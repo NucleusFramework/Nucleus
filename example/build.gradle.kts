@@ -61,10 +61,17 @@ nucleus.application {
         jvmVendor = JvmVendorSpec.BELLSOFT
         imageName = "nucleus-sample"
         march = providers.gradleProperty("nativeMarch").getOrElse("compatibility")
+        optimization {
+            optimizeForSize = true
+            skipFlow = true
+        }
+        upx {
+            isEnabled = true
+            compressionLevel = 10
+        }
         buildArgs.addAll(
             "-H:+AddAllCharsets",
             "-Djava.awt.headless=false",
-            "-Os",
             "-H:-IncludeMethodData",
         )
         nativeImageConfigBaseDir.set(

@@ -30,6 +30,8 @@ abstract class GraalvmSettings
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()
         val metadataRepository: MetadataRepositorySettings = objects.new()
+        val optimization: GraalvmOptimizationSettings = objects.new()
+        val upx: UpxSettings = objects.new()
 
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
@@ -37,6 +39,14 @@ abstract class GraalvmSettings
 
         fun metadataRepository(fn: Action<MetadataRepositorySettings>) {
             fn.execute(metadataRepository)
+        }
+
+        fun optimization(fn: Action<GraalvmOptimizationSettings>) {
+            fn.execute(optimization)
+        }
+
+        fun upx(fn: Action<UpxSettings>) {
+            fn.execute(upx)
         }
     }
 
@@ -77,4 +87,32 @@ abstract class MetadataRepositorySettings
          */
         val moduleToConfigVersion: MapProperty<String, String> =
             objects.mapProperty(String::class.java, String::class.java)
+    }
+
+abstract class GraalvmOptimizationSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /** Injects `-Os` to optimize for binary size. */
+        val optimizeForSize: Property<Boolean> = objects.notNullProperty(false)
+
+        /** Injects `-H:+TrackPrimitiveValues -H:+UsePredicates` (experimental). */
+        val skipFlow: Property<Boolean> = objects.notNullProperty(false)
+    }
+
+abstract class UpxSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /** Enable UPX compression of the native binary after compilation. */
+        val isEnabled: Property<Boolean> = objects.notNullProperty(false)
+
+        /** Path to the UPX executable. Resolved from PATH if not set. */
+        val executablePath: Property<String> = objects.nullableProperty()
+
+        /** Compression level (1-9, or 10 for --best). Defaults to 7. */
+        @Suppress("MagicNumber")
+        val compressionLevel: Property<Int> = objects.notNullProperty(7)
     }

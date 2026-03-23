@@ -41,6 +41,7 @@ private val graalvmDefaultJvmArgs: List<String> =
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
     val graalvm = app.graalvm
+    validateGraalvmOptimizationSettings(graalvm)
     val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
 
     val graalvmLauncher =
@@ -525,11 +526,58 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         }
                     }
 
+                    // Optimization flags from DSL
+                    if (graalvm.optimization.optimizeForSize.get()) add("-Os")
+                    if (graalvm.optimization.skipFlow.get()) {
+                        add("-H:+TrackPrimitiveValues")
+                        add("-H:+UsePredicates")
+                    }
+
                     addAll(graalvm.buildArgs.get())
                 }
         }
 
+    // ── UPX compression ──
+
+    val upxCompress: TaskProvider<Exec>? =
+        if (graalvm.upx.isEnabled.get()) {
+            val upxExe =
+                if (graalvm.upx.executablePath.isPresent) {
+                    graalvm.upx.executablePath.get()
+                } else {
+                    resolveFromPath("upx")
+                        ?: error(
+                            "UPX executable not found on PATH. " +
+                                "Install UPX or set graalvm.upx.executablePath explicitly.",
+                        )
+                }
+            val level = graalvm.upx.compressionLevel.get()
+            val levelArg = if (level == UPX_BEST_LEVEL) "--best" else "-$level"
+
+            tasks.register<Exec>(
+                taskNameAction = "upx",
+                taskNameObject = "graalvmBinary",
+            ) {
+                description = "Compress native binary with UPX"
+                dependsOn(nativeImageCompile)
+                val binary = nativeCompileDir.map { it.file(binaryName.get()).asFile }
+                commandLine(
+                    buildList {
+                        add(upxExe)
+                        if (currentOS == OS.MacOS) add("--force-macos")
+                        add(levelArg)
+                        add(binary.get().absolutePath)
+                    },
+                )
+            }
+        } else {
+            null
+        }
+
     // ── Platform-specific packaging ──
+
+    // The compile dependency for copy tasks: UPX (if enabled) must run before packaging copies the binary.
+    val compileOrUpx: TaskProvider<out DefaultTask> = upxCompress ?: nativeImageCompile
 
     val packageGraalvmNative: TaskProvider<out DefaultTask> =
         when (currentOS) {
@@ -537,7 +585,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 configureMacOsGraalvmPackaging(
                     graalvm,
                     graalvmHome,
-                    nativeImageCompile,
+                    compileOrUpx,
                     nativeCompileDir,
                     imageName,
                     unpackDefaultResources,
@@ -546,7 +594,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             OS.Windows ->
                 configureWindowsGraalvmPackaging(
                     graalvmHome,
-                    nativeImageCompile,
+                    compileOrUpx,
                     nativeCompileDir,
                     imageName,
                     packageUberJar,
@@ -554,7 +602,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             OS.Linux ->
                 configureLinuxGraalvmPackaging(
                     graalvmHome,
-                    nativeImageCompile,
+                    compileOrUpx,
                     nativeCompileDir,
                     imageName,
                     packageUberJar,
@@ -612,7 +660,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
     graalvm: GraalvmSettings,
     graalvmHome: org.gradle.api.provider.Provider<String>,
-    nativeImageCompile: TaskProvider<Exec>,
+    nativeImageCompile: TaskProvider<out DefaultTask>,
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
@@ -961,7 +1009,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
 @Suppress("LongParameterList")
 private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
     graalvmHome: org.gradle.api.provider.Provider<String>,
-    nativeImageCompile: TaskProvider<Exec>,
+    nativeImageCompile: TaskProvider<out DefaultTask>,
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
@@ -1060,7 +1108,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
 @Suppress("LongParameterList")
 private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
     graalvmHome: org.gradle.api.provider.Provider<String>,
-    nativeImageCompile: TaskProvider<Exec>,
+    nativeImageCompile: TaskProvider<out DefaultTask>,
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
@@ -1287,3 +1335,32 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Validation
+// ═══════════════════════════════════════════════════════════════════
+
+private const val UPX_MIN_LEVEL = 1
+private const val UPX_BEST_LEVEL = 10
+
+private fun JvmApplicationContext.validateGraalvmOptimizationSettings(graalvm: GraalvmSettings) {
+    val level = graalvm.upx.compressionLevel.get()
+    require(level in UPX_MIN_LEVEL..UPX_BEST_LEVEL) {
+        "upx.compressionLevel must be between $UPX_MIN_LEVEL and $UPX_BEST_LEVEL (10 = --best), got $level"
+    }
+    if (graalvm.optimization.skipFlow.get()) {
+        project.logger.lifecycle(
+            "GraalVM SkipFlow optimizations enabled (-H:+TrackPrimitiveValues -H:+UsePredicates). " +
+                "This is an experimental feature.",
+        )
+    }
+}
+
+/** Resolve an executable name from the system PATH, returning the absolute path or null. */
+private fun resolveFromPath(name: String): String? =
+    System
+        .getenv("PATH")
+        ?.splitToSequence(File.pathSeparator)
+        ?.map { File(it, name) }
+        ?.firstOrNull { it.isFile && it.canExecute() }
+        ?.absolutePath
