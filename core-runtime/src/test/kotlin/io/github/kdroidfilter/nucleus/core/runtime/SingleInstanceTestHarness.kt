@@ -27,23 +27,26 @@ fun main(args: Array<String>) {
 
     val lockDir = Paths.get(args[0])
     val lockId = args[1]
-    val holdSeconds = args[2].toLongOrNull() ?: run {
-        System.err.println("Invalid holdSeconds: ${args[2]}")
-        System.exit(2)
-        return
-    }
+    val holdSeconds =
+        args[2].toLongOrNull() ?: run {
+            System.err.println("Invalid holdSeconds: ${args[2]}")
+            System.exit(2)
+            return
+        }
 
-    SingleInstanceManager.configuration = SingleInstanceManager.Configuration(
-        lockFilesDir = lockDir,
-        lockIdentifier = lockId,
-    )
+    SingleInstanceManager.configuration =
+        SingleInstanceManager.Configuration(
+            lockFilesDir = lockDir,
+            lockIdentifier = lockId,
+        )
 
-    val isPrimary = SingleInstanceManager.isSingleInstance(
-        onRestoreRequest = {
-            println("RESTORE_REQUEST")
-            System.out.flush()
-        },
-    )
+    val isPrimary =
+        SingleInstanceManager.isSingleInstance(
+            onRestoreRequest = {
+                println("RESTORE_REQUEST")
+                System.out.flush()
+            },
+        )
 
     if (isPrimary) {
         println("LOCK_ACQUIRED")

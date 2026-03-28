@@ -212,14 +212,16 @@ class SingleInstanceIntegrationTest {
         val java = File(javaHome, "bin/java").absolutePath
         val classpath = System.getProperty("java.class.path")
 
-        val pb = ProcessBuilder(
-            java,
-            "-cp", classpath,
-            "io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceTestHarnessKt",
-            lockDir.toAbsolutePath().toString(),
-            lockId,
-            holdSeconds.toString(),
-        )
+        val pb =
+            ProcessBuilder(
+                java,
+                "-cp",
+                classpath,
+                "io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceTestHarnessKt",
+                lockDir.toAbsolutePath().toString(),
+                lockId,
+                holdSeconds.toString(),
+            )
         pb.redirectErrorStream(false)
         val process = pb.start()
         processes.add(process)

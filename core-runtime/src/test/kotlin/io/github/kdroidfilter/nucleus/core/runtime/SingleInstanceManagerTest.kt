@@ -8,7 +8,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import java.io.RandomAccessFile
-import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -96,9 +95,12 @@ class SingleInstanceManagerTest {
         // Now a fresh channel should acquire the lock via retry (succeeds on first attempt)
         val channel2 = RandomAccessFile(lockFile, "rw").channel
         try {
-            val lock2 = SingleInstanceManager.tryLockWithRetry(
-                channel2, maxAttempts = 3, retryDelayMs = 10,
-            )
+            val lock2 =
+                SingleInstanceManager.tryLockWithRetry(
+                    channel2,
+                    maxAttempts = 3,
+                    retryDelayMs = 10,
+                )
             assertNotNull("Lock should be acquired after previous release", lock2)
             lock2?.release()
         } finally {
@@ -226,10 +228,11 @@ class SingleInstanceManagerTest {
 
     @Test
     fun `configuration produces correct file paths`() {
-        val config = SingleInstanceManager.Configuration(
-            lockFilesDir = tempDir,
-            lockIdentifier = "com.example.myapp",
-        )
+        val config =
+            SingleInstanceManager.Configuration(
+                lockFilesDir = tempDir,
+                lockIdentifier = "com.example.myapp",
+            )
         assertTrue(config.lockFileName == "com.example.myapp.lock")
         assertTrue(config.restoreRequestFileName == "com.example.myapp.restore_request")
         assertTrue(config.lockFilePath == tempDir.resolve("com.example.myapp.lock"))
