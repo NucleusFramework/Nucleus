@@ -75,10 +75,12 @@ object SingleInstanceManager {
         val lockFile = createLockFile()
         fileChannel = RandomAccessFile(lockFile, "rw").channel
         return try {
-            fileLock = fileChannel?.tryLock()
+            fileLock = tryLockWithRetry(fileChannel)
             if (fileLock != null) {
                 // We are the only instance
                 debugLog { "Lock acquired, starting to watch for restore requests" }
+                // Clean any stale restore request file left from a previous crash
+                deleteRestoreRequestFile()
                 // Ensure that watching is started only once
                 if (!isWatching) {
                     isWatching = true
@@ -104,9 +106,35 @@ object SingleInstanceManager {
             debugLog { "The lock is already held by this process (${e.message})" }
             return true
         } catch (e: IOException) {
-            errorLog { "Error in isSingleInstance: $e" }
-            false
+            // Fail-open: if we cannot determine lock state, let the app run
+            // rather than silently terminating
+            errorLog { "Error in isSingleInstance (proceeding as primary): $e" }
+            true
         }
+    }
+
+    /**
+     * Attempts to acquire the file lock with retries.
+     *
+     * On macOS (and other platforms), a rapid relaunch can race with the previous
+     * process's shutdown hook that is still releasing the lock. A short retry window
+     * handles this gracefully.
+     */
+    @Suppress("MagicNumber")
+    internal fun tryLockWithRetry(
+        channel: FileChannel?,
+        maxAttempts: Int = 3,
+        retryDelayMs: Long = 150,
+    ): FileLock? {
+        repeat(maxAttempts) { attempt ->
+            val lock = channel?.tryLock()
+            if (lock != null) return lock
+            if (attempt < maxAttempts - 1) {
+                debugLog { "Lock attempt ${attempt + 1}/$maxAttempts failed, retrying in ${retryDelayMs}ms" }
+                Thread.sleep(retryDelayMs)
+            }
+        }
+        return null
     }
 
     private fun createLockFile(): File {
@@ -156,6 +184,9 @@ object SingleInstanceManager {
                 tempRestoreFilePath.onRestoreFileCreated()
                 Files.move(tempRestoreFilePath, restoreRequestFilePath, StandardCopyOption.REPLACE_EXISTING)
             } else {
+                // Delete any stale file first, then create a fresh one so the
+                // WatchService sees an ENTRY_CREATE event
+                Files.deleteIfExists(restoreRequestFilePath)
                 Files.createFile(restoreRequestFilePath)
             }
             debugLog { "Restore request file created: $restoreRequestFilePath" }
