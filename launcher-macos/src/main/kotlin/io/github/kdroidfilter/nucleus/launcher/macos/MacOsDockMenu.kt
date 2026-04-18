@@ -14,6 +14,17 @@ object MacOsDockMenu {
     val isAvailable: Boolean
         get() = NativeMacOsDockMenuBridge.isLoaded
 
+    /**
+     * Eagerly triggers the JNI library load on the calling thread.
+     *
+     * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+     * validation). Call [preload] from a background daemon thread during
+     * `main()` to keep the UI thread responsive on first tab open.
+     */
+    fun preload() {
+        NativeMacOsDockMenuBridge.isLoaded
+    }
+
     /** Listener for dock menu item clicks. Callbacks are dispatched on the Swing EDT. */
     var listener: DockMenuListener? = null
 

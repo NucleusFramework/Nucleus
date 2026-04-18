@@ -22,6 +22,22 @@ object TaskbarProgress {
     private var macOsAttentionRequestId: Int = -1
 
     /**
+     * Eagerly triggers the JNI library load on the calling thread.
+     *
+     * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+     * validation). Call [preload] from a background daemon thread during
+     * `main()` to keep the UI thread responsive on first use.
+     */
+    fun preload() {
+        when (Platform.Current) {
+            Platform.Windows -> NativeWindowsTaskbarBridge.isLoaded
+            Platform.MacOS -> NativeMacOsTaskbarBridge.isLoaded
+            Platform.Linux -> NativeLinuxTaskbarBridge.isLoaded
+            else -> Unit
+        }
+    }
+
+    /**
      * Explicit override for the `.desktop` filename on Linux.
      *
      * When set, bypasses all auto-detection. Must match the installed `.desktop` file

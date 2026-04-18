@@ -46,6 +46,17 @@ object EnergyManager {
     fun isAvailable(): Boolean = delegate?.isAvailable() ?: false
 
     /**
+     * Eagerly triggers the JNI library load on the calling thread.
+     *
+     * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+     * validation). Call [preload] from a background daemon thread during
+     * `main()` to keep the UI thread responsive on first use.
+     */
+    fun preload() {
+        delegate?.isAvailable()
+    }
+
+    /**
      * Enables efficiency mode for the current process.
      */
     fun enableEfficiencyMode(): Result = delegate?.enableEfficiencyMode() ?: unsupported

@@ -38,6 +38,17 @@ object MediaControlService {
     fun isAvailable(): Boolean = backend !== NoopBackend
 
     /**
+     * Eagerly triggers the JNI library load on the calling thread.
+     *
+     * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+     * validation). Call [preload] from a background daemon thread during
+     * `main()` to keep the UI thread responsive on first tab open.
+     */
+    fun preload() {
+        backend
+    }
+
+    /**
      * Configure the media player identity.
      *
      * On Linux, registers the MPRIS D-Bus name (format `org.mpris.MediaPlayer2.<name>`).

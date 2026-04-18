@@ -14,6 +14,17 @@ import io.github.kdroidfilter.nucleus.systemcolor.windows.windowsAccentColor
 import io.github.kdroidfilter.nucleus.systemcolor.windows.windowsHighContrast
 
 /**
+ * Eagerly triggers the JNI library load on the calling thread.
+ *
+ * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+ * validation). Call this from a background daemon thread during `main()` to
+ * keep the UI thread responsive on first accent-color query.
+ */
+fun preloadSystemColor() {
+    isSystemAccentColorSupported()
+}
+
+/**
  * Returns whether the current platform supports system accent color detection.
  */
 fun isSystemAccentColorSupported(): Boolean =

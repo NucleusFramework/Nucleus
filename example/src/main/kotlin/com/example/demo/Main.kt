@@ -69,11 +69,19 @@ import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceManager
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
+import io.github.kdroidfilter.nucleus.darkmodedetector.preloadDarkModeDetector
 import io.github.kdroidfilter.nucleus.energymanager.EnergyManager
+import io.github.kdroidfilter.nucleus.globalhotkey.GlobalHotKeyManager
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
+import io.github.kdroidfilter.nucleus.launcher.macos.MacOsDockMenu
 import io.github.kdroidfilter.nucleus.launcher.windows.WindowsJumpListManager
+import io.github.kdroidfilter.nucleus.media.control.MediaControlService
+import io.github.kdroidfilter.nucleus.menu.macos.preloadNativeMenuBar
 import io.github.kdroidfilter.nucleus.nativehttp.NativeHttpClient
+import io.github.kdroidfilter.nucleus.notification.NotificationCenter
+import io.github.kdroidfilter.nucleus.systemcolor.preloadSystemColor
 import io.github.kdroidfilter.nucleus.systemcolor.systemAccentColor
+import io.github.kdroidfilter.nucleus.taskbarprogress.TaskbarProgress
 import io.github.kdroidfilter.nucleus.updater.NucleusUpdater
 import io.github.kdroidfilter.nucleus.updater.UpdateEvent
 import io.github.kdroidfilter.nucleus.updater.UpdateLevel
@@ -98,6 +106,23 @@ private val deepLinkUri = mutableStateOf<URI?>(null)
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 fun main(args: Array<String>) {
     GraalVmInitializer.initialize()
+
+    // Warm native JNI libraries off the main thread. First `dlopen` on macOS
+    // can take 100–300 ms (AMFI code-signature validation); without this the
+    // cost lands on the EDT when a tab is opened for the first time.
+    Thread({
+        EnergyManager.preload()
+        GlobalHotKeyManager.preload()
+        MediaControlService.preload()
+        NotificationCenter.preload()
+        TaskbarProgress.preload()
+        preloadDarkModeDetector()
+        preloadSystemColor()
+        if (Platform.Current == Platform.MacOS) {
+            MacOsDockMenu.preload()
+            preloadNativeMenuBar()
+        }
+    }, "nucleus-native-warmup").apply { isDaemon = true; start() }
 
     // Set AUMID before any window is created (required for jump lists in non-APPX mode)
     if (Platform.Current == Platform.Windows) {

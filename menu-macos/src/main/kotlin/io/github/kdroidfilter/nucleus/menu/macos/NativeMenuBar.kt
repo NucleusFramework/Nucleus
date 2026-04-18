@@ -8,6 +8,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 
+/**
+ * Eagerly triggers the JNI library load on the calling thread.
+ *
+ * On macOS the first `dlopen` can take 100–300 ms (AMFI code-signature
+ * validation). Call this from a background daemon thread during `main()` to
+ * keep the UI thread responsive when the native menu bar is first rendered.
+ */
+fun preloadNativeMenuBar() {
+    NativeNsMenuBridge.isLoaded
+}
+
 // ─── Public composable ───────────────────────────────────────────────────────
 
 /**
