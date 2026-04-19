@@ -97,6 +97,9 @@ nav:
               - macOS: runtime/launcher-macos.md
               - Windows: runtime/launcher-windows.md
               - Linux: runtime/launcher-linux.md
+          - Clipboard:
+              - Common: runtime/clipboard-common.md
+              - macOS: runtime/clipboard-macos.md
           - Media Control: runtime/media-control.md
           - System:
               - Dark Mode Detector: runtime/darkmode-detector.md

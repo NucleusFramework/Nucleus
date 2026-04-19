@@ -189,29 +189,45 @@ fun main(args: Array<String>) {
                     CompositionLocalProvider(
                         LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                     ) {
-                        val tabs =
+                        val tabGroups =
                             buildList {
-                                addAll(listOf("Nucleus", "Gallery", "Taskbar"))
-                                add("Notifications (Common)")
-                                if (Platform.Current == Platform.MacOS ||
-                                    Platform.Current == Platform.Linux ||
-                                    Platform.Current == Platform.Windows
-                                ) {
-                                    add("Notifications")
-                                }
-                                if (Platform.Current == Platform.Windows ||
-                                    Platform.Current == Platform.Linux ||
-                                    Platform.Current == Platform.MacOS
-                                ) {
-                                    add("Launcher")
-                                }
-                                add("Media Control")
-                                add("Auto-Launch")
+                                add(TabGroup("Home", listOf("Nucleus")))
+                                add(TabGroup("UI", listOf("Gallery", "Taskbar")))
 
-                                add("Hotkeys")
-                                if (Platform.Current == Platform.MacOS) {
-                                    add("Menu")
+                                val notifChildren =
+                                    buildList {
+                                        add("Notifications (Common)")
+                                        if (Platform.Current == Platform.MacOS ||
+                                            Platform.Current == Platform.Linux ||
+                                            Platform.Current == Platform.Windows
+                                        ) {
+                                            add("Notifications")
+                                        }
+                                    }
+                                add(TabGroup("Notifications", notifChildren))
+
+                                val launcherChildren =
+                                    buildList {
+                                        if (Platform.Current == Platform.Windows ||
+                                            Platform.Current == Platform.Linux ||
+                                            Platform.Current == Platform.MacOS
+                                        ) {
+                                            add("Launcher")
+                                        }
+                                        if (Platform.Current == Platform.MacOS) {
+                                            add("Menu")
+                                        }
+                                    }
+                                if (launcherChildren.isNotEmpty()) {
+                                    add(TabGroup("Launcher", launcherChildren))
                                 }
+
+                                add(
+                                    TabGroup(
+                                        "System",
+                                        listOf("Media Control", "Auto-Launch", "Hotkeys", "Clipboard"),
+                                    ),
+                                )
                             }
                         var selectedTab by remember { mutableStateOf("Nucleus") }
 
@@ -274,11 +290,10 @@ fun main(args: Array<String>) {
                                 modifier = Modifier.align(titleBarAlignment),
                                 onClick = { isRtl = !isRtl },
                             )
-                            DraggableTabs(
-                                tabs = tabs,
+                            GroupDropdownTabs(
+                                groups = tabGroups,
                                 selectedTab = selectedTab,
                                 onSelect = { selectedTab = it },
-                                onReorder = { _, _ -> },
                                 modifier = Modifier.align(Alignment.CenterHorizontally),
                             )
                         }
@@ -358,6 +373,7 @@ fun main(args: Array<String>) {
                             "Auto-Launch" -> AutoLaunchScreen()
                             "Hotkeys" -> GlobalHotKeyScreen()
                             "Menu" -> MacOsMenuScreen()
+                            "Clipboard" -> ClipboardScreen()
                         }
 
                         if (showInfoDialog) {

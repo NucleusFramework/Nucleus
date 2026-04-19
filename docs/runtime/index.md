@@ -16,6 +16,8 @@ Nucleus provides runtime libraries for use in your application code. All are pub
 | Notification (Linux) | `io.github.kdroidfilter:nucleus.notification-linux` | Freedesktop Desktop Notifications API via JNI (D-Bus) |
 | Launcher (Linux) | `io.github.kdroidfilter:nucleus.launcher-linux` | Unity Launcher API — badge, progress, urgency, quicklist via JNI (D-Bus) |
 | Launcher (macOS) | `io.github.kdroidfilter:nucleus.launcher-macos` | macOS dock context menu — custom items, submenus, click callbacks via JNI |
+| Clipboard (Common) | `io.github.kdroidfilter:nucleus.clipboard-common` | Cross-platform clipboard façade — text, HTML, RTF, images, file lists + change watcher (`Flow<ClipboardEvent>`) |
+| Clipboard (macOS) | `io.github.kdroidfilter:nucleus.clipboard-macos` | macOS NSPasteboard backend for the clipboard API via JNI |
 | Media Control | `io.github.kdroidfilter:nucleus.media-control` | OS media controls (play/pause, metadata, seek) — MPRIS D-Bus on Linux, MPNowPlayingInfoCenter on macOS, SystemMediaTransportControls on Windows via JNI |
 | Menu (macOS) | `io.github.kdroidfilter:nucleus.menu-macos` | Complete NSMenu mapping — application menu bar, items, badges, delegates, SF Symbols via JNI |
 | SF Symbols | `io.github.kdroidfilter:nucleus.sf-symbols` | Type-safe Apple SF Symbols constants (6 195 symbols, 21 categories) |
@@ -50,6 +52,8 @@ dependencies {
     implementation("io.github.kdroidfilter:nucleus.notification-linux:<version>")
     implementation("io.github.kdroidfilter:nucleus.launcher-linux:<version>")
     implementation("io.github.kdroidfilter:nucleus.launcher-macos:<version>")
+    implementation("io.github.kdroidfilter:nucleus.clipboard-common:<version>")
+    implementation("io.github.kdroidfilter:nucleus.clipboard-macos:<version>")
     implementation("io.github.kdroidfilter:nucleus.media-control:<version>")
     implementation("io.github.kdroidfilter:nucleus.menu-macos:<version>")
     implementation("io.github.kdroidfilter:nucleus.sf-symbols:<version>")
@@ -77,7 +81,7 @@ dependencies {
 
 When ProGuard is enabled in a release build, the Nucleus Gradle plugin **automatically includes** the required rules for all Nucleus runtime libraries (`default-compose-desktop-rules.pro`). No manual configuration is needed.
 
-Libraries that use JNI (`decorated-window`, `darkmode-detector`, `system-color`, `energy-manager`, `native-ssl`, `notification-macos`, `notification-windows`, `notification-linux`, `launcher-windows`, `launcher-linux`) require `-keep` rules for their native bridge classes — these are handled by the plugin automatically.
+Libraries that use JNI (`decorated-window`, `darkmode-detector`, `system-color`, `energy-manager`, `native-ssl`, `notification-macos`, `notification-windows`, `notification-linux`, `launcher-windows`, `launcher-linux`, `clipboard-macos`) require `-keep` rules for their native bridge classes — these are handled by the plugin automatically.
 
 ### Overriding the ProGuard configuration
 

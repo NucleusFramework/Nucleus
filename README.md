@@ -108,6 +108,8 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.launcher-macos` | macOS Dock API — badge, menus |
 | `nucleus.launcher-windows` | Windows taskbar — badges, jump lists, overlay icons, thumbnail toolbar |
 | `nucleus.launcher-linux` | Unity Launcher — badge, progress, urgency, quicklist |
+| `nucleus.clipboard-common` | Cross-platform clipboard — text, HTML, RTF, images, files + change watcher |
+| `nucleus.clipboard-macos` | macOS `NSPasteboard` backend for the clipboard API |
 | `nucleus.media-control` | OS media controls — MPRIS (Linux), Now Playing (macOS), SMTC (Windows) |
 | `nucleus.menu-macos` | Native macOS menu bar |
 | `nucleus.freedesktop-icons` | Type-safe freedesktop icon naming constants |
