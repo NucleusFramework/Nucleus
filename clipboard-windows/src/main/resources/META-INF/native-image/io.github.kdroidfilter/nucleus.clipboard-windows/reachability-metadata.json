@@ -1,0 +1,8 @@
+{
+    "reflection": [
+        {
+            "type": "io.github.kdroidfilter.nucleus.clipboard.windows.NativeWindowsClipboardBridge",
+            "jniAccessible": true
+        }
+    ]
+}
