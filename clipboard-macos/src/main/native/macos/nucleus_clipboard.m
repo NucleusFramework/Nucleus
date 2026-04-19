@@ -323,3 +323,34 @@ Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nat
         [inv invoke];
     }
 }
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nativeGetAccessBehavior(
+    JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    @autoreleasepool {
+        NSPasteboard *pb = [NSPasteboard generalPasteboard];
+        SEL sel = NSSelectorFromString(@"accessBehavior");
+        if (![pb respondsToSelector:sel]) return -1;
+        NSMethodSignature *sig = [pb methodSignatureForSelector:sel];
+        NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
+        [inv setSelector:sel];
+        [inv setTarget:pb];
+        [inv invoke];
+        NSInteger result = 0;
+        [inv getReturnValue:&result];
+        return (jint)result;
+    }
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nativeIsAccessBehaviorSupported(
+    JNIEnv *env, jclass cls) {
+    (void)env; (void)cls;
+    @autoreleasepool {
+        NSPasteboard *pb = [NSPasteboard generalPasteboard];
+        BOOL hasGetter = [pb respondsToSelector:NSSelectorFromString(@"accessBehavior")];
+        BOOL hasSetter = [pb respondsToSelector:NSSelectorFromString(@"setAccessBehavior:")];
+        return (hasGetter && hasSetter) ? JNI_TRUE : JNI_FALSE;
+    }
+}

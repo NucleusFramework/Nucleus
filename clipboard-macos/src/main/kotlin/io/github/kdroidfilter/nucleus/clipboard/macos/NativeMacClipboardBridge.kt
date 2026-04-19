@@ -9,6 +9,7 @@ private const val LIBRARY_NAME = "nucleus_clipboard"
  * pasteboard and are safe to call from any thread (NSPasteboard is thread-safe,
  * and the ObjC side wraps each entry in an autorelease pool).
  */
+@Suppress("TooManyFunctions")
 internal object NativeMacClipboardBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeMacClipboardBridge::class.java)
 
@@ -62,4 +63,15 @@ internal object NativeMacClipboardBridge {
      */
     @JvmStatic
     external fun nativeSetAccessBehavior(value: Int)
+
+    /**
+     * Reads `NSPasteboard.accessBehavior`. Returns the raw enum value on
+     * macOS 15.4+, or `-1` when the property is not exposed by the runtime.
+     */
+    @JvmStatic
+    external fun nativeGetAccessBehavior(): Int
+
+    /** True when `NSPasteboard` responds to the `accessBehavior` selectors. */
+    @JvmStatic
+    external fun nativeIsAccessBehaviorSupported(): Boolean
 }

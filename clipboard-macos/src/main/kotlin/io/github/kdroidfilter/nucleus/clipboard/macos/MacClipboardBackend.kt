@@ -79,6 +79,15 @@ class MacClipboardBackend : ClipboardBackend {
         NativeMacClipboardBridge.nativeSetAccessBehavior(behavior.ordinal)
     }
 
+    override fun accessBehavior(): AccessBehavior? {
+        if (!NativeMacClipboardBridge.isLoaded) return null
+        val raw = NativeMacClipboardBridge.nativeGetAccessBehavior()
+        return AccessBehavior.entries.getOrNull(raw)
+    }
+
+    override fun isAccessBehaviorSupported(): Boolean =
+        NativeMacClipboardBridge.isLoaded && NativeMacClipboardBridge.nativeIsAccessBehaviorSupported()
+
     /**
      * Strips a leading UTF-8 BOM (`\uFEFF`) that Firefox and some web apps emit on
      * `public.html` payloads. Keeps the rest untouched.

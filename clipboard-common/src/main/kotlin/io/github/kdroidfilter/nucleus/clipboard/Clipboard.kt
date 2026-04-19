@@ -120,6 +120,15 @@ object Clipboard {
     fun setAccessBehavior(behavior: AccessBehavior) = backend.setAccessBehavior(behavior)
 
     /**
+     * Currently effective privacy policy, or `null` when the host OS does not
+     * expose one (macOS &lt; 15.4, Windows, Linux — treat as unrestricted).
+     */
+    val accessBehavior: AccessBehavior? get() = backend.accessBehavior()
+
+    /** True when [setAccessBehavior] and [accessBehavior] are honored (macOS 15.4+). */
+    val isAccessBehaviorSupported: Boolean get() = backend.isAccessBehaviorSupported()
+
+    /**
      * Cold [Flow] that emits whenever the clipboard contents change.
      *
      * The event carries only format metadata and a monotonic `changeCount`, not

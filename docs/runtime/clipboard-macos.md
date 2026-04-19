@@ -54,10 +54,15 @@ macOS 15.4 introduced a developer-preview pasteboard-privacy prompt. The backend
 - **Watcher & `availableFormats()`** — use `changeCount` and `-types`, both of which return metadata only. **No prompt.**
 - **`readXxx` methods** — read actual bytes; will trigger the prompt when `defaults write <bundle-id> EnablePasteboardPrivacyDeveloperPreview -bool yes` is active, or on macOS 16 when the prompt is enabled by default.
 - **`Clipboard.setAccessBehavior(...)`** — maps to `NSPasteboard.accessBehavior` (macOS 15.4+, guarded by `respondsToSelector:`). Older macOS versions silently ignore the call.
+- **`Clipboard.accessBehavior`** — reads the currently effective policy. Returns `null` when the runtime is older than macOS 15.4 (treat as unrestricted).
+- **`Clipboard.isAccessBehaviorSupported`** — `true` when both getter and setter selectors respond on `NSPasteboard`. Use this to gate UI that lets the user pick a policy.
 
 ```kotlin
 // At startup — opt the app into "ask every time" policy on macOS 15.4+.
-Clipboard.setAccessBehavior(AccessBehavior.AskEveryTime)
+if (Clipboard.isAccessBehaviorSupported) {
+    Clipboard.setAccessBehavior(AccessBehavior.AskEveryTime)
+    println("Effective policy: ${Clipboard.accessBehavior}")
+}
 ```
 
 ## Concealed / transient content

@@ -4,6 +4,7 @@ import io.github.kdroidfilter.nucleus.clipboard.AccessBehavior
 import io.github.kdroidfilter.nucleus.clipboard.ClipboardFormat
 import java.nio.file.Path
 
+@Suppress("TooManyFunctions")
 internal object NoOpBackend : ClipboardBackend {
     override val name: String = "no-op"
 
@@ -28,4 +29,8 @@ internal object NoOpBackend : ClipboardBackend {
     override fun changeCount(): Long = 0L
 
     override fun setAccessBehavior(behavior: AccessBehavior) = Unit
+
+    override fun accessBehavior(): AccessBehavior? = null
+
+    override fun isAccessBehaviorSupported(): Boolean = false
 }

@@ -12,6 +12,7 @@ import java.nio.file.Path
  * [isAvailable] returns `false`). The facade in [io.github.kdroidfilter.nucleus.clipboard.Clipboard]
  * picks the first available backend and delegates.
  */
+@Suppress("TooManyFunctions")
 interface ClipboardBackend {
     /** Human-readable backend name, for logging. */
     val name: String
@@ -47,4 +48,15 @@ interface ClipboardBackend {
 
     /** Sets the platform privacy policy (macOS 15.4+). No-op elsewhere. */
     fun setAccessBehavior(behavior: AccessBehavior)
+
+    /**
+     * Reads the currently effective privacy policy.
+     *
+     * Returns `null` when the host OS has no such concept (macOS &lt; 15.4,
+     * Windows, Linux) — callers should interpret this as "unrestricted access".
+     */
+    fun accessBehavior(): AccessBehavior?
+
+    /** True when [setAccessBehavior] and [accessBehavior] are honored by the backend. */
+    fun isAccessBehaviorSupported(): Boolean
 }

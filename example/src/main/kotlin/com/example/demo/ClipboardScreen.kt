@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import io.github.kdroidfilter.nucleus.clipboard.AccessBehavior
 import io.github.kdroidfilter.nucleus.clipboard.Clipboard
 import io.github.kdroidfilter.nucleus.clipboard.ClipboardEvent
 import io.github.kdroidfilter.nucleus.clipboard.ClipboardFormat
@@ -103,6 +104,12 @@ fun ClipboardScreen() {
             )
 
             WatcherCard(currentFormats, currentChangeCount)
+            AccessBehaviorCard(
+                onChange = { behavior ->
+                    Clipboard.setAccessBehavior(behavior)
+                    log("access behavior → $behavior")
+                },
+            )
             WriteCard(
                 textToCopy = textToCopy,
                 onTextChange = { textToCopy = it },
@@ -214,6 +221,47 @@ private fun WatcherCard(
             }
             Text(
                 "Copy anything anywhere (⌘C) to see events appear below.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun AccessBehaviorCard(onChange: (AccessBehavior) -> Unit) {
+    val supported = Clipboard.isAccessBehaviorSupported
+    var current by remember { mutableStateOf(Clipboard.accessBehavior) }
+
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Privacy — macOS 15.4+", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (supported) {
+                    "current: ${current?.name ?: "(unknown)"}"
+                } else {
+                    "Not supported on this OS / runtime — reads are unrestricted."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontFamily = FontFamily.Monospace,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                AccessBehavior.entries.forEach { behavior ->
+                    FilterChip(
+                        enabled = supported,
+                        selected = current == behavior,
+                        onClick = {
+                            onChange(behavior)
+                            current = Clipboard.accessBehavior
+                        },
+                        label = { Text(behavior.name) },
+                    )
+                }
+            }
+            Text(
+                "Watcher and availableFormats() only read metadata " +
+                    "(changeCount + types) — they never trigger the pasteboard-privacy prompt.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

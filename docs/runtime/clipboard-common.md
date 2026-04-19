@@ -54,6 +54,8 @@ Singleton façade. All suspending methods may be called from any coroutine conte
 | `isAvailable: Boolean` | `true` when a platform backend is loaded and operational. `false` on unsupported platforms or when the native library failed to load. |
 | `backendName: String` | Backend name for diagnostics (e.g. `"macOS NSPasteboard"` or `"no-op"`). |
 | `setAccessBehavior(behavior)` | Applies a privacy policy for background reads. Maps to `NSPasteboard.accessBehavior` on macOS 15.4+, no-op elsewhere. |
+| `accessBehavior: AccessBehavior?` | Currently effective policy, or `null` when the host OS has no such concept (treat as unrestricted). |
+| `isAccessBehaviorSupported: Boolean` | `true` when the backend honors `setAccessBehavior` / `accessBehavior` (macOS 15.4+). |
 
 #### Read
 
@@ -157,7 +159,10 @@ enum class AccessBehavior { AlwaysAllow, AskEveryTime, AlwaysDeny }
 Platform privacy policy for background reads. Maps 1:1 to `NSPasteboard.AccessBehavior` on macOS 15.4+. No-op on platforms without a privacy model. Call at startup:
 
 ```kotlin
-Clipboard.setAccessBehavior(AccessBehavior.AskEveryTime)
+if (Clipboard.isAccessBehaviorSupported) {
+    Clipboard.setAccessBehavior(AccessBehavior.AskEveryTime)
+}
+val effective: AccessBehavior? = Clipboard.accessBehavior // null on macOS < 15.4
 ```
 
 ## Sensitive-content note
