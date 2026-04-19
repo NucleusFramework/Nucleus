@@ -1,0 +1,8 @@
+{
+    "reflection": [
+        {
+            "type": "io.github.kdroidfilter.nucleus.clipboard.linux.NativeX11ClipboardBridge",
+            "jniAccessible": true
+        }
+    ]
+}

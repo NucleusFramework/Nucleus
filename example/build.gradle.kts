@@ -42,6 +42,7 @@ dependencies {
     implementation(project(":menu-macos"))
     implementation(project(":clipboard-common"))
     implementation(project(":clipboard-macos"))
+    implementation(project(":clipboard-linux"))
     implementation(project(":sf-symbols"))
     implementation(project(":media-control"))
     implementation(libs.coroutines.swing)
