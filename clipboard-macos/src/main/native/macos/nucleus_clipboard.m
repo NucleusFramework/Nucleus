@@ -18,6 +18,11 @@
 
 static JavaVM *g_jvm = NULL;
 
+static BOOL isMacOS_15_4_or_later(void) {
+    NSOperatingSystemVersion v = { .majorVersion = 15, .minorVersion = 4, .patchVersion = 0 };
+    return [[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v];
+}
+
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
     (void)reserved;
     g_jvm = vm;
@@ -348,9 +353,6 @@ Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nat
     JNIEnv *env, jclass cls) {
     (void)env; (void)cls;
     @autoreleasepool {
-        NSPasteboard *pb = [NSPasteboard generalPasteboard];
-        BOOL hasGetter = [pb respondsToSelector:NSSelectorFromString(@"accessBehavior")];
-        BOOL hasSetter = [pb respondsToSelector:NSSelectorFromString(@"setAccessBehavior:")];
-        return (hasGetter && hasSetter) ? JNI_TRUE : JNI_FALSE;
+        return isMacOS_15_4_or_later() ? JNI_TRUE : JNI_FALSE;
     }
 }
