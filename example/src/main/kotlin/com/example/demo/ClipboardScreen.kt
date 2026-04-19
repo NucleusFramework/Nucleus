@@ -52,9 +52,14 @@ private const val EVENT_LOG_MAX = 40
 private sealed class LogEntry {
     abstract val line: String
 
-    data class Text(override val line: String) : LogEntry()
+    data class Text(
+        override val line: String,
+    ) : LogEntry()
 
-    data class Image(override val line: String, val bitmap: ImageBitmap) : LogEntry()
+    data class Image(
+        override val line: String,
+        val bitmap: ImageBitmap,
+    ) : LogEntry()
 }
 
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
