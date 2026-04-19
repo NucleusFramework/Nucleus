@@ -49,15 +49,32 @@ import org.jetbrains.skia.Image as SkiaImage
 
 private const val EVENT_LOG_MAX = 40
 
+private sealed class LogEntry {
+    abstract val line: String
+
+    data class Text(override val line: String) : LogEntry()
+
+    data class Image(override val line: String, val bitmap: ImageBitmap) : LogEntry()
+}
+
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun ClipboardScreen() {
     val scope = rememberCoroutineScope()
-    val events = remember { mutableStateListOf<String>() }
+    val events = remember { mutableStateListOf<LogEntry>() }
 
     fun log(msg: String) {
         val ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
-        events.add(0, "[$ts] $msg")
+        events.add(0, LogEntry.Text("[$ts] $msg"))
+        while (events.size > EVENT_LOG_MAX) events.removeAt(events.lastIndex)
+    }
+
+    fun logImage(
+        msg: String,
+        bitmap: ImageBitmap,
+    ) {
+        val ts = LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+        events.add(0, LogEntry.Image("[$ts] $msg", bitmap))
         while (events.size > EVENT_LOG_MAX) events.removeAt(events.lastIndex)
     }
 
@@ -80,6 +97,16 @@ fun ClipboardScreen() {
             currentFormats = event.formats
             currentChangeCount = event.changeCount
             log("change #${event.changeCount} formats=${event.formats}")
+            if (ClipboardFormat.Image in event.formats) {
+                val bytes = Clipboard.readImageBytes()
+                val bitmap =
+                    bytes?.let {
+                        runCatching { SkiaImage.makeFromEncoded(it).toComposeImageBitmap() }.getOrNull()
+                    }
+                if (bitmap != null) {
+                    logImage("image copied · ${bytes.size} bytes (png)", bitmap)
+                }
+            }
         }
     }
 
@@ -172,7 +199,7 @@ fun ClipboardScreen() {
                 onReadImage = {
                     scope.launch {
                         val bytes = Clipboard.readImageBytes()
-                        lastImage =
+                        val bitmap =
                             bytes?.let {
                                 runCatching {
                                     SkiaImage
@@ -181,7 +208,12 @@ fun ClipboardScreen() {
                                         ).toComposeImageBitmap()
                                 }.getOrNull()
                             }
-                        log("read image: ${bytes?.size ?: 0} bytes (png)")
+                        lastImage = bitmap
+                        if (bitmap != null && bytes != null) {
+                            logImage("read image · ${bytes.size} bytes (png)", bitmap)
+                        } else {
+                            log("read image: ${bytes?.size ?: 0} bytes (png)")
+                        }
                     }
                 },
                 onReadFiles = {
@@ -374,7 +406,7 @@ private fun ReadRow(
 }
 
 @Composable
-private fun EventLogCard(events: List<String>) {
+private fun EventLogCard(events: List<LogEntry>) {
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLowest)) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Event log", style = MaterialTheme.typography.titleMedium)
@@ -387,8 +419,28 @@ private fun EventLogCard(events: List<String>) {
             } else {
                 HorizontalDivider()
                 Spacer(Modifier.height(4.dp))
-                events.take(EVENT_LOG_MAX).forEach {
-                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                events.take(EVENT_LOG_MAX).forEach { entry ->
+                    when (entry) {
+                        is LogEntry.Text ->
+                            Text(
+                                entry.line,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                            )
+                        is LogEntry.Image ->
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    entry.line,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontFamily = FontFamily.Monospace,
+                                )
+                                Image(
+                                    painter = BitmapPainter(entry.bitmap),
+                                    contentDescription = "Clipboard image",
+                                    modifier = Modifier.widthIn(max = 240.dp).heightIn(max = 160.dp),
+                                )
+                            }
+                    }
                 }
             }
         }

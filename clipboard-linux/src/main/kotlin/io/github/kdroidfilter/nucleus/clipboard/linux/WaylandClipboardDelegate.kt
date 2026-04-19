@@ -12,7 +12,11 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 private const val PROCESS_WRITE_TIMEOUT_SECONDS: Long = 3L
-private const val STREAM_DRAIN_MS: Long = 200L
+private const val IMAGE_READ_TIMEOUT_MS: Long = 5000L
+private const val DESTROY_DRAIN_MS: Long = 200L
+
+private val IMAGE_MIME_PREFERENCE: List<String> =
+    listOf("image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp", "image/gif", "image/tiff")
 
 /**
  * Wayland backend implemented by delegating to `wl-copy` and `wl-paste` from the
@@ -108,7 +112,43 @@ internal class WaylandClipboardDelegate {
 
     fun readImagePng(): ByteArray? {
         val paste = wlPaste ?: return null
-        return runCaptureBytes(listOf(paste, "-n", "-t", "image/png"), timeoutMs = 3000)
+        val available = listTypes().map { it.lowercase() }.toSet()
+        // 1. Try the preferred image MIME types actually advertised on the clipboard.
+        val preferred = IMAGE_MIME_PREFERENCE.firstOrNull { it in available }
+        if (preferred != null) {
+            runCaptureBytes(listOf(paste, "-n", "-t", preferred), timeoutMs = IMAGE_READ_TIMEOUT_MS)
+                ?.let { return it }
+        }
+        // 2. Any other image/* type the source publishes.
+        val anyImage = available.firstOrNull { it.startsWith("image/") && it !in IMAGE_MIME_PREFERENCE }
+        if (anyImage != null) {
+            runCaptureBytes(listOf(paste, "-n", "-t", anyImage), timeoutMs = IMAGE_READ_TIMEOUT_MS)
+                ?.let { return it }
+        }
+        // 3. File-URI copy from a file manager — if the first URI points at an
+        //    image file, read it directly from disk.
+        return readImageFromFileUri()
+    }
+
+    private fun readImageFromFileUri(): ByteArray? {
+        val files = readFiles()
+        val first = files.firstOrNull() ?: return null
+        val name = first.fileName?.toString()?.lowercase() ?: return null
+        val isImage =
+            name.endsWith(".png") ||
+                name.endsWith(".jpg") ||
+                name.endsWith(".jpeg") ||
+                name.endsWith(".webp") ||
+                name.endsWith(".bmp") ||
+                name.endsWith(".gif") ||
+                name.endsWith(".tiff")
+        if (!isImage) return null
+        return try {
+            java.nio.file.Files
+                .readAllBytes(first)
+        } catch (_: IOException) {
+            null
+        }
     }
 
     fun readFiles(): List<Path> {
@@ -226,10 +266,12 @@ internal class WaylandClipboardDelegate {
                 }
             if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
                 p.destroy()
-                t.join(STREAM_DRAIN_MS)
+                t.join(DESTROY_DRAIN_MS)
                 return null
             }
-            t.join(STREAM_DRAIN_MS)
+            // Process exited; the pipe is closed so the reader will finish promptly.
+            // Join without a cap to avoid truncating large payloads (screenshots, etc.).
+            t.join()
             if (p.exitValue() != 0) return null
             val out = buf.toByteArray()
             if (out.isEmpty()) null else out
