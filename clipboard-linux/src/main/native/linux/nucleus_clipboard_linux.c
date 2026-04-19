@@ -313,7 +313,7 @@ static xcb_atom_t a_CLIPBOARD, a_TARGETS, a_MULTIPLE, a_TIMESTAMP, a_SAVE_TARGET
     a_INCR, a_ATOM_PAIR, a_UTF8_STRING, a_STRING, a_TEXT, a_COMPOUND_TEXT,
     a_text_plain, a_text_plain_utf8, a_text_html, a_text_rtf, a_application_rtf,
     a_image_png, a_text_uri_list, a_x_special_gnome_copied_files,
-    a_application_x_kde_cutselection, a_clipboard_manager, a_prop;
+    a_application_x_kde_cutselection, a_clipboard_manager, a_prop, a_ts_probe;
 
 /* Mutex protecting everything below. */
 static pthread_mutex_t g_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -327,7 +327,15 @@ typedef struct {
 
 static payload_t g_offers[OFFER__COUNT];
 static bool      g_offer_is_cut = false;
-static xcb_timestamp_t g_own_ts = 0;
+
+/* Latest X11 server timestamp observed on our own window. Used instead of
+ * XCB_CURRENT_TIME for SetSelectionOwner / TIMESTAMP replies, as ICCCM §2.1
+ * forbids CurrentTime for those. Fetched via a zero-byte ChangeProperty probe
+ * which triggers a PropertyNotify that the event thread captures. */
+static xcb_timestamp_t g_latest_ts = 0;
+static bool             g_ts_pending = false;
+static pthread_cond_t   g_ts_cond = PTHREAD_COND_INITIALIZER;
+static xcb_timestamp_t  g_own_ts = 0;
 
 /* Requestor-side pending read. */
 typedef struct {
@@ -444,6 +452,46 @@ static void intern_all_atoms(void) {
     a_application_x_kde_cutselection = intern("application/x-kde-cutselection", false);
     a_clipboard_manager  = intern("CLIPBOARD_MANAGER", false);
     a_prop               = intern(PROP_NAME, false);
+    a_ts_probe           = intern("NUCLEUS_CLIPBOARD_TS_PROBE", false);
+}
+
+/* --------------------------------------------------------------------- */
+/* Deadline helper                                                        */
+/* --------------------------------------------------------------------- */
+
+static void add_ms(struct timespec *ts, long ms) {
+    ts->tv_sec += ms / 1000;
+    ts->tv_nsec += (ms % 1000) * 1000000L;
+    if (ts->tv_nsec >= 1000000000L) { ts->tv_sec++; ts->tv_nsec -= 1000000000L; }
+}
+
+/* --------------------------------------------------------------------- */
+/* ICCCM-compliant server timestamp fetch                                 */
+/* --------------------------------------------------------------------- */
+
+/* Forces the server to emit a PropertyNotify on our window and captures its
+ * `time` field via the event thread. Must be called with g_mutex held; the
+ * condvar wait releases it transiently. Falls back to g_latest_ts on timeout,
+ * or 0 if no event has ever been observed. */
+static xcb_timestamp_t get_server_timestamp_locked(void) {
+    g_ts_pending = true;
+    /* Append 0 bytes to a dedicated property → unconditional PropertyNotify. */
+    p_xcb_change_property(g_conn, XCB_PROP_MODE_APPEND, g_window, a_ts_probe,
+                          XCB_ATOM_STRING, 8, 0, NULL);
+    p_xcb_flush(g_conn);
+
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    add_ms(&deadline, 500);
+
+    while (g_ts_pending) {
+        int rc = pthread_cond_timedwait(&g_ts_cond, &g_mutex, &deadline);
+        if (rc == ETIMEDOUT) {
+            g_ts_pending = false;
+            break;
+        }
+    }
+    return g_latest_ts;
 }
 
 /* --------------------------------------------------------------------- */
@@ -616,13 +664,6 @@ static uint8_t *fetch_property(xcb_atom_t prop, bool *out_incr, size_t *out_len)
     return out;
 }
 
-/* Deadline helper. */
-static void add_ms(struct timespec *ts, long ms) {
-    ts->tv_sec += ms / 1000;
-    ts->tv_nsec += (ms % 1000) * 1000000L;
-    if (ts->tv_nsec >= 1000000000L) { ts->tv_sec++; ts->tv_nsec -= 1000000000L; }
-}
-
 /* Perform a full read for the given target (atom). Returns malloc'd bytes or NULL. */
 static uint8_t *read_selection(xcb_atom_t target, size_t *out_len) {
     *out_len = 0;
@@ -665,6 +706,11 @@ static uint8_t *read_selection(xcb_atom_t target, size_t *out_len) {
         while (!g_read.incr_done) {
             int rc = pthread_cond_timedwait(&g_read_cond, &g_mutex, &incr_deadline);
             if (rc == ETIMEDOUT) {
+                /* Delete the property so the sender is unblocked for its next
+                 * chunk (ICCCM requires the requestor to ack each chunk by
+                 * deleting the property). We then abandon the transfer. */
+                p_xcb_delete_property(g_conn, g_window, a_prop);
+                p_xcb_flush(g_conn);
                 g_read.waiting = false;
                 read_reset_locked();
                 pthread_mutex_unlock(&g_mutex);
@@ -720,8 +766,18 @@ static void on_selection_notify_locked(const xcb_selection_notify_event_t *ev) {
 }
 
 static void on_property_notify_locked(const xcb_property_notify_event_t *ev) {
+    /* Any PropertyNotify on our own window gives us a fresh server timestamp
+     * we can use for subsequent SetSelectionOwner calls (ICCCM §2.1). */
+    if (ev->window == g_window) {
+        g_latest_ts = ev->time;
+        if (ev->atom == a_ts_probe && g_ts_pending) {
+            g_ts_pending = false;
+            pthread_cond_broadcast(&g_ts_cond);
+        }
+    }
+
     /* state 0 = NewValue, 1 = Delete. We only care about NewValue on our
-     * own property during INCR. */
+     * own read property during INCR. */
     if (!g_read.waiting || !g_read.incr || g_read.incr_done) return;
     if (ev->window != g_window || ev->atom != a_prop || ev->state != 0) return;
 
@@ -1248,10 +1304,10 @@ Java_io_github_kdroidfilter_nucleus_clipboard_linux_NativeX11ClipboardBridge_nat
 
     g_offer_is_cut = (isCut == JNI_TRUE);
 
-    /* Use CurrentTime; xcb_set_selection_owner is routed via server and will
-     * be our implicit timestamp. Record it for TIMESTAMP replies. */
-    g_own_ts = XCB_CURRENT_TIME;
-    p_xcb_set_selection_owner(g_conn, g_window, a_CLIPBOARD, XCB_CURRENT_TIME);
+    /* ICCCM §2.1: SetSelectionOwner must use a real server timestamp,
+     * never CurrentTime. Probe one via a zero-byte ChangeProperty. */
+    g_own_ts = get_server_timestamp_locked();
+    p_xcb_set_selection_owner(g_conn, g_window, a_CLIPBOARD, g_own_ts);
     p_xcb_flush(g_conn);
 
     pthread_mutex_unlock(&g_mutex);
@@ -1271,7 +1327,8 @@ Java_io_github_kdroidfilter_nucleus_clipboard_linux_NativeX11ClipboardBridge_nat
      * often dies silently anyway. */
 
     free_offers_locked();
-    p_xcb_set_selection_owner(g_conn, XCB_ATOM_NONE, a_CLIPBOARD, XCB_CURRENT_TIME);
+    xcb_timestamp_t ts = get_server_timestamp_locked();
+    p_xcb_set_selection_owner(g_conn, XCB_ATOM_NONE, a_CLIPBOARD, ts);
     p_xcb_flush(g_conn);
 
     pthread_mutex_unlock(&g_mutex);

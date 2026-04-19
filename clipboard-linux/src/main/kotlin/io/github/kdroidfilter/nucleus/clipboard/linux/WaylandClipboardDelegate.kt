@@ -14,6 +14,7 @@ import java.util.concurrent.atomic.AtomicLong
 private const val PROCESS_WRITE_TIMEOUT_SECONDS: Long = 3L
 private const val IMAGE_READ_TIMEOUT_MS: Long = 5000L
 private const val DESTROY_DRAIN_MS: Long = 200L
+private const val DESTROY_GRACE_MS: Long = 500L
 
 private val IMAGE_MIME_PREFERENCE: List<String> =
     listOf("image/png", "image/jpeg", "image/jpg", "image/webp", "image/bmp", "image/gif", "image/tiff")
@@ -219,6 +220,9 @@ internal class WaylandClipboardDelegate {
             p.waitFor(PROCESS_WRITE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             if (p.isAlive) {
                 p.destroy()
+                if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) {
+                    p.destroyForcibly()
+                }
                 false
             } else {
                 p.exitValue() == 0
@@ -266,6 +270,9 @@ internal class WaylandClipboardDelegate {
                 }
             if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
                 p.destroy()
+                if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) {
+                    p.destroyForcibly()
+                }
                 t.join(DESTROY_DRAIN_MS)
                 return null
             }
@@ -296,6 +303,9 @@ internal class WaylandClipboardDelegate {
             val p = ProcessBuilder(cmd).redirectErrorStream(true).start()
             if (!p.waitFor(timeoutMs, TimeUnit.MILLISECONDS)) {
                 p.destroy()
+                if (!p.waitFor(DESTROY_GRACE_MS, TimeUnit.MILLISECONDS)) {
+                    p.destroyForcibly()
+                }
                 false
             } else {
                 p.exitValue() == 0

@@ -132,9 +132,10 @@ object Clipboard {
      * Cold [Flow] that emits whenever the clipboard contents change.
      *
      * The event carries only format metadata and a monotonic `changeCount`, not
-     * payload bytes — call a `readXxx` method to fetch content. Polls the backend's
-     * change counter (cheap Mach IPC on macOS, WM_CLIPBOARDUPDATE on Windows,
-     * XFixes on X11, data-control events on Wayland).
+     * payload bytes — call a `readXxx` method to fetch content. The flow polls
+     * `changeCount()` on every [pollInterval] tick regardless of backend; what
+     * differs is the source that bumps the counter: Mach IPC on macOS, a native
+     * event thread backed by XFixes on X11, and `wl-paste --watch` on Wayland.
      *
      * The baseline is captured on `collect`, so the flow does not emit the current
      * clipboard state — only subsequent changes.
@@ -149,7 +150,13 @@ object Clipboard {
                         val cur = backend.changeCount()
                         if (cur != last) {
                             last = cur
-                            trySend(ClipboardEvent(formats = availableFormats(), changeCount = cur))
+                            // availableFormats() may be slow on Wayland (spawns a process);
+                            // re-check isActive so a cancellation during the await
+                            // does not leak a ghost emission after close.
+                            val formats = availableFormats()
+                            if (isActive) {
+                                trySend(ClipboardEvent(formats = formats, changeCount = cur))
+                            }
                         }
                     }
                 }

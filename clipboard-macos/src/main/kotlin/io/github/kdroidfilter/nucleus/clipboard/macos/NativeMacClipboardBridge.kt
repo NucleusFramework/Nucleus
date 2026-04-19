@@ -58,15 +58,17 @@ internal object NativeMacClipboardBridge {
     external fun nativeClear(): Boolean
 
     /**
-     * Sets `NSPasteboard.accessBehavior`. Values match [AccessBehavior] ordinal:
-     * 0 = always allow, 1 = ask every time, 2 = always deny. No-op on macOS < 15.4.
+     * Sets `NSPasteboard.accessBehavior`. Accepts 0 = always allow,
+     * 1 = ask every time, 2 = always deny. Other values are refused.
+     * No-op on macOS < 15.4.
      */
     @JvmStatic
     external fun nativeSetAccessBehavior(value: Int)
 
     /**
-     * Reads `NSPasteboard.accessBehavior`. Returns the raw enum value on
-     * macOS 15.4+, or `-1` when the property is not exposed by the runtime.
+     * Reads `NSPasteboard.accessBehavior`. Returns 0/1/2 on macOS 15.4+,
+     * or `-1` when the property is not exposed or the value is outside the
+     * documented range (future macOS may add new cases).
      */
     @JvmStatic
     external fun nativeGetAccessBehavior(): Int

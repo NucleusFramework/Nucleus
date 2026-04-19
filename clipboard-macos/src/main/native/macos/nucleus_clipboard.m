@@ -315,10 +315,13 @@ Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nat
     JNIEnv *env, jclass cls, jint value) {
     (void)env; (void)cls;
     @autoreleasepool {
+        // macOS 15.4 enum layout: 0 = alwaysAllow, 1 = askEveryTime, 2 = alwaysDeny.
+        // Refuse out-of-range values rather than propagating them to AppKit where
+        // they would produce undefined behavior.
+        if (value < 0 || value > 2) return;
         NSPasteboard *pb = [NSPasteboard generalPasteboard];
         SEL sel = NSSelectorFromString(@"setAccessBehavior:");
         if (![pb respondsToSelector:sel]) return;
-        // macOS 15.4 enum layout: 0 = alwaysAllow, 1 = askEveryTime, 2 = alwaysDeny.
         NSInteger mapped = (NSInteger)value;
         NSMethodSignature *sig = [pb methodSignatureForSelector:sel];
         NSInvocation *inv = [NSInvocation invocationWithMethodSignature:sig];
@@ -344,6 +347,10 @@ Java_io_github_kdroidfilter_nucleus_clipboard_macos_NativeMacClipboardBridge_nat
         [inv invoke];
         NSInteger result = 0;
         [inv getReturnValue:&result];
+        // Only forward the three documented enum values. A future macOS
+        // release may add intermediate cases — surface them as -1 so the
+        // Kotlin side can degrade to null rather than silently misreport.
+        if (result < 0 || result > 2) return -1;
         return (jint)result;
     }
 }

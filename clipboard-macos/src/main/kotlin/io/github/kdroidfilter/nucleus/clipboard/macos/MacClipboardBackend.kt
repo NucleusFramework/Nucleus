@@ -76,13 +76,23 @@ class MacClipboardBackend : ClipboardBackend {
 
     override fun setAccessBehavior(behavior: AccessBehavior) {
         if (!NativeMacClipboardBridge.isLoaded) return
-        NativeMacClipboardBridge.nativeSetAccessBehavior(behavior.ordinal)
+        val raw =
+            when (behavior) {
+                AccessBehavior.AlwaysAllow -> 0
+                AccessBehavior.AskEveryTime -> 1
+                AccessBehavior.AlwaysDeny -> 2
+            }
+        NativeMacClipboardBridge.nativeSetAccessBehavior(raw)
     }
 
     override fun accessBehavior(): AccessBehavior? {
         if (!NativeMacClipboardBridge.isLoaded) return null
-        val raw = NativeMacClipboardBridge.nativeGetAccessBehavior()
-        return AccessBehavior.entries.getOrNull(raw)
+        return when (NativeMacClipboardBridge.nativeGetAccessBehavior()) {
+            0 -> AccessBehavior.AlwaysAllow
+            1 -> AccessBehavior.AskEveryTime
+            2 -> AccessBehavior.AlwaysDeny
+            else -> null
+        }
     }
 
     override fun isAccessBehaviorSupported(): Boolean =
