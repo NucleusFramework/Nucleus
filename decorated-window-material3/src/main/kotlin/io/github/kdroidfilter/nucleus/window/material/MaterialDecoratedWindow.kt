@@ -28,6 +28,13 @@ fun MaterialDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
+    /**
+     * Optional override for the body background colour. Leave `null` for the
+     * standard behaviour. Set to
+     * [androidx.compose.ui.graphics.Color.Transparent] when hosting a native
+     * NSView underneath (e.g. `MacWebView` from `webview-macos`).
+     */
+    bodyBackground: androidx.compose.ui.graphics.Color? = null,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
@@ -52,6 +59,7 @@ fun MaterialDecoratedWindow(
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
+            bodyBackground = bodyBackground,
             content = content,
         )
     }

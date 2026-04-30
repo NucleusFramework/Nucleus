@@ -1,0 +1,64 @@
+{
+    "reflection": [
+        {
+            "type": "io.github.kdroidfilter.nucleus.webview.macos.NativeWebViewBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onLoadingStateChanged",
+                    "parameterTypes": ["long", "boolean"]
+                }
+            ]
+        },
+        {
+            "type": "java.awt.Component",
+            "jniAccessible": true,
+            "fields": [
+                { "name": "peer" },
+                { "name": "background", "allowWrite": true }
+            ]
+        },
+        {
+            "type": "org.jetbrains.skiko.SkiaLayer",
+            "queryAllDeclaredMethods": true,
+            "methods": [
+                {
+                    "name": "setTransparency",
+                    "parameterTypes": ["boolean"]
+                }
+            ]
+        }
+    ],
+    "jni": [
+        {
+            "type": "java.awt.peer.ComponentPeer",
+            "queryAllPublicMethods": true,
+            "queryAllDeclaredMethods": true
+        },
+        {
+            "type": "sun.lwawt.LWWindowPeer",
+            "queryAllPublicMethods": true,
+            "queryAllDeclaredMethods": true,
+            "methods": [
+                { "name": "getPlatformWindow" }
+            ]
+        },
+        {
+            "type": "sun.lwawt.PlatformWindow",
+            "queryAllPublicMethods": true
+        },
+        {
+            "type": "sun.lwawt.macosx.CFRetainedResource",
+            "queryAllDeclaredFields": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.webview.macos.NativeWebViewBridge",
+            "methods": [
+                {
+                    "name": "onLoadingStateChanged",
+                    "parameterTypes": ["long", "boolean"]
+                }
+            ]
+        }
+    ]
+}

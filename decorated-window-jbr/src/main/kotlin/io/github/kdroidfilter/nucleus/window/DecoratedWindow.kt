@@ -28,6 +28,15 @@ fun DecoratedWindow(
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    /**
+     * Optional override for the body background colour. Leave `null` for the
+     * standard behaviour (title-bar colour fills the whole window, suppresses
+     * the white flash during live resize on Windows). Set to
+     * [androidx.compose.ui.graphics.Color.Transparent] when hosting a native
+     * NSView underneath the Compose surface (e.g. WKWebView via
+     * `webview-macos`).
+     */
+    bodyBackground: androidx.compose.ui.graphics.Color? = null,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ) {
     remember {
@@ -63,6 +72,7 @@ fun DecoratedWindow(
             icon = icon,
             undecorated = undecorated,
             onCloseRequest = onCloseRequest,
+            bodyBackground = bodyBackground,
             content = content,
         )
     }

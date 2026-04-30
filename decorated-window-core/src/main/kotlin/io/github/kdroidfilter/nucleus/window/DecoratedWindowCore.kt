@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.awt.ComposeWindow
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.Layout
@@ -177,6 +178,21 @@ val LocalTitleBarInfo: ProvidableCompositionLocal<TitleBarInfo> =
  * Shared body for DecoratedWindow, used by both JBR and JNI variants.
  * Each variant calls this from within a [Window] composable, passing the appropriate [undecorated] flag.
  */
+/**
+ * Shared body for DecoratedWindow, used by both JBR and JNI variants.
+ *
+ * @param bodyBackground Optional override for the body background colour.
+ *   Defaults to `null` which preserves the legacy behaviour (the title bar
+ *   background colour from [LocalTitleBarStyle] is filled across the whole
+ *   window — this notably mitigates the white flash during live resize on
+ *   Windows because every AWT child gets its `background` set, neutralising
+ *   `WM_ERASEBKGND`). Pass [Color.Transparent] when you need to host a
+ *   native heavyweight view underneath the Compose surface (e.g. a WKWebView
+ *   sibling on macOS): the body fill is suppressed and the per-component
+ *   AWT background propagation is skipped so the rendered surface keeps its
+ *   alpha. On Windows undecorated, this trade-off may reintroduce the
+ *   resize flash — only opt in when the transparency is actually required.
+ */
 @Suppress("FunctionNaming", "MagicNumber", "CyclomaticComplexMethod")
 @Composable
 fun FrameWindowScope.DecoratedWindowBody(
@@ -184,6 +200,7 @@ fun FrameWindowScope.DecoratedWindowBody(
     icon: Painter?,
     undecorated: Boolean,
     onCloseRequest: () -> Unit = {},
+    bodyBackground: Color? = null,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ) {
     var decoratedWindowState by remember { mutableStateOf(DecoratedWindowState.of(window)) }
@@ -348,15 +365,26 @@ fun FrameWindowScope.DecoratedWindowBody(
     // which would cause visual artifacts in dark themes.
     val isWindows = remember { System.getProperty("os.name").startsWith("Windows", ignoreCase = true) }
     val titleBarBackground = LocalTitleBarStyle.current.colors.background
-    LaunchedEffect(window, titleBarBackground) {
-        val awtColor = java.awt.Color(titleBarBackground.toArgb(), true)
+    // When [bodyBackground] is supplied (typically Color.Transparent for hosting
+    // a native NSView underneath via macWebView etc.), use it for the AWT-side
+    // recursive background so the JFrame's painting matches the Compose body.
+    val effectiveAwtBackground = bodyBackground ?: titleBarBackground
+    val skipAwtBackground = bodyBackground != null && bodyBackground.alpha < 1f
+    LaunchedEffect(window, effectiveAwtBackground, skipAwtBackground) {
+        val awtColor = java.awt.Color(effectiveAwtBackground.toArgb(), true)
         val isDark =
             titleBarBackground.red * 0.299f +
                 titleBarBackground.green * 0.587f +
                 titleBarBackground.blue * 0.114f < 0.5f
 
         fun applyRecursive(c: java.awt.Component) {
-            c.background = awtColor
+            // For decorated frames AWT throws when setting an alpha<255 background,
+            // so we skip the assignment entirely when the caller wants transparency
+            // and rely on each component's `isOpaque = false` (set by callers like
+            // MacWebView) to suppress AWT's background fill.
+            if (!skipAwtBackground) {
+                c.background = awtColor
+            }
             // [Skiko #1141] Remove this once stable Compose uses Skiko with
             //  https://github.com/JetBrains/skiko/pull/1141 —
             //  ContextHandler.draw() always clears to TRANSPARENT now and
@@ -406,7 +434,7 @@ fun FrameWindowScope.DecoratedWindowBody(
                     }
                 scope.content()
             },
-            modifier = Modifier.background(titleBarBackground).then(undecoratedWindowBorder),
+            modifier = Modifier.background(bodyBackground ?: titleBarBackground).then(undecoratedWindowBorder),
             measurePolicy = DecoratedWindowMeasurePolicy,
         )
     }
