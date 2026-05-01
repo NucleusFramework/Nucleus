@@ -2,6 +2,8 @@
 
 package io.github.kdroidfilter.nucleus.window.tao
 
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
+
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,15 +17,11 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
+import io.github.kdroidfilter.nucleus.window.TitleBarInfo
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
-
-/**
- * Title of the enclosing [DecoratedWindow]. Read by [TitleBar] to populate
- * [TitleBarScope.title]. Matches `decorated-window-core`'s `LocalTitleBarInfo`.
- */
-val LocalDecoratedWindowTitle = staticCompositionLocalOf { "" }
 
 /**
  * Holds the title-bar height (in dp / macOS points) currently requested by the
@@ -136,7 +134,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         a11yController.attach()
         host.setContent {
             CompositionLocalProvider(
-                LocalDecoratedWindowTitle provides title,
+                LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -223,7 +221,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         host.attach()
         host.setContent {
             CompositionLocalProvider(
-                LocalDecoratedWindowTitle provides title,
+                LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
@@ -319,7 +317,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.attach()
         host.setContent {
             CompositionLocalProvider(
-                LocalDecoratedWindowTitle provides title,
+                LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {

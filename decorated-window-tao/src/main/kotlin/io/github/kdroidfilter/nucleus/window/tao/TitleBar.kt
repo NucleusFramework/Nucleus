@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,21 +14,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
-import androidx.compose.ui.node.ModifierNodeElement
-import androidx.compose.ui.node.ParentDataModifierNode
-import androidx.compose.ui.platform.InspectorInfo
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
+import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
+import io.github.kdroidfilter.nucleus.window.TitleBarChildDataNode
+import io.github.kdroidfilter.nucleus.window.TitleBarScope
+import io.github.kdroidfilter.nucleus.window.TitleBarScopeImpl
 import io.github.kdroidfilter.nucleus.window.utils.linux.rememberLinuxButtonLayout
 import kotlin.math.max
 import kotlinx.coroutines.currentCoroutineContext
@@ -48,18 +48,6 @@ private val LINUX_KDE_EDGE_PADDING: Dp = 4.dp
 private val isLinuxKde: Boolean =
     Platform.Current == Platform.Linux &&
         LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
-
-/**
- * Scope passed to [TitleBar]'s content lambda. Mirrors `decorated-window-core`'s
- * `TitleBarScope`: place children with `Modifier.align(Alignment.Start)`,
- * `.End` or `.CenterHorizontally`. The default alignment is center.
- */
-@Stable
-interface TitleBarScope {
-    val title: String
-
-    fun Modifier.align(alignment: Alignment.Horizontal): Modifier
-}
 
 @Suppress("FunctionNaming")
 @Composable
@@ -80,9 +68,9 @@ fun DecoratedWindowScope.TitleBar(
     },
 ) {
     val taoWindow = window
-    val titleText = LocalDecoratedWindowTitle.current
+    val info = LocalTitleBarInfo.current
     val currentState = state
-    val scope = remember(titleText) { TitleBarScopeImpl(title = titleText) }
+    val scope = remember(info.title, info.icon) { TitleBarScopeImpl(title = info.title, icon = info.icon) }
 
     // Publish our requested height up to DecoratedWindow, which applies the
     // native button-centering constraints once the window is shown (post
@@ -177,21 +165,14 @@ fun DecoratedWindowScope.TitleBar(
                 }
             },
             modifier = Modifier.fillMaxWidth().height(height),
-            measurePolicy = remember(leftInset, rightInset) { TitleBarMeasurePolicy(leftInset, rightInset) },
+            measurePolicy = remember(leftInset, rightInset) { TaoTitleBarMeasurePolicy(leftInset, rightInset) },
         )
     }
 }
 
-internal class TitleBarScopeImpl(
-    override val title: String,
-) : TitleBarScope {
-    override fun Modifier.align(alignment: Alignment.Horizontal): Modifier =
-        this then TitleBarChildDataElement(alignment)
-}
-
 // ── Layout ────────────────────────────────────────────────────────────────
 
-private class TitleBarMeasurePolicy(
+private class TaoTitleBarMeasurePolicy(
     private val leftInset: Dp,
     private val rightInset: Dp,
 ) : androidx.compose.ui.layout.MeasurePolicy {
@@ -272,33 +253,6 @@ private class TitleBarMeasurePolicy(
             }
         }
     }
-}
-
-private class TitleBarChildDataElement(
-    val horizontalAlignment: Alignment.Horizontal,
-) : ModifierNodeElement<TitleBarChildDataNode>() {
-    override fun create(): TitleBarChildDataNode = TitleBarChildDataNode(horizontalAlignment)
-
-    override fun update(node: TitleBarChildDataNode) {
-        node.horizontalAlignment = horizontalAlignment
-    }
-
-    override fun equals(other: Any?): Boolean =
-        other is TitleBarChildDataElement && other.horizontalAlignment == horizontalAlignment
-
-    override fun hashCode(): Int = horizontalAlignment.hashCode()
-
-    override fun InspectorInfo.inspectableProperties() {
-        name = "align"
-        value = horizontalAlignment
-    }
-}
-
-private class TitleBarChildDataNode(
-    var horizontalAlignment: Alignment.Horizontal,
-) : Modifier.Node(),
-    ParentDataModifierNode {
-    override fun Density.modifyParentData(parentData: Any?) = this@TitleBarChildDataNode
 }
 
 // ── Drag ──────────────────────────────────────────────────────────────────

@@ -1,5 +1,9 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import io.github.kdroidfilter.nucleus.window.TitleBarScope
+
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
+
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
