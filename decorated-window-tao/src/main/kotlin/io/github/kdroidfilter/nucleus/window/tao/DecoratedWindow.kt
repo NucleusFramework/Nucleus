@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
+import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
@@ -217,6 +218,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
     }
 
+    val linuxDe = LinuxDesktopEnvironment.Current
     window.onWindowReady { w, h ->
         host.attach()
         host.setContent {
@@ -228,7 +230,13 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 // loop). See [TaoLinuxUriHandler].
                 LocalUriHandler provides TaoLinuxUriHandler,
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                val border = rememberUndecoratedWindowBorder(
+                    state = stateHolder.value,
+                    linuxDe = linuxDe,
+                    gnomeCornerArc = 24f,
+                    kdeCornerArc = 10f,
+                )
+                Column(modifier = Modifier.fillMaxSize().then(border)) {
                     scopeFactory().content()
                 }
             }
@@ -320,7 +328,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
             ) {
-                Column(modifier = Modifier.fillMaxSize()) {
+                val border = rememberUndecoratedWindowBorder(
+                    state = stateHolder.value,
+                    linuxDe = LinuxDesktopEnvironment.Unknown,
+                    gnomeCornerArc = 24f,
+                    kdeCornerArc = 10f,
+                )
+                Column(modifier = Modifier.fillMaxSize().then(border)) {
                     scopeFactory().content()
                 }
             }
