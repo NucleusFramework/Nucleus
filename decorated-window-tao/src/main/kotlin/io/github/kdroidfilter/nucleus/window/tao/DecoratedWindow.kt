@@ -8,6 +8,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.KeyEvent
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -35,9 +36,8 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
  *
  * Parameter set is intentionally a strict superset / matched subset of the
  * AWT-based backends so an app can swap modules with minimal call-site change.
- * Parameters that have no Tao equivalent yet (e.g. `enabled`, `focusable`,
- * `onPreviewKeyEvent`) are accepted and silently ignored — wiring them is
- * Phase 2b work.
+ * Parameters that have no Tao equivalent yet (e.g. `enabled`, `focusable`)
+ * are accepted and silently ignored — wiring them is Phase 2b work.
  */
 @Suppress("LongParameterList", "FunctionNaming")
 fun ApplicationScope.DecoratedWindow(
@@ -48,6 +48,7 @@ fun ApplicationScope.DecoratedWindow(
     visible: Boolean = true,
     resizable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Auto,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ): TaoWindow {
@@ -65,10 +66,11 @@ fun ApplicationScope.DecoratedWindow(
     )
 
     if (Platform.Current == Platform.Windows) {
-        return openDecoratedWindowWindows(window, title, visible, onCloseRequest, content)
+        return openDecoratedWindowWindows(window, title, visible, alwaysOnTop, onCloseRequest, onPreviewKeyEvent, content)
     }
 
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
+    host.previewKeyHandler = onPreviewKeyEvent
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     // Single source of truth shared with the host (which feeds it as a top
     // inset to the PlatformContext) and the TitleBar composable (which
@@ -143,15 +145,18 @@ fun ApplicationScope.DecoratedWindow(
  * the entire title bar zone — never HTMINBUTTON/HTMAXBUTTON/HTCLOSE — so DWM
  * doesn't repaint native buttons on top of our Compose UI.
  */
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 private fun ApplicationScope.openDecoratedWindowWindows(
     window: TaoWindow,
     title: String,
     visible: Boolean,
+    alwaysOnTop: Boolean,
     onCloseRequest: () -> Unit,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostWindows(window)
+    host.previewKeyHandler = onPreviewKeyEvent
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
@@ -203,6 +208,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     window.onFocusChanged { focused ->
         stateHolder.value = stateHolder.value.copy(active = focused)
         host.onFocusChanged(focused)
+    }
+
+    if (alwaysOnTop) {
+        window.setAlwaysOnTop(true)
     }
 
     return window

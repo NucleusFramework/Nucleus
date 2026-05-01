@@ -24,6 +24,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isCtrlPressed
+import androidx.compose.ui.input.key.isMetaPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -48,17 +54,29 @@ fun main() {
 }
 
 private fun runApp() = taoApplication {
+    val previewEvents = mutableStateListOf<String>()
     DecoratedWindow(
         onCloseRequest = ::exitApplication,
         title = "Tao Backend Demo",
         width = 1024.0,
         height = 720.0,
+        onPreviewKeyEvent = { event ->
+            // Demo: consume Cmd/Ctrl+K so it never reaches Compose. Other keys
+            // are still logged but pass through.
+            if (event.type == KeyEventType.KeyDown) {
+                logEvent(previewEvents, "preview ${event.key}")
+                if ((event.isMetaPressed || event.isCtrlPressed) && event.key == Key.K) {
+                    return@DecoratedWindow true
+                }
+            }
+            false
+        },
     ) {
         val taoWindow = window
         var clicks by remember { mutableStateOf(0) }
         val enabledBlobs = remember { mutableStateListOf(true, true, true, true) }
         var selectedTab by remember { mutableStateOf(Tab.Demo) }
-        val events = remember { mutableStateListOf<String>() }
+        val events = previewEvents
 
         TitleBar(height = 36.dp, background = Color(0xFF1A1D24)) { state ->
             Row(

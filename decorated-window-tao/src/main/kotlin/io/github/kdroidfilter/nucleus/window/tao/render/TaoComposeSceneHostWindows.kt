@@ -55,6 +55,9 @@ internal class TaoComposeSceneHostWindows(
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
+    /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
+    var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
+
     private val windowInfo = WindowsTaoWindowInfo()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
@@ -296,6 +299,7 @@ internal class TaoComposeSceneHostWindows(
             }
             else -> return false
         }
+        if (previewKeyHandler?.invoke(composeEvent) == true) return true
         return sc.sendKeyEvent(composeEvent)
     }
 

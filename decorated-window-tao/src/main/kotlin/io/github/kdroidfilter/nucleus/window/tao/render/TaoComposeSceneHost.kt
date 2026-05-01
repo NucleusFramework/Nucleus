@@ -81,6 +81,14 @@ internal class TaoComposeSceneHost(
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
+    /**
+     * App-level pre-dispatch hook. Receives every Compose [KeyEvent] before it
+     * reaches the scene; returning `true` consumes the event and prevents
+     * propagation. Mirrors AWT's `Window.setComponentZOrder`-pre-dispatch logic
+     * used by `decorated-window-jni`'s `onPreviewKeyEvent`.
+     */
+    var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
+
     // Mirrors `PlatformWindowContext.desktop.kt` — Compose's `Popup` framework
     // reads `LocalWindowInfo.current.containerSize` to know how large the host
     // window is, which is the basis for the popup positioning math (see
@@ -365,6 +373,7 @@ internal class TaoComposeSceneHost(
             }
             else -> return false
         }
+        if (previewKeyHandler?.invoke(composeEvent) == true) return true
         return sc.sendKeyEvent(composeEvent)
     }
 
