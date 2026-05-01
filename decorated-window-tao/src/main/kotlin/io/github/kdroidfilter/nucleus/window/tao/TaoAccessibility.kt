@@ -205,6 +205,12 @@ internal class TaoAccessibilityController(
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
+        // Note: gating on `nativeA11yIsActive()` is supported (see
+        // NativeTaoBridge) but disabled here — skipping pushes by default
+        // creates a chicken-and-egg with the very first AX query, which
+        // arrives before any timestamp has been bumped. A safe gating
+        // strategy needs a "push at least once after activation" guarantee
+        // and is left for a follow-up.
         val bytes = TaoA11ySnapshotSerializer.encode(nodes)
         NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
     }

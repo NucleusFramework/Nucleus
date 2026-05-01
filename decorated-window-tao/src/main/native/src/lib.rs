@@ -114,6 +114,8 @@ extern "C" {
         len: usize,
     ) -> i32;
     fn nucleus_tao_a11y_post_focus_changed(ns_view_handle: i64, node_id: u64);
+    fn nucleus_tao_a11y_is_voiceover_running() -> i32;
+    fn nucleus_tao_a11y_is_active() -> i32;
 }
 
 #[cfg(target_os = "macos")]
@@ -224,6 +226,26 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         nucleus_tao_a11y_apply_snapshot(ns_view, buf.as_ptr() as *const u8, len)
     };
     if ok != 0 { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let r = unsafe { nucleus_tao_a11y_is_voiceover_running() };
+    if r != 0 { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let r = unsafe { nucleus_tao_a11y_is_active() };
+    if r != 0 { JNI_TRUE } else { JNI_FALSE }
 }
 
 #[cfg(target_os = "macos")]

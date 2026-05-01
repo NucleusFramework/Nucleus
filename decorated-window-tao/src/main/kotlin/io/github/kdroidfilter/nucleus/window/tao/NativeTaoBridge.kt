@@ -250,6 +250,26 @@ internal object NativeTaoBridge {
     external fun nativeA11yPostFocusChanged(nsView: Long, nodeId: Long)
 
     /**
+     * Reads the `voiceOverEnabled` user default. Returns true when VoiceOver
+     * is currently running (or has been left enabled). Cheap CFPreferences
+     * read; safe to poll. Updates are not pushed — callers may re-query at
+     * any point but the value won't change between polls in the same tick.
+     */
+    @JvmStatic
+    external fun nativeA11yIsVoiceOverRunning(): Boolean
+
+    /**
+     * Returns true while at least one accessibility client (VoiceOver,
+     * Switch Control, AppleScript / System Events, Accessibility Inspector,
+     * etc.) has touched our tree within the last ~5 minutes. Mirrors
+     * Compose Desktop's `AccessibilityUsage` idle window. Used by
+     * [TaoAccessibilityController] to skip pushing snapshots when no client
+     * is listening.
+     */
+    @JvmStatic
+    external fun nativeA11yIsActive(): Boolean
+
+    /**
      * Called from native (`objc/a11y.m` → `nucleus_tao_a11y_invoke_action`)
      * on the macOS main thread when VoiceOver triggers an action. Routed to
      * the registered [TaoAccessibilityController] for the given window.

@@ -22,6 +22,8 @@
 
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
+#include <mach/mach_time.h>
+#include <stdatomic.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -52,6 +54,11 @@
 
 static const uint32_t kSnapshotMagic = 0xA110A11A;
 static const uint16_t kSnapshotVersion = 2;
+
+// Forward declaration — definition lives at the bottom alongside the JNI
+// entry points. Used by the TaoView swizzles to bump the "AX recently used"
+// timestamp consumed by `nucleus_tao_a11y_is_active`.
+static void note_a11y_query(void);
 
 typedef NS_ENUM(uint16_t, NucleusA11yRole) {
     NucleusA11yRoleUnknown = 0,
@@ -147,6 +154,12 @@ nucleus_tao_a11y_set_selection(int64_t ns_view_handle, uint64_t node_id,
 // Notification observers for backing-properties / screen change. Stored so
 // we can remove them on detach.
 @property(nonatomic, strong) NSMutableArray<id> *observers;
+// Cached rotors + their delegates. Built lazily on first
+// `accessibilityCustomRotors` query, invalidated on snapshot apply (the
+// projection's element set may have changed) only via the cachedRotors=nil
+// reset performed in `apply_snapshot_bytes`.
+@property(nonatomic, strong) NSArray<NSAccessibilityCustomRotor *> *cachedRotors;
+@property(nonatomic, strong) NSArray *rotorDelegates;
 - (NSArray<NucleusA11yElement *> *)rootChildrenForView;
 - (NucleusA11yElement *)focusedElement;
 - (NucleusA11yElement *)hitTestPointInView:(NSPoint)pointInView;
@@ -516,6 +529,14 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 // posts NSAccessibilityUIElementDestroyedNotification for us on dealloc.
 - (BOOL)accessibilityNotifiesWhenDestroyed { return YES; }
 
+// VoiceOver invokes its rotor (VO+U) by querying the *focused* element for
+// custom rotors. Each element therefore returns the projection's standard set
+// (Headings + Form Controls). Without this, the rotors live only on the
+// container view and VO can't reach them when a leaf is focused.
+- (NSArray<NSAccessibilityCustomRotor *> *)accessibilityCustomRotors {
+    return self.projection.cachedRotors ?: @[];
+}
+
 // ── NSAccessibilityNavigableStaticText (text fields & areas) ──────────────
 //
 // The minimum methods VoiceOver needs to navigate a text field with VO+arrow:
@@ -629,12 +650,6 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 - (NSRange)accessibilityVisibleCharacterRange {
     if (![self isTextElement]) return NSMakeRange(NSNotFound, 0);
     return NSMakeRange(0, self.valueString.length);
-}
-
-// VoiceOver edits text via `accessibilitySetValue:`. We forward the new
-// string to the JVM side so it can invoke `SemanticsActions.SetText`.
-- (BOOL)accessibilityPerformAction:(NSAccessibilityActionName)action {
-    return NO; // unused — actions covered by perform* selectors
 }
 
 - (id)accessibilityValue { return [self _axValue]; }
@@ -969,6 +984,65 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
 }
 
 // ────────────────────────────────────────────────────────────────────────────
+// Custom rotor delegate — generic next/prev finder over a filtered subset of
+// a projection's elements, sorted in document (visual) order.
+// ────────────────────────────────────────────────────────────────────────────
+
+typedef BOOL (^NucleusElementPredicate)(NucleusA11yElement *);
+
+@interface NucleusRotorDelegate : NSObject <NSAccessibilityCustomRotorItemSearchDelegate>
+@property(nonatomic, weak) NucleusA11yProjection *projection;
+@property(nonatomic, copy) NucleusElementPredicate predicate;
+@end
+
+@implementation NucleusRotorDelegate
+
+- (nullable NSAccessibilityCustomRotorItemResult *)rotor:(NSAccessibilityCustomRotor *)rotor
+                              resultForSearchParameters:(NSAccessibilityCustomRotorSearchParameters *)p
+{
+    (void)rotor;
+    NucleusA11yProjection *proj = self.projection;
+    if (!proj) return nil;
+
+    // Collect every element whose taoView is alive and that matches the
+    // rotor's filter. Sort by visual order (top-to-bottom, then left-to-right
+    // within the same row) — this matches how VoiceOver presents results.
+    NSMutableArray<NucleusA11yElement *> *matches = [NSMutableArray new];
+    for (NucleusA11yElement *el in proj.byId.allValues) {
+        if (self.predicate && self.predicate(el)) {
+            [matches addObject:el];
+        }
+    }
+    [matches sortUsingComparator:^NSComparisonResult(NucleusA11yElement *a, NucleusA11yElement *b) {
+        CGFloat ya = a.frameInView.origin.y, yb = b.frameInView.origin.y;
+        if (fabs(ya - yb) > 1.0) return ya < yb ? NSOrderedAscending : NSOrderedDescending;
+        CGFloat xa = a.frameInView.origin.x, xb = b.frameInView.origin.x;
+        if (xa == xb) return NSOrderedSame;
+        return xa < xb ? NSOrderedAscending : NSOrderedDescending;
+    }];
+    if (matches.count == 0) return nil;
+
+    id current = p.currentItem;
+    BOOL forward = (p.searchDirection == NSAccessibilityCustomRotorSearchDirectionNext);
+    NSUInteger currentIdx = current ? [matches indexOfObjectIdenticalTo:current] : NSNotFound;
+
+    NSUInteger targetIdx;
+    if (currentIdx == NSNotFound) {
+        targetIdx = forward ? 0 : matches.count - 1;
+    } else if (forward) {
+        if (currentIdx + 1 >= matches.count) return nil;
+        targetIdx = currentIdx + 1;
+    } else {
+        if (currentIdx == 0) return nil;
+        targetIdx = currentIdx - 1;
+    }
+    return [[NSAccessibilityCustomRotorItemResult alloc]
+        initWithTargetElement:(id<NSAccessibilityElement>)matches[targetIdx]];
+}
+
+@end
+
+// ────────────────────────────────────────────────────────────────────────────
 // TaoView a11y root: swizzles applied once.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -986,6 +1060,7 @@ static NSAccessibilityRole tao_view_accessibility_role(id self, SEL _cmd) {
 
 static NSArray *tao_view_accessibility_children(id self, SEL _cmd) {
     (void)_cmd;
+    note_a11y_query();
     NucleusA11yProjection *proj = projection_for_view((NSView *)self);
     if (!proj) return @[];
     return NSAccessibilityUnignoredChildren([proj rootChildrenForView]);
@@ -993,13 +1068,26 @@ static NSArray *tao_view_accessibility_children(id self, SEL _cmd) {
 
 static id tao_view_accessibility_focused_ui_element(id self, SEL _cmd) {
     (void)_cmd;
+    note_a11y_query();
     NucleusA11yProjection *proj = projection_for_view((NSView *)self);
     NucleusA11yElement *focused = [proj focusedElement];
     return focused ?: self;
 }
 
+// Returns the rotors VoiceOver navigates via VO+U. Built eagerly at attach
+// time (see `build_default_rotors`); per-element queries route to the same
+// cached list via `NucleusA11yElement.accessibilityCustomRotors`.
+static NSArray<NSAccessibilityCustomRotor *> *tao_view_accessibility_custom_rotors(
+    id self, SEL _cmd
+) {
+    (void)_cmd;
+    NucleusA11yProjection *proj = projection_for_view((NSView *)self);
+    return proj.cachedRotors ?: @[];
+}
+
 static id tao_view_accessibility_hit_test(id self, SEL _cmd, NSPoint pointInScreen) {
     (void)_cmd;
+    note_a11y_query();
     NSView *view = (NSView *)self;
     NSWindow *window = view.window;
     if (!window) return self;
@@ -1034,6 +1122,8 @@ static void nucleus_tao_swizzle_taoview_a11y_once(void) {
         class_replaceMethod(c, @selector(accessibilityHitTest:),
                             (IMP)tao_view_accessibility_hit_test,
                             "@@:{CGPoint=dd}");
+        class_replaceMethod(c, @selector(accessibilityCustomRotors),
+                            (IMP)tao_view_accessibility_custom_rotors, "@@:");
     });
 }
 
@@ -1119,11 +1209,51 @@ static void nucleus_tao_install_screen_change_observers(NucleusA11yProjection *p
                     usingBlock:handler]];
 }
 
+// Pre-builds the standard rotor set so that NucleusA11yElement queries from
+// VoiceOver hit a populated cache without round-tripping through the TaoView
+// swizzle first.
+static void build_default_rotors(NucleusA11yProjection *proj) {
+    if (proj.cachedRotors != nil) return;
+    NucleusRotorDelegate *headingsDelegate = [NucleusRotorDelegate new];
+    headingsDelegate.projection = proj;
+    headingsDelegate.predicate = ^BOOL(NucleusA11yElement *el) {
+        return (el.flags & NucleusA11yFlagHeading) != 0;
+    };
+    NSAccessibilityCustomRotor *headings = [[NSAccessibilityCustomRotor alloc]
+        initWithRotorType:NSAccessibilityCustomRotorTypeHeading
+            itemSearchDelegate:headingsDelegate];
+
+    NucleusRotorDelegate *formsDelegate = [NucleusRotorDelegate new];
+    formsDelegate.projection = proj;
+    formsDelegate.predicate = ^BOOL(NucleusA11yElement *el) {
+        switch (el.role) {
+            case NucleusA11yRoleButton:
+            case NucleusA11yRoleCheckbox:
+            case NucleusA11yRoleSwitch:
+            case NucleusA11yRoleRadioButton:
+            case NucleusA11yRoleTextField:
+            case NucleusA11yRoleTextArea:
+            case NucleusA11yRoleSlider:
+                return (el.flags & NucleusA11yFlagIsElement) != 0;
+            default:
+                return NO;
+        }
+    };
+    NSAccessibilityCustomRotor *forms = [[NSAccessibilityCustomRotor alloc]
+        initWithRotorType:NSAccessibilityCustomRotorTypeAny
+            itemSearchDelegate:formsDelegate];
+    forms.label = @"Form Controls";
+
+    proj.rotorDelegates = @[headingsDelegate, formsDelegate];
+    proj.cachedRotors = @[headings, forms];
+}
+
 void nucleus_tao_a11y_attach(int64_t ns_view_handle) {
     NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_handle;
     if (!view) return;
     nucleus_tao_swizzle_taoview_a11y_once();
     NucleusA11yProjection *proj = ensure_projection_for_view(view);
+    build_default_rotors(proj);
     if (view.window) {
         nucleus_tao_install_window_focus_forwarder(view.window);
         nucleus_tao_install_screen_change_observers(proj, view);
@@ -1160,6 +1290,63 @@ int nucleus_tao_a11y_apply_snapshot(int64_t ns_view_handle,
     if (!view) return 0;
     NucleusA11yProjection *proj = ensure_projection_for_view(view);
     return apply_snapshot_bytes(proj, bytes, len) ? 1 : 0;
+}
+
+// ── Accessibility-active detection ────────────────────────────────────────
+// `NSAccessibilityShouldUseUniqueId()` returns YES whenever at least one
+// accessibility client (VoiceOver, Switch Control, AppleScript / System
+// Events, Accessibility Inspector, etc.) has queried our process. It's the
+// closest macOS equivalent to iOS's `UIAccessibilityIsVoiceOverRunning`
+// for the broader question "should we be paying for the a11y projection?".
+//
+// The VoiceOver-specific user default is also exposed below for callers
+// that explicitly want to know whether VO itself is the listener.
+
+int nucleus_tao_a11y_is_voiceover_running(void) {
+    @autoreleasepool {
+        CFPropertyListRef v = CFPreferencesCopyValue(
+            CFSTR("voiceOverOnOffKey"),
+            CFSTR("com.apple.universalaccess"),
+            kCFPreferencesCurrentUser,
+            kCFPreferencesAnyHost);
+        if (v == NULL) return 0;
+        BOOL on = NO;
+        if (CFGetTypeID(v) == CFBooleanGetTypeID()) {
+            on = CFBooleanGetValue((CFBooleanRef)v);
+        } else if (CFGetTypeID(v) == CFNumberGetTypeID()) {
+            int n = 0; CFNumberGetValue((CFNumberRef)v, kCFNumberIntType, &n);
+            on = n != 0;
+        }
+        CFRelease(v);
+        return on ? 1 : 0;
+    }
+}
+
+// Tracks the most recent time an accessibility client touched our tree. Each
+// swizzled TaoView entry point (children / focused / hitTest) bumps it; the
+// JVM side reads `nucleus_tao_a11y_is_active` to decide whether to keep
+// pushing snapshots. Mirrors Compose Desktop's `AccessibilityUsage` (5-min
+// idle window).
+static _Atomic int64_t g_last_a11y_query_ns = 0;
+
+static int64_t monotonic_ns(void) {
+    return (int64_t)(mach_absolute_time());
+}
+
+static void note_a11y_query(void) {
+    atomic_store(&g_last_a11y_query_ns, monotonic_ns());
+}
+
+int nucleus_tao_a11y_is_active(void) {
+    int64_t last = atomic_load(&g_last_a11y_query_ns);
+    if (last == 0) return 0;
+    int64_t now = monotonic_ns();
+    // Treat any query within the last ~5 minutes as "still in use". The
+    // mach time base is not always nanoseconds — for simplicity we use the
+    // raw counter and a generous threshold (5 * 60 * 10⁹ ≈ 3×10¹¹ on most
+    // systems where the base is 1ns, larger on systems where it's smaller).
+    static const int64_t kIdleThresholdRaw = 300LL * 1000LL * 1000LL * 1000LL;
+    return (now - last) < kIdleThresholdRaw ? 1 : 0;
 }
 
 void nucleus_tao_a11y_post_focus_changed(int64_t ns_view_handle, uint64_t node_id) {
