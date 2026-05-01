@@ -9,10 +9,14 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.isAltPressed
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.WindowPosition
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
+import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
+import io.github.kdroidfilter.nucleus.window.jewel.rememberJewelTitleBarStyle
+import io.github.kdroidfilter.nucleus.window.jewel.rememberJewelWindowStyle
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import jewelsample.view.TitleBarView
@@ -71,7 +75,16 @@ fun main() {
                     styling = ComponentStyling.default(),
                     swingCompatMode = MainViewModel.swingCompat,
                 ) {
-                    TitleBarView()
+                    val jewelTitleBarStyle = rememberJewelTitleBarStyle()
+                    val jewelWindowStyle = rememberJewelWindowStyle()
+                    val titleBarIsDark = jewelTitleBarStyle.colors.background.luminance() < 0.5f
+                    NucleusDecoratedWindowTheme(
+                        isDark = titleBarIsDark,
+                        windowStyle = jewelWindowStyle,
+                        titleBarStyle = jewelTitleBarStyle,
+                    ) {
+                        TitleBarView()
+                    }
                 }
                 IntUiTheme(
                     theme = contentTheme,

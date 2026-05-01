@@ -39,6 +39,7 @@ dependencies {
     implementation(project(":core-runtime"))
     implementation(project(":darkmode-detector"))
     implementation(project(":decorated-window-tao"))
+    implementation(project(":decorated-window-jewel"))
     val jewelExclusions =
         Action<ExternalModuleDependency> {
             exclude(group = "org.jetbrains.skiko", module = "skiko-awt-runtime-all")

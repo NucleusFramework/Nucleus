@@ -85,7 +85,7 @@ private fun runApp() = taoApplication {
         var selectedTab by remember { mutableStateOf(Tab.Demo) }
         val events = previewEvents
 
-        TitleBar(height = 36.dp, background = Color(0xFF1A1D24)) { state ->
+        TitleBar { state ->
             Row(
                 modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,

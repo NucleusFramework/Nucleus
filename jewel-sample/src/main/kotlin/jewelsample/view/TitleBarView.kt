@@ -35,9 +35,8 @@ import java.net.URI
 @Composable
 internal fun DecoratedWindowScope.TitleBarView() {
     val startPadding = if (hostOs.isMacOS) 0.dp else 8.dp
-    val background = JewelTheme.globalColors.panelBackground
     val contentColor = JewelTheme.contentColor
-    TitleBar(height = 40.dp, background = background, titleColor = contentColor) { state ->
+    TitleBar { state ->
         CompositionLocalProvider(LocalContentColor provides contentColor) {
         Row(Modifier.align(Alignment.Start).padding(start = startPadding)) {
             Dropdown(

@@ -22,7 +22,7 @@ private val isKde =
     isLinux && LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
 @Composable
-internal fun rememberJewelWindowStyle(): DecoratedWindowStyle {
+fun rememberJewelWindowStyle(): DecoratedWindowStyle {
     val isDark = JewelTheme.isDark
     val borderColor =
         if (isLinux && isDark) {
@@ -44,7 +44,7 @@ internal fun rememberJewelWindowStyle(): DecoratedWindowStyle {
 }
 
 @Composable
-internal fun rememberJewelTitleBarStyle(): TitleBarStyle {
+fun rememberJewelTitleBarStyle(): TitleBarStyle {
     val background = JewelTheme.globalColors.panelBackground
     val contentColor = JewelTheme.contentColor
     val borderColor = JewelTheme.globalColors.borders.normal
