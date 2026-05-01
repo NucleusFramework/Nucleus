@@ -143,6 +143,32 @@ private fun runApp() = taoApplication {
                         modifier = Modifier.fillMaxSize(),
                         window = taoWindow,
                         onLog = { logEvent(events, it) },
+                        onOpenChildWindow = { childEnabled, childFocusable ->
+                            lateinit var childWindow: io.github.kdroidfilter.nucleus.window.tao.TaoWindow
+                            childWindow = DecoratedWindow(
+                                onCloseRequest = { childWindow.requestClose() },
+                                title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
+                                width = 480.0,
+                                height = 240.0,
+                                enabled = childEnabled,
+                                focusable = childFocusable,
+                            ) {
+                                Box(
+                                    modifier = Modifier.fillMaxSize().background(Color(0xFF15171C)),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    BasicText(
+                                        text = buildString {
+                                            append("enabled=$childEnabled · focusable=$childFocusable\n")
+                                            if (!childEnabled) append("→ pointer + key events ignored\n")
+                                            if (!childFocusable) append("→ window can't become key")
+                                        },
+                                        style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
+                                    )
+                                }
+                            }
+                            logEvent(events, "openChildWindow(enabled=$childEnabled, focusable=$childFocusable)")
+                        },
                     )
                     Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                 }

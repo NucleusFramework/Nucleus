@@ -220,6 +220,10 @@ enum UserEvent {
         handle: u64,
         always_on_top: bool,
     },
+    SetFocusable {
+        handle: u64,
+        focusable: bool,
+    },
     Exit,
 }
 
@@ -478,6 +482,14 @@ fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_always_on_top(always_on_top);
+                        }
+                    }
+                }
+                UserEvent::SetFocusable { handle, focusable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_focusable(focusable);
                         }
                     }
                 }
@@ -813,6 +825,20 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     let _ = proxy.send_event(UserEvent::SetAlwaysOnTop {
         handle: handle as u64,
         always_on_top: always_on_top != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetFocusable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    focusable: jboolean,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::SetFocusable {
+        handle: handle as u64,
+        focusable: focusable != JNI_FALSE,
     });
 }
 

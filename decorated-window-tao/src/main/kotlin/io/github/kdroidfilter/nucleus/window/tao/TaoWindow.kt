@@ -76,6 +76,10 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
 
+    fun setFocusable(focusable: Boolean) {
+        NativeTaoBridge.nativeSetFocusable(handle, focusable)
+    }
+
     fun show() {
         NativeTaoBridge.nativeSetVisible(handle, true)
     }

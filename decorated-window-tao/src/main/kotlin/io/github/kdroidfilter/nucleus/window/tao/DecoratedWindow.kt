@@ -36,8 +36,11 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
  *
  * Parameter set is intentionally a strict superset / matched subset of the
  * AWT-based backends so an app can swap modules with minimal call-site change.
- * Parameters that have no Tao equivalent yet (e.g. `enabled`, `focusable`)
- * are accepted and silently ignored — wiring them is Phase 2b work.
+ * `enabled = false` swallows pointer + keyboard events at the host level so
+ * the window appears unresponsive (no native disabled-state visual — matches
+ * `decorated-window-jni`'s behavior). `focusable = false` calls
+ * `tao::Window::set_focusable(false)`, which prevents the window from ever
+ * becoming key (useful for HUD/overlay windows).
  */
 @Suppress("LongParameterList", "FunctionNaming")
 fun ApplicationScope.DecoratedWindow(
@@ -47,6 +50,8 @@ fun ApplicationScope.DecoratedWindow(
     height: Double = 600.0,
     visible: Boolean = true,
     resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Auto,
@@ -66,7 +71,7 @@ fun ApplicationScope.DecoratedWindow(
     )
 
     if (Platform.Current == Platform.Windows) {
-        return openDecoratedWindowWindows(window, title, visible, alwaysOnTop, onCloseRequest, onPreviewKeyEvent, content)
+        return openDecoratedWindowWindows(window, title, visible, enabled, focusable, alwaysOnTop, onCloseRequest, onPreviewKeyEvent, content)
     }
 
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
@@ -118,20 +123,21 @@ fun ApplicationScope.DecoratedWindow(
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed { host.detach() }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    window.onPointerMoved { x, y -> host.onPointerMove(x, y) }
-    window.onPointerExited { host.onPointerExited() }
-    window.onPointerButton { b, p -> host.onPointerButton(b, p) }
-    window.onPointerScroll { dx, dy -> host.onPointerScroll(dx, dy) }
-    window.onKeyEvent { type, vk, loc, mods, cp -> host.onKeyEvent(type, vk, loc, mods, cp) }
+    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    window.onPointerExited { if (enabled) host.onPointerExited() }
+    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onKeyEvent { type, vk, loc, mods, cp ->
+        if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+    }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
         stateHolder.value = stateHolder.value.copy(active = focused)
         host.onFocusChanged(focused)
     }
 
-    if (alwaysOnTop) {
-        window.setAlwaysOnTop(true)
-    }
+    if (alwaysOnTop) window.setAlwaysOnTop(true)
+    if (!focusable) window.setFocusable(false)
 
     return window
 }
@@ -150,6 +156,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     window: TaoWindow,
     title: String,
     visible: Boolean,
+    enabled: Boolean,
+    focusable: Boolean,
     alwaysOnTop: Boolean,
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
@@ -199,20 +207,21 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed { host.detach() }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
-    window.onPointerMoved { x, y -> host.onPointerMove(x, y) }
-    window.onPointerExited { host.onPointerExited() }
-    window.onPointerButton { b, p -> host.onPointerButton(b, p) }
-    window.onPointerScroll { dx, dy -> host.onPointerScroll(dx, dy) }
-    window.onKeyEvent { type, vk, loc, mods, cp -> host.onKeyEvent(type, vk, loc, mods, cp) }
+    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    window.onPointerExited { if (enabled) host.onPointerExited() }
+    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onKeyEvent { type, vk, loc, mods, cp ->
+        if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+    }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
         stateHolder.value = stateHolder.value.copy(active = focused)
         host.onFocusChanged(focused)
     }
 
-    if (alwaysOnTop) {
-        window.setAlwaysOnTop(true)
-    }
+    if (alwaysOnTop) window.setAlwaysOnTop(true)
+    if (!focusable) window.setFocusable(false)
 
     return window
 }

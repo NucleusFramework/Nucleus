@@ -39,6 +39,7 @@ fun ActionsTab(
     modifier: Modifier = Modifier,
     window: TaoWindow,
     onLog: (String) -> Unit,
+    onOpenChildWindow: (enabled: Boolean, focusable: Boolean) -> Unit,
 ) {
     var titleInput by remember { mutableStateOf("Tao Backend Demo") }
     var alwaysOnTop by remember { mutableStateOf(false) }
@@ -150,6 +151,19 @@ fun ActionsTab(
                 "Click + hold to drag the window from inside the body",
                 style = TextStyle(color = Color(0xFFB7B9C4), fontSize = 12.sp),
             )
+        }
+
+        SectionTitle("enabled / focusable (open child window)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton("enabled = false") {
+                onOpenChildWindow(false, true)
+            }
+            ActionButton("focusable = false") {
+                onOpenChildWindow(true, false)
+            }
+            ActionButton("both = false") {
+                onOpenChildWindow(false, false)
+            }
         }
 
         SectionTitle("Close")

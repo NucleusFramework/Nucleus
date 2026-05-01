@@ -130,6 +130,12 @@ internal object NativeTaoBridge {
         alwaysOnTop: Boolean,
     )
 
+    @JvmStatic
+    external fun nativeSetFocusable(
+        handle: Long,
+        focusable: Boolean,
+    )
+
     /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
     @JvmStatic
     external fun nativeSetCursorIcon(
