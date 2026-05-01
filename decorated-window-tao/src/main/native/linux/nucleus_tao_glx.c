@@ -494,10 +494,16 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeResize(
     if (att->child_xid && p_XResizeWindow) {
         /* Keep the child overlay sized to the GTK parent. X11 doesn't auto-
          * resize child windows when the parent grows; without this our GL
-         * canvas freezes at its initial size while the GTK frame stretches. */
+         * canvas freezes at its initial size while the GTK frame stretches.
+         *
+         * XFlush (not XSync) — XSync round-trips the X server and blocks the
+         * Tao loop on every resize event. During fast user-driven resizes
+         * that hammers Xorg + GLX hard enough to deadlock the NVIDIA driver
+         * (observed on RTX 5060 Ti / driver 590) and lock the whole machine.
+         * The GLX swap that follows already serialises with the X server. */
         p_XResizeWindow(att->display, att->child_xid,
                         (unsigned int)widthPx, (unsigned int)heightPx);
-        if (p_XSync) p_XSync(att->display, 0);
+        if (p_XFlush) p_XFlush(att->display);
     }
 }
 

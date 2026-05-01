@@ -77,6 +77,21 @@ internal class TaoComposeSceneHostLinux(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
+    // Coalescing: `onResized`/`onScaleFactorChanged` arrive at 60–120 Hz during
+    // a user drag. Doing the X11 round-trip (XResizeWindow + rounded-shape
+    // XShape rebuild) on every event is what was deadlocking the NVIDIA driver
+    // on Blackwell. We just stash the latest size+scale and let the next
+    // `onRedrawRequested` apply them once before drawing.
+    private var lastAppliedWidthPx: Int = -1
+    private var lastAppliedHeightPx: Int = -1
+    private var lastAppliedScale: Float = Float.NaN
+
+    // Cache the Skia RT/Surface across frames — recreated only when the size
+    // changes. Reallocating an FBO + GL surface every frame piles up driver
+    // work that contributes to the resize-time GPU lockup.
+    private var cachedRt: BackendRenderTarget? = null
+    private var cachedSurface: Surface? = null
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -147,10 +162,10 @@ internal class TaoComposeSceneHostLinux(
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
-        if (attachmentHandle != 0L) {
-            NativeTaoGlxBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-            applyRoundedShape()
-        }
+        // Cheap state updates run inline so external callers (`applyRoundedShape`,
+        // composables reading `WindowInfo.containerSize`) see the new size
+        // immediately. The X11/GLX side is deferred to `onRedrawRequested` —
+        // see `applyPendingNativeResize`.
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
         window.requestRedraw()
@@ -175,12 +190,39 @@ internal class TaoComposeSceneHostLinux(
         if (newScale == scale) return
         scale = newScale
         scene?.density = Density(scale)
-        if (attachmentHandle != 0L) {
-            NativeTaoGlxBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-            applyRoundedShape()
-        }
         updateWindowInfoSize()
         window.requestRedraw()
+    }
+
+    /**
+     * Pushes the current `widthPx`/`heightPx`/`scale` to the GLX child window
+     * + rounded-shape + Skia surface cache, but only if any of them has
+     * changed since the last apply. Called from [onRedrawRequested] so a
+     * burst of resize events collapses to one X11 round-trip per actual frame.
+     */
+    private fun applyPendingNativeResize() {
+        if (attachmentHandle == 0L) return
+        if (widthPx <= 0 || heightPx <= 0) return
+        if (widthPx == lastAppliedWidthPx &&
+            heightPx == lastAppliedHeightPx &&
+            scale == lastAppliedScale
+        ) {
+            return
+        }
+        NativeTaoGlxBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+        applyRoundedShape()
+        // Drop the cached Skia surface so the next render rebuilds it at the
+        // new size. Closing here (rather than lazily in `onRedrawRequested`)
+        // keeps the lifetime tied to the GL context being current.
+        if (widthPx != lastAppliedWidthPx || heightPx != lastAppliedHeightPx) {
+            cachedSurface?.close()
+            cachedSurface = null
+            cachedRt?.close()
+            cachedRt = null
+        }
+        lastAppliedWidthPx = widthPx
+        lastAppliedHeightPx = heightPx
+        lastAppliedScale = scale
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -211,32 +253,35 @@ internal class TaoComposeSceneHostLinux(
         flushingDispatcher.drain()
 
         NativeTaoGlxBridge.nativeMakeCurrent(attachmentHandle)
+        // Coalesced size/scale change is committed here, after the GL context
+        // is current — applyPendingNativeResize closes the stale Skia cache.
+        applyPendingNativeResize()
 
-        val rt = BackendRenderTarget.makeGL(
-            width = widthPx,
-            height = heightPx,
-            sampleCnt = 0,
-            stencilBits = 8,
-            fbId = 0,
-            fbFormat = FramebufferFormat.GR_GL_RGBA8,
-        )
-        val surface = Surface.makeFromBackendRenderTarget(
-            context = ctx,
-            rt = rt,
-            origin = SurfaceOrigin.BOTTOM_LEFT,
-            colorFormat = SurfaceColorFormat.RGBA_8888,
-            colorSpace = ColorSpace.sRGB,
-        ) ?: run { rt.close(); return }
-
-        try {
-            surface.canvas.clear(0xFFFFFFFF.toInt())
-            sc.render(surface.canvas.asComposeCanvas(), now)
-            surface.flushAndSubmit(syncCpu = false)
-            NativeTaoGlxBridge.nativePresent(attachmentHandle)
-        } finally {
-            surface.close()
-            rt.close()
+        var surface = cachedSurface
+        if (surface == null) {
+            val rt = BackendRenderTarget.makeGL(
+                width = widthPx,
+                height = heightPx,
+                sampleCnt = 0,
+                stencilBits = 8,
+                fbId = 0,
+                fbFormat = FramebufferFormat.GR_GL_RGBA8,
+            )
+            surface = Surface.makeFromBackendRenderTarget(
+                context = ctx,
+                rt = rt,
+                origin = SurfaceOrigin.BOTTOM_LEFT,
+                colorFormat = SurfaceColorFormat.RGBA_8888,
+                colorSpace = ColorSpace.sRGB,
+            ) ?: run { rt.close(); return }
+            cachedRt = rt
+            cachedSurface = surface
         }
+
+        surface.canvas.clear(0xFFFFFFFF.toInt())
+        sc.render(surface.canvas.asComposeCanvas(), now)
+        surface.flushAndSubmit(syncCpu = false)
+        NativeTaoGlxBridge.nativePresent(attachmentHandle)
     }
 
     fun onPointerMove(aFixed: Int, bFixed: Int) {
@@ -344,6 +389,10 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
         scene?.close()
         scene = null
         directContext?.close()
