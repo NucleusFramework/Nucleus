@@ -144,6 +144,7 @@ fun main() = application {
                             onLog = { logEvent(events, it) },
                         )
                         Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
+                        else -> {}
                     }
                 }
             }

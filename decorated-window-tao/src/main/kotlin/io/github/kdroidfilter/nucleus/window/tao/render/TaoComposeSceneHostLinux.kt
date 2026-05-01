@@ -96,7 +96,6 @@ internal class TaoComposeSceneHostLinux(
         check(NativeTaoBridge.isLoaded && NativeTaoGlxBridge.isLoaded) {
             "Tao Linux native libraries not loaded"
         }
-        System.err.println("[tao-linux] attach: initial widthPx=$widthPx heightPx=$heightPx scale(pre)=${NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f}")
         // (kind, display, native_window) — see NativeTaoBridge.nativeLinuxHandles.
         // GLX only — kind must be 1 (Xlib). Wayland sessions are forced to
         // X11 via GDK_BACKEND in `taoApplication`, so we never see kind=2 here.
@@ -148,7 +147,6 @@ internal class TaoComposeSceneHostLinux(
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
-        System.err.println("[tao-linux] onResized: ${widthPx}x${heightPx} scale=$scale density=$scale")
         if (attachmentHandle != 0L) {
             NativeTaoGlxBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
             applyRoundedShape()
@@ -241,15 +239,11 @@ internal class TaoComposeSceneHostLinux(
         }
     }
 
-    private var moveLogCnt = 0
     fun onPointerMove(aFixed: Int, bFixed: Int) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
-        if (moveLogCnt++ % 30 == 0) {
-            System.err.println("[tao-linux] move pos=($xPx, $yPx) scene=${widthPx}x${heightPx} scale=$scale")
-        }
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
