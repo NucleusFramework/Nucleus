@@ -12,6 +12,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
@@ -224,6 +225,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             CompositionLocalProvider(
                 LocalDecoratedWindowTitle provides title,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                // Override the default Skiko `URIManager` (calls
+                // `Desktop.browse` → initialises XAWT → deadlocks our GLX
+                // loop). See [TaoLinuxUriHandler].
+                LocalUriHandler provides TaoLinuxUriHandler,
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
