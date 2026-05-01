@@ -1,0 +1,762 @@
+// NucleusTaoMetal.m — ObjC helper that turns the NSView created by Tao into a
+// Metal-rendering surface usable from Skiko, plus traffic-light button
+// repositioning to match a custom Compose-drawn title bar height.
+//
+// Compiled into libnucleus_tao_metal.dylib by build.sh, separate from the Rust
+// crate so we keep ObjC/AppKit out of the Rust build pipeline.
+//
+// The pipeline per frame is:
+//
+//   1. JVM calls beginFrame(layerHandle)        →  drawable + texture + size
+//   2. JVM wraps texture in a Skia Surface and renders the ComposeScene
+//   3. JVM calls flushAndSubmit() on the Surface (Metal command buffer fires)
+//   4. JVM calls present(layerHandle, drawable) →  presents drawable on screen
+
+#import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
+#import <Metal/Metal.h>
+#import <objc/runtime.h>
+#import <stdatomic.h>
+#import <stdio.h>
+#import <jni.h>
+
+#define NTLOG(fmt, ...) do { (void)0; } while (0)
+
+// Associated-object key used to hang the constraints array on each NSWindow
+// so we can deactivate the previous set before applying a new one.
+static const char kTaoConstraintsKey = 1;
+// Associated-object key for the fullscreen transition observer.
+static const char kTaoFSObserverKey  = 2;
+// Associated-object key holding the attachment handle for the window so the
+// fullscreen observer can reattach the CAMetalLayer post-transition.
+static const char kTaoAttachmentKey  = 3;
+// Associated-object key holding the last title-bar height applied by
+// applyButtonConstraints, so the FS observer can re-apply on didExitFullScreen.
+static const char kTaoTitleBarHeightKey = 4;
+// Holds the replacement-buttons container we install in the contentView when
+// the window enters fullscreen. Removed on exit. Mirrors decorated-window-jni's
+// `kFullscreenButtonsKey`.
+static const char kTaoFullscreenButtonsKey = 5;
+// Tracks whether the invisible NSToolbar (for macOS 26 large corner radius)
+// was installed before a fullscreen transition started. We have to remove it
+// on willEnter to avoid AppKit's "white band" animation glitch and reinstall
+// it on didEnter / didExit.
+static const char kTaoHadToolbarKey = 6;
+
+// Same metrics as decorated-window-jni's applyConstraints — keeps the
+// traffic-lights at the same offsets Apple's own apps use.
+static const float kMinHeightForFullSize = 28.0f;
+static const float kDefaultButtonOffset  = 23.0f;
+static const float kToolbarExtraInset    = 6.0f;
+static const float kMaxButtonLeftMargin  = 40.0f / 2.0f;
+
+// Forward declarations — definitions live further down the file but the FS
+// observer @implementation needs to call into them.
+static void removeButtonConstraints(NSWindow *window);
+static void applyButtonConstraints(NSWindow *window, float titleBarHeight);
+static void installFullScreenButtons(NSWindow *window, float titleBarHeight);
+static void removeFullScreenButtons(NSWindow *window);
+
+static void reinstallToolbarIfNeeded(NSWindow *window) {
+    NSNumber *had = objc_getAssociatedObject(window, &kTaoHadToolbarKey);
+    if (![had boolValue] || window.toolbar != nil) return;
+    NSToolbar *t = [[NSToolbar alloc] initWithIdentifier:@"NucleusTaoToolbar"];
+    t.showsBaselineSeparator = NO;
+    window.toolbar = t;
+}
+
+// ── Layer handle struct retained on the heap ─────────────────────────────
+
+typedef struct {
+    CAMetalLayer *layer;
+    id<MTLDevice> device;
+    id<MTLCommandQueue> queue;
+    NSView *view;
+    // 0 = normal; 1 = inside an AppKit fullscreen transition. Render path
+    // skips nextDrawable while non-zero so we don't block on a paused
+    // swapchain (Apple holds drawables for the duration of the animation).
+    atomic_int in_transition;
+    // 0 = window is in normal mode; 1 = window is in macOS fullscreen.
+    // Read by the Kotlin layer (via nativeIsFullscreen) so it can hide its
+    // custom Compose title bar — AppKit auto-shows its own native one.
+    atomic_int is_fullscreen;
+} NucleusTaoMetalAttachment;
+
+#define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
+
+// ── Replacement traffic-light buttons for fullscreen ────────────────────
+//
+// Ported from decorated-window-jni's NucleusButtonsView + installFullScreenButtons.
+// In fullscreen, AppKit's auto-hiding native title bar would either disappear
+// the buttons or, on non-notch screens, overlap our Compose title bar. JNI's
+// solution (matching JBR's AWTButtonsView) is to:
+//   1. Hide the AppKit titlebar container while in fullscreen,
+//   2. Install a custom NSView in the contentView containing 3 NSButtons
+//      created via [NSWindow standardWindowButton:forStyleMask:] — they look
+//      identical to the real traffic-lights and accept the standard actions.
+
+@interface NucleusTaoButtonsView : NSView {
+    BOOL _dispatching;
+}
+@end
+
+@implementation NucleusTaoButtonsView
+- (void)updateTrackingAreas {
+    [super updateTrackingAreas];
+    for (NSTrackingArea *ta in self.trackingAreas) {
+        [self removeTrackingArea:ta];
+    }
+    NSTrackingArea *ta = [[NSTrackingArea alloc]
+        initWithRect:NSZeroRect
+             options:(NSTrackingMouseEnteredAndExited |
+                      NSTrackingActiveInKeyWindow |
+                      NSTrackingInVisibleRect)
+               owner:self
+            userInfo:nil];
+    [self addTrackingArea:ta];
+}
+- (void)mouseEntered:(NSEvent *)event {
+    if (_dispatching) return;
+    _dispatching = YES;
+    [super mouseEntered:event];
+    for (NSView *btn in self.subviews) [btn mouseEntered:event];
+    _dispatching = NO;
+}
+- (void)mouseExited:(NSEvent *)event {
+    if (_dispatching) return;
+    _dispatching = YES;
+    [super mouseExited:event];
+    for (NSView *btn in self.subviews) [btn mouseExited:event];
+    _dispatching = NO;
+}
+@end
+
+static void computeButtonMetrics(float titleBarHeight,
+                                 float *outBtnWidth, float *outBtnHeight,
+                                 float *outOffset) {
+    float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
+    *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
+    *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
+    *outOffset    = shrinkFactor * kDefaultButtonOffset;
+}
+
+static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
+    if (objc_getAssociatedObject(window, &kTaoFullscreenButtonsKey)) return;
+    if ([window standardWindowButton:NSWindowCloseButton] == nil) return;
+
+    float btnWidth, btnHeight, offset;
+    computeButtonMetrics(titleBarHeight, &btnWidth, &btnHeight, &offset);
+
+    NucleusTaoButtonsView *container = [[NucleusTaoButtonsView alloc] init];
+    NSView *parent = window.contentView;
+    CGFloat y = parent.frame.size.height - titleBarHeight;
+    float margin = fminf(titleBarHeight / 2.0f, kMaxButtonLeftMargin);
+    float containerWidth = margin + 2.0f * offset + btnWidth;
+    [container setFrame:NSMakeRect(0, y, containerWidth, titleBarHeight)];
+    container.autoresizingMask = NSViewMinYMargin; // stay anchored to top
+
+    NSUInteger masks = [window styleMask];
+    NSArray<NSNumber *> *types = @[
+        @(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)
+    ];
+    SEL actions[] = {
+        @selector(performClose:),
+        @selector(performMiniaturize:),
+        @selector(toggleFullScreen:),
+    };
+
+    for (NSUInteger idx = 0; idx < 3; idx++) {
+        NSButton *btn = [NSWindow standardWindowButton:[types[idx] unsignedIntegerValue]
+                                          forStyleMask:masks];
+        CGFloat centerX = margin + idx * offset;
+        CGFloat centerY = titleBarHeight / 2.0f;
+        [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f,
+                                 centerY - btnHeight / 2.0f,
+                                 btnWidth, btnHeight)];
+        [btn setTarget:window];
+        [btn setAction:actions[idx]];
+        [container addSubview:btn];
+    }
+
+    [parent addSubview:container];
+    objc_setAssociatedObject(window, &kTaoFullscreenButtonsKey, container,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+static void removeFullScreenButtons(NSWindow *window) {
+    NucleusTaoButtonsView *container =
+        objc_getAssociatedObject(window, &kTaoFullscreenButtonsKey);
+    if (container == nil) return;
+    [container removeFromSuperview];
+    objc_setAssociatedObject(window, &kTaoFullscreenButtonsKey, nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// ── Fullscreen transition observer ───────────────────────────────────────
+//
+// AppKit's animated `toggleFullScreen:` reorders the contentView hierarchy
+// during the transition: it temporarily moves the view into a new fullscreen
+// NSWindow, then moves it back. During that move, our CAMetalLayer can lose
+// its host and the next drawable acquisition crashes. The observer re-asserts
+// the layer attachment on `DidEnter` / `DidExit`, plus the `framebufferOnly`
+// / `backgroundColor` invariants in case AppKit reset them.
+
+@interface NucleusTaoFSObserver : NSObject
+- (instancetype)initWithView:(NSView *)view;
+@end
+
+@implementation NucleusTaoFSObserver {
+    NSView *_view; // weak
+}
+
+- (instancetype)initWithView:(NSView *)view {
+    if ((self = [super init])) {
+        _view = view;
+        NSNotificationCenter *nc = NSNotificationCenter.defaultCenter;
+        [nc addObserver:self selector:@selector(willEnterFS:)
+                   name:NSWindowWillEnterFullScreenNotification object:view.window];
+        [nc addObserver:self selector:@selector(didEnterFS:)
+                   name:NSWindowDidEnterFullScreenNotification object:view.window];
+        [nc addObserver:self selector:@selector(willExitFS:)
+                   name:NSWindowWillExitFullScreenNotification object:view.window];
+        [nc addObserver:self selector:@selector(didExitFS:)
+                   name:NSWindowDidExitFullScreenNotification object:view.window];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [NSNotificationCenter.defaultCenter removeObserver:self];
+}
+
+- (void)reattach {
+    NSValue *boxed = objc_getAssociatedObject(_view.window, &kTaoAttachmentKey);
+    if (boxed == nil) return;
+    NucleusTaoMetalAttachment *att = (NucleusTaoMetalAttachment *) boxed.pointerValue;
+    if (att == NULL || att->layer == nil) return;
+    // Re-assert the layer wiring; cheap if AppKit already restored it.
+    // Same order rule as in setup: layer first, then wantsLayer.
+    _view.layer = att->layer;
+    _view.wantsLayer = YES;
+    att->layer.frame = _view.bounds;
+    att->layer.drawableSize = CGSizeMake(_view.bounds.size.width  * att->layer.contentsScale,
+                                         _view.bounds.size.height * att->layer.contentsScale);
+}
+
+- (NucleusTaoMetalAttachment *)attachment {
+    NSValue *boxed = objc_getAssociatedObject(_view.window, &kTaoAttachmentKey);
+    if (boxed == nil) return NULL;
+    return (NucleusTaoMetalAttachment *) boxed.pointerValue;
+}
+
+- (void)setTransition:(int)v {
+    NucleusTaoMetalAttachment *att = [self attachment];
+    if (att != NULL) atomic_store(&att->in_transition, v);
+}
+
+- (void)willEnterFS:(NSNotification *)n {
+    NTLOG("FS willEnter — restore default chrome + remove constraints + drop toolbar");
+    [self setTransition:1];
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    removeButtonConstraints(w);
+    // Restore the standard chrome so AppKit's fullscreen animation can run.
+    w.titlebarAppearsTransparent = NO;
+    w.titleVisibility = NSWindowTitleVisible;
+    w.movableByWindowBackground = NO;
+    // Drop the invisible toolbar to avoid AppKit's white-band glitch.
+    if (w.toolbar != nil) {
+        objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        w.toolbar = nil;
+    }
+    // Anchor the drawable top-left so AppKit's snapshot-stretch animation
+    // doesn't enlarge our 36 dp title bar visually. The unfilled area picks
+    // up the layer / window background.
+    NucleusTaoMetalAttachment *att = [self attachment];
+    if (att != NULL && att->layer != nil) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        att->layer.contentsGravity = kCAGravityTopLeft;
+        [CATransaction commit];
+    }
+}
+- (void)willExitFS:(NSNotification *)n {
+    NTLOG("FS willExit");
+    [self setTransition:1];
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    // Same gravity trick as willEnterFS: pin the drawable top-left so the
+    // shrink-animation doesn't crop the content visually.
+    NucleusTaoMetalAttachment *att = [self attachment];
+    if (att != NULL && att->layer != nil) {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        att->layer.contentsGravity = kCAGravityTopLeft;
+        [CATransaction commit];
+    }
+    // Tear down replacement buttons + un-hide the AppKit titlebar container so
+    // AppKit can drive the exit animation against its standard chrome.
+    removeFullScreenButtons(w);
+    NSView *btn = [w standardWindowButton:NSWindowCloseButton];
+    NSView *tbc = btn ? btn.superview.superview : nil;
+    if (tbc != nil && tbc.hidden) tbc.hidden = NO;
+    // Hide the standard buttons during the exit animation so they don't
+    // appear at the wrong (default) position before our constraints kick in.
+    [[w standardWindowButton:NSWindowCloseButton] setHidden:YES];
+    [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:YES];
+    [[w standardWindowButton:NSWindowZoomButton] setHidden:YES];
+    w.titlebarAppearsTransparent = YES;
+    w.titleVisibility = NSWindowTitleHidden;
+}
+
+- (void)didEnterFS:(NSNotification *)n {
+    NTLOG("FS didEnter — reattach + install fullscreen buttons + hide titlebar");
+    [self reattach];
+    [self setTransition:0];
+    NucleusTaoMetalAttachment *att = [self attachment];
+    if (att != NULL) {
+        atomic_store(&att->is_fullscreen, 1);
+        if (att->layer != nil) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            att->layer.contentsGravity = kCAGravityResize;
+            [CATransaction commit];
+        }
+    }
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    // Install replacement traffic-light buttons inside the contentView so
+    // they remain visible when AppKit auto-hides the native title bar (and
+    // they don't disappear with our custom Compose title bar in fullscreen).
+    NSNumber *h = objc_getAssociatedObject(w, &kTaoTitleBarHeightKey);
+    float height = h ? [h floatValue] : kMinHeightForFullSize;
+    installFullScreenButtons(w, height);
+    // Reinstall the invisible toolbar so the macOS 26 large-corner-radius
+    // treatment carries over into fullscreen.
+    reinstallToolbarIfNeeded(w);
+    // Hide the AppKit titlebar container to prevent it from intercepting
+    // clicks meant for our Compose content (the contentView spans the full
+    // window in fullscreen due to FullSizeContentView).
+    NSView *btn = [w standardWindowButton:NSWindowCloseButton];
+    NSView *tbc = btn ? btn.superview.superview : nil;
+    if (tbc != nil) tbc.hidden = YES;
+}
+
+- (void)didExitFS:(NSNotification *)n {
+    NTLOG("FS didExit — reattach + restore chrome + reapply constraints");
+    [self reattach];
+    [self setTransition:0];
+    NucleusTaoMetalAttachment *att = [self attachment];
+    if (att != NULL) {
+        atomic_store(&att->is_fullscreen, 0);
+        if (att->layer != nil) {
+            [CATransaction begin];
+            [CATransaction setDisableActions:YES];
+            att->layer.contentsGravity = kCAGravityResize;
+            [CATransaction commit];
+        }
+    }
+    NSWindow *w = _view.window;
+    if (w == nil) return;
+    // Re-show the standard buttons (hidden in willExitFS).
+    [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
+    [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
+    [[w standardWindowButton:NSWindowZoomButton] setHidden:NO];
+    // Reinstall the invisible toolbar (corner radius) and reapply the
+    // button-centering constraints for our custom title bar height.
+    reinstallToolbarIfNeeded(w);
+    NSNumber *h = objc_getAssociatedObject(w, &kTaoTitleBarHeightKey);
+    if (h != nil) applyButtonConstraints(w, [h floatValue]);
+}
+
+@end
+
+// ── Java POJO accessors (cached on first use) ────────────────────────────
+
+static jclass     gFrameClass        = NULL;
+static jmethodID  gFrameConstructor  = NULL;
+
+static void ensureFrameClassLoaded(JNIEnv *env) {
+    if (gFrameClass != NULL) return;
+    jclass local = (*env)->FindClass(env, "io/github/kdroidfilter/nucleus/window/tao/render/MetalFrame");
+    if (local == NULL) return;
+    gFrameClass = (jclass) (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+    // ctor (long drawablePtr, long texturePtr, int widthPx, int heightPx, float scale)
+    gFrameConstructor = (*env)->GetMethodID(env, gFrameClass, "<init>", "(JJIIF)V");
+}
+
+// ── JNI entry points ─────────────────────────────────────────────────────
+// Symbol naming follows io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
+
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttach(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NTLOG("nativeAttach view=%p", view);
+    if (view == nil) return 0;
+
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device == nil) return 0;
+
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    layer.device = device;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    layer.contentsScale = view.window.backingScaleFactor > 0
+        ? view.window.backingScaleFactor
+        : [NSScreen mainScreen].backingScaleFactor;
+
+    dispatch_block_t setup = ^{
+        // Apple docs (NSView.layer): a custom layer must be assigned BEFORE
+        // wantsLayer is set to YES, otherwise AppKit creates its default
+        // backing layer first and may revert to it during animated
+        // transitions (e.g. toggleFullScreen:).
+        view.layer = layer;
+        view.wantsLayer = YES;
+        layer.frame = view.bounds;
+    };
+    if ([NSThread isMainThread]) setup();
+    else                          dispatch_sync(dispatch_get_main_queue(), setup);
+
+    NucleusTaoMetalAttachment *att = (NucleusTaoMetalAttachment *)
+        calloc(1, sizeof(NucleusTaoMetalAttachment));
+    att->layer  = layer;       // ARC retains via the strong field
+    att->device = device;
+    att->queue  = [device newCommandQueue];
+    att->view   = view;
+
+    // Install fullscreen observer so the CAMetalLayer wiring survives an
+    // AppKit toggleFullScreen: transition. We hang the attachment pointer
+    // (boxed in NSValue) on the window so the observer can reach it.
+    dispatch_block_t installObserver = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        NSValue *boxed = [NSValue valueWithPointer:att];
+        objc_setAssociatedObject(win, &kTaoAttachmentKey, boxed,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        if (objc_getAssociatedObject(win, &kTaoFSObserverKey) == nil) {
+            NucleusTaoFSObserver *observer = [[NucleusTaoFSObserver alloc] initWithView:view];
+            objc_setAssociatedObject(win, &kTaoFSObserverKey, observer,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    };
+    if ([NSThread isMainThread]) installObserver();
+    else                          dispatch_sync(dispatch_get_main_queue(), installObserver);
+
+    NTLOG("nativeAttach done att=%p layer=%p device=%p", att, att->layer, att->device);
+    return (jlong)(uintptr_t)att;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeConfigureChrome(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        // Make the window's content area cover the entire frame (including the
+        // title bar region) and make the title bar transparent. The standard
+        // traffic-light buttons remain visible because they are part of the
+        // NSWindow chrome itself, not of the title bar background.
+        win.styleMask |= NSWindowStyleMaskFullSizeContentView;
+        win.titlebarAppearsTransparent = YES;
+        win.titleVisibility = NSWindowTitleHidden;
+        win.movableByWindowBackground = NO;
+        // Neutral light background shown through the CAMetalLayer until the
+        // first frame is presented. Matches the typical Compose Desktop /
+        // AWT default so apps that don't paint their own background look
+        // identical to the JNI/JBR backends.
+        win.backgroundColor = [NSColor whiteColor];
+        // Native fullscreen is allowed; the green traffic-light button
+        // triggers AppKit's animated toggleFullScreen:. A NucleusTaoFSObserver
+        // installed in nativeAttach below re-asserts the CAMetalLayer wiring
+        // after the transition completes (AppKit reparents the contentView,
+        // which can otherwise leave the layer detached and crash the next
+        // nextDrawable call).
+        NSWindowCollectionBehavior cb = win.collectionBehavior;
+        cb |= NSWindowCollectionBehaviorFullScreenPrimary;
+        win.collectionBehavior = cb;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/**
+ * Deactivates the constraint set previously installed by applyButtonConstraints
+ * and restores autoresizing on the AppKit private title-bar views, so AppKit
+ * regains control of layout for fullscreen animations and other transitions.
+ *
+ * Ported from `decorated-window-jni`'s `removeExistingConstraints` — without
+ * this, AppKit's animated `toggleFullScreen:` deadlocks because our manual
+ * NSLayoutConstraints conflict with AppKit's animation constraints on the
+ * same `NSTitlebarContainerView`.
+ */
+static void removeButtonConstraints(NSWindow *window) {
+    NSArray *existing = objc_getAssociatedObject(window, &kTaoConstraintsKey);
+    if (existing != nil) {
+        [NSLayoutConstraint deactivateConstraints:existing];
+        objc_setAssociatedObject(window, &kTaoConstraintsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+
+    NSView *closeBtn = [window standardWindowButton:NSWindowCloseButton];
+    if (closeBtn == nil) return;
+    NSView *titlebar          = closeBtn.superview;
+    NSView *titlebarContainer = titlebar ? titlebar.superview : nil;
+
+    if (titlebarContainer != nil) {
+        titlebarContainer.translatesAutoresizingMaskIntoConstraints = YES;
+    }
+    if (titlebar != nil) {
+        titlebar.translatesAutoresizingMaskIntoConstraints = YES;
+    }
+    closeBtn.translatesAutoresizingMaskIntoConstraints = YES;
+    NSView *miniBtn = [window standardWindowButton:NSWindowMiniaturizeButton];
+    NSView *zoomBtn = [window standardWindowButton:NSWindowZoomButton];
+    if (miniBtn != nil) miniBtn.translatesAutoresizingMaskIntoConstraints = YES;
+    if (zoomBtn != nil) zoomBtn.translatesAutoresizingMaskIntoConstraints = YES;
+}
+
+/**
+ * Repositions the standard NSWindow buttons (close / miniaturise / zoom) so
+ * they are vertically centred inside a custom-height title bar drawn by
+ * Compose. Without this the buttons stay at AppKit's default ~7pt-from-top
+ * offset, looking misaligned with a 32-44pt custom bar.
+ *
+ * Ported from `decorated-window-jni`'s `applyConstraints`, simplified for
+ * our case (no RTL, no fullscreen-button replacement, single drag view).
+ */
+static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
+    NSView *closeBtn = [window standardWindowButton:NSWindowCloseButton];
+    NSView *miniBtn  = [window standardWindowButton:NSWindowMiniaturizeButton];
+    NSView *zoomBtn  = [window standardWindowButton:NSWindowZoomButton];
+    if (closeBtn == nil || miniBtn == nil || zoomBtn == nil) return;
+
+    NSView *titlebar          = closeBtn.superview;
+    NSView *titlebarContainer = titlebar ? titlebar.superview : nil;
+    NSView *themeFrame        = titlebarContainer ? titlebarContainer.superview : nil;
+    if (themeFrame == nil) return;
+
+    // Tear down our previously-applied constraint set + restore autoresizing.
+    removeButtonConstraints(window);
+
+    // Remember the height so the FS observer can re-apply on didExitFullScreen.
+    objc_setAssociatedObject(window, &kTaoTitleBarHeightKey, @(titleBarHeight),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    NSMutableArray *constraints = [NSMutableArray array];
+
+    titlebarContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    [constraints addObjectsFromArray:@[
+        [titlebarContainer.leftAnchor   constraintEqualToAnchor:themeFrame.leftAnchor],
+        [titlebarContainer.widthAnchor  constraintEqualToAnchor:themeFrame.widthAnchor],
+        [titlebarContainer.topAnchor    constraintEqualToAnchor:themeFrame.topAnchor],
+        [titlebarContainer.heightAnchor constraintEqualToConstant:titleBarHeight],
+    ]];
+
+    titlebar.translatesAutoresizingMaskIntoConstraints = NO;
+    [constraints addObjectsFromArray:@[
+        [titlebar.leftAnchor   constraintEqualToAnchor:titlebarContainer.leftAnchor],
+        [titlebar.rightAnchor  constraintEqualToAnchor:titlebarContainer.rightAnchor],
+        [titlebar.topAnchor    constraintEqualToAnchor:titlebarContainer.topAnchor],
+        [titlebar.bottomAnchor constraintEqualToAnchor:titlebarContainer.bottomAnchor],
+    ]];
+
+    float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
+    float offset       = shrinkFactor * kDefaultButtonOffset;
+    float extraInset   = window.toolbar ? kToolbarExtraInset : 0.0f;
+    float margin       = fminf(titleBarHeight / 2.0f, kMaxButtonLeftMargin) + extraInset;
+
+    NSArray *buttons = @[closeBtn, miniBtn, zoomBtn];
+    [buttons enumerateObjectsUsingBlock:^(NSView *btn, NSUInteger idx, BOOL *stop) {
+        btn.translatesAutoresizingMaskIntoConstraints = NO;
+        float c = margin + idx * offset;
+        [constraints addObjectsFromArray:@[
+            [btn.widthAnchor   constraintLessThanOrEqualToAnchor:titlebarContainer.heightAnchor
+                                                      multiplier:0.5],
+            [btn.heightAnchor  constraintEqualToAnchor:btn.widthAnchor
+                                            multiplier:14.0 / 12.0
+                                              constant:-2.0],
+            [btn.centerYAnchor constraintEqualToAnchor:titlebarContainer.topAnchor
+                                              constant:titleBarHeight / 2.0f],
+            [btn.centerXAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor
+                                              constant:c],
+        ]];
+    }];
+
+    [NSLayoutConstraint activateConstraints:constraints];
+    objc_setAssociatedObject(window, &kTaoConstraintsKey, constraints,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeApplyButtonLayout(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jfloat titleBarHeight) {
+    NTLOG("nativeApplyButtonLayout h=%.1f", titleBarHeight);
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        applyButtonConstraints(win, titleBarHeight);
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/**
+ * Returns YES on macOS 26 (Tahoe) or later, where attaching an invisible
+ * NSToolbar yields the new ~26pt window corner radius and adopts other
+ * modern chrome behaviours. Cheap query — caches the result in a static.
+ */
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeIsMacOSTahoeOrLater(
+        JNIEnv *env, jclass clazz) {
+    static jboolean cached = (jboolean) -1;
+    if (cached != (jboolean) -1) return cached;
+    NSOperatingSystemVersion v = (NSOperatingSystemVersion){26, 0, 0};
+    cached = [[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v] ? JNI_TRUE : JNI_FALSE;
+    return cached;
+}
+
+/**
+ * Applies (or removes) the macOS 26+ "large corner radius" treatment by
+ * attaching an invisible NSToolbar on the parent NSWindow. The toolbar acts
+ * as a marker that opts the window into the new modern corner radius and
+ * Liquid-Glass-friendly chrome path. No-op on macOS < 26.
+ */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeApplyLargeCornerRadius(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        // Pre-Tahoe systems do not draw the new corners even with a toolbar
+        // attached; bail out so we don't pay the toolbar overhead for nothing.
+        NSOperatingSystemVersion v = (NSOperatingSystemVersion){26, 0, 0};
+        if (![[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:v]) return;
+
+        if (enabled == JNI_TRUE) {
+            if (win.toolbar == nil) {
+                NSToolbar *t = [[NSToolbar alloc] initWithIdentifier:@"NucleusTaoToolbar"];
+                t.showsBaselineSeparator = NO;
+                // Default visibility = YES; combined with titlebarAppearsTransparent
+                // the toolbar is invisible but still triggers the 26pt corners.
+                win.toolbar = t;
+            }
+        } else if (win.toolbar != nil) {
+            win.toolbar = nil;
+        }
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeDetach(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    NSWindow *win = att->view.window;
+    att->layer  = nil;
+    att->device = nil;
+    att->queue  = nil;
+    att->view   = nil;
+    if (win != nil) {
+        objc_setAssociatedObject(win, &kTaoFSObserverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(win, &kTaoAttachmentKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    free(att);
+}
+
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeDevicePtr(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return 0;
+    return (jlong)(uintptr_t) (__bridge void *) HANDLE_OF(handle)->device;
+}
+
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeQueuePtr(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return 0;
+    return (jlong)(uintptr_t) (__bridge void *) HANDLE_OF(handle)->queue;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeResize(
+        JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale) {
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    dispatch_block_t resize = ^{
+        att->layer.contentsScale = scale;
+        att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
+        att->layer.frame         = att->view.bounds;
+    };
+    if ([NSThread isMainThread]) resize();
+    else                          dispatch_sync(dispatch_get_main_queue(), resize);
+}
+
+JNIEXPORT jobject JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeBeginFrame(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return NULL;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+
+    id<CAMetalDrawable> drawable = [att->layer nextDrawable];
+    if (drawable == nil) {
+        return NULL;
+    }
+
+    // Retain so the JVM can hold the pointer until present(); released there.
+    void *retained = (__bridge_retained void *) drawable;
+
+    id<MTLTexture> texture = drawable.texture;
+    CGSize size = att->layer.drawableSize;
+    CGFloat scale = att->layer.contentsScale;
+
+    ensureFrameClassLoaded(env);
+    if (gFrameClass == NULL || gFrameConstructor == NULL) {
+        // Drop the retain to avoid leaking the drawable when the JVM mapping fails.
+        CFBridgingRelease(retained);
+        return NULL;
+    }
+
+    return (*env)->NewObject(env, gFrameClass, gFrameConstructor,
+        (jlong)(uintptr_t) retained,
+        (jlong)(uintptr_t) (__bridge void *) texture,
+        (jint) size.width,
+        (jint) size.height,
+        (jfloat) scale);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeIsInTransition(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return JNI_FALSE;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    return atomic_load(&att->in_transition) != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresent(
+        JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr) {
+    if (handle == 0 || drawablePtr == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+
+    // Move ownership back so ARC releases after the present block finishes.
+    id<CAMetalDrawable> drawable = (__bridge_transfer id<CAMetalDrawable>)
+        (void *)(uintptr_t) drawablePtr;
+
+    id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
+    [commandBuffer presentDrawable:drawable];
+    [commandBuffer commit];
+}

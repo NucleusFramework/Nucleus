@@ -1,0 +1,219 @@
+package io.github.kdroidfilter.nucleus.window.tao
+
+import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
+
+private const val LIBRARY_NAME = "nucleus_tao"
+
+/**
+ * Direct JNI bridge over the Tao windowing library.
+ *
+ * macOS-only Phase 2. The event loop owned by [nativeRunBlocking] must run on
+ * the macOS main thread (process thread 0). This is guaranteed by GraalVM
+ * native-image — it is **not** the case on a regular JVM unless the binary is
+ * launched with `-XstartOnFirstThread`.
+ */
+internal object NativeTaoBridge {
+    private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoBridge::class.java)
+
+    val isLoaded: Boolean get() = loaded
+
+    /**
+     * Receives events dispatched from the Rust event loop, called on the
+     * macOS main thread. [code] matches the constants in [TaoEventCode];
+     * [a]/[b] carry packed payloads (e.g. width/height, button, scancode).
+     */
+    interface EventCallback {
+        @Suppress("FunctionParameterNaming")
+        fun onEvent(handle: Long, code: Int, a: Int, b: Int)
+
+        /**
+         * Keyboard event callback (separate from [onEvent] because it carries
+         * 5 payload values). [type] is [TaoEventCode.KEY_DOWN] or [KEY_UP].
+         * [vkCode]/[keyLocation] follow AWT's `KeyEvent.VK_*` / `KEY_LOCATION_*`
+         * conventions so Compose's `Key(nativeKeyCode, nativeKeyLocation)`
+         * works unchanged. [modifiers] is a bitmask: 1=Shift, 2=Ctrl, 4=Alt,
+         * 8=Meta. [codePoint] is the UTF-32 code-point produced by the key, or 0.
+         */
+        @Suppress("LongParameterList", "FunctionParameterNaming")
+        fun onKeyEvent(
+            handle: Long,
+            type: Int,
+            vkCode: Int,
+            keyLocation: Int,
+            modifiers: Int,
+            codePoint: Int,
+        )
+    }
+
+    /** Takes over the calling thread. Blocks until [nativeExit] is called. */
+    @JvmStatic
+    external fun nativeRunBlocking(callback: EventCallback)
+
+    @JvmStatic
+    external fun nativeCreateWindow(
+        handle: Long,
+        title: String,
+        width: Double,
+        height: Double,
+        decorations: Boolean,
+        resizable: Boolean,
+        visible: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetVisible(
+        handle: Long,
+        visible: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetTitle(
+        handle: Long,
+        title: String,
+    )
+
+    @JvmStatic
+    external fun nativeRequestRedraw(handle: Long)
+
+    @JvmStatic
+    external fun nativeRequestClose(handle: Long)
+
+    @JvmStatic
+    external fun nativeExit()
+
+    @JvmStatic
+    external fun nativeIsAvailable(): Boolean
+
+    /**
+     * Returns the underlying NSView pointer for the given window handle. Must
+     * be called on the macOS main thread. Returns 0 if the window does not
+     * exist (yet) or has been closed.
+     */
+    @JvmStatic
+    external fun nativeNsViewHandle(handle: Long): Long
+
+    /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
+    @JvmStatic
+    external fun nativeScaleFactor(handle: Long): Int
+
+    /** Synchronous — must be called on the macOS main thread during a press. */
+    @JvmStatic
+    external fun nativeDragWindow(handle: Long)
+
+    @JvmStatic
+    external fun nativeIsMaximized(handle: Long): Boolean
+
+    @JvmStatic
+    external fun nativeSetMaximized(
+        handle: Long,
+        maximized: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetMinimized(
+        handle: Long,
+        minimized: Boolean,
+    )
+
+    /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
+    @JvmStatic
+    external fun nativeSetCursorIcon(
+        handle: Long,
+        code: Int,
+    )
+
+    /**
+     * Anchors macOS IME UI (accent picker, dead-key feedback, candidate windows)
+     * at the given window-local rect in *physical pixels* (top-left origin).
+     * AppKit's press-and-hold logic requires this rect to have non-zero size —
+     * Tao's stock `firstRectForCharacterRange:` returns 0×0, which we override.
+     */
+    @JvmStatic
+    external fun nativeSetImeRect(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+    )
+
+    /** Diagnostic: prints NSView state relevant to NSTextInputClient/press-and-hold. */
+    @JvmStatic
+    external fun nativeDiagView(handle: Long)
+
+    /**
+     * Calls `[view.inputContext activate]`. Required to trigger AppKit's
+     * press-and-hold accent picker: without it, the inputContext is not the
+     * "current" one and `_NSKeyBindingManager` skips the marked-text phase.
+     */
+    @JvmStatic
+    external fun nativeActivateInputContext(handle: Long)
+}
+
+/** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */
+@Suppress("MagicNumber")
+object TaoCursorIcon {
+    const val DEFAULT: Int = 0
+    const val TEXT: Int = 1
+    const val HAND: Int = 2
+    const val CROSSHAIR: Int = 3
+    const val WAIT: Int = 4
+    const val MOVE: Int = 5
+    const val NOT_ALLOWED: Int = 6
+    const val HELP: Int = 7
+    const val PROGRESS: Int = 8
+    const val EW_RESIZE: Int = 9
+    const val NS_RESIZE: Int = 10
+    const val NESW_RESIZE: Int = 11
+    const val NWSE_RESIZE: Int = 12
+}
+
+/** Mirrors the event constants in `nucleus_tao` (`lib.rs`). */
+@Suppress("MagicNumber")
+object TaoEventCode {
+    const val LAUNCHED: Int = 1
+    const val RESIZED: Int = 2
+    const val CLOSE_REQUESTED: Int = 3
+    const val DESTROYED: Int = 4
+    const val REDRAW_REQUESTED: Int = 5
+    const val FOCUSED: Int = 6
+    const val UNFOCUSED: Int = 7
+    const val SCALE_FACTOR_CHANGED: Int = 8
+
+    const val CURSOR_MOVED: Int = 10
+    const val CURSOR_LEFT: Int = 11
+    const val MOUSE_DOWN: Int = 12
+    const val MOUSE_UP: Int = 13
+    const val KEY_DOWN: Int = 14
+    const val KEY_UP: Int = 15
+    const val WINDOW_READY: Int = 16
+    const val SCROLL_LINE: Int = 17
+    const val SCROLL_PIXEL: Int = 18
+    const val KEY_TYPED: Int = 19
+}
+
+/** Modifier-state bitmask that mirrors the Rust side. */
+@Suppress("MagicNumber")
+object TaoModifierMask {
+    const val SHIFT: Int = 1 shl 0
+    const val CONTROL: Int = 1 shl 1
+    const val ALT: Int = 1 shl 2
+    const val META: Int = 1 shl 3
+}
+
+/** AWT-equivalent `KeyEvent.KEY_LOCATION_*` constants we accept from Rust. */
+@Suppress("MagicNumber")
+object TaoKeyLocation {
+    const val STANDARD: Int = 1
+    const val LEFT: Int = 2
+    const val RIGHT: Int = 3
+    const val NUMPAD: Int = 4
+}
+
+@Suppress("MagicNumber")
+object TaoMouseButton {
+    const val LEFT: Int = 0
+    const val RIGHT: Int = 1
+    const val MIDDLE: Int = 2
+    const val OTHER: Int = 3
+}

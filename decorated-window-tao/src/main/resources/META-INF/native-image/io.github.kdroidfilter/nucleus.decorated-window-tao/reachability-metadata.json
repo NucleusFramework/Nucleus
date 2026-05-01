@@ -1,0 +1,88 @@
+{
+    "reflection": [
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge$EventCallback",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onEvent",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onKeyEvent",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.TaoApplication$EventDispatcher",
+            "jniAccessible": true,
+            "allDeclaredFields": true,
+            "methods": [
+                {
+                    "name": "onEvent",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onKeyEvent",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.render.MetalFrame",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "<init>",
+                    "parameterTypes": [
+                        "long",
+                        "long",
+                        "int",
+                        "int",
+                        "float"
+                    ]
+                }
+            ],
+            "fields": [
+                { "name": "drawablePtr" },
+                { "name": "texturePtr" },
+                { "name": "widthPx" },
+                { "name": "heightPx" },
+                { "name": "scale" }
+            ]
+        }
+    ]
+}

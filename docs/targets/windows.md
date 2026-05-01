@@ -195,6 +195,11 @@ windows {
         square150x150Logo.set(project.file("packaging/appx/Square150x150Logo.png"))
         wide310x150Logo.set(project.file("packaging/appx/Wide310x150Logo.png"))
 
+        // Windows version range written into AppxManifest.xml.
+        // Required by the Store: MinVersion must be > 10.0.17134.0 (Windows 10 1803).
+        minVersion = "10.0.17763.0"        // Windows 10 1809 (October 2018 Update)
+        maxVersionTested = "10.0.22621.0"  // Windows 11 22H2
+
         // Store build options
         addAutoLaunchExtension = false
         setBuildNumber = true
@@ -214,6 +219,48 @@ windows {
 ### MSIX Bundle (Multi-Architecture)
 
 Create an `.msixbundle` containing both amd64 and arm64 `.appx` files. See [CI/CD](../ci-cd.md#windows-msix-bundle) for the GitHub Actions workflow.
+
+### Submitting to the Microsoft Store
+
+Two requirements are enforced by Partner Center at upload time. Both apply to every `.appx`/`.msix` inside an `.msixbundle` (the bundle is just a container — each contained package carries its own `AppxManifest.xml`, and Partner Center validates each one).
+
+#### 1. Use the identity assigned by Partner Center
+
+`identityName`, `publisher`, and `publisherDisplayName` must match the values shown on your reservation page in Partner Center under **Product identity**. You cannot pick them freely — the Store rejects packages whose manifest identity does not match the reservation.
+
+```kotlin
+appx {
+    // Package/Identity/Name from Partner Center
+    identityName = "Contoso.MyApp-Suffix"
+    // Package/Identity/Publisher (CN=<GUID> assigned by the Store)
+    publisher = "CN=12345678-90AB-CDEF-1234-567890ABCDEF"
+    // Package/Properties/PublisherDisplayName from Partner Center
+    publisherDisplayName = "Contoso"
+}
+```
+
+!!! warning "Sideload vs Store identity"
+    For sideloading you can use any `CN=...` that matches your code-signing certificate. For the Store you **must** use the `CN=<GUID>` assigned by Partner Center — the certificate is provided server-side, so the local signing certificate (if any) does not need to match the Store CN.
+
+#### 2. Set `minVersion` above the Store's floor
+
+By default no `MinVersion` is written and the underlying tooling falls back to a value (`10.0.14316.0`) that the Store rejects with:
+
+> *Package acceptance validation error: bundle is not valid. You can't upload msix/msixbundle/msixupload packages that target Windows with a MinVersion <= 10.0.17134.0.*
+
+Always set `minVersion` to at least `10.0.17763.0` (Windows 10 1809) for Store submissions:
+
+```kotlin
+appx {
+    minVersion = "10.0.17763.0"
+    maxVersionTested = "10.0.22621.0"
+}
+```
+
+| Property | Maps to | Notes |
+|----------|---------|-------|
+| `minVersion` | `<TargetDeviceFamily MinVersion="…"/>` | Must be `> 10.0.17134.0` for Store uploads. |
+| `maxVersionTested` | `<TargetDeviceFamily MaxVersionTested="…"/>` | Highest Windows build you've validated against. |
 
 ## Code Signing
 
