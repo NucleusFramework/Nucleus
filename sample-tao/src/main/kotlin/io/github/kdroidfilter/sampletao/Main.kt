@@ -40,7 +40,7 @@ import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
-import io.github.kdroidfilter.nucleus.window.tao.taoApplicationComposable
+import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import io.github.kdroidfilter.nucleus.window.tao.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import io.github.kdroidfilter.sampleshared.EventsTab
@@ -56,7 +56,7 @@ fun main() {
     runApp()
 }
 
-private fun runApp() = taoApplicationComposable {
+private fun runApp() = taoApplication {
     val previewEvents = remember { mutableStateListOf<String>() }
     var childRequest by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }
 

@@ -45,7 +45,7 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
  * becoming key (useful for HUD/overlay windows).
  */
 @Suppress("LongParameterList", "FunctionNaming")
-fun ApplicationScope.openDecoratedWindow(
+internal fun ApplicationScope.openDecoratedWindow(
     onCloseRequest: () -> Unit,
     title: String = "",
     icon: Painter? = null,
