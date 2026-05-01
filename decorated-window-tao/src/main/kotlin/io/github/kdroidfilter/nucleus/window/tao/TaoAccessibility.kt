@@ -82,6 +82,9 @@ object TaoA11yFlag {
     const val HEADING    = 1 shl 6
     const val PASSWORD   = 1 shl 7
     const val MULTILINE  = 1 shl 8
+    const val MODAL                = 1 shl 9
+    const val LIVE_REGION_POLITE   = 1 shl 10
+    const val LIVE_REGION_ASSERTIVE = 1 shl 11
 }
 
 @Suppress("MagicNumber")
@@ -95,6 +98,7 @@ object TaoA11yAction {
     const val SCROLL_DOWN   = 1 shl 6
     const val SCROLL_LEFT   = 1 shl 7
     const val SCROLL_RIGHT  = 1 shl 8
+    const val DISMISS       = 1 shl 9
 }
 
 /**
@@ -223,6 +227,7 @@ internal class TaoAccessibilityController(
             TaoA11yAction.SCROLL_DOWN   -> h.onScrollDown?.invoke()
             TaoA11yAction.SCROLL_LEFT   -> h.onScrollLeft?.invoke()
             TaoA11yAction.SCROLL_RIGHT  -> h.onScrollRight?.invoke()
+            TaoA11yAction.DISMISS       -> h.onDismiss?.invoke()
         }
         wakeEventLoop()
     }
@@ -255,6 +260,7 @@ internal class TaoAccessibilityController(
         val onScrollDown: (() -> Unit)? = null,
         val onScrollLeft: (() -> Unit)? = null,
         val onScrollRight: (() -> Unit)? = null,
+        val onDismiss: (() -> Unit)? = null,
     )
 }
 

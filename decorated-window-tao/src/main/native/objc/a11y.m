@@ -73,15 +73,18 @@ typedef NS_ENUM(uint16_t, NucleusA11yRole) {
 };
 
 typedef NS_OPTIONS(uint16_t, NucleusA11yFlag) {
-    NucleusA11yFlagIsElement   = 1 << 0,
-    NucleusA11yFlagEnabled     = 1 << 1,
-    NucleusA11yFlagFocused     = 1 << 2,
-    NucleusA11yFlagSelected    = 1 << 3,
-    NucleusA11yFlagChecked     = 1 << 4,
-    NucleusA11yFlagMixed       = 1 << 5,
-    NucleusA11yFlagHeading     = 1 << 6,
-    NucleusA11yFlagPassword    = 1 << 7,
-    NucleusA11yFlagMultiline   = 1 << 8,
+    NucleusA11yFlagIsElement       = 1 << 0,
+    NucleusA11yFlagEnabled         = 1 << 1,
+    NucleusA11yFlagFocused         = 1 << 2,
+    NucleusA11yFlagSelected        = 1 << 3,
+    NucleusA11yFlagChecked         = 1 << 4,
+    NucleusA11yFlagMixed           = 1 << 5,
+    NucleusA11yFlagHeading         = 1 << 6,
+    NucleusA11yFlagPassword        = 1 << 7,
+    NucleusA11yFlagMultiline       = 1 << 8,
+    NucleusA11yFlagModal           = 1 << 9,   // IsDialog → isAccessibilityModal
+    NucleusA11yFlagLiveRegionPolite    = 1 << 10,
+    NucleusA11yFlagLiveRegionAssertive = 1 << 11,
 };
 
 typedef NS_OPTIONS(uint16_t, NucleusA11yAction) {
@@ -94,6 +97,7 @@ typedef NS_OPTIONS(uint16_t, NucleusA11yAction) {
     NucleusA11yActionScrollDown   = 1 << 6,
     NucleusA11yActionScrollLeft   = 1 << 7,
     NucleusA11yActionScrollRight  = 1 << 8,
+    NucleusA11yActionDismiss      = 1 << 9,
 };
 
 // Forward-declared callbacks into Kotlin (defined in lib.rs). We weak-link
@@ -320,6 +324,13 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return (self.flags & NucleusA11yFlagFocused) != 0;
 }
 
+// Modal dialogs scope VoiceOver focus: with this YES, VO won't navigate to
+// elements outside the dialog. Compose's `Dialog` composable carries
+// `SemanticsProperties.IsDialog` which we map to this flag.
+- (BOOL)isAccessibilityModal {
+    return (self.flags & NucleusA11yFlagModal) != 0;
+}
+
 - (NSRect)accessibilityFrame {
     NSView *v = self.taoView;
     if (!v) return NSZeroRect;
@@ -460,6 +471,39 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     if (nucleus_tao_a11y_invoke_action) {
         nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
                                        self.nodeId, NucleusA11yActionScrollRight);
+    }
+    return YES;
+}
+
+// AppKit advertises an action as "available" whenever its `accessibilityPerform<Action>`
+// selector exists on the class. We implement all of them so that one
+// NSAccessibilityElement subclass can serve every role, but we want VoiceOver
+// to only show actions that are actually wired for *this particular node*.
+// Returning nil from `accessibilityActionDescription:` for unsupported names
+// hides them from VoiceOver's action menu.
+- (NSString *)accessibilityActionDescription:(NSAccessibilityActionName)action {
+    BOOL supported = NO;
+    if ([action isEqualToString:NSAccessibilityPressAction]) {
+        supported = (self.actions & NucleusA11yActionClick) != 0;
+    } else if ([action isEqualToString:NSAccessibilityIncrementAction]) {
+        supported = (self.actions & NucleusA11yActionIncrement) != 0;
+    } else if ([action isEqualToString:NSAccessibilityDecrementAction]) {
+        supported = (self.actions & NucleusA11yActionDecrement) != 0;
+    } else if ([action isEqualToString:NSAccessibilityCancelAction]) {
+        supported = (self.actions & NucleusA11yActionDismiss) != 0;
+    } else if ([action isEqualToString:NSAccessibilityShowMenuAction]) {
+        supported = NO;
+    }
+    return supported ? NSAccessibilityActionDescription(action) : nil;
+}
+
+// VoiceOver dismisses dialogs via VO+Esc, which AppKit routes to
+// `accessibilityPerformCancel`. We forward to Compose's `Dismiss` action.
+- (BOOL)accessibilityPerformCancel {
+    if (!(self.actions & NucleusA11yActionDismiss)) return NO;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, NucleusA11yActionDismiss);
     }
     return YES;
 }
@@ -667,6 +711,9 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     NSMutableArray<NucleusA11yElement *> *valueChanged = [NSMutableArray new];
     NSMutableArray<NucleusA11yElement *> *titleChanged = [NSMutableArray new];
     NSMutableArray<NucleusA11yElement *> *createdNodes = [NSMutableArray new];
+    // Live-region announcements collected during the parse pass. Each entry is
+    // (priority, text). Flushed at the end via NSAccessibilityAnnouncementRequested.
+    NSMutableArray<NSDictionary *> *announcements = [NSMutableArray new];
     BOOL anyFrameChanged = NO;
     BOOL selectionSetChanged = NO;
     uint64_t previousFocusedId = proj.focusedNodeId;
@@ -723,6 +770,24 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
             BOOL prevSelected = (el.flags & NucleusA11yFlagSelected) != 0;
             BOOL nextSelected = (flags & NucleusA11yFlagSelected) != 0;
             if (prevSelected != nextSelected) selectionSetChanged = YES;
+            // Live region: when the announceable text (label/value) of a
+            // LiveRegion node changes, queue an announcement at the matching
+            // priority. We announce the new value if present, else the label.
+            BOOL isLive = (flags & (NucleusA11yFlagLiveRegionPolite |
+                                    NucleusA11yFlagLiveRegionAssertive)) != 0;
+            if (isLive && (labelDiff || valueDiff)) {
+                NSString *text = (valueStr.length > 0 ? valueStr : label);
+                if (text.length > 0) {
+                    NSAccessibilityPriorityLevel pri =
+                        (flags & NucleusA11yFlagLiveRegionAssertive)
+                            ? NSAccessibilityPriorityHigh
+                            : NSAccessibilityPriorityMedium;
+                    [announcements addObject:@{
+                        NSAccessibilityAnnouncementKey: text,
+                        NSAccessibilityPriorityKey: @(pri),
+                    }];
+                }
+            }
         }
         el.taoView = proj.taoView;
         el.projection = proj;
@@ -839,6 +904,15 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         // list-style components).
         NSAccessibilityPostNotification(liveView,
                                         NSAccessibilitySelectedChildrenChangedNotification);
+    }
+    // Flush live-region announcements. The notification target should be the
+    // window so VoiceOver picks up the announcement regardless of focus.
+    if (canPost && announcements.count > 0) {
+        NSWindow *win = liveView.window;
+        for (NSDictionary *ann in announcements) {
+            NSAccessibilityPostNotificationWithUserInfo(
+                win, NSAccessibilityAnnouncementRequestedNotification, ann);
+        }
     }
     return YES;
 }

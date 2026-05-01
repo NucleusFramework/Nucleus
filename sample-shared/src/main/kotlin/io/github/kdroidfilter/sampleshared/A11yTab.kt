@@ -32,14 +32,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -66,6 +71,8 @@ fun A11yTab(
     var radioSelected by remember { mutableIntStateOf(0) }
     var sliderValue by remember { mutableFloatStateOf(0.5f) }
     var textValue by remember { mutableStateOf(TextFieldValue("hello")) }
+    var status by remember { mutableStateOf("Ready") }
+    var dialogOpen by remember { mutableStateOf(false) }
     val sliderRange = 0f..1f
 
     Column(
@@ -256,7 +263,65 @@ fun A11yTab(
             }
         }
 
+        // ── Live region (announces on text change) ────────────────────────
+        Section("Live region (assertive)") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                A11yButton(
+                    label = "Update status",
+                    onClick = {
+                        val ts = java.time.LocalTime.now().withNano(0)
+                        status = "Status updated at $ts"
+                    },
+                )
+                BasicText(
+                    text = status,
+                    modifier = Modifier.semantics {
+                        liveRegion = LiveRegionMode.Assertive
+                        contentDescription = status
+                    },
+                    style = labelStyle,
+                )
+            }
+        }
+
+        // ── Modal dialog ──────────────────────────────────────────────────
+        Section("Modal dialog") {
+            A11yButton(
+                label = "Open dialog",
+                onClick = { dialogOpen = true },
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
+    }
+
+    if (dialogOpen) {
+        Dialog(onDismissRequest = { dialogOpen = false }) {
+            Column(
+                modifier = Modifier
+                    .background(Color(0xFF1F2937), androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                    .padding(24.dp)
+                    .semantics {
+                        // IsDialog is auto-set by Compose's Dialog, but we
+                        // also expose a Dismiss action so VoiceOver can close
+                        // via VO+Esc.
+                        this[SemanticsProperties.IsDialog] = Unit
+                        dismiss { dialogOpen = false; true }
+                    },
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                BasicText(
+                    text = "Modal dialog",
+                    modifier = Modifier.semantics { heading() },
+                    style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 16.sp, fontWeight = FontWeight.Bold),
+                )
+                BasicText(
+                    text = "VoiceOver users press VO+Esc to dismiss.",
+                    style = labelStyle,
+                )
+                A11yButton(label = "Close", onClick = { dialogOpen = false })
+            }
+        }
     }
 }
 

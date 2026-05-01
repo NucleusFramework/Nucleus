@@ -112,6 +112,7 @@ internal class TaoSemanticsObserver(
         val pageDown = node.config.getOrNull(SemanticsActions.PageDown)?.action
         val pageLeft = node.config.getOrNull(SemanticsActions.PageLeft)?.action
         val pageRight = node.config.getOrNull(SemanticsActions.PageRight)?.action
+        val dismiss = node.config.getOrNull(SemanticsActions.Dismiss)?.action
         // Page actions are preferred when present (they correspond to AppKit's
         // "scroll by page" semantics that VO+Cmd+arrow triggers). Fall back to
         // ScrollBy with a heuristic step (~ a viewport's worth) if the node
@@ -140,6 +141,7 @@ internal class TaoSemanticsObserver(
                 onScrollDown = onScrollDown,
                 onScrollLeft = onScrollLeft,
                 onScrollRight = onScrollRight,
+                onDismiss = dismiss?.let { { it.invoke() } },
             ),
         )
 
@@ -255,6 +257,14 @@ internal class TaoSemanticsObserver(
         }
         if (isHeading) flags = flags or TaoA11yFlag.HEADING
         if (isPassword) flags = flags or TaoA11yFlag.PASSWORD
+        if (cfg.contains(SemanticsProperties.IsDialog)) flags = flags or TaoA11yFlag.MODAL
+        when (cfg.getOrNull(SemanticsProperties.LiveRegion)) {
+            androidx.compose.ui.semantics.LiveRegionMode.Polite ->
+                flags = flags or TaoA11yFlag.LIVE_REGION_POLITE
+            androidx.compose.ui.semantics.LiveRegionMode.Assertive ->
+                flags = flags or TaoA11yFlag.LIVE_REGION_ASSERTIVE
+            else -> Unit
+        }
 
         var actions = 0
         if (onClick) actions = actions or TaoA11yAction.CLICK
@@ -277,6 +287,7 @@ internal class TaoSemanticsObserver(
             actions = actions or TaoA11yAction.SCROLL_UP or TaoA11yAction.SCROLL_DOWN or
                 TaoA11yAction.SCROLL_LEFT or TaoA11yAction.SCROLL_RIGHT
         }
+        if (cfg.contains(SemanticsActions.Dismiss)) actions = actions or TaoA11yAction.DISMISS
 
         // Slider role implies enabled + element.
         if (role == TaoA11yRole.Slider) flags = flags or TaoA11yFlag.IS_ELEMENT
