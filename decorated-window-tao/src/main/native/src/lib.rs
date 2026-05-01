@@ -247,6 +247,10 @@ enum UserEvent {
         x: f64,
         y: f64,
     },
+    SetFullscreen {
+        handle: u64,
+        fullscreen: bool,
+    },
     Exit,
 }
 
@@ -563,6 +567,18 @@ fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_outer_position(tao::dpi::LogicalPosition::new(x, y));
+                        }
+                    }
+                }
+                UserEvent::SetFullscreen { handle, fullscreen } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            if fullscreen {
+                                w.set_fullscreen(Some(tao::window::Fullscreen::Borderless(None)));
+                            } else {
+                                w.set_fullscreen(None);
+                            }
                         }
                     }
                 }
@@ -992,6 +1008,20 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         handle: handle as u64,
         x,
         y,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetFullscreen(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    fullscreen: jboolean,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::SetFullscreen {
+        handle: handle as u64,
+        fullscreen: fullscreen != JNI_FALSE,
     });
 }
 

@@ -32,12 +32,15 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.WindowPlacement
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 
 @Composable
 fun ActionsTab(
     modifier: Modifier = Modifier,
     window: TaoWindow,
+    placement: WindowPlacement,
+    onPlacementChange: (WindowPlacement) -> Unit,
     onLog: (String) -> Unit,
     onOpenChildWindow: (enabled: Boolean, focusable: Boolean) -> Unit,
 ) {
@@ -88,6 +91,28 @@ fun ActionsTab(
                     window.show()
                     onLog("show() (auto)")
                 }.start()
+            }
+        }
+
+        SectionTitle("Placement (via WindowState)")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton(
+                label = "Floating" + if (placement == WindowPlacement.Floating) " ✓" else "",
+            ) {
+                onPlacementChange(WindowPlacement.Floating)
+                onLog("placement = Floating")
+            }
+            ActionButton(
+                label = "Maximized" + if (placement == WindowPlacement.Maximized) " ✓" else "",
+            ) {
+                onPlacementChange(WindowPlacement.Maximized)
+                onLog("placement = Maximized")
+            }
+            ActionButton(
+                label = "Fullscreen" + if (placement == WindowPlacement.Fullscreen) " ✓" else "",
+            ) {
+                onPlacementChange(WindowPlacement.Fullscreen)
+                onLog("placement = Fullscreen")
             }
         }
 

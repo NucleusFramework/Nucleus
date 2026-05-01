@@ -34,7 +34,6 @@ import androidx.compose.ui.window.rememberWindowState
  *  - User `content` lambda captures latest via `rememberUpdatedState`; state
  *    declared in the parent application scope and read inside `content`
  *    propagates via snapshot but does not share a CompositionContext.
- *  - `WindowPlacement.Fullscreen` not yet implemented.
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
@@ -99,8 +98,10 @@ fun ApplicationScope.DecoratedWindow(
         (state.position as? WindowPosition.Absolute)?.let { pos ->
             w.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
         }
-        if (state.placement == WindowPlacement.Maximized) {
-            w.setMaximized(true)
+        when (state.placement) {
+            WindowPlacement.Maximized -> w.setMaximized(true)
+            WindowPlacement.Fullscreen -> w.setFullscreen(true)
+            WindowPlacement.Floating -> Unit
         }
         if (state.isMinimized) {
             w.setMinimized(true)
@@ -147,10 +148,19 @@ fun ApplicationScope.DecoratedWindow(
     }
     LaunchedEffect(window, state.placement) {
         if (state.placement != applied.placement) {
+            // Always exit any active fullscreen/maximized state before applying
+            // the new placement — Tao on macOS animates the fullscreen
+            // transition and stacking the two calls without ordering can leave
+            // the window in a wedged state.
+            when (applied.placement) {
+                WindowPlacement.Fullscreen -> window.setFullscreen(false)
+                WindowPlacement.Maximized -> window.setMaximized(false)
+                else -> Unit
+            }
             when (state.placement) {
                 WindowPlacement.Maximized -> window.setMaximized(true)
-                WindowPlacement.Floating -> window.setMaximized(false)
-                else -> Unit // Fullscreen TODO
+                WindowPlacement.Fullscreen -> window.setFullscreen(true)
+                WindowPlacement.Floating -> Unit // already cleared above
             }
             applied.placement = state.placement
         }

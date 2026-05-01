@@ -80,6 +80,12 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, minimized)
     }
 
+    /** Borderless fullscreen on the current monitor (Tao's
+     *  `Fullscreen::Borderless(None)`). */
+    fun setFullscreen(fullscreen: Boolean) {
+        NativeTaoBridge.nativeSetFullscreen(handle, fullscreen)
+    }
+
     fun setAlwaysOnTop(alwaysOnTop: Boolean) {
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }

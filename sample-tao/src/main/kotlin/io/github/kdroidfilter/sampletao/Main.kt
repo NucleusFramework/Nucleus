@@ -148,6 +148,8 @@ private fun runApp() = taoApplicationComposable {
                     Tab.Actions -> ActionsTab(
                         modifier = Modifier.fillMaxSize(),
                         window = taoWindow,
+                        placement = mainState.placement,
+                        onPlacementChange = { mainState.placement = it },
                         onLog = { logEvent(events, it) },
                         onOpenChildWindow = { childEnabled, childFocusable ->
                             childRequest = childEnabled to childFocusable

@@ -169,6 +169,12 @@ internal object NativeTaoBridge {
         y: Double,
     )
 
+    @JvmStatic
+    external fun nativeSetFullscreen(
+        handle: Long,
+        fullscreen: Boolean,
+    )
+
     /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
     @JvmStatic
     external fun nativeSetCursorIcon(
