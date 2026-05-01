@@ -62,7 +62,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Auto,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val window = taoApplication.openWindow(
         title = title,
@@ -115,8 +115,8 @@ internal fun ApplicationScope.openDecoratedWindow(
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 28f }
     var buttonLayoutApplied = false
 
-    val scopeFactory: ColumnScope.() -> DecoratedWindowScope = {
-        object : DecoratedWindowScope, ColumnScope by this {
+    val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
+        object : TaoDecoratedWindowScope, ColumnScope by this {
             override val window: TaoWindow = window
             override val state: DecoratedWindowState get() = stateHolder.value
         }
@@ -202,7 +202,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
     onKeyEvent: (KeyEvent) -> Boolean,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostLinux(window)
     host.previewKeyHandler = onPreviewKeyEvent
@@ -210,8 +210,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
-    val scopeFactory: ColumnScope.() -> DecoratedWindowScope = {
-        object : DecoratedWindowScope, ColumnScope by this {
+    val scopeFactory: ColumnScope.() -> TaoDecoratedWindowScope = {
+        object : TaoDecoratedWindowScope, ColumnScope by this {
             override val window: TaoWindow = window
             override val state: DecoratedWindowState get() = stateHolder.value
         }
@@ -298,7 +298,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
     onKeyEvent: (KeyEvent) -> Boolean,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostWindows(window)
     host.previewKeyHandler = onPreviewKeyEvent
@@ -306,8 +306,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
-    val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> DecoratedWindowScope = {
-        object : DecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
+    val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> TaoDecoratedWindowScope = {
+        object : TaoDecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
             override val window: TaoWindow = window
             override val state: DecoratedWindowState get() = stateHolder.value
         }

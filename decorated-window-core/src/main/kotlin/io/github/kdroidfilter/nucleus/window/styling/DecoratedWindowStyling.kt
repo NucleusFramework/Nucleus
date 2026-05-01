@@ -34,5 +34,5 @@ data class DecoratedWindowMetrics(
 
 val LocalDecoratedWindowStyle =
     staticCompositionLocalOf<DecoratedWindowStyle> {
-        error("No DecoratedWindowStyle provided. Wrap your content with NucleusDecoratedWindowTheme.")
+        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults.darkWindowStyle()
     }

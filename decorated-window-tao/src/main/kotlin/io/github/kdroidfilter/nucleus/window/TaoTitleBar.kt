@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.window.tao
+package io.github.kdroidfilter.nucleus.window
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
@@ -20,14 +20,18 @@ import io.github.kdroidfilter.nucleus.window.ControlButtonsDirection
 import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.GenericTitleBarImpl
 import io.github.kdroidfilter.nucleus.window.TitleBarScope
+import io.github.kdroidfilter.nucleus.window.hasMacOSLargeCornerRadius
+import io.github.kdroidfilter.nucleus.window.hasNewFullscreenControls
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
+import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
+import io.github.kdroidfilter.nucleus.window.tao.TaoDecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
+import io.github.kdroidfilter.nucleus.window.tao.WindowControlsLinux
+import io.github.kdroidfilter.nucleus.window.tao.WindowControlsWindows
 import io.github.kdroidfilter.nucleus.window.utils.linux.rememberLinuxButtonLayout
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
-
-// Native traffic-lights occupy roughly the leftmost 78 points on macOS.
-private val NATIVE_BUTTONS_INSET_MACOS: Dp = 78.dp
 
 // KDE breeze gives the leading edge of its title bar a small padding so the
 // edge-most window control button doesn't sit flush against the window border.
@@ -67,12 +71,24 @@ fun DecoratedWindowScope.TitleBar(
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
-    val taoWindow = window
-    val currentState = state
+    // Tao always provides a [TaoDecoratedWindowScope] at runtime — cast so the
+    // public extension can stay on the abstract `core.DecoratedWindowScope`
+    // (drop-in compatible with jbr / jni call sites).
+    val taoScope = this as TaoDecoratedWindowScope
+    val taoWindow = taoScope.window
+    val currentState = taoScope.state
 
     // Publish the resolved height up to DecoratedWindow, which applies the
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
+
+    // Read parity-only modifier flags (consumed for swap-in API parity with
+    // jbr/jni; tao's macOS path already animates the menu-bar offset and
+    // applies the large corner radius via `MacOSStyle` at window creation).
+    @Suppress("UNUSED_VARIABLE")
+    val newFullscreenControls = modifier.hasNewFullscreenControls()
+    @Suppress("UNUSED_VARIABLE")
+    val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius()
 
     val linuxLayout = if (Platform.Current == Platform.Linux) rememberLinuxButtonLayout() else null
     val controlDir = controlButtonsDirection.resolve()
@@ -89,9 +105,14 @@ fun DecoratedWindowScope.TitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlDir,
-        applyTitleBar = { measuredHeight, _ ->
+        applyTitleBar = { measuredHeight, titleBarState ->
             heightHolder.value = measuredHeight.value
-            titleBarPadding(linuxLayout?.controlsOnRight)
+            titleBarPadding(
+                measuredHeight = measuredHeight,
+                isFullscreen = titleBarState.isFullscreen,
+                controlIsRtl = controlDir == LayoutDirection.Rtl,
+                linuxControlsOnRight = linuxLayout?.controlsOnRight,
+            )
         },
         backgroundContent = backgroundContent,
         content = { titleBarState ->
@@ -137,16 +158,32 @@ fun DecoratedWindowScope.TitleBar(
 
 /**
  * Platform-specific reservation insets returned to [GenericTitleBarImpl]'s
- * `applyTitleBar` callback. macOS reserves space for the native AppKit
- * traffic-light buttons; KDE Breeze pads the controls side to keep the
- * edge-most button off the window border.
+ * `applyTitleBar` callback. Mirrors `decorated-window-jni`'s `MacOSTitleBar`
+ * exactly:
+ * - macOS in fullscreen: 80 dp on the controls edge.
+ * - macOS otherwise: Apple's traffic-light formula
+ *   `2 * leftMargin + 2 * shrink * 20`, where `leftMargin = min(h/2, 20)` and
+ *   `shrink = min(h/28, 1)`. At the default 40 dp height this gives 80 dp.
+ * - KDE Breeze: 4 dp on the controls side.
  */
-private fun titleBarPadding(controlsOnRight: Boolean?): PaddingValues =
+private fun titleBarPadding(
+    measuredHeight: Dp,
+    isFullscreen: Boolean,
+    controlIsRtl: Boolean,
+    linuxControlsOnRight: Boolean?,
+): PaddingValues =
     when (Platform.Current) {
-        Platform.MacOS -> PaddingValues(start = NATIVE_BUTTONS_INSET_MACOS, end = NATIVE_BUTTONS_INSET_MACOS)
+        Platform.MacOS -> {
+            val inset = if (isFullscreen) {
+                MAC_FULLSCREEN_BUTTONS_INSET
+            } else {
+                macTrafficLightInset(measuredHeight)
+            }
+            if (controlIsRtl) PaddingValues(end = inset) else PaddingValues(start = inset)
+        }
         Platform.Linux -> {
-            if (isLinuxKde && controlsOnRight != null) {
-                if (controlsOnRight) {
+            if (isLinuxKde && linuxControlsOnRight != null) {
+                if (linuxControlsOnRight) {
                     PaddingValues(end = LINUX_KDE_EDGE_PADDING)
                 } else {
                     PaddingValues(start = LINUX_KDE_EDGE_PADDING)
@@ -157,6 +194,16 @@ private fun titleBarPadding(controlsOnRight: Boolean?): PaddingValues =
         }
         else -> PaddingValues(0.dp)
     }
+
+private val MAC_FULLSCREEN_BUTTONS_INSET: Dp = 80.dp
+
+@Suppress("MagicNumber")
+private fun macTrafficLightInset(height: Dp): Dp {
+    val h = height.value
+    val shrink = minOf(h / 28f, 1f)
+    val leftMargin = minOf(h / 2f, 20f)
+    return (2f * leftMargin + 2f * shrink * 20f).dp
+}
 
 // ── Drag ──────────────────────────────────────────────────────────────────
 

@@ -41,5 +41,5 @@ data class TitleBarMetrics(
 
 val LocalTitleBarStyle =
     staticCompositionLocalOf<TitleBarStyle> {
-        error("No TitleBarStyle provided. Wrap your content with NucleusDecoratedWindowTheme.")
+        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults.darkTitleBarStyle()
     }

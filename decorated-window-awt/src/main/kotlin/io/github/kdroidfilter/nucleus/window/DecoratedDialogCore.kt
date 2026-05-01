@@ -42,10 +42,8 @@ import java.awt.geom.Rectangle2D
 import java.awt.geom.RoundRectangle2D
 
 @Stable
-interface DecoratedDialogScope : DialogWindowScope {
+interface AwtDecoratedDialogScope : DecoratedDialogScope, DialogWindowScope {
     override val window: ComposeDialog
-
-    val state: DecoratedDialogState
 }
 
 object DecoratedDialogMeasurePolicy : MeasurePolicy {
@@ -90,47 +88,10 @@ object DecoratedDialogMeasurePolicy : MeasurePolicy {
     }
 }
 
-@Immutable
-@JvmInline
-value class DecoratedDialogState(
-    val state: ULong,
-) {
-    val isActive: Boolean
-        get() = state and Active != 0UL
-
-    fun copy(active: Boolean = isActive): DecoratedDialogState = of(active = active)
-
-    fun toDecoratedWindowState(): DecoratedWindowState =
-        DecoratedWindowState.of(
-            fullscreen = false,
-            minimized = false,
-            maximized = false,
-            active = isActive,
-        )
-
-    override fun toString(): String = "${javaClass.simpleName}(isActive=$isActive)"
-
-    companion object {
-        val Active: ULong = 1UL shl 0
-
-        fun of(active: Boolean = true): DecoratedDialogState =
-            DecoratedDialogState(
-                if (active) Active else 0UL,
-            )
-
-        fun of(window: ComposeDialog): DecoratedDialogState = of(active = window.isActive)
-    }
-}
-
-data class DialogTitleBarInfo(
-    val title: String,
-    val icon: Painter?,
-)
-
-val LocalDialogTitleBarInfo: ProvidableCompositionLocal<DialogTitleBarInfo> =
-    compositionLocalOf {
-        error("LocalDialogTitleBarInfo not provided, DialogTitleBar must be used in DecoratedDialog")
-    }
+/** AWT-bound factory for [DecoratedDialogState]. Defined as an extension so
+ *  the value class itself can stay in `decorated-window-core` (no AWT). */
+fun DecoratedDialogState.Companion.of(window: ComposeDialog): DecoratedDialogState =
+    of(active = window.isActive)
 
 /**
  * Shared body for DecoratedDialog, used by both JBR and JNI variants.
@@ -281,7 +242,7 @@ fun DialogWindowScope.DecoratedDialogBody(
         Layout(
             content = {
                 val scope =
-                    object : DecoratedDialogScope {
+                    object : AwtDecoratedDialogScope {
                         override val state: DecoratedDialogState
                             get() = decoratedDialogState
 

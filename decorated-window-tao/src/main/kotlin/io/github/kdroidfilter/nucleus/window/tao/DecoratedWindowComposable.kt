@@ -51,7 +51,7 @@ fun ApplicationScope.DecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Auto,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
     val latestPreview by rememberUpdatedState(onPreviewKeyEvent)

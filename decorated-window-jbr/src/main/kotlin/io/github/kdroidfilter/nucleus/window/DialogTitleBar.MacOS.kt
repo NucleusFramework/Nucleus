@@ -14,7 +14,7 @@ import io.github.kdroidfilter.nucleus.window.utils.WindowMouseEventEffect
 
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedDialogScope.MacOSDialogTitleBar(
+internal fun AwtDecoratedDialogScope.MacOSDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

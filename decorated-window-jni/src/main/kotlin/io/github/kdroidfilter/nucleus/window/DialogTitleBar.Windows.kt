@@ -17,7 +17,7 @@ import io.github.kdroidfilter.nucleus.window.utils.windows.JniWindowsWindowUtil
 
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedDialogScope.WindowsDialogTitleBar(
+internal fun AwtDecoratedDialogScope.WindowsDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

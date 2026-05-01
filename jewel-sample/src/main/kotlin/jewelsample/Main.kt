@@ -12,6 +12,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.application
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme

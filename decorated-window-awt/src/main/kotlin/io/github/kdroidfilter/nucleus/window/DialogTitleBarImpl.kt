@@ -12,7 +12,7 @@ import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedDialogScope.DialogTitleBarImpl(
+fun AwtDecoratedDialogScope.DialogTitleBarImpl(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
