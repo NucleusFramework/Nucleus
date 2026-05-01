@@ -8,7 +8,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.unit.DpSize
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -46,14 +48,17 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
 fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
     title: String = "",
+    icon: Painter? = null,
     width: Double = 800.0,
     height: Double = 600.0,
+    minimumSize: DpSize? = null,
     visible: Boolean = true,
     resizable: Boolean = true,
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Auto,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ): TaoWindow {
@@ -71,11 +76,15 @@ fun ApplicationScope.DecoratedWindow(
     )
 
     if (Platform.Current == Platform.Windows) {
-        return openDecoratedWindowWindows(window, title, visible, enabled, focusable, alwaysOnTop, onCloseRequest, onPreviewKeyEvent, content)
+        return openDecoratedWindowWindows(
+            window, title, visible, enabled, focusable, alwaysOnTop,
+            icon, minimumSize, onCloseRequest, onPreviewKeyEvent, onKeyEvent, content,
+        )
     }
 
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
     host.previewKeyHandler = onPreviewKeyEvent
+    host.keyHandler = onKeyEvent
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     // Single source of truth shared with the host (which feeds it as a top
     // inset to the PlatformContext) and the TitleBar composable (which
@@ -138,6 +147,8 @@ fun ApplicationScope.DecoratedWindow(
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
     if (!focusable) window.setFocusable(false)
+    minimumSize?.let { window.setMinimumSize(it.width.value.toDouble(), it.height.value.toDouble()) }
+    icon?.toRgbaIcon()?.let { (w, h, px) -> window.setIcon(w, h, px) }
 
     return window
 }
@@ -159,12 +170,16 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     enabled: Boolean,
     focusable: Boolean,
     alwaysOnTop: Boolean,
+    icon: Painter?,
+    minimumSize: DpSize?,
     onCloseRequest: () -> Unit,
     onPreviewKeyEvent: (KeyEvent) -> Boolean,
+    onKeyEvent: (KeyEvent) -> Boolean,
     content: @Composable DecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostWindows(window)
     host.previewKeyHandler = onPreviewKeyEvent
+    host.keyHandler = onKeyEvent
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
@@ -222,6 +237,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)
     if (!focusable) window.setFocusable(false)
+    minimumSize?.let { window.setMinimumSize(it.width.value.toDouble(), it.height.value.toDouble()) }
+    icon?.toRgbaIcon()?.let { (w, h, px) -> window.setIcon(w, h, px) }
 
     return window
 }

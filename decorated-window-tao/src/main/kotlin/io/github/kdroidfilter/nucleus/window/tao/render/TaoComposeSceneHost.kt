@@ -89,6 +89,13 @@ internal class TaoComposeSceneHost(
      */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
+    /**
+     * App-level post-dispatch hook. Fires only when the scene did not consume
+     * the event. Returning `true` marks it as handled. Mirrors
+     * `decorated-window-jni`'s `onKeyEvent`.
+     */
+    var keyHandler: ((KeyEvent) -> Boolean)? = null
+
     // Mirrors `PlatformWindowContext.desktop.kt` — Compose's `Popup` framework
     // reads `LocalWindowInfo.current.containerSize` to know how large the host
     // window is, which is the basis for the popup positioning math (see
@@ -374,7 +381,8 @@ internal class TaoComposeSceneHost(
             else -> return false
         }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
-        return sc.sendKeyEvent(composeEvent)
+        if (sc.sendKeyEvent(composeEvent)) return true
+        return keyHandler?.invoke(composeEvent) == true
     }
 
     private companion object {

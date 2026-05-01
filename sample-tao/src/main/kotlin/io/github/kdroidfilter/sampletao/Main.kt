@@ -34,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
@@ -60,6 +61,7 @@ private fun runApp() = taoApplication {
         title = "Tao Backend Demo",
         width = 1024.0,
         height = 720.0,
+        minimumSize = DpSize(640.dp, 480.dp),
         onPreviewKeyEvent = { event ->
             // Demo: consume Cmd/Ctrl+K so it never reaches Compose. Other keys
             // are still logged but pass through.

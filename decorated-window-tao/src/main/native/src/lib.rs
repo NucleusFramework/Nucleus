@@ -224,6 +224,19 @@ enum UserEvent {
         handle: u64,
         focusable: bool,
     },
+    SetMinInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the minimum".
+        width: f64,
+        height: f64,
+    },
+    SetWindowIcon {
+        handle: u64,
+        // Premultiplied RGBA pixel buffer, row-major. Empty `pixels` clears.
+        width: u32,
+        height: u32,
+        pixels: Vec<u8>,
+    },
     Exit,
 }
 
@@ -490,6 +503,32 @@ fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_focusable(focusable);
+                        }
+                    }
+                }
+                UserEvent::SetMinInnerSize { handle, width, height } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            if width < 0.0 || height < 0.0 {
+                                w.set_min_inner_size::<LogicalSize<f64>>(None);
+                            } else {
+                                w.set_min_inner_size(Some(LogicalSize::new(width, height)));
+                            }
+                        }
+                    }
+                }
+                UserEvent::SetWindowIcon { handle, width, height, pixels } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            if pixels.is_empty() || width == 0 || height == 0 {
+                                w.set_window_icon(None);
+                            } else if let Ok(icon) =
+                                tao::window::Icon::from_rgba(pixels, width, height)
+                            {
+                                w.set_window_icon(Some(icon));
+                            }
                         }
                     }
                 }
@@ -839,6 +878,48 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     let _ = proxy.send_event(UserEvent::SetFocusable {
         handle: handle as u64,
         focusable: focusable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetMinInnerSize(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jdouble,
+    height: jdouble,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::SetMinInnerSize {
+        handle: handle as u64,
+        width,
+        height,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetWindowIcon(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jint,
+    height: jint,
+    pixels: jni::objects::JByteArray,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let buf = if pixels.is_null() || width <= 0 || height <= 0 {
+        Vec::new()
+    } else {
+        match env.convert_byte_array(&pixels) {
+            Ok(b) => b,
+            Err(_) => return,
+        }
+    };
+    let _ = proxy.send_event(UserEvent::SetWindowIcon {
+        handle: handle as u64,
+        width: width.max(0) as u32,
+        height: height.max(0) as u32,
+        pixels: buf,
     });
 }
 

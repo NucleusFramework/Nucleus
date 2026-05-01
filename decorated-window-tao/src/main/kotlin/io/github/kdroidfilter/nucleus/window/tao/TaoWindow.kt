@@ -80,6 +80,18 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetFocusable(handle, focusable)
     }
 
+    /** Logical pixels. Pass `null` to clear the minimum. */
+    fun setMinimumSize(widthDp: Double?, heightDp: Double?) {
+        val w = widthDp ?: -1.0
+        val h = heightDp ?: -1.0
+        NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
+    }
+
+    /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
+    fun setIcon(width: Int, height: Int, pixels: ByteArray) {
+        NativeTaoBridge.nativeSetWindowIcon(handle, width, height, pixels)
+    }
+
     fun show() {
         NativeTaoBridge.nativeSetVisible(handle, true)
     }

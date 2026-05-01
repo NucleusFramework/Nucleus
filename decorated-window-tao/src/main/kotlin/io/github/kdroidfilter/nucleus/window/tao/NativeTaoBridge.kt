@@ -136,6 +136,23 @@ internal object NativeTaoBridge {
         focusable: Boolean,
     )
 
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMinInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
+    /** [pixels] is row-major premultiplied RGBA. Empty array clears the icon. */
+    @JvmStatic
+    external fun nativeSetWindowIcon(
+        handle: Long,
+        width: Int,
+        height: Int,
+        pixels: ByteArray,
+    )
+
     /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
     @JvmStatic
     external fun nativeSetCursorIcon(

@@ -58,6 +58,9 @@ internal class TaoComposeSceneHostWindows(
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
+    /** App-level post-dispatch hook. See [TaoComposeSceneHost.keyHandler]. */
+    var keyHandler: ((KeyEvent) -> Boolean)? = null
+
     private val windowInfo = WindowsTaoWindowInfo()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
@@ -300,7 +303,8 @@ internal class TaoComposeSceneHostWindows(
             else -> return false
         }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
-        return sc.sendKeyEvent(composeEvent)
+        if (sc.sendKeyEvent(composeEvent)) return true
+        return keyHandler?.invoke(composeEvent) == true
     }
 
     /** Push the latest title-bar height (in dp) down to the deco WndProc so
