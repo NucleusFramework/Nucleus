@@ -15,7 +15,7 @@ import androidx.compose.ui.platform.InspectorInfo
 import androidx.compose.ui.unit.toSize
 import com.jetbrains.WindowDecorations
 import io.github.kdroidfilter.nucleus.window.DecoratedDialogScope
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
 import java.awt.Window
@@ -97,7 +97,7 @@ private class RegisterClientRegionNode(
  * @param titleBar The platform window decorations object that receives hit test updates.
  */
 @Composable
-internal fun DecoratedWindowScope.WindowMouseEventEffect(titleBar: WindowDecorations.CustomTitleBar) {
+internal fun AwtDecoratedWindowScope.WindowMouseEventEffect(titleBar: WindowDecorations.CustomTitleBar) {
     WindowMouseEventEffectImpl(window, titleBar)
 }
 

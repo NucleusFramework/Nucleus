@@ -1,4 +1,3 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -17,10 +16,8 @@ val publishVersion =
 
 dependencies {
     api(project(":decorated-window-core"))
-    api(project(":decorated-window-awt"))
     implementation(project(":core-runtime"))
-    implementation(libs.compose.desktop.common)
-    implementation(libs.jbr.api)
+    api(libs.compose.desktop.common)
 }
 
 java {
@@ -34,35 +31,12 @@ kotlin {
     }
 }
 
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Objective-C JNI bridge into macOS dylibs (arm64 + x64)"
-    group = "build"
-    val nativeDir = file("src/main/native/macos")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "darwin-aarch64/libnucleus_macos.dylib")
-    onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs)
-    }
-}
-
 mavenPublishing {
-    coordinates("io.github.kdroidfilter", "nucleus.decorated-window-jbr", publishVersion)
+    coordinates("io.github.kdroidfilter", "nucleus.decorated-window-awt", publishVersion)
 
     pom {
-        name.set("Nucleus Decorated Window JBR")
-        description.set("JBR-based custom decorated window with native title bar for Compose Desktop")
+        name.set("Nucleus Decorated Window AWT")
+        description.set("AWT/Compose Desktop integration of Nucleus Decorated Window (consumed by JBR and JNI backends)")
         url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {

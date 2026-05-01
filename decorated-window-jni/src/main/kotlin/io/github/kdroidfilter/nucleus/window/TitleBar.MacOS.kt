@@ -36,7 +36,7 @@ private const val MENU_BAR_ANIMATION_MS = 200
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @Composable
-internal fun DecoratedWindowScope.MacOSTitleBar(
+internal fun AwtDecoratedWindowScope.MacOSTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

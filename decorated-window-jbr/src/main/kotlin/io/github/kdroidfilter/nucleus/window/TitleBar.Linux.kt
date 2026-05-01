@@ -17,7 +17,7 @@ import java.awt.event.MouseEvent
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedWindowScope.LinuxTitleBar(
+internal fun AwtDecoratedWindowScope.LinuxTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle,

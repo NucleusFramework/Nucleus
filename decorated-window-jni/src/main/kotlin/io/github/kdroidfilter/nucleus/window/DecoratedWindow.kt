@@ -86,7 +86,7 @@ fun DecoratedWindow(
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable AwtDecoratedWindowScope.() -> Unit,
 ) {
     val undecorated =
         when (Platform.Current) {

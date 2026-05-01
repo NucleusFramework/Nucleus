@@ -6,7 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import io.github.kdroidfilter.nucleus.window.ControlButtonsDirection
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.TitleBar
 import io.github.kdroidfilter.nucleus.window.TitleBarScope
@@ -23,7 +23,7 @@ import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
  */
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.MaterialTitleBar(
+fun AwtDecoratedWindowScope.MaterialTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

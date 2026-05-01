@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-internal fun Modifier.insideBorder(
+fun Modifier.insideBorder(
     width: Dp = 1.dp,
     color: Color,
     shape: Shape = RectangleShape,

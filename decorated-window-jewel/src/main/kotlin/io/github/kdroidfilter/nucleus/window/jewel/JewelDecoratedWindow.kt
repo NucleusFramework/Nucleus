@@ -8,7 +8,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import io.github.kdroidfilter.nucleus.window.DecoratedWindow
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import org.jetbrains.jewel.foundation.theme.JewelTheme
@@ -31,7 +31,7 @@ fun JewelDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable AwtDecoratedWindowScope.() -> Unit,
 ) {
     val colorScheme = JewelTheme.globalColors
     val windowStyle = rememberJewelWindowStyle()

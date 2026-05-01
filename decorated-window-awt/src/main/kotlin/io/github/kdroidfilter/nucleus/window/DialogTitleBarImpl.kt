@@ -24,7 +24,6 @@ fun DecoratedDialogScope.DialogTitleBarImpl(
 ) {
     val dialogState = state
     GenericTitleBarImpl(
-        window = window,
         state = dialogState.toDecoratedWindowState(),
         modifier = modifier,
         gradientStartColor = gradientStartColor,

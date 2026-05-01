@@ -17,7 +17,7 @@ import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
  */
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.TitleBar(
+fun AwtDecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

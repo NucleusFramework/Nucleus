@@ -5,7 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import io.github.kdroidfilter.nucleus.window.ControlButtonsDirection
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.TitleBar
 import io.github.kdroidfilter.nucleus.window.TitleBarScope
@@ -15,7 +15,7 @@ import org.jetbrains.jewel.foundation.theme.LocalContentColor
 
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.JewelTitleBar(
+fun AwtDecoratedWindowScope.JewelTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

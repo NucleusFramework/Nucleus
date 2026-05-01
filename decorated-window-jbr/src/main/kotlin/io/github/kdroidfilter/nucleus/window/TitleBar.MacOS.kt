@@ -56,7 +56,7 @@ private class NewFullscreenControlsNode(
 
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedWindowScope.MacOSTitleBar(
+internal fun AwtDecoratedWindowScope.MacOSTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
