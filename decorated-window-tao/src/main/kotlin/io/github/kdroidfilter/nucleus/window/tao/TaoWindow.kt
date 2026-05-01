@@ -10,7 +10,11 @@ class TaoWindow internal constructor(
     val handle: Long,
 ) {
     private var readyListener: ((Int, Int) -> Unit)? = null
-    private var resizedListener: ((Int, Int) -> Unit)? = null
+    // Multi-cast: the imperative `openDecoratedWindow` registers a listener
+    // for host-rendering, and the @Composable `DecoratedWindow` adds another
+    // for state-sync. They must coexist.
+    private val resizedListeners = mutableListOf<(Int, Int) -> Unit>()
+    private val movedListeners = mutableListOf<(Int, Int) -> Unit>()
     private var scaleFactorListener: ((Float) -> Unit)? = null
     private var closeRequestedListener: (() -> Unit)? = null
     private var destroyedListener: (() -> Unit)? = null
@@ -72,6 +76,10 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, true)
     }
 
+    fun setMinimized(minimized: Boolean) {
+        NativeTaoBridge.nativeSetMinimized(handle, minimized)
+    }
+
     fun setAlwaysOnTop(alwaysOnTop: Boolean) {
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
@@ -90,6 +98,21 @@ class TaoWindow internal constructor(
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
     fun setIcon(width: Int, height: Int, pixels: ByteArray) {
         NativeTaoBridge.nativeSetWindowIcon(handle, width, height, pixels)
+    }
+
+    /** Logical pixels (matches [TaoApplication.openWindow]'s `width`/`height`). */
+    fun setInnerSize(widthDp: Double, heightDp: Double) {
+        NativeTaoBridge.nativeSetInnerSize(handle, widthDp, heightDp)
+    }
+
+    /** Logical pixels. Top-left of the outer (decoration-inclusive) window. */
+    fun setOuterPosition(xDp: Double, yDp: Double) {
+        NativeTaoBridge.nativeSetOuterPosition(handle, xDp, yDp)
+    }
+
+    /** Multi-cast: fires on every native window move. [xPx]/[yPx] are physical pixels. */
+    fun onMoved(block: (xPx: Int, yPx: Int) -> Unit) {
+        movedListeners += block
     }
 
     fun show() {
@@ -111,8 +134,9 @@ class TaoWindow internal constructor(
         readyListener = block
     }
 
+    /** Multi-cast: every call adds a listener; all of them fire on each resize. */
     fun onResized(block: (width: Int, height: Int) -> Unit) {
-        resizedListener = block
+        resizedListeners += block
     }
 
     fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
@@ -179,7 +203,8 @@ class TaoWindow internal constructor(
     ) {
         when (code) {
             TaoEventCode.WINDOW_READY -> readyListener?.invoke(a, b)
-            TaoEventCode.RESIZED -> resizedListener?.invoke(a, b)
+            TaoEventCode.RESIZED -> resizedListeners.forEach { it.invoke(a, b) }
+            TaoEventCode.MOVED -> movedListeners.forEach { it.invoke(a, b) }
             TaoEventCode.SCALE_FACTOR_CHANGED -> scaleFactorListener?.invoke(a / 1000f)
             TaoEventCode.CLOSE_REQUESTED -> closeRequestedListener?.invoke()
             TaoEventCode.DESTROYED -> {

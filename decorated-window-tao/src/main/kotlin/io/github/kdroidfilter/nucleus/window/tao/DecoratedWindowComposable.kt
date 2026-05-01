@@ -9,33 +9,40 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
+import androidx.compose.ui.window.rememberWindowState
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
- * `decorated-window-jni`'s `DecoratedWindow` (sans `state`, which lands in a
- * future iteration). Reactive parameters (`title`, `alwaysOnTop`, `visible`,
- * `focusable`, `minimumSize`, `icon`) push to the underlying [TaoWindow] via
- * `LaunchedEffect`. Callback parameters (`onCloseRequest`, `onPreviewKeyEvent`,
- * `onKeyEvent`) are reactive without recreating the window.
+ * `decorated-window-jni`'s `DecoratedWindow`.
+ *
+ * Reactive parameters (`title`, `alwaysOnTop`, `visible`, `focusable`,
+ * `minimumSize`, `icon`, every field of [state]) push to the underlying
+ * [TaoWindow] via `LaunchedEffect`. Callback parameters (`onCloseRequest`,
+ * `onPreviewKeyEvent`, `onKeyEvent`) are reactive without recreating the
+ * window.
+ *
+ * State sync is bidirectional: when the user drags or resizes the window
+ * natively, [state] is updated. The `applied` snapshot guards against
+ * feedback loops so we don't write back values we ourselves originated.
  *
  * Limitations vs. `decorated-window-jni`:
- *  - `state: WindowState` not yet wired (size/position fixed at construction).
- *  - `enabled` only applies at construction.
- *  - `width`/`height` are construction-only (replaced by `state` when wired).
- *  - User `content` lambda captures latest via `rememberUpdatedState`, so
- *    state declared inside `content` recomposes normally; state declared in
- *    the parent application scope and *read* inside `content` propagates via
- *    snapshot, but does NOT share a CompositionContext (each window owns its
- *    own scene Composition).
+ *  - `enabled` only applies at construction (no live disabling yet).
+ *  - User `content` lambda captures latest via `rememberUpdatedState`; state
+ *    declared in the parent application scope and read inside `content`
+ *    propagates via snapshot but does not share a CompositionContext.
+ *  - `WindowPlacement.Fullscreen` not yet implemented.
  */
-@Suppress("LongParameterList", "FunctionNaming")
+@Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
 fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
+    state: WindowState = rememberWindowState(),
     title: String = "",
     icon: Painter? = null,
-    width: Double = 800.0,
-    height: Double = 600.0,
     minimumSize: DpSize? = null,
     visible: Boolean = true,
     resizable: Boolean = true,
@@ -51,31 +58,111 @@ fun ApplicationScope.DecoratedWindow(
     val latestPreview by rememberUpdatedState(onPreviewKeyEvent)
     val latestKey by rememberUpdatedState(onKeyEvent)
     val latestContent by rememberUpdatedState(content)
+    val latestState by rememberUpdatedState(state)
+
+    // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
+    // we wrote to the window so the native→state listeners can ignore echoes.
+    val applied = remember {
+        object {
+            var size: DpSize? = null
+            var position: WindowPosition? = null
+            var placement: WindowPlacement? = null
+            var isMinimized: Boolean? = null
+        }
+    }
 
     val window = remember {
-        openDecoratedWindow(
+        applied.size = state.size
+        applied.position = state.position
+        applied.placement = state.placement
+        applied.isMinimized = state.isMinimized
+
+        val w = openDecoratedWindow(
             onCloseRequest = { latestOnClose() },
             title = title,
             icon = icon,
-            width = width,
-            height = height,
+            width = state.size.width.value.toDouble(),
+            height = state.size.height.value.toDouble(),
             minimumSize = minimumSize,
-            visible = false, // controlled below by LaunchedEffect
+            visible = false,
             resizable = resizable,
             enabled = enabled,
             focusable = focusable,
-            alwaysOnTop = false, // applied below
+            alwaysOnTop = false,
             onPreviewKeyEvent = { latestPreview(it) },
             onKeyEvent = { latestKey(it) },
             macOSStyle = macOSStyle,
             content = { latestContent.invoke(this) },
         )
+
+        // Initial state application
+        (state.position as? WindowPosition.Absolute)?.let { pos ->
+            w.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
+        }
+        if (state.placement == WindowPlacement.Maximized) {
+            w.setMaximized(true)
+        }
+        if (state.isMinimized) {
+            w.setMinimized(true)
+        }
+
+        // Native → state sync (resize / move). Read scale per-event since the
+        // user can move the window between displays of differing densities.
+        w.onResized { wPx, hPx ->
+            val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
+            val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
+            if (newSize != applied.size) {
+                applied.size = newSize
+                latestState.size = newSize
+            }
+        }
+        w.onMoved { xPx, yPx ->
+            val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
+            val newPos = WindowPosition((xPx / scale).dp, (yPx / scale).dp)
+            if (newPos != applied.position) {
+                applied.position = newPos
+                latestState.position = newPos
+            }
+        }
+        w
     }
 
     DisposableEffect(window) {
         onDispose { window.requestClose() }
     }
 
+    // ── State → window sync ──
+    LaunchedEffect(window, state.size) {
+        if (state.size != applied.size) {
+            window.setInnerSize(state.size.width.value.toDouble(), state.size.height.value.toDouble())
+            applied.size = state.size
+        }
+    }
+    LaunchedEffect(window, state.position) {
+        val pos = state.position
+        if (pos is WindowPosition.Absolute && pos != applied.position) {
+            window.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
+            applied.position = pos
+        }
+    }
+    LaunchedEffect(window, state.placement) {
+        if (state.placement != applied.placement) {
+            when (state.placement) {
+                WindowPlacement.Maximized -> window.setMaximized(true)
+                WindowPlacement.Floating -> window.setMaximized(false)
+                else -> Unit // Fullscreen TODO
+            }
+            applied.placement = state.placement
+        }
+    }
+    LaunchedEffect(window, state.isMinimized) {
+        if (state.isMinimized != applied.isMinimized) {
+            window.setMinimized(state.isMinimized)
+            applied.isMinimized = state.isMinimized
+        }
+    }
+
+    // ── Other reactive params ──
     LaunchedEffect(window, title) { window.setTitle(title) }
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }

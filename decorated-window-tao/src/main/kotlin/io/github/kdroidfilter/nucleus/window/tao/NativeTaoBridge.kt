@@ -153,6 +153,22 @@ internal object NativeTaoBridge {
         pixels: ByteArray,
     )
 
+    /** Logical pixels. */
+    @JvmStatic
+    external fun nativeSetInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
+    /** Logical pixels. */
+    @JvmStatic
+    external fun nativeSetOuterPosition(
+        handle: Long,
+        x: Double,
+        y: Double,
+    )
+
     /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
     @JvmStatic
     external fun nativeSetCursorIcon(
@@ -248,6 +264,9 @@ object TaoEventCode {
      * the Compose Recomposer can run on the same thread as the Tao loop.
      */
     const val MAIN_EVENTS_CLEARED: Int = 20
+
+    /** `a`/`b` carry `x`/`y` in physical pixels. */
+    const val MOVED: Int = 21
 }
 
 /** Modifier-state bitmask that mirrors the Rust side. */

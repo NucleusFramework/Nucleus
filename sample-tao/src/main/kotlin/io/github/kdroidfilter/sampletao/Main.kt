@@ -36,6 +36,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
@@ -59,11 +60,11 @@ private fun runApp() = taoApplicationComposable {
     val previewEvents = remember { mutableStateListOf<String>() }
     var childRequest by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }
 
+    val mainState = rememberWindowState(size = DpSize(1024.dp, 720.dp))
     DecoratedWindow(
         onCloseRequest = ::exitApplication,
+        state = mainState,
         title = "Tao Backend Demo",
-        width = 1024.0,
-        height = 720.0,
         minimumSize = DpSize(640.dp, 480.dp),
         onPreviewKeyEvent = { event ->
             // Demo: consume Cmd/Ctrl+K so it never reaches Compose. Other keys
@@ -162,9 +163,8 @@ private fun runApp() = taoApplicationComposable {
     childRequest?.let { (childEnabled, childFocusable) ->
         DecoratedWindow(
             onCloseRequest = { childRequest = null },
+            state = rememberWindowState(size = DpSize(480.dp, 240.dp)),
             title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
-            width = 480.0,
-            height = 240.0,
             enabled = childEnabled,
             focusable = childFocusable,
         ) {

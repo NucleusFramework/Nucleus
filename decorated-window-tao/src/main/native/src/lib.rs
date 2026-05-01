@@ -582,6 +582,9 @@ fn run_event_loop_blocking() {
                     WindowEvent::Resized(size) => {
                         dispatch(handle, EVENT_RESIZED, size.width as jint, size.height as jint);
                     }
+                    WindowEvent::Moved(pos) => {
+                        dispatch(handle, EVENT_MOVED, pos.x, pos.y);
+                    }
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
                         dispatch(handle, EVENT_SCALE_FACTOR_CHANGED, (scale_factor * 1000.0) as jint, 0);
                     }
@@ -957,6 +960,38 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         width: width.max(0) as u32,
         height: height.max(0) as u32,
         pixels: buf,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetInnerSize(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jdouble,
+    height: jdouble,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::SetInnerSize {
+        handle: handle as u64,
+        width,
+        height,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetOuterPosition(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    x: jdouble,
+    y: jdouble,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::SetOuterPosition {
+        handle: handle as u64,
+        x,
+        y,
     });
 }
 
