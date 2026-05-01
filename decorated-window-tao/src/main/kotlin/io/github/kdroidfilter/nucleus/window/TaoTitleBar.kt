@@ -116,42 +116,30 @@ fun DecoratedWindowScope.TitleBar(
         },
         backgroundContent = backgroundContent,
         content = { titleBarState ->
-            // Linux + controls-on-left (rare KDE setup): controls placed via
-            // Modifier.align(Alignment.Start). Declare BEFORE user content so
-            // they appear at the start edge.
-            if (linuxLayout != null && !linuxLayout.controlsOnRight) {
-                WindowControlsLinux(
-                    win = taoWindow,
-                    state = titleBarState,
-                    isResizable = taoWindow.isResizable,
-                    layout = linuxLayout,
-                )
-            }
-
-            content(titleBarState)
-
-            // Windows: native min/max/close are not painted by DWM (the
-            // WndProc subclass returns HTCLIENT for the title bar zone),
-            // so the library injects its own Compose buttons here. The
-            // user does not see them on macOS, where AppKit traffic-light
-            // buttons are positioned by `nativeApplyButtonLayout`.
-            if (Platform.Current == Platform.Windows) {
-                WindowControlsWindows(
+            // Window controls are declared BEFORE user content so core's
+            // [TitleBarMeasurePolicy] places them at the extreme edge first
+            // (first-declared End item = rightmost in LTR; first-declared
+            // Start item = leftmost). Mirrors `decorated-window-jni`'s
+            // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
+            // ahead of `content()`.
+            when (Platform.Current) {
+                Platform.Linux -> if (linuxLayout != null) {
+                    WindowControlsLinux(
+                        win = taoWindow,
+                        state = titleBarState,
+                        isResizable = taoWindow.isResizable,
+                        layout = linuxLayout,
+                    )
+                }
+                Platform.Windows -> WindowControlsWindows(
                     win = taoWindow,
                     state = titleBarState,
                     modifier = Modifier.align(Alignment.End),
                 )
+                else -> Unit // macOS uses native AppKit traffic-lights
             }
 
-            // Linux + controls-on-right (default).
-            if (linuxLayout != null && linuxLayout.controlsOnRight) {
-                WindowControlsLinux(
-                    win = taoWindow,
-                    state = titleBarState,
-                    isResizable = taoWindow.isResizable,
-                    layout = linuxLayout,
-                )
-            }
+            content(titleBarState)
         },
     )
 }
