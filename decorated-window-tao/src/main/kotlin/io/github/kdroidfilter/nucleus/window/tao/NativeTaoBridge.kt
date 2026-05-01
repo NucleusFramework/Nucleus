@@ -241,6 +241,13 @@ object TaoEventCode {
     const val SCROLL_LINE: Int = 17
     const val SCROLL_PIXEL: Int = 18
     const val KEY_TYPED: Int = 19
+
+    /**
+     * Fired once per Tao event-loop iteration once every in-flight event has
+     * been processed. We use it to drain `TaoMainDispatcher`'s task queue so
+     * the Compose Recomposer can run on the same thread as the Tao loop.
+     */
+    const val MAIN_EVENTS_CLEARED: Int = 20
 }
 
 /** Modifier-state bitmask that mirrors the Rust side. */

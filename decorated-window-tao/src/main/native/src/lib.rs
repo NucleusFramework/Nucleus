@@ -237,6 +237,16 @@ enum UserEvent {
         height: u32,
         pixels: Vec<u8>,
     },
+    SetInnerSize {
+        handle: u64,
+        width: f64,
+        height: f64,
+    },
+    SetOuterPosition {
+        handle: u64,
+        x: f64,
+        y: f64,
+    },
     Exit,
 }
 
@@ -262,6 +272,14 @@ const EVENT_KEY_UP: jint = 15;
 // events without `isTypedEvent` for character insertion, so we must produce
 // these separately from the physical KEY_DOWN.
 const EVENT_KEY_TYPED: jint = 19;
+// Fired once per Tao event-loop iteration after all in-flight events have
+// been processed. Drives the JVM-side coroutine dispatcher pump
+// (`TaoMainDispatcher`) so the Compose Recomposer can apply changes between
+// platform events without spawning a worker thread.
+const EVENT_MAIN_EVENTS_CLEARED: jint = 20;
+// `a` and `b` carry x/y in physical pixels. Logical conversion is done on
+// the JVM side using the cached scale factor.
+const EVENT_MOVED: jint = 21;
 const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logical)
 // Scroll deltas come either as line counts (mouse wheel) or pixel deltas
 // (trackpad). Compose's `MacOSCocoaConfig` (cf. compose-multiplatform-core)
@@ -532,6 +550,22 @@ fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetInnerSize { handle, width, height } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_inner_size(LogicalSize::new(width, height));
+                        }
+                    }
+                }
+                UserEvent::SetOuterPosition { handle, x, y } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_outer_position(tao::dpi::LogicalPosition::new(x, y));
+                        }
+                    }
+                }
                 UserEvent::Exit => {
                     *control_flow = ControlFlow::Exit;
                 }
@@ -645,6 +679,9 @@ fn run_event_loop_blocking() {
                 if let Some(handle) = handle_for(window_id) {
                     dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
                 }
+            }
+            Event::MainEventsCleared => {
+                dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
             }
             _ => {}
         }

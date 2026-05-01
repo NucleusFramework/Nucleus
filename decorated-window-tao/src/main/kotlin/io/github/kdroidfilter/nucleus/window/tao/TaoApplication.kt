@@ -80,6 +80,7 @@ object TaoApplication {
                     onLaunched = null
                     cb?.invoke(this@TaoApplication)
                 }
+                TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
                 else -> lookup(handle)?.dispatch(code, a, b)
             }
         }

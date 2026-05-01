@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
+import io.github.kdroidfilter.nucleus.window.tao.taoApplicationComposable
 import io.github.kdroidfilter.nucleus.window.tao.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import io.github.kdroidfilter.sampleshared.EventsTab
@@ -54,8 +55,10 @@ fun main() {
     runApp()
 }
 
-private fun runApp() = taoApplication {
-    val previewEvents = mutableStateListOf<String>()
+private fun runApp() = taoApplicationComposable {
+    val previewEvents = remember { mutableStateListOf<String>() }
+    var childRequest by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }
+
     DecoratedWindow(
         onCloseRequest = ::exitApplication,
         title = "Tao Backend Demo",
@@ -146,34 +149,37 @@ private fun runApp() = taoApplication {
                         window = taoWindow,
                         onLog = { logEvent(events, it) },
                         onOpenChildWindow = { childEnabled, childFocusable ->
-                            lateinit var childWindow: io.github.kdroidfilter.nucleus.window.tao.TaoWindow
-                            childWindow = DecoratedWindow(
-                                onCloseRequest = { childWindow.requestClose() },
-                                title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
-                                width = 480.0,
-                                height = 240.0,
-                                enabled = childEnabled,
-                                focusable = childFocusable,
-                            ) {
-                                Box(
-                                    modifier = Modifier.fillMaxSize().background(Color(0xFF15171C)),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    BasicText(
-                                        text = buildString {
-                                            append("enabled=$childEnabled · focusable=$childFocusable\n")
-                                            if (!childEnabled) append("→ pointer + key events ignored\n")
-                                            if (!childFocusable) append("→ window can't become key")
-                                        },
-                                        style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
-                                    )
-                                }
-                            }
+                            childRequest = childEnabled to childFocusable
                             logEvent(events, "openChildWindow(enabled=$childEnabled, focusable=$childFocusable)")
                         },
                     )
                     Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                 }
+            }
+        }
+    }
+
+    childRequest?.let { (childEnabled, childFocusable) ->
+        DecoratedWindow(
+            onCloseRequest = { childRequest = null },
+            title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
+            width = 480.0,
+            height = 240.0,
+            enabled = childEnabled,
+            focusable = childFocusable,
+        ) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color(0xFF15171C)),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(
+                    text = buildString {
+                        append("enabled=$childEnabled · focusable=$childFocusable\n")
+                        if (!childEnabled) append("→ pointer + key events ignored\n")
+                        if (!childFocusable) append("→ window can't become key")
+                    },
+                    style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
+                )
             }
         }
     }
