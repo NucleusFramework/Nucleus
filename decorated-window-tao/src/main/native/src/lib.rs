@@ -294,6 +294,35 @@ pub extern "C" fn nucleus_tao_a11y_set_text(
     }
 }
 
+/// Called from `objc/a11y.m` when VoiceOver invokes a Compose-defined custom
+/// accessibility action (VO+Cmd+. menu). `action_index` is the position of
+/// the action in the per-node list pushed via the wire format.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_invoke_custom_action(
+    ns_view_handle: i64,
+    node_id: u64,
+    action_index: i32,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11yCustomAction",
+            "(JJI)V",
+            &[
+                JValue::Long(ns_view_handle),
+                JValue::Long(node_id as i64),
+                JValue::Int(action_index),
+            ],
+        );
+    }
+}
+
 /// Called from `objc/a11y.m` when VoiceOver places the caret / extends the
 /// selection inside a text field (`setAccessibilitySelectedTextRange:`).
 /// Routed to Compose's `SemanticsActions.SetSelection`.

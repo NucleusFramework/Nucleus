@@ -32,10 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.dismiss
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
@@ -260,6 +262,35 @@ fun A11yTab(
                     },
                     style = labelStyle,
                 )
+            }
+        }
+
+        // ── Custom actions (VO+Cmd+. menu) ────────────────────────────────
+        Section("Custom actions") {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF1F2937))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = "Notification (clicks: $clicks)"
+                            customActions = listOf(
+                                CustomAccessibilityAction("Mark as read") {
+                                    clicks += 100; true
+                                },
+                                CustomAccessibilityAction("Archive") {
+                                    clicks += 1000; true
+                                },
+                            )
+                        },
+                ) {
+                    BasicText(
+                        text = "Notification — VO+Cmd+.",
+                        style = labelStyle,
+                    )
+                }
             }
         }
 

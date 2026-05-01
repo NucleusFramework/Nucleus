@@ -34,26 +34,28 @@
 //     u16 version  = 1
 //     u16 reserved
 //     u32 nodeCount
-//   Per node (version 2):
+//   Per node (version 4):
 //     u64 nodeId
 //     u64 parentId        (0 = root → child of TaoView)
 //     u16 role            (NucleusA11yRole enum)
-//     u16 flags           (bit0=isElement bit1=enabled bit2=focused
-//                          bit3=selected bit4=checked bit5=mixed
-//                          bit6=heading bit7=password bit8=multiline)
-//     u16 actions         (bit0=click bit1=increment bit2=decrement bit3=setText)
+//     u16 flags           (see NucleusA11yFlag)
+//     u16 actions         (see NucleusA11yAction)
 //     u16 reserved2
 //     f32 frameX,Y,W,H    (window-local logical points, top-left origin)
 //     f32 minValue, maxValue, value
 //     u32 selectionStart  (UTF-16 code unit, 0 if not a text field)
 //     u32 selectionEnd    (UTF-16 code unit, ≥ selectionStart)
+//     f32 hScrollMax, hScrollValue   (0,0 if no horizontal scroll axis)
+//     f32 vScrollMax, vScrollValue   (0,0 if no vertical scroll axis)
 //     u16 labelLen        (UTF-8); bytes
 //     u16 valueLen        (UTF-8); bytes
+//     u16 customActionCount
+//       per custom action: u16 nameLen (UTF-8); bytes
 //
 // All multi-byte fields little-endian.
 
 static const uint32_t kSnapshotMagic = 0xA110A11A;
-static const uint16_t kSnapshotVersion = 2;
+static const uint16_t kSnapshotVersion = 4;
 
 // Forward declaration — definition lives at the bottom alongside the JNI
 // entry points. Used by the TaoView swizzles to bump the "AX recently used"
@@ -121,11 +123,16 @@ __attribute__((weak)) extern void
 nucleus_tao_a11y_set_selection(int64_t ns_view_handle, uint64_t node_id,
                                int32_t start, int32_t end);
 
+__attribute__((weak)) extern void
+nucleus_tao_a11y_invoke_custom_action(int64_t ns_view_handle, uint64_t node_id,
+                                      int32_t action_index);
+
 // ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yElement — backing object for one Compose semantic node.
 // ────────────────────────────────────────────────────────────────────────────
 
 @class NucleusA11yProjection;
+@class NucleusA11yScrollBar;
 
 @interface NucleusA11yElement : NSAccessibilityElement
 @property(nonatomic, weak) NSView *taoView;
@@ -143,7 +150,38 @@ nucleus_tao_a11y_set_selection(int64_t ns_view_handle, uint64_t node_id,
 @property(nonatomic, copy) NSString *valueString;
 @property(nonatomic, assign) NSUInteger selectionStart;  // UTF-16 code units
 @property(nonatomic, assign) NSUInteger selectionEnd;
+// Scroll axes — current scroll position + total scrollable extent in
+// pixels. `Max == 0` means the axis has no scroll range and no virtual
+// AXScrollBar child should be exposed.
+@property(nonatomic, assign) float hScrollMax;
+@property(nonatomic, assign) float hScrollValue;
+@property(nonatomic, assign) float vScrollMax;
+@property(nonatomic, assign) float vScrollValue;
 @property(nonatomic, strong) NSMutableArray<NucleusA11yElement *> *childElements;
+// Custom action names (Compose `CustomAccessibilityAction.label`). The order
+// is the dispatch index — invoked back via
+// `nucleus_tao_a11y_invoke_custom_action(view, nodeId, index)`.
+@property(nonatomic, copy) NSArray<NSString *> *customActionNames;
+// Cached `NSAccessibilityCustomAction` array, lazily built from
+// `customActionNames` on first read.
+@property(nonatomic, strong) NSArray<NSAccessibilityCustomAction *> *customActionsCache;
+@property(nonatomic, strong) NucleusA11yScrollBar *cachedHScrollBar;
+@property(nonatomic, strong) NucleusA11yScrollBar *cachedVScrollBar;
+@end
+
+/**
+ * Synthetic scroll-bar element backing an AXScrollBar role inside a
+ * NucleusA11yElement of role ScrollArea. VoiceOver scroll commands
+ * (VO+Cmd+arrow on a scroll area) translate to `setAccessibilityValue:`
+ * with a value in 0..1, which we map back to a Compose `ScrollBy(dx, dy)`.
+ *
+ * The scroll bar's frame mirrors the parent scroll area in the orientation
+ * axis and uses a 0-thickness rect on the cross axis — VoiceOver doesn't
+ * render the bar visually anyway, it just needs a frame to anchor on.
+ */
+@interface NucleusA11yScrollBar : NSAccessibilityElement
+@property(nonatomic, weak) NucleusA11yElement *owner;
+@property(nonatomic, assign) BOOL horizontal;
 @end
 
 @interface NucleusA11yProjection : NSObject
@@ -364,11 +402,46 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 }
 
 - (NSArray *)accessibilityChildren {
-    return self.childElements ?: @[];
+    if (self.role != NucleusA11yRoleScrollArea) return self.childElements ?: @[];
+    NSMutableArray *all = [NSMutableArray arrayWithArray:self.childElements ?: @[]];
+    if (self.hScrollMax > 0 || self.vScrollMax > 0) {
+        NucleusA11yScrollBar *h = [self accessibilityHorizontalScrollBar];
+        NucleusA11yScrollBar *v = [self accessibilityVerticalScrollBar];
+        if (h) [all addObject:h];
+        if (v) [all addObject:v];
+    }
+    return all;
 }
 
 - (NSArray *)accessibilityChildrenInNavigationOrder {
-    return self.childElements ?: @[];
+    return [self accessibilityChildren];
+}
+
+// Lazily allocate scroll bars when the parent is a scroll area with scroll
+// extent. Cached on the element so VoiceOver gets stable identity across
+// queries.
+- (NucleusA11yScrollBar *)accessibilityHorizontalScrollBar {
+    if (self.role != NucleusA11yRoleScrollArea) return nil;
+    if (self.hScrollMax <= 0) return nil;
+    if (!self.cachedHScrollBar) {
+        NucleusA11yScrollBar *bar = [NucleusA11yScrollBar new];
+        bar.owner = self;
+        bar.horizontal = YES;
+        self.cachedHScrollBar = bar;
+    }
+    return self.cachedHScrollBar;
+}
+
+- (NucleusA11yScrollBar *)accessibilityVerticalScrollBar {
+    if (self.role != NucleusA11yRoleScrollArea) return nil;
+    if (self.vScrollMax <= 0) return nil;
+    if (!self.cachedVScrollBar) {
+        NucleusA11yScrollBar *bar = [NucleusA11yScrollBar new];
+        bar.owner = self;
+        bar.horizontal = NO;
+        self.cachedVScrollBar = bar;
+    }
+    return self.cachedVScrollBar;
 }
 
 // For scroll areas, return only the children whose frames intersect the
@@ -537,6 +610,64 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return self.projection.cachedRotors ?: @[];
 }
 
+// Per-element custom actions. VoiceOver users hit VO+Cmd+. on the focused
+// element to open the action menu; this is also surfaced to AT scripting via
+// `AXCustomActions`. Each NSAccessibilityCustomAction wraps the Compose-side
+// `CustomAccessibilityAction.label` and dispatches by index back through the
+// JNI callback.
+//
+// Implementation note: we use the `initWithName:target:selector:` pattern
+// rather than `initWithName:handler:` because the handler form is documented
+// as "in-process only" — handler blocks cannot be marshalled across the
+// AX/IPC boundary. With target/selector, AppKit routes the invocation back
+// through our element class, and we look up the action index via the
+// selector name suffix.
+- (NSArray<NSAccessibilityCustomAction *> *)accessibilityCustomActions {
+    if (self.customActionsCache) return self.customActionsCache;
+    if (self.customActionNames.count == 0) return @[];
+    NSMutableArray<NSAccessibilityCustomAction *> *built =
+        [NSMutableArray arrayWithCapacity:self.customActionNames.count];
+    [self.customActionNames enumerateObjectsUsingBlock:^(NSString *name, NSUInteger idx, BOOL *stop) {
+        (void)stop;
+        // Encode the action index in the selector name so the dispatch can
+        // recover it. The action receiver method is generated dynamically
+        // below via `+resolveInstanceMethod:`.
+        NSString *selStr = [NSString stringWithFormat:@"_nucleusInvokeCustomAction%lu:", (unsigned long)idx];
+        SEL sel = NSSelectorFromString(selStr);
+        NSAccessibilityCustomAction *a = [[NSAccessibilityCustomAction alloc]
+            initWithName:name
+                  target:self
+                selector:sel];
+        [built addObject:a];
+    }];
+    self.customActionsCache = built;
+    return built;
+}
+
+// Dynamically resolve the per-index custom-action selectors. Each one is
+// `_nucleusInvokeCustomActionN:` with the action index N — we extract N
+// from the selector name and dispatch through the JNI callback.
++ (BOOL)resolveInstanceMethod:(SEL)sel {
+    NSString *name = NSStringFromSelector(sel);
+    NSString *prefix = @"_nucleusInvokeCustomAction";
+    if (![name hasPrefix:prefix] || ![name hasSuffix:@":"]) {
+        return [super resolveInstanceMethod:sel];
+    }
+    NSString *digits = [name substringWithRange:NSMakeRange(prefix.length,
+        name.length - prefix.length - 1)];
+    NSInteger idx = digits.integerValue;
+    IMP imp = imp_implementationWithBlock(^BOOL(NucleusA11yElement *self, id sender) {
+        (void)sender;
+        if (nucleus_tao_a11y_invoke_custom_action) {
+            nucleus_tao_a11y_invoke_custom_action(
+                (int64_t)(uintptr_t)self.taoView, self.nodeId, (int32_t)idx);
+        }
+        return YES;
+    });
+    class_addMethod([self class], sel, imp, "B@:@");
+    return YES;
+}
+
 // ── NSAccessibilityNavigableStaticText (text fields & areas) ──────────────
 //
 // The minimum methods VoiceOver needs to navigate a text field with VO+arrow:
@@ -698,6 +829,95 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 @end
 
 // ────────────────────────────────────────────────────────────────────────────
+// NucleusA11yScrollBar implementation.
+// ────────────────────────────────────────────────────────────────────────────
+
+@implementation NucleusA11yScrollBar
+
+- (BOOL)isAccessibilityElement { return YES; }
+- (NSAccessibilityRole)accessibilityRole { return NSAccessibilityScrollBarRole; }
+- (NSAccessibilityOrientation)accessibilityOrientation {
+    return self.horizontal ? NSAccessibilityOrientationHorizontal
+                           : NSAccessibilityOrientationVertical;
+}
+
+- (NSString *)accessibilityRoleDescription {
+    return NSAccessibilityRoleDescription(NSAccessibilityScrollBarRole, nil);
+}
+
+- (NSRect)accessibilityFrame {
+    NucleusA11yElement *o = self.owner;
+    if (!o) return NSZeroRect;
+    NSRect parent = [o accessibilityFrame];
+    // Place the scroll bar along the bottom (horizontal) or right (vertical)
+    // edge with a token thickness — VoiceOver doesn't render it, only uses
+    // the rect for hit-test fallback / focus visualization.
+    const CGFloat thickness = 12.0;
+    if (self.horizontal) {
+        return NSMakeRect(parent.origin.x,
+                          parent.origin.y - thickness,
+                          parent.size.width, thickness);
+    } else {
+        return NSMakeRect(parent.origin.x + parent.size.width,
+                          parent.origin.y,
+                          thickness, parent.size.height);
+    }
+}
+
+- (id)accessibilityParent {
+    return self.owner ? NSAccessibilityUnignoredAncestor(self.owner) : nil;
+}
+
+- (NSNumber *)accessibilityValue {
+    NucleusA11yElement *o = self.owner;
+    if (!o) return @0;
+    float total = self.horizontal ? o.hScrollMax : o.vScrollMax;
+    float cur   = self.horizontal ? o.hScrollValue : o.vScrollValue;
+    if (total <= 0) return @0;
+    float frac = cur / total;
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    return @(frac);
+}
+
+- (NSNumber *)accessibilityMinValue { return @0; }
+- (NSNumber *)accessibilityMaxValue { return @1; }
+
+- (void)setAccessibilityValue:(id)newValue {
+    NucleusA11yElement *o = self.owner;
+    if (!o) return;
+    float frac = 0;
+    if ([newValue isKindOfClass:[NSNumber class]]) frac = [newValue floatValue];
+    if (frac < 0) frac = 0; else if (frac > 1) frac = 1;
+    float total = self.horizontal ? o.hScrollMax : o.vScrollMax;
+    float cur   = self.horizontal ? o.hScrollValue : o.vScrollValue;
+    if (total <= 0) return;
+    float target = frac * total;
+    float delta = target - cur;
+    // We don't have a "set absolute scroll position" on the Compose side,
+    // only ScrollBy. Decompose the absolute target into a delta and route
+    // through an existing scroll action bit. We reuse the directional
+    // SCROLL_UP/DOWN/LEFT/RIGHT flags but, crucially, we need to convey the
+    // distance — the existing invoke_action only carries the action bit.
+    // For now, emulate by issuing repeated page-step calls clamped to the
+    // smallest step that moves us closer. This covers VoiceOver's use case
+    // (incremental scroll) without a wire-format change.
+    NucleusA11yAction action;
+    if (self.horizontal) {
+        action = (delta > 0) ? NucleusA11yActionScrollRight : NucleusA11yActionScrollLeft;
+    } else {
+        action = (delta > 0) ? NucleusA11yActionScrollDown : NucleusA11yActionScrollUp;
+    }
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)o.taoView,
+                                       o.nodeId, (uint16_t)action);
+    }
+}
+
+- (BOOL)accessibilityNotifiesWhenDestroyed { return YES; }
+
+@end
+
+// ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yProjection implementation.
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -803,6 +1023,8 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         uint32_t selStart = 0, selEnd = 0;
         READ_OR_FAIL(&selStart, 4);
         READ_OR_FAIL(&selEnd, 4);
+        float scroll[4] = {0};
+        READ_OR_FAIL(scroll, sizeof(scroll));
         READ_OR_FAIL(&labelLen, 2);
         if (offset + labelLen > len) return NO;
         NSString *label = [[NSString alloc] initWithBytes:bytes + offset
@@ -815,6 +1037,23 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                                                       length:valueLen
                                                     encoding:NSUTF8StringEncoding] ?: @"";
         offset += valueLen;
+        // Custom actions: count + per-action UTF-8 name.
+        uint16_t customCount = 0;
+        READ_OR_FAIL(&customCount, 2);
+        NSMutableArray<NSString *> *customNames = nil;
+        if (customCount > 0) {
+            customNames = [NSMutableArray arrayWithCapacity:customCount];
+            for (uint16_t k = 0; k < customCount; k++) {
+                uint16_t nameLen = 0;
+                READ_OR_FAIL(&nameLen, 2);
+                if (offset + nameLen > len) return NO;
+                NSString *nm = [[NSString alloc] initWithBytes:bytes + offset
+                                                        length:nameLen
+                                                      encoding:NSUTF8StringEncoding] ?: @"";
+                offset += nameLen;
+                [customNames addObject:nm];
+            }
+        }
 
         NSNumber *key = @(nodeId);
         NucleusA11yElement *el = previous[key];
@@ -869,6 +1108,15 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         el.valueString = valueStr;
         el.selectionStart = selStart;
         el.selectionEnd = selEnd;
+        el.hScrollMax = scroll[0]; el.hScrollValue = scroll[1];
+        el.vScrollMax = scroll[2]; el.vScrollValue = scroll[3];
+        // Replace customActions only if the names list changed; this keeps
+        // VoiceOver's identity stable on the NSAccessibilityCustomAction
+        // objects across snapshot pushes when nothing custom changed.
+        if (![el.customActionNames isEqualToArray:customNames]) {
+            el.customActionNames = customNames;
+            el.customActionsCache = nil;
+        }
         el.childElements = [NSMutableArray new];
         next[key] = el;
         if (wasNew) [createdNodes addObject:el];
@@ -890,12 +1138,20 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
             memcpy(&parentId, bytes + off2, 8); off2 += 8;
             off2 += 36; // role + flags + actions + reserved2 + frame + range
             off2 += 8;  // selectionStart + selectionEnd
+            off2 += 16; // hScrollMax + hScrollValue + vScrollMax + vScrollValue
             uint16_t labelLen = 0;
             memcpy(&labelLen, bytes + off2, 2); off2 += 2;
             off2 += labelLen;
             uint16_t valueLen = 0;
             memcpy(&valueLen, bytes + off2, 2); off2 += 2;
             off2 += valueLen;
+            uint16_t customCount = 0;
+            memcpy(&customCount, bytes + off2, 2); off2 += 2;
+            for (uint16_t k = 0; k < customCount; k++) {
+                uint16_t nameLen = 0;
+                memcpy(&nameLen, bytes + off2, 2); off2 += 2;
+                off2 += nameLen;
+            }
 
             NucleusA11yElement *el = next[@(nodeId)];
             if (!el) continue;

@@ -68,6 +68,10 @@ internal class TaoSemanticsObserver(
      */
     fun syncIfDirty() {
         if (!dirty || controller.isDisposed) return
+        // Refresh the gating decision: if an AX client has touched the tree
+        // since our last push, the next `pushSnapshot` MUST go through even
+        // if we'd otherwise be in the idle window.
+        controller.maybeForceResync()
         dirty = false
         val nodes = ArrayList<TaoA11yNode>(64)
         val liveIds = HashSet<Long>()
@@ -114,6 +118,8 @@ internal class TaoSemanticsObserver(
         val pageRight = node.config.getOrNull(SemanticsActions.PageRight)?.action
         val dismiss = node.config.getOrNull(SemanticsActions.Dismiss)?.action
         val setSelection = node.config.getOrNull(SemanticsActions.SetSelection)?.action
+        val customActionsList: List<androidx.compose.ui.semantics.CustomAccessibilityAction> =
+            node.config.getOrNull(SemanticsActions.CustomActions) ?: emptyList()
         // Page actions are preferred when present (they correspond to AppKit's
         // "scroll by page" semantics that VO+Cmd+arrow triggers). Fall back to
         // ScrollBy with a heuristic step (~ a viewport's worth) if the node
@@ -149,12 +155,22 @@ internal class TaoSemanticsObserver(
                     // to mean "set the editable cursor / selection directly".
                     { start, end -> fn.invoke(start, end, false) }
                 },
+                customActions = customActionsList.map { ca -> { ca.action.invoke() } },
             ),
         )
 
         val label = computeLabel(node)
         val valueString = computeValueString(node)
         val rangeInfo = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+        val hRange = node.config.getOrNull(SemanticsProperties.HorizontalScrollAxisRange)
+        val vRange = node.config.getOrNull(SemanticsProperties.VerticalScrollAxisRange)
+        // ScrollAxisRange exposes value/maxValue as `() -> Float` lambdas
+        // (re-evaluated every frame). Capture the current snapshot here —
+        // VoiceOver re-queries via the AXScrollBar setter on each scroll.
+        val hScrollMax = hRange?.maxValue?.invoke() ?: 0f
+        val hScrollValue = hRange?.value?.invoke() ?: 0f
+        val vScrollMax = vRange?.maxValue?.invoke() ?: 0f
+        val vScrollValue = vRange?.value?.invoke() ?: 0f
         val selection = node.config.getOrNull(SemanticsProperties.TextSelectionRange)
         val (selStart, selEnd) = if (selection != null) {
             // Compose stores selection as [TextRange] over the editable text's
@@ -183,8 +199,13 @@ internal class TaoSemanticsObserver(
                 numericValue = rangeInfo?.current ?: 0f,
                 selectionStart = selStart,
                 selectionEnd = selEnd,
+                hScrollMax = hScrollMax,
+                hScrollValue = hScrollValue,
+                vScrollMax = vScrollMax,
+                vScrollValue = vScrollValue,
                 label = label,
                 valueString = valueString,
+                customActions = customActionsList.map { it.label },
             ),
         )
 

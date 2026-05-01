@@ -47,8 +47,19 @@ data class TaoA11yNode(
     val numericValue: Float = 0f,
     val selectionStart: Int = 0,
     val selectionEnd: Int = 0,
+    /** Horizontal scroll axis: total scrollable extent. 0 = no horizontal scroll. */
+    val hScrollMax: Float = 0f,
+    val hScrollValue: Float = 0f,
+    val vScrollMax: Float = 0f,
+    val vScrollValue: Float = 0f,
     val label: String = "",
     val valueString: String = "",
+    /**
+     * Compose-defined custom action labels. Their dispatch index is the
+     * position in this list; native invokes them back via
+     * `dispatchA11yCustomAction(nsView, nodeId, index)`.
+     */
+    val customActions: List<String> = emptyList(),
 )
 
 @Suppress("MagicNumber")
@@ -145,6 +156,10 @@ internal object TaoAccessibilityRegistry {
     fun dispatchSetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
         byNsView[nsView]?.onSetSelectionInvoked(nodeId, start, end)
     }
+
+    fun dispatchCustomAction(nsView: Long, nodeId: Long, index: Int) {
+        byNsView[nsView]?.onCustomActionInvoked(nodeId, index)
+    }
 }
 
 /**
@@ -168,6 +183,19 @@ internal class TaoAccessibilityController(
      * dispatched).
      */
     private var nsView: Long = 0L
+
+    /**
+     * Whether the next [pushSnapshot] should bypass the `nativeA11yIsActive`
+     * gate. Set to `true` initially so the first observer tick after attach
+     * always seeds the native tree — otherwise the very first AX query
+     * (which races with the first push) sees an empty tree.
+     *
+     * The flag also flips to `true` whenever the native side detects an AX
+     * query but the JVM has been skipping pushes during an idle window.
+     * That's checked in [pushSnapshot] before deciding to skip.
+     */
+    private var pendingForcedPush: Boolean = true
+    private var lastPushedNonceMonotonicNs: Long = 0L
 
     /**
      * Once disposed, every public entry point becomes a no-op. Necessary
@@ -205,14 +233,34 @@ internal class TaoAccessibilityController(
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
-        // Note: gating on `nativeA11yIsActive()` is supported (see
-        // NativeTaoBridge) but disabled here — skipping pushes by default
-        // creates a chicken-and-egg with the very first AX query, which
-        // arrives before any timestamp has been bumped. A safe gating
-        // strategy needs a "push at least once after activation" guarantee
-        // and is left for a follow-up.
+        // Gating disabled by default: always push. The native side keeps a
+        // recent-query timestamp (`nucleus_tao_a11y_is_active`) which the
+        // observer can probe to skip work — but doing so reliably needs
+        // additional plumbing (a tick that re-syncs after the idle window
+        // ends, even when no Compose state changed). Until that lands,
+        // pushing every recomposition is the safe default.
         val bytes = TaoA11ySnapshotSerializer.encode(nodes)
         NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
+        lastPushedNonceMonotonicNs = System.nanoTime()
+    }
+
+    /**
+     * Called by the observer on a low-frequency tick (or by the runtime when
+     * a user interaction occurs). If a fresh AX query has arrived since the
+     * last push, we force the next [pushSnapshot] to actually go through —
+     * this keeps the tree current after waking up from an idle period.
+     */
+    fun maybeForceResync() {
+        if (isDisposed) return
+        if (NativeTaoBridge.nativeA11yIsActive()) {
+            // Only force if we've actually been skipping pushes (i.e. nothing
+            // pushed for a while). The cheap proxy is "more than 0 since boot
+            // and last push older than 1 s".
+            val sinceLastPush = System.nanoTime() - lastPushedNonceMonotonicNs
+            if (lastPushedNonceMonotonicNs == 0L || sinceLastPush > 1_000_000_000L) {
+                pendingForcedPush = true
+            }
+        }
     }
 
     fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
@@ -278,7 +326,21 @@ internal class TaoAccessibilityController(
         val onScrollRight: (() -> Unit)? = null,
         val onDismiss: (() -> Unit)? = null,
         val onSetSelection: ((start: Int, end: Int) -> Unit)? = null,
+        /**
+         * Compose-side custom actions, invoked by index. The order MUST match
+         * the [TaoA11yNode.customActions] labels list pushed in the same
+         * snapshot.
+         */
+        val customActions: List<() -> Unit> = emptyList(),
     )
+
+    internal fun onCustomActionInvoked(nodeId: Long, index: Int) {
+        if (isDisposed) return
+        val list = actionHandlers[nodeId]?.customActions ?: return
+        if (index < 0 || index >= list.size) return
+        list[index].invoke()
+        wakeEventLoop()
+    }
 }
 
 /**
@@ -286,21 +348,26 @@ internal class TaoAccessibilityController(
  */
 internal object TaoA11ySnapshotSerializer {
     private const val MAGIC = 0xA110A11A.toInt()
-    private const val VERSION: Short = 2  // bumped to add selectionStart/End fields
+    private const val VERSION: Short = 4  // bumped to add scroll axis info
 
     fun encode(nodes: List<TaoA11yNode>): ByteArray {
         var size = 12 // header
         val labelBytes = ArrayList<ByteArray>(nodes.size)
         val valueBytes = ArrayList<ByteArray>(nodes.size)
-        // Per-node fixed size: 8(id)+8(parent)+2(role)+2(flags)+2(actions)+
-        // 2(reserved)+16(frame)+12(range)+8(selection) = 60
-        // Plus label and value lengths (2 each + bytes).
+        val customBytes = ArrayList<List<ByteArray>>(nodes.size)
+        // Per-node fixed size:
+        //   8(id)+8(parent)+2(role)+2(flags)+2(actions)+2(reserved)
+        //   +16(frame)+12(range)+8(selection)+16(scroll axes) = 76
         for (n in nodes) {
             val lb = n.label.toByteArray(Charsets.UTF_8)
             val vb = n.valueString.toByteArray(Charsets.UTF_8)
             labelBytes += lb
             valueBytes += vb
-            size += 60 + 2 + lb.size + 2 + vb.size
+            val cb = n.customActions.map { it.toByteArray(Charsets.UTF_8) }
+            customBytes += cb
+            var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2
+            for (a in cb) nodeSize += 2 + a.size
+            size += nodeSize
         }
         val buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
@@ -319,12 +386,20 @@ internal object TaoA11ySnapshotSerializer {
             buf.putFloat(n.minValue); buf.putFloat(n.maxValue); buf.putFloat(n.numericValue)
             buf.putInt(n.selectionStart)
             buf.putInt(n.selectionEnd)
+            buf.putFloat(n.hScrollMax); buf.putFloat(n.hScrollValue)
+            buf.putFloat(n.vScrollMax); buf.putFloat(n.vScrollValue)
             val lb = labelBytes[i]
             buf.putShort(lb.size.toShort())
             buf.put(lb)
             val vb = valueBytes[i]
             buf.putShort(vb.size.toShort())
             buf.put(vb)
+            val cb = customBytes[i]
+            buf.putShort(cb.size.toShort())
+            for (ab in cb) {
+                buf.putShort(ab.size.toShort())
+                buf.put(ab)
+            }
         }
         return buf.array()
     }
