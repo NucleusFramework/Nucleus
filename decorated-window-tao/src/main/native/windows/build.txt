@@ -2,11 +2,33 @@ Using vcvarsall.bat: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\
 
 === Building nucleus_tao.dll (x64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
-    Finished `release` profile [optimized] target(s) in 3.77s
+warning: variable does not need to be mutable
+   --> src\lib.rs:958:5
+    |
+958 |     mut env: JNIEnv,
+    |     ----^^^
+    |     |
+    |     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nucleus_tao` (lib) generated 1 warning (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.61s
 
 === Building nucleus_tao.dll (ARM64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
-    Finished `release` profile [optimized] target(s) in 3.84s
+warning: variable does not need to be mutable
+   --> src\lib.rs:958:5
+    |
+958 |     mut env: JNIEnv,
+    |     ----^^^
+    |     |
+    |     help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `nucleus_tao` (lib) generated 1 warning (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.73s
 
 === Building C helpers (x64) ===
 'vswhere.exe' n'est pas reconnu en tant que commande interne

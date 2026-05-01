@@ -1,8 +1,5 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
-import androidx.compose.foundation.ComposeFoundationFlags
-import androidx.compose.foundation.ExperimentalFoundationApi
-
 /**
  * Scope exposed by [taoApplication]. Mirrors `androidx.compose.ui.window.ApplicationScope`
  * so call sites can stay nearly identical between the AWT-based backends
@@ -37,7 +34,6 @@ internal class ApplicationScopeImpl(
  * lower-level [TaoApplication.openWindow]) and they will live until the user
  * closes them or [exitApplication] is called.
  */
-@OptIn(ExperimentalFoundationApi::class)
 fun taoApplication(content: ApplicationScope.() -> Unit) {
     // CRITICAL ORDER: force-load the Tao native library FIRST. Its `+load`
     // method sets `ApplePressAndHoldEnabled = YES` in NSUserDefaults; that
@@ -49,14 +45,6 @@ fun taoApplication(content: ApplicationScope.() -> Unit) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — did you run on macOS arm64/x86_64?"
     }
-
-    // Enable the new Compose-Popup-based context menu (introduced in
-    // Compose Multiplatform 1.9). The legacy implementation falls back to
-    // Swing's `JPopupMenu` and uses `SwingUtilities.convertPointFromScreen`
-    // — which doesn't work with our non-AWT NSWindow and shows the menu at
-    // the wrong location. The new path renders the menu as Compose content
-    // anchored at the click position in scene-local coordinates.
-    ComposeFoundationFlags.isNewContextMenuEnabled = true
 
     TaoApplication.run { app ->
         ApplicationScopeImpl(app).content()

@@ -8,13 +8,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
-import io.github.kdroidfilter.nucleus.window.jewel.JewelTitleBar
-import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
-import io.github.kdroidfilter.nucleus.window.newFullscreenControls
+import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.tao.TitleBar
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.foundation.theme.LocalContentColor
 import jewelsample.IntUiThemes
 import jewelsample.showcase.ShowcaseIcons
 import jewelsample.showcase.views.forCurrentOs
@@ -34,8 +35,10 @@ import java.net.URI
 @Composable
 internal fun DecoratedWindowScope.TitleBarView() {
     val startPadding = if (hostOs.isMacOS) 0.dp else 8.dp
-    val titleBarModifier = Modifier.newFullscreenControls().macOSLargeCornerRadius()
-    JewelTitleBar(titleBarModifier, gradientStartColor = MainViewModel.projectColor) {
+    val background = JewelTheme.globalColors.panelBackground
+    val contentColor = JewelTheme.contentColor
+    TitleBar(height = 40.dp, background = background, titleColor = contentColor) { state ->
+        CompositionLocalProvider(LocalContentColor provides contentColor) {
         Row(Modifier.align(Alignment.Start).padding(start = startPadding)) {
             Dropdown(
                 Modifier.height(30.dp),
@@ -118,6 +121,7 @@ internal fun DecoratedWindowScope.TitleBarView() {
                     Icon(key = iconKey, contentDescription = description, hints = arrayOf(Size(20)))
                 }
             }
+        }
         }
     }
 }

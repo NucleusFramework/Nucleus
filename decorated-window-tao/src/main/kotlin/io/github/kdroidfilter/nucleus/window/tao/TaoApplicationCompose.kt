@@ -1,7 +1,5 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
-import androidx.compose.foundation.ComposeFoundationFlags
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.runtime.Applier
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Composition
@@ -29,14 +27,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
  */
-@OptIn(ExperimentalFoundationApi::class)
 fun taoApplicationComposable(
     content: @Composable ApplicationScope.() -> Unit,
 ) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — did you run on macOS arm64/x86_64?"
     }
-    ComposeFoundationFlags.isNewContextMenuEnabled = true
 
     TaoApplication.run { app ->
         val scope = ComposableApplicationScope(app)

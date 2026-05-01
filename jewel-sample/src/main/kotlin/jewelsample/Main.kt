@@ -11,10 +11,10 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.application
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
-import io.github.kdroidfilter.nucleus.window.jewel.JewelDecoratedWindow
+import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
+import io.github.kdroidfilter.nucleus.window.tao.taoApplicationComposable
 import jewelsample.view.TitleBarView
 import jewelsample.viewmodel.MainViewModel
 import jewelsample.viewmodel.MainViewModel.currentView
@@ -40,7 +40,7 @@ fun main() {
 
     val icon = svgResource("icons/jewel-logo.svg")
 
-    application {
+    taoApplicationComposable {
         val textStyle = JewelTheme.createDefaultTextStyle()
         val editorStyle = JewelTheme.createEditorTextStyle()
 
@@ -54,35 +54,35 @@ fun main() {
         val contentTheme = if (isDark) darkTheme else lightTheme
         val titleBarTheme = if (isTitleBarDark) darkTheme else lightTheme
 
-        IntUiTheme(
-            theme = titleBarTheme,
-            styling = ComponentStyling.default(),
-            swingCompatMode = MainViewModel.swingCompat,
-        ) {
-            JewelDecoratedWindow(
-                onCloseRequest = { exitApplication() },
-                title = "Jewel standalone sample",
-                icon = icon,
-                state =
-                    androidx.compose.ui.window.rememberWindowState(
-                        position = WindowPosition.Aligned(Alignment.Center),
-                    ),
-                onKeyEvent = { keyEvent ->
-                    processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
-                },
-                content = {
+        DecoratedWindow(
+            onCloseRequest = { exitApplication() },
+            title = "Jewel standalone sample",
+            icon = icon,
+            state =
+                androidx.compose.ui.window.rememberWindowState(
+                    position = WindowPosition.Aligned(Alignment.Center),
+                ),
+            onKeyEvent = { keyEvent ->
+                processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
+            },
+            content = {
+                IntUiTheme(
+                    theme = titleBarTheme,
+                    styling = ComponentStyling.default(),
+                    swingCompatMode = MainViewModel.swingCompat,
+                ) {
                     TitleBarView()
-                    IntUiTheme(
-                        theme = contentTheme,
-                        styling = ComponentStyling.default(),
-                        swingCompatMode = MainViewModel.swingCompat,
-                    ) {
-                        @OptIn(ExperimentalJewelApi::class)
-                        ProvideMarkdownStyling { currentView.content() }
-                    }
-                },
-            )
-        }
+                }
+                IntUiTheme(
+                    theme = contentTheme,
+                    styling = ComponentStyling.default(),
+                    swingCompatMode = MainViewModel.swingCompat,
+                ) {
+                    @OptIn(ExperimentalJewelApi::class)
+                    ProvideMarkdownStyling { currentView.content() }
+                }
+            },
+        )
     }
 }
 
