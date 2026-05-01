@@ -45,6 +45,8 @@ data class TaoA11yNode(
     val minValue: Float = 0f,
     val maxValue: Float = 0f,
     val numericValue: Float = 0f,
+    val selectionStart: Int = 0,
+    val selectionEnd: Int = 0,
     val label: String = "",
     val valueString: String = "",
 )
@@ -125,6 +127,10 @@ internal object TaoAccessibilityRegistry {
 
     fun dispatchAction(handle: Long, nodeId: Long, action: Int) {
         byHandle[handle]?.onActionInvoked(nodeId, action)
+    }
+
+    fun dispatchSetText(nsView: Long, nodeId: Long, text: String) {
+        byNsView[nsView]?.onSetTextInvoked(nodeId, text)
     }
 }
 
@@ -208,6 +214,16 @@ internal class TaoAccessibilityController(
             TaoA11yAction.INCREMENT -> h.onIncrement?.invoke()
             TaoA11yAction.DECREMENT -> h.onDecrement?.invoke()
         }
+        wakeEventLoop()
+    }
+
+    internal fun onSetTextInvoked(nodeId: Long, text: String) {
+        if (isDisposed) return
+        actionHandlers[nodeId]?.onSetText?.invoke(text)
+        wakeEventLoop()
+    }
+
+    private fun wakeEventLoop() {
         // The action just wrote to Compose state on the AppKit main thread,
         // outside any Tao event handler. The Recomposer is suspended on
         // `TaoMainDispatcher`, which is only pumped from `MAIN_EVENTS_CLEARED`
@@ -223,6 +239,7 @@ internal class TaoAccessibilityController(
         val onClick: (() -> Unit)? = null,
         val onIncrement: (() -> Unit)? = null,
         val onDecrement: (() -> Unit)? = null,
+        val onSetText: ((String) -> Unit)? = null,
     )
 }
 
@@ -231,20 +248,21 @@ internal class TaoAccessibilityController(
  */
 internal object TaoA11ySnapshotSerializer {
     private const val MAGIC = 0xA110A11A.toInt()
-    private const val VERSION: Short = 1
+    private const val VERSION: Short = 2  // bumped to add selectionStart/End fields
 
     fun encode(nodes: List<TaoA11yNode>): ByteArray {
-        // Pre-compute size to allocate exactly once.
         var size = 12 // header
         val labelBytes = ArrayList<ByteArray>(nodes.size)
         val valueBytes = ArrayList<ByteArray>(nodes.size)
+        // Per-node fixed size: 8(id)+8(parent)+2(role)+2(flags)+2(actions)+
+        // 2(reserved)+16(frame)+12(range)+8(selection) = 60
+        // Plus label and value lengths (2 each + bytes).
         for (n in nodes) {
             val lb = n.label.toByteArray(Charsets.UTF_8)
             val vb = n.valueString.toByteArray(Charsets.UTF_8)
             labelBytes += lb
             valueBytes += vb
-            // 8+8+2+2+2+2+16+12+2+lb.size+2+vb.size
-            size += 8 + 8 + 2 + 2 + 2 + 2 + 16 + 12 + 2 + lb.size + 2 + vb.size
+            size += 60 + 2 + lb.size + 2 + vb.size
         }
         val buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
@@ -261,6 +279,8 @@ internal object TaoA11ySnapshotSerializer {
             buf.putFloat(n.frameX); buf.putFloat(n.frameY)
             buf.putFloat(n.frameW); buf.putFloat(n.frameH)
             buf.putFloat(n.minValue); buf.putFloat(n.maxValue); buf.putFloat(n.numericValue)
+            buf.putInt(n.selectionStart)
+            buf.putInt(n.selectionEnd)
             val lb = labelBytes[i]
             buf.putShort(lb.size.toShort())
             buf.put(lb)

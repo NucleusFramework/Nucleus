@@ -238,6 +238,40 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     unsafe { nucleus_tao_a11y_post_focus_changed(ns_view, node_id as u64) };
 }
 
+/// Called from `objc/a11y.m` when VoiceOver edits a text field via
+/// `setAccessibilityValue:`. Forwards the new string (UTF-8) to Kotlin so it
+/// can invoke `SemanticsActions.SetText`.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_set_text(
+    ns_view_handle: i64,
+    node_id: u64,
+    utf8: *const u8,
+    len: i32,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if utf8.is_null() || len < 0 { return };
+    let slice = unsafe { std::slice::from_raw_parts(utf8, len as usize) };
+    let Ok(text) = std::str::from_utf8(slice) else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let Ok(jstr) = env.new_string(text) else { return };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11ySetText",
+            "(JJLjava/lang/String;)V",
+            &[
+                JValue::Long(ns_view_handle),
+                JValue::Long(node_id as i64),
+                JValue::Object(&jstr.into()),
+            ],
+        );
+    }
+}
+
 /// Called from `objc/a11y.m` when VoiceOver triggers an accessibility action.
 /// Passes the NSView pointer through unchanged — the JVM-side registry is
 /// indexed by NSView, so we can avoid acquiring `WINDOWS.lock()` here. That

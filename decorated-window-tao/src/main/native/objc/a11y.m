@@ -32,7 +32,7 @@
 //     u16 version  = 1
 //     u16 reserved
 //     u32 nodeCount
-//   Per node:
+//   Per node (version 2):
 //     u64 nodeId
 //     u64 parentId        (0 = root → child of TaoView)
 //     u16 role            (NucleusA11yRole enum)
@@ -43,12 +43,15 @@
 //     u16 reserved2
 //     f32 frameX,Y,W,H    (window-local logical points, top-left origin)
 //     f32 minValue, maxValue, value
+//     u32 selectionStart  (UTF-16 code unit, 0 if not a text field)
+//     u32 selectionEnd    (UTF-16 code unit, ≥ selectionStart)
 //     u16 labelLen        (UTF-8); bytes
 //     u16 valueLen        (UTF-8); bytes
 //
 // All multi-byte fields little-endian.
 
 static const uint32_t kSnapshotMagic = 0xA110A11A;
+static const uint16_t kSnapshotVersion = 2;
 
 typedef NS_ENUM(uint16_t, NucleusA11yRole) {
     NucleusA11yRoleUnknown = 0,
@@ -88,11 +91,15 @@ typedef NS_OPTIONS(uint16_t, NucleusA11yAction) {
     NucleusA11yActionSetText   = 1 << 3,
 };
 
-// Forward-declared callback into Kotlin (defined in lib.rs as
-// `nucleus_tao_a11y_invoke_action_from_native`). We weak-link it so the
-// native dylib still loads in environments where the JNI side isn't wired.
+// Forward-declared callbacks into Kotlin (defined in lib.rs). We weak-link
+// them so the native dylib still loads in environments where the JNI side
+// isn't wired (tests / standalone load).
 __attribute__((weak)) extern void
 nucleus_tao_a11y_invoke_action(int64_t ns_view_handle, uint64_t node_id, uint16_t action);
+
+__attribute__((weak)) extern void
+nucleus_tao_a11y_set_text(int64_t ns_view_handle, uint64_t node_id,
+                          const char *utf8, int32_t len);
 
 // ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yElement — backing object for one Compose semantic node.
@@ -114,6 +121,8 @@ nucleus_tao_a11y_invoke_action(int64_t ns_view_handle, uint64_t node_id, uint16_
 @property(nonatomic, assign) float numericValue;
 @property(nonatomic, copy) NSString *label;
 @property(nonatomic, copy) NSString *valueString;
+@property(nonatomic, assign) NSUInteger selectionStart;  // UTF-16 code units
+@property(nonatomic, assign) NSUInteger selectionEnd;
 @property(nonatomic, strong) NSMutableArray<NucleusA11yElement *> *childElements;
 @end
 
@@ -122,6 +131,9 @@ nucleus_tao_a11y_invoke_action(int64_t ns_view_handle, uint64_t node_id, uint16_
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, NucleusA11yElement *> *byId;
 @property(nonatomic, strong) NSMutableArray<NucleusA11yElement *> *roots;
 @property(nonatomic, assign) uint64_t focusedNodeId;
+// Notification observers for backing-properties / screen change. Stored so
+// we can remove them on detach.
+@property(nonatomic, strong) NSMutableArray<id> *observers;
 - (NSArray<NucleusA11yElement *> *)rootChildrenForView;
 - (NucleusA11yElement *)focusedElement;
 - (NucleusA11yElement *)hitTestPointInView:(NSPoint)pointInView;
@@ -272,26 +284,6 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     }
 }
 
-- (id)accessibilityValue {
-    switch (self.role) {
-        case NucleusA11yRoleCheckbox:
-        case NucleusA11yRoleSwitch:
-        case NucleusA11yRoleRadioButton:
-            if (self.flags & NucleusA11yFlagMixed) return @2;
-            return (self.flags & NucleusA11yFlagChecked) ? @1 : @0;
-        case NucleusA11yRoleSlider:
-        case NucleusA11yRoleProgress:
-            return @(self.numericValue);
-        case NucleusA11yRoleHeading:
-            return @(1);  // heading level placeholder
-        case NucleusA11yRoleTextField:
-        case NucleusA11yRoleTextArea:
-            return self.valueString ?: @"";
-        default:
-            return self.valueString.length > 0 ? self.valueString : nil;
-    }
-}
-
 - (NSNumber *)accessibilityMinValue {
     if (self.role == NucleusA11yRoleSlider || self.role == NucleusA11yRoleProgress) {
         return @(self.minValue);
@@ -393,6 +385,123 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 // posts NSAccessibilityUIElementDestroyedNotification for us on dealloc.
 - (BOOL)accessibilityNotifiesWhenDestroyed { return YES; }
 
+// ── NSAccessibilityNavigableStaticText (text fields & areas) ──────────────
+//
+// The minimum methods VoiceOver needs to navigate a text field with VO+arrow:
+//   - accessibilityNumberOfCharacters    (length in UTF-16 code units)
+//   - accessibilityRangeForLine:         (single-line: line 0 = whole text)
+//   - accessibilityLineForIndex:         (always 0 for single-line)
+//   - accessibilityStringForRange:       (substring access)
+//   - accessibilitySelectedTextRange     (caret + selection)
+//   - accessibilityInsertionPointLineNumber
+// Multi-line wrap support is left for a follow-up; AppKit announces the
+// whole text on focus regardless, which is enough for stock TextField UX.
+
+- (BOOL)isTextElement {
+    return self.role == NucleusA11yRoleTextField || self.role == NucleusA11yRoleTextArea;
+}
+
+- (NSInteger)accessibilityNumberOfCharacters {
+    if (![self isTextElement]) return 0;
+    return (NSInteger)(self.valueString.length);
+}
+
+- (NSRange)accessibilityRangeForLine:(NSInteger)line {
+    if (![self isTextElement] || line != 0) return NSMakeRange(NSNotFound, 0);
+    return NSMakeRange(0, self.valueString.length);
+}
+
+- (NSInteger)accessibilityLineForIndex:(NSInteger)index {
+    if (![self isTextElement]) return -1;
+    if (index < 0 || (NSUInteger)index > self.valueString.length) return -1;
+    return 0;
+}
+
+- (NSString *)accessibilityStringForRange:(NSRange)range {
+    if (![self isTextElement]) return nil;
+    NSString *s = self.valueString ?: @"";
+    if (range.location > s.length) return @"";
+    NSUInteger maxLen = s.length - range.location;
+    NSRange clamped = NSMakeRange(range.location, MIN(range.length, maxLen));
+    return [s substringWithRange:clamped];
+}
+
+- (NSAttributedString *)accessibilityAttributedStringForRange:(NSRange)range {
+    NSString *plain = [self accessibilityStringForRange:range];
+    if (!plain) return nil;
+    return [[NSAttributedString alloc] initWithString:plain];
+}
+
+- (NSRange)accessibilitySelectedTextRange {
+    if (![self isTextElement]) return NSMakeRange(NSNotFound, 0);
+    NSUInteger start = self.selectionStart;
+    NSUInteger end   = self.selectionEnd;
+    if (end < start) end = start;
+    return NSMakeRange(start, end - start);
+}
+
+- (NSString *)accessibilitySelectedText {
+    return [self accessibilityStringForRange:[self accessibilitySelectedTextRange]];
+}
+
+- (NSInteger)accessibilityInsertionPointLineNumber {
+    return [self isTextElement] ? 0 : -1;
+}
+
+- (NSRange)accessibilityVisibleCharacterRange {
+    if (![self isTextElement]) return NSMakeRange(NSNotFound, 0);
+    return NSMakeRange(0, self.valueString.length);
+}
+
+// VoiceOver edits text via `accessibilitySetValue:`. We forward the new
+// string to the JVM side so it can invoke `SemanticsActions.SetText`.
+- (BOOL)accessibilityPerformAction:(NSAccessibilityActionName)action {
+    return NO; // unused — actions covered by perform* selectors
+}
+
+- (id)accessibilityValue { return [self _axValue]; }
+
+// Note: the redirect through `_axValue` keeps the existing role-driven
+// implementation intact while letting `setAccessibilityValue:` know which
+// shape to expect.
+- (id)_axValue {
+    switch (self.role) {
+        case NucleusA11yRoleCheckbox:
+        case NucleusA11yRoleSwitch:
+        case NucleusA11yRoleRadioButton:
+            if (self.flags & NucleusA11yFlagMixed) return @2;
+            return (self.flags & NucleusA11yFlagChecked) ? @1 : @0;
+        case NucleusA11yRoleSlider:
+        case NucleusA11yRoleProgress:
+            return @(self.numericValue);
+        case NucleusA11yRoleHeading:
+            return @(1);
+        case NucleusA11yRoleTextField:
+        case NucleusA11yRoleTextArea:
+            return self.valueString ?: @"";
+        default:
+            return self.valueString.length > 0 ? self.valueString : nil;
+    }
+}
+
+- (void)setAccessibilityValue:(id)newValue {
+    if (![self isTextElement]) return;
+    if (!(self.actions & NucleusA11yActionSetText)) return;
+    NSString *str = nil;
+    if ([newValue isKindOfClass:[NSString class]]) {
+        str = newValue;
+    } else if ([newValue isKindOfClass:[NSAttributedString class]]) {
+        str = [newValue string];
+    }
+    if (!str) return;
+    if (nucleus_tao_a11y_set_text) {
+        const char *utf8 = [str UTF8String] ?: "";
+        int32_t bytes = (int32_t)strlen(utf8);
+        nucleus_tao_a11y_set_text((int64_t)(uintptr_t)self.taoView,
+                                  self.nodeId, utf8, bytes);
+    }
+}
+
 @end
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -442,6 +551,16 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 #define READ_OR_FAIL(dst, n) \
     do { if (offset + (n) > len) return NO; memcpy((dst), bytes + offset, (n)); offset += (n); } while (0)
 
+// Diffing parser. Reuses element pointers across pushes (so VoiceOver's
+// element identity survives), then emits the minimal set of notifications:
+//   - NSAccessibilityCreated         for new elements
+//   - NSAccessibilityUIElementDestroyed for removed elements (10.9 contract,
+//                                       paired with `accessibilityNotifiesWhenDestroyed`)
+//   - NSAccessibilityValueChanged    when value / numericValue changed
+//   - NSAccessibilityTitleChanged    when label changed
+//   - NSAccessibilityLayoutChanged   on the root if any frame changed
+// Mirrors the AccessKit `QueuedEvents` model: collect during parse, post
+// once at the end so VoiceOver sees a coherent batched state change.
 static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                                  const uint8_t *bytes,
                                  size_t len) {
@@ -452,7 +571,7 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     uint16_t version = 0, reserved = 0;
     READ_OR_FAIL(&version, 2);
     READ_OR_FAIL(&reserved, 2);
-    if (version != 1) return NO;
+    if (version != kSnapshotVersion) return NO;
     uint32_t nodeCount = 0;
     READ_OR_FAIL(&nodeCount, 4);
 
@@ -461,7 +580,13 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         [NSMutableDictionary dictionaryWithCapacity:nodeCount];
     NSMutableArray<NucleusA11yElement *> *roots = [NSMutableArray new];
 
-    // First pass: parse and create / reuse elements.
+    // Queued notifications — flushed after the whole snapshot is consistent.
+    NSMutableArray<NucleusA11yElement *> *valueChanged = [NSMutableArray new];
+    NSMutableArray<NucleusA11yElement *> *titleChanged = [NSMutableArray new];
+    NSMutableArray<NucleusA11yElement *> *createdNodes = [NSMutableArray new];
+    BOOL anyFrameChanged = NO;
+
+    // First pass: parse, reuse-or-create, diff against previous values.
     for (uint32_t i = 0; i < nodeCount; i++) {
         uint64_t nodeId = 0, parentId = 0;
         uint16_t role = 0, flags = 0, actions = 0, reserved2 = 0;
@@ -476,6 +601,9 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         READ_OR_FAIL(&reserved2, 2);
         READ_OR_FAIL(frame, sizeof(frame));
         READ_OR_FAIL(range, sizeof(range));
+        uint32_t selStart = 0, selEnd = 0;
+        READ_OR_FAIL(&selStart, 4);
+        READ_OR_FAIL(&selEnd, 4);
         READ_OR_FAIL(&labelLen, 2);
         if (offset + labelLen > len) return NO;
         NSString *label = [[NSString alloc] initWithBytes:bytes + offset
@@ -491,9 +619,19 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
 
         NSNumber *key = @(nodeId);
         NucleusA11yElement *el = previous[key];
-        if (!el) {
+        BOOL wasNew = (el == nil);
+        if (wasNew) {
             el = [NucleusA11yElement new];
             el.nodeId = nodeId;
+        } else {
+            // Diff *before* mutating the element.
+            NSRect newFrame = NSMakeRect(frame[0], frame[1], frame[2], frame[3]);
+            if (!NSEqualRects(el.frameInView, newFrame)) anyFrameChanged = YES;
+            BOOL labelDiff = ![el.label isEqualToString:label];
+            BOOL valueDiff = (el.numericValue != range[2]) ||
+                             ![el.valueString isEqualToString:valueStr];
+            if (labelDiff) [titleChanged addObject:el];
+            if (valueDiff) [valueChanged addObject:el];
         }
         el.taoView = proj.taoView;
         el.projection = proj;
@@ -507,41 +645,28 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         el.numericValue = range[2];
         el.label = label;
         el.valueString = valueStr;
+        el.selectionStart = selStart;
+        el.selectionEnd = selEnd;
         el.childElements = [NSMutableArray new];
         next[key] = el;
+        if (wasNew) [createdNodes addObject:el];
         if (flags & NucleusA11yFlagFocused) {
             proj.focusedNodeId = nodeId;
         }
     }
 
-    // Second pass: link parent → children. Order in the buffer is the desired
-    // traversal order (Compose pushes nodes in semantic / visual order).
-    [roots removeAllObjects];
-    for (uint32_t i = 0; i < nodeCount; i++) {
-        // Walk again in declaration order via byId lookup keyed on the
-        // insertion order is brittle; use the dictionary's keyEnumerator
-        // sorted by the natural ordering Kotlin emitted. Simpler: iterate
-        // the buffer once more would require re-parsing — instead we rely
-        // on Kotlin emitting parents before children, which lets us link
-        // here using `next` only. We achieve traversal order by iterating
-        // `next` via objectEnumerator which is unordered — so we replicate
-        // by re-walking parent links: roots first, then BFS.
-        // Implementation note: Kotlin pushes in insertion order via
-        // SemanticsTree depth-first traversal. We capture that order in a
-        // separate array now.
-    }
-
-    // Capture insertion order via a parallel array.
-    // (Re-parse bytes once to recover order — cheap, avoids state.)
+    // Second pass: link parent → children using the buffer's traversal order
+    // (Kotlin emits parents before children via DFS, which lets us link in
+    // one re-scan). Re-parsing is cheap; the alternative would be a parallel
+    // ordering array allocated in pass 1.
     {
         size_t off2 = 12; // skip header
         for (uint32_t i = 0; i < nodeCount; i++) {
             uint64_t nodeId = 0, parentId = 0;
             memcpy(&nodeId, bytes + off2, 8); off2 += 8;
             memcpy(&parentId, bytes + off2, 8); off2 += 8;
-            // Skip the rest of fixed-size fields: role(2)+flags(2)+actions(2)+
-            // reserved2(2)+frame(16)+range(12) = 36 bytes
-            off2 += 36;
+            off2 += 36; // role + flags + actions + reserved2 + frame + range
+            off2 += 8;  // selectionStart + selectionEnd
             uint16_t labelLen = 0;
             memcpy(&labelLen, bytes + off2, 2); off2 += 2;
             off2 += labelLen;
@@ -558,24 +683,55 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                 if (parent) {
                     [parent.childElements addObject:el];
                 } else {
-                    // Orphaned (parent missing) → treat as root so it stays visible.
                     [roots addObject:el];
                 }
             }
         }
     }
 
+    // Compute the "removed" set: elements that existed before but not now.
+    NSMutableArray<NucleusA11yElement *> *removed = [NSMutableArray new];
+    for (NSNumber *prevKey in previous) {
+        if (next[prevKey] == nil) {
+            NucleusA11yElement *gone = previous[prevKey];
+            if (gone) [removed addObject:gone];
+        }
+    }
+
+    // Commit the new state before posting notifications so that VoiceOver,
+    // when it reacts to one of the events by re-querying the tree, sees the
+    // post-update state.
     proj.byId = next;
     proj.roots = roots;
 
-    // Notify AppKit that the layout changed. AccessKit-style: one batched
-    // notification for the whole tree, not per-node. Guard against a
-    // detached projection — its taoView is nil and posting on nil is a no-op
-    // but the autorelease churn is wasted work.
+    // ── Flush queued notifications ─────────────────────────────────────────
     NSView *liveView = proj.taoView;
-    if (liveView && liveView.window != nil) {
-        NSAccessibilityPostNotification(liveView,
-                                        NSAccessibilityLayoutChangedNotification);
+    BOOL canPost = liveView != nil && liveView.window != nil;
+
+    for (NucleusA11yElement *el in createdNodes) {
+        if (canPost) NSAccessibilityPostNotification(el, NSAccessibilityCreatedNotification);
+    }
+    for (NucleusA11yElement *el in removed) {
+        // Pair with `accessibilityNotifiesWhenDestroyed = YES` — required
+        // since 10.9 for NSObject-backed (i.e. non-NSView-backed) elements.
+        // Sever back-pointers so any straggling AppKit query returns safe
+        // defaults instead of dereferencing the now-orphan element.
+        NSAccessibilityPostNotification(el, NSAccessibilityUIElementDestroyedNotification);
+        el.taoView = nil;
+        el.projection = nil;
+        [el.childElements removeAllObjects];
+    }
+    for (NucleusA11yElement *el in valueChanged) {
+        if (canPost) NSAccessibilityPostNotification(el, NSAccessibilityValueChangedNotification);
+    }
+    for (NucleusA11yElement *el in titleChanged) {
+        if (canPost) NSAccessibilityPostNotification(el, NSAccessibilityTitleChangedNotification);
+    }
+    if (anyFrameChanged && canPost) {
+        // Single layout-changed on the root view is enough — VoiceOver
+        // re-queries frames it has cached. Posting per-element would
+        // pessimise the announcement queue without extra information.
+        NSAccessibilityPostNotification(liveView, NSAccessibilityLayoutChangedNotification);
     }
     return YES;
 }
@@ -692,13 +848,45 @@ static void nucleus_tao_install_window_focus_forwarder(NSWindow *window) {
 // C entry points (called from Rust / JNI).
 // ────────────────────────────────────────────────────────────────────────────
 
+// Posts NSAccessibilityLayoutChangedNotification so VoiceOver flushes its
+// cached frames. Required when the window moves between displays whose
+// backing scale factors differ — without this, VO reads stale screen
+// coordinates and points users at the wrong location. Mirrors Chromium's
+// `BrowserAccessibilityManagerMac::OnWindowDidChangeBackingProperties`.
+static void nucleus_tao_install_screen_change_observers(NucleusA11yProjection *proj,
+                                                        NSView *view) {
+    NSWindow *window = view.window;
+    if (!window) return;
+    if (!proj.observers) proj.observers = [NSMutableArray new];
+
+    void (^handler)(NSNotification *) = ^(NSNotification *_unused) {
+        NSView *liveView = proj.taoView;
+        if (liveView && liveView.window) {
+            NSAccessibilityPostNotification(liveView,
+                                            NSAccessibilityLayoutChangedNotification);
+        }
+    };
+    NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+    [proj.observers addObject:
+        [nc addObserverForName:NSWindowDidChangeBackingPropertiesNotification
+                        object:window
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:handler]];
+    [proj.observers addObject:
+        [nc addObserverForName:NSWindowDidChangeScreenNotification
+                        object:window
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:handler]];
+}
+
 void nucleus_tao_a11y_attach(int64_t ns_view_handle) {
     NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_handle;
     if (!view) return;
     nucleus_tao_swizzle_taoview_a11y_once();
-    ensure_projection_for_view(view);
+    NucleusA11yProjection *proj = ensure_projection_for_view(view);
     if (view.window) {
         nucleus_tao_install_window_focus_forwarder(view.window);
+        nucleus_tao_install_screen_change_observers(proj, view);
     }
 }
 
@@ -707,6 +895,11 @@ void nucleus_tao_a11y_detach(int64_t ns_view_handle) {
     // The integer key is enough to evict the projection.
     NucleusA11yProjection *proj = gProjections()[@(ns_view_handle)];
     if (proj) {
+        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+        for (id obs in proj.observers ?: @[]) {
+            [nc removeObserver:obs];
+        }
+        [proj.observers removeAllObjects];
         // Sever weak references so any straggling AppKit query returns
         // empty defaults rather than dereferencing a stale view.
         for (NucleusA11yElement *el in proj.byId.allValues) {

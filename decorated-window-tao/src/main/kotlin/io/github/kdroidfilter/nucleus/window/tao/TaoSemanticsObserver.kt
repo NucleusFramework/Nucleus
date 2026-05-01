@@ -105,18 +105,33 @@ internal class TaoSemanticsObserver(
 
         val onClick = node.config.getOrNull(SemanticsActions.OnClick)?.action
         val setProgress = node.config.getOrNull(SemanticsActions.SetProgress)?.action
+        val setText = node.config.getOrNull(SemanticsActions.SetText)?.action
         controller.setActionHandlers(
             id,
             TaoAccessibilityController.ActionHandlers(
                 onClick = onClick?.let { { it.invoke() } },
                 onIncrement = setProgress?.let { fn -> { stepProgress(node, fn, +1) } },
                 onDecrement = setProgress?.let { fn -> { stepProgress(node, fn, -1) } },
+                onSetText = setText?.let { fn ->
+                    { newText -> fn.invoke(androidx.compose.ui.text.AnnotatedString(newText)) }
+                },
             ),
         )
 
         val label = computeLabel(node)
         val valueString = computeValueString(node)
         val rangeInfo = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+        val selection = node.config.getOrNull(SemanticsProperties.TextSelectionRange)
+        val (selStart, selEnd) = if (selection != null) {
+            // Compose stores selection as [TextRange] over the editable text's
+            // chars. AppKit / NSAccessibility expect UTF-16 code-unit offsets,
+            // which match Kotlin's String char count for BMP-only strings.
+            // For surrogate pair code points the mapping is identical (Kotlin
+            // also counts UTF-16 code units), so passing through is correct.
+            selection.start to selection.end
+        } else {
+            0 to 0
+        }
 
         out.add(
             TaoA11yNode(
@@ -132,6 +147,8 @@ internal class TaoSemanticsObserver(
                 minValue = rangeInfo?.range?.start ?: 0f,
                 maxValue = rangeInfo?.range?.endInclusive ?: 0f,
                 numericValue = rangeInfo?.current ?: 0f,
+                selectionStart = selStart,
+                selectionEnd = selEnd,
                 label = label,
                 valueString = valueString,
             ),
