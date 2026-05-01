@@ -11,8 +11,11 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
+import androidx.compose.ui.window.rememberWindowState
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
@@ -36,6 +39,7 @@ import org.jetbrains.jewel.intui.standalone.theme.darkThemeDefinition
 import org.jetbrains.jewel.intui.standalone.theme.default
 import org.jetbrains.jewel.intui.standalone.theme.lightThemeDefinition
 import org.jetbrains.jewel.ui.ComponentStyling
+import java.awt.Dimension
 
 @ExperimentalLayoutApi
 fun main() {
@@ -64,9 +68,10 @@ fun main() {
             title = "Jewel standalone sample",
             icon = icon,
             state =
-                androidx.compose.ui.window.rememberWindowState(
+                rememberWindowState(
                     position = WindowPosition.Aligned(Alignment.Center),
                 ),
+            minimumSize = DpSize(800.dp, 400.dp),
             onKeyEvent = { keyEvent ->
                 processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
             },
