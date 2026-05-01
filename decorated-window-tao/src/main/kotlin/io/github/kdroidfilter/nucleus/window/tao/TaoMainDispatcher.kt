@@ -1,5 +1,6 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import androidx.compose.runtime.snapshots.Snapshot
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -28,8 +29,10 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // Snapshot count to avoid an infinite loop if a block re-dispatches
         // synchronously and re-queues itself.
         var remaining = pending.size
+        var ranAnything = false
         while (remaining-- > 0) {
             val block = pending.poll() ?: break
+            ranAnything = true
             try {
                 block.run()
             } catch (t: Throwable) {
@@ -38,6 +41,19 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
                 // exception handler. Re-throwing here would crash the Tao loop.
                 t.printStackTrace()
             }
+        }
+        // Propagate snapshot writes performed by the blocks above. Compose's
+        // `GlobalSnapshotManager` posts `Snapshot.sendApplyNotifications()` to
+        // Skiko's `MainUIDispatcher` (= AWT EDT on JVM), but our event loop
+        // runs on the macOS main thread independently from the EDT — without
+        // this call, animation state writes performed in `withFrameNanos`
+        // continuations land in the global snapshot but their apply observers
+        // (notably `BaseComposeScene.snapshotInvalidationTracker`) only fire
+        // whenever the EDT happens to pump, freezing animations between input
+        // events. Doing it synchronously here mirrors what
+        // `BaseComposeScene.postponeInvalidation` does for pointer/key events.
+        if (ranAnything) {
+            Snapshot.sendApplyNotifications()
         }
     }
 }

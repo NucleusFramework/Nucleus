@@ -4,7 +4,6 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext as KCoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
@@ -35,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+import io.github.kdroidfilter.nucleus.window.tao.TaoMainDispatcher
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
 import org.jetbrains.skia.BackendRenderTarget
@@ -129,13 +129,11 @@ internal class TaoComposeSceneHost(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
-    // Throttle: minimum 16 ms between two presented frames so we never block
-    // the main thread with a render loop. Without this, Compose's invalidate
-    // → requestRedraw → render → invalidate cycle can run hundreds of times
-    // per second, starving AppKit's animation timers (notably the fullscreen
-    // transition which then never completes).
-    private var lastFrameTimeNanos: Long = 0L
-    private val minFrameIntervalNanos: Long = 16_000_000L
+    // Frame pacing is delegated to the CAMetalLayer's `displaySyncEnabled`
+    // (default YES): `nextDrawable` blocks for vsync, naturally capping the
+    // loop at the display refresh rate. Mirrors Windows/Linux where Tao
+    // backends rely on `wglSwapIntervalEXT(1)` / GLX swap interval. A software
+    // throttle here only drops frames the GPU is ready to present.
 
 
     fun attach() {
@@ -252,18 +250,6 @@ internal class TaoComposeSceneHost(
         val ctx = directContext ?: return
         val sc = scene ?: return
 
-        // Drain any async work Compose queued onto our dispatcher (notably
-        // MouseWheel scroll handling, which schedules a layout pass via the
-        // scene's coroutineContext). Running it here means it executes on the
-        // render thread (= macOS main thread), which is what Compose requires.
-        flushingDispatcher.drain()
-
-        val now = System.nanoTime()
-        if (now - lastFrameTimeNanos < minFrameIntervalNanos) {
-            return
-        }
-        lastFrameTimeNanos = now
-
         val frame = NativeMetalBridge.nativeBeginFrame(attachmentHandle) ?: return
 
         var presented = false
@@ -285,13 +271,19 @@ internal class TaoComposeSceneHost(
                 surface.canvas.clear(0xFFFFFFFF.toInt())
                 val nanoTime = System.nanoTime()
                 sc.render(surface.canvas.asComposeCanvas(), nanoTime)
-                // Signal "frame finished" to Compose. Without this, the
-                // recomposer keeps invalidating after every render → infinite
-                // loop saturating the main thread.
-                frameClock.sendFrame(nanoTime)
                 surface.flushAndSubmit(syncCpu = false)
                 NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
                 presented = true
+                // Drain Compose's async work (sendFrame continuations,
+                // recomposer steps) **synchronously** here so their state
+                // writes happen now and trigger `invalidate` → next
+                // requestRedraw inside the same Tao loop iteration. Without
+                // this, the work would sit in TaoMainDispatcher.pending until
+                // the loop happens to wake again — which on macOS only
+                // reliably occurs on input events. This mirrors Skiko's
+                // FrameDispatcher pattern: render → drain pending coroutine
+                // work → next frame.
+                TaoMainDispatcher.pump()
             } finally {
                 surface.close()
                 rt.close()
@@ -435,37 +427,35 @@ internal class TaoComposeSceneHost(
     }
 
     /**
-     * Coroutine dispatcher that captures every block sent to it and runs them
-     * on whoever next calls [drain]. We invoke `drain` from
-     * [onRedrawRequested], which is called on the macOS main thread (the same
-     * thread that owns the [ComposeScene]). The block dispatches Compose
-     * recomposition / layout work that MUST run on that thread.
+     * Coroutine dispatcher that funnels Compose's async work onto the macOS
+     * main thread.
      *
-     * After dispatching, we also call `window.requestRedraw()` so the next
-     * render cycle drains the queue — otherwise pending work would sit until
-     * something else triggers a redraw.
+     * Mirrors the pattern Compose Desktop uses on AWT (`MainUIDispatcher` →
+     * `EventQueue.invokeLater`): we delegate to [TaoMainDispatcher], which
+     * pumps queued blocks on every `Event::MainEventsCleared` tick of the
+     * Tao loop. We also call `window.requestRedraw()` so the loop is woken
+     * if it was idle — without it, animations driven by `withFrameNanos`
+     * (whose continuations land here when `frameClock.sendFrame` fires
+     * inside `BaseComposeScene.recompose`) would freeze until input arrives.
+     *
+     * The auto-pump matters: in the previous implementation, blocks only
+     * ran during [onRedrawRequested]'s explicit drain — a chicken-and-egg
+     * with redraws being what triggers them in the first place.
      */
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {
-        private val queue = ConcurrentLinkedQueue<Runnable>()
-
         override fun dispatch(context: KCoroutineContext, block: Runnable) {
-            queue.add(block)
-            window.requestRedraw()
+            // Only delegate to TaoMainDispatcher (auto-pumps on MAIN_EVENTS_CLEARED).
+            // Do NOT call window.requestRedraw() here: every Compose snapshot
+            // write goes through this dispatcher, and forcing a redraw on
+            // each one floods the event loop with UserEvents that the macOS
+            // throttle skips (16ms cap), starving real frames. The scene's
+            // own `invalidate` callback already calls requestRedraw whenever
+            // there is actually something new to draw.
+            TaoMainDispatcher.dispatch(context, block)
         }
 
         fun enqueue(block: Runnable) {
-            queue.add(block)
-        }
-
-        fun drain() {
-            // Snapshot the queue length so a block that itself enqueues work
-            // (common with Compose recomposition) doesn't trap us in a loop;
-            // newly-enqueued items run on the next drain.
-            var remaining = queue.size
-            while (remaining-- > 0) {
-                val runnable = queue.poll() ?: break
-                runnable.run()
-            }
+            TaoMainDispatcher.dispatch(EmptyCoroutineContext, block)
         }
     }
 
