@@ -270,6 +270,19 @@ internal object NativeTaoBridge {
     external fun nativeA11yIsActive(): Boolean
 
     /**
+     * Atomically consumes the "force resync" flag set by the native side
+     * whenever an AX query lands while pushes are being skipped. Returns
+     * `true` once and the flag is cleared — observer must push a fresh
+     * snapshot on the same tick.
+     */
+    @JvmStatic
+    external fun nativeA11yConsumeResync(): Boolean
+
+    /** Tells the native side that a snapshot was just pushed. */
+    @JvmStatic
+    external fun nativeA11yNotePushed()
+
+    /**
      * Called from native (`objc/a11y.m` → `nucleus_tao_a11y_invoke_action`)
      * on the macOS main thread when VoiceOver triggers an action. Routed to
      * the registered [TaoAccessibilityController] for the given window.
@@ -305,6 +318,12 @@ internal object NativeTaoBridge {
     @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_invoke_custom_action)
     fun dispatchA11yCustomAction(nsView: Long, nodeId: Long, index: Int) {
         TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index)
+    }
+
+    @JvmStatic
+    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_scroll_by)
+    fun dispatchA11yScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
+        TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
     }
 }
 

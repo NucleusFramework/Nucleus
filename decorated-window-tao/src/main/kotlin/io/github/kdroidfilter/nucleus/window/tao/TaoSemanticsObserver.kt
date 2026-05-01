@@ -156,6 +156,9 @@ internal class TaoSemanticsObserver(
                     { start, end -> fn.invoke(start, end, false) }
                 },
                 customActions = customActionsList.map { ca -> { ca.action.invoke() } },
+                onScrollBy = scrollBy?.let { fn ->
+                    { dx, dy -> fn.invoke(dx, dy) }
+                },
             ),
         )
 
@@ -241,31 +244,50 @@ internal class TaoSemanticsObserver(
         val onClick = cfg.contains(SemanticsActions.OnClick)
         val setProgress = cfg.contains(SemanticsActions.SetProgress)
 
-        var role = when (composeRole) {
-            Role.Button -> TaoA11yRole.Button
-            Role.Checkbox -> TaoA11yRole.Checkbox
-            Role.Switch -> TaoA11yRole.Switch
-            Role.RadioButton -> TaoA11yRole.RadioButton
-            Role.Tab -> TaoA11yRole.Tab
-            Role.Image -> TaoA11yRole.Image
-            Role.DropdownList -> TaoA11yRole.PopupMenu
+        // Collection-aware role detection: a node carrying CollectionInfo
+        // becomes an AXTable (or AXOutline if 1-column) and items inside
+        // (with CollectionItemInfo) become AXRow / AXCell. This is a coarse
+        // mapping — full table protocol (rows[]/columns[]/header) is left for
+        // a follow-up but the role naming alone enables VO+arrow row nav.
+        val collectionInfo = cfg.getOrNull(SemanticsProperties.CollectionInfo)
+        val collectionItem = cfg.getOrNull(SemanticsProperties.CollectionItemInfo)
+
+        // Detect scroll axes early — a LazyColumn carries both CollectionInfo
+        // and HorizontalScrollAxisRange/VerticalScrollAxisRange. Mapping it
+        // to Table/Outline strips the scroll bar children we install on
+        // AXScrollArea, so prioritise ScrollArea when scroll is present.
+        val hasScrollAxes = cfg.contains(SemanticsActions.ScrollBy) ||
+            cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
+            cfg.contains(SemanticsProperties.VerticalScrollAxisRange)
+        var role = when {
+            collectionInfo != null && !hasScrollAxes ->
+                if (collectionInfo.columnCount <= 1) TaoA11yRole.Outline
+                else TaoA11yRole.Table
+            collectionInfo != null && hasScrollAxes -> TaoA11yRole.ScrollArea
+            collectionItem != null -> TaoA11yRole.Row
+            composeRole == Role.Button -> TaoA11yRole.Button
+            composeRole == Role.Checkbox -> TaoA11yRole.Checkbox
+            composeRole == Role.Switch -> TaoA11yRole.Switch
+            composeRole == Role.RadioButton -> TaoA11yRole.RadioButton
+            composeRole == Role.Tab -> TaoA11yRole.Tab
+            composeRole == Role.Image -> TaoA11yRole.Image
+            composeRole == Role.DropdownList -> TaoA11yRole.PopupMenu
             else -> when {
                 isHeading -> TaoA11yRole.Heading
                 hasEditable -> TaoA11yRole.TextField
                 rangeInfo != null && setProgress -> TaoA11yRole.Slider
                 rangeInfo != null -> TaoA11yRole.Progress
+                // Scroll containers must beat hasText/onClick — a
+                // `Modifier.verticalScroll` wrapper around a Column of texts
+                // would otherwise demote to StaticText (merged-config flag).
+                cfg.contains(SemanticsActions.ScrollBy) ||
+                cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
+                cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
                 // Clickable wins over plain text: a `Box.clickable { Text(…) }`
                 // composable (e.g. the "Clear" button or tab labels in sample-tao)
                 // should announce as a button, with the Text becoming the label.
                 onClick -> TaoA11yRole.Button
                 hasText -> TaoA11yRole.StaticText
-                // A composable carrying scroll-related semantics (typically a
-                // `Modifier.verticalScroll` / `LazyColumn`) should announce as
-                // a scroll area so VoiceOver routes scroll commands to it and
-                // so `accessibilityVisibleChildren` filters off-screen items.
-                cfg.contains(SemanticsActions.ScrollBy) ||
-                cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
-                cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
                 else -> TaoA11yRole.Group
             }
         }

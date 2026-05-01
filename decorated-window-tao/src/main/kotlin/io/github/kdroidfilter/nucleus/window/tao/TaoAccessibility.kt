@@ -80,6 +80,10 @@ enum class TaoA11yRole(val code: Int) {
     Heading(13),
     Tab(14),
     PopupMenu(15),
+    Table(16),
+    Outline(17),
+    Row(18),
+    Cell(19),
 }
 
 @Suppress("MagicNumber")
@@ -160,6 +164,10 @@ internal object TaoAccessibilityRegistry {
     fun dispatchCustomAction(nsView: Long, nodeId: Long, index: Int) {
         byNsView[nsView]?.onCustomActionInvoked(nodeId, index)
     }
+
+    fun dispatchScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
+        byNsView[nsView]?.onScrollByInvoked(nodeId, dx, dy)
+    }
 }
 
 /**
@@ -233,14 +241,18 @@ internal class TaoAccessibilityController(
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
-        // Gating disabled by default: always push. The native side keeps a
-        // recent-query timestamp (`nucleus_tao_a11y_is_active`) which the
-        // observer can probe to skip work — but doing so reliably needs
-        // additional plumbing (a tick that re-syncs after the idle window
-        // ends, even when no Compose state changed). Until that lands,
-        // pushing every recomposition is the safe default.
+        // Smart gating: skip when no AX client is active AND no resync was
+        // requested (which would happen if an AX query landed during a skip).
+        // The initial push at attach time has `pendingForcedPush = true`, so
+        // it always seeds the native tree — that's what made the first AX
+        // query find a populated tree before we had this fix.
+        val active = NativeTaoBridge.nativeA11yIsActive()
+        val needsResync = NativeTaoBridge.nativeA11yConsumeResync()
+        if (!pendingForcedPush && !active && !needsResync) return
         val bytes = TaoA11ySnapshotSerializer.encode(nodes)
         NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
+        NativeTaoBridge.nativeA11yNotePushed()
+        pendingForcedPush = false
         lastPushedNonceMonotonicNs = System.nanoTime()
     }
 
@@ -251,16 +263,8 @@ internal class TaoAccessibilityController(
      * this keeps the tree current after waking up from an idle period.
      */
     fun maybeForceResync() {
-        if (isDisposed) return
-        if (NativeTaoBridge.nativeA11yIsActive()) {
-            // Only force if we've actually been skipping pushes (i.e. nothing
-            // pushed for a while). The cheap proxy is "more than 0 since boot
-            // and last push older than 1 s".
-            val sinceLastPush = System.nanoTime() - lastPushedNonceMonotonicNs
-            if (lastPushedNonceMonotonicNs == 0L || sinceLastPush > 1_000_000_000L) {
-                pendingForcedPush = true
-            }
-        }
+        // No longer needed — pushSnapshot consumes the native resync flag
+        // directly. Kept as a no-op to preserve the observer's call site.
     }
 
     fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
@@ -332,6 +336,8 @@ internal class TaoAccessibilityController(
          * snapshot.
          */
         val customActions: List<() -> Unit> = emptyList(),
+        /** Absolute scroll delta in pixels. Wired to `SemanticsActions.ScrollBy`. */
+        val onScrollBy: ((dx: Float, dy: Float) -> Unit)? = null,
     )
 
     internal fun onCustomActionInvoked(nodeId: Long, index: Int) {
@@ -339,6 +345,12 @@ internal class TaoAccessibilityController(
         val list = actionHandlers[nodeId]?.customActions ?: return
         if (index < 0 || index >= list.size) return
         list[index].invoke()
+        wakeEventLoop()
+    }
+
+    internal fun onScrollByInvoked(nodeId: Long, dx: Float, dy: Float) {
+        if (isDisposed) return
+        actionHandlers[nodeId]?.onScrollBy?.invoke(dx, dy)
         wakeEventLoop()
     }
 }

@@ -116,6 +116,8 @@ extern "C" {
     fn nucleus_tao_a11y_post_focus_changed(ns_view_handle: i64, node_id: u64);
     fn nucleus_tao_a11y_is_voiceover_running() -> i32;
     fn nucleus_tao_a11y_is_active() -> i32;
+    fn nucleus_tao_a11y_consume_resync() -> i32;
+    fn nucleus_tao_a11y_note_pushed();
 }
 
 #[cfg(target_os = "macos")]
@@ -250,6 +252,25 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 #[cfg(target_os = "macos")]
 #[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    let r = unsafe { nucleus_tao_a11y_consume_resync() };
+    if r != 0 { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    unsafe { nucleus_tao_a11y_note_pushed() };
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
     _env: JNIEnv,
     _class: JClass,
@@ -318,6 +339,37 @@ pub extern "C" fn nucleus_tao_a11y_invoke_custom_action(
                 JValue::Long(ns_view_handle),
                 JValue::Long(node_id as i64),
                 JValue::Int(action_index),
+            ],
+        );
+    }
+}
+
+/// Called from `objc/a11y.m` when VoiceOver moves a scroll bar to an absolute
+/// position via `setAccessibilityValue:`. Delivers the precise (dx, dy)
+/// delta to Compose's `SemanticsActions.ScrollBy`.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_scroll_by(
+    ns_view_handle: i64,
+    node_id: u64,
+    dx: f32,
+    dy: f32,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11yScrollBy",
+            "(JJFF)V",
+            &[
+                JValue::Long(ns_view_handle),
+                JValue::Long(node_id as i64),
+                JValue::Float(dx),
+                JValue::Float(dy),
             ],
         );
     }

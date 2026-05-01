@@ -79,6 +79,10 @@ typedef NS_ENUM(uint16_t, NucleusA11yRole) {
     NucleusA11yRoleHeading,
     NucleusA11yRoleTab,
     NucleusA11yRolePopupMenu,
+    NucleusA11yRoleTable,
+    NucleusA11yRoleOutline,
+    NucleusA11yRoleRow,
+    NucleusA11yRoleCell,
 };
 
 typedef NS_OPTIONS(uint16_t, NucleusA11yFlag) {
@@ -126,6 +130,10 @@ nucleus_tao_a11y_set_selection(int64_t ns_view_handle, uint64_t node_id,
 __attribute__((weak)) extern void
 nucleus_tao_a11y_invoke_custom_action(int64_t ns_view_handle, uint64_t node_id,
                                       int32_t action_index);
+
+__attribute__((weak)) extern void
+nucleus_tao_a11y_scroll_by(int64_t ns_view_handle, uint64_t node_id,
+                           float dx, float dy);
 
 // ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yElement — backing object for one Compose semantic node.
@@ -297,6 +305,10 @@ static NSString *role_to_ns_role(uint16_t role) {
         case NucleusA11yRoleImage:       return NSAccessibilityImageRole;
         case NucleusA11yRoleScrollArea:  return NSAccessibilityScrollAreaRole;
         case NucleusA11yRolePopupMenu:   return NSAccessibilityPopUpButtonRole;
+        case NucleusA11yRoleTable:       return NSAccessibilityTableRole;
+        case NucleusA11yRoleOutline:     return NSAccessibilityOutlineRole;
+        case NucleusA11yRoleRow:         return NSAccessibilityRowRole;
+        case NucleusA11yRoleCell:        return NSAccessibilityCellRole;
         case NucleusA11yRoleGroup:
         default:                         return NSAccessibilityGroupRole;
     }
@@ -644,6 +656,14 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return built;
 }
 
+// (Reverted) Custom actions cross-process serialisation:
+// Attempts to bridge via the deprecated `accessibilityAttributeValue:` /
+// `accessibilityAttributeNames` path break attribute marshalling for the
+// other attributes (AppKit's NSAccessibilityElement implements them via the
+// modern selectors, not the legacy informal protocol). VoiceOver reads
+// custom actions in-process and works correctly; cross-process AXUIElement
+// reads remain limited by AppKit. This is a known boundary.
+
 // Dynamically resolve the per-index custom-action selectors. Each one is
 // `_nucleusInvokeCustomActionN:` with the action index N — we extract N
 // from the selector name and dispatch through the JNI callback.
@@ -783,6 +803,94 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return NSMakeRange(0, self.valueString.length);
 }
 
+// Per-line bounding rect approximation. Without a Compose `TextLayoutResult`
+// in the wire format we can't pinpoint individual glyphs, but we *can* tell
+// VoiceOver which line is being read by:
+//   - splitting the element's frame vertically by line count
+//   - within a line, returning a horizontally-proportional sub-rect based on
+//     the substring's character index range
+// This is enough for VO line-tracking ("VO+arrow next line" highlights the
+// row) without claiming sub-pixel precision.
+- (NSRect)accessibilityFrameForRange:(NSRange)range {
+    if (![self isTextElement]) return NSZeroRect;
+    NSArray<NSValue *> *lines = [self _lineRanges];
+    if (lines.count == 0) return NSZeroRect;
+    NSRect frame = self.frameInView;
+    if (range.location > self.valueString.length) return NSZeroRect;
+    // Find the first and last line touched by `range`.
+    NSInteger firstLine = -1, lastLine = -1;
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        NSRange lr = [lines[i] rangeValue];
+        NSUInteger lineEnd = lr.location + lr.length;
+        NSUInteger rangeEnd = range.location + range.length;
+        BOOL touches = (range.location <= lineEnd) && (rangeEnd >= lr.location);
+        if (touches) {
+            if (firstLine < 0) firstLine = (NSInteger)i;
+            lastLine = (NSInteger)i;
+        }
+    }
+    if (firstLine < 0) return NSZeroRect;
+    CGFloat lineHeight = frame.size.height / lines.count;
+    CGFloat top = frame.origin.y + lineHeight * firstLine;
+    CGFloat height = lineHeight * (lastLine - firstLine + 1);
+    NSRect localRect = NSMakeRect(frame.origin.x, top, frame.size.width, height);
+    NSView *v = self.taoView;
+    return v ? rect_to_screen(v, localRect) : NSZeroRect;
+}
+
+// VO uses this when reading text: returns the screen rect of the substring at
+// `range`. We map to the per-line approximation above.
+- (NSRect)accessibilityBoundsForRange:(NSRange)range {
+    return [self accessibilityFrameForRange:range];
+}
+
+// Inverse: given a screen point, find the character index it maps to. We
+// approximate using line-height / line-width division. Good enough for VO+
+// rotor "Read From Cursor" landing on the right paragraph.
+// IME marked-text protocol stubs. The actual marked-text plumbing lives in
+// `main_thread_dispatch.m` (NucleusTextOverlay forwards setMarkedText: to
+// Tao). VoiceOver reads `accessibilityMarkedRange` to know if text is being
+// composed (e.g. CJK IME); we return NSNotFound to mean "no active
+// composition" — Compose doesn't surface an explicit composition range as a
+// SemanticsProperty, so a fully reactive marked-text announce would need to
+// pipe state from NucleusTextOverlay back through the wire format. The stub
+// is correct (no false-positive announcements) and prevents -25200 errors
+// when AT clients query the attribute on a text field.
+- (NSRange)accessibilityMarkedRange {
+    return NSMakeRange(NSNotFound, 0);
+}
+
+- (NSAttributedString *)accessibilityAttributedStringForMarkedRange:(NSRange)range {
+    (void)range;
+    return nil;
+}
+
+- (NSRange)accessibilityRangeForPosition:(NSPoint)point {
+    if (![self isTextElement]) return NSMakeRange(NSNotFound, 0);
+    NSView *v = self.taoView;
+    if (!v) return NSMakeRange(NSNotFound, 0);
+    NSWindow *window = v.window;
+    if (!window) return NSMakeRange(NSNotFound, 0);
+    NSPoint pInWindow = [window convertPointFromScreen:point];
+    NSPoint pInView = [v convertPoint:pInWindow fromView:nil];
+    if (!v.isFlipped) pInView.y = v.bounds.size.height - pInView.y;
+    NSRect frame = self.frameInView;
+    if (!NSPointInRect(pInView, frame)) return NSMakeRange(NSNotFound, 0);
+    NSArray<NSValue *> *lines = [self _lineRanges];
+    if (lines.count == 0) return NSMakeRange(0, 0);
+    CGFloat localY = pInView.y - frame.origin.y;
+    CGFloat lineHeight = frame.size.height / lines.count;
+    NSInteger lineIdx = (NSInteger)(localY / lineHeight);
+    if (lineIdx < 0) lineIdx = 0;
+    if (lineIdx >= (NSInteger)lines.count) lineIdx = (NSInteger)lines.count - 1;
+    NSRange lineRange = [lines[lineIdx] rangeValue];
+    CGFloat localX = pInView.x - frame.origin.x;
+    CGFloat fracX = frame.size.width > 0 ? (localX / frame.size.width) : 0;
+    if (fracX < 0) fracX = 0; else if (fracX > 1) fracX = 1;
+    NSUInteger charInLine = (NSUInteger)(fracX * lineRange.length);
+    return NSMakeRange(lineRange.location + charInLine, 1);
+}
+
 - (id)accessibilityValue { return [self _axValue]; }
 
 // Note: the redirect through `_axValue` keeps the existing role-driven
@@ -893,23 +1001,13 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     if (total <= 0) return;
     float target = frac * total;
     float delta = target - cur;
-    // We don't have a "set absolute scroll position" on the Compose side,
-    // only ScrollBy. Decompose the absolute target into a delta and route
-    // through an existing scroll action bit. We reuse the directional
-    // SCROLL_UP/DOWN/LEFT/RIGHT flags but, crucially, we need to convey the
-    // distance — the existing invoke_action only carries the action bit.
-    // For now, emulate by issuing repeated page-step calls clamped to the
-    // smallest step that moves us closer. This covers VoiceOver's use case
-    // (incremental scroll) without a wire-format change.
-    NucleusA11yAction action;
-    if (self.horizontal) {
-        action = (delta > 0) ? NucleusA11yActionScrollRight : NucleusA11yActionScrollLeft;
-    } else {
-        action = (delta > 0) ? NucleusA11yActionScrollDown : NucleusA11yActionScrollUp;
-    }
-    if (nucleus_tao_a11y_invoke_action) {
-        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)o.taoView,
-                                       o.nodeId, (uint16_t)action);
+    // Precise scroll: send the exact delta through `nucleus_tao_a11y_scroll_by`,
+    // which Compose dispatches to `SemanticsActions.ScrollBy(dx, dy)`. This
+    // gives VoiceOver an absolute setValue rather than a directional page step.
+    if (nucleus_tao_a11y_scroll_by) {
+        float dx = self.horizontal ? delta : 0.0f;
+        float dy = self.horizontal ? 0.0f : delta;
+        nucleus_tao_a11y_scroll_by((int64_t)(uintptr_t)o.taoView, o.nodeId, dx, dy);
     }
 }
 
@@ -1578,31 +1676,58 @@ int nucleus_tao_a11y_is_voiceover_running(void) {
     }
 }
 
-// Tracks the most recent time an accessibility client touched our tree. Each
-// swizzled TaoView entry point (children / focused / hitTest) bumps it; the
-// JVM side reads `nucleus_tao_a11y_is_active` to decide whether to keep
-// pushing snapshots. Mirrors Compose Desktop's `AccessibilityUsage` (5-min
-// idle window).
+// Tracks the most recent time an accessibility client touched our tree, plus
+// a "force resync" flag the JVM observer reads at each tick. The flag is set
+// here (in C) the moment any AX entry point fires while we've been skipping
+// pushes — that flips `pendingForcedPush` on the JVM side at the next sync,
+// guaranteeing the tree gets refreshed once after wake-up.
 static _Atomic int64_t g_last_a11y_query_ns = 0;
+// Last-pushed timestamp written by the JVM side via
+// `nucleus_tao_a11y_note_pushed`. Lets `note_a11y_query` decide whether the
+// query came in during an idle window (push needed) or not.
+static _Atomic int64_t g_last_a11y_push_ns = 0;
+// One-shot flag: a query has occurred since the last push, so the JVM should
+// force the next snapshot push regardless of its own gating heuristic.
+static _Atomic int g_a11y_force_resync = 1;
 
 static int64_t monotonic_ns(void) {
     return (int64_t)(mach_absolute_time());
 }
 
 static void note_a11y_query(void) {
-    atomic_store(&g_last_a11y_query_ns, monotonic_ns());
+    int64_t now = monotonic_ns();
+    atomic_store(&g_last_a11y_query_ns, now);
+    int64_t lastPush = atomic_load(&g_last_a11y_push_ns);
+    // If the last push is older than 1 raw-counter second, we were idle —
+    // request a fresh resync. Threshold is the same as JVM-side staleness.
+    if (lastPush == 0 || now - lastPush > 1000LL * 1000LL * 1000LL) {
+        atomic_store(&g_a11y_force_resync, 1);
+    }
 }
 
 int nucleus_tao_a11y_is_active(void) {
     int64_t last = atomic_load(&g_last_a11y_query_ns);
     if (last == 0) return 0;
     int64_t now = monotonic_ns();
-    // Treat any query within the last ~5 minutes as "still in use". The
-    // mach time base is not always nanoseconds — for simplicity we use the
-    // raw counter and a generous threshold (5 * 60 * 10⁹ ≈ 3×10¹¹ on most
-    // systems where the base is 1ns, larger on systems where it's smaller).
     static const int64_t kIdleThresholdRaw = 300LL * 1000LL * 1000LL * 1000LL;
     return (now - last) < kIdleThresholdRaw ? 1 : 0;
+}
+
+/// Called by the JVM right after a successful snapshot push. Updates the
+/// last-push timestamp and clears the resync flag.
+void nucleus_tao_a11y_note_pushed(void) {
+    atomic_store(&g_last_a11y_push_ns, monotonic_ns());
+    atomic_store(&g_a11y_force_resync, 0);
+}
+
+/// Returns 1 (and clears the flag) if the JVM owes a forced push because an
+/// AX query happened while pushes were being skipped. Returns 0 otherwise.
+int nucleus_tao_a11y_consume_resync(void) {
+    int expected = 1;
+    if (atomic_compare_exchange_strong(&g_a11y_force_resync, &expected, 0)) {
+        return 1;
+    }
+    return 0;
 }
 
 void nucleus_tao_a11y_post_focus_changed(int64_t ns_view_handle, uint64_t node_id) {
