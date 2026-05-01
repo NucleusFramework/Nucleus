@@ -85,10 +85,15 @@ typedef NS_OPTIONS(uint16_t, NucleusA11yFlag) {
 };
 
 typedef NS_OPTIONS(uint16_t, NucleusA11yAction) {
-    NucleusA11yActionClick     = 1 << 0,
-    NucleusA11yActionIncrement = 1 << 1,
-    NucleusA11yActionDecrement = 1 << 2,
-    NucleusA11yActionSetText   = 1 << 3,
+    NucleusA11yActionClick        = 1 << 0,
+    NucleusA11yActionIncrement    = 1 << 1,
+    NucleusA11yActionDecrement    = 1 << 2,
+    NucleusA11yActionSetText      = 1 << 3,
+    NucleusA11yActionRequestFocus = 1 << 4,
+    NucleusA11yActionScrollUp     = 1 << 5,
+    NucleusA11yActionScrollDown   = 1 << 6,
+    NucleusA11yActionScrollLeft   = 1 << 7,
+    NucleusA11yActionScrollRight  = 1 << 8,
 };
 
 // Forward-declared callbacks into Kotlin (defined in lib.rs). We weak-link
@@ -338,6 +343,22 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return self.childElements ?: @[];
 }
 
+// For scroll areas, return only the children whose frames intersect the
+// scroll area's own visible rect. VoiceOver uses this to skip off-screen
+// items during fast navigation. For other roles AppKit defaults to
+// accessibilityChildren which is what we want.
+- (NSArray *)accessibilityVisibleChildren {
+    if (self.role != NucleusA11yRoleScrollArea) return self.childElements ?: @[];
+    NSRect viewport = self.frameInView;
+    NSMutableArray *visible = [NSMutableArray new];
+    for (NucleusA11yElement *child in self.childElements) {
+        if (NSIntersectsRect(viewport, child.frameInView)) {
+            [visible addObject:child];
+        }
+    }
+    return visible;
+}
+
 - (id)accessibilityHitTest:(NSPoint)pointInScreen {
     NSView *v = self.taoView;
     if (!v) return self;
@@ -388,6 +409,59 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
         return YES;
     }
     return NO;
+}
+
+// VoiceOver / external AX clients can request focus via this setter. We
+// translate the YES case into a Compose `SemanticsActions.RequestFocus`.
+- (void)setAccessibilityFocused:(BOOL)focused {
+    if (!focused) return;
+    if (!(self.actions & NucleusA11yActionRequestFocus)) return;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId,
+                                       NucleusA11yActionRequestFocus);
+    }
+}
+
+// VoiceOver scroll commands (VO+Cmd+arrow when on a scroll area) route
+// through these per-direction selectors. Compose's `SemanticsActions.PageUp`
+// / `PageDown` etc. cover each direction; we map them through the matching
+// action bit so a single invoke_action call dispatches to the right Compose
+// handler.
+- (BOOL)accessibilityPerformScrollUp {
+    if (!(self.actions & NucleusA11yActionScrollUp)) return NO;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, NucleusA11yActionScrollUp);
+    }
+    return YES;
+}
+
+- (BOOL)accessibilityPerformScrollDown {
+    if (!(self.actions & NucleusA11yActionScrollDown)) return NO;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, NucleusA11yActionScrollDown);
+    }
+    return YES;
+}
+
+- (BOOL)accessibilityPerformScrollLeft {
+    if (!(self.actions & NucleusA11yActionScrollLeft)) return NO;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, NucleusA11yActionScrollLeft);
+    }
+    return YES;
+}
+
+- (BOOL)accessibilityPerformScrollRight {
+    if (!(self.actions & NucleusA11yActionScrollRight)) return NO;
+    if (nucleus_tao_a11y_invoke_action) {
+        nucleus_tao_a11y_invoke_action((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, NucleusA11yActionScrollRight);
+    }
+    return YES;
 }
 
 // 10.9 contract for NSObject-backed elements: we must answer YES so AppKit
@@ -594,6 +668,9 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     NSMutableArray<NucleusA11yElement *> *titleChanged = [NSMutableArray new];
     NSMutableArray<NucleusA11yElement *> *createdNodes = [NSMutableArray new];
     BOOL anyFrameChanged = NO;
+    BOOL selectionSetChanged = NO;
+    uint64_t previousFocusedId = proj.focusedNodeId;
+    uint64_t newFocusedId = 0;
 
     // First pass: parse, reuse-or-create, diff against previous values.
     for (uint32_t i = 0; i < nodeCount; i++) {
@@ -641,6 +718,11 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                              ![el.valueString isEqualToString:valueStr];
             if (labelDiff) [titleChanged addObject:el];
             if (valueDiff) [valueChanged addObject:el];
+            // Selected toggled? Track at the projection level so the post-loop
+            // pass can fire a single SelectedChildrenChanged on the root.
+            BOOL prevSelected = (el.flags & NucleusA11yFlagSelected) != 0;
+            BOOL nextSelected = (flags & NucleusA11yFlagSelected) != 0;
+            if (prevSelected != nextSelected) selectionSetChanged = YES;
         }
         el.taoView = proj.taoView;
         el.projection = proj;
@@ -660,9 +742,10 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         next[key] = el;
         if (wasNew) [createdNodes addObject:el];
         if (flags & NucleusA11yFlagFocused) {
-            proj.focusedNodeId = nodeId;
+            newFocusedId = nodeId;
         }
     }
+    proj.focusedNodeId = newFocusedId;
 
     // Second pass: link parent → children using the buffer's traversal order
     // (Kotlin emits parents before children via DFS, which lets us link in
@@ -741,6 +824,21 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         // re-queries frames it has cached. Posting per-element would
         // pessimise the announcement queue without extra information.
         NSAccessibilityPostNotification(liveView, NSAccessibilityLayoutChangedNotification);
+    }
+    // Focus change: post on the new focused element if one exists, else on
+    // the view (which means "no focus" — VoiceOver lands on the window).
+    if (canPost && newFocusedId != previousFocusedId) {
+        NucleusA11yElement *focused = newFocusedId != 0 ? next[@(newFocusedId)] : nil;
+        id target = focused ?: (id)liveView;
+        NSAccessibilityPostNotification(target,
+                                        NSAccessibilityFocusedUIElementChangedNotification);
+    }
+    if (canPost && selectionSetChanged) {
+        // Posting on the root view triggers VO to re-query selection across
+        // any container that owns selectable items (radio groups, tab bars,
+        // list-style components).
+        NSAccessibilityPostNotification(liveView,
+                                        NSAccessibilitySelectedChildrenChangedNotification);
     }
     return YES;
 }

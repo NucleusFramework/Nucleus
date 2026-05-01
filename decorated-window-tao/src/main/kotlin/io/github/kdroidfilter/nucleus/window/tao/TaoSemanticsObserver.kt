@@ -106,6 +106,26 @@ internal class TaoSemanticsObserver(
         val onClick = node.config.getOrNull(SemanticsActions.OnClick)?.action
         val setProgress = node.config.getOrNull(SemanticsActions.SetProgress)?.action
         val setText = node.config.getOrNull(SemanticsActions.SetText)?.action
+        val requestFocus = node.config.getOrNull(SemanticsActions.RequestFocus)?.action
+        val scrollBy = node.config.getOrNull(SemanticsActions.ScrollBy)?.action
+        val pageUp = node.config.getOrNull(SemanticsActions.PageUp)?.action
+        val pageDown = node.config.getOrNull(SemanticsActions.PageDown)?.action
+        val pageLeft = node.config.getOrNull(SemanticsActions.PageLeft)?.action
+        val pageRight = node.config.getOrNull(SemanticsActions.PageRight)?.action
+        // Page actions are preferred when present (they correspond to AppKit's
+        // "scroll by page" semantics that VO+Cmd+arrow triggers). Fall back to
+        // ScrollBy with a heuristic step (~ a viewport's worth) if the node
+        // only exposes raw scroll.
+        val viewportH = node.boundsInWindow.height / (if (density > 0f) density else 1f)
+        val viewportW = node.boundsInWindow.width / (if (density > 0f) density else 1f)
+        val onScrollUp = pageUp?.let { { it.invoke(); Unit } }
+            ?: scrollBy?.let { fn -> { fn.invoke(0f, -viewportH * 0.9f); Unit } }
+        val onScrollDown = pageDown?.let { { it.invoke(); Unit } }
+            ?: scrollBy?.let { fn -> { fn.invoke(0f, +viewportH * 0.9f); Unit } }
+        val onScrollLeft = pageLeft?.let { { it.invoke(); Unit } }
+            ?: scrollBy?.let { fn -> { fn.invoke(-viewportW * 0.9f, 0f); Unit } }
+        val onScrollRight = pageRight?.let { { it.invoke(); Unit } }
+            ?: scrollBy?.let { fn -> { fn.invoke(+viewportW * 0.9f, 0f); Unit } }
         controller.setActionHandlers(
             id,
             TaoAccessibilityController.ActionHandlers(
@@ -115,6 +135,11 @@ internal class TaoSemanticsObserver(
                 onSetText = setText?.let { fn ->
                     { newText -> fn.invoke(androidx.compose.ui.text.AnnotatedString(newText)) }
                 },
+                onRequestFocus = requestFocus?.let { { it.invoke() } },
+                onScrollUp = onScrollUp,
+                onScrollDown = onScrollDown,
+                onScrollLeft = onScrollLeft,
+                onScrollRight = onScrollRight,
             ),
         )
 
@@ -204,6 +229,13 @@ internal class TaoSemanticsObserver(
                 // should announce as a button, with the Text becoming the label.
                 onClick -> TaoA11yRole.Button
                 hasText -> TaoA11yRole.StaticText
+                // A composable carrying scroll-related semantics (typically a
+                // `Modifier.verticalScroll` / `LazyColumn`) should announce as
+                // a scroll area so VoiceOver routes scroll commands to it and
+                // so `accessibilityVisibleChildren` filters off-screen items.
+                cfg.contains(SemanticsActions.ScrollBy) ||
+                cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
+                cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
                 else -> TaoA11yRole.Group
             }
         }
@@ -230,6 +262,21 @@ internal class TaoSemanticsObserver(
             actions = actions or TaoA11yAction.INCREMENT or TaoA11yAction.DECREMENT
         }
         if (cfg.contains(SemanticsActions.SetText)) actions = actions or TaoA11yAction.SET_TEXT
+        if (cfg.contains(SemanticsActions.RequestFocus)) {
+            actions = actions or TaoA11yAction.REQUEST_FOCUS
+        }
+        // Expose scroll bits whenever the node carries either page actions or
+        // a generic ScrollBy. The handler wiring above synthesises the
+        // missing direction from the available primitive.
+        val hasScroll = cfg.contains(SemanticsActions.ScrollBy) ||
+            cfg.contains(SemanticsActions.PageUp) ||
+            cfg.contains(SemanticsActions.PageDown) ||
+            cfg.contains(SemanticsActions.PageLeft) ||
+            cfg.contains(SemanticsActions.PageRight)
+        if (hasScroll) {
+            actions = actions or TaoA11yAction.SCROLL_UP or TaoA11yAction.SCROLL_DOWN or
+                TaoA11yAction.SCROLL_LEFT or TaoA11yAction.SCROLL_RIGHT
+        }
 
         // Slider role implies enabled + element.
         if (role == TaoA11yRole.Slider) flags = flags or TaoA11yFlag.IS_ELEMENT

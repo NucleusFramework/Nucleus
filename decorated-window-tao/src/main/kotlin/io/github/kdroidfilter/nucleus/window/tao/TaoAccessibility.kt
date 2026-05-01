@@ -86,10 +86,15 @@ object TaoA11yFlag {
 
 @Suppress("MagicNumber")
 object TaoA11yAction {
-    const val CLICK     = 1 shl 0
-    const val INCREMENT = 1 shl 1
-    const val DECREMENT = 1 shl 2
-    const val SET_TEXT  = 1 shl 3
+    const val CLICK         = 1 shl 0
+    const val INCREMENT     = 1 shl 1
+    const val DECREMENT     = 1 shl 2
+    const val SET_TEXT      = 1 shl 3
+    const val REQUEST_FOCUS = 1 shl 4
+    const val SCROLL_UP     = 1 shl 5
+    const val SCROLL_DOWN   = 1 shl 6
+    const val SCROLL_LEFT   = 1 shl 7
+    const val SCROLL_RIGHT  = 1 shl 8
 }
 
 /**
@@ -210,9 +215,14 @@ internal class TaoAccessibilityController(
         if (isDisposed) return
         val h = actionHandlers[nodeId] ?: return
         when (action) {
-            TaoA11yAction.CLICK     -> h.onClick?.invoke()
-            TaoA11yAction.INCREMENT -> h.onIncrement?.invoke()
-            TaoA11yAction.DECREMENT -> h.onDecrement?.invoke()
+            TaoA11yAction.CLICK         -> h.onClick?.invoke()
+            TaoA11yAction.INCREMENT     -> h.onIncrement?.invoke()
+            TaoA11yAction.DECREMENT     -> h.onDecrement?.invoke()
+            TaoA11yAction.REQUEST_FOCUS -> h.onRequestFocus?.invoke()
+            TaoA11yAction.SCROLL_UP     -> h.onScrollUp?.invoke()
+            TaoA11yAction.SCROLL_DOWN   -> h.onScrollDown?.invoke()
+            TaoA11yAction.SCROLL_LEFT   -> h.onScrollLeft?.invoke()
+            TaoA11yAction.SCROLL_RIGHT  -> h.onScrollRight?.invoke()
         }
         wakeEventLoop()
     }
@@ -240,6 +250,11 @@ internal class TaoAccessibilityController(
         val onIncrement: (() -> Unit)? = null,
         val onDecrement: (() -> Unit)? = null,
         val onSetText: ((String) -> Unit)? = null,
+        val onRequestFocus: (() -> Unit)? = null,
+        val onScrollUp: (() -> Unit)? = null,
+        val onScrollDown: (() -> Unit)? = null,
+        val onScrollLeft: (() -> Unit)? = null,
+        val onScrollRight: (() -> Unit)? = null,
     )
 }
 
