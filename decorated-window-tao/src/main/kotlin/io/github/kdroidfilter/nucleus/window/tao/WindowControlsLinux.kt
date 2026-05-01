@@ -58,14 +58,12 @@ internal fun TitleBarScope.WindowControlsLinux(
     val icons = linuxTitleBarIcons()
     val buttonAlignment = if (layout.controlsOnRight) Alignment.End else Alignment.Start
 
-    // `layout.buttons[0]` is "closest to the edge". Tao's TitleBar
-    // measurePolicy reverses End items at placement time (last declared sits
-    // at the rightmost edge), while Start items keep declaration order (first
-    // declared sits at the leftmost edge). Reversing the iteration on the
-    // right-side path keeps the close button flush against the window edge in
-    // both layouts.
-    val ordered = if (layout.controlsOnRight) layout.buttons.reversed() else layout.buttons
-    for (button in ordered) {
+    // Iterate over `layout.buttons` in natural order — `layout.buttons[0]` is
+    // "closest to the edge". Core's `TitleBarMeasurePolicy` places End items
+    // first-declared = rightmost (controls-on-right) and Start items
+    // first-declared = leftmost. Mirrors `decorated-window-jni`'s
+    // `WindowControlArea.kt` exactly.
+    for (button in layout.buttons) {
         when (button) {
             LinuxTitleBarButton.CLOSE -> {
                 val closeHover = if (state.isActive) icons.closeHoverFocused else icons.closeHover
