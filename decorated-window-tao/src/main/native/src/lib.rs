@@ -1012,6 +1012,24 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeIsFullscreen(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jboolean {
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return JNI_FALSE,
+    };
+    let Some(map) = guard.as_ref() else { return JNI_FALSE };
+    if let Some(w) = map.get(&(handle as u64)) {
+        if w.fullscreen().is_some() { JNI_TRUE } else { JNI_FALSE }
+    } else {
+        JNI_FALSE
+    }
+}
+
+#[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetFullscreen(
     _env: JNIEnv,
     _class: JClass,

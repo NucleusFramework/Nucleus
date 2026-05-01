@@ -68,6 +68,9 @@ class TaoWindow internal constructor(
     val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
+    val isFullscreen: Boolean
+        get() = NativeTaoBridge.nativeIsFullscreen(handle)
+
     fun setMaximized(maximized: Boolean) {
         NativeTaoBridge.nativeSetMaximized(handle, maximized)
     }

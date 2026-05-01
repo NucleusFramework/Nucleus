@@ -170,6 +170,9 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeIsFullscreen(handle: Long): Boolean
+
+    @JvmStatic
     external fun nativeSetFullscreen(
         handle: Long,
         fullscreen: Boolean,

@@ -116,6 +116,20 @@ fun ApplicationScope.DecoratedWindow(
                 applied.size = newSize
                 latestState.size = newSize
             }
+            // Tao doesn't emit a dedicated "placement changed" event, but
+            // every fullscreen / maximize / restore transition resizes the
+            // window. Re-query both flags here to keep `state.placement` in
+            // sync when the user exits fullscreen via Esc / green button or
+            // hits the system maximize gesture.
+            val placementNow = when {
+                w.isFullscreen -> WindowPlacement.Fullscreen
+                w.isMaximized -> WindowPlacement.Maximized
+                else -> WindowPlacement.Floating
+            }
+            if (placementNow != applied.placement) {
+                applied.placement = placementNow
+                latestState.placement = placementNow
+            }
         }
         w.onMoved { xPx, yPx ->
             val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
