@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.Measurable
 import androidx.compose.ui.layout.Placeable
@@ -84,12 +85,17 @@ fun DecoratedWindowScope.TitleBar(
         Platform.MacOS -> NATIVE_BUTTONS_INSET_MACOS to NATIVE_BUTTONS_INSET_MACOS
         else -> NATIVE_BUTTONS_INSET_NONE to NATIVE_BUTTONS_INSET_NONE
     }
+    val viewConfig = LocalViewConfiguration.current
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
             .background(background)
-            .windowDragHandler(taoWindow),
+            .windowDragHandler(
+                window = taoWindow,
+                doubleTapMinMs = viewConfig.doubleTapMinTimeMillis,
+                doubleTapMaxMs = viewConfig.doubleTapTimeoutMillis,
+            ),
     ) {
         Layout(
             content = {
@@ -236,16 +242,35 @@ private class TitleBarChildDataNode(
 
 // ── Drag ──────────────────────────────────────────────────────────────────
 
-private fun Modifier.windowDragHandler(window: TaoWindow): Modifier =
+private fun Modifier.windowDragHandler(
+    window: TaoWindow,
+    doubleTapMinMs: Long,
+    doubleTapMaxMs: Long,
+): Modifier =
     pointerInput(window) {
+        // We always consume Press events on the title bar to dispatch them to
+        // `dragWindow()` (Tao posts the platform-specific drag-start message).
+        // Because we consume, the native window machinery never sees the
+        // sequence as a real title-bar click → its native double-click→zoom
+        // (macOS) or →maximize (Windows) doesn't fire. Detect it in Compose
+        // and toggle maximize ourselves on every platform. Mirrors
+        // `decorated-window-jni`'s `TitleBar.{MacOS,Windows}.kt`.
         val ctx = currentCoroutineContext()
+        var lastPress = 0L
         awaitPointerEventScope {
             while (ctx.isActive) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 val change = event.changes.firstOrNull() ?: continue
                 if (event.type == PointerEventType.Press && !change.isConsumed) {
                     change.consume()
-                    window.dragWindow()
+                    val now = System.currentTimeMillis()
+                    if (now - lastPress in doubleTapMinMs..doubleTapMaxMs) {
+                        window.setMaximized(!window.isMaximized)
+                        lastPress = 0L
+                    } else {
+                        window.dragWindow()
+                        lastPress = now
+                    }
                 }
             }
         }
