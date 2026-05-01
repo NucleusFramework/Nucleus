@@ -43,6 +43,7 @@ import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import io.github.kdroidfilter.nucleus.window.tao.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
+import io.github.kdroidfilter.sampleshared.A11yTab
 import io.github.kdroidfilter.sampleshared.EventsTab
 import io.github.kdroidfilter.sampleshared.FancyDemo
 import io.github.kdroidfilter.sampleshared.PALETTE
@@ -156,6 +157,7 @@ private fun runApp() = taoApplication {
                             logEvent(events, "openChildWindow(enabled=$childEnabled, focusable=$childFocusable)")
                         },
                     )
+                    Tab.A11y -> A11yTab(modifier = Modifier.fillMaxSize())
                     Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                 }
             }
