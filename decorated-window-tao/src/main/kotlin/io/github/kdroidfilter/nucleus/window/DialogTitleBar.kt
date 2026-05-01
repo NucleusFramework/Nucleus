@@ -6,9 +6,10 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,8 +22,8 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
@@ -31,6 +32,9 @@ import io.github.kdroidfilter.nucleus.window.DecoratedDialogState
 import io.github.kdroidfilter.nucleus.window.GenericTitleBarImpl
 import io.github.kdroidfilter.nucleus.window.LocalControlButtonsDirection
 import io.github.kdroidfilter.nucleus.window.TitleBarScope
+import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
+import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
+import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoDecoratedDialogScope
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
@@ -63,7 +67,6 @@ fun DecoratedDialogScope.DialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
-    backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val taoScope = this as TaoDecoratedDialogScope
@@ -71,7 +74,23 @@ fun DecoratedDialogScope.DialogTitleBar(
     val dialogState = taoScope.state
     val windowState = dialogState.toDecoratedWindowState()
     val controlDir = controlButtonsDirection.resolve()
-    val viewConfig = LocalViewConfiguration.current
+    val controlIsRtl = controlDir == LayoutDirection.Rtl
+
+    // Publish the resolved height up to DecoratedWindow so its native
+    // button-centering call uses the dialog's actual title-bar height.
+    val heightHolder = LocalRequestedTitleBarHeight.current
+    SideEffect { heightHolder.value = style.metrics.height.value }
+
+    // macOS: flip the AppKit traffic-lights to the right edge when RTL is
+    // active. Same path as the windowed [TitleBar].
+    if (Platform.Current == Platform.MacOS) {
+        LaunchedEffect(taoWindow, controlIsRtl) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                NativeMetalBridge.nativeSetButtonLayoutRtl(nsView, controlIsRtl)
+            }
+        }
+    }
 
     GenericTitleBarImpl(
         state = windowState,
@@ -79,52 +98,39 @@ fun DecoratedDialogScope.DialogTitleBar(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlDir,
-        applyTitleBar = { measuredHeight, _ ->
-            when (Platform.Current) {
-                Platform.MacOS -> {
-                    val h = measuredHeight.value
-                    val shrink = minOf(h / 28f, 1f)
-                    val leftMargin = minOf(h / 2f, 20f)
-                    val inset = (2f * leftMargin + 2f * shrink * 20f).dp
-                    if (controlDir == androidx.compose.ui.unit.LayoutDirection.Rtl) {
-                        PaddingValues(end = inset)
-                    } else {
-                        PaddingValues(start = inset)
-                    }
-                }
-                else -> PaddingValues(0.dp)
-            }
+        applyTitleBar = { measuredHeight, titleBarState ->
+            heightHolder.value = measuredHeight.value
+            // Identical reservation logic to [TitleBar]: macOS traffic-lights
+            // (with fullscreen 80 dp override), KDE Breeze edge padding, none
+            // elsewhere. Dialogs never expose a Linux native control layout
+            // (close-only chrome), so [linuxControlsOnRight] = null.
+            titleBarPadding(
+                measuredHeight = measuredHeight,
+                isFullscreen = titleBarState.isFullscreen,
+                controlIsRtl = controlIsRtl,
+                linuxControlsOnRight = null,
+            )
         },
-        backgroundContent = backgroundContent,
         content = { _ ->
-            content(dialogState)
-
-            // Inject a Compose-drawn close button on platforms that don't
-            // ship a native one alongside our custom title bar (Windows + Linux).
-            // macOS keeps native traffic-lights painted by AppKit.
+            // Window controls are declared BEFORE the user content so core's
+            // [TitleBarMeasurePolicy] places them at the extreme edge first
+            // — same convention as [TitleBar].
             when (Platform.Current) {
-                Platform.Windows -> {
-                    DialogWindowsCloseButton(
-                        onClick = { taoWindow.requestUserClose() },
-                        modifier = Modifier.align(Alignment.End),
-                        style = style,
-                    )
-                }
-                Platform.Linux -> {
-                    DialogLinuxCloseButton(
-                        onClick = { taoWindow.requestUserClose() },
-                        state = windowState,
-                        style = style,
-                        modifier = Modifier.align(Alignment.End),
-                    )
-                }
-                else -> Unit
+                Platform.Windows -> DialogWindowsCloseButton(
+                    onClick = { taoWindow.requestUserClose() },
+                    modifier = Modifier.align(Alignment.End),
+                    style = style,
+                )
+                Platform.Linux -> DialogLinuxCloseButton(
+                    onClick = { taoWindow.requestUserClose() },
+                    state = windowState,
+                    style = style,
+                    modifier = Modifier.align(Alignment.End),
+                )
+                else -> Unit // macOS uses native AppKit traffic-lights
             }
-            // Suppress unused-warning shim for viewConfig — kept for parity
-            // with TitleBar's drag-handler chain (dialogs aren't draggable
-            // by default on Tao; they sit on the parent's coordinate space).
-            @Suppress("UNUSED_EXPRESSION")
-            viewConfig
+
+            content(dialogState)
         },
     )
 }

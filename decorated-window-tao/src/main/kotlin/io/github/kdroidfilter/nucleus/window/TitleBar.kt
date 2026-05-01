@@ -2,6 +2,7 @@ package io.github.kdroidfilter.nucleus.window
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +26,8 @@ import io.github.kdroidfilter.nucleus.window.hasNewFullscreenControls
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
+import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
+import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.WindowControlsLinux
@@ -92,6 +95,18 @@ fun DecoratedWindowScope.TitleBar(
 
     val linuxLayout = if (Platform.Current == Platform.Linux) rememberLinuxButtonLayout() else null
     val controlDir = controlButtonsDirection.resolve()
+    val controlIsRtl = controlDir == LayoutDirection.Rtl
+
+    // macOS: flip the AppKit traffic-lights to the right edge when RTL is
+    // active. Mirrors `decorated-window-jni`'s `nativeSetRTL` call path.
+    if (Platform.Current == Platform.MacOS) {
+        LaunchedEffect(taoWindow, controlIsRtl) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                NativeMetalBridge.nativeSetButtonLayoutRtl(nsView, controlIsRtl)
+            }
+        }
+    }
 
     val viewConfig = LocalViewConfiguration.current
 
@@ -154,7 +169,7 @@ fun DecoratedWindowScope.TitleBar(
  *   `shrink = min(h/28, 1)`. At the default 40 dp height this gives 80 dp.
  * - KDE Breeze: 4 dp on the controls side.
  */
-private fun titleBarPadding(
+internal fun titleBarPadding(
     measuredHeight: Dp,
     isFullscreen: Boolean,
     controlIsRtl: Boolean,
@@ -208,22 +223,36 @@ private fun Modifier.windowDragHandler(
         // (macOS) or →maximize (Windows) doesn't fire. Detect it in Compose
         // and toggle maximize ourselves on every platform. Mirrors
         // `decorated-window-jni`'s `TitleBar.{MacOS,Windows}.kt`.
+        // Robust double-tap detection: only treat a press as the second tap of a
+        // double-tap if a Release was actually observed between the two presses.
+        // On macOS, `dragWindow()` enters a native modal event-tracking loop that
+        // can swallow the trailing release; without this guard, the next press
+        // (after the user lifts and clicks again) would be misclassified as a
+        // double-tap and falsely toggle maximize → fullscreen.
         val ctx = currentCoroutineContext()
         var lastPress = 0L
+        var releasedSinceLastPress = true
         awaitPointerEventScope {
             while (ctx.isActive) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
                 val change = event.changes.firstOrNull() ?: continue
-                if (event.type == PointerEventType.Press && !change.isConsumed) {
-                    change.consume()
-                    val now = System.currentTimeMillis()
-                    if (now - lastPress in doubleTapMinMs..doubleTapMaxMs) {
-                        window.setMaximized(!window.isMaximized)
-                        lastPress = 0L
-                    } else {
-                        window.dragWindow()
-                        lastPress = now
+                when (event.type) {
+                    PointerEventType.Press -> if (!change.isConsumed) {
+                        change.consume()
+                        val now = System.currentTimeMillis()
+                        val isDoubleTap = releasedSinceLastPress &&
+                            now - lastPress in doubleTapMinMs..doubleTapMaxMs
+                        if (isDoubleTap) {
+                            window.setMaximized(!window.isMaximized)
+                            lastPress = 0L
+                        } else {
+                            window.dragWindow()
+                            lastPress = now
+                        }
+                        releasedSinceLastPress = false
                     }
+                    PointerEventType.Release -> releasedSinceLastPress = true
+                    else -> Unit
                 }
             }
         }

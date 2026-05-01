@@ -15,22 +15,24 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against decorated-window-jbr API but let the consumer choose the runtime
-    // implementation: either :decorated-window-jbr (JBR) or :decorated-window-jni.
+    // Compile against all backends — consumer picks one at runtime:
+    //  :decorated-window-jbr (JBR), :decorated-window-jni (any JVM), or
+    //  :decorated-window-tao (no-AWT native).
     compileOnly(project(":decorated-window-jbr"))
+    compileOnly(project(":decorated-window-tao"))
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.jewel.foundation)
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 

@@ -110,4 +110,18 @@ internal object NativeMetalBridge {
         nsViewPtr: Long,
         titleBarHeight: Float,
     )
+
+    /**
+     * Flips the AppKit traffic-light buttons to the right edge of the title bar
+     * when [isRtl] is true, or back to the default left edge when false. Must
+     * be called after [nativeApplyButtonLayout] has stashed the title-bar
+     * height (otherwise this is a no-op until the height is published).
+     *
+     * Mirrors `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetRTL`.
+     */
+    @JvmStatic
+    external fun nativeSetButtonLayoutRtl(
+        nsViewPtr: Long,
+        isRtl: Boolean,
+    )
 }

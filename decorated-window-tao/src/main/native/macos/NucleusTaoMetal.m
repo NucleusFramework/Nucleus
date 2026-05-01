@@ -42,6 +42,9 @@ static const char kTaoFullscreenButtonsKey = 5;
 // on willEnter to avoid AppKit's "white band" animation glitch and reinstall
 // it on didEnter / didExit.
 static const char kTaoHadToolbarKey = 6;
+// RTL flag for traffic-light positioning. When YES, applyButtonConstraints
+// anchors the buttons to titlebarContainer.rightAnchor (mirrored layout).
+static const char kTaoButtonsRtlKey = 7;
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -147,13 +150,21 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
     float btnWidth, btnHeight, offset;
     computeButtonMetrics(titleBarHeight, &btnWidth, &btnHeight, &offset);
 
+    NSNumber *rtlNum = objc_getAssociatedObject(window, &kTaoButtonsRtlKey);
+    BOOL rtl = rtlNum != nil && rtlNum.boolValue;
+
     NucleusTaoButtonsView *container = [[NucleusTaoButtonsView alloc] init];
     NSView *parent = window.contentView;
     CGFloat y = parent.frame.size.height - titleBarHeight;
     float margin = fminf(titleBarHeight / 2.0f, kMaxButtonLeftMargin);
     float containerWidth = margin + 2.0f * offset + btnWidth;
-    [container setFrame:NSMakeRect(0, y, containerWidth, titleBarHeight)];
-    container.autoresizingMask = NSViewMinYMargin; // stay anchored to top
+    // RTL: anchor the container to the right edge of contentView and let it
+    // follow horizontal resizes via NSViewMinXMargin. LTR: anchor to left.
+    CGFloat containerX = rtl ? (parent.frame.size.width - containerWidth) : 0.0f;
+    [container setFrame:NSMakeRect(containerX, y, containerWidth, titleBarHeight)];
+    container.autoresizingMask = rtl
+        ? (NSViewMinXMargin | NSViewMinYMargin)
+        : NSViewMinYMargin;
 
     NSUInteger masks = [window styleMask];
     NSArray<NSNumber *> *types = @[
@@ -168,7 +179,12 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
     for (NSUInteger idx = 0; idx < 3; idx++) {
         NSButton *btn = [NSWindow standardWindowButton:[types[idx] unsignedIntegerValue]
                                           forStyleMask:masks];
-        CGFloat centerX = margin + idx * offset;
+        // RTL: close (idx 0) sits at the right edge of the container,
+        // miniaturise + zoom step inward leftwards. LTR keeps the original
+        // left-anchored layout.
+        CGFloat centerX = rtl
+            ? (containerWidth - margin - idx * offset)
+            : (margin + idx * offset);
         CGFloat centerY = titleBarHeight / 2.0f;
         [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f,
                                  centerY - btnHeight / 2.0f,
@@ -571,6 +587,9 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
     float extraInset   = window.toolbar ? kToolbarExtraInset : 0.0f;
     float margin       = fminf(titleBarHeight / 2.0f, kMaxButtonLeftMargin) + extraInset;
 
+    NSNumber *rtlNum = objc_getAssociatedObject(window, &kTaoButtonsRtlKey);
+    BOOL rtl = rtlNum != nil && rtlNum.boolValue;
+
     NSArray *buttons = @[closeBtn, miniBtn, zoomBtn];
     [buttons enumerateObjectsUsingBlock:^(NSView *btn, NSUInteger idx, BOOL *stop) {
         btn.translatesAutoresizingMaskIntoConstraints = NO;
@@ -583,9 +602,18 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
                                               constant:-2.0],
             [btn.centerYAnchor constraintEqualToAnchor:titlebarContainer.topAnchor
                                               constant:titleBarHeight / 2.0f],
-            [btn.centerXAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor
-                                              constant:c],
         ]];
+        if (rtl) {
+            // Mirror to the right edge: close button at the rightmost position,
+            // miniaturise + zoom step inward by `offset` per index.
+            [constraints addObject:
+                [btn.centerXAnchor constraintEqualToAnchor:titlebarContainer.rightAnchor
+                                                 constant:-c]];
+        } else {
+            [constraints addObject:
+                [btn.centerXAnchor constraintEqualToAnchor:titlebarContainer.leftAnchor
+                                                 constant:c]];
+        }
     }];
 
     [NSLayoutConstraint activateConstraints:constraints];
@@ -604,6 +632,44 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeApplyButt
         NSWindow *win = view.window;
         if (win == nil) return;
         applyButtonConstraints(win, titleBarHeight);
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/**
+ * Flips the AppKit traffic-light buttons (close / miniaturise / zoom) to the
+ * right edge of the title bar when [rtl] is YES, or back to the default left
+ * edge when NO. Re-applies [applyButtonConstraints] with the previously stored
+ * [kTaoTitleBarHeightKey] so the new anchor side takes effect immediately.
+ *
+ * Mirrors `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetRTL`.
+ */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeSetButtonLayoutRtl(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean isRtl) {
+    NTLOG("nativeSetButtonLayoutRtl rtl=%d", (int)isRtl);
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        objc_setAssociatedObject(win, &kTaoButtonsRtlKey,
+                                 @((BOOL)(isRtl == JNI_TRUE)),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        NSNumber *h = objc_getAssociatedObject(win, &kTaoTitleBarHeightKey);
+        if (h != nil) {
+            applyButtonConstraints(win, h.floatValue);
+        }
+        // If we're currently in fullscreen, re-install the replacement
+        // traffic-light container so the new RTL flag takes effect on the
+        // overlay buttons too (otherwise they'd stay anchored on the side
+        // matched at the moment fullscreen was entered).
+        if (([win styleMask] & NSWindowStyleMaskFullScreen) != 0 && h != nil) {
+            removeFullScreenButtons(win);
+            installFullScreenButtons(win, h.floatValue);
+        }
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
