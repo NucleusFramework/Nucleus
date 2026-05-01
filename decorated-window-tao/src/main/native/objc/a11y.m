@@ -189,18 +189,27 @@ static NucleusA11yProjection *ensure_projection_for_view(NSView *view) {
 static NSRect rect_to_screen(NSView *view, NSRect rectInView) {
     NSWindow *window = view.window;
     if (!window) return NSZeroRect;
-    // Flip Y inside the view (TaoView is `isFlipped == YES` to match Compose).
-    // If for some reason we're un-flipped, the conversion via convertRect:toView:
-    // already handles it; the manual flip below is a no-op safety net for the
-    // flipped case (which is what we actually use).
-    NSRect bounds = view.bounds;
-    NSRect flipped = view.isFlipped
-        ? NSMakeRect(rectInView.origin.x,
-                     bounds.size.height - rectInView.origin.y - rectInView.size.height,
-                     rectInView.size.width,
-                     rectInView.size.height)
-        : rectInView;
-    NSRect inWindow = [view convertRect:flipped toView:nil];
+    // The input rect uses Compose's top-left origin (y grows downward).
+    // We need to deliver an AppKit screen rect (bottom-left, y grows upward).
+    //
+    // - If the source view is `isFlipped == YES`, its own coordinate space is
+    //   already top-left, so we hand the rect to `convertRect:toView:nil`
+    //   verbatim — AppKit reconciles flipped→non-flipped during conversion.
+    // - If the source view is `isFlipped == NO` (default `NSView`, which is
+    //   what Tao 0.35 ships), we must flip Y manually first so the rect
+    //   matches the view's bottom-left coordinate system before conversion.
+    NSRect rectInOwnSpace;
+    if (view.isFlipped) {
+        rectInOwnSpace = rectInView;
+    } else {
+        NSRect bounds = view.bounds;
+        rectInOwnSpace = NSMakeRect(
+            rectInView.origin.x,
+            bounds.size.height - rectInView.origin.y - rectInView.size.height,
+            rectInView.size.width,
+            rectInView.size.height);
+    }
+    NSRect inWindow = [view convertRect:rectInOwnSpace toView:nil];
     return [window convertRectToScreen:inWindow];
 }
 
@@ -773,6 +782,14 @@ static id tao_view_accessibility_hit_test(id self, SEL _cmd, NSPoint pointInScre
     if (!window) return self;
     NSPoint pointInWindow = [window convertPointFromScreen:pointInScreen];
     NSPoint pointInView = [view convertPoint:pointInWindow fromView:nil];
+    // `frameInView` is stored in Compose's top-left convention. If the view
+    // is non-flipped (Tao default), `convertPoint` produces a bottom-left
+    // point — flip Y here so the comparison against frameInView is in the
+    // same orientation. Without this flip, hovering near the visual top of
+    // the content selects an element whose frame is near the visual bottom.
+    if (!view.isFlipped) {
+        pointInView.y = view.bounds.size.height - pointInView.y;
+    }
     NucleusA11yProjection *proj = projection_for_view(view);
     NucleusA11yElement *hit = [proj hitTestPointInView:pointInView];
     return hit ?: self;
