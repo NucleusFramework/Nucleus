@@ -113,6 +113,7 @@ internal class TaoSemanticsObserver(
         val pageLeft = node.config.getOrNull(SemanticsActions.PageLeft)?.action
         val pageRight = node.config.getOrNull(SemanticsActions.PageRight)?.action
         val dismiss = node.config.getOrNull(SemanticsActions.Dismiss)?.action
+        val setSelection = node.config.getOrNull(SemanticsActions.SetSelection)?.action
         // Page actions are preferred when present (they correspond to AppKit's
         // "scroll by page" semantics that VO+Cmd+arrow triggers). Fall back to
         // ScrollBy with a heuristic step (~ a viewport's worth) if the node
@@ -142,6 +143,12 @@ internal class TaoSemanticsObserver(
                 onScrollLeft = onScrollLeft,
                 onScrollRight = onScrollRight,
                 onDismiss = dismiss?.let { { it.invoke() } },
+                onSetSelection = setSelection?.let { fn ->
+                    // Compose's SetSelection is `(start, end, traversalMode) -> Boolean`.
+                    // VoiceOver doesn't expose a traversalMode concept; pass false
+                    // to mean "set the editable cursor / selection directly".
+                    { start, end -> fn.invoke(start, end, false) }
+                },
             ),
         )
 

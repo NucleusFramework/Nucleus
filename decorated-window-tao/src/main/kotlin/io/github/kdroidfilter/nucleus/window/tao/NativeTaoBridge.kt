@@ -274,6 +274,12 @@ internal object NativeTaoBridge {
     fun dispatchA11ySetText(nsView: Long, nodeId: Long, text: String) {
         TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text)
     }
+
+    @JvmStatic
+    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_set_selection)
+    fun dispatchA11ySetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
+        TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end)
+    }
 }
 
 /** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */

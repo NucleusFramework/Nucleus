@@ -272,6 +272,37 @@ pub extern "C" fn nucleus_tao_a11y_set_text(
     }
 }
 
+/// Called from `objc/a11y.m` when VoiceOver places the caret / extends the
+/// selection inside a text field (`setAccessibilitySelectedTextRange:`).
+/// Routed to Compose's `SemanticsActions.SetSelection`.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_set_selection(
+    ns_view_handle: i64,
+    node_id: u64,
+    start: i32,
+    end: i32,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11ySetSelection",
+            "(JJII)V",
+            &[
+                JValue::Long(ns_view_handle),
+                JValue::Long(node_id as i64),
+                JValue::Int(start),
+                JValue::Int(end),
+            ],
+        );
+    }
+}
+
 /// Called from `objc/a11y.m` when VoiceOver triggers an accessibility action.
 /// Passes the NSView pointer through unchanged — the JVM-side registry is
 /// indexed by NSView, so we can avoid acquiring `WINDOWS.lock()` here. That

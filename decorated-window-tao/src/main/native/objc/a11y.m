@@ -110,6 +110,10 @@ __attribute__((weak)) extern void
 nucleus_tao_a11y_set_text(int64_t ns_view_handle, uint64_t node_id,
                           const char *utf8, int32_t len);
 
+__attribute__((weak)) extern void
+nucleus_tao_a11y_set_selection(int64_t ns_view_handle, uint64_t node_id,
+                               int32_t start, int32_t end);
+
 // ────────────────────────────────────────────────────────────────────────────
 // NucleusA11yElement — backing object for one Compose semantic node.
 // ────────────────────────────────────────────────────────────────────────────
@@ -533,15 +537,46 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return (NSInteger)(self.valueString.length);
 }
 
+// Builds the table of line ranges (start, length) by scanning valueString for
+// `\n`. The terminating newline ends the previous line; an empty trailing
+// line is reported when the string ends with `\n` (matches Cocoa's convention
+// for `NSLayoutManager.rangeOfLineForCharacterAtIndex:`).
+- (NSArray<NSValue *> *)_lineRanges {
+    NSString *s = self.valueString ?: @"";
+    NSMutableArray<NSValue *> *ranges = [NSMutableArray new];
+    NSUInteger len = s.length;
+    NSUInteger lineStart = 0;
+    for (NSUInteger i = 0; i < len; i++) {
+        unichar c = [s characterAtIndex:i];
+        if (c == '\n') {
+            [ranges addObject:[NSValue valueWithRange:NSMakeRange(lineStart, i - lineStart)]];
+            lineStart = i + 1;
+        }
+    }
+    // Trailing line (or the only line if no `\n` present).
+    [ranges addObject:[NSValue valueWithRange:NSMakeRange(lineStart, len - lineStart)]];
+    return ranges;
+}
+
 - (NSRange)accessibilityRangeForLine:(NSInteger)line {
-    if (![self isTextElement] || line != 0) return NSMakeRange(NSNotFound, 0);
-    return NSMakeRange(0, self.valueString.length);
+    if (![self isTextElement]) return NSMakeRange(NSNotFound, 0);
+    NSArray<NSValue *> *ranges = [self _lineRanges];
+    if (line < 0 || (NSUInteger)line >= ranges.count) return NSMakeRange(NSNotFound, 0);
+    return [ranges[line] rangeValue];
 }
 
 - (NSInteger)accessibilityLineForIndex:(NSInteger)index {
     if (![self isTextElement]) return -1;
-    if (index < 0 || (NSUInteger)index > self.valueString.length) return -1;
-    return 0;
+    NSUInteger idx = (NSUInteger)index;
+    if (index < 0 || idx > self.valueString.length) return -1;
+    NSArray<NSValue *> *ranges = [self _lineRanges];
+    for (NSUInteger i = 0; i < ranges.count; i++) {
+        NSRange r = [ranges[i] rangeValue];
+        // A position at the very end of a line (on its trailing `\n`) is
+        // reported as belonging to that line, matching NSTextView's behavior.
+        if (idx >= r.location && idx <= r.location + r.length) return (NSInteger)i;
+    }
+    return (NSInteger)(ranges.count - 1);
 }
 
 - (NSString *)accessibilityStringForRange:(NSRange)range {
@@ -567,12 +602,28 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
     return NSMakeRange(start, end - start);
 }
 
+// VoiceOver places the caret / extends the selection via this setter (e.g.
+// VO+arrow during text navigation). We forward to Compose's
+// `SemanticsActions.SetSelection`. Compose mutates state, our snapshot
+// observer will push the new selection back through the wire format on the
+// next recomposition.
+- (void)setAccessibilitySelectedTextRange:(NSRange)range {
+    if (![self isTextElement]) return;
+    if (nucleus_tao_a11y_set_selection) {
+        int32_t start = (int32_t)range.location;
+        int32_t end = (int32_t)(range.location + range.length);
+        nucleus_tao_a11y_set_selection((int64_t)(uintptr_t)self.taoView,
+                                       self.nodeId, start, end);
+    }
+}
+
 - (NSString *)accessibilitySelectedText {
     return [self accessibilityStringForRange:[self accessibilitySelectedTextRange]];
 }
 
 - (NSInteger)accessibilityInsertionPointLineNumber {
-    return [self isTextElement] ? 0 : -1;
+    if (![self isTextElement]) return -1;
+    return [self accessibilityLineForIndex:(NSInteger)self.selectionStart];
 }
 
 - (NSRange)accessibilityVisibleCharacterRange {

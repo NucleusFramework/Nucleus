@@ -141,6 +141,10 @@ internal object TaoAccessibilityRegistry {
     fun dispatchSetText(nsView: Long, nodeId: Long, text: String) {
         byNsView[nsView]?.onSetTextInvoked(nodeId, text)
     }
+
+    fun dispatchSetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
+        byNsView[nsView]?.onSetSelectionInvoked(nodeId, start, end)
+    }
 }
 
 /**
@@ -238,6 +242,12 @@ internal class TaoAccessibilityController(
         wakeEventLoop()
     }
 
+    internal fun onSetSelectionInvoked(nodeId: Long, start: Int, end: Int) {
+        if (isDisposed) return
+        actionHandlers[nodeId]?.onSetSelection?.invoke(start, end)
+        wakeEventLoop()
+    }
+
     private fun wakeEventLoop() {
         // The action just wrote to Compose state on the AppKit main thread,
         // outside any Tao event handler. The Recomposer is suspended on
@@ -261,6 +271,7 @@ internal class TaoAccessibilityController(
         val onScrollLeft: (() -> Unit)? = null,
         val onScrollRight: (() -> Unit)? = null,
         val onDismiss: (() -> Unit)? = null,
+        val onSetSelection: ((start: Int, end: Int) -> Unit)? = null,
     )
 }
 
