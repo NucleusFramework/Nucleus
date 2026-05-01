@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.foundation.layout.Column
@@ -85,6 +87,20 @@ internal fun ApplicationScope.openDecoratedWindow(
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+
+    // ── macOS accessibility ────────────────────────────────────────────────
+    // Spin up the per-window NSAccessibility projection. The observer hooks
+    // into Compose's SemanticsOwnerListener and pushes a flat snapshot to
+    // native on every change; the controller owns the per-window state and
+    // routes VoiceOver actions back into Compose semantics actions.
+    val a11yController = TaoAccessibilityController(window.handle)
+    val a11yObserver = TaoSemanticsObserver(
+        controller = a11yController,
+        densityProvider = { host.density() },
+        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+    )
+    host.semanticsOwnerListener = a11yObserver
+
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     // Single source of truth shared with the host (which feeds it as a top
     // inset to the PlatformContext) and the TitleBar composable (which
@@ -105,6 +121,10 @@ internal fun ApplicationScope.openDecoratedWindow(
         // firstResponder during Compose TextField focus — required to engage
         // press-and-hold (long-press 'e' → accent picker).
         NativeTaoBridge.nativeAttachTextOverlay(window.handle)
+        // Install a11y projection (TaoView swizzles + per-view registry +
+        // NSWindow focus forwarder). Must follow attach() so the NSView
+        // exists and the window is reachable.
+        a11yController.attach()
         host.setContent {
             CompositionLocalProvider(
                 LocalDecoratedWindowTitle provides title,
@@ -130,7 +150,10 @@ internal fun ApplicationScope.openDecoratedWindow(
         }
     }
     window.onCloseRequested { onCloseRequest() }
-    window.onDestroyed { host.detach() }
+    window.onDestroyed {
+        a11yController.dispose()
+        host.detach()
+    }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }

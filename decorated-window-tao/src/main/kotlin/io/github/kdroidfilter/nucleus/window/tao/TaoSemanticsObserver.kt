@@ -1,0 +1,255 @@
+@file:OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+
+package io.github.kdroidfilter.nucleus.window.tao
+
+import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsOwner
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.state.ToggleableState
+
+/**
+ * Compose `PlatformContext.SemanticsOwnerListener` that walks the
+ * SemanticsOwner tree on every change and pushes a flat snapshot to a
+ * [TaoAccessibilityController].
+ *
+ * Mirrors `compose-multiplatform-core/desktop/AccessibilityController.kt`'s
+ * BFS sync but skips the per-node Java `AccessibleContext` shadow tree
+ * because our consumers (NSAccessibility) work off a serialised snapshot
+ * rather than a live object graph.
+ *
+ * Invariants:
+ *  - `pushSnapshot` runs on the macOS main thread (the same thread that
+ *    drains `TaoMainDispatcher`); we trust the caller to schedule us there.
+ *  - Nodes are emitted in semantic / visual order (root first, then DFS in
+ *    `replacedChildren` order), which the C parser relies on to build the
+ *    children arrays in one pass.
+ */
+internal class TaoSemanticsObserver(
+    private val controller: TaoAccessibilityController,
+    private val densityProvider: () -> Float,
+    private val onScheduleSync: (TaoSemanticsObserver) -> Unit,
+) : PlatformContext.SemanticsOwnerListener {
+
+    private val owners = mutableListOf<SemanticsOwner>()
+    private var dirty = false
+
+    override fun onSemanticsOwnerAppended(semanticsOwner: SemanticsOwner) {
+        if (!owners.contains(semanticsOwner)) {
+            owners.add(semanticsOwner)
+            dirty = true
+            if (!controller.isDisposed) onScheduleSync(this)
+        }
+    }
+
+    override fun onSemanticsOwnerRemoved(semanticsOwner: SemanticsOwner) {
+        if (owners.remove(semanticsOwner)) {
+            dirty = true
+            if (!controller.isDisposed) onScheduleSync(this)
+        }
+    }
+
+    override fun onSemanticsChange(semanticsOwner: SemanticsOwner) {
+        dirty = true
+        onScheduleSync(this)
+    }
+
+    override fun onLayoutChange(semanticsOwner: SemanticsOwner, semanticsNodeId: Int) {
+        dirty = true
+        onScheduleSync(this)
+    }
+
+    /**
+     * Builds a fresh snapshot from the current SemanticsOwner state and
+     * pushes it to the controller. Idempotent; the caller debounces.
+     */
+    fun syncIfDirty() {
+        if (!dirty || controller.isDisposed) return
+        dirty = false
+        val nodes = ArrayList<TaoA11yNode>(64)
+        val liveIds = HashSet<Long>()
+        val density = densityProvider()
+        for (owner in owners) {
+            val root = owner.rootSemanticsNode
+            if (root.layoutInfo.let { it.isPlaced && it.isAttached }) {
+                walk(root, parentId = 0L, density = density, out = nodes, liveIds = liveIds)
+            }
+        }
+        controller.clearStaleHandlers(liveIds)
+        controller.pushSnapshot(nodes)
+    }
+
+    private fun walk(
+        node: SemanticsNode,
+        parentId: Long,
+        density: Float,
+        out: ArrayList<TaoA11yNode>,
+        liveIds: HashSet<Long>,
+    ) {
+        if (node.isInvisibleToA11y()) return
+
+        val id = nodeIdToLong(node.id)
+        liveIds.add(id)
+
+        val (role, flags, actions) = describe(node)
+        val bounds = node.boundsInWindow
+        // Bounds are in window-local pixels at the current density. ObjC wants
+        // window-local logical points (= pixels / density at scale=1, but
+        // Compose reports `boundsInWindow` already in raw px). Convert by
+        // dividing by density so values match AppKit's points-based input to
+        // `convertRect:toView:`.
+        val invDensity = if (density > 0f) 1f / density else 1f
+
+        val onClick = node.config.getOrNull(SemanticsActions.OnClick)?.action
+        val setProgress = node.config.getOrNull(SemanticsActions.SetProgress)?.action
+        controller.setActionHandlers(
+            id,
+            TaoAccessibilityController.ActionHandlers(
+                onClick = onClick?.let { { it.invoke() } },
+                onIncrement = setProgress?.let { fn -> { stepProgress(node, fn, +1) } },
+                onDecrement = setProgress?.let { fn -> { stepProgress(node, fn, -1) } },
+            ),
+        )
+
+        val label = computeLabel(node)
+        val valueString = computeValueString(node)
+        val rangeInfo = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+
+        out.add(
+            TaoA11yNode(
+                nodeId = id,
+                parentId = parentId,
+                role = role,
+                flags = flags,
+                actions = actions,
+                frameX = bounds.left * invDensity,
+                frameY = bounds.top * invDensity,
+                frameW = bounds.width * invDensity,
+                frameH = bounds.height * invDensity,
+                minValue = rangeInfo?.range?.start ?: 0f,
+                maxValue = rangeInfo?.range?.endInclusive ?: 0f,
+                numericValue = rangeInfo?.current ?: 0f,
+                label = label,
+                valueString = valueString,
+            ),
+        )
+
+        for (child in node.children) {
+            if (child.layoutInfo.let { it.isPlaced && it.isAttached }) {
+                walk(child, parentId = id, density = density, out = out, liveIds = liveIds)
+            }
+        }
+    }
+
+    private fun stepProgress(
+        node: SemanticsNode,
+        setProgress: (Float) -> Boolean,
+        direction: Int,
+    ) {
+        val info = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo) ?: return
+        val span = info.range.endInclusive - info.range.start
+        if (span <= 0f) return
+        val step = span * 0.1f * direction
+        val target = (info.current + step).coerceIn(info.range.start, info.range.endInclusive)
+        setProgress(target)
+    }
+
+    private fun describe(node: SemanticsNode): Triple<TaoA11yRole, Int, Int> {
+        val cfg = node.config
+        val composeRole = cfg.getOrNull(SemanticsProperties.Role)
+        val hasText = cfg.contains(SemanticsProperties.Text)
+        val hasEditable = cfg.contains(SemanticsProperties.EditableText)
+        val isHeading = cfg.contains(SemanticsProperties.Heading)
+        val toggleable = cfg.getOrNull(SemanticsProperties.ToggleableState)
+        val isPassword = cfg.contains(SemanticsProperties.Password)
+        val rangeInfo = cfg.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+        val onClick = cfg.contains(SemanticsActions.OnClick)
+        val setProgress = cfg.contains(SemanticsActions.SetProgress)
+
+        var role = when (composeRole) {
+            Role.Button -> TaoA11yRole.Button
+            Role.Checkbox -> TaoA11yRole.Checkbox
+            Role.Switch -> TaoA11yRole.Switch
+            Role.RadioButton -> TaoA11yRole.RadioButton
+            Role.Tab -> TaoA11yRole.Tab
+            Role.Image -> TaoA11yRole.Image
+            Role.DropdownList -> TaoA11yRole.PopupMenu
+            else -> when {
+                isHeading -> TaoA11yRole.Heading
+                hasEditable -> TaoA11yRole.TextField
+                rangeInfo != null && setProgress -> TaoA11yRole.Slider
+                rangeInfo != null -> TaoA11yRole.Progress
+                // Clickable wins over plain text: a `Box.clickable { Text(…) }`
+                // composable (e.g. the "Clear" button or tab labels in sample-tao)
+                // should announce as a button, with the Text becoming the label.
+                onClick -> TaoA11yRole.Button
+                hasText -> TaoA11yRole.StaticText
+                else -> TaoA11yRole.Group
+            }
+        }
+
+        var flags = 0
+        // Anything carrying meaningful semantics is announceable.
+        val hasAnyContent = hasText || hasEditable || onClick || toggleable != null ||
+            composeRole != null || rangeInfo != null
+        if (hasAnyContent) flags = flags or TaoA11yFlag.IS_ELEMENT
+        if (!cfg.contains(SemanticsProperties.Disabled)) flags = flags or TaoA11yFlag.ENABLED
+        if (cfg.getOrNull(SemanticsProperties.Focused) == true) flags = flags or TaoA11yFlag.FOCUSED
+        if (cfg.getOrNull(SemanticsProperties.Selected) == true) flags = flags or TaoA11yFlag.SELECTED
+        when (toggleable) {
+            ToggleableState.On -> flags = flags or TaoA11yFlag.CHECKED
+            ToggleableState.Indeterminate -> flags = flags or TaoA11yFlag.MIXED
+            else -> Unit
+        }
+        if (isHeading) flags = flags or TaoA11yFlag.HEADING
+        if (isPassword) flags = flags or TaoA11yFlag.PASSWORD
+
+        var actions = 0
+        if (onClick) actions = actions or TaoA11yAction.CLICK
+        if (setProgress) {
+            actions = actions or TaoA11yAction.INCREMENT or TaoA11yAction.DECREMENT
+        }
+        if (cfg.contains(SemanticsActions.SetText)) actions = actions or TaoA11yAction.SET_TEXT
+
+        // Slider role implies enabled + element.
+        if (role == TaoA11yRole.Slider) flags = flags or TaoA11yFlag.IS_ELEMENT
+
+        return Triple(role, flags, actions)
+    }
+
+    private fun computeLabel(node: SemanticsNode): String {
+        val cfg = node.config
+        cfg.getOrNull(SemanticsProperties.ContentDescription)?.firstOrNull()?.let { return it }
+        // For controls that visually carry their label as text, surface the
+        // text — VoiceOver expects a label even on Buttons that contain a
+        // child Text composable.
+        val text = cfg.getOrNull(SemanticsProperties.Text)
+        if (text != null && text.isNotEmpty()) {
+            return text.joinToString(" ") { it.text }
+        }
+        return ""
+    }
+
+    private fun computeValueString(node: SemanticsNode): String {
+        val cfg = node.config
+        cfg.getOrNull(SemanticsProperties.EditableText)?.let { return it.text }
+        cfg.getOrNull(SemanticsProperties.StateDescription)?.let { return it }
+        return ""
+    }
+
+    private fun SemanticsNode.isInvisibleToA11y(): Boolean {
+        @Suppress("DEPRECATION")
+        return config.contains(SemanticsProperties.InvisibleToUser) ||
+            config.contains(SemanticsProperties.HideFromAccessibility)
+    }
+
+    /**
+     * SemanticsNode ids are Compose `LayoutNode.semanticsId` (Int). We promote
+     * to Long for the wire format; node id 0 is reserved for "no parent" so
+     * we shift by +1 to keep ids non-zero.
+     */
+    private fun nodeIdToLong(id: Int): Long = (id.toLong() and 0xFFFFFFFFL) + 1L
+}

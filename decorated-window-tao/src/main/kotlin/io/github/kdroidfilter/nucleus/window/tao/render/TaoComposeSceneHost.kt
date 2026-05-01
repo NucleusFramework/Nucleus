@@ -96,6 +96,13 @@ internal class TaoComposeSceneHost(
      */
     var keyHandler: ((KeyEvent) -> Boolean)? = null
 
+    /**
+     * SemanticsOwnerListener installed when the host carries an a11y
+     * controller. Forwarded through the [TaoPlatformContext] so Compose's
+     * BaseComposeScene picks it up. Set once before [attach].
+     */
+    var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+
     // Mirrors `PlatformWindowContext.desktop.kt` — Compose's `Popup` framework
     // reads `LocalWindowInfo.current.containerSize` to know how large the host
     // window is, which is the basis for the popup positioning math (see
@@ -172,6 +179,7 @@ internal class TaoComposeSceneHost(
                 windowHandle = window.handle,
                 topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
                 windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
             ),
             invalidate = {
                 window.requestRedraw()
@@ -204,6 +212,29 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+    }
+
+    /** Current scale factor (logical→physical multiplier). */
+    fun density(): Float = scale
+
+    // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
+    // recomposition collapses into a single push at the next render tick.
+    private var a11ySyncScheduled: Runnable? = null
+
+    /**
+     * Schedules [block] to run on the macOS main thread "soon" — at the next
+     * redraw. Used by the SemanticsObserver to coalesce per-recomposition
+     * change notifications into one snapshot push per frame.
+     */
+    fun scheduleA11ySync(block: () -> Unit) {
+        if (a11ySyncScheduled != null) return
+        val r = Runnable {
+            a11ySyncScheduled = null
+            block()
+        }
+        a11ySyncScheduled = r
+        flushingDispatcher.enqueue(r)
+        window.requestRedraw()
     }
 
     private fun updateWindowInfoSize() {
@@ -422,6 +453,10 @@ internal class TaoComposeSceneHost(
             window.requestRedraw()
         }
 
+        fun enqueue(block: Runnable) {
+            queue.add(block)
+        }
+
         fun drain() {
             // Snapshot the queue length so a block that itself enqueues work
             // (common with Compose recomposition) doesn't trap us in a loop;
@@ -481,6 +516,7 @@ private class TaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic

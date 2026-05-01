@@ -224,6 +224,50 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeFocusTextOverlay(focused: Boolean)
+
+    // ── Accessibility (macOS) ──────────────────────────────────────────────
+    //
+    // The Compose Semantics tree is observed by [TaoAccessibilityController]
+    // and pushed here as a binary [ByteArray]. Native parses, projects to
+    // NucleusA11yElement objects, and exposes them to AppKit / VoiceOver.
+
+    // The a11y API takes the NSView pointer directly (not the window handle)
+    // because EVENT_DESTROYED is dispatched from inside Rust's WINDOWS lock —
+    // any reentrant `WINDOWS.lock()` from JNI on the same thread would
+    // deadlock the Tao event loop. The JVM caches the NSView at attach time
+    // and passes it back unchanged on every call.
+
+    @JvmStatic
+    external fun nativeA11yAttach(nsView: Long)
+
+    @JvmStatic
+    external fun nativeA11yDetach(nsView: Long)
+
+    @JvmStatic
+    external fun nativeA11yApplySnapshot(nsView: Long, bytes: ByteArray): Boolean
+
+    @JvmStatic
+    external fun nativeA11yPostFocusChanged(nsView: Long, nodeId: Long)
+
+    /**
+     * Called from native (`objc/a11y.m` → `nucleus_tao_a11y_invoke_action`)
+     * on the macOS main thread when VoiceOver triggers an action. Routed to
+     * the registered [TaoAccessibilityController] for the given window.
+     *
+     * [action] mirrors the `NucleusA11yAction` bitmask: 1=click, 2=increment,
+     * 4=decrement, 8=setText. Exactly one bit is set per call.
+     */
+    @JvmStatic
+    @Suppress("unused") // called from JNI
+    fun dispatchA11yAction(handle: Long, nodeId: Long, action: Int) {
+        TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action)
+    }
+
+    @JvmStatic
+    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_invoke_action)
+    fun dispatchA11yActionByNsView(nsView: Long, nodeId: Long, action: Int) {
+        TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action)
+    }
 }
 
 /** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */

@@ -106,6 +106,14 @@ extern "C" {
     );
     fn nucleus_tao_attach_text_overlay(ns_view_handle: i64);
     fn nucleus_tao_focus_text_overlay(focused: i32);
+    fn nucleus_tao_a11y_attach(ns_view_handle: i64);
+    fn nucleus_tao_a11y_detach(ns_view_handle: i64);
+    fn nucleus_tao_a11y_apply_snapshot(
+        ns_view_handle: i64,
+        bytes: *const u8,
+        len: usize,
+    ) -> i32;
+    fn nucleus_tao_a11y_post_focus_changed(ns_view_handle: i64, node_id: u64);
 }
 
 #[cfg(target_os = "macos")]
@@ -151,6 +159,113 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     if let Some(window) = map.get(&(handle as u64)) {
         let ns_view = window.ns_view() as i64;
         unsafe { nucleus_tao_activate_input_context(ns_view) };
+    }
+}
+
+// ── A11y bridge (macOS) ────────────────────────────────────────────────────
+//
+// The JVM side builds an immutable snapshot of the Compose semantics tree,
+// serialises it to the wire format documented in `objc/a11y.m`, and pushes it
+// here once per Compose tick. We forward the bytes verbatim to the ObjC
+// projection, which rebuilds its NSAccessibilityElement tree and posts the
+// appropriate notifications to AppKit.
+//
+// `Action` callbacks travel back the other direction: VoiceOver invokes
+// `accessibilityPerformPress` on a NucleusA11yElement, which calls
+// `nucleus_tao_a11y_invoke_action`, which turns into a JNI upcall to the
+// Kotlin-side controller (`TaoAccessibilityBridge.invokeAction`).
+
+// All a11y JNI exports take the NSView pointer directly (cached on the JVM
+// side at attach time) rather than the window handle. This is critical
+// because `EVENT_DESTROYED` is dispatched from inside `WINDOWS.lock()` —
+// any reentrant lock attempt on the same thread (e.g. from
+// `nativeA11yDetach`) would deadlock the Tao event loop.
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
+    _env: JNIEnv,
+    _class: JClass,
+    ns_view: jlong,
+) {
+    if ns_view == 0 { return; }
+    unsafe { nucleus_tao_a11y_attach(ns_view) };
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
+    _env: JNIEnv,
+    _class: JClass,
+    ns_view: jlong,
+) {
+    if ns_view == 0 { return; }
+    unsafe { nucleus_tao_a11y_detach(ns_view) };
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
+    env: JNIEnv,
+    _class: JClass,
+    ns_view: jlong,
+    bytes: jni::objects::JByteArray,
+) -> jboolean {
+    if ns_view == 0 { return JNI_FALSE; }
+    let len = match env.get_array_length(&bytes) {
+        Ok(n) if n > 0 => n as usize,
+        _ => return JNI_FALSE,
+    };
+    let mut buf = vec![0i8; len];
+    if env.get_byte_array_region(&bytes, 0, &mut buf).is_err() {
+        return JNI_FALSE;
+    }
+    let ok = unsafe {
+        nucleus_tao_a11y_apply_snapshot(ns_view, buf.as_ptr() as *const u8, len)
+    };
+    if ok != 0 { JNI_TRUE } else { JNI_FALSE }
+}
+
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
+    _env: JNIEnv,
+    _class: JClass,
+    ns_view: jlong,
+    node_id: jlong,
+) {
+    if ns_view == 0 { return; }
+    unsafe { nucleus_tao_a11y_post_focus_changed(ns_view, node_id as u64) };
+}
+
+/// Called from `objc/a11y.m` when VoiceOver triggers an accessibility action.
+/// Passes the NSView pointer through unchanged — the JVM-side registry is
+/// indexed by NSView, so we can avoid acquiring `WINDOWS.lock()` here. That
+/// keeps this callback safe to invoke from any AppKit context, including
+/// nested ones where the Tao loop happens to hold the lock.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn nucleus_tao_a11y_invoke_action(
+    ns_view_handle: i64,
+    node_id: u64,
+    action: u16,
+) {
+    let Some(jvm) = JAVA_VM.get() else { return };
+    if let Ok(mut env) = jvm.attach_current_thread() {
+        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let _ = env.call_static_method(
+            class,
+            "dispatchA11yActionByNsView",
+            "(JJI)V",
+            &[
+                JValue::Long(ns_view_handle),
+                JValue::Long(node_id as i64),
+                JValue::Int(action as i32),
+            ],
+        );
     }
 }
 
