@@ -38,6 +38,7 @@ fun ActionsTab(
     onLog: (String) -> Unit,
 ) {
     var titleInput by remember { mutableStateOf("Tao Backend Demo") }
+    var alwaysOnTop by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier.padding(24.dp),
@@ -84,6 +85,43 @@ fun ActionsTab(
                     onLog("show() (auto)")
                 }.start()
             }
+        }
+
+        SectionTitle("Always on top")
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable {
+                    alwaysOnTop = !alwaysOnTop
+                    window.setAlwaysOnTop(alwaysOnTop)
+                    onLog("setAlwaysOnTop($alwaysOnTop)")
+                }
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (alwaysOnTop) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.06f))
+                    .border(
+                        1.dp,
+                        if (alwaysOnTop) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.2f),
+                        RoundedCornerShape(4.dp),
+                    )
+                    .padding(2.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(
+                    text = if (alwaysOnTop) "✓" else " ",
+                    style = TextStyle(color = Color(0xFF0F1115), fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                    modifier = Modifier.width(14.dp),
+                )
+            }
+            BasicText(
+                text = "Keep window above all others",
+                style = TextStyle(color = Color(0xFFB7B9C4), fontSize = 13.sp),
+            )
         }
 
         SectionTitle("Drag")

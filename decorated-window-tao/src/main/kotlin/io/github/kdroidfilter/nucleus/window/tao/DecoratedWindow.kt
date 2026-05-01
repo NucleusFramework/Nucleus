@@ -128,7 +128,7 @@ fun ApplicationScope.DecoratedWindow(
     }
 
     if (alwaysOnTop) {
-        // TODO Phase 2b: expose tao::Window::set_always_on_top via JNI.
+        window.setAlwaysOnTop(true)
     }
 
     return window

@@ -72,6 +72,10 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, true)
     }
 
+    fun setAlwaysOnTop(alwaysOnTop: Boolean) {
+        NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
+    }
+
     fun show() {
         NativeTaoBridge.nativeSetVisible(handle, true)
     }
