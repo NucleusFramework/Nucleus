@@ -45,6 +45,17 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
+    /**
+     * Fires the [onCloseRequested] listener as if the OS had emitted a close
+     * event (clicking native X, Alt+F4, etc.). Use this from custom UI like
+     * the title-bar close button so the user's `onCloseRequest` callback runs
+     * and gets a chance to call `exitApplication()` — bypassing it via
+     * [requestClose] destroys the window but leaves the event loop running.
+     */
+    fun requestUserClose() {
+        closeRequestedListener?.invoke()
+    }
+
     /** Starts a native window drag — call synchronously during a mouse press. */
     fun dragWindow() {
         NativeTaoBridge.nativeDragWindow(handle)

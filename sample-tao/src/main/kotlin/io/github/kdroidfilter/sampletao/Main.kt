@@ -34,13 +34,13 @@ import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.tao.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
-
-private enum class Tab(val label: String) {
-    Demo("Demo"),
-    Scroll("Scroll"),
-    Actions("Window actions"),
-    Events("Events"),
-}
+import io.github.kdroidfilter.sampleshared.EventsTab
+import io.github.kdroidfilter.sampleshared.FancyDemo
+import io.github.kdroidfilter.sampleshared.PALETTE
+import io.github.kdroidfilter.sampleshared.ScrollTab
+import io.github.kdroidfilter.sampleshared.Tab
+import io.github.kdroidfilter.sampleshared.TabBar
+import io.github.kdroidfilter.sampleshared.logEvent
 
 fun main() {
     GraalVmInitializer.initialize()
@@ -60,7 +60,7 @@ private fun runApp() = taoApplication {
         var selectedTab by remember { mutableStateOf(Tab.Demo) }
         val events = remember { mutableStateListOf<String>() }
 
-        TitleBar(height = 36.dp) { state ->
+        TitleBar(height = 36.dp, background = Color(0xFF1A1D24)) { state ->
             Row(
                 modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -133,36 +133,3 @@ private fun runApp() = taoApplication {
     }
 }
 
-@Composable
-private fun TabBar(
-    selected: Tab,
-    onSelect: (Tab) -> Unit,
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth().height(40.dp).background(Color(0xFF15181D)),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Tab.entries.forEach { tab ->
-            val isSelected = tab == selected
-            Box(
-                modifier = Modifier.height(40.dp).clickable { onSelect(tab) }.padding(horizontal = 16.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                BasicText(
-                    text = tab.label,
-                    style = TextStyle(
-                        color = if (isSelected) Color(0xFF8AB4FF) else Color(0xFFA0A4B0),
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    ),
-                )
-            }
-        }
-    }
-}
-
-internal fun logEvent(events: SnapshotStateList<String>, line: String) {
-    val ts = java.time.LocalTime.now().withNano(0).toString()
-    events.add(0, "$ts  $line")
-    if (events.size > 200) events.removeAt(events.lastIndex)
-}

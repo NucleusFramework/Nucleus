@@ -1,0 +1,44 @@
+Using vcvarsall.bat: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvarsall.bat
+
+=== Building nucleus_tao.dll (x64) ===
+   Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
+    Finished `release` profile [optimized] target(s) in 3.77s
+
+=== Building nucleus_tao.dll (ARM64) ===
+   Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
+    Finished `release` profile [optimized] target(s) in 3.84s
+
+=== Building C helpers (x64) ===
+'vswhere.exe' n'est pas reconnu en tant que commande interne
+ou externe, un programme ex‚cutable ou un fichier de commandes.
+**********************************************************************
+** Visual Studio 2022 Developer Command Prompt v17.0
+** Copyright (c) 2022 Microsoft Corporation
+**********************************************************************
+[vcvarsall.bat] Environment initialized for: 'x64'
+nucleus_tao_windows_deco.c
+   Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_windows_deco.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_windows_deco.exp
+nucleus_tao_gl.c
+   Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_gl.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_gl.exp
+
+=== Building C helpers (ARM64) ===
+'vswhere.exe' n'est pas reconnu en tant que commande interne
+ou externe, un programme ex‚cutable ou un fichier de commandes.
+**********************************************************************
+** Visual Studio 2022 Developer Command Prompt v17.0
+** Copyright (c) 2022 Microsoft Corporation
+**********************************************************************
+[vcvarsall.bat] Environment initialized for: 'x64_arm64'
+nucleus_tao_windows_deco.c
+   Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_windows_deco.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_windows_deco.exp
+nucleus_tao_gl.c
+   Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_gl.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_gl.exp
+Cleared NativeLibraryLoader cache: C:\Users\Elie\AppData\Local\nucleus\native
+
+Built DLLs:
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao.dll
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_windows_deco.dll
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-x64\nucleus_tao_gl.dll
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao.dll
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_windows_deco.dll
+  C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_gl.dll

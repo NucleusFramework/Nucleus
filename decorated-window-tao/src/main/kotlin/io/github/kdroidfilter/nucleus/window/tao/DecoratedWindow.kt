@@ -8,7 +8,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
+import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
 
 /**
  * Title of the enclosing [DecoratedWindow]. Read by [TitleBar] to populate
@@ -53,10 +55,18 @@ fun ApplicationScope.DecoratedWindow(
         title = title,
         width = width,
         height = height,
-        decorations = true,
+        // On macOS we keep native decorations (traffic-light buttons live there).
+        // On Windows we drop them: the WndProc subclass installed by
+        // `NativeTaoWindowsDecoBridge` repaints the title bar zone as client area
+        // and Compose draws min/max/close itself.
+        decorations = Platform.Current != Platform.Windows,
         resizable = resizable,
         visible = false, // we show after first paint
     )
+
+    if (Platform.Current == Platform.Windows) {
+        return openDecoratedWindowWindows(window, title, visible, onCloseRequest, content)
+    }
 
     val host = TaoComposeSceneHost(window, macOSStyle = macOSStyle)
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
@@ -119,6 +129,80 @@ fun ApplicationScope.DecoratedWindow(
 
     if (alwaysOnTop) {
         // TODO Phase 2b: expose tao::Window::set_always_on_top via JNI.
+    }
+
+    return window
+}
+
+/**
+ * Windows path for [DecoratedWindow]: WGL renderer + custom WndProc decoration.
+ * Boutons min/max/close drawn in Compose by the user content (the [TitleBar]
+ * composable lays them out at `Modifier.align(Alignment.End)`).
+ *
+ * Hit-testing rule (memorised in CLAUDE.md): the WndProc returns HTCLIENT for
+ * the entire title bar zone — never HTMINBUTTON/HTMAXBUTTON/HTCLOSE — so DWM
+ * doesn't repaint native buttons on top of our Compose UI.
+ */
+@Suppress("FunctionNaming")
+private fun ApplicationScope.openDecoratedWindowWindows(
+    window: TaoWindow,
+    title: String,
+    visible: Boolean,
+    onCloseRequest: () -> Unit,
+    content: @Composable DecoratedWindowScope.() -> Unit,
+): TaoWindow {
+    val host = TaoComposeSceneHostWindows(window)
+    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
+    val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+
+    val scopeFactory: androidx.compose.foundation.layout.ColumnScope.() -> DecoratedWindowScope = {
+        object : DecoratedWindowScope, androidx.compose.foundation.layout.ColumnScope by this {
+            override val window: TaoWindow = window
+            override val state: DecoratedWindowState get() = stateHolder.value
+        }
+    }
+
+    window.onWindowReady { w, h ->
+        host.attach()
+        host.setContent {
+            CompositionLocalProvider(
+                LocalDecoratedWindowTitle provides title,
+                LocalRequestedTitleBarHeight provides titleBarHeightState,
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    scopeFactory().content()
+                }
+            }
+        }
+        host.onResized(w, h)
+        host.syncTitleBarHeight()
+        host.onRedrawRequested()
+        if (visible) window.show()
+    }
+    window.onResized { w, h ->
+        host.onResized(w, h)
+        host.syncTitleBarHeight()
+        // Tao does not emit a dedicated "maximized state changed" event, but
+        // every maximize/restore cycle resizes the window. Re-query is_maximized
+        // here to keep the Compose state (used by the maximize button icon
+        // swap) in sync.
+        val maxNow = window.isMaximized
+        if (stateHolder.value.isMaximized != maxNow) {
+            stateHolder.value = stateHolder.value.copy(maximized = maxNow)
+        }
+    }
+    window.onCloseRequested { onCloseRequest() }
+    window.onDestroyed { host.detach() }
+    window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
+    window.onPointerMoved { x, y -> host.onPointerMove(x, y) }
+    window.onPointerExited { host.onPointerExited() }
+    window.onPointerButton { b, p -> host.onPointerButton(b, p) }
+    window.onPointerScroll { dx, dy -> host.onPointerScroll(dx, dy) }
+    window.onKeyEvent { type, vk, loc, mods, cp -> host.onKeyEvent(type, vk, loc, mods, cp) }
+    window.onRedrawRequested { host.onRedrawRequested() }
+    window.onFocusChanged { focused ->
+        stateHolder.value = stateHolder.value.copy(active = focused)
+        host.onFocusChanged(focused)
     }
 
     return window

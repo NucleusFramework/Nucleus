@@ -27,12 +27,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
+import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import kotlin.math.max
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 
-// Native traffic-lights occupy roughly the leftmost 78 points on macOS.
-private val NATIVE_BUTTONS_INSET: Dp = 78.dp
+// Native traffic-lights occupy roughly the leftmost 78 points on macOS. On
+// Windows the title bar zone is fully under Compose's control — no native
+// reservation, the user's TitleBar content places min/max/close itself.
+private val NATIVE_BUTTONS_INSET_MACOS: Dp = 78.dp
+private val NATIVE_BUTTONS_INSET_NONE: Dp = 0.dp
 
 /**
  * Scope passed to [TitleBar]'s content lambda. Mirrors `decorated-window-core`'s
@@ -76,6 +80,10 @@ fun DecoratedWindowScope.TitleBar(
     val heightHolder = LocalRequestedTitleBarHeight.current
     SideEffect { heightHolder.value = height.value }
 
+    val (leftInset, rightInset) = when (Platform.Current) {
+        Platform.MacOS -> NATIVE_BUTTONS_INSET_MACOS to NATIVE_BUTTONS_INSET_MACOS
+        else -> NATIVE_BUTTONS_INSET_NONE to NATIVE_BUTTONS_INSET_NONE
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -84,9 +92,25 @@ fun DecoratedWindowScope.TitleBar(
             .windowDragHandler(taoWindow),
     ) {
         Layout(
-            content = { scope.content(currentState) },
+            content = {
+                scope.content(currentState)
+                // Windows: native min/max/close are not painted by DWM (the
+                // WndProc subclass returns HTCLIENT for the title bar zone),
+                // so the library injects its own Compose buttons here. The
+                // user does not see them on macOS, where AppKit traffic-light
+                // buttons are positioned by `nativeApplyButtonLayout`.
+                if (Platform.Current == Platform.Windows) {
+                    with(scope) {
+                        WindowControlsWindows(
+                            win = taoWindow,
+                            state = currentState,
+                            modifier = Modifier.align(Alignment.End),
+                        )
+                    }
+                }
+            },
             modifier = Modifier.fillMaxWidth().height(height),
-            measurePolicy = remember { TitleBarMeasurePolicy(NATIVE_BUTTONS_INSET, NATIVE_BUTTONS_INSET) },
+            measurePolicy = remember(leftInset, rightInset) { TitleBarMeasurePolicy(leftInset, rightInset) },
         )
     }
 }

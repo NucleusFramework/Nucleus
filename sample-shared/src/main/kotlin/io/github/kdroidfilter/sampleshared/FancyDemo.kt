@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.sampletao
+package io.github.kdroidfilter.sampleshared
 
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -39,7 +39,7 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-internal val PALETTE = listOf(
+val PALETTE = listOf(
     Color(0xFF6366F1), // indigo
     Color(0xFFEC4899), // pink
     Color(0xFF06B6D4), // cyan
@@ -157,7 +157,7 @@ private fun GlassCard(clicks: Int) {
             verticalArrangement = Arrangement.Center,
         ) {
             BasicText(
-                text = "Compose × Tao × Metal",
+                text = "Compose × Skia",
                 style = TextStyle(
                     color = Color(0xFFF5F5FA),
                     fontSize = 36.sp,
@@ -166,7 +166,7 @@ private fun GlassCard(clicks: Int) {
             )
             Spacer(Modifier.height(12.dp))
             BasicText(
-                text = "no AWT — Skia drawing into a CAMetalLayer attached by Tao",
+                text = "shared body — pick a tab to compare backends",
                 style = TextStyle(
                     color = Color(0xFFB7B9C4),
                     fontSize = 14.sp,

@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.sampletao
+package io.github.kdroidfilter.sampleshared
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box

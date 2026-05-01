@@ -1,16 +1,19 @@
 // nucleus_tao — JNI direct bridge over Tao for the Nucleus decorated-window-tao backend.
 //
-// macOS-only Phase 2:
-//   - Owns the Tao event loop on the macOS main thread (guaranteed by GraalVM
-//     native-image: main() runs on OS thread 0).
-//   - Exposes the underlying NSView pointer so the JVM can attach a CAMetalLayer
-//     and drive a Skiko/Compose render pipeline outside AWT.
-//   - Dispatches pointer / mouse-button / keyboard events to Kotlin so the
-//     ComposeScene host can route them into the active scene.
+// Cross-platform: macOS (Metal renderer + AppKit chrome) and Windows (WGL
+// renderer + custom WndProc decoration). Linux not yet wired in.
+//
+// Common responsibilities:
+//   - Owns the Tao event loop on the platform main thread.
+//   - Exposes the underlying native window handle (NSView on macOS, HWND on
+//     Windows) so the JVM can attach a render surface and drive a Skiko/Compose
+//     render pipeline outside AWT.
+//   - Dispatches pointer / mouse-button / keyboard events to Kotlin.
 
 mod keymap;
 
 use std::collections::HashMap;
+#[cfg(target_os = "macos")]
 use std::ffi::c_void;
 use std::sync::Mutex;
 
@@ -23,7 +26,10 @@ use tao::dpi::LogicalSize;
 use tao::event::{ElementState, Event, MouseButton, MouseScrollDelta, StartCause, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy};
 use tao::keyboard::ModifiersState;
+#[cfg(target_os = "macos")]
 use tao::platform::macos::WindowExtMacOS;
+#[cfg(target_os = "windows")]
+use tao::platform::windows::WindowExtWindows;
 use tao::window::{CursorIcon, Window, WindowBuilder, WindowId};
 
 // ── Globals ────────────────────────────────────────────────────────────────
@@ -81,6 +87,7 @@ const CURSOR_FIXED_SCALE: f64 = 1024.0;
 //
 // Implemented in C in `objc/main_thread_dispatch.m`, compiled by build.rs.
 
+#[cfg(target_os = "macos")]
 extern "C" {
     fn nucleus_tao_run_on_main_blocking(
         entry: extern "C" fn(*mut c_void),
@@ -118,6 +125,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     }
 }
 
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeFocusTextOverlay(
     _env: JNIEnv,
@@ -127,6 +135,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     unsafe { nucleus_tao_focus_text_overlay(if focused != JNI_FALSE { 1 } else { 0 }) };
 }
 
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeActivateInputContext(
     _env: JNIEnv,
@@ -146,6 +155,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// Called from `main_thread_dispatch.m` when the user hits Cmd-Q.
 /// Posts a UserEvent::Exit on the running Tao event-loop proxy.
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "C" fn nucleus_tao_post_exit() {
     if let Some(proxy) = EVENT_LOOP_PROXY.get() {
@@ -153,14 +163,17 @@ pub extern "C" fn nucleus_tao_post_exit() {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn is_macos_main_thread() -> bool {
     unsafe { nucleus_tao_is_main_thread() != 0 }
 }
 
+#[cfg(target_os = "macos")]
 extern "C" fn run_event_loop_trampoline(_ctx: *mut c_void) {
     run_event_loop_blocking();
 }
 
+#[cfg(target_os = "macos")]
 fn dispatch_run_event_loop_on_main() {
     unsafe {
         nucleus_tao_run_on_main_blocking(run_event_loop_trampoline, std::ptr::null_mut());
@@ -341,11 +354,20 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     // Tao's NSApplication-backed event loop must run on the macOS main thread.
     // GraalVM native-image binaries packaged via jpackage / Compose Desktop
     // sometimes invoke main() on a JVM worker thread, so we sync-dispatch
-    // ourselves onto the main queue when needed.
-    if is_macos_main_thread() {
+    // ourselves onto the main queue when needed. On Windows there's no such
+    // constraint — Tao installs its WndProc on whatever thread runs the event
+    // loop and the OS message pump works on any thread.
+    #[cfg(target_os = "macos")]
+    {
+        if is_macos_main_thread() {
+            run_event_loop_blocking();
+        } else {
+            dispatch_run_event_loop_on_main();
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
         run_event_loop_blocking();
-    } else {
-        dispatch_run_event_loop_on_main();
     }
 }
 
@@ -355,8 +377,10 @@ fn run_event_loop_blocking() {
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
     // local monitors must be added there).
+    #[cfg(target_os = "macos")]
     unsafe { nucleus_tao_install_cmd_q_handler() };
     // Enable macOS press-and-hold accent picker (opt-in via NSUserDefaults).
+    #[cfg(target_os = "macos")]
     unsafe { nucleus_tao_enable_press_and_hold() };
 
     event_loop.run(move |event, target, control_flow| {
@@ -666,6 +690,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// Returns the underlying NSView pointer so the JVM can attach a CAMetalLayer.
 /// Must be called on the macOS main thread (i.e. from a Tao event handler).
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeNsViewHandle(
     _env: JNIEnv,
@@ -679,6 +704,24 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     let Some(map) = guard.as_ref() else { return 0 };
     let Some(window) = map.get(&(handle as u64)) else { return 0 };
     window.ns_view() as jlong
+}
+
+/// Returns the underlying HWND so the JVM can attach a WGL context and apply
+/// custom decoration via the `nucleus_tao_windows_deco` helper.
+#[cfg(target_os = "windows")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeHwndHandle(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jlong {
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return 0,
+    };
+    let Some(map) = guard.as_ref() else { return 0 };
+    let Some(window) = map.get(&(handle as u64)) else { return 0 };
+    window.hwnd() as isize as jlong
 }
 
 /// Synchronous: starts a native window-drag session. Must be called from the
@@ -754,6 +797,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// AppKit's press-and-hold accent picker is gated on
 /// `firstRectForCharacterRange:` returning a rect with non-zero size — Tao's
 /// stock impl returns size 0×0, which short-circuits the picker.
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetImeRect(
     _env: JNIEnv,

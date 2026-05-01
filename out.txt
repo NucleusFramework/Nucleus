@@ -1,0 +1,61 @@
+Starting a Gradle Daemon, 2 busy and 2 incompatible and 30 stopped Daemons could not be reused, use --status for details
+> Task :plugin-build:buildSrc:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :plugin-build:buildSrc:pluginDescriptors UP-TO-DATE
+> Task :plugin-build:buildSrc:processResources NO-SOURCE
+> Task :plugin-build:buildSrc:compileKotlin
+> Task :plugin-build:buildSrc:compileJava NO-SOURCE
+> Task :plugin-build:buildSrc:compileGroovy NO-SOURCE
+> Task :plugin-build:buildSrc:classes UP-TO-DATE
+
+> Task :plugin-build:buildSrc:jar
+:jar: No valid plugin descriptors were found in META-INF/gradle-plugins
+
+> Task :plugin-build:plugin:buildConfig
+> Task :plugin-build:plugin:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :plugin-build:plugin:pluginDescriptors
+> Task :plugin-build:plugin:processResources UP-TO-DATE
+> Task :plugin-build:plugin:compileKotlin
+> Task :plugin-build:plugin:compileJava
+> Task :plugin-build:plugin:classes
+> Task :plugin-build:plugin:jar UP-TO-DATE
+> Task :decorated-window-tao:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :core-runtime:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :decorated-window-core:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :decorated-window-core:convertXmlValueResourcesForMain NO-SOURCE
+> Task :decorated-window-tao:convertXmlValueResourcesForMain NO-SOURCE
+> Task :decorated-window-tao:copyNonXmlValueResourcesForMain NO-SOURCE
+> Task :decorated-window-core:copyNonXmlValueResourcesForMain NO-SOURCE
+> Task :decorated-window-core:prepareComposeResourcesTaskForMain NO-SOURCE
+> Task :decorated-window-tao:prepareComposeResourcesTaskForMain NO-SOURCE
+> Task :decorated-window-core:generateResourceAccessorsForMain SKIPPED
+> Task :decorated-window-tao:generateResourceAccessorsForMain SKIPPED
+> Task :decorated-window-core:generateActualResourceCollectorsForMain SKIPPED
+> Task :decorated-window-tao:generateActualResourceCollectorsForMain SKIPPED
+> Task :decorated-window-core:generateComposeResClass SKIPPED
+> Task :decorated-window-tao:generateComposeResClass SKIPPED
+> Task :decorated-window-core:assembleMainResources UP-TO-DATE
+> Task :decorated-window-core:buildNativeLinux SKIPPED
+> Task :decorated-window-core:buildNativeMacOs SKIPPED
+> Task :decorated-window-core:buildNativeWindows SKIPPED
+> Task :decorated-window-core:processResources UP-TO-DATE
+> Task :core-runtime:processResources UP-TO-DATE
+> Task :core-runtime:compileKotlin
+> Task :core-runtime:compileJava NO-SOURCE
+> Task :core-runtime:classes UP-TO-DATE
+> Task :core-runtime:jar UP-TO-DATE
+> Task :decorated-window-core:compileKotlin
+> Task :decorated-window-core:compileJava NO-SOURCE
+> Task :decorated-window-core:classes UP-TO-DATE
+> Task :decorated-window-core:jar UP-TO-DATE
+> Task :decorated-window-tao:compileKotlin
+
+[Incubating] Problems report is available at: file:///C:/Users/Elie/IdeaProjects/ComposeDeskKit/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.4.0/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 38s
+17 actionable tasks: 9 executed, 8 up-to-date

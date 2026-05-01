@@ -87,10 +87,19 @@ internal object NativeTaoBridge {
     /**
      * Returns the underlying NSView pointer for the given window handle. Must
      * be called on the macOS main thread. Returns 0 if the window does not
-     * exist (yet) or has been closed.
+     * exist (yet) or has been closed. Only resolvable on macOS — calling on
+     * other platforms throws `UnsatisfiedLinkError`.
      */
     @JvmStatic
     external fun nativeNsViewHandle(handle: Long): Long
+
+    /**
+     * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM
+     * can attach a WGL context and apply custom decoration. Only resolvable on
+     * Windows.
+     */
+    @JvmStatic
+    external fun nativeHwndHandle(handle: Long): Long
 
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic

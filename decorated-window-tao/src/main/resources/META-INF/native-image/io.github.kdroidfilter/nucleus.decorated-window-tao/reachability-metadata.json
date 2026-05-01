@@ -83,6 +83,14 @@
                 { "name": "heightPx" },
                 { "name": "scale" }
             ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoGlBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDecoBridge",
+            "jniAccessible": true
         }
     ]
 }

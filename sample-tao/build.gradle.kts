@@ -1,3 +1,4 @@
+import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -10,6 +11,7 @@ plugins {
 
 dependencies {
     implementation(project(":decorated-window-tao"))
+    implementation(project(":sample-shared"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
     implementation(compose.desktop.currentOs)
@@ -50,7 +52,8 @@ nucleus.application {
     }
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis)
+        compressionLevel = CompressionLevel.Maximum
         appName = "Sample Tao"
         packageName = "SampleTao"
         packageVersion = "1.0.0"

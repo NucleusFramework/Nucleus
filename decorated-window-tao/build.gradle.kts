@@ -33,13 +33,12 @@ kotlin {
 }
 
 // ── Native build ────────────────────────────────────────────────────────────
-// Tao + jni crate compiled into a universal macOS dylib.
-// macOS only for now (Phase 1 / GraalVM native-image target).
+// Tao + jni crate + per-platform helpers (Metal on macOS, WGL + WndProc deco
+// on Windows). Native binaries ship in src/main/resources/nucleus/native/.
 
 val buildNativeMacOs by tasks.registering(Exec::class) {
     description = "Compiles the Rust JNI bridge into a macOS dylib (arm64 + x86_64)"
     group = "build"
-    val nativeDir = file("src/main/native")
     val outputDir = file("src/main/resources/nucleus/native")
     val checkFile = File(outputDir, "darwin-aarch64/libnucleus_tao.dylib")
     onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
@@ -50,13 +49,30 @@ val buildNativeMacOs by tasks.registering(Exec::class) {
     commandLine("bash", "build.sh")
 }
 
+val buildNativeWindows by tasks.registering(Exec::class) {
+    description = "Compiles the Rust JNI bridge + WGL/Deco helpers into Windows DLLs"
+    group = "build"
+    val outputDir = file("src/main/resources/nucleus/native")
+    val checkFile = File(outputDir, "win32-x64/nucleus_tao.dll")
+    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) && !checkFile.exists() }
+    inputs.dir(file("src/main/native/src"))
+    inputs.file(file("src/main/native/Cargo.toml"))
+    inputs.file(file("src/main/native/windows/nucleus_tao_windows_deco.c"))
+    inputs.file(file("src/main/native/windows/nucleus_tao_gl.c"))
+    outputs.dir(outputDir)
+    workingDir(file("src/main/native/windows"))
+    commandLine("cmd", "/c", ".\\build.bat")
+}
+
 tasks.processResources {
     dependsOn(buildNativeMacOs)
+    dependsOn(buildNativeWindows)
 }
 
 tasks.configureEach {
     if (name == "sourcesJar") {
         dependsOn(buildNativeMacOs)
+        dependsOn(buildNativeWindows)
     }
 }
 
