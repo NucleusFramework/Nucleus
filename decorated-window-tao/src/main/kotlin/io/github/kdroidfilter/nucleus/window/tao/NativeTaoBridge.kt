@@ -7,10 +7,12 @@ private const val LIBRARY_NAME = "nucleus_tao"
 /**
  * Direct JNI bridge over the Tao windowing library.
  *
- * macOS-only Phase 2. The event loop owned by [nativeRunBlocking] must run on
- * the macOS main thread (process thread 0). This is guaranteed by GraalVM
- * native-image — it is **not** the case on a regular JVM unless the binary is
- * launched with `-XstartOnFirstThread`.
+ * Cross-platform: macOS, Windows and Linux (X11 + Wayland via GTK). On macOS
+ * the event loop owned by [nativeRunBlocking] must run on the OS main thread
+ * (process thread 0); GraalVM native-image guarantees this, on a regular JVM
+ * launch with `-XstartOnFirstThread`. Windows and Linux have no such
+ * constraint — Tao installs its message pump / GTK main loop on whichever
+ * thread calls `nativeRunBlocking`.
  */
 internal object NativeTaoBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoBridge::class.java)
@@ -100,6 +102,16 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeHwndHandle(handle: Long): Long
+
+    /**
+     * Linux counterpart: returns `[kind, display, nativeWindow]` so the JVM can
+     * attach an EGL context. `kind` is 0 = unavailable, 1 = Xlib, 2 = Wayland.
+     * For Xlib, `display` is `Display*` and `nativeWindow` is the X11 `Window`
+     * (XID). For Wayland, `display` is `wl_display*` and `nativeWindow` is
+     * `wl_surface*`. Only resolvable on Linux.
+     */
+    @JvmStatic
+    external fun nativeLinuxHandles(handle: Long): LongArray?
 
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic

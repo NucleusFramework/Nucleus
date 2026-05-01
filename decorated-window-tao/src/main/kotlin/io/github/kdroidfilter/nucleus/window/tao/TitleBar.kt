@@ -28,7 +28,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.sp
+import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.utils.linux.rememberLinuxButtonLayout
 import kotlin.math.max
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -38,6 +40,14 @@ import kotlinx.coroutines.isActive
 // reservation, the user's TitleBar content places min/max/close itself.
 private val NATIVE_BUTTONS_INSET_MACOS: Dp = 78.dp
 private val NATIVE_BUTTONS_INSET_NONE: Dp = 0.dp
+
+// KDE breeze gives the leading edge of its title bar a small padding so the
+// edge-most window control button doesn't sit flush against the window border.
+// Mirrors `decorated-window-core/TitleBarLinuxCommon.kt::kdePaddingForButtonLayout`.
+private val LINUX_KDE_EDGE_PADDING: Dp = 4.dp
+private val isLinuxKde: Boolean =
+    Platform.Current == Platform.Linux &&
+        LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
 /**
  * Scope passed to [TitleBar]'s content lambda. Mirrors `decorated-window-core`'s
@@ -81,8 +91,28 @@ fun DecoratedWindowScope.TitleBar(
     val heightHolder = LocalRequestedTitleBarHeight.current
     SideEffect { heightHolder.value = height.value }
 
+    // GNOME `button-layout` is read once per composition (and re-emitted by
+    // the GSettings observer when the user changes it in Tweaks) — we need it
+    // both to pick the side WindowControlsLinux is rendered on, and to apply
+    // the KDE 4 dp edge padding on the right side.
+    val linuxLayout = if (Platform.Current == Platform.Linux) rememberLinuxButtonLayout() else null
+
     val (leftInset, rightInset) = when (Platform.Current) {
         Platform.MacOS -> NATIVE_BUTTONS_INSET_MACOS to NATIVE_BUTTONS_INSET_MACOS
+        Platform.Linux -> {
+            // KDE-only edge padding, mirroring `kdePaddingForButtonLayout()`
+            // from decorated-window-core. Applied on whichever side the
+            // controls live so they don't sit flush against the border.
+            if (isLinuxKde && linuxLayout != null) {
+                if (linuxLayout.controlsOnRight) {
+                    NATIVE_BUTTONS_INSET_NONE to LINUX_KDE_EDGE_PADDING
+                } else {
+                    LINUX_KDE_EDGE_PADDING to NATIVE_BUTTONS_INSET_NONE
+                }
+            } else {
+                NATIVE_BUTTONS_INSET_NONE to NATIVE_BUTTONS_INSET_NONE
+            }
+        }
         else -> NATIVE_BUTTONS_INSET_NONE to NATIVE_BUTTONS_INSET_NONE
     }
     val viewConfig = LocalViewConfiguration.current
@@ -99,7 +129,22 @@ fun DecoratedWindowScope.TitleBar(
     ) {
         Layout(
             content = {
+                // Linux + controls-on-left (rare KDE setup): declare controls
+                // BEFORE user content so the measurePolicy places them at the
+                // start edge — Start items are placed in declaration order.
+                if (linuxLayout != null && !linuxLayout.controlsOnRight) {
+                    with(scope) {
+                        WindowControlsLinux(
+                            win = taoWindow,
+                            state = currentState,
+                            isResizable = taoWindow.isResizable,
+                            layout = linuxLayout,
+                        )
+                    }
+                }
+
                 scope.content(currentState)
+
                 // Windows: native min/max/close are not painted by DWM (the
                 // WndProc subclass returns HTCLIENT for the title bar zone),
                 // so the library injects its own Compose buttons here. The
@@ -111,6 +156,22 @@ fun DecoratedWindowScope.TitleBar(
                             win = taoWindow,
                             state = currentState,
                             modifier = Modifier.align(Alignment.End),
+                        )
+                    }
+                }
+
+                // Linux + controls-on-right (default): declare AFTER user
+                // content. End items are placed via `ends.reversed()` so the
+                // last declared sits at the rightmost edge — exactly what we
+                // want for the close button (which is `layout.buttons[0]`,
+                // declared first inside WindowControlsLinux).
+                if (linuxLayout != null && linuxLayout.controlsOnRight) {
+                    with(scope) {
+                        WindowControlsLinux(
+                            win = taoWindow,
+                            state = currentState,
+                            isResizable = taoWindow.isResizable,
+                            layout = linuxLayout,
                         )
                     }
                 }

@@ -64,15 +64,33 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     commandLine("cmd", "/c", ".\\build.bat")
 }
 
+val buildNativeLinux by tasks.registering(Exec::class) {
+    description = "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries"
+    group = "build"
+    val outputDir = file("src/main/resources/nucleus/native")
+    val arch = System.getProperty("os.arch").lowercase()
+    val archDir = if (arch.contains("aarch64") || arch.contains("arm64")) "linux-aarch64" else "linux-x64"
+    val checkFile = File(outputDir, "$archDir/libnucleus_tao.so")
+    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
+    inputs.dir(file("src/main/native/src"))
+    inputs.file(file("src/main/native/Cargo.toml"))
+    inputs.file(file("src/main/native/linux/nucleus_tao_glx.c"))
+    outputs.dir(outputDir)
+    workingDir(file("src/main/native/linux"))
+    commandLine("bash", "build.sh")
+}
+
 tasks.processResources {
     dependsOn(buildNativeMacOs)
     dependsOn(buildNativeWindows)
+    dependsOn(buildNativeLinux)
 }
 
 tasks.configureEach {
     if (name == "sourcesJar") {
         dependsOn(buildNativeMacOs)
         dependsOn(buildNativeWindows)
+        dependsOn(buildNativeLinux)
     }
 }
 

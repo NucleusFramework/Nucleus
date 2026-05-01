@@ -1,7 +1,8 @@
 // nucleus_tao — JNI direct bridge over Tao for the Nucleus decorated-window-tao backend.
 //
-// Cross-platform: macOS (Metal renderer + AppKit chrome) and Windows (WGL
-// renderer + custom WndProc decoration). Linux not yet wired in.
+// Cross-platform: macOS (Metal renderer + AppKit chrome), Windows (WGL
+// renderer + custom WndProc decoration) and Linux (EGL on X11/Wayland via
+// GTK, native GTK decorations).
 //
 // Common responsibilities:
 //   - Owns the Tao event loop on the platform main thread.
@@ -32,6 +33,9 @@ use tao::platform::macos::WindowExtMacOS;
 use tao::platform::windows::WindowExtWindows;
 use tao::window::{CursorIcon, Window, WindowBuilder, WindowId};
 
+#[cfg(target_os = "linux")]
+use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle};
+
 // ── Globals ────────────────────────────────────────────────────────────────
 
 static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
@@ -45,6 +49,17 @@ static WINDOWS: Mutex<Option<HashMap<u64, Window>>> = Mutex::new(None);
 // every event, so we need to remember the latest snapshot. Stored as already-
 // packed AWT-equivalent bitmask matching `TaoModifierMask` on the JVM side.
 static CURRENT_MODIFIERS: Mutex<i32> = Mutex::new(0);
+
+// Linux only: last cursor name requested per window, so we can re-apply it on
+// every CursorMoved event. tao's GTK backend installs a motion-notify handler
+// that calls `gdk_window_set_cursor("default")` on every motion (resize-edge
+// detection on undecorated, resizable windows). That handler runs through
+// XIDefineCursor under the hood, which takes precedence over legacy
+// XDefineCursor for the matching master pointer — so we must re-apply our
+// device cursor *after* tao's handler on every move, otherwise the icon the
+// user sees flashes back to the default arrow on the next pixel of motion.
+#[cfg(target_os = "linux")]
+static LAST_CURSOR_BY_HANDLE: Mutex<Option<HashMap<u64, String>>> = Mutex::new(None);
 
 const MOD_MASK_SHIFT: i32 = 1 << 0;
 const MOD_MASK_CONTROL: i32 = 1 << 1;
@@ -699,7 +714,35 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 fn run_event_loop_blocking() {
-    let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
+    // Skiko's bundled `libskiko-linux-x64.so` only links against
+    // `glXGetCurrentContext` — its `GrGLMakeNativeInterface()` is the GLX
+    // flavour, so an EGL/Wayland context is invisible to `DirectContext.makeGL()`.
+    // Force GTK onto the X11 backend so we always hand a GLX-compatible XID
+    // to `nucleus_tao_glx`. On Wayland sessions XWayland satisfies this
+    // transparently. The user can override by exporting GDK_BACKEND themselves.
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var_os("GDK_BACKEND").is_none() {
+            std::env::set_var("GDK_BACKEND", "x11");
+        }
+    }
+
+    let mut builder = EventLoopBuilder::<UserEvent>::with_user_event();
+    // GTK enforces that gtk_main_init be called from the OS process main
+    // thread (= tid == pid). On a regular JVM the Java "main" thread is *not*
+    // process thread 0 — javaw / java spawn a worker for it — so Tao's stock
+    // assertion would panic at startup. `with_any_thread(true)` opts into the
+    // documented escape hatch (`EventLoopBuilderExtUnix`), letting us drive
+    // the GTK loop from whichever thread the JVM hands us. The caveat noted
+    // in the Tao docs (windows die with the thread) doesn't bite us: the
+    // event-loop thread is the process's main Java thread, which lives until
+    // the JVM exits.
+    #[cfg(target_os = "linux")]
+    {
+        use tao::platform::unix::EventLoopBuilderExtUnix;
+        builder.with_any_thread(true);
+    }
+    let event_loop = builder.build();
     let _ = EVENT_LOOP_PROXY.set(event_loop.create_proxy());
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
@@ -737,6 +780,21 @@ fn run_event_loop_blocking() {
                     if let Ok(window) = window {
                         let logical_w = width as jint;
                         let logical_h = height as jint;
+
+                        // GTK realizes its widgets lazily, so the underlying
+                        // `GdkWindow` (= source of the X11 XID / Wayland
+                        // wl_surface that the EGL helper needs) doesn't
+                        // exist yet right after `build()`. Force realization
+                        // here so `nativeLinuxHandles` returns a valid handle
+                        // synchronously when the JVM-side WINDOW_READY
+                        // callback runs. macOS / Windows do this implicitly.
+                        #[cfg(target_os = "linux")]
+                        {
+                            use gtk::prelude::WidgetExt;
+                            use tao::platform::unix::WindowExtUnix;
+                            window.gtk_window().realize();
+                        }
+
                         {
                             let mut guard = WINDOWS.lock().unwrap();
                             if let Some(map) = guard.as_mut() {
@@ -775,6 +833,12 @@ fn run_event_loop_blocking() {
                     let mut guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_mut() {
                         if map.remove(&handle).is_some() {
+                            #[cfg(target_os = "linux")]
+                            if let Ok(mut g) = LAST_CURSOR_BY_HANDLE.lock() {
+                                if let Some(m) = g.as_mut() {
+                                    m.remove(&handle);
+                                }
+                            }
                             dispatch(handle, EVENT_DESTROYED, 0, 0);
                         }
                     }
@@ -892,6 +956,14 @@ fn run_event_loop_blocking() {
                         dispatch(handle, code, 0, 0);
                     }
                     WindowEvent::CursorMoved { position, .. } => {
+                        // Re-apply our XI2 device cursor BEFORE dispatching the
+                        // event to the JVM. tao's GTK signal handler ran first
+                        // and reset `gdk_window_set_cursor("default")` on the
+                        // parent for resize-edge detection — without this
+                        // re-apply our hover icon would only flash for a
+                        // single pixel of motion before being overwritten.
+                        #[cfg(target_os = "linux")]
+                        reapply_stored_cursor(handle);
                         dispatch(
                             handle,
                             EVENT_CURSOR_MOVED,
@@ -1125,6 +1197,99 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     let Some(map) = guard.as_ref() else { return 0 };
     let Some(window) = map.get(&(handle as u64)) else { return 0 };
     window.hwnd() as isize as jlong
+}
+
+/// Returns the underlying X11 / Wayland window handles so the JVM can attach
+/// an EGL context via the `nucleus_tao_egl` helper.
+///
+/// The returned `long[]` has length 3 with one of the following shapes:
+///   `[0, 0, 0]`       → handle unavailable (window not yet realised).
+///   `[1, display, xid]` → Xlib backend; `display` is `Display*`,
+///                         `xid` is the X11 `Window`.
+///   `[2, display, surface]` → Wayland backend; `display` is `wl_display*`,
+///                             `surface` is `wl_surface*`.
+///
+/// Tao's GTK-based Linux windowing layer wraps both X11 and Wayland — the
+/// concrete backend is decided at GDK init time. We mirror its
+/// `raw_window_handle_rwh_06`/`raw_display_handle_rwh_06` impls and expose the
+/// underlying pointers directly, then let the C-side EGL helper pick the right
+/// `EGLNativeWindowType` (Window / wl_egl_window).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxHandles(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jni::sys::jlongArray {
+    // Resolve handles inside the WINDOWS lock so the Tao Window can't be
+    // dropped between the `window_handle()` and `display_handle()` calls.
+    let mut out = [0i64; 3];
+    if let Ok(guard) = WINDOWS.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(window) = map.get(&(handle as u64)) {
+                fill_linux_handles(window, &mut out);
+            }
+        }
+    }
+    match env.new_long_array(3) {
+        Ok(arr) => {
+            let _ = env.set_long_array_region(&arr, 0, &out);
+            arr.into_raw()
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn fill_linux_handles(window: &Window, out: &mut [jlong; 3]) {
+    let Ok(wh) = window.window_handle() else { return };
+    let Ok(dh) = window.display_handle() else { return };
+    match (wh.as_raw(), dh.as_raw()) {
+        (RawWindowHandle::Xlib(w), RawDisplayHandle::Xlib(_)) => {
+            // Tao's `raw_display_handle_rwh_06` calls `XOpenDisplay(NULL)`
+            // and returns a *fresh* X11 connection. GLX requires the context,
+            // drawable and display to all share the same connection — using
+            // tao's display with a GDK-owned XID makes `glXMakeCurrent` fail
+            // silently. Pull GDK's actual `Display*` via `gdk_x11_*`.
+            out[0] = 1;
+            out[1] = gdk_x11_display_for_window(window).unwrap_or(0);
+            out[2] = w.window as jlong;
+        }
+        (RawWindowHandle::Wayland(w), RawDisplayHandle::Wayland(d)) => {
+            out[0] = 2;
+            out[1] = d.display.as_ptr() as jlong;
+            out[2] = w.surface.as_ptr() as jlong;
+        }
+        _ => {}
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn gdk_x11_display_for_window(window: &Window) -> Option<jlong> {
+    use glib::translate::ToGlibPtr;
+    use gtk::prelude::WidgetExt;
+    use tao::platform::unix::WindowExtUnix;
+
+    let gtk_window = window.gtk_window();
+    let gdk_display = WidgetExt::display(gtk_window);
+    // `gdk_display.to_glib_none().0` returns `*mut gdk_sys::GdkDisplay`. Tao's
+    // transitive `gtk` crate doesn't expose the `gdk` crate publicly, so we
+    // erase to `*mut c_void` and re-cast — `GdkX11Display` is a
+    // newtype over `GdkDisplay` at the C level.
+    let raw_display_ptr: *mut std::ffi::c_void =
+        glib::translate::ToGlibPtr::<*mut gtk::gdk::ffi::GdkDisplay>::to_glib_none(&gdk_display).0
+            as *mut std::ffi::c_void;
+    if raw_display_ptr.is_null() {
+        return None;
+    }
+    let xdisplay = unsafe {
+        gdk_x11_sys::gdk_x11_display_get_xdisplay(raw_display_ptr as *mut gdk_x11_sys::GdkX11Display)
+    };
+    if xdisplay.is_null() {
+        None
+    } else {
+        Some(xdisplay as jlong)
+    }
 }
 
 /// Synchronous: starts a native window-drag session. Must be called from the
@@ -1366,6 +1531,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// Mirrors `TaoCursorIcon` on the JVM side. Numeric codes only, so the JNI
 /// signature stays `(JI)V`. Subset chosen to cover what Compose Desktop's
 /// `PointerIcon` constants surface — additional shapes can be added later.
+#[cfg(not(target_os = "linux"))]
 fn cursor_from_code(code: jint) -> CursorIcon {
     match code {
         1 => CursorIcon::Text,
@@ -1384,6 +1550,93 @@ fn cursor_from_code(code: jint) -> CursorIcon {
     }
 }
 
+/// Linux-only: maps the JVM-side cursor codes to the freedesktop / Adwaita
+/// cursor-theme names that `gdk_cursor_new_from_name` accepts. Going through
+/// the cursor theme (rather than `XCreateFontCursor` core fonts) makes the
+/// icons follow the user's GTK theme and survive XWayland's cursor surface
+/// re-rendering.
+#[cfg(target_os = "linux")]
+fn cursor_name_from_code(code: jint) -> &'static str {
+    match code {
+        1 => "text",
+        2 => "pointer",
+        3 => "crosshair",
+        4 => "wait",
+        5 => "move",
+        6 => "not-allowed",
+        7 => "help",
+        8 => "progress",
+        9 => "ew-resize",
+        10 => "ns-resize",
+        11 => "nesw-resize",
+        12 => "nwse-resize",
+        _ => "default",
+    }
+}
+
+/// Iterates every master pointer of the window's GDK display and assigns the
+/// given themed cursor on the GdkWindow via `gdk_window_set_device_cursor`,
+/// which on GTK 3 / Linux ultimately calls XIDefineCursor for each device.
+///
+/// This is the X Input 2 equivalent of `XDefineCursor` and is what GTK 3
+/// itself uses internally — legacy `XDefineCursor` is silently overridden
+/// by the per-device cursor, so going through GDK is the only way to make
+/// the icon stick across motion events on a window co-hosted with GTK.
+#[cfg(target_os = "linux")]
+fn apply_cursor_via_gdk(window: &Window, name: &str) {
+    use gtk::prelude::*;
+    use tao::platform::unix::WindowExtUnix;
+
+    let gtk_window = window.gtk_window();
+    let Some(gdk_window) = WidgetExt::window(gtk_window) else { return };
+    let display = WidgetExt::display(gtk_window);
+    let Some(cursor) = gtk::gdk::Cursor::from_name(&display, name) else {
+        // Theme miss — fall back to "default". `from_name("default")` is
+        // guaranteed by every shipping cursor theme.
+        if name != "default" {
+            apply_cursor_via_gdk(window, "default");
+        }
+        return;
+    };
+    // Iterate every seat's master pointer. GTK 3 keeps one master pointer
+    // per seat; on a typical desktop there's exactly one seat, but MPX
+    // setups (multiple physical mice each driving their own cursor) expose
+    // additional seats. `gdk_window_set_device_cursor` writes the per-device
+    // XInput 2 cursor — that's what GTK itself does, and what overrides the
+    // default cursor tao keeps re-applying via its motion handler.
+    for seat in display.list_seats() {
+        if let Some(pointer) = seat.pointer() {
+            gdk_window.set_device_cursor(&pointer, &cursor);
+        }
+    }
+    display.flush();
+}
+
+/// Re-applies the cursor stored for the given window (if any). Called from
+/// the `WindowEvent::CursorMoved` handler, after tao's own motion handler
+/// has had a chance to overwrite the cursor with the resize-edge default.
+///
+/// Skipped when the stored cursor is "default": tao already resets to
+/// default on every motion event, so re-applying it would be a no-op
+/// (and would waste an XIDefineCursor round-trip on every mouse movement).
+/// In the common case (no hover icon active), this short-circuits before
+/// touching GDK at all.
+#[cfg(target_os = "linux")]
+fn reapply_stored_cursor(handle: u64) {
+    let name = {
+        let Ok(guard) = LAST_CURSOR_BY_HANDLE.lock() else { return };
+        match guard.as_ref().and_then(|m| m.get(&handle)) {
+            Some(s) if s != "default" => s.clone(),
+            _ => return,
+        }
+    };
+    let Ok(guard) = WINDOWS.lock() else { return };
+    let Some(map) = guard.as_ref() else { return };
+    if let Some(window) = map.get(&handle) {
+        apply_cursor_via_gdk(window, &name);
+    }
+}
+
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetCursorIcon(
     _env: JNIEnv,
@@ -1391,13 +1644,37 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     code: jint,
 ) {
-    let guard = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let Some(map) = guard.as_ref() else { return };
-    if let Some(window) = map.get(&(handle as u64)) {
-        window.set_cursor_icon(cursor_from_code(code));
+    #[cfg(target_os = "linux")]
+    {
+        // GTK 3 manages cursors through XInput 2's per-device cursor table,
+        // which beats legacy `XDefineCursor` and tao's own `set_cursor_icon`
+        // (the latter only updates the client pointer, not every master).
+        // Store the requested name so the CursorMoved handler can re-apply
+        // it after each of tao's motion-handler resets, then push it once now
+        // for the immediate hover transition.
+        let name = cursor_name_from_code(code);
+        if let Ok(mut guard) = LAST_CURSOR_BY_HANDLE.lock() {
+            guard
+                .get_or_insert_with(HashMap::new)
+                .insert(handle as u64, name.to_string());
+        }
+        let Ok(guard) = WINDOWS.lock() else { return };
+        let Some(map) = guard.as_ref() else { return };
+        if let Some(window) = map.get(&(handle as u64)) {
+            apply_cursor_via_gdk(window, name);
+        }
+        return;
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let guard = match WINDOWS.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(map) = guard.as_ref() else { return };
+        if let Some(window) = map.get(&(handle as u64)) {
+            window.set_cursor_icon(cursor_from_code(code));
+        }
     }
 }
 

@@ -35,7 +35,8 @@ fun taoApplication(
     content: @Composable ApplicationScope.() -> Unit,
 ) {
     check(NativeTaoBridge.isLoaded) {
-        "nucleus_tao native library is not available — did you run on macOS arm64/x86_64?"
+        "nucleus_tao native library is not available — supported targets: " +
+            "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
     }
 
     TaoApplication.run { app ->

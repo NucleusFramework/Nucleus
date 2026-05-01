@@ -8,6 +8,13 @@ package io.github.kdroidfilter.nucleus.window.tao
  */
 class TaoWindow internal constructor(
     val handle: Long,
+    /**
+     * `true` when the window was created with `resizable = true`. Surfaced to
+     * Compose so [WindowControlsLinux] can hide the maximize button on
+     * non-resizable windows (matches the `decorated-window-jni` behaviour
+     * — `frame.isResizable` gates the maximize button there too).
+     */
+    val isResizable: Boolean = true,
 ) {
     private var readyListener: ((Int, Int) -> Unit)? = null
     // Multi-cast: the imperative `openDecoratedWindow` registers a listener

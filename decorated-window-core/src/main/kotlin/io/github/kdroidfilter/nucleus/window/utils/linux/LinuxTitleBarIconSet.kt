@@ -9,7 +9,7 @@ import io.github.kdroidfilter.nucleus.window.LocalIsDarkTheme
 import io.github.kdroidfilter.nucleus.window.icons.linux.gnome.*
 import io.github.kdroidfilter.nucleus.window.icons.linux.kde.*
 
-internal data class LinuxTitleBarIconSet(
+data class LinuxTitleBarIconSet(
     val close: Painter,
     val closeHover: Painter,
     val closePressed: Painter,
@@ -31,7 +31,7 @@ internal data class LinuxTitleBarIconSet(
 )
 
 @Composable
-internal fun linuxTitleBarIcons(
+fun linuxTitleBarIcons(
     de: LinuxDesktopEnvironment = LinuxDesktopEnvironment.Current,
     isDark: Boolean = LocalIsDarkTheme.current,
 ): LinuxTitleBarIconSet {

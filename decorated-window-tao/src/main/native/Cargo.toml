@@ -13,6 +13,25 @@ tao = "0.35"
 jni = "0.21"
 once_cell = "1.20"
 
+# Tao 0.35 exposes window handles via raw-window-handle 0.6. We use it on
+# Linux to pull the underlying X11 (Xlib) or Wayland (wl_surface + wl_display)
+# pointers and hand them to the EGL helper so we can drive Skia's GL backend
+# without going through GTK's drawing area. `gtk` is needed to call
+# `WidgetExt::realize()` on the Tao-owned GTK window — GDK realizes lazily,
+# and we need the underlying GdkWindow to exist before WINDOW_READY fires
+# (otherwise `gdk_x11_window_get_xid` returns 0). Tao 0.35 already pulls it
+# transitively, this entry just makes the trait import compile.
+[target.'cfg(target_os = "linux")'.dependencies]
+raw-window-handle = "0.6"
+gtk = "0.18"
+# `gdkx11-sys` is already a transitive dep of tao; declaring it explicitly
+# lets us call `gdk_x11_display_get_xdisplay` to grab GDK's actual X11 Display*
+# (rather than tao's `XOpenDisplay(NULL)` second connection). GLX requires
+# the context, drawable and display to all come from the same X connection,
+# so reusing GDK's is the only way the GLX bridge can render into the GTK XID.
+gdkx11-sys = "0.18"
+glib = "0.18"
+
 [build-dependencies]
 cc = "1.0"
 

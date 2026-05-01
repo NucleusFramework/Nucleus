@@ -839,8 +839,12 @@ name = "nucleus_tao"
 version = "0.1.0"
 dependencies = [
  "cc",
+ "gdkx11-sys",
+ "glib",
+ "gtk",
  "jni",
  "once_cell",
+ "raw-window-handle",
  "tao",
 ]
 

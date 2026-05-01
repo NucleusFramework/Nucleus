@@ -31,7 +31,8 @@ object TaoApplication {
      */
     fun run(block: (TaoApplication) -> Unit) {
         check(NativeTaoBridge.isLoaded) {
-            "nucleus_tao native library is not available — did you run on macOS arm64/x86_64?"
+            "nucleus_tao native library is not available — supported targets: " +
+                "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
         }
         onLaunched = block
         NativeTaoBridge.nativeRunBlocking(EventDispatcher)
@@ -55,7 +56,7 @@ object TaoApplication {
         visible: Boolean = true,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
-        val window = TaoWindow(handle)
+        val window = TaoWindow(handle, isResizable = resizable)
         windows[handle] = window
         NativeTaoBridge.nativeCreateWindow(handle, title, width, height, decorations, resizable, visible)
         return window

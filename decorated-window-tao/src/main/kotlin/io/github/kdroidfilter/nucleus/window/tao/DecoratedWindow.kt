@@ -15,6 +15,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
+import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
 
 /**
@@ -69,16 +70,23 @@ internal fun ApplicationScope.openDecoratedWindow(
         width = width,
         height = height,
         // On macOS we keep native decorations (traffic-light buttons live there).
-        // On Windows we drop them: the WndProc subclass installed by
-        // `NativeTaoWindowsDecoBridge` repaints the title bar zone as client area
-        // and Compose draws min/max/close itself.
-        decorations = Platform.Current != Platform.Windows,
+        // On Windows + Linux we drop them — we draw the close/min/max buttons
+        // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
+        // the user's [TitleBar] composable, mirroring decorated-window-jni.
+        decorations = Platform.Current == Platform.MacOS,
         resizable = resizable,
         visible = false, // we show after first paint
     )
 
     if (Platform.Current == Platform.Windows) {
         return openDecoratedWindowWindows(
+            window, title, visible, enabled, focusable, alwaysOnTop,
+            icon, minimumSize, onCloseRequest, onPreviewKeyEvent, onKeyEvent, content,
+        )
+    }
+
+    if (Platform.Current == Platform.Linux) {
+        return openDecoratedWindowLinux(
             window, title, visible, enabled, focusable, alwaysOnTop,
             icon, minimumSize, onCloseRequest, onPreviewKeyEvent, onKeyEvent, content,
         )
@@ -154,6 +162,95 @@ internal fun ApplicationScope.openDecoratedWindow(
         a11yController.dispose()
         host.detach()
     }
+    window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
+    window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
+    window.onPointerExited { if (enabled) host.onPointerExited() }
+    window.onPointerButton { b, p -> if (enabled) host.onPointerButton(b, p) }
+    window.onPointerScroll { dx, dy -> if (enabled) host.onPointerScroll(dx, dy) }
+    window.onKeyEvent { type, vk, loc, mods, cp ->
+        if (enabled) host.onKeyEvent(type, vk, loc, mods, cp) else false
+    }
+    window.onRedrawRequested { host.onRedrawRequested() }
+    window.onFocusChanged { focused ->
+        stateHolder.value = stateHolder.value.copy(active = focused)
+        host.onFocusChanged(focused)
+    }
+
+    if (alwaysOnTop) window.setAlwaysOnTop(true)
+    if (!focusable) window.setFocusable(false)
+    minimumSize?.let { window.setMinimumSize(it.width.value.toDouble(), it.height.value.toDouble()) }
+    icon?.toRgbaIcon()?.let { (w, h, px) -> window.setIcon(w, h, px) }
+
+    return window
+}
+
+/**
+ * Linux path for [DecoratedWindow]: EGL renderer attached to the GTK-owned
+ * surface (X11 XID or wl_surface, picked at runtime by [TaoComposeSceneHostLinux]).
+ * Native GTK decorations are kept; the user's [TitleBar] composable still
+ * works as a sub-bar inside the content area.
+ */
+@Suppress("FunctionNaming", "LongParameterList")
+private fun ApplicationScope.openDecoratedWindowLinux(
+    window: TaoWindow,
+    title: String,
+    visible: Boolean,
+    enabled: Boolean,
+    focusable: Boolean,
+    alwaysOnTop: Boolean,
+    icon: Painter?,
+    minimumSize: DpSize?,
+    onCloseRequest: () -> Unit,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean,
+    onKeyEvent: (KeyEvent) -> Boolean,
+    content: @Composable DecoratedWindowScope.() -> Unit,
+): TaoWindow {
+    val host = TaoComposeSceneHostLinux(window)
+    host.previewKeyHandler = onPreviewKeyEvent
+    host.keyHandler = onKeyEvent
+    val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
+    val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
+
+    val scopeFactory: ColumnScope.() -> DecoratedWindowScope = {
+        object : DecoratedWindowScope, ColumnScope by this {
+            override val window: TaoWindow = window
+            override val state: DecoratedWindowState get() = stateHolder.value
+        }
+    }
+
+    window.onWindowReady { w, h ->
+        host.attach()
+        host.setContent {
+            CompositionLocalProvider(
+                LocalDecoratedWindowTitle provides title,
+                LocalRequestedTitleBarHeight provides titleBarHeightState,
+            ) {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    scopeFactory().content()
+                }
+            }
+        }
+        host.onResized(w, h)
+        host.onRedrawRequested()
+        if (visible) window.show()
+    }
+    window.onResized { w, h ->
+        host.onResized(w, h)
+        // Tao on Linux doesn't emit a dedicated "maximized state changed"
+        // event; every maximize/restore cycle resizes the window. Re-query
+        // is_maximized so the Compose state stays in sync.
+        val maxNow = window.isMaximized
+        if (stateHolder.value.isMaximized != maxNow) {
+            stateHolder.value = stateHolder.value.copy(maximized = maxNow)
+        }
+        // Reapply the rounded-rect XShape now that we've observed the
+        // post-resize maximized flag — `host.onResized` ran ahead of the
+        // is_maximized query and may have set the wrong shape on a
+        // borderline maximize/restore frame.
+        host.applyRoundedShape()
+    }
+    window.onCloseRequested { onCloseRequest() }
+    window.onDestroyed { host.detach() }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
