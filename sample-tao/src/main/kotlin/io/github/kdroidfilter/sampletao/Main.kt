@@ -39,9 +39,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.rememberWindowState
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
+import io.github.kdroidfilter.nucleus.window.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
-import io.github.kdroidfilter.nucleus.window.tao.TitleBar
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import io.github.kdroidfilter.sampleshared.A11yTab
 import io.github.kdroidfilter.sampleshared.EventsTab
