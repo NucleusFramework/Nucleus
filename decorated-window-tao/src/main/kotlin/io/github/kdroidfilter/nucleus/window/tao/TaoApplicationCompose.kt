@@ -21,16 +21,20 @@ import kotlinx.coroutines.yield
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Composable variant of [taoApplication]. Mirrors Compose Desktop's
- * `awaitApplication` but pumps the Compose runtime through Tao's event loop
+ * Top-level launcher for the Tao backend. Mirrors Compose Desktop's
+ * `application { }` but pumps the Compose runtime through Tao's event loop
  * via [TaoMainDispatcher] (single-threaded model — no AWT EDT).
+ *
+ * Must be called from the macOS main thread (process thread 0). In a GraalVM
+ * native-image build this is automatic; on a regular JVM, launch with
+ * `-XstartOnFirstThread`.
  *
  * Inside [content] you may call `@Composable` [DecoratedWindow]s, use
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
  */
 @OptIn(ExperimentalFoundationApi::class)
-fun taoApplicationComposable(
+fun taoApplication(
     content: @Composable ApplicationScope.() -> Unit,
 ) {
     check(NativeTaoBridge.isLoaded) {
