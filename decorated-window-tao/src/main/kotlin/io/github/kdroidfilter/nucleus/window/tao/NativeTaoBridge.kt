@@ -137,10 +137,6 @@ internal object NativeTaoBridge {
         height: Int,
     )
 
-    /** Diagnostic: prints NSView state relevant to NSTextInputClient/press-and-hold. */
-    @JvmStatic
-    external fun nativeDiagView(handle: Long)
-
     /**
      * Calls `[view.inputContext activate]`. Required to trigger AppKit's
      * press-and-hold accent picker: without it, the inputContext is not the
@@ -148,6 +144,23 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeActivateInputContext(handle: Long)
+
+    /**
+     * Adds a transparent `NSTextView` overlay as a subview of the TaoView.
+     * AppKit's press-and-hold logic only engages for views whose lineage
+     * includes `NSTextView`; the overlay satisfies that check while forwarding
+     * every NSTextInputClient call to the underlying TaoView. Idempotent.
+     */
+    @JvmStatic
+    external fun nativeAttachTextOverlay(handle: Long)
+
+    /**
+     * Routes key events through the NSTextView overlay (`focused = true`) so
+     * `_NSKeyBindingManager` engages press-and-hold, or back to TaoView
+     * (`focused = false`) once a Compose TextField loses focus.
+     */
+    @JvmStatic
+    external fun nativeFocusTextOverlay(focused: Boolean)
 }
 
 /** Cursor icon codes mirrored 1:1 with the Rust `cursor_from_code` table. */

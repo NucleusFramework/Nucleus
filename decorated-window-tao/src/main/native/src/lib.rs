@@ -89,7 +89,6 @@ extern "C" {
     fn nucleus_tao_is_main_thread() -> i32;
     fn nucleus_tao_install_cmd_q_handler();
     fn nucleus_tao_enable_press_and_hold();
-    fn nucleus_tao_diag_view(ns_view_handle: i64);
     fn nucleus_tao_activate_input_context(ns_view_handle: i64);
     fn nucleus_tao_set_ime_local_rect(
         ns_view_handle: i64,
@@ -98,6 +97,34 @@ extern "C" {
         w_px: f64,
         h_px: f64,
     );
+    fn nucleus_tao_attach_text_overlay(ns_view_handle: i64);
+    fn nucleus_tao_focus_text_overlay(focused: i32);
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeAttachTextOverlay(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    let guard = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let Some(map) = guard.as_ref() else { return };
+    if let Some(window) = map.get(&(handle as u64)) {
+        let ns_view = window.ns_view() as i64;
+        unsafe { nucleus_tao_attach_text_overlay(ns_view) };
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeFocusTextOverlay(
+    _env: JNIEnv,
+    _class: JClass,
+    focused: jboolean,
+) {
+    unsafe { nucleus_tao_focus_text_overlay(if focused != JNI_FALSE { 1 } else { 0 }) };
 }
 
 #[no_mangle]
@@ -114,23 +141,6 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     if let Some(window) = map.get(&(handle as u64)) {
         let ns_view = window.ns_view() as i64;
         unsafe { nucleus_tao_activate_input_context(ns_view) };
-    }
-}
-
-#[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeDiagView(
-    _env: JNIEnv,
-    _class: JClass,
-    handle: jlong,
-) {
-    let guard = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let Some(map) = guard.as_ref() else { return };
-    if let Some(window) = map.get(&(handle as u64)) {
-        let ns_view = window.ns_view() as i64;
-        unsafe { nucleus_tao_diag_view(ns_view) };
     }
 }
 

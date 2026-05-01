@@ -75,6 +75,10 @@ fun ApplicationScope.DecoratedWindow(
 
     window.onWindowReady { w, h ->
         host.attach()
+        // Add the NSTextView overlay subview that AppKit will use as the
+        // firstResponder during Compose TextField focus — required to engage
+        // press-and-hold (long-press 'e' → accent picker).
+        NativeTaoBridge.nativeAttachTextOverlay(window.handle)
         host.setContent {
             CompositionLocalProvider(
                 LocalDecoratedWindowTitle provides title,
