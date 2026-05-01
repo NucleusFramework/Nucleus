@@ -108,6 +108,7 @@ extern "C" {
     fn nucleus_tao_focus_text_overlay(focused: i32);
 }
 
+#[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeAttachTextOverlay(
     _env: JNIEnv,
