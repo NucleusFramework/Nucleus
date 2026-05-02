@@ -136,6 +136,8 @@ extern "C" {
     fn nucleus_tao_a11y_is_active() -> i32;
     fn nucleus_tao_a11y_consume_resync() -> i32;
     fn nucleus_tao_a11y_note_pushed();
+    fn nucleus_tao_install_drag_monitor();
+    fn nucleus_tao_start_window_drag(ns_window_ptr: i64);
 }
 
 #[cfg(target_os = "macos")]
@@ -812,6 +814,10 @@ fn run_event_loop_blocking() {
     // Enable macOS press-and-hold accent picker (opt-in via NSUserDefaults).
     #[cfg(target_os = "macos")]
     unsafe { nucleus_tao_enable_press_and_hold() };
+    // Latch the most recent NSLeftMouseDown for `nativeDragWindow` (mirrors
+    // JNI's NucleusDragView.lastMouseDownEvent).
+    #[cfg(target_os = "macos")]
+    unsafe { nucleus_tao_install_drag_monitor() };
 
     event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -1352,22 +1358,53 @@ fn gdk_x11_display_for_window(window: &Window) -> Option<jlong> {
     }
 }
 
-/// Synchronous: starts a native window-drag session. Must be called from the
-/// main thread while a mouse press is still active (i.e. inside a Compose
-/// pointer-input handler dispatched by Tao on the same main-thread iteration).
+/// Starts a native window-drag session.
+///
+/// On macOS we go through our own ObjC helper rather than `tao::Window::
+/// drag_window()` for two reasons (mirrors the JNI backend):
+///   1. The helper uses the latched NSLeftMouseDown event, not whichever event
+///      AppKit happens to be processing (Tao calls `[NSApp currentEvent]`,
+///      which is a NSLeftMouseDragged when this is invoked from a Compose
+///      Move handler — `performWindowDragWithEvent:` documents a mouseDown).
+///   2. The helper posts the call via `dispatch_async(dispatch_get_main_queue())`
+///      so AppKit's modal event-tracking loop only starts on the next runloop
+///      iteration. This gives Compose's child gesture detectors (e.g.
+///      reorderable's drag handle) a chance to consume the in-flight gesture
+///      before the modal loop steals it.
+///
+/// On Windows / Linux we keep the synchronous Tao call — those backends
+/// don't drive a modal AppKit-style loop and the Compose-side hit-testing is
+/// reliable enough.
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeDragWindow(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
 ) {
-    let guard = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return,
-    };
-    let Some(map) = guard.as_ref() else { return };
-    if let Some(window) = map.get(&(handle as u64)) {
-        let _ = window.drag_window();
+    #[cfg(target_os = "macos")]
+    {
+        let guard = match WINDOWS.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(map) = guard.as_ref() else { return };
+        if let Some(window) = map.get(&(handle as u64)) {
+            let ns_window = window.ns_window() as i64;
+            unsafe { nucleus_tao_start_window_drag(ns_window) };
+        }
+        return;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let guard = match WINDOWS.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        let Some(map) = guard.as_ref() else { return };
+        if let Some(window) = map.get(&(handle as u64)) {
+            let _ = window.drag_window();
+        }
     }
 }
 

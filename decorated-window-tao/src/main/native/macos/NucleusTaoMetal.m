@@ -483,6 +483,16 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeConfigure
         win.titlebarAppearsTransparent = YES;
         win.titleVisibility = NSWindowTitleHidden;
         win.movableByWindowBackground = NO;
+        // Disable native window dragging entirely. Without this, AppKit's
+        // NSTitlebarContainerView intercepts mouse-downs in the title-bar
+        // area (the top ~28pt of the window — where our Compose-driven
+        // title bar lives) and starts a window drag before Compose ever
+        // sees the events. Mirrors `decorated-window-jni`'s
+        // `JniMacTitleBar.m` which does the same. We re-enable
+        // `movable` momentarily inside `nucleus_tao_start_window_drag`
+        // because `performWindowDragWithEvent:` requires `isMovable=YES`
+        // on macOS < 26.
+        [win setMovable:NO];
         // Neutral light background shown through the CAMetalLayer until the
         // first frame is presented. Matches the typical Compose Desktop /
         // AWT default so apps that don't paint their own background look

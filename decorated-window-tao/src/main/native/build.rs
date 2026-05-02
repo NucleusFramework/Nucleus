@@ -4,6 +4,7 @@ fn main() {
             .file("objc/main_thread_dispatch.m")
             .file("objc/a11y.m")
             .file("objc/apple_events.m")
+            .file("objc/window_drag.m")
             .flag("-fobjc-arc")
             .flag("-mmacosx-version-min=10.15")
             .compile("nucleus_tao_objc_helpers");
@@ -11,5 +12,6 @@ fn main() {
         println!("cargo:rerun-if-changed=objc/main_thread_dispatch.m");
         println!("cargo:rerun-if-changed=objc/a11y.m");
         println!("cargo:rerun-if-changed=objc/apple_events.m");
+        println!("cargo:rerun-if-changed=objc/window_drag.m");
     }
 }

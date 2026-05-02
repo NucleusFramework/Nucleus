@@ -4,11 +4,18 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
@@ -120,13 +127,29 @@ fun DecoratedWindowScope.TitleBar(
 
     val viewConfig = LocalViewConfiguration.current
 
+    var lastPress by remember { mutableLongStateOf(0L) }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    val rootModifier = modifier
+        .titleBarHitTestHandler(taoWindow)
+        .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
+            if (
+                this.currentEvent.button == PointerButton.Primary &&
+                this.currentEvent.changes.any { !it.isConsumed }
+            ) {
+                val now = System.currentTimeMillis()
+                if (now - lastPress in
+                    viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                ) {
+                    taoWindow.setMaximized(!taoWindow.isMaximized)
+                }
+                lastPress = now
+            }
+        }
+
     GenericTitleBarImpl(
         state = currentState,
-        modifier = modifier.windowDragHandler(
-            window = taoWindow,
-            doubleTapMinMs = viewConfig.doubleTapMinTimeMillis,
-            doubleTapMaxMs = viewConfig.doubleTapTimeoutMillis,
-        ),
+        modifier = rootModifier,
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlDir,
@@ -220,49 +243,43 @@ private fun macTrafficLightInset(height: Dp): Dp {
 
 // ── Drag ──────────────────────────────────────────────────────────────────
 
-private fun Modifier.windowDragHandler(
-    window: TaoWindow,
-    doubleTapMinMs: Long,
-    doubleTapMaxMs: Long,
-): Modifier =
+// Mirrors `decorated-window-jni/TitleBar.MacOS.kt::titleBarHitTestHandler`.
+// Press → mark pendingDrag (no consumption). Move while pending → start the
+// native window drag. Consumed Press → enter `inUserControl` and skip drag.
+//
+// On macOS this is the *only* path that drags the window — AppKit's native
+// title-bar drag is disabled by `[NSWindow setMovable:NO]` in
+// `nativeConfigureChrome`, so clicks in the title bar reach Compose
+// undisturbed. The native side defers `performWindowDragWithEvent:` via
+// `dispatch_async`, mirroring JNI exactly.
+private fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
     pointerInput(window) {
-        // We always consume Press events on the title bar to dispatch them to
-        // `dragWindow()` (Tao posts the platform-specific drag-start message).
-        // Because we consume, the native window machinery never sees the
-        // sequence as a real title-bar click → its native double-click→zoom
-        // (macOS) or →maximize (Windows) doesn't fire. Detect it in Compose
-        // and toggle maximize ourselves on every platform. Mirrors
-        // `decorated-window-jni`'s `TitleBar.{MacOS,Windows}.kt`.
-        // Robust double-tap detection: only treat a press as the second tap of a
-        // double-tap if a Release was actually observed between the two presses.
-        // On macOS, `dragWindow()` enters a native modal event-tracking loop that
-        // can swallow the trailing release; without this guard, the next press
-        // (after the user lifts and clicks again) would be misclassified as a
-        // double-tap and falsely toggle maximize → fullscreen.
         val ctx = currentCoroutineContext()
-        var lastPress = 0L
-        var releasedSinceLastPress = true
         awaitPointerEventScope {
+            var inUserControl = false
+            var pendingDrag = false
             while (ctx.isActive) {
                 val event = awaitPointerEvent(PointerEventPass.Main)
-                val change = event.changes.firstOrNull() ?: continue
-                when (event.type) {
-                    PointerEventType.Press -> if (!change.isConsumed) {
-                        change.consume()
-                        val now = System.currentTimeMillis()
-                        val isDoubleTap = releasedSinceLastPress &&
-                            now - lastPress in doubleTapMinMs..doubleTapMaxMs
-                        if (isDoubleTap) {
-                            window.setMaximized(!window.isMaximized)
-                            lastPress = 0L
-                        } else {
-                            window.dragWindow()
-                            lastPress = now
+                event.changes.forEach {
+                    if (!it.isConsumed && !inUserControl) {
+                        when (event.type) {
+                            PointerEventType.Press -> pendingDrag = true
+                            PointerEventType.Move ->
+                                if (pendingDrag) {
+                                    window.dragWindow()
+                                    pendingDrag = false
+                                }
+                            PointerEventType.Release -> pendingDrag = false
                         }
-                        releasedSinceLastPress = false
+                    } else {
+                        if (event.type == PointerEventType.Press) {
+                            inUserControl = true
+                            pendingDrag = false
+                        }
+                        if (event.type == PointerEventType.Release) {
+                            inUserControl = false
+                        }
                     }
-                    PointerEventType.Release -> releasedSinceLastPress = true
-                    else -> Unit
                 }
             }
         }
