@@ -62,7 +62,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     alwaysOnTop: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    macOSStyle: MacOSStyle = MacOSStyle.Auto,
+    macOSStyle: MacOSStyle = MacOSStyle.Classic,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val window = taoApplication.openWindow(

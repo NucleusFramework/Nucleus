@@ -103,7 +103,7 @@ fun DialogWindowScope.DecoratedDialogBody(
     title: String,
     icon: Painter?,
     undecorated: Boolean,
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable AwtDecoratedDialogScope.() -> Unit,
 ) {
     var decoratedDialogState by remember { mutableStateOf(DecoratedDialogState.of(window)) }
 

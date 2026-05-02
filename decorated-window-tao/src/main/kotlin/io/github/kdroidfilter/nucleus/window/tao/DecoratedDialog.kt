@@ -34,7 +34,7 @@ fun ApplicationScope.DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    macOSStyle: MacOSStyle = MacOSStyle.Auto,
+    macOSStyle: MacOSStyle = MacOSStyle.Classic,
     content: @Composable TaoDecoratedDialogScope.() -> Unit,
 ) {
     // DialogState exposes size/position only; reuse the WindowState plumbing

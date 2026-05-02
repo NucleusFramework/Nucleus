@@ -85,13 +85,23 @@ fun DecoratedWindowScope.TitleBar(
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
 
-    // Read parity-only modifier flags (consumed for swap-in API parity with
-    // jbr/jni; tao's macOS path already animates the menu-bar offset and
-    // applies the large corner radius via `MacOSStyle` at window creation).
+    // Modifier-driven flags. `newFullscreenControls` is consumed for parity
+    // with jbr/jni; tao's macOS path already animates the menu-bar offset
+    // separately. `macOSLargeCornerRadius` re-runs the NSToolbar install at
+    // composition time so the modifier-driven path matches the AWT backends
+    // (the `MacOSStyle` parameter at window creation is the imperative
+    // equivalent — both are honoured).
     @Suppress("UNUSED_VARIABLE")
     val newFullscreenControls = modifier.hasNewFullscreenControls()
-    @Suppress("UNUSED_VARIABLE")
     val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius()
+    if (Platform.Current == Platform.MacOS && macOSLargeCornerRadius) {
+        LaunchedEffect(taoWindow) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L && NativeMetalBridge.isLoaded) {
+                NativeMetalBridge.nativeApplyLargeCornerRadius(nsView, true)
+            }
+        }
+    }
 
     val linuxLayout = if (Platform.Current == Platform.Linux) rememberLinuxButtonLayout() else null
     val controlDir = controlButtonsDirection.resolve()

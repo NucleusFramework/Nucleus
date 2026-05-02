@@ -11,6 +11,7 @@ plugins {
 
 dependencies {
     implementation(project(":decorated-window-tao"))
+    implementation(project(":nucleus-application"))
     implementation(project(":sample-shared"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))

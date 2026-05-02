@@ -20,6 +20,7 @@ dependencies {
     //  :decorated-window-tao (no-AWT native).
     compileOnly(project(":decorated-window-jbr"))
     compileOnly(project(":decorated-window-tao"))
+    compileOnly(project(":nucleus-application"))
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.compose.material3)

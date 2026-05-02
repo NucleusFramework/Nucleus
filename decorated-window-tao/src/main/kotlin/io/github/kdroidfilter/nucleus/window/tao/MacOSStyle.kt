@@ -1,13 +1,13 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
 /**
- * macOS visual treatment applied to a [DecoratedWindow].
+ * macOS visual treatment applied to a [DecoratedWindow] at construction.
  *
- * The "modern" treatment opts the window into the macOS 26 (Tahoe)
- * Liquid-Glass / large-corner-radius chrome by attaching an invisible
- * `NSToolbar`. It is silently ignored on macOS releases that don't honour the
- * new corner radius (≤ Sequoia), so [Auto] is the correct default for most
- * applications: modern look on Tahoe, classic chrome on older systems.
+ * Imperative counterpart of [io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius]
+ * — the Modifier is the recommended path (works the same on jbr/jni/tao).
+ * Tao defaults to [Classic] so the swap-in API behaves identically to the
+ * AWT backends: opt in to the large corner radius via the Modifier on
+ * `TitleBar { … }`, not via this enum.
  */
 enum class MacOSStyle {
     /** Modern (Tahoe) on macOS 26+, classic chrome on older releases. */

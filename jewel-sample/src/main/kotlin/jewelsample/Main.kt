@@ -14,15 +14,15 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow
+import io.github.kdroidfilter.nucleus.application.NucleusBackend
+import io.github.kdroidfilter.nucleus.application.nucleusApplication
 import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.jewel.rememberJewelTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.jewel.rememberJewelWindowStyle
-import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow
-import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 import jewelsample.view.TitleBarView
 import jewelsample.viewmodel.MainViewModel
 import jewelsample.viewmodel.MainViewModel.currentView
@@ -49,7 +49,7 @@ fun main() {
 
     val icon = svgResource("icons/jewel-logo.svg")
 
-    taoApplication {
+    nucleusApplication(backend = NucleusBackend.Tao) {
         val textStyle = JewelTheme.createDefaultTextStyle()
         val editorStyle = JewelTheme.createEditorTextStyle()
 

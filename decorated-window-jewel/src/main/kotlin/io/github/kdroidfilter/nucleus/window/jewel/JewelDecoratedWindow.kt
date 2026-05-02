@@ -8,14 +8,13 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindowFn
+import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
+import io.github.kdroidfilter.nucleus.application.NucleusDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.DecoratedWindow
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
-import io.github.kdroidfilter.nucleus.window.tao.ApplicationScope as TaoApplicationScope
-import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
-import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow as TaoDecoratedWindow
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 
 private const val LUMINANCE_THRESHOLD = 0.5f
@@ -69,15 +68,14 @@ fun ApplicationScope.JewelDecoratedWindow(
 }
 
 /**
- * Tao-backed Jewel-styled wrapper for [DecoratedWindow].
- *
- * Tao opens a fresh ComposeScene per window so [JewelTheme] does not propagate
- * across the boundary; the resolved Jewel + Nucleus styles are computed in the
- * outer composition and re-provided inside the new scene.
+ * Backend-agnostic Jewel-styled wrapper. Use inside `nucleusApplication { … }`
+ * — works on AWT (JBR/JNI) and Tao with the same call site. The Tao
+ * `ComposeScene` boundary is handled by re-providing the resolved styles
+ * inside the new scene.
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun TaoApplicationScope.JewelDecoratedWindow(
+fun NucleusApplicationScope.JewelDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -91,15 +89,14 @@ fun TaoApplicationScope.JewelDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
-    macOSStyle: MacOSStyle = MacOSStyle.Auto,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     val windowStyle = rememberJewelWindowStyle()
     val jewelTitleBarStyle = rememberJewelTitleBarStyle()
     val resolvedTitleBarStyle = titleBarStyle ?: jewelTitleBarStyle
     val titleBarIsDark = resolvedTitleBarStyle.colors.background.luminance() < LUMINANCE_THRESHOLD
 
-    TaoDecoratedWindow(
+    NucleusDecoratedWindowFn(
         onCloseRequest = onCloseRequest,
         state = state,
         visible = visible,
@@ -112,7 +109,6 @@ fun TaoApplicationScope.JewelDecoratedWindow(
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
-        macOSStyle = macOSStyle,
     ) {
         NucleusDecoratedWindowTheme(
             isDark = titleBarIsDark,
@@ -123,3 +119,4 @@ fun TaoApplicationScope.JewelDecoratedWindow(
         }
     }
 }
+

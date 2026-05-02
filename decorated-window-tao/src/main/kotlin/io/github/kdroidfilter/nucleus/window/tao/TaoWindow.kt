@@ -26,7 +26,7 @@ class TaoWindow internal constructor(
     private var closeRequestedListener: (() -> Unit)? = null
     private var destroyedListener: (() -> Unit)? = null
     private var redrawListener: (() -> Unit)? = null
-    private var focusListener: ((Boolean) -> Unit)? = null
+    private val focusListeners = mutableListOf<(Boolean) -> Unit>()
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
     private var pointerExitedListener: (() -> Unit)? = null
     private var pointerButtonListener: ((Int, Boolean) -> Unit)? = null
@@ -171,8 +171,9 @@ class TaoWindow internal constructor(
         redrawListener = block
     }
 
+    /** Multi-cast: every call adds a listener; all of them fire on each focus change. */
     fun onFocusChanged(block: (focused: Boolean) -> Unit) {
-        focusListener = block
+        focusListeners += block
     }
 
     fun onPointerMoved(block: (xFixed: Int, yFixed: Int) -> Unit) {
@@ -228,8 +229,8 @@ class TaoWindow internal constructor(
                 TaoApplication.remove(handle)
             }
             TaoEventCode.REDRAW_REQUESTED -> redrawListener?.invoke()
-            TaoEventCode.FOCUSED -> focusListener?.invoke(true)
-            TaoEventCode.UNFOCUSED -> focusListener?.invoke(false)
+            TaoEventCode.FOCUSED -> focusListeners.forEach { it.invoke(true) }
+            TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)
             TaoEventCode.CURSOR_LEFT -> pointerExitedListener?.invoke()
             TaoEventCode.MOUSE_DOWN -> pointerButtonListener?.invoke(a, true)

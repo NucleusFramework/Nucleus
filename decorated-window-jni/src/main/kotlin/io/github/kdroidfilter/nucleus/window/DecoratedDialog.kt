@@ -24,7 +24,7 @@ fun DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable AwtDecoratedDialogScope.() -> Unit,
 ) {
     val undecorated = Platform.Linux == Platform.Current || Platform.Windows == Platform.Current
 

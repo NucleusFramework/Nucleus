@@ -15,15 +15,17 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against all backends — consumer picks one at runtime:
-    //  :decorated-window-jbr (JBR), :decorated-window-jni (any JVM), or
-    //  :decorated-window-tao (no-AWT native).
-    compileOnly(project(":decorated-window-jbr"))
+    api(project(":decorated-window-core"))
+    api(project(":decorated-window-awt"))
+    implementation(project(":core-runtime"))
+    implementation(libs.compose.desktop.common)
+
+    // An app ships exactly one backend at runtime — by construction (their
+    // imports overlap, so coexistence is unsupported). We compile against
+    // jni (which provides the AWT-bound DecoratedWindow signature, identical
+    // to jbr's) and tao for the no-AWT path.
+    compileOnly(project(":decorated-window-jni"))
     compileOnly(project(":decorated-window-tao"))
-    compileOnly(project(":nucleus-application"))
-    api(project(":core-runtime"))
-    api(libs.compose.desktop.common)
-    implementation(libs.jewel.foundation)
 }
 
 java {
@@ -38,11 +40,14 @@ kotlin {
 }
 
 mavenPublishing {
-    coordinates("io.github.kdroidfilter", "nucleus.decorated-window-jewel", publishVersion)
+    coordinates("io.github.kdroidfilter", "nucleus.nucleus-application", publishVersion)
 
     pom {
-        name.set("Nucleus Jewel Decorated Window")
-        description.set("Jewel (IntelliJ theme) integration for Nucleus Decorated Window")
+        name.set("Nucleus Application")
+        description.set(
+            "Unified entry point picking the decorated-window backend " +
+                "(JBR/JNI AWT or no-AWT Tao) and exposing a backend-agnostic window handle.",
+        )
         url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {

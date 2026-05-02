@@ -39,7 +39,9 @@ use raw_window_handle::{HasDisplayHandle, HasWindowHandle, RawDisplayHandle, Raw
 // ── Globals ────────────────────────────────────────────────────────────────
 
 static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
-static EVENT_CALLBACK: OnceCell<GlobalRef> = OnceCell::new();
+// Held in a Mutex (not OnceCell) so we can drop the GlobalRef after the Tao
+// event loop exits — invokes DeleteGlobalRef and unpins the Kotlin callback.
+static EVENT_CALLBACK: Mutex<Option<GlobalRef>> = Mutex::new(None);
 static EVENT_LOOP_PROXY: OnceCell<EventLoopProxy<UserEvent>> = OnceCell::new();
 
 static WINDOWS: Mutex<Option<HashMap<u64, Window>>> = Mutex::new(None);
@@ -603,7 +605,8 @@ const MOUSE_BUTTON_OTHER: jint = 3;
 
 fn dispatch(handle: u64, code: jint, a: jint, b: jint) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Some(callback) = EVENT_CALLBACK.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
+    let Some(callback) = guard.as_ref() else { return };
     let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
     let _ = env.call_method(
         callback.as_obj(),
@@ -632,7 +635,8 @@ fn dispatch_key(
     code_point: jint,
 ) {
     let Some(vm) = JAVA_VM.get() else { return };
-    let Some(callback) = EVENT_CALLBACK.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
+    let Some(callback) = guard.as_ref() else { return };
     let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
     let _ = env.call_method(
         callback.as_obj(),
@@ -684,7 +688,9 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         let _ = JAVA_VM.set(vm);
     }
     if let Ok(global) = env.new_global_ref(&callback) {
-        let _ = EVENT_CALLBACK.set(global);
+        if let Ok(mut guard) = EVENT_CALLBACK.lock() {
+            *guard = Some(global);
+        }
     }
     {
         let mut guard = WINDOWS.lock().unwrap();
@@ -710,6 +716,13 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     #[cfg(not(target_os = "macos"))]
     {
         run_event_loop_blocking();
+    }
+
+    // Event loop has exited (UserEvent::Exit). Drop the Kotlin callback ref so
+    // DeleteGlobalRef runs and the JVM can collect it. JAVA_VM stays in its
+    // OnceCell — JavaVM is just a pointer wrapper, not a JVM-side resource.
+    if let Ok(mut guard) = EVENT_CALLBACK.lock() {
+        guard.take();
     }
 }
 

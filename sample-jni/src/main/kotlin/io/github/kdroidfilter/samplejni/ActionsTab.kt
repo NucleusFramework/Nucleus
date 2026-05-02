@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -16,10 +15,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,17 +24,16 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.awt.ComposeWindow
-import java.awt.Frame
+import io.github.kdroidfilter.nucleus.application.NucleusWindow
 
 @Composable
 fun ActionsTab(
     modifier: Modifier = Modifier,
-    window: ComposeWindow,
+    window: NucleusWindow,
+    currentTitle: String,
+    onTitleChange: (String) -> Unit,
     onLog: (String) -> Unit,
 ) {
-    var titleInput by remember { mutableStateOf("JNI Backend Demo") }
-
     Column(
         modifier = modifier.padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -47,8 +41,8 @@ fun ActionsTab(
         SectionTitle("Title")
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicTextField(
-                value = titleInput,
-                onValueChange = { titleInput = it },
+                value = currentTitle,
+                onValueChange = onTitleChange,
                 singleLine = true,
                 textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
                 cursorBrush = SolidColor(Color(0xFF8AB4FF)),
@@ -60,44 +54,41 @@ fun ActionsTab(
                     .width(320.dp),
             )
             ActionButton("Apply") {
-                window.title = titleInput
-                onLog("setTitle(\"$titleInput\")")
+                onLog("setTitle(\"$currentTitle\")")
             }
         }
 
         SectionTitle("Window state")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             ActionButton("Minimize") {
-                window.extendedState = window.extendedState or Frame.ICONIFIED
-                onLog("ICONIFIED")
+                window.setMinimized(true)
+                onLog("setMinimized(true)")
             }
             ActionButton("Toggle Maximize") {
-                val isMax = window.extendedState and Frame.MAXIMIZED_BOTH != 0
-                window.extendedState = if (isMax) Frame.NORMAL else Frame.MAXIMIZED_BOTH
-                onLog("setMaximized(${!isMax})")
+                val next = !window.isMaximized
+                window.setMaximized(next)
+                onLog("setMaximized($next)")
             }
             ActionButton("Hide 2 s") {
-                window.isVisible = false
-                onLog("isVisible = false")
+                window.hide()
+                onLog("hide()")
                 Thread {
                     Thread.sleep(2_000)
-                    java.awt.EventQueue.invokeLater {
-                        window.isVisible = true
-                        onLog("isVisible = true (auto)")
-                    }
+                    window.show()
+                    onLog("show() (auto)")
                 }.start()
             }
         }
 
         SectionTitle("Close")
         ActionButton("requestClose()", accent = Color(0xFFFF7777)) {
-            window.dispatchEvent(java.awt.event.WindowEvent(window, java.awt.event.WindowEvent.WINDOW_CLOSING))
-            onLog("dispatch WINDOW_CLOSING")
+            window.close()
+            onLog("window.close()")
         }
 
         Spacer(Modifier.height(8.dp))
         BasicText(
-            "AWT-based backend (decorated-window-jni). Drag the title bar to move; double-click to maximize.",
+            "Backend-agnostic window controls via NucleusWindow. Drag the title bar to move; double-click to maximize.",
             style = TextStyle(color = Color(0xFF7A8088), fontSize = 11.sp),
         )
     }

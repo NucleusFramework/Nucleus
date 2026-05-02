@@ -27,7 +27,7 @@ import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -48,8 +48,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
+import io.github.kdroidfilter.nucleus.application.nucleusApplication
 import com.example.demo.gallery.GalleryScreen
 import com.example.demo.icons.MaterialIconsDark_mode
 import com.example.demo.icons.MaterialIconsInfo
@@ -86,8 +86,6 @@ import io.github.kdroidfilter.nucleus.window.material.MaterialDecoratedWindow
 import io.github.kdroidfilter.nucleus.window.material.MaterialDialogTitleBar
 import io.github.kdroidfilter.nucleus.window.material.MaterialTitleBar
 import io.github.kdroidfilter.nucleus.window.newFullscreenControls
-import java.awt.event.WindowEvent
-import java.awt.event.WindowFocusListener
 import java.io.File
 import java.net.URI
 import kotlin.system.exitProcess
@@ -134,7 +132,7 @@ fun main(args: Array<String>) {
         }
     }
 
-    application {
+    nucleusApplication {
         var isWindowVisible by remember { mutableStateOf(true) }
         var restoreRequestCount by remember { mutableStateOf(0) }
         var themeMode by remember { mutableStateOf(ThemeMode.System) }
@@ -154,7 +152,7 @@ fun main(args: Array<String>) {
 
         if (!isFirstInstance) {
             exitApplication()
-            return@application
+            return@nucleusApplication
         }
 
         if (isWindowVisible) {
@@ -284,27 +282,13 @@ fun main(args: Array<String>) {
                         }
                         LaunchedEffect(restoreRequestCount) {
                             if (restoreRequestCount > 0) {
-                                window.toFront()
-                                window.requestFocus()
+                                nucleusWindow.toFront()
+                                nucleusWindow.requestFocus()
                             }
                         }
 
                         // Energy efficiency: full when minimized, light when unfocused
-                        var isWindowFocused by remember { mutableStateOf(window.isFocused) }
-                        DisposableEffect(window) {
-                            val listener =
-                                object : WindowFocusListener {
-                                    override fun windowGainedFocus(e: WindowEvent?) {
-                                        isWindowFocused = true
-                                    }
-
-                                    override fun windowLostFocus(e: WindowEvent?) {
-                                        isWindowFocused = false
-                                    }
-                                }
-                            window.addWindowFocusListener(listener)
-                            onDispose { window.removeWindowFocusListener(listener) }
-                        }
+                        val isWindowFocused by nucleusWindow.focusFlow.collectAsState()
                         LaunchedEffect(state.isMinimized, isWindowFocused) {
                             when {
                                 state.isMinimized -> {
@@ -337,7 +321,7 @@ fun main(args: Array<String>) {
                                     GalleryScreen(seedColor = seedColor)
                                 }
                             }
-                            "Taskbar" -> TaskbarProgressScreen(window)
+                            "Taskbar" -> TaskbarProgressScreen(nucleusWindow.unsafe.awtWindow!!)
                             "Notifications" -> {
                                 when (Platform.Current) {
                                     Platform.MacOS -> NotificationsScreen()
@@ -348,7 +332,7 @@ fun main(args: Array<String>) {
                             }
                             "Launcher" -> {
                                 when (Platform.Current) {
-                                    Platform.Windows -> WindowsLauncherScreen(window)
+                                    Platform.Windows -> WindowsLauncherScreen(nucleusWindow.unsafe.awtWindow!!)
                                     Platform.MacOS -> MacOsLauncherScreen()
                                     Platform.Linux -> LauncherScreen()
                                     else -> {}

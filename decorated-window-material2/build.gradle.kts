@@ -18,19 +18,21 @@ dependencies {
     // Compile against decorated-window-jbr API but let the consumer choose the runtime
     // implementation: either :decorated-window-jbr (JBR) or :decorated-window-jni.
     compileOnly(project(":decorated-window-jbr"))
+    compileOnly(project(":decorated-window-tao"))
+    compileOnly(project(":nucleus-application"))
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.compose.material)
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 

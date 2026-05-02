@@ -11,6 +11,7 @@ plugins {
 dependencies {
     implementation(project(":decorated-window-jni"))
     implementation(project(":decorated-window-core"))
+    implementation(project(":nucleus-application"))
     implementation(project(":sample-shared"))
     implementation(project(":core-runtime"))
     implementation(compose.desktop.currentOs)

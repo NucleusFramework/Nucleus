@@ -8,20 +8,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,11 +27,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import io.github.kdroidfilter.nucleus.window.DecoratedWindow
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow
+import io.github.kdroidfilter.nucleus.application.NucleusBackend
+import io.github.kdroidfilter.nucleus.application.nucleusApplication
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.TitleBar
+import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarColors
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarMetrics
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
@@ -47,10 +45,9 @@ import io.github.kdroidfilter.sampleshared.Tab
 import io.github.kdroidfilter.sampleshared.TabBar
 import io.github.kdroidfilter.sampleshared.logEvent
 
-fun main() = application {
+fun main() = nucleusApplication(backend = NucleusBackend.Awt) {
     val state = rememberWindowState(width = 1024.dp, height = 720.dp)
 
-    // Match the look of sample-tao: opaque dark title bar.
     val titleBarStyle = TitleBarStyle(
         colors = TitleBarColors(
             background = Color(0xFF1A1D24),
@@ -61,11 +58,13 @@ fun main() = application {
         metrics = TitleBarMetrics(height = 36.dp),
     )
 
+    var title by remember { mutableStateOf("JNI Backend Demo") }
+
     NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = titleBarStyle) {
         DecoratedWindow(
             onCloseRequest = ::exitApplication,
             state = state,
-            title = "JNI Backend Demo",
+            title = title,
             minimumSize = DpSize(640.dp, 400.dp),
         ) {
             var clicks by remember { mutableStateOf(0) }
@@ -73,7 +72,7 @@ fun main() = application {
             var selectedTab by remember { mutableStateOf(Tab.Demo) }
             val events = remember { mutableStateListOf<String>() }
 
-            TitleBar { state ->
+            TitleBar(modifier = Modifier.macOSLargeCornerRadius()) { state ->
                 Row(
                     modifier = Modifier.align(Alignment.Start).padding(start = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -90,7 +89,7 @@ fun main() = application {
                 }
 
                 BasicText(
-                    text = "JNI Backend Demo",
+                    text = title,
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     style = TextStyle(
                         color = if (state.isActive) Color(0xFFE6E6E6) else Color(0xFFE6E6E6).copy(alpha = 0.5f),
@@ -140,7 +139,9 @@ fun main() = application {
                         Tab.Scroll -> ScrollTab(modifier = Modifier.fillMaxSize())
                         Tab.Actions -> ActionsTab(
                             modifier = Modifier.fillMaxSize(),
-                            window = window,
+                            window = nucleusWindow,
+                            currentTitle = title,
+                            onTitleChange = { title = it },
                             onLog = { logEvent(events, it) },
                         )
                         Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
@@ -151,4 +152,3 @@ fun main() = application {
         }
     }
 }
-

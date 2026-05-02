@@ -27,6 +27,7 @@ dependencies {
     implementation(project(":system-color"))
     implementation(project(":decorated-window-material3"))
     implementation(project(":decorated-window-jni"))
+    implementation(project(":nucleus-application"))
     implementation(project(":energy-manager"))
     implementation(project(":taskbar-progress"))
     implementation(project(":notification-common"))

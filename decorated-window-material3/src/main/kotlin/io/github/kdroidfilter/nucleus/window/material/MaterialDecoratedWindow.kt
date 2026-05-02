@@ -8,21 +8,21 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
+import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
+import io.github.kdroidfilter.nucleus.application.NucleusDecoratedWindowScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.DecoratedWindow
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
-import io.github.kdroidfilter.nucleus.window.tao.ApplicationScope as TaoApplicationScope
-import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
-import io.github.kdroidfilter.nucleus.window.tao.DecoratedWindow as TaoDecoratedWindow
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindow
 
 /**
  * Material 3 wrapper around the AWT-based `DecoratedWindow` (JBR / JNI
  * backends). Picks Material colors via [rememberMaterialTitleBarStyle] and
  * wraps with [NucleusDecoratedWindowTheme].
  *
- * Use the [TaoApplicationScope] overload below when running on the Tao backend
- * (`taoApplication { … }`).
+ * For new code, prefer the [NucleusApplicationScope] overload below — it
+ * works the same on AWT and Tao without changing the call site.
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
@@ -40,7 +40,7 @@ fun ApplicationScope.MaterialDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable AwtDecoratedWindowScope.() -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val windowStyle = rememberMaterialWindowStyle(colorScheme)
@@ -70,14 +70,17 @@ fun ApplicationScope.MaterialDecoratedWindow(
 }
 
 /**
- * Material 3 wrapper around Tao's `DecoratedWindow`. Same styling as the
- * AWT-based overload above; consumes Tao's [TaoApplicationScope] receiver so
- * call-sites only need to swap `application { … }` → `taoApplication { … }`
- * when migrating between backends.
+ * Material 3 wrapper that picks the correct backend automatically. Use this
+ * inside `nucleusApplication { … }` — works on AWT (JBR/JNI) and Tao with the
+ * same call site.
+ *
+ * Theme tokens captured from the outer composition are re-provided inside the
+ * window content, which matters on Tao (each window owns its own ComposeScene
+ * and CompositionLocals don't propagate across scenes).
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun TaoApplicationScope.MaterialDecoratedWindow(
+fun NucleusApplicationScope.MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -91,12 +94,8 @@ fun TaoApplicationScope.MaterialDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
-    macOSStyle: MacOSStyle = MacOSStyle.Auto,
-    content: @Composable DecoratedWindowScope.() -> Unit,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
-    // Tao opens a fresh ComposeScene per window, so CompositionLocals from the
-    // outer scope (MaterialTheme, JewelTheme, …) do NOT propagate. Capture the
-    // outer theme values here and re-provide them INSIDE the new scene below.
     val outerColorScheme = MaterialTheme.colorScheme
     val outerTypography = MaterialTheme.typography
     val outerShapes = MaterialTheme.shapes
@@ -104,7 +103,7 @@ fun TaoApplicationScope.MaterialDecoratedWindow(
     val resolvedTitleBarStyle = titleBarStyle ?: rememberMaterialTitleBarStyle(outerColorScheme)
     val isDark = outerColorScheme.isDark()
 
-    TaoDecoratedWindow(
+    NucleusDecoratedWindow(
         onCloseRequest = onCloseRequest,
         state = state,
         visible = visible,
@@ -117,7 +116,6 @@ fun TaoApplicationScope.MaterialDecoratedWindow(
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
-        macOSStyle = macOSStyle,
     ) {
         MaterialTheme(
             colorScheme = outerColorScheme,
@@ -134,3 +132,4 @@ fun TaoApplicationScope.MaterialDecoratedWindow(
         }
     }
 }
+

@@ -7,12 +7,12 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.rememberDialogState
+import io.github.kdroidfilter.nucleus.application.DecoratedDialog as NucleusDecoratedDialog
+import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
+import io.github.kdroidfilter.nucleus.application.NucleusDecoratedDialogScope
+import io.github.kdroidfilter.nucleus.window.AwtDecoratedDialogScope
 import io.github.kdroidfilter.nucleus.window.DecoratedDialog
-import io.github.kdroidfilter.nucleus.window.DecoratedDialogScope
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
-import io.github.kdroidfilter.nucleus.window.tao.ApplicationScope as TaoApplicationScope
-import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
-import io.github.kdroidfilter.nucleus.window.tao.DecoratedDialog as TaoDecoratedDialog
 
 /** AWT-backed (JBR / JNI) Material 3 wrapper for [DecoratedDialog]. */
 @Suppress("FunctionNaming", "LongParameterList")
@@ -28,7 +28,7 @@ fun ApplicationScope.MaterialDecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable AwtDecoratedDialogScope.() -> Unit,
 ) {
     val colorScheme = MaterialTheme.colorScheme
     val windowStyle = rememberMaterialWindowStyle(colorScheme)
@@ -55,10 +55,14 @@ fun ApplicationScope.MaterialDecoratedDialog(
     }
 }
 
-/** Tao-backed Material 3 wrapper for [DecoratedDialog]. */
+/**
+ * Material 3 wrapper that picks the correct backend automatically. Use inside
+ * `nucleusApplication { … }` — works on AWT (JBR/JNI) and Tao with the same
+ * call site.
+ */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun TaoApplicationScope.MaterialDecoratedDialog(
+fun NucleusApplicationScope.MaterialDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,
@@ -69,8 +73,7 @@ fun TaoApplicationScope.MaterialDecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    macOSStyle: MacOSStyle = MacOSStyle.Auto,
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
 ) {
     val outerColorScheme = MaterialTheme.colorScheme
     val outerTypography = MaterialTheme.typography
@@ -79,7 +82,7 @@ fun TaoApplicationScope.MaterialDecoratedDialog(
     val titleBarStyle = rememberMaterialTitleBarStyle(outerColorScheme)
     val isDark = outerColorScheme.isDark()
 
-    TaoDecoratedDialog(
+    NucleusDecoratedDialog(
         onCloseRequest = onCloseRequest,
         state = state,
         visible = visible,
@@ -90,7 +93,6 @@ fun TaoApplicationScope.MaterialDecoratedDialog(
         focusable = focusable,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
-        macOSStyle = macOSStyle,
     ) {
         MaterialTheme(
             colorScheme = outerColorScheme,
