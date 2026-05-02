@@ -30,6 +30,10 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.LocalIsDarkTheme
 import io.github.kdroidfilter.nucleus.window.icons.windows.Close
 import io.github.kdroidfilter.nucleus.window.icons.windows.CloseDark
+import io.github.kdroidfilter.nucleus.window.icons.windows.CloseFullscreen
+import io.github.kdroidfilter.nucleus.window.icons.windows.CloseFullscreenDark
+import io.github.kdroidfilter.nucleus.window.icons.windows.CloseFullscreenInactive
+import io.github.kdroidfilter.nucleus.window.icons.windows.CloseFullscreenInactiveDark
 import io.github.kdroidfilter.nucleus.window.icons.windows.CloseHover
 import io.github.kdroidfilter.nucleus.window.icons.windows.CloseInactive
 import io.github.kdroidfilter.nucleus.window.icons.windows.CloseInactiveDark
@@ -78,6 +82,8 @@ internal fun WindowControlsWindows(
     win: TaoWindow,
     state: DecoratedWindowState,
     modifier: Modifier = Modifier,
+    isFullscreen: Boolean = false,
+    onExitFullscreen: (() -> Unit)? = null,
 ) {
     val isDark = LocalIsDarkTheme.current
     Row(modifier = modifier.fillMaxHeight()) {
@@ -93,8 +99,22 @@ internal fun WindowControlsWindows(
             contentDescription = "Minimize",
         )
 
-        // Maximize / Restore — switches icon based on actual window state
-        if (state.isMaximized) {
+        // Fullscreen → exit-fullscreen button replaces maximize/restore.
+        // Mirrors decorated-window-jni's WindowsWindowControlArea behaviour.
+        if (isFullscreen && onExitFullscreen != null) {
+            WindowsCaptionButton(
+                onClick = onExitFullscreen,
+                isDark = isDark,
+                icon = if (state.isActive) {
+                    if (isDark) WindowsControlButtonIcons.CloseFullscreenDark else WindowsControlButtonIcons.CloseFullscreen
+                } else {
+                    if (isDark) WindowsControlButtonIcons.CloseFullscreenInactiveDark
+                    else WindowsControlButtonIcons.CloseFullscreenInactive
+                },
+                contentDescription = "Exit fullscreen",
+            )
+        } else if (state.isMaximized) {
+            // Maximize / Restore — switches icon based on actual window state
             WindowsCaptionButton(
                 onClick = { win.setMaximized(false) },
                 isDark = isDark,

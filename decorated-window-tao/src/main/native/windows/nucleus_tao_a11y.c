@@ -942,57 +942,56 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     debug_log("apply_snapshot: nodeCount=%u newFocused=%I64u prevFocused=%I64u eventCount=%d listening=%d",
               nodeCount, newFocusedNodeId, prevFocusedNodeId, eventCount, clientsListening ? 1 : 0);
 
-    /* ── Fire events (outside the lock) ───────────────────────────────────
-     * UIA forwards these to listeners synchronously on a worker thread, so
-     * holding our lock here would deadlock if a client re-enters via
-     * GetPropertyValue / Navigate during dispatch. */
+    /* ── Defer event raises to the WndProc ────────────────────────────────
+     * Queue every event and PostMessage(WM_FLUSH) — UIA's post-raise
+     * callbacks (Navigate/scope resolution back into our STA) only succeed
+     * once the JNI call has returned and the Tao message pump resumes.
+     * Raising inline here, while the pump is blocked inside JNI, causes
+     * silent event drops. */
+    HWND eventHwnd = proj->hwnd;
     for (int i = 0; i < eventCount; i++) {
         PendingEvent *e = &events[i];
-        IRawElementProviderSimple *prov =
-            (IRawElementProviderSimple *)&e->target->lpSimpleVtbl;
+        DeferredEvent *de = (DeferredEvent *)xalloc(sizeof(DeferredEvent));
+        if (!de) {
+            if (e->kind == 0) { VariantClear(&e->oldValue); VariantClear(&e->newValue); }
+            xfree(e->announceText);
+            continue;
+        }
+        de->target = e->target;
+        InterlockedIncrement(&e->target->refCount);  /* hold the element until flush */
+        de->kind = e->kind;
         if (e->kind == 0) {
-            UiaRaiseAutomationPropertyChangedEvent(prov, e->propertyId, e->oldValue, e->newValue);
-            VariantClear(&e->oldValue);
-            VariantClear(&e->newValue);
+            de->propertyId = e->propertyId;
+            de->oldValue = e->oldValue;     /* transfer ownership */
+            de->newValue = e->newValue;
         } else if (e->kind == 1) {
-            /* UiaRaiseNotificationEvent is Win10 1709+. Resolve dynamically
-             * so the DLL still loads on older Windows; fall back to a value-
-             * change-style raise on the StaticText element. */
-            typedef HRESULT (WINAPI *PFN_RaiseNotif)(
-                IRawElementProviderSimple *, int, int, BSTR, BSTR);
-            static PFN_RaiseNotif pRaise = NULL;
-            static volatile LONG resolved = 0;
-            if (InterlockedCompareExchange(&resolved, 1, 0) == 0) {
-                HMODULE m = GetModuleHandleW(L"uiautomationcore.dll");
-                if (m) pRaise = (PFN_RaiseNotif)GetProcAddress(m, "UiaRaiseNotificationEvent");
-            }
-            if (pRaise && e->announceText) {
-                BSTR bstr = SysAllocString(e->announceText);
-                pRaise(prov,
-                       NotificationKind_Other,
-                       e->announcePriority == 2
-                           ? NotificationProcessing_ImportantAll
-                           : NotificationProcessing_All,
-                       bstr,
-                       NULL);
-                SysFreeString(bstr);
-            }
+            de->announceText = e->announceText
+                ? SysAllocString(e->announceText) : NULL;
+            de->announcePriority = e->announcePriority;
             xfree(e->announceText);
         }
+        defer_enqueue(eventHwnd, de);
     }
     xfree(events);
 
     if (focusTarget) {
-        UiaRaiseAutomationEvent(
-            (IRawElementProviderSimple *)&focusTarget->lpSimpleVtbl,
-            UIA_AutomationFocusChangedEventId);
+        DeferredEvent *de = (DeferredEvent *)xalloc(sizeof(DeferredEvent));
+        if (de) {
+            de->target = focusTarget;
+            InterlockedIncrement(&focusTarget->refCount);
+            de->kind = 2;
+            defer_enqueue(eventHwnd, de);
+        }
     }
 
-    /* Inform UIA that the structure changed so it re-queries children. */
     if (proj->root) {
-        UiaRaiseStructureChangedEvent(
-            (IRawElementProviderSimple *)&proj->root->lpSimpleVtbl,
-            StructureChangeType_ChildrenInvalidated, NULL, 0);
+        DeferredEvent *de = (DeferredEvent *)xalloc(sizeof(DeferredEvent));
+        if (de) {
+            de->target = (NucleusUiaElement *)proj->root;  /* root has same vtbl prefix */
+            InterlockedIncrement(&proj->root->refCount);
+            de->kind = 3;
+            defer_enqueue(eventHwnd, de);
+        }
     }
 
     /* Free old map last — events have been delivered, runtime IDs of the new
@@ -1098,7 +1097,14 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_get_ProviderOptions(
 {
     (void)This;
     if (!pRetVal) return E_POINTER;
-    *pRetVal = ProviderOptions_ServerSideProvider;
+    /* ServerSideProvider | UseComThreading. The latter is critical: our
+     * provider lives on a JVM-owned STA thread (java.desktop / AWT init
+     * already CoInitialized it), so UIA must marshal cross-apartment calls
+     * through the COM proxy/stub system rather than calling us directly
+     * from RPC pool threads. Without this flag, UIA event delivery
+     * silently drops because the post-raise callbacks (Navigate/scope
+     * resolution) hit a non-marshaled provider on the wrong thread. */
+    *pRetVal = ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading;
     return S_OK;
 }
 
@@ -2004,7 +2010,7 @@ static HRESULT STDMETHODCALLTYPE Root_Simple_get_ProviderOptions(
 {
     (void)This;
     if (!pRetVal) return E_POINTER;
-    *pRetVal = ProviderOptions_ServerSideProvider;
+    *pRetVal = ProviderOptions_ServerSideProvider | ProviderOptions_UseComThreading;
     return S_OK;
 }
 
@@ -2289,8 +2295,106 @@ static IRawElementProviderFragmentRootVtbl g_rootFragmentRootVtbl = {
 };
 
 /* WndProc subclass installed on attach. Intercepts WM_GETOBJECT to return
- * our UIA provider, and WM_DESTROY to disconnect cleanly. */
+ * our UIA provider, and WM_DESTROY to disconnect cleanly. Also handles a
+ * deferred-event message (WM_APP+1) that flushes the pending UIA event
+ * queue from inside the message pump — see DeferredEvent below. */
 #define A11Y_SUBCLASS_ID 0x4E55436CULL  /* 'NUCl' */
+#define A11Y_WM_FLUSH_EVENTS (WM_APP + 1)
+
+/* Deferred event: queued by apply_snapshot, flushed by the WndProc after
+ * the JNI call returns and the Tao message pump resumes. Raising events
+ * from inside the JNI-blocked tick prevents UIA's post-raise callbacks
+ * (Navigate/scope resolution) from being serviced — STA needs to be
+ * actively pumping during/after the raise. */
+typedef struct DeferredEvent {
+    /* The provider (root or element). AddRef'd by enqueuer; Released by
+     * defer_flush. Stored as IRawElementProviderSimple* so root/element
+     * heterogeneous queue is type-safe — the vtbl dispatch picks the right
+     * Release implementation. */
+    IRawElementProviderSimple *provider;
+    int kind;                    /* 0=property, 1=notification, 2=focus, 3=structure */
+    int propertyId;              /* kind=0 */
+    VARIANT oldValue;            /* kind=0 */
+    VARIANT newValue;            /* kind=0 */
+    BSTR announceText;           /* kind=1; freed after raise */
+    int announcePriority;        /* kind=1 */
+    struct DeferredEvent *next;
+} DeferredEvent;
+
+static CRITICAL_SECTION g_deferQueueLock;
+static DeferredEvent *g_deferQueueHead = NULL;
+static DeferredEvent *g_deferQueueTail = NULL;
+static volatile LONG g_deferInited = 0;
+
+static void defer_init(void) {
+    if (InterlockedCompareExchange(&g_deferInited, 1, 0) == 0) {
+        InitializeCriticalSection(&g_deferQueueLock);
+    }
+}
+
+static void defer_enqueue(HWND hwnd, DeferredEvent *e) {
+    defer_init();
+    e->next = NULL;
+    EnterCriticalSection(&g_deferQueueLock);
+    if (g_deferQueueTail) g_deferQueueTail->next = e;
+    else g_deferQueueHead = e;
+    g_deferQueueTail = e;
+    LeaveCriticalSection(&g_deferQueueLock);
+    PostMessageW(hwnd, A11Y_WM_FLUSH_EVENTS, 0, 0);
+}
+
+static DeferredEvent *defer_drain(void) {
+    defer_init();
+    EnterCriticalSection(&g_deferQueueLock);
+    DeferredEvent *head = g_deferQueueHead;
+    g_deferQueueHead = NULL;
+    g_deferQueueTail = NULL;
+    LeaveCriticalSection(&g_deferQueueLock);
+    return head;
+}
+
+static void defer_flush(void) {
+    DeferredEvent *cur = defer_drain();
+    while (cur) {
+        DeferredEvent *next = cur->next;
+        IRawElementProviderSimple *prov =
+            (IRawElementProviderSimple *)&cur->target->lpSimpleVtbl;
+        HRESULT hr = S_OK;
+        if (cur->kind == 0) {
+            hr = UiaRaiseAutomationPropertyChangedEvent(
+                prov, cur->propertyId, cur->oldValue, cur->newValue);
+            VariantClear(&cur->oldValue);
+            VariantClear(&cur->newValue);
+        } else if (cur->kind == 1) {
+            typedef HRESULT (WINAPI *PFN_RaiseNotif)(
+                IRawElementProviderSimple *, int, int, BSTR, BSTR);
+            static PFN_RaiseNotif pRaise = NULL;
+            static volatile LONG resolved = 0;
+            if (InterlockedCompareExchange(&resolved, 1, 0) == 0) {
+                HMODULE m = GetModuleHandleW(L"uiautomationcore.dll");
+                if (m) pRaise = (PFN_RaiseNotif)GetProcAddress(m, "UiaRaiseNotificationEvent");
+            }
+            if (pRaise) {
+                hr = pRaise(prov,
+                            NotificationKind_Other,
+                            cur->announcePriority == 2
+                                ? NotificationProcessing_ImportantAll
+                                : NotificationProcessing_All,
+                            cur->announceText, NULL);
+            }
+            if (cur->announceText) SysFreeString(cur->announceText);
+        } else if (cur->kind == 2) {
+            hr = UiaRaiseAutomationEvent(prov, UIA_AutomationFocusChangedEventId);
+        } else if (cur->kind == 3) {
+            hr = UiaRaiseStructureChangedEvent(
+                prov, StructureChangeType_ChildrenInvalidated, NULL, 0);
+        }
+        debug_log("defer_flush: kind=%d propId=%d hr=0x%x", cur->kind, cur->propertyId, (unsigned)hr);
+        IUnknown_Release((IUnknown *)prov);
+        xfree(cur);
+        cur = next;
+    }
+}
 
 static LRESULT CALLBACK a11ySubclassProc(
     HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam,
@@ -2306,6 +2410,10 @@ static LRESULT CALLBACK a11ySubclassProc(
             return UiaReturnRawElementProvider(
                 hwnd, wParam, lParam,
                 (IRawElementProviderSimple *)&p->root->lpSimpleVtbl);
+        }
+        case A11Y_WM_FLUSH_EVENTS: {
+            defer_flush();
+            return 0;
         }
         case WM_DESTROY: {
             if (p && p->root) {

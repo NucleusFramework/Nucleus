@@ -189,6 +189,8 @@ fun DecoratedWindowScope.TitleBar(
                     win = taoWindow,
                     state = titleBarState,
                     modifier = Modifier.align(Alignment.End),
+                    isFullscreen = titleBarState.isFullscreen,
+                    onExitFullscreen = { taoWindow.setFullscreen(false) },
                 )
                 else -> Unit // macOS uses native AppKit traffic-lights
             }
