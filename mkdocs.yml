@@ -80,6 +80,7 @@ nav:
           - Decorated Window:
               - Overview: runtime/decorated-window.md
               - Nucleus Application: runtime/nucleus-application.md
+              - Tao backend: runtime/decorated-window-tao.md
               - Jewel Integration: runtime/decorated-window-jewel.md
               - Material 2: runtime/decorated-window-material2.md
               - Material 3: runtime/decorated-window-material3.md
