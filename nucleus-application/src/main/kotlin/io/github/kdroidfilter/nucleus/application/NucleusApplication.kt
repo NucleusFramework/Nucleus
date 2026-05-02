@@ -34,14 +34,15 @@ import io.github.kdroidfilter.nucleus.application.internal.TaoLauncher
  *     backend (`-jbr` or `-jni`) are present, Tao wins.
  */
 fun nucleusApplication(
+    args: Array<String> = emptyArray(),
     backend: NucleusBackend = NucleusBackend.Auto,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     when (resolveBackend(backend)) {
-        NucleusBackend.Tao -> TaoLauncher.run(content)
+        NucleusBackend.Tao -> TaoLauncher.run(args, content)
         NucleusBackend.Awt, NucleusBackend.Auto ->
             application {
-                val nucleusScope = AwtNucleusApplicationScope(this)
+                val nucleusScope = AwtNucleusApplicationScope(this, args)
                 CompositionLocalProvider(LocalNucleusBackend provides NucleusBackend.Awt) {
                     nucleusScope.content()
                 }

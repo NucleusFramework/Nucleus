@@ -6,6 +6,7 @@ import io.github.kdroidfilter.nucleus.application.LocalNucleusBackend
 import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
 import io.github.kdroidfilter.nucleus.application.NucleusBackend
 import io.github.kdroidfilter.nucleus.application.TaoNucleusApplicationScope
+import io.github.kdroidfilter.nucleus.window.tao.TaoDeepLinkBridge
 import io.github.kdroidfilter.nucleus.window.tao.taoApplication
 
 /**
@@ -14,9 +15,19 @@ import io.github.kdroidfilter.nucleus.window.tao.taoApplication
  * `decorated-window-tao` module.
  */
 internal object TaoLauncher {
-    fun run(content: @Composable NucleusApplicationScope.() -> Unit) {
+    fun run(
+        args: Array<String>,
+        content: @Composable NucleusApplicationScope.() -> Unit,
+    ) {
+        // Install the macOS Apple Events handler before Tao starts NSApp's run
+        // loop, so the cold-start kAEGetURL (app launched via a `nucleus://…`
+        // link) is captured. The user's callback is wired later from
+        // `TaoNucleusApplicationScope.onDeepLink { … }`; URIs received before
+        // then are buffered and replayed by `TaoDeepLinkBridge`.
+        TaoDeepLinkBridge.installNativeHandler()
+
         taoApplication {
-            val scope = TaoNucleusApplicationScope(this)
+            val scope = TaoNucleusApplicationScope(this, args)
             CompositionLocalProvider(LocalNucleusBackend provides NucleusBackend.Tao) {
                 scope.content()
             }

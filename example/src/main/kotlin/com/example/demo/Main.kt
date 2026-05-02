@@ -94,9 +94,6 @@ private const val AOT_TRAINING_DURATION_MS = 45_000L
 
 private val deepLinkUri = mutableStateOf<URI?>(null)
 
-// macOS resolves the AppleEvent only after NSApp.run starts (i.e. after AWT
-// init), so the early call from main() returns false. We stash args here and
-// re-query from Compose to pick up the late signal.
 private var nucleusMainArgs: Array<String> = emptyArray()
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
@@ -110,11 +107,6 @@ fun main(args: Array<String>) {
     // Set AUMID before any window is created (required for jump lists in non-APPX mode)
     if (Platform.Current == Platform.Windows) {
         WindowsJumpListManager.setProcessAppId()
-    }
-
-    DeepLinkHandler.register(args) { uri ->
-        println("[JumpList/DeepLink] Received: $uri")
-        deepLinkUri.value = uri
     }
 
     // Stop app after 15 seconds during AOT training mode
@@ -132,7 +124,12 @@ fun main(args: Array<String>) {
         }
     }
 
-    nucleusApplication {
+    nucleusApplication(args) {
+        onDeepLink { uri ->
+            println("[JumpList/DeepLink] Received: $uri")
+            deepLinkUri.value = uri
+        }
+
         var isWindowVisible by remember { mutableStateOf(true) }
         var restoreRequestCount by remember { mutableStateOf(0) }
         var themeMode by remember { mutableStateOf(ThemeMode.System) }

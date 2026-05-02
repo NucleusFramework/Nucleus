@@ -2,6 +2,18 @@
     "reflection": [
         {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "dispatchDeepLink",
+                    "parameterTypes": [
+                        "java.lang.String"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.TaoDeepLinkBridge",
             "jniAccessible": true
         },
         {
