@@ -19,6 +19,7 @@ set "SCRIPT_DIR=%~dp0"
 set "NATIVE_DIR=%SCRIPT_DIR%.."
 set "DECO_SRC=%SCRIPT_DIR%nucleus_tao_windows_deco.c"
 set "GL_SRC=%SCRIPT_DIR%nucleus_tao_gl.c"
+set "A11Y_SRC=%SCRIPT_DIR%nucleus_tao_a11y.c"
 set "RESOURCE_DIR=%NATIVE_DIR%\..\resources\nucleus\native"
 set "OUT_DIR_X64=%RESOURCE_DIR%\win32-x64"
 set "OUT_DIR_ARM64=%RESOURCE_DIR%\win32-aarch64"
@@ -129,6 +130,20 @@ if errorlevel 1 (
     echo ERROR: x64 GL compilation failed >&2
     exit /b 1
 )
+
+REM nucleus_tao_a11y.dll — UI Automation provider. Needs the C runtime
+REM (HeapAlloc-friendly libcmt) because uiautomationcore.lib pulls in C++
+REM statics that require __security_check_cookie / floating-point support.
+cl /LD /O1 /GS- /nologo ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    "%A11Y_SRC%" ^
+    /Fe:"%OUT_DIR_X64%\nucleus_tao_a11y.dll" ^
+    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
+if errorlevel 1 (
+    echo ERROR: x64 a11y compilation failed >&2
+    exit /b 1
+)
 endlocal
 
 del /q "%OUT_DIR_X64%\*.obj" "%OUT_DIR_X64%\*.lib" "%OUT_DIR_X64%\*.exp" 2>nul
@@ -163,6 +178,18 @@ cl /LD /O1 /GS- /nologo ^
     /link /NODEFAULTLIB /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 GL compilation failed >&2
+    endlocal
+    goto :clear_cache
+)
+
+cl /LD /O1 /GS- /nologo ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    "%A11Y_SRC%" ^
+    /Fe:"%OUT_DIR_ARM64%\nucleus_tao_a11y.dll" ^
+    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
+if errorlevel 1 (
+    echo WARNING: ARM64 a11y compilation failed >&2
     endlocal
     goto :clear_cache
 )

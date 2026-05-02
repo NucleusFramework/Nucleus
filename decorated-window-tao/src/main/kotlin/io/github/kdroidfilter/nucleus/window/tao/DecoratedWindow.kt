@@ -317,6 +317,19 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     val host = TaoComposeSceneHostWindows(window)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+
+    // ── Windows accessibility (UIA) ────────────────────────────────────────
+    // Per-window UIA projection driven by the same SemanticsObserver pipeline
+    // as macOS. The controller resolves the HWND on attach via
+    // `nativeHwndHandle` and pushes the binary snapshot to nucleus_tao_a11y.dll.
+    val a11yController = TaoAccessibilityController(window.handle)
+    val a11yObserver = TaoSemanticsObserver(
+        controller = a11yController,
+        densityProvider = { host.density() },
+        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+    )
+    host.semanticsOwnerListener = a11yObserver
+
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
@@ -329,6 +342,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     window.onWindowReady { w, h ->
         host.attach()
+        a11yController.attach()
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
@@ -369,7 +383,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         }
     }
     window.onCloseRequested { onCloseRequest() }
-    window.onDestroyed { host.detach() }
+    window.onDestroyed {
+        a11yController.dispose()
+        host.detach()
+    }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }

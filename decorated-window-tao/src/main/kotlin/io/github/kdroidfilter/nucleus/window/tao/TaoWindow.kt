@@ -1,5 +1,7 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import io.github.kdroidfilter.nucleus.core.runtime.Platform
+
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
  *
@@ -76,7 +78,16 @@ class TaoWindow internal constructor(
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
     val isFullscreen: Boolean
-        get() = NativeTaoBridge.nativeIsFullscreen(handle)
+        get() {
+            // On Windows, fullscreen is owned by the WndProc subclass so its
+            // `isFullscreen` flag stays in sync with WM_NCCALCSIZE / hit-test
+            // logic. Tao's own fullscreen state would be FALSE in that case.
+            if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+                val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+                if (hwnd != 0L) return NativeTaoWindowsDecoBridge.nativeIsFullscreen(hwnd)
+            }
+            return NativeTaoBridge.nativeIsFullscreen(handle)
+        }
 
     fun setMaximized(maximized: Boolean) {
         NativeTaoBridge.nativeSetMaximized(handle, maximized)
@@ -90,9 +101,21 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinimized(handle, minimized)
     }
 
-    /** Borderless fullscreen on the current monitor (Tao's
-     *  `Fullscreen::Borderless(None)`). */
+    /** Borderless fullscreen on the current monitor.
+     *
+     * On Windows we route through the WndProc subclass (saves WINDOWPLACEMENT,
+     * synchronises the deco's `isFullscreen` flag, restores cleanly) — Tao's
+     * own `set_fullscreen` doesn't coordinate with our custom WM_NCCALCSIZE
+     * and leaves the maximize button + window position desynced after exit.
+     * Other platforms use Tao's native path. */
     fun setFullscreen(fullscreen: Boolean) {
+        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
+                return
+            }
+        }
         NativeTaoBridge.nativeSetFullscreen(handle, fullscreen)
     }
 

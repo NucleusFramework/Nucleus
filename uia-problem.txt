@@ -1,0 +1,113 @@
+# Problem: UIA PropertyChanged events fire from a custom IRawElementProviderSimple but don't reach AutomationPropertyChangedEventHandler subscribers
+
+## Context
+
+I'm building a custom UI Automation provider in C (no ATL/WRL, plain CINTERFACE / COBJMACROS) that projects a virtual a11y tree on top of an HWND. The HWND is owned by a JVM process (Compose Desktop running through the Tao crate), and the C provider lives in a sibling DLL `nucleus_tao_a11y.dll` loaded into that same JVM process.
+
+Architecture:
+- A WndProc subclass on the HWND intercepts `WM_GETOBJECT` with `lParam == UiaRootObjectId` and returns a root provider via `UiaReturnRawElementProvider(hwnd, wParam, lParam, root)`.
+- The root implements `IRawElementProviderSimple`, `IRawElementProviderFragment`, `IRawElementProviderFragmentRoot`. Its `get_HostRawElementProvider` returns `UiaHostProviderFromHwnd(hwnd, ...)`.
+- Children are virtual fragments (no HWND), implementing Simple+Fragment+ pattern interfaces (Invoke / Toggle / Value / RangeValue / SelectionItem / Scroll / ExpandCollapse). Each child's `GetRuntimeId` returns `[UiaAppendRuntimeId, lo32(nodeId), hi32(nodeId)]` — stable across snapshots.
+- A binary snapshot is pushed from the JVM whenever Compose recomposes. On each push I rebuild the tree, but I reuse the same C struct (same IUnknown identity) for elements that exist in both old and new snapshots, so the COM object identity is stable across pushes for a given nodeId.
+
+## What works
+
+- A PowerShell tool that walks the tree (`AutomationElement.FindAll` + `TreeWalker.RawViewWalker`) sees every Compose semantic node correctly: ControlType, Name, BoundingRectangle, supported patterns, and current pattern values (toggleState=On/Off, value="hello", range=0..1 cur=0.5, isSelected, etc.).
+- `IInvokePattern.Invoke()` from PS reaches my `IInvokeProvider::Invoke`, which forwards to the JVM via a registered C function pointer (Rust trampoline -> JNI upcall -> Compose semantics action). Compose state changes, the next snapshot pushes, the dump shows the new value.
+- Same round-trip works for `TogglePattern.Toggle()`, `ValuePattern.SetValue("abc")`, `RangeValuePattern.SetValue(0.7)` — all confirmed by re-dumping the tree after the action.
+
+## What doesn't work
+
+`UiaRaiseAutomationPropertyChangedEvent` calls don't reach a PowerShell-side `AutomationPropertyChangedEventHandler`, even though all the pre-conditions look right.
+
+### My event-raising code
+
+In `apply_snapshot` (called on every Compose snapshot push), after building the new tree, I diff each new node against a captured copy of the old node's fields (`prior->flags`, `prior->numericValue`, `prior->label`, `prior->valueStr`). For each detected change I append a `PendingEvent` with the relevant `propertyId`, `oldValue`, `newValue` (correctly typed VARIANTs: VT_BSTR for Name/Value, VT_I4 for ToggleState, VT_R8 for RangeValue, VT_BOOL for IsSelected). Then OUTSIDE the projection lock I loop over `events[]` and for each call:
+
+```c
+IRawElementProviderSimple *prov = (IRawElementProviderSimple *)&e->target->lpSimpleVtbl;
+UiaRaiseAutomationPropertyChangedEvent(prov, e->propertyId, e->oldValue, e->newValue);
+```
+
+I use the spec-correct property IDs:
+- UIA_NamePropertyId = 30005
+- UIA_ValueValuePropertyId = 30045
+- UIA_ToggleToggleStatePropertyId = 30086
+- UIA_RangeValueValuePropertyId = 30047
+- UIA_SelectionItemIsSelectedPropertyId = 30079
+
+I also raise `UiaRaiseStructureChangedEvent(root, StructureChangeType_ChildrenInvalidated, NULL, 0)` on each push (this would force re-query on AT clients but doesn't replace property-change events).
+
+### Diagnostics confirming the events fire
+
+I added a debug log gated by env var. On every `apply_snapshot` it logs:
+
+```
+apply_snapshot: nodeCount=57 newFocused=51 prevFocused=61 eventCount=3 listening=1
+apply_snapshot: nodeCount=57 newFocused=51 prevFocused=51 eventCount=2 listening=1
+```
+
+Where:
+- `eventCount` is the number of PendingEvents I'm about to fire — non-zero whenever Compose state actually changes
+- `listening = UiaClientsAreListening()` — returns TRUE while the PS listener is subscribed
+
+So a client IS listening, my code IS calling `UiaRaiseAutomationPropertyChangedEvent` with proper arguments. But the PS handler never fires.
+
+### PowerShell listener
+
+```powershell
+$propHandler = [System.Windows.Automation.AutomationPropertyChangedEventHandler]{
+    param($s, $e)
+    Write-Host "[Prop] $($e.Property.ProgrammaticName): $($e.OldValue) -> $($e.NewValue)"
+}
+$props = @(
+    [System.Windows.Automation.AutomationElement]::NameProperty,
+    [System.Windows.Automation.ValuePattern]::ValueProperty,
+    [System.Windows.Automation.TogglePattern]::ToggleStateProperty,
+    [System.Windows.Automation.RangeValuePattern]::ValueProperty,
+    [System.Windows.Automation.SelectionItemPattern]::IsSelectedProperty
+)
+[System.Windows.Automation.Automation]::AddAutomationPropertyChangedEventHandler(
+    $target, [System.Windows.Automation.TreeScope]::Subtree, $propHandler, $props)
+
+# Trigger actions via UIA (which DO succeed and DO change Compose state)
+# Sleep to let recomposition + snapshot push happen
+Start-Sleep -Seconds 5
+```
+
+Result: 0 events captured despite my provider firing them with `UiaClientsAreListening()` returning TRUE.
+
+### Things I tried
+
+1. Stable COM identity across snapshots — initially each snapshot allocated fresh element COM objects; I refactored to recycle the same struct (same IUnknown*) when nodeId matches. Verified via runtime: same pointer reused. No change in PS capture.
+
+2. Larger sleep — wait 5s after triggering actions to let recomposition + push happen. No change. The debug log confirms multiple `apply_snapshot` calls with `eventCount > 0` happen during that window.
+
+3. CoInitializeEx(MTA) at the start of `apply_snapshot`. Returns `RPC_E_CHANGED_MODE` (0x80010106) — meaning the calling thread is already in some apartment (likely STA, set by AWT or Tao). I removed it since CoInitialize doesn't change apartments.
+
+4. Verified property IDs — found one bug (Min/Max RangeValue swapped) and fixed it; doesn't affect Toggle/Value events which still don't reach.
+
+5. Listener subscribes BEFORE actions trigger — verified via `Start-Sleep` between `AddAutomationPropertyChangedEventHandler` and the first action.
+
+6. Confirmed FocusChanged path: same problem. I also call `UiaRaiseAutomationEvent(provider, UIA_AutomationFocusChangedEventId)` when the focused node changes. Logs confirm it fires. PS `AddAutomationFocusChangedEventHandler` captures nothing.
+
+7. NotificationEvent (Win10 1709+) for live regions — same outcome.
+
+### What I think is happening
+
+Either:
+- (a) PS UIA event subscription has known limitations with custom providers I'm not seeing in stock docs, OR
+- (b) My provider has a subtle correctness issue — maybe `get_HostRawElementProvider` on the root must NOT return `UiaHostProviderFromHwnd` for events to route correctly, OR maybe the fragment must implement `IRawElementProviderAdviseEvents`, OR the runtime ID format is wrong, OR I need to AddRef the provider before raising the event, OR the provider needs to be on a thread with a message pump, etc.
+- (c) The events ARE delivered but PS's marshalling drops them silently. Real screen readers (Narrator/NVDA) might still receive them — I can't easily test that headlessly.
+
+### Provider thread context
+
+`apply_snapshot` runs on the JVM "compose render thread" — this is the thread that owns Tao's event loop on Windows. It pumps Win32 messages via `GetMessage`/`PeekMessage`. So if UIA delivers cross-process via window messages, that thread should service them. CoInitializeEx returns `RPC_E_CHANGED_MODE`, so something already initialized COM on that thread (probably STA from AWT side effects, since Compose Desktop pulls in `java.desktop` which initializes COM on its EDT).
+
+### Question for the specialist
+
+Why is my custom UIA provider's `UiaRaiseAutomationPropertyChangedEvent` (and `UiaRaiseAutomationEvent` for focus) firing with `UiaClientsAreListening()==TRUE`, but a `System.Windows.Automation.AutomationPropertyChangedEventHandler` subscribed via PowerShell at `TreeScope::Subtree` on the window root never receives them?
+
+What does a correct minimal repro look like (Win32 + custom UIA provider in C, raises property-changed event, captured by .NET UIA client) so I can compare?
+
+Are there documented requirements I'm missing — `IRawElementProviderAdviseEvents`, threading, runtime ID stability, `ProviderOptions` flags, the role of `UiaHostProviderFromHwnd` as host provider on the root, or similar — that would make property-change events specifically (not structure/invoke) propagate to `AutomationPropertyChangedEventHandler`?

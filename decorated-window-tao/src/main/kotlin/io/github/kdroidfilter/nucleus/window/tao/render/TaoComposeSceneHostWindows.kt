@@ -61,6 +61,13 @@ internal class TaoComposeSceneHostWindows(
     /** App-level post-dispatch hook. See [TaoComposeSceneHost.keyHandler]. */
     var keyHandler: ((KeyEvent) -> Boolean)? = null
 
+    /**
+     * SemanticsOwnerListener installed when the host carries an a11y
+     * controller. Wired through [WindowsTaoPlatformContext] so Compose's
+     * BaseComposeScene picks it up. Set once before [attach].
+     */
+    var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+
     private val windowInfo = WindowsTaoWindowInfo()
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
@@ -110,6 +117,7 @@ internal class TaoComposeSceneHostWindows(
                 windowHandle = window.handle,
                 topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
                 windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
             ),
             invalidate = {
                 window.requestRedraw()
@@ -319,6 +327,29 @@ internal class TaoComposeSceneHostWindows(
         if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetBackgroundColor(hwnd, argb)
     }
 
+    /** Current scale factor (logical→physical multiplier). */
+    fun density(): Float = scale
+
+    // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
+    // recomposition collapses into a single push at the next render tick.
+    private var a11ySyncScheduled: Runnable? = null
+
+    /**
+     * Schedules [block] to run on the render thread "soon" — at the next
+     * redraw. Used by the SemanticsObserver to coalesce per-recomposition
+     * change notifications into one snapshot push per frame.
+     */
+    fun scheduleA11ySync(block: () -> Unit) {
+        if (a11ySyncScheduled != null) return
+        val r = Runnable {
+            a11ySyncScheduled = null
+            block()
+        }
+        a11ySyncScheduled = r
+        flushingDispatcher.enqueue(r)
+        window.requestRedraw()
+    }
+
     fun detach() {
         scene?.close()
         scene = null
@@ -344,6 +375,10 @@ internal class TaoComposeSceneHostWindows(
         override fun dispatch(context: KCoroutineContext, block: Runnable) {
             queue.add(block)
             window.requestRedraw()
+        }
+
+        fun enqueue(block: Runnable) {
+            queue.add(block)
         }
 
         fun drain() {
@@ -379,6 +414,7 @@ private class WindowsTaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
 
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =

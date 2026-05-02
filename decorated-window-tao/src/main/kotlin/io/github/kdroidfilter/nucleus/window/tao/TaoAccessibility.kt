@@ -218,10 +218,22 @@ internal class TaoAccessibilityController(
 
     fun attach() {
         if (isDisposed) return
-        // Resolve and cache ns_view BEFORE entering the destroy path. Calling
-        // nativeNsViewHandle here is safe because attach runs inside
-        // `onWindowReady`, well before any Tao close machinery.
-        nsView = NativeTaoBridge.nativeNsViewHandle(windowHandle)
+        // Resolve and cache the native window handle BEFORE entering the
+        // destroy path. Safe here because attach runs inside `onWindowReady`,
+        // well before any Tao close machinery.
+        //
+        // The "nsView" field name is historical — on Windows it stores the
+        // HWND (the Kotlin-side action registry treats it as an opaque key
+        // and the native side resolves it back to the actual HWND/NSView).
+        val os = System.getProperty("os.name", "").lowercase()
+        nsView = if (os.contains("win")) {
+            // Force-load nucleus_tao_a11y.dll so the Rust side can resolve
+            // its exports via GetModuleHandleW.
+            NativeTaoA11yWindowsBridge.isLoaded
+            NativeTaoBridge.nativeHwndHandle(windowHandle)
+        } else {
+            NativeTaoBridge.nativeNsViewHandle(windowHandle)
+        }
         if (nsView == 0L) return
         TaoAccessibilityRegistry.register(windowHandle, this)
         TaoAccessibilityRegistry.registerNsView(nsView, this)
