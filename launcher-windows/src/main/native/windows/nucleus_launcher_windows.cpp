@@ -414,12 +414,12 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
     std::wstring aumid = toWString(env, jAumid);
     if (aumid.empty()) return env->NewStringUTF("AUMID is empty");
 
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE && hr != S_FALSE) {
-        return errorString(env, "CoInitializeEx failed", hr);
-    }
-
-    hr = SetCurrentProcessExplicitAppUserModelID(aumid.c_str());
+    // Do NOT call CoInitializeEx here: SetCurrentProcessExplicitAppUserModelID
+    // is a pure Win32 API and does not require COM. Initializing COM as MTA on
+    // the caller's thread (typically the JVM main thread) would lock its
+    // apartment and break later STA initialization (e.g. Tao's OleInitialize,
+    // which fails with RPC_E_CHANGED_MODE).
+    HRESULT hr = SetCurrentProcessExplicitAppUserModelID(aumid.c_str());
     if (FAILED(hr)) return errorString(env, "SetCurrentProcessExplicitAppUserModelID failed", hr);
 
     return nullptr;
