@@ -251,8 +251,14 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // event; every maximize/restore cycle resizes the window. Re-query
         // is_maximized so the Compose state stays in sync.
         val maxNow = window.isMaximized
-        if (stateHolder.value.isMaximized != maxNow) {
-            stateHolder.value = stateHolder.value.copy(maximized = maxNow)
+        val fsNow = window.isFullscreen
+        if (stateHolder.value.isMaximized != maxNow ||
+            stateHolder.value.isFullscreen != fsNow
+        ) {
+            stateHolder.value = stateHolder.value.copy(
+                maximized = maxNow,
+                fullscreen = fsNow,
+            )
         }
         // Reapply the rounded-rect XShape now that we've observed the
         // post-resize maximized flag — `host.onResized` ran ahead of the
@@ -352,8 +358,14 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         // here to keep the Compose state (used by the maximize button icon
         // swap) in sync.
         val maxNow = window.isMaximized
-        if (stateHolder.value.isMaximized != maxNow) {
-            stateHolder.value = stateHolder.value.copy(maximized = maxNow)
+        val fsNow = window.isFullscreen
+        if (stateHolder.value.isMaximized != maxNow ||
+            stateHolder.value.isFullscreen != fsNow
+        ) {
+            stateHolder.value = stateHolder.value.copy(
+                maximized = maxNow,
+                fullscreen = fsNow,
+            )
         }
     }
     window.onCloseRequested { onCloseRequest() }

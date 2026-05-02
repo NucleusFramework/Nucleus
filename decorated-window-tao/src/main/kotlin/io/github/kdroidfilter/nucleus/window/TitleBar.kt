@@ -133,6 +133,12 @@ fun DecoratedWindowScope.TitleBar(
     val rootModifier = modifier
         .titleBarHitTestHandler(taoWindow)
         .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
+            // Suppress the double-click → toggle-maximize gesture while the
+            // window is fullscreen. On macOS `[NSWindow zoom:]` exits
+            // fullscreen, so without this guard a double-click anywhere in
+            // the title bar would unexpectedly leave fullscreen — and with
+            // `[setMovable:NO]` AppKit no longer handles that itself.
+            if (currentState.isFullscreen) return@onPointerEvent
             if (
                 this.currentEvent.button == PointerButton.Primary &&
                 this.currentEvent.changes.any { !it.isConsumed }
