@@ -166,6 +166,22 @@ internal fun ApplicationScope.openDecoratedWindow(
                 NativeMetalBridge.nativeApplyButtonLayout(nsView, titleBarHeightState.value)
             }
         }
+        // Tao does not emit a dedicated "fullscreen state changed" event, but
+        // every native fullscreen / unfullscreen transition resizes the
+        // window. Re-query so [DecoratedWindowState.isFullscreen] (read by
+        // TitleBar's double-click guard) stays in sync whether the user
+        // entered fullscreen via the green traffic-light or by toggling
+        // `state.placement` from a custom button.
+        val maxNow = window.isMaximized
+        val fsNow = window.isFullscreen
+        if (stateHolder.value.isMaximized != maxNow ||
+            stateHolder.value.isFullscreen != fsNow
+        ) {
+            stateHolder.value = stateHolder.value.copy(
+                maximized = maxNow,
+                fullscreen = fsNow,
+            )
+        }
     }
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed {

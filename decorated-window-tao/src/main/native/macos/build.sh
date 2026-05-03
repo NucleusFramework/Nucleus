@@ -1,7 +1,8 @@
 #!/bin/bash
-# Compiles two macOS dylibs into per-architecture resource folders:
+# Compiles three macOS dylibs into per-architecture resource folders:
 #   - libnucleus_tao.dylib       (Rust crate, Tao + JNI)
 #   - libnucleus_tao_metal.dylib (Objective-C, CAMetalLayer + Metal frame helper)
+#   - libnucleus_tao_dnd.dylib   (Objective-C, NSDraggingDestination/Source bridge)
 #
 # Outputs are placed in src/main/resources/nucleus/native/{darwin-aarch64,darwin-x64}/.
 #
@@ -79,7 +80,33 @@ clang -arch x86_64 "${COMMON_FLAGS[@]}" \
     -o "$OUT_DIR_X64/libnucleus_tao_metal.dylib" "$SRC"
 strip -x "$OUT_DIR_X64/libnucleus_tao_metal.dylib"
 
-# ── 3) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
+# ── 3) Objective-C DnD helper (libnucleus_tao_dnd.dylib) ────────────────────
+# JNI exports for NSDraggingDestination/Source. Shipped as its own dylib so
+# the JNI symbols survive the Rust crate's release-mode `strip = "symbols"`.
+
+DND_SRC="$SCRIPT_DIR/../objc/dnd.m"
+DND_FLAGS=(
+    -dynamiclib
+    -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"
+    -framework Cocoa
+    -framework AppKit
+    -mmacosx-version-min=10.15
+    -fobjc-arc
+    -Oz
+    -flto
+    -Wl,-dead_strip
+    -Wl,-x
+)
+
+clang -arch arm64 "${DND_FLAGS[@]}" \
+    -o "$OUT_DIR_ARM64/libnucleus_tao_dnd.dylib" "$DND_SRC"
+strip -x "$OUT_DIR_ARM64/libnucleus_tao_dnd.dylib"
+
+clang -arch x86_64 "${DND_FLAGS[@]}" \
+    -o "$OUT_DIR_X64/libnucleus_tao_dnd.dylib" "$DND_SRC"
+strip -x "$OUT_DIR_X64/libnucleus_tao_dnd.dylib"
+
+# ── 4) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
 # NativeLibraryLoader uses the platform-standard cache directory, which is
 # `~/Library/Caches/nucleus/native` on macOS (not `~/.cache/...` à la Linux).
 
@@ -91,5 +118,5 @@ for CACHE_DIR in "$HOME/Library/Caches/nucleus/native" "$HOME/.cache/nucleus/nat
 done
 
 echo "Built per-architecture dylibs:"
-ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib}
-ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib}
+ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib}
+ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib}

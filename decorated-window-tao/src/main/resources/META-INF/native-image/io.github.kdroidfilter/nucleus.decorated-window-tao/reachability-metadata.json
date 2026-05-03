@@ -132,6 +132,30 @@
                 { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
             ]
         },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge$Callback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost$InboundDnDCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
         { "type": "java.io.File" },
         { "type": "java.util.ArrayList", "methods": [{ "name": "<init>" }] },
         { "type": "java.awt.datatransfer.DataFlavor", "allDeclaredFields": true, "allDeclaredMethods": true },
