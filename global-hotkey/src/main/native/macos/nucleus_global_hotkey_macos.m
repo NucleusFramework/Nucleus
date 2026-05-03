@@ -7,7 +7,17 @@
 static JavaVM *g_jvm = NULL;
 static jclass g_bridgeClass = NULL;
 static jmethodID g_onHotKeyMethod = NULL;
-static EventHandlerRef g_eventHandler = NULL;
+// NSEvent monitors that intercept hot key NSEvents (type=SystemDefined,
+// subtype=6) before they are dispatched. We use these instead of installing a
+// Carbon EventHandler because the Tao backend's NSApplication event pipeline
+// does not forward these events through the standard
+// `[NSApp sendEvent:] → SendEventToEventTarget(GetApplicationEventTarget())`
+// chain that Carbon handlers depend on. The local monitor fires upstream of
+// sendEvent: when the app is focused; the global monitor fires when the
+// hot key is pressed while the app is in the background. NSEventMaskSystemDefined
+// monitoring does not require Accessibility / Input Monitoring permissions.
+static id g_eventMonitorLocal = nil;
+static id g_eventMonitorGlobal = nil;
 
 // Map registration id → EventHotKeyRef for unregistration
 #define MAX_HOTKEYS 256
@@ -170,38 +180,26 @@ static EventHotKeyRef removeHotKeyRef(jlong id) {
     return ref;
 }
 
-// ---- Carbon event handler ----
+// ---- NSEvent → JVM dispatch ----
 
-static OSStatus hotKeyEventHandler(EventHandlerCallRef nextHandler, EventRef event, void *userData) {
-    (void)nextHandler;
-    (void)userData;
-
-    EventHotKeyID hotKeyID;
-    OSStatus status = GetEventParameter(event, kEventParamDirectObject, typeEventHotKeyID,
-                                        NULL, sizeof(hotKeyID), NULL, &hotKeyID);
-    if (status != noErr) return status;
-
-    jlong id = (jlong)hotKeyID.id;
-
-    // Fire callback to Kotlin
-    if (g_jvm == NULL || g_bridgeClass == NULL || g_onHotKeyMethod == NULL) return noErr;
+// Forwards a single hot key event to the Kotlin bridge.
+static void fireHotKeyToJVM(jlong id, jint keyCode) {
+    if (g_jvm == NULL || g_bridgeClass == NULL || g_onHotKeyMethod == NULL) return;
 
     JNIEnv *env = NULL;
     jint attached = (*g_jvm)->GetEnv(g_jvm, (void **)&env, JNI_VERSION_1_8);
     BOOL didAttach = NO;
     if (attached == JNI_EDETACHED) {
         if ((*g_jvm)->AttachCurrentThreadAsDaemon(g_jvm, (void **)&env, NULL) != JNI_OK) {
-            return noErr;
+            return;
         }
         didAttach = YES;
     } else if (attached != JNI_OK) {
-        return noErr;
+        return;
     }
 
-    // Pass back the original AWT key code and portable modifier flags
-    // The id is enough for the bridge to dispatch to the right listener
     (*env)->CallStaticVoidMethod(env, g_bridgeClass, g_onHotKeyMethod,
-                                 id, (jint)hotKeyID.signature, (jint)0);
+                                 id, keyCode, (jint)0);
 
     if ((*env)->ExceptionCheck(env)) {
         (*env)->ExceptionClear(env);
@@ -210,9 +208,12 @@ static OSStatus hotKeyEventHandler(EventHandlerCallRef nextHandler, EventRef eve
     if (didAttach) {
         (*g_jvm)->DetachCurrentThread(g_jvm);
     }
-
-    return noErr;
 }
+
+// NSSystemDefined event subtype emitted when a Carbon-registered hot key fires.
+// Documented in HIToolbox internal headers as `kEventHotKeyPressedSubtype = 6`
+// (released = 9).
+#define NS_HOT_KEY_PRESSED_SUBTYPE 6
 
 // ---- JNI exports ----
 
@@ -226,7 +227,7 @@ JNIEXPORT jstring JNICALL
 Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeInit(
     JNIEnv *env, jclass clazz) {
     @autoreleasepool {
-        if (g_eventHandler != NULL) return NULL; // Already initialized
+        if (g_eventMonitorLocal != nil || g_eventMonitorGlobal != nil) return NULL; // Already initialized
 
         // Cache the bridge class (global ref) and callback method
         g_bridgeClass = (*env)->NewGlobalRef(env, clazz);
@@ -237,21 +238,39 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
             return (*env)->NewStringUTF(env, "Failed to find onHotKey callback method");
         }
 
-        // Install a Carbon event handler for hotkey events
-        EventTypeSpec eventType;
-        eventType.eventClass = kEventClassKeyboard;
-        eventType.eventKind = kEventHotKeyPressed;
+        void (^handle)(NSEvent *) = ^(NSEvent *event) {
+            if (event.subtype != NS_HOT_KEY_PRESSED_SUBTYPE) return;
+            // The Carbon EventRef behind the NSEvent carries the original
+            // EventHotKeyID we passed to RegisterEventHotKey. NSEvent.data1
+            // contains a packed value that doesn't trivially decode to our
+            // id, so we go through Carbon's GetEventParameter instead.
+            EventRef eventRef = (EventRef)[event eventRef];
+            if (eventRef == NULL) return;
+            EventHotKeyID hotKeyID;
+            if (GetEventParameter(eventRef, kEventParamDirectObject, typeEventHotKeyID,
+                                  NULL, sizeof(hotKeyID), NULL, &hotKeyID) != noErr) {
+                return;
+            }
+            fireHotKeyToJVM((jlong)hotKeyID.id, (jint)hotKeyID.signature);
+        };
 
-        OSStatus status = InstallEventHandler(
-            GetApplicationEventTarget(),
-            NewEventHandlerUPP(hotKeyEventHandler),
-            1, &eventType, NULL, &g_eventHandler
-        );
-
-        if (status != noErr) {
+        // Local: fires when our app has focus. Runs upstream of sendEvent:.
+        g_eventMonitorLocal = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskSystemDefined
+                                                                    handler:^NSEvent *(NSEvent *event) {
+            handle(event);
+            return event;
+        }];
+        // Global: fires for events delivered to other apps (i.e. when our app
+        // is in the background). Required because RegisterEventHotKey hot keys
+        // are typically pressed while the user is working in another app.
+        g_eventMonitorGlobal = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskSystemDefined
+                                                                      handler:^(NSEvent *event) {
+            handle(event);
+        }];
+        if (g_eventMonitorLocal == nil && g_eventMonitorGlobal == nil) {
             (*env)->DeleteGlobalRef(env, g_bridgeClass);
             g_bridgeClass = NULL;
-            return (*env)->NewStringUTF(env, "Failed to install Carbon event handler");
+            return (*env)->NewStringUTF(env, "Failed to install NSEvent monitors");
         }
 
         return NULL; // success
@@ -263,7 +282,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
     JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode) {
     (void)clazz;
     @autoreleasepool {
-        if (g_eventHandler == NULL) {
+        if (g_eventMonitorLocal == nil && g_eventMonitorGlobal == nil) {
             return (*env)->NewStringUTF(env, "Not initialized");
         }
 
@@ -329,10 +348,14 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
         g_hotKeyCount = 0;
         pthread_mutex_unlock(&g_mutex);
 
-        // Remove event handler
-        if (g_eventHandler != NULL) {
-            RemoveEventHandler(g_eventHandler);
-            g_eventHandler = NULL;
+        // Remove NSEvent monitors
+        if (g_eventMonitorLocal != nil) {
+            [NSEvent removeMonitor:g_eventMonitorLocal];
+            g_eventMonitorLocal = nil;
+        }
+        if (g_eventMonitorGlobal != nil) {
+            [NSEvent removeMonitor:g_eventMonitorGlobal];
+            g_eventMonitorGlobal = nil;
         }
 
         // Release global ref
