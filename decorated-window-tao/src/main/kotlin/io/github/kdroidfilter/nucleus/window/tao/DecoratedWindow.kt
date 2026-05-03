@@ -288,19 +288,19 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             }
         }
         host.onResized(w, h)
-        host.onRedrawRequested()
+        // First paint must happen *after* the surface is shown:
+        //  - X11: a pre-show synchronous render leaves the GLX backbuffer
+        //    invalidated by the subsequent map, so the dialog stayed black
+        //    until something forced a repaint anyway.
+        //  - Wayland: stricter — `eglSwapBuffers` against a wl_surface that
+        //    hasn't received its xdg_toplevel.configure ack via GTK is
+        //    silently dropped by the compositor and the window never
+        //    appears at all.
+        // Show first; the post-show `requestRedraw` schedules a draw on
+        // the next event-loop tick once the surface is mapped (and on
+        // Wayland, after the configure handshake completes).
         if (visible) {
             window.show()
-            // The synchronous render above happened while the GTK parent was
-            // still unmapped — its child GLX drawable's backbuffer is either
-            // invalidated or never surfaced. Tao on Linux doesn't emit an
-            // Expose-equivalent on map, and a static window (no animations,
-            // no hover state) never produces a follow-up redraw on its own,
-            // so the dialog stays black until something forces a repaint.
-            // Posting a redraw here guarantees one frame after the parent
-            // is mapped. Animated windows (the main window with hover/blob
-            // effects) also benefit but were masking this bug via their
-            // continuous redraw stream.
             window.requestRedraw()
         }
         // Bounds get pushed by `onResized` which fires immediately after

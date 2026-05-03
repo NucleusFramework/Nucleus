@@ -21,8 +21,41 @@
  * ships standalone. libwayland-egl is only required for the Wayland
  * attach path; X11-only setups don't need it.
  *
- * TODO (planned follow-ups, mirror the questions raised in the
- *       Phase-2 research brief):
+ * KNOWN LIMITATION — Wayland-native attach (`nativeAttachWayland`) is
+ * structurally broken on tao 0.35 + GTK 3. On X11 we share the GTK XID
+ * with EGL and the X server arbitrates the buffer ownership transparently;
+ * on Wayland, the `wl_surface` is a single role-bound resource and **GTK
+ * owns it** — tao's `connect_draw` signal handler paints a cairo-shm
+ * buffer to the same wl_surface on every frame (event_loop.rs:912 of
+ * tao 0.35), so any EGL `eglSwapBuffers` we issue races with GTK's commit.
+ * Worse, GTK delays its `xdg_wm_base.get_xdg_surface(wl_surface)` setup
+ * until *after* the first draw, so our buffer attach lands while the
+ * surface still has no role and the compositor disconnects with
+ * `xdg_wm_base.error(invalid_surface_state, "wl_surface@N already has a
+ * buffer committed")`.
+ *
+ * The clean architectural fix is a `wl_subsurface` child of the GTK
+ * `wl_surface` (~250 LOC of hand-rolled wl_compositor / wl_subcompositor
+ * marshalling): GTK keeps owning the parent xdg-shell surface, we own a
+ * sub-surface in `set_desync` mode that takes our EGL buffer commits
+ * independently. Same architecture as the X11 child-window fallback we
+ * already use for visual mismatches.
+ *
+ * Until that lands, `nativeAttachWayland` is kept on the JVM-facing JNI
+ * surface (so the dispatch in `TaoComposeSceneHostLinux` doesn't churn)
+ * but it logs a one-shot warning and forwards to the same
+ * `eglCreateWindowSurface` path that gets us the protocol error — i.e.
+ * Wayland-native is opt-in *experimental*. Set `NUCLEUS_TAO_LINUX_RENDERER=egl`
+ * on a Wayland session ⇒ XWayland (forced via `GDK_BACKEND=x11` in lib.rs)
+ * by default; the env-var-only flow currently can't deliver true Wayland
+ * native rendering on this stack.
+ *
+ * TODO (planned follow-ups, in priority order):
+ *   - **wl_subsurface child**: makes the Wayland path actually usable.
+ *     Requires libwayland-client.so.0 + hand-rolled `wl_interface` /
+ *     `wl_message` tables for wl_compositor.create_surface and
+ *     wl_subcompositor.get_subsurface. Resize coordinates with the
+ *     parent's xdg_toplevel.configure handler.
  *   - `wp_fractional_scale_v1` + `wp_viewporter` binding to honor
  *     fractional HiDPI scales correctly on Wayland (GTK 3 reports only
  *     integer scales, so 125% / 150% sessions currently get a buffer at
@@ -770,8 +803,31 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
     if (!wlDisplayPtr || !wlSurfacePtr) return 0;
     if (!load_libs()) return 0;
     if (!p_wl_egl_window_create) {
-        DBG("libwayland-egl not loaded — Wayland path unavailable\n");
+        fprintf(stderr,
+                "[nucleus_tao_egl] Wayland path unavailable — "
+                "libwayland-egl.so.1 not found at runtime.\n");
         return 0;
+    }
+    /* One-shot warning the first time the Wayland path is taken: this
+     * exists in the JNI surface so the dispatcher in TaoComposeSceneHostLinux
+     * stays clean, but in practice the buffer attach races with GTK's
+     * xdg_shell setup on tao 0.35 + GTK 3 (see the file header for the
+     * full diagnosis). The real fix is a wl_subsurface child — until then
+     * users who hit `xdg_wm_base` protocol errors should drop
+     * NUCLEUS_TAO_LINUX_RENDERER and rely on the GLX path, or set
+     * `GDK_BACKEND=x11` explicitly to land on EGL+XWayland. */
+    static int s_warned = 0;
+    if (!s_warned) {
+        s_warned = 1;
+        fprintf(stderr,
+                "[nucleus_tao_egl] WARNING: Wayland-native EGL is experimental on tao 0.35 + GTK 3.\n"
+                "[nucleus_tao_egl]          Buffer ownership conflicts with GTK's cairo paint and may\n"
+                "[nucleus_tao_egl]          trigger `xdg_wm_base.error(invalid_surface_state)`. If the\n"
+                "[nucleus_tao_egl]          window doesn't appear or the process exits with `Erreur de\n"
+                "[nucleus_tao_egl]          protocole`, fall back to EGL+XWayland: unset\n"
+                "[nucleus_tao_egl]          NUCLEUS_TAO_LINUX_RENDERER and pass\n"
+                "[nucleus_tao_egl]          `-Dnucleus.tao.linux.renderer=egl` instead, or export\n"
+                "[nucleus_tao_egl]          `GDK_BACKEND=x11` alongside the env-var.\n");
     }
 
     wl_display *wdpy = (wl_display *) (uintptr_t) wlDisplayPtr;
