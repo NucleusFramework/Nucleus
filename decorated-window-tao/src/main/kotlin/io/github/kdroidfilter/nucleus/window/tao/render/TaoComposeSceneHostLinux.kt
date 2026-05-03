@@ -149,38 +149,69 @@ internal class TaoComposeSceneHostLinux(
             },
         ) { "Tao Linux $renderer helper library not loaded" }
         // (kind, display, native_window) — see NativeTaoBridge.nativeLinuxHandles.
-        // Phase 1: both renderers require kind=1 (Xlib). Wayland sessions are
-        // forced to X11 via GDK_BACKEND in `taoApplication`. The native EGL
-        // path (`nativeAttachWayland`) lands in a follow-up commit.
+        //   kind=1 → Xlib  (`display` = X Display*, `native_window` = XID)
+        //   kind=2 → Wayland (`display` = wl_display*, `native_window` = wl_surface*)
+        // GLX requires kind=1; EGL handles both. tao's GDK_BACKEND defaulting
+        // (Rust side, lib.rs::run_event_loop_blocking) keeps GLX-only sessions
+        // on X11 by forcing `GDK_BACKEND=x11` unless `NUCLEUS_TAO_LINUX_RENDERER=egl`
+        // releases it.
         val handles = NativeTaoBridge.nativeLinuxHandles(window.handle)
         require(handles != null && handles.size == 3 && handles[0].toInt() != 0) {
             "Linux window handles unavailable; window not yet realised"
         }
-        check(handles[0].toInt() == 1) {
-            "Tao window is not on X11 (kind=${handles[0]}). " +
-                "Set GDK_BACKEND=x11 — both GLX and EGL paths currently require X11."
-        }
+        val kind = handles[0].toInt()
         val display = handles[1]
-        val xid = handles[2]
+        val nativeWin = handles[2]
+        if (renderer == Renderer.GLX) {
+            check(kind == 1) {
+                "GLX requires an X11 window (kind=$kind). " +
+                    "Either keep `GDK_BACKEND=x11` set or switch to " +
+                    "NUCLEUS_TAO_LINUX_RENDERER=egl for native Wayland support."
+            }
+        } else {
+            check(kind == 1 || kind == 2) {
+                "Unsupported Tao window kind=$kind for the EGL renderer."
+            }
+        }
 
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
 
-        // Initial GL child-window size if the GTK visual isn't GL-compatible.
-        // If we already know widthPx/heightPx (post-Resized), pass those; the
-        // helper otherwise queries the parent via XGetWindowAttributes.
+        // Initial buffer / child-window size. If we already know widthPx/heightPx
+        // (post-Resized) pass those; the X11 helper otherwise queries the
+        // parent via XGetWindowAttributes, the Wayland helper falls back to 1×1.
         val initialW = widthPx.coerceAtLeast(0)
         val initialH = heightPx.coerceAtLeast(0)
 
         attachmentHandle = when (renderer) {
             Renderer.GLX -> {
-                val handle = NativeTaoGlxBridge.nativeAttach(display, xid, initialW, initialH)
-                require(handle != 0L) { "Failed to create GLX context for XID=$xid" }
+                val handle = NativeTaoGlxBridge.nativeAttach(display, nativeWin, initialW, initialH)
+                require(handle != 0L) { "Failed to create GLX context for XID=$nativeWin" }
                 handle
             }
-            Renderer.EGL -> {
-                val handle = NativeTaoEglBridge.nativeAttachX11(display, xid, initialW, initialH)
-                require(handle != 0L) { "Failed to create EGL context for XID=$xid" }
-                handle
+            Renderer.EGL -> when (kind) {
+                1 -> {
+                    val handle = NativeTaoEglBridge.nativeAttachX11(display, nativeWin, initialW, initialH)
+                    require(handle != 0L) { "Failed to create EGL context for XID=$nativeWin" }
+                    handle
+                }
+                2 -> {
+                    // Wayland: hand the helper *physical* pixel dimensions
+                    // (logical × scale). On a HiDPI display tao reports the
+                    // integer scale via `nativeScaleFactor`; fractional scaling
+                    // (`wp_fractional_scale_v1`) lands in a follow-up — until
+                    // then we round-up.
+                    val physW = (initialW * scale).toInt().coerceAtLeast(1)
+                    val physH = (initialH * scale).toInt().coerceAtLeast(1)
+                    val handle = NativeTaoEglBridge.nativeAttachWayland(
+                        display, nativeWin, physW, physH,
+                    )
+                    require(handle != 0L) {
+                        "Failed to create EGL context for wl_surface=$nativeWin " +
+                            "— libwayland-egl unavailable?"
+                    }
+                    handle
+                }
+                else -> error("unreachable")
             }
         }
 
@@ -585,11 +616,25 @@ internal class TaoComposeSceneHostLinux(
         ;
 
         companion object {
+            /**
+             * Resolves the renderer in priority order:
+             *   1. `-Dnucleus.tao.linux.renderer=…` (JVM system property)
+             *   2. `NUCLEUS_TAO_LINUX_RENDERER=…`   (process env-var)
+             *   3. default: `glx`
+             *
+             * The env-var fallback exists so a single export covers both
+             * the Kotlin side (this method) and the Rust side (lib.rs reads
+             * the same env-var to decide whether to force `GDK_BACKEND=x11`
+             * for the GLX path). `-D` properties aren't exposed as
+             * env-vars to Rust, so without this dual lookup users would
+             * have to set both.
+             */
             fun fromSystemProperty(): Renderer {
-                val raw = System.getProperty("nucleus.tao.linux.renderer", "glx")
+                val raw = System.getProperty("nucleus.tao.linux.renderer")
+                    ?: System.getenv("NUCLEUS_TAO_LINUX_RENDERER")
+                    ?: "glx"
                 return when (raw.trim().lowercase()) {
                     "egl" -> EGL
-                    "glx", "" -> GLX
                     else -> GLX
                 }
             }

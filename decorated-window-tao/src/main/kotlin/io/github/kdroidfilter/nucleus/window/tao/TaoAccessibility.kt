@@ -278,16 +278,15 @@ internal class TaoAccessibilityController(
                 NativeTaoBridge.nativeNsViewHandle(windowHandle)
             else -> {
                 // Linux: AT-SPI projection lives inside nucleus_tao itself
-                // (no sibling .so to load). The handle is the X11 Window
-                // XID — index 2 of the `nativeLinuxHandles` triple,
-                // assuming kind=1 (Xlib). GLX path forces GDK_BACKEND=x11
-                // so we never see kind=2 here.
-                val handles = NativeTaoBridge.nativeLinuxHandles(windowHandle)
-                if (handles != null && handles.size == 3 && handles[0].toInt() == 1) {
-                    handles[2]
-                } else {
-                    0L
-                }
+                // (no sibling .so to load). On the X11 path the handle was
+                // historically the X11 Window XID — but `a11y_linux.rs`
+                // treats it as an opaque `i64` registry key (see WindowState
+                // doc comment), it never dereferences it. Using the Tao
+                // window handle directly means the EGL+Wayland path
+                // (kind=2, no XID) keeps a11y working without changes on
+                // the Rust side. AT-SPI itself is D-Bus and backend-agnostic
+                // (accesskit_unix has zero X11/Wayland deps).
+                if (NativeTaoBridge.nativeLinuxHandles(windowHandle) != null) windowHandle else 0L
             }
         }
         if (nsView == 0L) return

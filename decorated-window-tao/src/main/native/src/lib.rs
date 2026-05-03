@@ -1173,12 +1173,27 @@ fn run_event_loop_blocking() {
     // Skiko's bundled `libskiko-linux-x64.so` only links against
     // `glXGetCurrentContext` — its `GrGLMakeNativeInterface()` is the GLX
     // flavour, so an EGL/Wayland context is invisible to `DirectContext.makeGL()`.
-    // Force GTK onto the X11 backend so we always hand a GLX-compatible XID
-    // to `nucleus_tao_glx`. On Wayland sessions XWayland satisfies this
-    // transparently. The user can override by exporting GDK_BACKEND themselves.
+    // The new EGL path goes through `GLAssembledInterface` + `eglGetProcAddress`
+    // and works on both X11 and Wayland; the legacy GLX path still requires
+    // a real GLX-compatible XID so we keep forcing `GDK_BACKEND=x11` for it.
+    //
+    // Selection mirrors `TaoComposeSceneHostLinux.Renderer.fromSystemProperty`:
+    //   - `NUCLEUS_TAO_LINUX_RENDERER=egl` → don't force the backend, GDK is
+    //     free to pick Wayland on a Wayland session and X11 elsewhere
+    //   - anything else (including unset) → force `GDK_BACKEND=x11` so GLX
+    //     keeps working transparently on XWayland
+    //
+    // Two env-vars are used (one for tao on the Rust side here, one
+    // `-Dnucleus.tao.linux.renderer` for the JVM side) because the JVM
+    // doesn't propagate `-D` properties as process env-vars; the Kotlin
+    // side reads the env-var as a fallback so a single `NUCLEUS_TAO_LINUX_RENDERER=egl`
+    // export covers both.
     #[cfg(target_os = "linux")]
     {
-        if std::env::var_os("GDK_BACKEND").is_none() {
+        let want_egl = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")
+            .map(|v| v.to_string_lossy().eq_ignore_ascii_case("egl"))
+            .unwrap_or(false);
+        if !want_egl && std::env::var_os("GDK_BACKEND").is_none() {
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }

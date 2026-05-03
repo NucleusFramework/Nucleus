@@ -69,6 +69,7 @@ typedef unsigned long  EGLNativeWindowType;   /* X11 Window XID on Xlib */
 #define EGL_CONTEXT_OPENGL_PROFILE_MASK            0x30FD
 #define EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT  0x00000002
 #define EGL_PLATFORM_X11_KHR           0x31D5
+#define EGL_PLATFORM_WAYLAND_KHR       0x31D8
 
 /* ── Xlib types & constants (subset) ────────────────────────────────────── */
 
@@ -178,6 +179,19 @@ typedef EGLBoolean (*PFN_eglSwapInterval)(EGLDisplay, EGLint);
 typedef EGLint     (*PFN_eglGetError)(void);
 typedef void      *(*PFN_eglGetProcAddress)(const char *);
 
+/* ── Wayland EGL helpers ────────────────────────────────────────────────── */
+
+/* Opaque types — we only ever pass them to libwayland-egl. */
+typedef struct wl_egl_window_  wl_egl_window;
+typedef struct wl_display_     wl_display;
+typedef struct wl_surface_     wl_surface;
+
+typedef wl_egl_window *(*PFN_wl_egl_window_create)(wl_surface *, int, int);
+typedef void           (*PFN_wl_egl_window_destroy)(wl_egl_window *);
+typedef void           (*PFN_wl_egl_window_resize)(wl_egl_window *, int, int, int, int);
+
+/* ── Xlib function pointer types ────────────────────────────────────────── */
+
 typedef int          (*PFN_XGetWindowAttributes)(Display *, Window, XWindowAttributes *);
 typedef VisualID     (*PFN_XVisualIDFromVisual)(Visual *);
 typedef XVisualInfo *(*PFN_XGetVisualInfo)(Display *, long, XVisualInfo *, int *);
@@ -232,7 +246,12 @@ static PFN_XResizeWindow         p_XResizeWindow         = NULL;
 static PFN_XShapeCombineRectangles p_XShapeCombineRectangles = NULL;
 
 static void *g_libxext = NULL;
+static void *g_libwlegl = NULL;
 static int g_libs_loaded = 0;
+
+static PFN_wl_egl_window_create  p_wl_egl_window_create  = NULL;
+static PFN_wl_egl_window_destroy p_wl_egl_window_destroy = NULL;
+static PFN_wl_egl_window_resize  p_wl_egl_window_resize  = NULL;
 
 static int load_libs(void) {
     if (g_libs_loaded) return 1;
@@ -266,6 +285,12 @@ static int load_libs(void) {
     if (!g_libxext) g_libxext = dlopen("libXext.so.6", RTLD_LAZY | RTLD_GLOBAL);
     if (!g_libxext) g_libxext = dlopen("libXext.so",   RTLD_LAZY | RTLD_GLOBAL);
 
+    /* libwayland-egl — needed for the Wayland attach path only. We don't
+     * fail load_libs() if it's missing; X11 sessions don't need it and
+     * `nativeAttachWayland` will return 0 with a clear log. */
+    if (!g_libwlegl) g_libwlegl = dlopen("libwayland-egl.so.1", RTLD_LAZY | RTLD_GLOBAL);
+    if (!g_libwlegl) g_libwlegl = dlopen("libwayland-egl.so",   RTLD_LAZY | RTLD_GLOBAL);
+
 #define LOAD(lib, sym) p_##sym = (PFN_##sym) dlsym(lib, #sym)
     LOAD(g_libegl, eglGetDisplay);
     LOAD(g_libegl, eglGetPlatformDisplay);
@@ -298,6 +323,14 @@ static int load_libs(void) {
     if (g_libxext) {
         p_XShapeCombineRectangles =
             (PFN_XShapeCombineRectangles) dlsym(g_libxext, "XShapeCombineRectangles");
+    }
+    if (g_libwlegl) {
+        p_wl_egl_window_create  =
+            (PFN_wl_egl_window_create)  dlsym(g_libwlegl, "wl_egl_window_create");
+        p_wl_egl_window_destroy =
+            (PFN_wl_egl_window_destroy) dlsym(g_libwlegl, "wl_egl_window_destroy");
+        p_wl_egl_window_resize  =
+            (PFN_wl_egl_window_resize)  dlsym(g_libwlegl, "wl_egl_window_resize");
     }
 #undef LOAD
 
@@ -340,11 +373,17 @@ typedef struct {
     EGLSurface surface;
     /* X11 plumbing. `parent_xid` is always the GTK-owned XID; `child_xid` is
      * non-zero only when GDK's visual didn't match any EGLConfig and we had
-     * to create a child window with a Mesa-canonical visual on top. */
+     * to create a child window with a Mesa-canonical visual on top. Both
+     * stay 0 on the Wayland path. */
     Display   *xdisplay;
     Window     parent_xid;
     Window     child_xid;
     Colormap   child_colormap;
+    /* Wayland plumbing. `wl_window` is non-NULL only on the Wayland path —
+     * it's the libwayland-egl handle that wraps a `wl_surface` into something
+     * EGL can render into. Lifetime is tied to this attachment; destroyed
+     * before `eglDestroySurface` to avoid use-after-free on the compositor side. */
+    wl_egl_window *wl_window;
     int        widthPx;
     int        heightPx;
     float      scale;
@@ -643,6 +682,150 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachX1
     return (jlong) (uintptr_t) att;
 }
 
+/**
+ * Wayland-native attach: wraps a `wl_surface*` into an EGL window surface
+ * via libwayland-egl's `wl_egl_window` and creates the GL context against
+ * `eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, …)`.
+ *
+ * No visual matching here — Wayland surfaces have no X visual concept; the
+ * EGLConfig only needs to be alpha-capable (so the compositor can blend our
+ * rounded corners) and OPENGL-renderable. Mesa's Wayland EGL is the de-facto
+ * standard; NVIDIA driver 560+ supports the same path through `egl-wayland2`.
+ */
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWayland(
+    JNIEnv *env, jclass clazz,
+    jlong wlDisplayPtr, jlong wlSurfacePtr,
+    jint widthPx, jint heightPx)
+{
+    (void) env; (void) clazz;
+    if (!wlDisplayPtr || !wlSurfacePtr) return 0;
+    if (!load_libs()) return 0;
+    if (!p_wl_egl_window_create) {
+        DBG("libwayland-egl not loaded — Wayland path unavailable\n");
+        return 0;
+    }
+
+    wl_display *wdpy = (wl_display *) (uintptr_t) wlDisplayPtr;
+    wl_surface *wsurf = (wl_surface *) (uintptr_t) wlSurfacePtr;
+    int phys_w = widthPx > 0 ? widthPx : 1;
+    int phys_h = heightPx > 0 ? heightPx : 1;
+    DBG("attachWayland: wl_display=%p wl_surface=%p wxh=%dx%d\n",
+        (void*)wdpy, (void*)wsurf, phys_w, phys_h);
+
+    /* 1) EGL display via the Wayland platform extension. EGL 1.5 core, also
+     *    available through `EGL_EXT_platform_wayland`. Always prefer the
+     *    explicit-platform call over `eglGetDisplay(wl_display*)` — the
+     *    legacy variant is ambiguous when both X11 and Wayland clients live
+     *    in the same process. */
+    EGLDisplay edpy = EGL_NO_DISPLAY;
+    if (p_eglGetPlatformDisplay) {
+        edpy = p_eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, wdpy, NULL);
+    }
+    if (edpy == EGL_NO_DISPLAY && p_eglGetDisplay) {
+        edpy = p_eglGetDisplay((EGLNativeDisplayType) wdpy);
+    }
+    if (edpy == EGL_NO_DISPLAY) {
+        DBG("eglGetPlatformDisplay(WAYLAND) returned EGL_NO_DISPLAY\n");
+        return 0;
+    }
+    EGLint maj = 0, min = 0;
+    if (!p_eglInitialize(edpy, &maj, &min)) {
+        DBG("eglInitialize failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        return 0;
+    }
+    DBG("EGL %d.%d initialized (Wayland)\n", maj, min);
+
+    if (!p_eglBindAPI(EGL_OPENGL_API)) {
+        DBG("eglBindAPI(EGL_OPENGL_API) failed on Wayland EGL\n");
+        return 0;
+    }
+
+    /* 2) Pick an ARGB config. No native-visual matching needed on Wayland. */
+    const EGLint cfg_attrs[] = {
+        EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
+        EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+        EGL_RED_SIZE,        8,
+        EGL_GREEN_SIZE,      8,
+        EGL_BLUE_SIZE,       8,
+        EGL_ALPHA_SIZE,      8,
+        EGL_DEPTH_SIZE,      0,
+        EGL_STENCIL_SIZE,    0,
+        EGL_SAMPLES,         0,
+        EGL_NONE
+    };
+    EGLConfig cfg = NULL;
+    EGLint ncfg = 0;
+    if (!p_eglChooseConfig(edpy, cfg_attrs, &cfg, 1, &ncfg) || ncfg <= 0 || !cfg) {
+        DBG("eglChooseConfig (Wayland) returned no configs\n");
+        return 0;
+    }
+
+    const EGLint ctx_attrs[] = {
+        EGL_CONTEXT_MAJOR_VERSION, 3,
+        EGL_CONTEXT_MINOR_VERSION, 3,
+        EGL_CONTEXT_OPENGL_PROFILE_MASK,
+            EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+        EGL_NONE
+    };
+    EGLContext ctx = p_eglCreateContext(edpy, cfg, EGL_NO_CONTEXT, ctx_attrs);
+    if (ctx == EGL_NO_CONTEXT) {
+        DBG("eglCreateContext (Wayland) failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        return 0;
+    }
+
+    /* 3) Wrap the wl_surface into a wl_egl_window. The compositor sees the
+     *    wl_egl_window as the buffer source for the surface; resize is via
+     *    `wl_egl_window_resize` (see nativeResize). */
+    wl_egl_window *wlwin = p_wl_egl_window_create(wsurf, phys_w, phys_h);
+    if (!wlwin) {
+        DBG("wl_egl_window_create returned NULL\n");
+        p_eglDestroyContext(edpy, ctx);
+        return 0;
+    }
+
+    EGLSurface surf = p_eglCreateWindowSurface(edpy, cfg,
+                                               (EGLNativeWindowType) wlwin, NULL);
+    if (surf == EGL_NO_SURFACE) {
+        DBG("eglCreateWindowSurface (Wayland) failed: 0x%x\n",
+            p_eglGetError ? p_eglGetError() : 0);
+        if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
+        p_eglDestroyContext(edpy, ctx);
+        return 0;
+    }
+
+    if (!p_eglMakeCurrent(edpy, surf, surf, ctx)) {
+        DBG("eglMakeCurrent (Wayland) failed: 0x%x\n",
+            p_eglGetError ? p_eglGetError() : 0);
+        p_eglDestroySurface(edpy, surf);
+        if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
+        p_eglDestroyContext(edpy, ctx);
+        return 0;
+    }
+
+    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 1);
+
+    EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
+    if (!att) {
+        p_eglMakeCurrent(edpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+        p_eglDestroySurface(edpy, surf);
+        if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
+        p_eglDestroyContext(edpy, ctx);
+        return 0;
+    }
+    att->display   = edpy;
+    att->config    = cfg;
+    att->context   = ctx;
+    att->surface   = surf;
+    att->wl_window = wlwin;
+    att->widthPx   = phys_w;
+    att->heightPx  = phys_h;
+    att->scale     = 1.0f;
+    DBG("attached (Wayland): edpy=%p ctx=%p surf=%p wlwin=%p\n",
+        edpy, (void*)ctx, (void*)surf, (void*)wlwin);
+    return (jlong) (uintptr_t) att;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong handle)
@@ -662,6 +845,14 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeDetach(
     }
     if (att->xdisplay && att->child_colormap && p_XFreeColormap) {
         p_XFreeColormap(att->xdisplay, att->child_colormap);
+    }
+    /* Wayland path: destroy the wl_egl_window AFTER eglDestroySurface so
+     * the EGL surface's buffer release runs before the compositor loses
+     * the wl_surface ↔ buffer link. Tao destroys the wl_surface itself
+     * later when the GTK window is unrealized — nothing for us to do
+     * about that. */
+    if (att->wl_window && p_wl_egl_window_destroy) {
+        p_wl_egl_window_destroy(att->wl_window);
     }
     free(att);
 }
@@ -695,7 +886,15 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeResize(
                         (unsigned int) att->widthPx, (unsigned int) att->heightPx);
         if (p_XFlush) p_XFlush(att->xdisplay);
     }
-    /* If we render straight into the GTK window, the EGL surface follows
+    /* Wayland: `wl_egl_window_resize` informs libwayland-egl that the EGL
+     * back buffer should be reallocated at the new size on the next
+     * eglSwapBuffers. Without this the buffer stays at its original
+     * dimensions and the compositor scales it up, blurring the result. */
+    if (att->wl_window && p_wl_egl_window_resize) {
+        p_wl_egl_window_resize(att->wl_window,
+                               att->widthPx, att->heightPx, 0, 0);
+    }
+    /* If we render straight into the GTK X window, the EGL surface follows
      * automatically (GTK already issues XResizeWindow on the parent). */
 }
 

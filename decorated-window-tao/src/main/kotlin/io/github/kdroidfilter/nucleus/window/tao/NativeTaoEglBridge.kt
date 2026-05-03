@@ -40,6 +40,25 @@ internal object NativeTaoEglBridge {
         heightPx: Int,
     ): Long
 
+    /**
+     * Wayland-native attach. Wraps [wlSurfacePtr] (= `wl_surface*`) into a
+     * `wl_egl_window` via libwayland-egl and binds an EGL window surface
+     * against `eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, [wlDisplayPtr])`.
+     *
+     * [widthPx] / [heightPx] are the **physical** pixel dimensions (logical
+     * × scale) — the compositor expects buffer dimensions, not logical ones.
+     *
+     * Returns 0 if libwayland-egl isn't available on the system; the caller
+     * should fall back to the X11 path or surface a clear error.
+     */
+    @JvmStatic
+    external fun nativeAttachWayland(
+        wlDisplayPtr: Long,
+        wlSurfacePtr: Long,
+        widthPx: Int,
+        heightPx: Int,
+    ): Long
+
     @JvmStatic
     external fun nativeDetach(handle: Long)
 
