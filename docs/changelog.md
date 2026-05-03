@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+### Improvements
+
+- **Compose Hot Reload integration** — `nucleus.application.mainClass` is now automatically propagated to `compose.desktop.application.mainClass`, so `hotRun` and `hotSnapshotMain` resolve the entry point without any extra `compose.desktop.application` block or `-PmainClass=...` flag.
+- **Tao backend on macOS Hot Reload** — When `decorated-window-tao` is on the classpath, the plugin auto-injects `-XstartOnFirstThread` into Compose Hot Reload's `JavaExec` tasks on macOS, so `hotRun` opens a visible window instead of silently bouncing the main thread.
+
+### Bug Fixes
+
+- **Fix variant resolution for Compose Hot Reload classpath** — `CleanNativeLibsTransform` now skips Hot Reload runtime configurations, avoiding `compose-dev-java-runtime` usage-type disambiguation errors when the project also uses the Nucleus plugin.
+
+---
+
 ## v1.11.0
 
 **Released: 2026-04-13**

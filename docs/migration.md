@@ -57,19 +57,13 @@ Replace the `compose.desktop.application` block with `nucleus.application` for p
 ```
 
 !!! tip "Using Compose Hot Reload?"
-    Some Compose plugin tasks (like `hotRun`) read `mainClass` from the original `compose.desktop.application` block, not from `nucleus.application`. If you use [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html), either keep a minimal Compose block alongside Nucleus:
-
-    ```kotlin
-    compose.desktop.application {
-        mainClass = "com.example.MainKt"
-    }
-    ```
-
-    Or pass the property explicitly when running:
+    Nucleus automatically propagates `nucleus.application.mainClass` to `compose.desktop.application.mainClass`, so [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) tasks (`hotRun`, `hotSnapshotMain`) resolve the entry point with no extra configuration. You can still override it from the command line if needed:
 
     ```bash
     ./gradlew hotRun -PmainClass=com.example.MainKt
     ```
+
+    On macOS with the `decorated-window-tao` backend, the plugin also auto-injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks so the Tao event loop has the main thread it requires.
 
 ## Step 4: Add Nucleus Features (Optional)
 
@@ -201,4 +195,4 @@ Everything from the official plugin works unchanged:
 - All existing Gradle tasks (`run`, `packageDmg`, `packageDeb`, etc.)
 - `compose.desktop.currentOs` dependency
 - Source set configuration
-- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works as usual since Nucleus extends the Compose plugin. Note: `hotRun` reads `mainClass` from `compose.desktop.application`, so set it there too or pass `-PmainClass=...` (see [Step 3](#step-3-use-the-nucleus-dsl))
+- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works out of the box since Nucleus extends the Compose plugin. `mainClass` set on `nucleus.application` is propagated automatically; `decorated-window-tao` projects also get `-XstartOnFirstThread` injected on macOS

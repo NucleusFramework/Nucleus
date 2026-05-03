@@ -81,7 +81,7 @@ fun main() {
 ```
 
 !!! note "macOS main thread"
-    Tao runs the OS event loop on the **process main thread** (thread 0). On a regular JVM you must launch with `-XstartOnFirstThread`; in a GraalVM native-image build this is automatic. The Nucleus Gradle plugin injects the flag for `./gradlew run` and packaged distributions.
+    Tao runs the OS event loop on the **process main thread** (thread 0). On a regular JVM you must launch with `-XstartOnFirstThread`; in a GraalVM native-image build this is automatic. The Nucleus Gradle plugin injects the flag for `./gradlew run`, packaged distributions, and Compose Hot Reload tasks (`hotRun`, `hotSnapshotMain`) when `decorated-window-tao` is on the classpath.
 
 ## Architecture
 

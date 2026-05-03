@@ -201,20 +201,13 @@ nucleus.application {
 
 Nucleus is fully compatible with [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html). Since Nucleus extends the Compose plugin (not replaces it), Hot Reload works out of the box.
 
-The `hotRun` task reads `mainClass` from the `compose.desktop.application` block. If you only set it in `nucleus.application`, add a minimal Compose block:
-
-```kotlin
-compose.desktop.application {
-    mainClass = "com.example.MainKt"
-}
-```
-
-Or pass it via the command line:
+The `mainClass` set in `nucleus.application` is automatically propagated to `compose.desktop.application.mainClass`, so `hotRun` and `hotSnapshotMain` resolve the entry point with no extra configuration. You can still override it from the command line:
 
 ```bash
 ./gradlew hotRun -PmainClass=com.example.MainKt
 ```
 
+**Tao backend on macOS:** When the project depends on `decorated-window-tao`, the plugin automatically injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks on macOS. This is required because Tao runs the OS event loop on the process main thread — without the flag, `hotRun` launches but no window appears.
 ### Packaging
 
 | Task | Description |
@@ -551,18 +544,12 @@ Replace the `compose.desktop.application` block with `nucleus.application` for p
  }
 ```
 
-**Using Compose Hot Reload?:** Some Compose plugin tasks (like `hotRun`) read `mainClass` from the original `compose.desktop.application` block, not from `nucleus.application`. If you use [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html), either keep a minimal Compose block alongside Nucleus:
-    ```kotlin
-    compose.desktop.application {
-        mainClass = "com.example.MainKt"
-    }
-    ```
-
-    Or pass the property explicitly when running:
-
+**Using Compose Hot Reload?:** Nucleus automatically propagates `nucleus.application.mainClass` to `compose.desktop.application.mainClass`, so [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) tasks (`hotRun`, `hotSnapshotMain`) resolve the entry point with no extra configuration. You can still override it from the command line if needed:
     ```bash
     ./gradlew hotRun -PmainClass=com.example.MainKt
     ```
+
+    On macOS with the `decorated-window-tao` backend, the plugin also auto-injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks so the Tao event loop has the main thread it requires.
 
 ## Step 4: Add Nucleus Features (Optional)
 
@@ -694,7 +681,7 @@ Everything from the official plugin works unchanged:
 - All existing Gradle tasks (`run`, `packageDmg`, `packageDeb`, etc.)
 - `compose.desktop.currentOs` dependency
 - Source set configuration
-- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works as usual since Nucleus extends the Compose plugin. Note: `hotRun` reads `mainClass` from `compose.desktop.application`, so set it there too or pass `-PmainClass=...` (see [Step 3](#step-3-use-the-nucleus-dsl))
+- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works out of the box since Nucleus extends the Compose plugin. `mainClass` set on `nucleus.application` is propagated automatically; `decorated-window-tao` projects also get `-XstartOnFirstThread` injected on macOS
 
 ---
 
@@ -726,6 +713,8 @@ Everything from the official plugin works unchanged:
 - [Single Instance](https://nucleus.kdroidfilter.com/runtime/single-instance/)
 - [Deep Links](https://nucleus.kdroidfilter.com/runtime/deep-links/)
 - [Decorated Window](https://nucleus.kdroidfilter.com/runtime/decorated-window/)
+- [Nucleus Application](https://nucleus.kdroidfilter.com/runtime/nucleus-application/)
+- [Decorated Window — Tao backend](https://nucleus.kdroidfilter.com/runtime/decorated-window-tao/)
 - [Decorated Window — Jewel](https://nucleus.kdroidfilter.com/runtime/decorated-window-jewel/)
 - [Decorated Window — Material 2](https://nucleus.kdroidfilter.com/runtime/decorated-window-material2/)
 - [Decorated Window — Material 3](https://nucleus.kdroidfilter.com/runtime/decorated-window-material3/)
