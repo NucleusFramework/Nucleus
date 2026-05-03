@@ -20,6 +20,7 @@ set "NATIVE_DIR=%SCRIPT_DIR%.."
 set "DECO_SRC=%SCRIPT_DIR%nucleus_tao_windows_deco.c"
 set "GL_SRC=%SCRIPT_DIR%nucleus_tao_gl.c"
 set "A11Y_SRC=%SCRIPT_DIR%nucleus_tao_a11y.c"
+set "DND_SRC=%SCRIPT_DIR%nucleus_tao_dnd.c"
 set "RESOURCE_DIR=%NATIVE_DIR%\..\resources\nucleus\native"
 set "OUT_DIR_X64=%RESOURCE_DIR%\win32-x64"
 set "OUT_DIR_ARM64=%RESOURCE_DIR%\win32-aarch64"
@@ -144,6 +145,17 @@ if errorlevel 1 (
     echo ERROR: x64 a11y compilation failed >&2
     exit /b 1
 )
+
+cl /LD /O1 /GS- /nologo ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    "%DND_SRC%" ^
+    /Fe:"%OUT_DIR_X64%\nucleus_tao_dnd.dll" ^
+    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    kernel32.lib user32.lib ole32.lib oleaut32.lib uuid.lib shell32.lib
+if errorlevel 1 (
+    echo ERROR: x64 dnd compilation failed >&2
+    exit /b 1
+)
 endlocal
 
 del /q "%OUT_DIR_X64%\*.obj" "%OUT_DIR_X64%\*.lib" "%OUT_DIR_X64%\*.exp" 2>nul
@@ -190,6 +202,18 @@ cl /LD /O1 /GS- /nologo ^
     kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
 if errorlevel 1 (
     echo WARNING: ARM64 a11y compilation failed >&2
+    endlocal
+    goto :clear_cache
+)
+
+cl /LD /O1 /GS- /nologo ^
+    /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
+    "%DND_SRC%" ^
+    /Fe:"%OUT_DIR_ARM64%\nucleus_tao_dnd.dll" ^
+    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    kernel32.lib user32.lib ole32.lib oleaut32.lib uuid.lib shell32.lib
+if errorlevel 1 (
+    echo WARNING: ARM64 dnd compilation failed >&2
     endlocal
     goto :clear_cache
 )

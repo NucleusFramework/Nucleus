@@ -318,7 +318,7 @@ fun main(args: Array<String>) {
                                     GalleryScreen(seedColor = seedColor)
                                 }
                             }
-                            "Taskbar" -> TaskbarProgressScreen(nucleusWindow.unsafe.awtWindow!!)
+                            "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
                             "Notifications" -> {
                                 when (Platform.Current) {
                                     Platform.MacOS -> NotificationsScreen()

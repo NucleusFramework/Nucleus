@@ -127,6 +127,87 @@ internal class TaoComposeSceneHostWindows(
                 window.requestRedraw()
             },
         )
+
+        registerInboundDnD()
+    }
+
+    @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
+            io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log(
+                "windows DnD lib not loaded — inbound disabled"
+            )
+            return
+        }
+        val rootNode = { scene?.rootDragAndDropNode }
+        val callback = object : io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.Callback {
+
+            private fun makeEvent(
+                xPx: Int,
+                yPx: Int,
+                files: Array<String>?,
+            ): androidx.compose.ui.draganddrop.DragAndDropEvent {
+                val payload = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload(
+                    files = files?.toList() ?: emptyList(),
+                )
+                return androidx.compose.ui.draganddrop.DragAndDropEvent(
+                    action = androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy,
+                    nativeEvent = payload,
+                    positionInRootImpl = androidx.compose.ui.geometry.Offset(xPx.toFloat(), yPx.toFloat()),
+                )
+            }
+
+            override fun onDragEnter(hwnd: Long, x: Int, y: Int, keyState: Int, hasFiles: Boolean): Int {
+                io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("onDragEnter x=$x y=$y hasFiles=$hasFiles")
+                if (!hasFiles) return io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                val node = rootNode() ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                val ev = makeEvent(x, y, null)
+                val accepted = node.acceptDragAndDropTransfer(ev)
+                if (accepted) {
+                    node.onStarted(ev)
+                    node.onEntered(ev)
+                }
+                return if (accepted) {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                } else {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                }
+            }
+
+            override fun onDragOver(hwnd: Long, x: Int, y: Int, keyState: Int, hasFiles: Boolean): Int {
+                val node = rootNode() ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                val ev = makeEvent(x, y, null)
+                node.onMoved(ev)
+                return if (node.hasEligibleDropTarget) {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                } else {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                }
+            }
+
+            override fun onDragLeave(hwnd: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("onDragLeave")
+                val node = rootNode() ?: return
+                val ev = makeEvent(-1, -1, null)
+                node.onExited(ev)
+                node.onEnded(ev)
+            }
+
+            override fun onDrop(hwnd: Long, x: Int, y: Int, keyState: Int, files: Array<String>?): Int {
+                io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("onDrop x=$x y=$y files=${files?.size ?: 0}")
+                val node = rootNode() ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                val ev = makeEvent(x, y, files)
+                val accepted = node.onDrop(ev)
+                node.onEnded(ev)
+                return if (accepted) {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                } else {
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+                }
+            }
+        }
+        val rc = io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.nativeRegister(hwnd, callback)
+        io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("RegisterDragDrop rc=$rc")
     }
 
     fun setContent(content: @Composable () -> Unit) {
@@ -364,6 +445,9 @@ internal class TaoComposeSceneHostWindows(
             attachmentHandle = 0L
         }
         if (hwnd != 0L) {
+            if (io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.isLoaded) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.nativeRevoke(hwnd)
+            }
             NativeTaoWindowsDecoBridge.nativeUninstallDecoration(hwnd)
             hwnd = 0L
         }

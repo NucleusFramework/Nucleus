@@ -34,6 +34,15 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
 }
 
 /**
+ * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
+ * descendant composable. Mirrors `androidx.compose.ui.window.LocalWindow` from
+ * Compose Desktop, but for Tao-owned windows. Returns `null` outside of a
+ * `DecoratedWindow` content lambda — call sites should fail loudly or no-op
+ * when absent.
+ */
+val LocalTaoWindow = staticCompositionLocalOf<TaoWindow?> { null }
+
+/**
  * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedWindow`.
  * Imperative-on-the-outside, Composable-on-the-inside: opens a single Tao
  * window, mounts the user [content] inside its dedicated `ComposeScene`, and
@@ -136,6 +145,7 @@ internal fun ApplicationScope.openDecoratedWindow(
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
+                LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -224,6 +234,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
+                LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
@@ -348,6 +359,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
+                LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
             ) {

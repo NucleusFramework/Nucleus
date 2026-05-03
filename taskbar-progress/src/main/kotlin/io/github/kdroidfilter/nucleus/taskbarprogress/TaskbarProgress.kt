@@ -233,5 +233,111 @@ object TaskbarProgress {
             else -> false
         }
 
+    /**
+     * AWT-free variant of [setProgress]: takes a raw Windows HWND. On
+     * macOS/Linux the [hwnd] argument is ignored (the underlying APIs are
+     * app-wide). Intended for non-AWT backends (e.g. Tao).
+     */
+    fun setProgressForHwnd(
+        hwnd: Long,
+        value: Double,
+    ): Boolean {
+        val clamped = value.coerceIn(0.0, 1.0)
+        return when (Platform.Current) {
+            Platform.Windows -> {
+                if (!NativeWindowsTaskbarBridge.isLoaded) return false
+                NativeWindowsTaskbarBridge.nativeSetProgressByHwnd(
+                    hwnd,
+                    (clamped * PROGRESS_MAX).toLong(),
+                    PROGRESS_MAX,
+                ) == 0
+            }
+            Platform.MacOS -> {
+                if (!NativeMacOsTaskbarBridge.isLoaded) return false
+                NativeMacOsTaskbarBridge.nativeSetDockProgress(
+                    (clamped * PROGRESS_MAX).toLong(),
+                    PROGRESS_MAX,
+                ) == 0
+            }
+            Platform.Linux -> {
+                val filename = resolveDesktopFilename() ?: return false
+                if (!NativeLinuxTaskbarBridge.isLoaded) return false
+                NativeLinuxTaskbarBridge.nativeSetProgress(
+                    filename,
+                    (clamped * PROGRESS_MAX).toLong(),
+                    PROGRESS_MAX,
+                ) == 0
+            }
+            else -> false
+        }
+    }
+
+    /** AWT-free variant of [setState]. */
+    fun setStateForHwnd(
+        hwnd: Long,
+        state: State,
+    ): Boolean = when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeWindowsTaskbarBridge.isLoaded) return false
+            NativeWindowsTaskbarBridge.nativeSetProgressStateByHwnd(hwnd, state.flag) == 0
+        }
+        Platform.MacOS -> {
+            if (!NativeMacOsTaskbarBridge.isLoaded) return false
+            NativeMacOsTaskbarBridge.nativeSetDockState(state.flag) == 0
+        }
+        Platform.Linux -> {
+            val filename = resolveDesktopFilename() ?: return false
+            if (!NativeLinuxTaskbarBridge.isLoaded) return false
+            NativeLinuxTaskbarBridge.nativeSetProgressState(filename, state.flag) == 0
+        }
+        else -> false
+    }
+
+    /** AWT-free variant of [requestAttention]. */
+    fun requestAttentionForHwnd(
+        hwnd: Long,
+        type: AttentionType = AttentionType.INFORMATIONAL,
+    ): Boolean = when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeWindowsTaskbarBridge.isLoaded) return false
+            NativeWindowsTaskbarBridge.nativeRequestAttentionByHwnd(hwnd, type.nativeValue) == 0
+        }
+        Platform.MacOS -> {
+            if (!NativeMacOsTaskbarBridge.isLoaded) return false
+            val id = NativeMacOsTaskbarBridge.nativeRequestAttention(type.nativeValue)
+            macOsAttentionRequestId = id
+            id >= 0
+        }
+        Platform.Linux -> {
+            val filename = resolveDesktopFilename() ?: return false
+            if (!NativeLinuxTaskbarBridge.isLoaded) return false
+            NativeLinuxTaskbarBridge.nativeSetUrgent(filename, true) == 0
+        }
+        else -> false
+    }
+
+    /** AWT-free variant of [stopAttention]. */
+    fun stopAttentionForHwnd(hwnd: Long): Boolean = when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeWindowsTaskbarBridge.isLoaded) return false
+            NativeWindowsTaskbarBridge.nativeRequestAttentionByHwnd(hwnd, 0) == 0
+        }
+        Platform.MacOS -> {
+            if (!NativeMacOsTaskbarBridge.isLoaded) return false
+            val id = macOsAttentionRequestId
+            if (id >= 0) {
+                NativeMacOsTaskbarBridge.nativeCancelAttention(id)
+                macOsAttentionRequestId = -1
+            }
+            true
+        }
+        Platform.Linux -> {
+            val filename = resolveDesktopFilename() ?: return false
+            if (!NativeLinuxTaskbarBridge.isLoaded) return false
+            NativeLinuxTaskbarBridge.nativeSetUrgent(filename, false) == 0
+        }
+        else -> false
+    }
+
     private fun resolveDesktopFilename(): String? = linuxDesktopFilename ?: LinuxDesktopFileDetector.desktopFilename
 }

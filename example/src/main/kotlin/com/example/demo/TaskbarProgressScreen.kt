@@ -26,23 +26,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import io.github.kdroidfilter.nucleus.application.NucleusWindow
 import io.github.kdroidfilter.nucleus.taskbarprogress.TaskbarProgress
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.hideTaskbarProgress
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.requestTaskbarAttention
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.setTaskbarProgress
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarError
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarIndeterminate
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarPaused
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.showTaskbarProgress
+import io.github.kdroidfilter.nucleus.taskbarprogress.tao.stopTaskbarAttention
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.awt.Window
 
 private const val ATTENTION_DELAY_MS = 1_000L
 
 @Suppress("FunctionNaming", "LongMethod")
 @Composable
-fun TaskbarProgressScreen(window: Window) {
+fun TaskbarProgressScreen(window: NucleusWindow) {
     val scope = rememberCoroutineScope()
     var progress by remember { mutableStateOf(0.5f) }
     var currentState by remember { mutableStateOf(TaskbarProgress.State.NO_PROGRESS) }
     var attentionCountdown by remember { mutableStateOf(0) }
 
     DisposableEffect(Unit) {
-        onDispose { TaskbarProgress.hideProgress(window) }
+        onDispose { window.hideTaskbarProgress() }
     }
 
     Surface(modifier = Modifier.fillMaxSize()) {
@@ -89,10 +97,10 @@ fun TaskbarProgressScreen(window: Window) {
                         TaskbarProgress.State.NORMAL,
                         TaskbarProgress.State.ERROR,
                         TaskbarProgress.State.PAUSED,
-                        -> TaskbarProgress.setProgress(window, progress.toDouble())
+                        -> window.setTaskbarProgress(progress.toDouble())
 
                         else -> {
-                            TaskbarProgress.showProgress(window, progress.toDouble())
+                            window.showTaskbarProgress(progress.toDouble())
                             currentState = TaskbarProgress.State.NORMAL
                         }
                     }
@@ -110,13 +118,13 @@ fun TaskbarProgressScreen(window: Window) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
-                    TaskbarProgress.showProgress(window, progress.toDouble())
+                    window.showTaskbarProgress(progress.toDouble())
                     currentState = TaskbarProgress.State.NORMAL
                 }) { Text("Normal") }
 
                 Button(
                     onClick = {
-                        TaskbarProgress.showError(window, progress.toDouble())
+                        window.showTaskbarError(progress.toDouble())
                         currentState = TaskbarProgress.State.ERROR
                     },
                     colors =
@@ -127,7 +135,7 @@ fun TaskbarProgressScreen(window: Window) {
 
                 Button(
                     onClick = {
-                        TaskbarProgress.showPaused(window, progress.toDouble())
+                        window.showTaskbarPaused(progress.toDouble())
                         currentState = TaskbarProgress.State.PAUSED
                     },
                     colors =
@@ -141,12 +149,12 @@ fun TaskbarProgressScreen(window: Window) {
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
-                    TaskbarProgress.showIndeterminate(window)
+                    window.showTaskbarIndeterminate()
                     currentState = TaskbarProgress.State.INDETERMINATE
                 }) { Text("Indeterminate") }
 
                 OutlinedButton(onClick = {
-                    TaskbarProgress.hideProgress(window)
+                    window.hideTaskbarProgress()
                     currentState = TaskbarProgress.State.NO_PROGRESS
                 }) { Text("Hide") }
             }
@@ -178,10 +186,7 @@ fun TaskbarProgressScreen(window: Window) {
                                 delay(ATTENTION_DELAY_MS)
                             }
                             attentionCountdown = 0
-                            TaskbarProgress.requestAttention(
-                                window,
-                                TaskbarProgress.AttentionType.INFORMATIONAL,
-                            )
+                            window.requestTaskbarAttention(TaskbarProgress.AttentionType.INFORMATIONAL)
                         }
                     },
                     enabled = attentionCountdown == 0,
@@ -195,10 +200,7 @@ fun TaskbarProgressScreen(window: Window) {
                                 delay(ATTENTION_DELAY_MS)
                             }
                             attentionCountdown = 0
-                            TaskbarProgress.requestAttention(
-                                window,
-                                TaskbarProgress.AttentionType.CRITICAL,
-                            )
+                            window.requestTaskbarAttention(TaskbarProgress.AttentionType.CRITICAL)
                         }
                     },
                     colors =
@@ -209,7 +211,7 @@ fun TaskbarProgressScreen(window: Window) {
                 ) { Text("Critical") }
 
                 OutlinedButton(onClick = {
-                    TaskbarProgress.stopAttention(window)
+                    window.stopTaskbarAttention()
                 }) { Text("Stop") }
             }
         }

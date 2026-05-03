@@ -56,7 +56,13 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
         object : DragAndDropTarget {
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 dropCount++
-                lastDrop = "nativeEvent=${event.nativeEvent?.let { it::class.simpleName } ?: "null"}"
+                val payload = event.nativeEvent
+                    as? io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload
+                lastDrop = if (payload != null) {
+                    "files=${payload.files.size}: ${payload.files.joinToString(limit = 2)}"
+                } else {
+                    "nativeEvent=${event.nativeEvent?.let { it::class.simpleName } ?: "null"}"
+                }
                 onLog("[DnD] drop #$dropCount lastDrop=$lastDrop")
                 return true
             }

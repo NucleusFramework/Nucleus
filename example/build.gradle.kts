@@ -30,6 +30,7 @@ dependencies {
     implementation(project(":nucleus-application"))
     implementation(project(":energy-manager"))
     implementation(project(":taskbar-progress"))
+    implementation(project(":taskbar-progress-tao"))
     implementation(project(":notification-common"))
     implementation(project(":notification-macos"))
     implementation(project(":notification-linux"))

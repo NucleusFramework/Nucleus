@@ -229,20 +229,14 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
 
 /* ---- JNI exports ------------------------------------------------- */
 
-JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgress(
-    JNIEnv *env, jclass clazz, jobject awtWindow, jlong completed, jlong total)
-{
+/* ---- Shared helpers (HWND-driven) -------------------------------- */
+
+static jint SetProgressByHwnd(HWND hwnd, jlong completed, jlong total) {
     void **vTable;
     HRESULT (WINAPI *pfnSetProgressValue)(void*, HWND, ULONGLONG, ULONGLONG);
-    HWND hwnd;
     HRESULT hr;
 
-    (void)clazz;
-
     if (!EnsureTaskbarList()) return -1;
-
-    hwnd = GetHwndFromAwtWindow(env, awtWindow);
     if (!hwnd) return -2;
 
     vTable = *(void ***)g_taskbarList;
@@ -253,20 +247,12 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbar
     return (jint)hr;
 }
 
-JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgressState(
-    JNIEnv *env, jclass clazz, jobject awtWindow, jint flags)
-{
+static jint SetProgressStateByHwnd(HWND hwnd, jint flags) {
     void **vTable;
     HRESULT (WINAPI *pfnSetProgressState)(void*, HWND, int);
-    HWND hwnd;
     HRESULT hr;
 
-    (void)clazz;
-
     if (!EnsureTaskbarList()) return -1;
-
-    hwnd = GetHwndFromAwtWindow(env, awtWindow);
     if (!hwnd) return -2;
 
     vTable = *(void ***)g_taskbarList;
@@ -277,25 +263,55 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbar
     return (jint)hr;
 }
 
+/* ---- AWT-window-driven entrypoints ------------------------------- */
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgress(
+    JNIEnv *env, jclass clazz, jobject awtWindow, jlong completed, jlong total)
+{
+    HWND hwnd;
+    (void)clazz;
+    hwnd = GetHwndFromAwtWindow(env, awtWindow);
+    return SetProgressByHwnd(hwnd, completed, total);
+}
+
+/* ---- HWND-driven entrypoints (used by non-AWT backends, e.g. Tao) - */
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgressByHwnd(
+    JNIEnv *env, jclass clazz, jlong hwnd, jlong completed, jlong total)
+{
+    (void)env; (void)clazz;
+    return SetProgressByHwnd((HWND)(intptr_t)hwnd, completed, total);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgressStateByHwnd(
+    JNIEnv *env, jclass clazz, jlong hwnd, jint flags)
+{
+    (void)env; (void)clazz;
+    return SetProgressStateByHwnd((HWND)(intptr_t)hwnd, flags);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeSetProgressState(
+    JNIEnv *env, jclass clazz, jobject awtWindow, jint flags)
+{
+    HWND hwnd;
+    (void)clazz;
+    hwnd = GetHwndFromAwtWindow(env, awtWindow);
+    return SetProgressStateByHwnd(hwnd, flags);
+}
+
 /* ---- nativeRequestAttention -------------------------------------- */
 
-/*
- * type: 0 = stop, 1 = informational (tray only, 4 flashes), 2 = critical (all, until foreground)
- */
-JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeRequestAttention(
-    JNIEnv *env, jclass clazz, jobject awtWindow, jint type)
-{
+static jint RequestAttentionByHwnd(HWND hwnd, jint type) {
     static PFN_FlashWindowEx pfnFlash = NULL;
     static BOOL pfnFlashResolved = FALSE;
-    HWND hwnd;
     MY_FLASHWINFO fwi;
     DWORD flags;
     UINT count;
 
-    (void)clazz;
-
-    /* Resolve FlashWindowEx from user32.dll */
     if (!pfnFlashResolved) {
         HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
         if (hUser32) {
@@ -304,8 +320,6 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbar
         pfnFlashResolved = TRUE;
     }
     if (!pfnFlash) return -1;
-
-    hwnd = GetHwndFromAwtWindow(env, awtWindow);
     if (!hwnd) return -2;
 
     switch (type) {
@@ -332,4 +346,25 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbar
 
     pfnFlash(&fwi);
     return 0;
+}
+
+/*
+ * type: 0 = stop, 1 = informational (tray only, 4 flashes), 2 = critical (all, until foreground)
+ */
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeRequestAttention(
+    JNIEnv *env, jclass clazz, jobject awtWindow, jint type)
+{
+    HWND hwnd;
+    (void)clazz;
+    hwnd = GetHwndFromAwtWindow(env, awtWindow);
+    return RequestAttentionByHwnd(hwnd, type);
+}
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_taskbarprogress_windows_NativeWindowsTaskbarBridge_nativeRequestAttentionByHwnd(
+    JNIEnv *env, jclass clazz, jlong hwnd, jint type)
+{
+    (void)env; (void)clazz;
+    return RequestAttentionByHwnd((HWND)(intptr_t)hwnd, type);
 }

@@ -74,6 +74,24 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeDragWindow(handle)
     }
 
+    /**
+     * Returns the underlying native window handle for the current platform:
+     *  - Windows: HWND as a `Long` (0 if unavailable).
+     *  - macOS: NSView pointer as a `Long` — the AppKit subview hosting the
+     *    Compose surface. The owning NSWindow can be obtained via `[view window]`.
+     *  - Linux: returns 0 (use [NativeTaoBridge.nativeLinuxHandles] for the
+     *    full `[kind, display, nativeWindow]` triplet).
+     *
+     * Intended for cross-module integration (e.g. taskbar, notifications) that
+     * need to address the OS window directly without going through Tao APIs.
+     */
+    val nativeHandle: Long
+        get() = when (Platform.Current) {
+            Platform.Windows -> NativeTaoBridge.nativeHwndHandle(handle)
+            Platform.MacOS -> NativeTaoBridge.nativeNsViewHandle(handle)
+            else -> 0L
+        }
+
     val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
