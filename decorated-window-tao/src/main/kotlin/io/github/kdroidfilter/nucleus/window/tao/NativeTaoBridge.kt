@@ -354,6 +354,17 @@ internal object NativeTaoBridge {
     external fun nativeA11yIsVoiceOverRunning(): Boolean
 
     /**
+     * Linux only: override the AT-SPI application name reported through
+     * `org.a11y.atspi.Application.toolkitName` and the `Accessible.Name` of
+     * the root. Without this, accesskit_unix uses `current_exe()` — which on
+     * the JVM is just "java", so screen readers / Accerciser show the app
+     * incorrectly. Must be called before the first adapter is constructed.
+     * No-op on macOS and Windows.
+     */
+    @JvmStatic
+    external fun nativeA11ySetAppName(name: String)
+
+    /**
      * Returns true while at least one accessibility client (VoiceOver,
      * Switch Control, AppleScript / System Events, Accessibility Inspector,
      * etc.) has touched our tree within the last ~5 minutes. Mirrors

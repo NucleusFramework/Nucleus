@@ -1,5 +1,6 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
@@ -37,6 +38,7 @@ data class TaoA11yNode(
     val parentId: Long,
     val role: TaoA11yRole,
     val flags: Int,
+    val extraFlags: Int = 0,
     val actions: Int,
     val frameX: Float,
     val frameY: Float,
@@ -60,6 +62,14 @@ data class TaoA11yNode(
      * `dispatchA11yCustomAction(nsView, nodeId, index)`.
      */
     val customActions: List<String> = emptyList(),
+    /**
+     * Compose `Modifier.testTag(...)` value. Forwarded as AT-SPI's
+     * `Accessible.GetAccessibleId()` (via AccessKit's `set_author_id`) so UI
+     * automation, Accerciser and screen readers can identify widgets
+     * symbolically rather than by visual label. Maps to `AXIdentifier` on
+     * macOS and `UIA_AutomationIdPropertyId` on Windows.
+     */
+    val testTag: String = "",
 )
 
 @Suppress("MagicNumber")
@@ -109,6 +119,16 @@ object TaoA11yFlag {
     const val EXPANDED_TRUE    = 1 shl 13
     const val EXPANDED_FALSE   = 1 shl 14
     const val HIDDEN           = 1 shl 15
+}
+
+/**
+ * Extra per-node flags carried in the wire format's previously-reserved u16
+ * after `actions`. Wire-format v6+. Linux uses these for AT-SPI-specific bits
+ * that don't have macOS / Windows equivalents.
+ */
+@Suppress("MagicNumber")
+object TaoA11yExtraFlag {
+    const val READ_ONLY = 1 shl 0
 }
 
 @Suppress("MagicNumber")
@@ -271,6 +291,16 @@ internal class TaoAccessibilityController(
             }
         }
         if (nsView == 0L) return
+        // Override AT-SPI's app name before the first Adapter spins up.
+        // accesskit_unix defaults to `current_exe()` — on the JVM that's
+        // "java", which is what every screen reader and Accerciser would
+        // otherwise display. Idempotent: only the first call sticks.
+        runCatching {
+            val displayName = NucleusApp.appName ?: NucleusApp.appId
+            if (displayName.isNotBlank()) {
+                NativeTaoBridge.nativeA11ySetAppName(displayName)
+            }
+        }
         TaoAccessibilityRegistry.register(windowHandle, this)
         TaoAccessibilityRegistry.registerNsView(nsView, this)
         NativeTaoBridge.nativeA11yAttach(nsView)
@@ -420,13 +450,14 @@ internal class TaoAccessibilityController(
  */
 internal object TaoA11ySnapshotSerializer {
     private const val MAGIC = 0xA110A11A.toInt()
-    private const val VERSION: Short = 4  // bumped to add scroll axis info
+    private const val VERSION: Short = 6  // bumped to use reserved2 as extraFlags
 
     fun encode(nodes: List<TaoA11yNode>): ByteArray {
         var size = 12 // header
         val labelBytes = ArrayList<ByteArray>(nodes.size)
         val valueBytes = ArrayList<ByteArray>(nodes.size)
         val customBytes = ArrayList<List<ByteArray>>(nodes.size)
+        val testTagBytes = ArrayList<ByteArray>(nodes.size)
         // Per-node fixed size:
         //   8(id)+8(parent)+2(role)+2(flags)+2(actions)+2(reserved)
         //   +16(frame)+12(range)+8(selection)+16(scroll axes) = 76
@@ -437,7 +468,9 @@ internal object TaoA11ySnapshotSerializer {
             valueBytes += vb
             val cb = n.customActions.map { it.toByteArray(Charsets.UTF_8) }
             customBytes += cb
-            var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2
+            val tb = n.testTag.toByteArray(Charsets.UTF_8)
+            testTagBytes += tb
+            var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2 + 2 + tb.size
             for (a in cb) nodeSize += 2 + a.size
             size += nodeSize
         }
@@ -452,7 +485,7 @@ internal object TaoA11ySnapshotSerializer {
             buf.putShort(n.role.code.toShort())
             buf.putShort(n.flags.toShort())
             buf.putShort(n.actions.toShort())
-            buf.putShort(0) // reserved2
+            buf.putShort(n.extraFlags.toShort())
             buf.putFloat(n.frameX); buf.putFloat(n.frameY)
             buf.putFloat(n.frameW); buf.putFloat(n.frameH)
             buf.putFloat(n.minValue); buf.putFloat(n.maxValue); buf.putFloat(n.numericValue)
@@ -472,6 +505,9 @@ internal object TaoA11ySnapshotSerializer {
                 buf.putShort(ab.size.toShort())
                 buf.put(ab)
             }
+            val tb = testTagBytes[i]
+            buf.putShort(tb.size.toShort())
+            buf.put(tb)
         }
         return buf.array()
     }

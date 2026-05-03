@@ -43,6 +43,17 @@ x11-dl = "2"
 [build-dependencies]
 cc = "1.0"
 
+# Vendored fork of accesskit_atspi_common 0.14.2 with three local patches
+# that the upstream 0.14 release doesn't include:
+#   - State::Modal exposure when node.is_modal() (Compose IsDialog semantic)
+#   - `level: N` attribute via Accessible.GetAttributes (heading level)
+#   - (planned) Interface::EditableText for text inputs
+# accesskit_unix consumes accesskit_atspi_common transitively, so this
+# patch propagates without needing to fork accesskit_unix itself.
+[patch.crates-io]
+accesskit_atspi_common = { path = "vendor/accesskit_atspi_common" }
+accesskit_unix = { path = "vendor/accesskit_unix" }
+
 # Smaller binaries for shipping inside the JAR / native-image.
 [profile.release]
 opt-level = "z"

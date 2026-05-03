@@ -866,6 +866,28 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     /* TODO: emit UIA_AutomationFocusChangedEventId via UiaRaiseAutomationEvent. */
 }
 
+/* No-op stubs for nativeA11ySetAppName on macOS / Windows — the Linux path
+ * uses this to override accesskit_unix's `current_exe()` fallback (which
+ * returns "java" on the JVM). macOS reads the bundle CFBundleName and Windows
+ * uses the HWND title, so neither needs overriding. */
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+    _env: JNIEnv,
+    _class: JClass,
+    _name: jni::objects::JString,
+) {
+}
+
+#[cfg(target_os = "windows")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+    _env: JNIEnv,
+    _class: JClass,
+    _name: jni::objects::JString,
+) {
+}
+
 /// Called from `main_thread_dispatch.m` when the user hits Cmd-Q.
 /// Posts a UserEvent::Exit on the running Tao event-loop proxy.
 #[cfg(target_os = "macos")]

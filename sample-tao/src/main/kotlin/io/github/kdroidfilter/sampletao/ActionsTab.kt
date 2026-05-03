@@ -1,5 +1,6 @@
 package io.github.kdroidfilter.sampletao
 
+import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -60,6 +61,7 @@ fun ActionsTab(
                 textStyle = TextStyle(color = Color.White, fontSize = 14.sp),
                 cursorBrush = SolidColor(Color(0xFF8AB4FF)),
                 modifier = Modifier
+                    .testTag("title-input")
                     .clip(RoundedCornerShape(6.dp))
                     .background(Color.White.copy(alpha = 0.06f))
                     .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
@@ -70,6 +72,19 @@ fun ActionsTab(
                 window.setTitle(titleInput)
                 onLog("setTitle(\"$titleInput\")")
             }
+            BasicTextField(
+                value = "read-only sample",
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                textStyle = TextStyle(color = Color(0xFFB0B5BD), fontSize = 14.sp),
+                modifier = Modifier
+                    .testTag("readonly-input")
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color.White.copy(alpha = 0.04f))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+                    .width(180.dp),
+            )
         }
 
         SectionTitle("Window state")

@@ -36,7 +36,8 @@ use std::sync::{
 
 use accesskit::{
     Action, ActionData, ActionHandler, ActionRequest, ActivationHandler, CustomAction,
-    DeactivationHandler, Live, Node, NodeId, Rect, Role, Toggled, Tree, TreeUpdate,
+    DeactivationHandler, Live, Node, NodeId, Rect, Role, TextPosition, TextSelection, Toggled,
+    Tree, TreeUpdate,
 };
 use accesskit_unix::Adapter;
 use jni::objects::{JByteArray, JClass, JValue};
@@ -49,7 +50,7 @@ use crate::JAVA_VM;
 // ── Wire format (kept in sync with TaoA11ySnapshotSerializer.kt) ───────────
 
 const MAGIC: u32 = 0xA110_A11A;
-const VERSION: u16 = 4;
+const VERSION: u16 = 6;
 
 // Role codes — match TaoA11yRole.code in TaoAccessibility.kt.
 const ROLE_UNKNOWN: u16 = 0;
@@ -81,7 +82,7 @@ const ROLE_TOOLTIP: u16 = 22;
 // (e.g. F_IS_ELEMENT, F_ENABLED, F_HEADING, F_MULTILINE), but kept here as
 // authoritative documentation of the wire format.
 #[allow(dead_code)] const F_IS_ELEMENT: u16 = 1 << 0;
-#[allow(dead_code)] const F_ENABLED: u16 = 1 << 1;
+const F_ENABLED: u16 = 1 << 1;
 const F_FOCUSED: u16 = 1 << 2;
 const F_SELECTED: u16 = 1 << 3;
 const F_CHECKED: u16 = 1 << 4;
@@ -96,6 +97,9 @@ const F_MULTI_SELECTABLE: u16 = 1 << 12;
 const F_EXPANDED_TRUE: u16 = 1 << 13;
 const F_EXPANDED_FALSE: u16 = 1 << 14;
 const F_HIDDEN: u16 = 1 << 15;
+
+// Extra flags (carried in what was `reserved2` before wire format v6).
+const EF_READ_ONLY: u16 = 1 << 0;
 
 // Action bits — match TaoA11yAction.
 const A_CLICK: u16 = 1 << 0;
@@ -276,7 +280,9 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         let role_code = c.read_u16()?;
         let flags = c.read_u16()?;
         let actions = c.read_u16()?;
-        let _reserved2 = c.read_u16()?;
+        // Wire format v6+ uses what was `reserved2` for an extra-flags u16.
+        // Bit 0 = read-only (Compose `BasicTextField(readOnly = true)`).
+        let extra_flags = c.read_u16()?;
         let frame_x = c.read_f32()? as f64;
         let frame_y = c.read_f32()? as f64;
         let frame_w = c.read_f32()? as f64;
@@ -284,8 +290,8 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         let v_min = c.read_f32()? as f64;
         let v_max = c.read_f32()? as f64;
         let v_now = c.read_f32()? as f64;
-        let _sel_start = c.read_i32()?;
-        let _sel_end = c.read_i32()?;
+        let sel_start = c.read_i32()?;
+        let sel_end = c.read_i32()?;
         let h_scroll_max = c.read_f32()? as f64;
         let h_scroll_value = c.read_f32()? as f64;
         let v_scroll_max = c.read_f32()? as f64;
@@ -297,6 +303,12 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         for _ in 0..custom_count {
             custom_labels.push(c.read_str()?);
         }
+        // testTag (Compose `Modifier.testTag`) — wire format v5+. Routed to
+        // AccessKit's `set_author_id`, which AT-SPI surfaces as
+        // Accessible.GetAccessibleId(). This matches `AXIdentifier` (macOS)
+        // and `AutomationId` (Windows UIA), so test runners and screen
+        // readers can identify widgets symbolically.
+        let test_tag = c.read_str()?;
 
         let node_id = NodeId(id_raw as u64);
         all_ids.push(node_id);
@@ -319,6 +331,10 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
             node.set_label(label.clone());
         }
 
+        if !test_tag.is_empty() {
+            node.set_author_id(test_tag);
+        }
+
         // Password fields: never expose cleartext on the bus, regardless of
         // what Compose passes through. AccessKit's PasswordInput role tells
         // ATs to suppress speech of the value, but we additionally mask.
@@ -329,6 +345,28 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
             } else {
                 node.set_value(value_str);
             }
+        }
+
+        // Compose's `SemanticsProperties.TextSelectionRange` (start, end) maps
+        // to AccessKit's TextSelection. Setting it on the input node itself
+        // (rather than on a child TextRun, which Compose doesn't produce)
+        // lets the vendored adapter diff `raw_text_selection()` between
+        // snapshots and emit `object:text-caret-moved` events for AT-SPI.
+        if matches!(role, Role::TextInput | Role::MultilineTextInput | Role::PasswordInput)
+            && (sel_start >= 0 || sel_end >= 0)
+        {
+            let pos_start = sel_start.max(0) as usize;
+            let pos_end = sel_end.max(0) as usize;
+            node.set_text_selection(TextSelection {
+                anchor: TextPosition {
+                    node: node_id,
+                    character_index: pos_start,
+                },
+                focus: TextPosition {
+                    node: node_id,
+                    character_index: pos_end,
+                },
+            });
         }
 
         // Numeric value range — sliders, progress bars, scroll bars.
@@ -394,6 +432,22 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
             if matches!(role, Role::Group) {
                 node.set_role(Role::Dialog);
             }
+        }
+        // F_ENABLED is set by the Kotlin observer when the Compose semantic
+        // does NOT contain `Disabled`. Inverting here so AccessKit (and
+        // therefore AT-SPI's STATE_ENABLED / STATE_SENSITIVE) correctly
+        // reflects Compose's `Modifier.semantics { disabled() }` and the
+        // default `enabled = false` parameter on Material widgets.
+        if flags & F_ENABLED == 0 {
+            node.set_disabled();
+        }
+        // Read-only text inputs (BasicTextField with readOnly = true). The
+        // observer detects this from the absence of SemanticsActions.SetText.
+        // AccessKit's `is_read_only_supported` returns true for text-input
+        // roles, so the vendored fork's `state()` will then insert
+        // State::ReadOnly.
+        if extra_flags & EF_READ_ONLY != 0 {
+            node.set_read_only();
         }
         if flags & F_HIDDEN != 0 {
             node.set_hidden();
@@ -528,9 +582,14 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
     }
 
     let focus = focus_id.unwrap_or(root_id);
+    // Identify the UI toolkit so AT-SPI clients (Accerciser's "Application
+    // info" pane, Orca's verbose diagnostics) can route toolkit-specific
+    // quirks. Mirrors what GTK reports as "GTK" and what Qt reports as "Qt".
+    let mut tree = Tree::new(root_id);
+    tree.toolkit_name = Some("Compose Multiplatform".to_string());
     let update = TreeUpdate {
         nodes: nodes_with_children,
-        tree: Some(Tree::new(root_id)),
+        tree: Some(tree),
         focus,
     };
     Some((update, metas, root_id))
@@ -630,12 +689,17 @@ fn forward_action_to_jvm(
     match request.action {
         Action::ReplaceSelectedText => {
             if meta_actions & A_SET_TEXT == 0 {
+                eprintln!("[a11y] ReplaceSelectedText ignored: A_SET_TEXT not set on node {}", node_id);
                 return;
             }
             let text = match request.data {
                 Some(ActionData::Value(s)) => s.into_string(),
-                _ => return,
+                _ => {
+                    eprintln!("[a11y] ReplaceSelectedText ignored: missing ActionData::Value");
+                    return;
+                }
             };
+            eprintln!("[a11y] ReplaceSelectedText -> dispatchA11ySetText(node={}, text={:?})", node_id, text);
             let Ok(jstr) = env.new_string(&text) else { return };
             let _ = env.call_static_method(
                 class,
@@ -921,6 +985,24 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     // AT-SPI are detected through `AT_ACTIVE` instead, which the activation
     // handler flips on first connect.
     JNI_FALSE
+}
+
+/// Override the AT-SPI application name. Without this, accesskit_unix uses
+/// `current_exe()` which on the JVM is just "java" — so screen readers and
+/// accessibility tools (Accerciser, Orca) all show the app as "java" instead
+/// of its actual product name. Must be called before the first Adapter is
+/// constructed; later calls are silently ignored.
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+    mut env: JNIEnv,
+    _class: JClass,
+    name: jni::objects::JString,
+) {
+    let Ok(jstr) = env.get_string(&name) else { return };
+    let s: String = jstr.into();
+    if !s.is_empty() {
+        accesskit_unix::set_app_name(s);
+    }
 }
 
 #[no_mangle]

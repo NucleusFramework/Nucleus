@@ -198,12 +198,21 @@ internal class TaoSemanticsObserver(
             0 to 0
         }
 
+        // BasicTextField with `readOnly = true` keeps SemanticsProperties.EditableText
+        // (so we still expose the value) but drops SemanticsActions.SetText. ATs
+        // distinguish read-only fields from regular ones via STATE_READ_ONLY.
+        var extraFlags = 0
+        val isReadOnlyTextInput = node.config.contains(SemanticsProperties.EditableText) &&
+            !node.config.contains(SemanticsActions.SetText)
+        if (isReadOnlyTextInput) extraFlags = extraFlags or TaoA11yExtraFlag.READ_ONLY
+
         out.add(
             TaoA11yNode(
                 nodeId = id,
                 parentId = parentId,
                 role = role,
                 flags = flags,
+                extraFlags = extraFlags,
                 actions = actions,
                 frameX = bounds.left * invDensity,
                 frameY = bounds.top * invDensity,
@@ -221,6 +230,7 @@ internal class TaoSemanticsObserver(
                 label = label,
                 valueString = valueString,
                 customActions = customActionsList.map { it.label },
+                testTag = node.config.getOrNull(SemanticsProperties.TestTag).orEmpty(),
             ),
         )
 
