@@ -1170,18 +1170,19 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 fn run_event_loop_blocking() {
-    // Force GTK onto the X11 backend. Why: even though our EGL helper has
-    // a Wayland attach path (and Skia's GL backend is platform-agnostic via
-    // GLAssembledInterface), tao 0.35 + GTK 3 owns the wl_surface and paints
-    // a cairo-shm buffer to it on every draw signal — see the KNOWN
-    // LIMITATION block in nucleus_tao_egl.c for the full diagnosis. Until
-    // we land a wl_subsurface child, going through XWayland is the only
-    // path that doesn't trip xdg_shell protocol errors.
+    // GTK backend selection. We can now drive native Wayland through a
+    // wl_subsurface child of GTK's wl_surface (see nucleus_tao_egl.c
+    // `nativeAttachWayland`), so the historic forcing of GDK_BACKEND=x11 is
+    // gated on an env-var. Default behaviour stays on X11/XWayland (proven
+    // path) until the Wayland subsurface path racks up a few weeks of usage.
     //
-    // Power-user escape hatch: setting NUCLEUS_TAO_LINUX_RENDERER=wayland
-    // releases the forcing so the broken Wayland-native code path can be
-    // exercised for development of the wl_subsurface fix. Anything else
-    // (including unset, the default) keeps us on XWayland.
+    //   NUCLEUS_TAO_LINUX_RENDERER=wayland → release GDK_BACKEND, GDK
+    //                                        will auto-pick Wayland on a
+    //                                        Wayland session
+    //   anything else (default)            → force GDK_BACKEND=x11 so a
+    //                                        Wayland session lands on
+    //                                        XWayland (subsurface code
+    //                                        unreachable)
     #[cfg(target_os = "linux")]
     {
         let opt_in_wayland = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")

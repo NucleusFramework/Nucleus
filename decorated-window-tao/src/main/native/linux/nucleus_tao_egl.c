@@ -21,41 +21,27 @@
  * ships standalone. libwayland-egl is only required for the Wayland
  * attach path; X11-only setups don't need it.
  *
- * KNOWN LIMITATION — Wayland-native attach (`nativeAttachWayland`) is
- * structurally broken on tao 0.35 + GTK 3. On X11 we share the GTK XID
- * with EGL and the X server arbitrates the buffer ownership transparently;
- * on Wayland, the `wl_surface` is a single role-bound resource and **GTK
- * owns it** — tao's `connect_draw` signal handler paints a cairo-shm
- * buffer to the same wl_surface on every frame (event_loop.rs:912 of
- * tao 0.35), so any EGL `eglSwapBuffers` we issue races with GTK's commit.
- * Worse, GTK delays its `xdg_wm_base.get_xdg_surface(wl_surface)` setup
- * until *after* the first draw, so our buffer attach lands while the
- * surface still has no role and the compositor disconnects with
- * `xdg_wm_base.error(invalid_surface_state, "wl_surface@N already has a
- * buffer committed")`.
+ * Wayland architecture. tao 0.35 + GTK 3 owns the `wl_surface` and
+ * paints a cairo-shm buffer to it on every draw signal (event_loop.rs:912
+ * of tao 0.35); GTK delays its `xdg_wm_base.get_xdg_surface(wl_surface)`
+ * setup until after the first draw. Rendering EGL directly onto that
+ * surface races with GTK's commits and trips
+ * `xdg_wm_base.error(invalid_surface_state)`. The fix:
+ * `nativeAttachWayland` creates an owned `wl_subsurface` child of GTK's
+ * surface — same architectural pattern as the X11 child-window fallback
+ * we use for visual mismatches. GTK keeps owning the parent + xdg_toplevel,
+ * we render into the subsurface in `set_desync` mode so our buffer commits
+ * land independently. Implementation hand-rolls `wl_compositor.create_surface`,
+ * `wl_subcompositor.get_subsurface`, `set_position` and `set_desync` against
+ * libwayland-client.so.0 — the C protocol headers aren't pulled at build
+ * time so the .so ships standalone.
  *
- * The clean architectural fix is a `wl_subsurface` child of the GTK
- * `wl_surface` (~250 LOC of hand-rolled wl_compositor / wl_subcompositor
- * marshalling): GTK keeps owning the parent xdg-shell surface, we own a
- * sub-surface in `set_desync` mode that takes our EGL buffer commits
- * independently. Same architecture as the X11 child-window fallback we
- * already use for visual mismatches.
- *
- * Until that lands, `nativeAttachWayland` is kept on the JVM-facing JNI
- * surface (so the dispatch in `TaoComposeSceneHostLinux` doesn't churn)
- * but it logs a one-shot warning and forwards to the same
- * `eglCreateWindowSurface` path that gets us the protocol error — i.e.
- * Wayland-native is opt-in *experimental*. Set `NUCLEUS_TAO_LINUX_RENDERER=egl`
- * on a Wayland session ⇒ XWayland (forced via `GDK_BACKEND=x11` in lib.rs)
- * by default; the env-var-only flow currently can't deliver true Wayland
- * native rendering on this stack.
+ * Wayland-native is gated behind `NUCLEUS_TAO_LINUX_RENDERER=wayland` for
+ * now (see lib.rs); the default still forces `GDK_BACKEND=x11` to land on
+ * XWayland. Once the wl_subsurface path racks up a few weeks of usage
+ * the gate can be flipped or removed.
  *
  * TODO (planned follow-ups, in priority order):
- *   - **wl_subsurface child**: makes the Wayland path actually usable.
- *     Requires libwayland-client.so.0 + hand-rolled `wl_interface` /
- *     `wl_message` tables for wl_compositor.create_surface and
- *     wl_subcompositor.get_subsurface. Resize coordinates with the
- *     parent's xdg_toplevel.configure handler.
  *   - `wp_fractional_scale_v1` + `wp_viewporter` binding to honor
  *     fractional HiDPI scales correctly on Wayland (GTK 3 reports only
  *     integer scales, so 125% / 150% sessions currently get a buffer at
@@ -237,16 +223,68 @@ typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
 #define EGL_VENDOR  0x3053
 #define EGL_VERSION 0x3054
 
-/* ── Wayland EGL helpers ────────────────────────────────────────────────── */
+/* ── Wayland client + EGL helpers ───────────────────────────────────────── */
 
-/* Opaque types — we only ever pass them to libwayland-egl. */
+/* Opaque types — we only ever pass them to libwayland-* and libwayland-egl. */
 typedef struct wl_egl_window_  wl_egl_window;
 typedef struct wl_display_     wl_display;
 typedef struct wl_surface_     wl_surface;
+typedef struct wl_proxy_       wl_proxy;
+typedef struct wl_event_queue_ wl_event_queue;
 
 typedef wl_egl_window *(*PFN_wl_egl_window_create)(wl_surface *, int, int);
 typedef void           (*PFN_wl_egl_window_destroy)(wl_egl_window *);
 typedef void           (*PFN_wl_egl_window_resize)(wl_egl_window *, int, int, int, int);
+
+/* `wl_message` and `wl_interface` are the static introspection tables for
+ * each Wayland interface. We don't define our own — we read pointers via
+ * dlsym from libwayland-client.so.0 — but we need the layout to pass them
+ * to `wl_proxy_marshal_flags`. */
+struct wl_message {
+    const char *name;
+    const char *signature;
+    const struct wl_interface **types;
+};
+struct wl_interface {
+    const char *name;
+    int version;
+    int method_count;
+    const struct wl_message *methods;
+    int event_count;
+    const struct wl_message *events;
+};
+
+/* Subset of libwayland-client.so.0 we use for the wl_subsurface child path.
+ * varargs `wl_proxy_marshal_flags` is the universal request-marshaller — we
+ * call it with the same arg layout the inline statics in
+ * <wayland-client-protocol.h> use. */
+typedef wl_proxy *(*PFN_wl_proxy_marshal_flags)(
+    wl_proxy *proxy, uint32_t opcode, const struct wl_interface *interface,
+    uint32_t version, uint32_t flags, ...);
+typedef int             (*PFN_wl_proxy_add_listener)(wl_proxy *, void (**)(void), void *);
+typedef void            (*PFN_wl_proxy_destroy)(wl_proxy *);
+typedef void            (*PFN_wl_proxy_set_queue)(wl_proxy *, wl_event_queue *);
+typedef uint32_t        (*PFN_wl_proxy_get_version)(wl_proxy *);
+typedef wl_event_queue *(*PFN_wl_display_create_queue)(wl_display *);
+typedef int             (*PFN_wl_display_roundtrip_queue)(wl_display *, wl_event_queue *);
+typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
+
+/* Wayland protocol opcodes (from wayland.xml; stable since the protocol
+ * was frozen in 2014, won't change). Re-declared instead of imported so
+ * the build doesn't pull in libwayland-dev headers. */
+#define WL_MARSHAL_FLAG_DESTROY            1
+#define WL_DISPLAY_GET_REGISTRY            1
+#define WL_REGISTRY_BIND                   0
+#define WL_COMPOSITOR_CREATE_SURFACE       0
+#define WL_COMPOSITOR_CREATE_REGION        1
+#define WL_REGION_DESTROY                  0
+#define WL_SUBCOMPOSITOR_GET_SUBSURFACE    1
+#define WL_SUBSURFACE_DESTROY              0
+#define WL_SUBSURFACE_SET_POSITION         1
+#define WL_SUBSURFACE_SET_DESYNC           5
+#define WL_SURFACE_DESTROY                 0
+#define WL_SURFACE_SET_INPUT_REGION        5
+#define WL_SURFACE_COMMIT                  6
 
 /* ── Xlib function pointer types ────────────────────────────────────────── */
 
@@ -306,11 +344,30 @@ static PFN_XShapeCombineRectangles p_XShapeCombineRectangles = NULL;
 
 static void *g_libxext = NULL;
 static void *g_libwlegl = NULL;
+static void *g_libwlclient = NULL;
 static int g_libs_loaded = 0;
 
 static PFN_wl_egl_window_create  p_wl_egl_window_create  = NULL;
 static PFN_wl_egl_window_destroy p_wl_egl_window_destroy = NULL;
 static PFN_wl_egl_window_resize  p_wl_egl_window_resize  = NULL;
+
+/* libwayland-client function pointers + interface globals (the latter
+ * are exported `const struct wl_interface` symbols in the .so). */
+static PFN_wl_proxy_marshal_flags     p_wl_proxy_marshal_flags     = NULL;
+static PFN_wl_proxy_add_listener      p_wl_proxy_add_listener      = NULL;
+static PFN_wl_proxy_destroy           p_wl_proxy_destroy           = NULL;
+static PFN_wl_proxy_set_queue         p_wl_proxy_set_queue         = NULL;
+static PFN_wl_proxy_get_version       p_wl_proxy_get_version       = NULL;
+static PFN_wl_display_create_queue    p_wl_display_create_queue    = NULL;
+static PFN_wl_display_roundtrip_queue p_wl_display_roundtrip_queue = NULL;
+static PFN_wl_event_queue_destroy     p_wl_event_queue_destroy     = NULL;
+
+static const struct wl_interface *g_wl_registry_interface     = NULL;
+static const struct wl_interface *g_wl_compositor_interface   = NULL;
+static const struct wl_interface *g_wl_subcompositor_interface= NULL;
+static const struct wl_interface *g_wl_subsurface_interface   = NULL;
+static const struct wl_interface *g_wl_surface_interface      = NULL;
+static const struct wl_interface *g_wl_region_interface       = NULL;
 
 static int load_libs(void) {
     if (g_libs_loaded) return 1;
@@ -344,11 +401,13 @@ static int load_libs(void) {
     if (!g_libxext) g_libxext = dlopen("libXext.so.6", RTLD_LAZY | RTLD_GLOBAL);
     if (!g_libxext) g_libxext = dlopen("libXext.so",   RTLD_LAZY | RTLD_GLOBAL);
 
-    /* libwayland-egl — needed for the Wayland attach path only. We don't
-     * fail load_libs() if it's missing; X11 sessions don't need it and
-     * `nativeAttachWayland` will return 0 with a clear log. */
+    /* libwayland-egl + libwayland-client — needed for the Wayland attach
+     * path only. We don't fail load_libs() if missing; X11 sessions don't
+     * need them and `nativeAttachWayland` will return 0 with a clear log. */
     if (!g_libwlegl) g_libwlegl = dlopen("libwayland-egl.so.1", RTLD_LAZY | RTLD_GLOBAL);
     if (!g_libwlegl) g_libwlegl = dlopen("libwayland-egl.so",   RTLD_LAZY | RTLD_GLOBAL);
+    if (!g_libwlclient) g_libwlclient = dlopen("libwayland-client.so.0", RTLD_LAZY | RTLD_GLOBAL);
+    if (!g_libwlclient) g_libwlclient = dlopen("libwayland-client.so",   RTLD_LAZY | RTLD_GLOBAL);
 
 #define LOAD(lib, sym) p_##sym = (PFN_##sym) dlsym(lib, #sym)
     LOAD(g_libegl, eglGetDisplay);
@@ -391,6 +450,36 @@ static int load_libs(void) {
             (PFN_wl_egl_window_destroy) dlsym(g_libwlegl, "wl_egl_window_destroy");
         p_wl_egl_window_resize  =
             (PFN_wl_egl_window_resize)  dlsym(g_libwlegl, "wl_egl_window_resize");
+    }
+    if (g_libwlclient) {
+        p_wl_proxy_marshal_flags =
+            (PFN_wl_proxy_marshal_flags) dlsym(g_libwlclient, "wl_proxy_marshal_flags");
+        p_wl_proxy_add_listener =
+            (PFN_wl_proxy_add_listener)  dlsym(g_libwlclient, "wl_proxy_add_listener");
+        p_wl_proxy_destroy =
+            (PFN_wl_proxy_destroy)       dlsym(g_libwlclient, "wl_proxy_destroy");
+        p_wl_proxy_set_queue =
+            (PFN_wl_proxy_set_queue)     dlsym(g_libwlclient, "wl_proxy_set_queue");
+        p_wl_proxy_get_version =
+            (PFN_wl_proxy_get_version)   dlsym(g_libwlclient, "wl_proxy_get_version");
+        p_wl_display_create_queue =
+            (PFN_wl_display_create_queue)    dlsym(g_libwlclient, "wl_display_create_queue");
+        p_wl_display_roundtrip_queue =
+            (PFN_wl_display_roundtrip_queue) dlsym(g_libwlclient, "wl_display_roundtrip_queue");
+        p_wl_event_queue_destroy =
+            (PFN_wl_event_queue_destroy) dlsym(g_libwlclient, "wl_event_queue_destroy");
+        g_wl_registry_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_registry_interface");
+        g_wl_compositor_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_compositor_interface");
+        g_wl_subcompositor_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_subcompositor_interface");
+        g_wl_subsurface_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_subsurface_interface");
+        g_wl_surface_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_surface_interface");
+        g_wl_region_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_region_interface");
     }
 #undef LOAD
 
@@ -479,11 +568,21 @@ typedef struct {
     Window     parent_xid;
     Window     child_xid;
     Colormap   child_colormap;
-    /* Wayland plumbing. `wl_window` is non-NULL only on the Wayland path —
-     * it's the libwayland-egl handle that wraps a `wl_surface` into something
-     * EGL can render into. Lifetime is tied to this attachment; destroyed
-     * before `eglDestroySurface` to avoid use-after-free on the compositor side. */
-    wl_egl_window *wl_window;
+    /* Wayland plumbing. We never render directly to GTK's wl_surface —
+     * instead we own a `wl_subsurface` child of it, which decouples our
+     * buffer commits from GTK's xdg_shell handshake and its cairo paint
+     * cycle (see file header for the full diagnosis). All these proxies
+     * live on `wl_queue` so events on them don't race with GDK's default
+     * queue. nativeDetach destroys them in this order: wl_window →
+     * wl_subsurface → wl_child_surface → wl_compositor / wl_subcompositor →
+     * wl_registry → wl_queue. */
+    wl_event_queue *wl_queue;
+    wl_proxy       *wl_registry;
+    wl_proxy       *wl_compositor;
+    wl_proxy       *wl_subcompositor;
+    wl_proxy       *wl_child_surface;
+    wl_proxy       *wl_subsurface;
+    wl_egl_window  *wl_window;
     int        widthPx;
     int        heightPx;
     float      scale;
@@ -783,15 +882,68 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachX1
     return (jlong) (uintptr_t) att;
 }
 
+/* ── Wayland subsurface plumbing ────────────────────────────────────────── */
+
 /**
- * Wayland-native attach: wraps a `wl_surface*` into an EGL window surface
- * via libwayland-egl's `wl_egl_window` and creates the GL context against
- * `eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, …)`.
+ * State carried by the wl_registry::global listener while we're binding
+ * `wl_compositor` and `wl_subcompositor` during attach. Owned by the calling
+ * thread for the duration of the roundtrip — do not leak.
+ */
+typedef struct {
+    wl_proxy *registry;
+    wl_proxy *compositor;
+    wl_proxy *subcompositor;
+} WlBindState;
+
+static void wl_registry_global(
+    void *data, wl_proxy *registry, uint32_t name,
+    const char *interface, uint32_t version)
+{
+    WlBindState *st = (WlBindState *) data;
+    if (!st->compositor && strcmp(interface, "wl_compositor") == 0) {
+        /* `wl_registry::bind` has signature "usun" (uint name, string interface,
+         * uint version, new_id). For new_id without statically-known interface
+         * libwayland sends `interface_name`+`version`+`new_id_handle` triplet on
+         * the wire. Match what `wl_registry_bind` inline does. */
+        uint32_t v = version < 4 ? version : 4;
+        st->compositor = p_wl_proxy_marshal_flags(
+            registry, WL_REGISTRY_BIND, g_wl_compositor_interface, v, 0,
+            name, "wl_compositor", v, NULL);
+    } else if (!st->subcompositor && strcmp(interface, "wl_subcompositor") == 0) {
+        uint32_t v = version < 1 ? version : 1;
+        st->subcompositor = p_wl_proxy_marshal_flags(
+            registry, WL_REGISTRY_BIND, g_wl_subcompositor_interface, v, 0,
+            name, "wl_subcompositor", v, NULL);
+    }
+}
+
+static void wl_registry_global_remove(
+    void *data, wl_proxy *registry, uint32_t name)
+{
+    (void) data; (void) registry; (void) name;
+    /* No-op: compositor / subcompositor never disappear at runtime. */
+}
+
+/* Pointer-table fed to wl_proxy_add_listener — order must match the events
+ * declared in wl_registry's wl_message[] (global, global_remove). */
+static void (*const wl_registry_listener[])(void) = {
+    (void (*)(void)) wl_registry_global,
+    (void (*)(void)) wl_registry_global_remove,
+};
+
+/**
+ * Wayland-native attach.
  *
- * No visual matching here — Wayland surfaces have no X visual concept; the
- * EGLConfig only needs to be alpha-capable (so the compositor can blend our
- * rounded corners) and OPENGL-renderable. Mesa's Wayland EGL is the de-facto
- * standard; NVIDIA driver 560+ supports the same path through `egl-wayland2`.
+ * We don't render onto GTK's wl_surface — GTK paints a cairo SHM buffer
+ * onto it on every draw signal, and any `eglSwapBuffers` we'd issue on
+ * the same surface would race with GTK's commit (and worse: trip the
+ * xdg_shell `invalid_surface_state` error if we attached before GTK's
+ * `get_xdg_surface`). Instead we own a `wl_subsurface` child of GTK's
+ * surface. GTK keeps owning the parent + xdg_toplevel; we render into
+ * the subsurface in `set_desync` mode so our commits land independently.
+ *
+ * Shape: same architectural pattern as the X11 child-window fallback,
+ * just expressed through Wayland protocol primitives.
  */
 JNIEXPORT jlong JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWayland(
@@ -804,44 +956,174 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
     if (!load_libs()) return 0;
     if (!p_wl_egl_window_create) {
         fprintf(stderr,
-                "[nucleus_tao_egl] Wayland path unavailable — "
-                "libwayland-egl.so.1 not found at runtime.\n");
+                "[nucleus_tao_egl] Wayland path unavailable — libwayland-egl.so.1 missing.\n");
         return 0;
     }
-    /* One-shot warning the first time the Wayland path is taken: this
-     * exists in the JNI surface so the dispatcher in TaoComposeSceneHostLinux
-     * stays clean, but in practice the buffer attach races with GTK's
-     * xdg_shell setup on tao 0.35 + GTK 3 (see the file header for the
-     * full diagnosis). The real fix is a wl_subsurface child — until then
-     * users who hit `xdg_wm_base` protocol errors should drop
-     * NUCLEUS_TAO_LINUX_RENDERER and rely on the GLX path, or set
-     * `GDK_BACKEND=x11` explicitly to land on EGL+XWayland. */
-    static int s_warned = 0;
-    if (!s_warned) {
-        s_warned = 1;
+    if (!p_wl_proxy_marshal_flags || !g_wl_registry_interface ||
+        !g_wl_compositor_interface || !g_wl_subcompositor_interface ||
+        !g_wl_subsurface_interface || !g_wl_surface_interface) {
         fprintf(stderr,
-                "[nucleus_tao_egl] WARNING: Wayland-native EGL is experimental on tao 0.35 + GTK 3.\n"
-                "[nucleus_tao_egl]          Buffer ownership conflicts with GTK's cairo paint and may\n"
-                "[nucleus_tao_egl]          trigger `xdg_wm_base.error(invalid_surface_state)`. If the\n"
-                "[nucleus_tao_egl]          window doesn't appear or the process exits with `Erreur de\n"
-                "[nucleus_tao_egl]          protocole`, fall back to EGL+XWayland: unset\n"
-                "[nucleus_tao_egl]          NUCLEUS_TAO_LINUX_RENDERER and pass\n"
-                "[nucleus_tao_egl]          `-Dnucleus.tao.linux.renderer=egl` instead, or export\n"
-                "[nucleus_tao_egl]          `GDK_BACKEND=x11` alongside the env-var.\n");
+                "[nucleus_tao_egl] Wayland path unavailable — libwayland-client.so.0 "
+                "or its interface tables couldn't be resolved.\n");
+        return 0;
     }
 
-    wl_display *wdpy = (wl_display *) (uintptr_t) wlDisplayPtr;
-    wl_surface *wsurf = (wl_surface *) (uintptr_t) wlSurfacePtr;
+    wl_display *wdpy  = (wl_display *) (uintptr_t) wlDisplayPtr;
+    wl_proxy   *wparent = (wl_proxy *)   (uintptr_t) wlSurfacePtr;
     int phys_w = widthPx > 0 ? widthPx : 1;
     int phys_h = heightPx > 0 ? heightPx : 1;
-    DBG("attachWayland: wl_display=%p wl_surface=%p wxh=%dx%d\n",
-        (void*)wdpy, (void*)wsurf, phys_w, phys_h);
+    DBG("attachWayland: wl_display=%p parent_wl_surface=%p wxh=%dx%d\n",
+        (void*)wdpy, (void*)wparent, phys_w, phys_h);
 
-    /* 1) EGL display via the Wayland platform extension. EGL 1.5 core, also
-     *    available through `EGL_EXT_platform_wayland`. Always prefer the
-     *    explicit-platform call over `eglGetDisplay(wl_display*)` — the
-     *    legacy variant is ambiguous when both X11 and Wayland clients live
-     *    in the same process. */
+    /* ── 1) Bind wl_compositor + wl_subcompositor on a private event queue ── */
+    /* Private queue keeps registry / compositor / subcompositor / our
+     * subsurface events away from GDK's default queue — otherwise our
+     * roundtrip below would dispatch GDK events out of band and freeze GTK.
+     */
+    wl_event_queue *queue = p_wl_display_create_queue(wdpy);
+    if (!queue) {
+        DBG("wl_display_create_queue failed\n");
+        return 0;
+    }
+
+    /* `wl_display.get_registry` constructor — we treat the wl_display* as a
+     * wl_proxy, which is safe because libwayland's wl_display is allocated
+     * through the same wl_proxy machinery (the type punning is documented
+     * in the wayland-client header). */
+    wl_proxy *registry = p_wl_proxy_marshal_flags(
+        (wl_proxy *) wdpy, WL_DISPLAY_GET_REGISTRY,
+        g_wl_registry_interface,
+        p_wl_proxy_get_version((wl_proxy *) wdpy),
+        0, NULL);
+    if (!registry) {
+        DBG("wl_display.get_registry returned NULL\n");
+        p_wl_event_queue_destroy(queue);
+        return 0;
+    }
+    p_wl_proxy_set_queue(registry, queue);
+
+    WlBindState bind_state = { registry, NULL, NULL };
+    p_wl_proxy_add_listener(
+        registry, (void (**)(void)) wl_registry_listener, &bind_state);
+
+    /* Roundtrip on OUR queue: send `wl_display.sync`, dispatch all events
+     * received on `queue` until the sync done event arrives — covers the
+     * initial burst of `wl_registry::global` events.
+     *
+     * Compositor / subcompositor pointers also need their own queue or
+     * future events on them (e.g. the bind ack) would land on GDK's queue.
+     * `wl_proxy_set_queue` on freshly-created proxies only matters for
+     * future events — they're set inside `wl_registry_global` after creation
+     * because the proxy is created by wl_proxy_marshal_flags above. We do
+     * the set_queue here explicitly to be defensive. */
+    if (p_wl_display_roundtrip_queue(wdpy, queue) < 0) {
+        DBG("wl_display_roundtrip_queue failed\n");
+        if (bind_state.compositor) p_wl_proxy_destroy(bind_state.compositor);
+        if (bind_state.subcompositor) p_wl_proxy_destroy(bind_state.subcompositor);
+        p_wl_proxy_destroy(registry);
+        p_wl_event_queue_destroy(queue);
+        return 0;
+    }
+    if (!bind_state.compositor || !bind_state.subcompositor) {
+        fprintf(stderr,
+                "[nucleus_tao_egl] Wayland compositor missing %s%s%s — "
+                "compositor too old? subsurface support is mandatory in Wayland 1.4+.\n",
+                bind_state.compositor ? "" : "wl_compositor",
+                (!bind_state.compositor && !bind_state.subcompositor) ? " and " : "",
+                bind_state.subcompositor ? "" : "wl_subcompositor");
+        if (bind_state.compositor) p_wl_proxy_destroy(bind_state.compositor);
+        if (bind_state.subcompositor) p_wl_proxy_destroy(bind_state.subcompositor);
+        p_wl_proxy_destroy(registry);
+        p_wl_event_queue_destroy(queue);
+        return 0;
+    }
+    p_wl_proxy_set_queue(bind_state.compositor, queue);
+    p_wl_proxy_set_queue(bind_state.subcompositor, queue);
+
+    /* ── 2) Create our owned child wl_surface via wl_compositor.create_surface ── */
+    wl_proxy *child_surface = p_wl_proxy_marshal_flags(
+        bind_state.compositor, WL_COMPOSITOR_CREATE_SURFACE,
+        g_wl_surface_interface,
+        p_wl_proxy_get_version(bind_state.compositor),
+        0, NULL);
+    if (!child_surface) {
+        DBG("wl_compositor.create_surface returned NULL\n");
+        p_wl_proxy_destroy(bind_state.subcompositor);
+        p_wl_proxy_destroy(bind_state.compositor);
+        p_wl_proxy_destroy(registry);
+        p_wl_event_queue_destroy(queue);
+        return 0;
+    }
+    p_wl_proxy_set_queue(child_surface, queue);
+
+    /* ── 3) Make the child a subsurface of GTK's parent ── */
+    wl_proxy *subsurface = p_wl_proxy_marshal_flags(
+        bind_state.subcompositor, WL_SUBCOMPOSITOR_GET_SUBSURFACE,
+        g_wl_subsurface_interface,
+        p_wl_proxy_get_version(bind_state.subcompositor),
+        0,
+        /* new_id placeholder */ NULL,
+        /* surface (child)   */ child_surface,
+        /* parent (GTK's)    */ wparent);
+    if (!subsurface) {
+        DBG("wl_subcompositor.get_subsurface returned NULL\n");
+        p_wl_proxy_marshal_flags(child_surface, WL_SURFACE_DESTROY, NULL,
+            p_wl_proxy_get_version(child_surface), WL_MARSHAL_FLAG_DESTROY);
+        p_wl_proxy_destroy(bind_state.subcompositor);
+        p_wl_proxy_destroy(bind_state.compositor);
+        p_wl_proxy_destroy(registry);
+        p_wl_event_queue_destroy(queue);
+        return 0;
+    }
+    p_wl_proxy_set_queue(subsurface, queue);
+
+    /* Position relative to parent (top-left corner aligned), and `set_desync`
+     * so our buffer commits don't have to wait for the parent's transaction.
+     * Spec: subsurface becomes mapped once parent is mapped AND a non-NULL
+     * buffer has been applied — first eglSwapBuffers does the latter, GTK
+     * does the former. */
+    p_wl_proxy_marshal_flags(
+        subsurface, WL_SUBSURFACE_SET_POSITION, NULL,
+        p_wl_proxy_get_version(subsurface), 0,
+        /*x*/ 0, /*y*/ 0);
+    p_wl_proxy_marshal_flags(
+        subsurface, WL_SUBSURFACE_SET_DESYNC, NULL,
+        p_wl_proxy_get_version(subsurface), 0);
+
+    /* Make the child surface input-transparent so the compositor routes
+     * pointer / keyboard / touch events to GTK's parent surface (where tao
+     * has its event handlers wired). Without this our EGL-rendered surface
+     * sits on top of GTK's parent and silently swallows every click — the
+     * Wayland equivalent of XShape `ShapeInput=empty` that the X11 child
+     * window uses for the same purpose.
+     *
+     * `wl_compositor.create_region` with no rects added = empty region.
+     * `set_input_region(empty)` makes the surface ignore all input. The
+     * region is double-buffered surface state, applied at the next commit
+     * on the child (and that commit is gated on the parent's commit while
+     * we're still in default sync mode — but `set_input_region` queued
+     * before the first eglSwapBuffers is fine because the buffer commit
+     * carries the input region with it). */
+    if (g_wl_region_interface) {
+        wl_proxy *empty_region = p_wl_proxy_marshal_flags(
+            bind_state.compositor, WL_COMPOSITOR_CREATE_REGION,
+            g_wl_region_interface,
+            p_wl_proxy_get_version(bind_state.compositor),
+            0, NULL);
+        if (empty_region) {
+            p_wl_proxy_set_queue(empty_region, queue);
+            p_wl_proxy_marshal_flags(
+                child_surface, WL_SURFACE_SET_INPUT_REGION, NULL,
+                p_wl_proxy_get_version(child_surface), 0,
+                empty_region);
+            /* The compositor only needs the region for the duration of
+             * `set_input_region` — we can destroy our handle right away. */
+            p_wl_proxy_marshal_flags(empty_region, WL_REGION_DESTROY, NULL,
+                p_wl_proxy_get_version(empty_region), WL_MARSHAL_FLAG_DESTROY);
+        }
+    }
+
+    /* ── 4) EGL setup against our child wl_surface ── */
     EGLDisplay edpy = EGL_NO_DISPLAY;
     if (p_eglGetPlatformDisplay) {
         edpy = p_eglGetPlatformDisplay(EGL_PLATFORM_WAYLAND_KHR, wdpy, NULL);
@@ -851,22 +1133,21 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
     }
     if (edpy == EGL_NO_DISPLAY) {
         DBG("eglGetPlatformDisplay(WAYLAND) returned EGL_NO_DISPLAY\n");
-        return 0;
+        goto fail_after_subsurface;
     }
     EGLint maj = 0, min = 0;
     if (!p_eglInitialize(edpy, &maj, &min)) {
         DBG("eglInitialize failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
-        return 0;
+        goto fail_after_subsurface;
     }
     DBG("EGL %d.%d initialized (Wayland)\n", maj, min);
     log_egl_diagnostics_once(edpy, /*is_wayland=*/1);
 
     if (!p_eglBindAPI(EGL_OPENGL_API)) {
         DBG("eglBindAPI(EGL_OPENGL_API) failed on Wayland EGL\n");
-        return 0;
+        goto fail_after_subsurface;
     }
 
-    /* 2) Pick an ARGB config. No native-visual matching needed on Wayland. */
     const EGLint cfg_attrs[] = {
         EGL_SURFACE_TYPE,    EGL_WINDOW_BIT,
         EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
@@ -883,7 +1164,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
     EGLint ncfg = 0;
     if (!p_eglChooseConfig(edpy, cfg_attrs, &cfg, 1, &ncfg) || ncfg <= 0 || !cfg) {
         DBG("eglChooseConfig (Wayland) returned no configs\n");
-        return 0;
+        goto fail_after_subsurface;
     }
 
     const EGLint ctx_attrs[] = {
@@ -896,19 +1177,16 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
     EGLContext ctx = p_eglCreateContext(edpy, cfg, EGL_NO_CONTEXT, ctx_attrs);
     if (ctx == EGL_NO_CONTEXT) {
         DBG("eglCreateContext (Wayland) failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
-        return 0;
+        goto fail_after_subsurface;
     }
 
-    /* 3) Wrap the wl_surface into a wl_egl_window. The compositor sees the
-     *    wl_egl_window as the buffer source for the surface; resize is via
-     *    `wl_egl_window_resize` (see nativeResize). */
-    wl_egl_window *wlwin = p_wl_egl_window_create(wsurf, phys_w, phys_h);
+    /* Wrap our owned child wl_surface — NOT GTK's — into a wl_egl_window. */
+    wl_egl_window *wlwin = p_wl_egl_window_create((wl_surface *) child_surface, phys_w, phys_h);
     if (!wlwin) {
         DBG("wl_egl_window_create returned NULL\n");
         p_eglDestroyContext(edpy, ctx);
-        return 0;
+        goto fail_after_subsurface;
     }
-
     EGLSurface surf = p_eglCreateWindowSurface(edpy, cfg,
                                                (EGLNativeWindowType) wlwin, NULL);
     if (surf == EGL_NO_SURFACE) {
@@ -916,19 +1194,37 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
             p_eglGetError ? p_eglGetError() : 0);
         if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
         p_eglDestroyContext(edpy, ctx);
-        return 0;
+        goto fail_after_subsurface;
     }
-
     if (!p_eglMakeCurrent(edpy, surf, surf, ctx)) {
         DBG("eglMakeCurrent (Wayland) failed: 0x%x\n",
             p_eglGetError ? p_eglGetError() : 0);
         p_eglDestroySurface(edpy, surf);
         if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
         p_eglDestroyContext(edpy, ctx);
-        return 0;
+        goto fail_after_subsurface;
     }
-
-    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 1);
+    /* eglSwapInterval(0) on Wayland — NOT a vsync choice, a deadlock fix.
+     *
+     * Mesa's Wayland EGL with interval=1 installs a `wl_surface.frame`
+     * callback before each swap and BLOCKS in `wl_display_dispatch_queue`
+     * until that callback fires. The callback only fires once the surface
+     * is *mapped* by the compositor — which for a wl_subsurface in default
+     * sync mode requires the PARENT surface to commit (so our `set_desync`
+     * state takes effect). The parent commit happens inside GTK's
+     * `connect_draw` handler on the same thread that our `eglSwapBuffers`
+     * is blocking → circular wait, the process freezes with no window.
+     *
+     * Setting interval=0 skips the frame-callback dance entirely. We give
+     * up frame-paced vsync on the Wayland path; the compositor still
+     * presents at refresh rate, just without throttling our render loop.
+     * A future commit can install our own frame callback on the child
+     * surface and gate redraws there to recover smooth vsync without the
+     * deadlock.
+     *
+     * Doesn't apply to the X11 path (eglSwapBuffers on X11 uses DRI3 +
+     * Present, no frame-callback semantics, no deadlock risk). */
+    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 0);
 
     EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
     if (!att) {
@@ -936,19 +1232,37 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
         p_eglDestroySurface(edpy, surf);
         if (p_wl_egl_window_destroy) p_wl_egl_window_destroy(wlwin);
         p_eglDestroyContext(edpy, ctx);
-        return 0;
+        goto fail_after_subsurface;
     }
-    att->display   = edpy;
-    att->config    = cfg;
-    att->context   = ctx;
-    att->surface   = surf;
-    att->wl_window = wlwin;
-    att->widthPx   = phys_w;
-    att->heightPx  = phys_h;
-    att->scale     = 1.0f;
-    DBG("attached (Wayland): edpy=%p ctx=%p surf=%p wlwin=%p\n",
-        edpy, (void*)ctx, (void*)surf, (void*)wlwin);
+    att->display          = edpy;
+    att->config           = cfg;
+    att->context          = ctx;
+    att->surface          = surf;
+    att->wl_queue         = queue;
+    att->wl_registry      = registry;
+    att->wl_compositor    = bind_state.compositor;
+    att->wl_subcompositor = bind_state.subcompositor;
+    att->wl_child_surface = child_surface;
+    att->wl_subsurface    = subsurface;
+    att->wl_window        = wlwin;
+    att->widthPx          = phys_w;
+    att->heightPx         = phys_h;
+    att->scale            = 1.0f;
+    DBG("attached (Wayland subsurface): edpy=%p ctx=%p surf=%p child_surf=%p subsurf=%p\n",
+        edpy, (void*)ctx, (void*)surf, (void*)child_surface, (void*)subsurface);
     return (jlong) (uintptr_t) att;
+
+fail_after_subsurface:
+    /* Failure path: tear down the subsurface chain in destruction order. */
+    p_wl_proxy_marshal_flags(subsurface, WL_SUBSURFACE_DESTROY, NULL,
+        p_wl_proxy_get_version(subsurface), WL_MARSHAL_FLAG_DESTROY);
+    p_wl_proxy_marshal_flags(child_surface, WL_SURFACE_DESTROY, NULL,
+        p_wl_proxy_get_version(child_surface), WL_MARSHAL_FLAG_DESTROY);
+    p_wl_proxy_destroy(bind_state.subcompositor);
+    p_wl_proxy_destroy(bind_state.compositor);
+    p_wl_proxy_destroy(registry);
+    p_wl_event_queue_destroy(queue);
+    return 0;
 }
 
 JNIEXPORT void JNICALL
@@ -971,14 +1285,27 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeDetach(
     if (att->xdisplay && att->child_colormap && p_XFreeColormap) {
         p_XFreeColormap(att->xdisplay, att->child_colormap);
     }
-    /* Wayland path: destroy the wl_egl_window AFTER eglDestroySurface so
-     * the EGL surface's buffer release runs before the compositor loses
-     * the wl_surface ↔ buffer link. Tao destroys the wl_surface itself
-     * later when the GTK window is unrealized — nothing for us to do
-     * about that. */
+    /* Wayland path: destroy the proxies in strict reverse-creation order to
+     * keep the compositor's bookkeeping happy.
+     *   wl_egl_window  → wl_subsurface → wl_child_surface → globals → registry → queue
+     * Inverting any pair triggers a `Bad object` protocol error from Mutter. */
     if (att->wl_window && p_wl_egl_window_destroy) {
         p_wl_egl_window_destroy(att->wl_window);
     }
+    if (att->wl_subsurface && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_subsurface),
+            WL_MARSHAL_FLAG_DESTROY);
+    }
+    if (att->wl_child_surface && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_child_surface, WL_SURFACE_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_child_surface),
+            WL_MARSHAL_FLAG_DESTROY);
+    }
+    if (att->wl_compositor && p_wl_proxy_destroy)    p_wl_proxy_destroy(att->wl_compositor);
+    if (att->wl_subcompositor && p_wl_proxy_destroy) p_wl_proxy_destroy(att->wl_subcompositor);
+    if (att->wl_registry && p_wl_proxy_destroy)      p_wl_proxy_destroy(att->wl_registry);
+    if (att->wl_queue && p_wl_event_queue_destroy)   p_wl_event_queue_destroy(att->wl_queue);
     free(att);
 }
 
