@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoEglBridge
-import io.github.kdroidfilter.nucleus.window.tao.NativeTaoGlxBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
 import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
@@ -124,38 +123,17 @@ internal class TaoComposeSceneHostLinux(
         else -> 0
     }
 
-    /**
-     * Selected at attach time, one of [Renderer.GLX] or [Renderer.EGL]. Driven
-     * by the JVM system property `nucleus.tao.linux.renderer` — defaults to
-     * [Renderer.GLX] during the parallel-rollout phase. Set to `egl` to
-     * exercise the new path that drives Skia through `GLAssembledInterface`
-     * + `eglGetProcAddress`, on its way to native Wayland support.
-     */
-    private var renderer: Renderer = Renderer.GLX
-
     fun attach() {
-        renderer = Renderer.fromSystemProperty()
-        // One-line breadcrumb so test runs make it obvious which path is
-        // live when the visual is otherwise indistinguishable. Logged once
-        // per window. Selector: `-Dnucleus.tao.linux.renderer=…` or
-        // `NUCLEUS_TAO_LINUX_RENDERER=…` env-var.
-        java.util.logging.Logger
-            .getLogger("nucleus.tao.linux")
-            .info("renderer=$renderer (selector: nucleus.tao.linux.renderer)")
-        check(NativeTaoBridge.isLoaded) { "nucleus_tao not loaded" }
-        check(
-            when (renderer) {
-                Renderer.GLX -> NativeTaoGlxBridge.isLoaded
-                Renderer.EGL -> NativeTaoEglBridge.isLoaded
-            },
-        ) { "Tao Linux $renderer helper library not loaded" }
+        check(NativeTaoBridge.isLoaded && NativeTaoEglBridge.isLoaded) {
+            "Tao Linux native libraries not loaded"
+        }
         // (kind, display, native_window) — see NativeTaoBridge.nativeLinuxHandles.
         //   kind=1 → Xlib  (`display` = X Display*, `native_window` = XID)
         //   kind=2 → Wayland (`display` = wl_display*, `native_window` = wl_surface*)
-        // GLX requires kind=1; EGL handles both. tao's GDK_BACKEND defaulting
-        // (Rust side, lib.rs::run_event_loop_blocking) keeps GLX-only sessions
-        // on X11 by forcing `GDK_BACKEND=x11` unless `NUCLEUS_TAO_LINUX_RENDERER=egl`
-        // releases it.
+        // tao on Linux always lands on kind=1 because lib.rs forces
+        // `GDK_BACKEND=x11` — Wayland-native rendering is blocked on a
+        // wl_subsurface child (see nucleus_tao_egl.c header). The kind=2
+        // dispatch below stays as forward-compat infrastructure.
         val handles = NativeTaoBridge.nativeLinuxHandles(window.handle)
         require(handles != null && handles.size == 3 && handles[0].toInt() != 0) {
             "Linux window handles unavailable; window not yet realised"
@@ -163,16 +141,8 @@ internal class TaoComposeSceneHostLinux(
         val kind = handles[0].toInt()
         val display = handles[1]
         val nativeWin = handles[2]
-        if (renderer == Renderer.GLX) {
-            check(kind == 1) {
-                "GLX requires an X11 window (kind=$kind). " +
-                    "Either keep `GDK_BACKEND=x11` set or switch to " +
-                    "NUCLEUS_TAO_LINUX_RENDERER=egl for native Wayland support."
-            }
-        } else {
-            check(kind == 1 || kind == 2) {
-                "Unsupported Tao window kind=$kind for the EGL renderer."
-            }
+        check(kind == 1 || kind == 2) {
+            "Unsupported Tao window kind=$kind"
         }
 
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
@@ -183,66 +153,41 @@ internal class TaoComposeSceneHostLinux(
         val initialW = widthPx.coerceAtLeast(0)
         val initialH = heightPx.coerceAtLeast(0)
 
-        attachmentHandle = when (renderer) {
-            Renderer.GLX -> {
-                val handle = NativeTaoGlxBridge.nativeAttach(display, nativeWin, initialW, initialH)
-                require(handle != 0L) { "Failed to create GLX context for XID=$nativeWin" }
-                handle
+        attachmentHandle = when (kind) {
+            1 -> {
+                val h = NativeTaoEglBridge.nativeAttachX11(display, nativeWin, initialW, initialH)
+                require(h != 0L) { "Failed to create EGL context for XID=$nativeWin" }
+                h
             }
-            Renderer.EGL -> when (kind) {
-                1 -> {
-                    val handle = NativeTaoEglBridge.nativeAttachX11(display, nativeWin, initialW, initialH)
-                    require(handle != 0L) { "Failed to create EGL context for XID=$nativeWin" }
-                    handle
+            2 -> {
+                // Wayland: physical pixels (logical × scale). Currently
+                // unreachable while lib.rs forces GDK_BACKEND=x11, but kept so
+                // that flipping the env-var (or landing the wl_subsurface
+                // patch) doesn't require revisiting this path.
+                val physW = (initialW * scale).toInt().coerceAtLeast(1)
+                val physH = (initialH * scale).toInt().coerceAtLeast(1)
+                val h = NativeTaoEglBridge.nativeAttachWayland(display, nativeWin, physW, physH)
+                require(h != 0L) {
+                    "Failed to create EGL context for wl_surface=$nativeWin — libwayland-egl missing?"
                 }
-                2 -> {
-                    // Wayland: hand the helper *physical* pixel dimensions
-                    // (logical × scale). On a HiDPI display tao reports the
-                    // integer scale via `nativeScaleFactor`; fractional scaling
-                    // (`wp_fractional_scale_v1`) lands in a follow-up — until
-                    // then we round-up.
-                    val physW = (initialW * scale).toInt().coerceAtLeast(1)
-                    val physH = (initialH * scale).toInt().coerceAtLeast(1)
-                    val handle = NativeTaoEglBridge.nativeAttachWayland(
-                        display, nativeWin, physW, physH,
-                    )
-                    require(handle != 0L) {
-                        "Failed to create EGL context for wl_surface=$nativeWin " +
-                            "— libwayland-egl unavailable?"
-                    }
-                    handle
-                }
-                else -> error("unreachable")
+                h
             }
+            else -> error("unreachable")
         }
 
-        // 1 GrDirectContext per window, paired with its own GL context (see
-        // nucleus_tao_glx.c / nucleus_tao_egl.c). Skia's intended ownership
-        // model: one direct context exclusively drives one GL context, no
-        // FBO 0 ambiguity, no manual GL-state reset between frames.
-        directContext = when (renderer) {
-            // Skiko's pre-built libskiko-linux-x64.so links against
-            // `glXGetCurrentContext`; `MakeGL()` resolves Skia's
-            // `GrGLMakeNativeInterface` on GLX directly.
-            Renderer.GLX -> DirectContext.makeGL()
-                ?: error(
-                    "DirectContext.makeGL() returned null — Skia couldn't bind to the GLX " +
-                        "context. Make sure libGL was dlopen-ed with RTLD_GLOBAL " +
-                        "(see nucleus_tao_glx.c).",
-                )
-            // EGL: hand Skia an `eglGetProcAddress`-backed proc loader through
-            // `GLAssembledInterface`. Same trick Skiko uses for Angle on
-            // Windows. Works on any EGL-capable driver, X11 or Wayland.
-            Renderer.EGL -> {
-                val fnPtr = NativeTaoEglBridge.nativeGetProcAddrFunctionPointer()
-                require(fnPtr != 0L) {
-                    "NativeTaoEglBridge.nativeGetProcAddrFunctionPointer returned 0 — " +
-                        "libEGL.so.1 not found?"
-                }
-                val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
-                DirectContext.makeGLWithInterface(iface)
-            }
+        // 1 GrDirectContext per window, paired with its own EGL context (see
+        // nucleus_tao_egl.c). Skia's intended ownership model: one direct
+        // context exclusively drives one GL context, no FBO 0 ambiguity, no
+        // manual GL-state reset between frames.
+        //
+        // We hand Skia an `eglGetProcAddress`-backed proc loader through
+        // `GLAssembledInterface` — same trick Skiko uses for Angle on Windows.
+        val fnPtr = NativeTaoEglBridge.nativeGetProcAddrFunctionPointer()
+        require(fnPtr != 0L) {
+            "NativeTaoEglBridge.nativeGetProcAddrFunctionPointer returned 0 — libEGL.so.1 missing?"
         }
+        val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
+        directContext = DirectContext.makeGLWithInterface(iface)
 
         val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
             getRootNode = { scene!!.rootDragAndDropNode },
@@ -312,19 +257,6 @@ internal class TaoComposeSceneHostLinux(
      * `updateWindowShape()`: rectangular when the window fills the screen,
      * rounded otherwise.
      */
-    fun applyRoundedShape() {
-        if (attachmentHandle == 0L || cornerRadiusPx <= 0) return
-        if (widthPx <= 0 || heightPx <= 0) return
-        // EGL path: XShape clipping is replaced by alpha-blended rounded
-        // corners drawn into the EGL surface itself (planned for the
-        // `with_transparent(true)` follow-up). For now the EGL path renders
-        // square; visual parity with GLX comes when that work lands.
-        if (renderer != Renderer.GLX) return
-        val isMaxOrFull = window.isMaximized || window.isFullscreen
-        val radius = if (isMaxOrFull) 0 else cornerRadiusPx
-        NativeTaoGlxBridge.nativeSetRoundedShape(attachmentHandle, widthPx, heightPx, radius)
-    }
-
     fun onScaleFactorChanged(newScale: Float) {
         if (newScale == scale) return
         scale = newScale
@@ -348,11 +280,7 @@ internal class TaoComposeSceneHostLinux(
         ) {
             return
         }
-        when (renderer) {
-            Renderer.GLX -> NativeTaoGlxBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-            Renderer.EGL -> NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        }
-        applyRoundedShape()
+        NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         // Drop the cached Skia surface so the next render rebuilds it at the
         // new size. Closing here (rather than lazily in `onRedrawRequested`)
         // keeps the lifetime tied to the GL context being current.
@@ -394,10 +322,7 @@ internal class TaoComposeSceneHostLinux(
         frameClock.sendFrame(now)
         flushingDispatcher.drain()
 
-        when (renderer) {
-            Renderer.GLX -> NativeTaoGlxBridge.nativeMakeCurrent(attachmentHandle)
-            Renderer.EGL -> NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
-        }
+        NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
@@ -423,33 +348,23 @@ internal class TaoComposeSceneHostLinux(
             cachedSurface = surface
         }
 
-        // GLX renders onto an XShape-clipped X window, so the corner pixels
-        // are discarded by the X server and an opaque white clear is fine.
-        // EGL has no XShape on the EGL drawable — corners are alpha-blended,
-        // so we clear to fully transparent and let the carve pass below
-        // mask out the rounded-corner cutouts.
-        val clearColor = if (renderer == Renderer.EGL) 0x00000000 else 0xFFFFFFFF.toInt()
-        surface.canvas.clear(clearColor)
+        // Clear to fully transparent so the carve pass below can zero out the
+        // alpha at the four rounded-corner cut-outs without leaving theme
+        // background pixels behind.
+        surface.canvas.clear(0x00000000)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        if (renderer == Renderer.EGL && cornerRadiusPx > 0 &&
-            !window.isMaximized && !window.isFullscreen
-        ) {
+        if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen) {
             carveRoundedCorners(surface.canvas, widthPx, heightPx, cornerRadiusPx)
         }
         surface.flushAndSubmit(syncCpu = false)
-        when (renderer) {
-            Renderer.GLX -> NativeTaoGlxBridge.nativePresent(attachmentHandle)
-            Renderer.EGL -> NativeTaoEglBridge.nativePresent(attachmentHandle)
-        }
+        NativeTaoEglBridge.nativePresent(attachmentHandle)
     }
 
     /**
-     * Alpha-blended replacement for the XShape rounded-rectangle clip used by
-     * the GLX path. Paints the four corner cut-outs with `BlendMode.CLEAR`
-     * (which sets the destination alpha to 0) so the EGL surface shows the
-     * compositor's content behind those pixels — same visual result as XShape
-     * `ShapeBounding`, but driven entirely from the GL backbuffer so it works
-     * on Wayland too.
+     * Alpha-blended rounded-corner clip. Paints the four corner cut-outs with
+     * `BlendMode.CLEAR` (destination alpha → 0) so the compositor blends the
+     * content behind those pixels — works uniformly on X11 and Wayland (no
+     * XShape needed).
      *
      * The path is `full_rect XOR rounded_rect` via `EVEN_ODD` fill, which
      * yields exactly the four corner pieces; AA at the rounded edge stays in
@@ -587,59 +502,13 @@ internal class TaoComposeSceneHostLinux(
         directContext?.close()
         directContext = null
         if (attachmentHandle != 0L) {
-            when (renderer) {
-                Renderer.GLX -> NativeTaoGlxBridge.nativeDetach(attachmentHandle)
-                Renderer.EGL -> NativeTaoEglBridge.nativeDetach(attachmentHandle)
-            }
+            NativeTaoEglBridge.nativeDetach(attachmentHandle)
             attachmentHandle = 0L
         }
     }
 
     private companion object {
         private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
-    }
-
-    /**
-     * GL backend selector. Phase 1 ships both implementations side-by-side;
-     * the choice is JVM-process-wide via the `nucleus.tao.linux.renderer`
-     * system property (defaults to [GLX]).
-     */
-    private enum class Renderer {
-        /** Legacy: GLX child window + Skia's `MakeGL()`. X11-only. */
-        GLX,
-
-        /**
-         * EGL window surface + `GLAssembledInterface` over `eglGetProcAddress`.
-         * Phase 1 covers X11 only (matches the GLX path); Wayland support
-         * lands in a follow-up commit.
-         */
-        EGL,
-        ;
-
-        companion object {
-            /**
-             * Resolves the renderer in priority order:
-             *   1. `-Dnucleus.tao.linux.renderer=…` (JVM system property)
-             *   2. `NUCLEUS_TAO_LINUX_RENDERER=…`   (process env-var)
-             *   3. default: `glx`
-             *
-             * The env-var fallback exists so a single export covers both
-             * the Kotlin side (this method) and the Rust side (lib.rs reads
-             * the same env-var to decide whether to force `GDK_BACKEND=x11`
-             * for the GLX path). `-D` properties aren't exposed as
-             * env-vars to Rust, so without this dual lookup users would
-             * have to set both.
-             */
-            fun fromSystemProperty(): Renderer {
-                val raw = System.getProperty("nucleus.tao.linux.renderer")
-                    ?: System.getenv("NUCLEUS_TAO_LINUX_RENDERER")
-                    ?: "glx"
-                return when (raw.trim().lowercase()) {
-                    "egl" -> EGL
-                    else -> GLX
-                }
-            }
-        }
     }
 
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {

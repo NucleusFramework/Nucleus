@@ -1170,30 +1170,24 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 fn run_event_loop_blocking() {
-    // Skiko's bundled `libskiko-linux-x64.so` only links against
-    // `glXGetCurrentContext` — its `GrGLMakeNativeInterface()` is the GLX
-    // flavour, so an EGL/Wayland context is invisible to `DirectContext.makeGL()`.
-    // The new EGL path goes through `GLAssembledInterface` + `eglGetProcAddress`
-    // and works on both X11 and Wayland; the legacy GLX path still requires
-    // a real GLX-compatible XID so we keep forcing `GDK_BACKEND=x11` for it.
+    // Force GTK onto the X11 backend. Why: even though our EGL helper has
+    // a Wayland attach path (and Skia's GL backend is platform-agnostic via
+    // GLAssembledInterface), tao 0.35 + GTK 3 owns the wl_surface and paints
+    // a cairo-shm buffer to it on every draw signal — see the KNOWN
+    // LIMITATION block in nucleus_tao_egl.c for the full diagnosis. Until
+    // we land a wl_subsurface child, going through XWayland is the only
+    // path that doesn't trip xdg_shell protocol errors.
     //
-    // Selection mirrors `TaoComposeSceneHostLinux.Renderer.fromSystemProperty`:
-    //   - `NUCLEUS_TAO_LINUX_RENDERER=egl` → don't force the backend, GDK is
-    //     free to pick Wayland on a Wayland session and X11 elsewhere
-    //   - anything else (including unset) → force `GDK_BACKEND=x11` so GLX
-    //     keeps working transparently on XWayland
-    //
-    // Two env-vars are used (one for tao on the Rust side here, one
-    // `-Dnucleus.tao.linux.renderer` for the JVM side) because the JVM
-    // doesn't propagate `-D` properties as process env-vars; the Kotlin
-    // side reads the env-var as a fallback so a single `NUCLEUS_TAO_LINUX_RENDERER=egl`
-    // export covers both.
+    // Power-user escape hatch: setting NUCLEUS_TAO_LINUX_RENDERER=wayland
+    // releases the forcing so the broken Wayland-native code path can be
+    // exercised for development of the wl_subsurface fix. Anything else
+    // (including unset, the default) keeps us on XWayland.
     #[cfg(target_os = "linux")]
     {
-        let want_egl = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")
-            .map(|v| v.to_string_lossy().eq_ignore_ascii_case("egl"))
+        let opt_in_wayland = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")
+            .map(|v| v.to_string_lossy().eq_ignore_ascii_case("wayland"))
             .unwrap_or(false);
-        if !want_egl && std::env::var_os("GDK_BACKEND").is_none() {
+        if !opt_in_wayland && std::env::var_os("GDK_BACKEND").is_none() {
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }

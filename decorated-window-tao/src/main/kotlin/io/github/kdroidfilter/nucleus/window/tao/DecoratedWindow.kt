@@ -323,11 +323,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 fullscreen = fsNow,
             )
         }
-        // Reapply the rounded-rect XShape now that we've observed the
-        // post-resize maximized flag — `host.onResized` ran ahead of the
-        // is_maximized query and may have set the wrong shape on a
-        // borderline maximize/restore frame.
-        host.applyRoundedShape()
+        // EGL replaces the XShape rounded-clip with a Skia post-render
+        // BlendMode.CLEAR carve in `host.onRedrawRequested` — the next
+        // redraw (already requested by tao after the resize) picks up the
+        // updated isMaximized / isFullscreen flag and skips the carve when
+        // the window goes rectangular.
         // Push window-local bounds (0,0,w,h) on resize.
         pushA11yBoundsLinux(a11yController.linuxXid, window.handle, w, h)
     }
