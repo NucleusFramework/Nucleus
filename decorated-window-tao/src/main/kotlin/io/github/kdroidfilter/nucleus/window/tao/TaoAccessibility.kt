@@ -100,6 +100,12 @@ object TaoA11yFlag {
     const val MODAL                = 1 shl 9
     const val LIVE_REGION_POLITE   = 1 shl 10
     const val LIVE_REGION_ASSERTIVE = 1 shl 11
+    // Linux/AT-SPI-only bits — macOS and Windows ignore them. Wire format kept
+    // at v4 because flags ride in a u16 we already had spare bits in.
+    const val MULTI_SELECTABLE = 1 shl 12
+    const val EXPANDED_TRUE    = 1 shl 13
+    const val EXPANDED_FALSE   = 1 shl 14
+    const val HIDDEN           = 1 shl 15
 }
 
 @Suppress("MagicNumber")
@@ -168,6 +174,10 @@ internal object TaoAccessibilityRegistry {
     fun dispatchScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
         byNsView[nsView]?.onScrollByInvoked(nodeId, dx, dy)
     }
+
+    fun dispatchSetValue(nsView: Long, nodeId: Long, value: Double) {
+        byNsView[nsView]?.onSetValueInvoked(nodeId, value)
+    }
 }
 
 /**
@@ -191,6 +201,13 @@ internal class TaoAccessibilityController(
      * dispatched).
      */
     private var nsView: Long = 0L
+
+    /**
+     * Linux-only convenience accessor: the X11 Window XID cached at attach
+     * time, or 0 before attach / on other platforms. Used by the
+     * DecoratedWindow Linux path to push focus + bounds updates to AccessKit.
+     */
+    val linuxXid: Long get() = nsView
 
     /**
      * Whether the next [pushSnapshot] should bypass the `nativeA11yIsActive`
@@ -223,16 +240,32 @@ internal class TaoAccessibilityController(
         // well before any Tao close machinery.
         //
         // The "nsView" field name is historical — on Windows it stores the
-        // HWND (the Kotlin-side action registry treats it as an opaque key
-        // and the native side resolves it back to the actual HWND/NSView).
+        // HWND, on Linux the X11 Window XID. The Kotlin-side action registry
+        // treats it as an opaque key and the native side resolves it back to
+        // the actual HWND/NSView/XID.
         val os = System.getProperty("os.name", "").lowercase()
-        nsView = if (os.contains("win")) {
-            // Force-load nucleus_tao_a11y.dll so the Rust side can resolve
-            // its exports via GetModuleHandleW.
-            NativeTaoA11yWindowsBridge.isLoaded
-            NativeTaoBridge.nativeHwndHandle(windowHandle)
-        } else {
-            NativeTaoBridge.nativeNsViewHandle(windowHandle)
+        nsView = when {
+            os.contains("win") -> {
+                // Force-load nucleus_tao_a11y.dll so the Rust side can
+                // resolve its exports via GetModuleHandleW.
+                NativeTaoA11yWindowsBridge.isLoaded
+                NativeTaoBridge.nativeHwndHandle(windowHandle)
+            }
+            os.contains("mac") || os.contains("darwin") ->
+                NativeTaoBridge.nativeNsViewHandle(windowHandle)
+            else -> {
+                // Linux: AT-SPI projection lives inside nucleus_tao itself
+                // (no sibling .so to load). The handle is the X11 Window
+                // XID — index 2 of the `nativeLinuxHandles` triple,
+                // assuming kind=1 (Xlib). GLX path forces GDK_BACKEND=x11
+                // so we never see kind=2 here.
+                val handles = NativeTaoBridge.nativeLinuxHandles(windowHandle)
+                if (handles != null && handles.size == 3 && handles[0].toInt() == 1) {
+                    handles[2]
+                } else {
+                    0L
+                }
+            }
         }
         if (nsView == 0L) return
         TaoAccessibilityRegistry.register(windowHandle, this)
@@ -350,6 +383,12 @@ internal class TaoAccessibilityController(
         val customActions: List<() -> Unit> = emptyList(),
         /** Absolute scroll delta in pixels. Wired to `SemanticsActions.ScrollBy`. */
         val onScrollBy: ((dx: Float, dy: Float) -> Unit)? = null,
+        /**
+         * Slider / progress value setter (Linux AT-SPI `Value.SetCurrentValue`).
+         * Receives the absolute value in the slider's own range; the handler
+         * clamps and forwards to `SemanticsActions.SetProgress`.
+         */
+        val onSetValue: ((Float) -> Unit)? = null,
     )
 
     internal fun onCustomActionInvoked(nodeId: Long, index: Int) {
@@ -363,6 +402,12 @@ internal class TaoAccessibilityController(
     internal fun onScrollByInvoked(nodeId: Long, dx: Float, dy: Float) {
         if (isDisposed) return
         actionHandlers[nodeId]?.onScrollBy?.invoke(dx, dy)
+        wakeEventLoop()
+    }
+
+    internal fun onSetValueInvoked(nodeId: Long, value: Double) {
+        if (isDisposed) return
+        actionHandlers[nodeId]?.onSetValue?.invoke(value.toFloat())
         wakeEventLoop()
     }
 }

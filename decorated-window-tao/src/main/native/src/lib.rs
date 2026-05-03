@@ -12,6 +12,8 @@
 //   - Dispatches pointer / mouse-button / keyboard events to Kotlin.
 
 mod keymap;
+#[cfg(target_os = "linux")]
+mod a11y_linux;
 
 use std::collections::HashMap;
 #[cfg(target_os = "macos")]

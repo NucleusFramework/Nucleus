@@ -66,6 +66,13 @@ internal class TaoComposeSceneHostLinux(
     /** App-level post-dispatch hook. See [TaoComposeSceneHost.keyHandler]. */
     var keyHandler: ((KeyEvent) -> Boolean)? = null
 
+    /**
+     * SemanticsOwnerListener installed when the host carries an a11y
+     * controller. Forwarded through [LinuxTaoPlatformContext] so Compose's
+     * BaseComposeScene picks it up. Set once before [attach].
+     */
+    var semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null
+
     private val windowInfo = LinuxTaoWindowInfo()
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
@@ -137,7 +144,17 @@ internal class TaoComposeSceneHostLinux(
         require(handle != 0L) { "Failed to create GLX context for XID=$xid" }
         attachmentHandle = handle
 
+        // 1 GrDirectContext per window, paired with its own GLX context
+        // (see nucleus_tao_glx.c — per-window contexts share display lists
+        // with a process-wide seed). This is Skia's intended ownership
+        // model: one direct context exclusively drives one GL context, no
+        // FBO 0 ambiguity, no manual GL-state reset between frames.
         directContext = DirectContext.makeGL()
+            ?: error(
+                "DirectContext.makeGL() returned null — Skia couldn't bind to the GLX " +
+                    "context. Make sure libGL was dlopen-ed with RTLD_GLOBAL " +
+                    "(see nucleus_tao_glx.c)."
+            )
 
         val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
             getRootNode = { scene!!.rootDragAndDropNode },
@@ -150,12 +167,37 @@ internal class TaoComposeSceneHostLinux(
                 windowHandle = window.handle,
                 topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
                 windowInfo = windowInfo,
+                semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
             ),
             invalidate = {
                 window.requestRedraw()
             },
         )
+    }
+
+    /** Current scale factor (logical→physical multiplier). */
+    fun density(): Float = scale
+
+    // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
+    // recomposition collapses into a single push at the next render tick.
+    private var a11ySyncScheduled: Runnable? = null
+
+    /**
+     * Schedules [block] to run on the GTK main thread "soon" — at the next
+     * redraw. Used by the SemanticsObserver to coalesce per-recomposition
+     * change notifications into one snapshot push per frame, mirroring the
+     * macOS / Windows behavior.
+     */
+    fun scheduleA11ySync(block: () -> Unit) {
+        if (a11ySyncScheduled != null) return
+        val r = Runnable {
+            a11ySyncScheduled = null
+            block()
+        }
+        a11ySyncScheduled = r
+        flushingDispatcher.enqueue(r)
+        window.requestRedraw()
     }
 
     fun setContent(content: @Composable () -> Unit) {
@@ -419,6 +461,12 @@ internal class TaoComposeSceneHostLinux(
             window.requestRedraw()
         }
 
+        /** Same effect as `dispatch` but skips the no-op coroutine context. */
+        fun enqueue(block: Runnable) {
+            queue.add(block)
+            window.requestRedraw()
+        }
+
         fun drain() {
             var remaining = queue.size
             while (remaining-- > 0) {
@@ -452,6 +500,7 @@ private class LinuxTaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
+    override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
 

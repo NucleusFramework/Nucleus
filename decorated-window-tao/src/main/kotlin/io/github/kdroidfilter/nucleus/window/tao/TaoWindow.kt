@@ -1,6 +1,7 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -28,6 +29,16 @@ class TaoWindow internal constructor(
     private var closeRequestedListener: (() -> Unit)? = null
     private var destroyedListener: (() -> Unit)? = null
     private var redrawListener: (() -> Unit)? = null
+    // Coalesces concurrent `requestRedraw` calls into one pending native request:
+    // tao on Linux only drains one entry from its `draws` channel per event-loop
+    // iteration, but Compose readily produces multiple invalidations per frame
+    // (FlushingDispatcher.dispatch, scene invalidate, onResized…). Without
+    // coalescing, the channel is flooded by the active window's redraws and
+    // requests for any *other* window (e.g. a freshly-opened DecoratedDialog)
+    // get buried — observable as a dialog stuck on its initial frame and
+    // displaying black. Cleared in `dispatch(REDRAW_REQUESTED)`, just before
+    // the listener runs, so a redraw posted *during* render still gets through.
+    private val redrawPending = AtomicBoolean(false)
     private val focusListeners = mutableListOf<(Boolean) -> Unit>()
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
     private var pointerExitedListener: (() -> Unit)? = null
@@ -51,6 +62,7 @@ class TaoWindow internal constructor(
     }
 
     fun requestRedraw() {
+        if (!redrawPending.compareAndSet(false, true)) return
         NativeTaoBridge.nativeRequestRedraw(handle)
     }
 
@@ -274,7 +286,13 @@ class TaoWindow internal constructor(
                 destroyedListener?.invoke()
                 TaoApplication.remove(handle)
             }
-            TaoEventCode.REDRAW_REQUESTED -> redrawListener?.invoke()
+            TaoEventCode.REDRAW_REQUESTED -> {
+                // Clear *before* invoking — if the listener (which renders) posts
+                // another invalidate via `requestRedraw`, the next frame must go
+                // through. Setting after would drop legitimate follow-up frames.
+                redrawPending.set(false)
+                redrawListener?.invoke()
+            }
             TaoEventCode.FOCUSED -> focusListeners.forEach { it.invoke(true) }
             TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
             TaoEventCode.CURSOR_MOVED -> pointerMoveListener?.invoke(a, b)

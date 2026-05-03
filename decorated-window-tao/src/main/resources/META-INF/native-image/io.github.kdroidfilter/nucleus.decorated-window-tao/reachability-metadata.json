@@ -4,12 +4,14 @@
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge",
             "jniAccessible": true,
             "methods": [
-                {
-                    "name": "dispatchDeepLink",
-                    "parameterTypes": [
-                        "java.lang.String"
-                    ]
-                }
+                { "name": "dispatchDeepLink", "parameterTypes": ["java.lang.String"] },
+                { "name": "dispatchA11yAction", "parameterTypes": ["long","long","int"] },
+                { "name": "dispatchA11yActionByNsView", "parameterTypes": ["long","long","int"] },
+                { "name": "dispatchA11ySetText", "parameterTypes": ["long","long","java.lang.String"] },
+                { "name": "dispatchA11ySetSelection", "parameterTypes": ["long","long","int","int"] },
+                { "name": "dispatchA11yCustomAction", "parameterTypes": ["long","long","int"] },
+                { "name": "dispatchA11yScrollBy", "parameterTypes": ["long","long","float","float"] },
+                { "name": "dispatchA11ySetValue", "parameterTypes": ["long","long","double"] }
             ]
         },
         {

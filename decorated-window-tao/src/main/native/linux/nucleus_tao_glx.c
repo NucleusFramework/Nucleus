@@ -278,7 +278,7 @@ typedef struct {
     Window      parent_xid;       /* GTK's X11 window */
     Window      child_xid;        /* Our GL-visual child (0 if rendering directly into parent) */
     Colormap    child_colormap;
-    GLXContext  glx_context;
+    GLXContext  glx_context;      /* Per-window context, share-lists with `g_share_root_ctx`. Destroyed in `nativeDetach`. */
     Drawable    glx_drawable;     /* = child_xid if non-zero, else parent_xid */
     int         widthPx;
     int         heightPx;
@@ -289,6 +289,36 @@ typedef struct {
     XID         current_cursor;
     int         current_cursor_code;
 } GlxAttachment;
+
+/* ── Process-wide GLX seed state ──────────────────────────────────────────
+ * Each Tao window gets its own `GLXContext`, paired one-to-one with its
+ * Skia `GrDirectContext`. That's Skia's intended ownership model: one
+ * direct context exclusively drives one GL context, no FBO 0 ambiguity,
+ * no manual `resetGLAll` between frames.
+ *
+ * Per-window contexts are created with `g_share_root_ctx` as the share-list
+ * parent, so display lists / textures / buffers are visible across windows.
+ * That's the canonical multi-window OpenGL pattern and the NVIDIA driver
+ * handles it correctly. The previous "single shared context across all
+ * windows" model crashed inside `libnvidia-glcore` (driver 590 on Blackwell)
+ * with NULL-source memcpys in `_nFlushAndSubmit`: two `GrDirectContext`s
+ * stomping on the same GL state machine corrupted each other's VBO
+ * bookkeeping. Share lists fix this because the driver knows the resources
+ * are co-owned, not aliased between rivals.
+ *
+ * The seed (`g_share_root_ctx`) is lazily created on first `nativeAttach`
+ * and never destroyed — its lifetime needs to outlive every per-window
+ * context that shares with it, and on process exit the X server cleans up.
+ * The seed is never made current and never used for rendering; it just
+ * anchors the share-list namespace.
+ *
+ * The cached XVisualInfo is captured by value: its `Visual *` points into
+ * Xlib's per-display internal data and is valid for the lifetime of the
+ * Display, so it's safe to reuse for child-window creation after `XFree`. */
+static GLXContext  g_share_root_ctx = NULL;
+static Display    *g_share_root_dpy = NULL;
+static XVisualInfo g_shared_vinfo;
+static int         g_shared_vinfo_valid = 0;
 
 static int parent_visual_is_gl_compatible(Display *dpy, XVisualInfo *parent_info) {
     if (!p_glXGetConfig) return 0;
@@ -329,21 +359,48 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
     DBG("parent attrs: depth=%d wxh=%dx%d visual=%p root=0x%lx\n",
         attrs.depth, attrs.width, attrs.height, (void*)attrs.visual, attrs.root);
 
-    /* Pick a baseline FBConfig-compatible visual. The single-screen JVM-owned
-     * X display we got from tao only has screen 0. */
+    /* Lazy-create the process-wide share-list seed + cache its visual on
+     * the first attach. Subsequent attaches just reuse the cached state.
+     * The seed is never made current — it only anchors the share-list
+     * namespace for the per-window contexts created below. */
     int screen = 0;
-    int single_buf_attribs[] = {
-        GLX_RGBA, GLX_DOUBLEBUFFER,
-        GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8,
-        GLX_DEPTH_SIZE, 0, GLX_STENCIL_SIZE, 8,
-        (int)None
-    };
-    XVisualInfo *vinfo = p_glXChooseVisual(dpy, screen, single_buf_attribs);
-    if (!vinfo) {
-        DBG("glXChooseVisual returned NULL on screen %d\n", screen);
+    if (!g_share_root_ctx) {
+        int single_buf_attribs[] = {
+            GLX_RGBA, GLX_DOUBLEBUFFER,
+            GLX_RED_SIZE, 8, GLX_GREEN_SIZE, 8, GLX_BLUE_SIZE, 8, GLX_ALPHA_SIZE, 8,
+            GLX_DEPTH_SIZE, 0, GLX_STENCIL_SIZE, 8,
+            (int)None
+        };
+        XVisualInfo *vinfo = p_glXChooseVisual(dpy, screen, single_buf_attribs);
+        if (!vinfo) {
+            DBG("glXChooseVisual returned NULL on screen %d\n", screen);
+            return 0;
+        }
+        DBG("glXChooseVisual ok: depth=%d visualid=0x%lx\n", vinfo->depth, vinfo->visualid);
+
+        GLXContext root = p_glXCreateContext(dpy, vinfo, NULL, 1 /* direct rendering */);
+        if (!root) {
+            DBG("glXCreateContext returned NULL for share-root\n");
+            p_XFree(vinfo);
+            return 0;
+        }
+        DBG("share-root ctx created: %p\n", (void*)root);
+        /* Capture vinfo by value — `->visual` is process-lifetime, owned by
+         * the Display, so reusing it after XFree(vinfo) is safe. */
+        g_shared_vinfo = *vinfo;
+        g_shared_vinfo_valid = 1;
+        g_share_root_ctx = root;
+        g_share_root_dpy = dpy;
+        p_XFree(vinfo);
+    } else if (dpy != g_share_root_dpy) {
+        /* Defensive: in this codebase tao opens exactly one X Display so all
+         * windows share it; bail loudly if a future change breaks that. */
+        DBG("ERROR: nativeAttach called with a different Display than the one "
+            "that created g_share_root_ctx — share-list model assumes a single Display.\n");
         return 0;
     }
-    DBG("glXChooseVisual ok: depth=%d visualid=0x%lx\n", vinfo->depth, vinfo->visualid);
+
+    XVisualInfo *vinfo = &g_shared_vinfo;
 
     /* If GTK's parent window already uses a GLX-compatible visual we render
      * directly into it (cheapest path). Otherwise create a child X11 window
@@ -377,7 +434,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
                                 CWBorderPixel | CWColormap | CWEventMask, &swa);
         if (!child) {
             p_XFreeColormap(dpy, child_cmap);
-            p_XFree(vinfo);
             return 0;
         }
         /* Make the child input-transparent so X11 routes pointer / keyboard
@@ -393,19 +449,23 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
 
     DBG("can_render_into_parent=%d child_xid=0x%lx\n", can_render_into_parent, child);
 
-    GLXContext ctx = p_glXCreateContext(dpy, vinfo, NULL, 1 /* direct rendering */);
+    Drawable drawable = child ? (Drawable)child : (Drawable)parent;
+    /* Per-window context, sharing display lists with the seed. Each window
+     * owning its own context matches Skia's `1 GrDirectContext = 1 GLContext`
+     * contract and avoids the FBO 0 reuse hazard of a single shared context. */
+    GLXContext ctx = p_glXCreateContext(dpy, &g_shared_vinfo, g_share_root_ctx,
+                                        1 /* direct rendering */);
     if (!ctx) {
-        DBG("glXCreateContext returned NULL (direct=true)\n");
+        DBG("glXCreateContext (per-window, share-root=%p) returned NULL\n",
+            (void*)g_share_root_ctx);
         if (child) {
             p_XDestroyWindow(dpy, child);
             p_XFreeColormap(dpy, child_cmap);
         }
-        p_XFree(vinfo);
         return 0;
     }
-
-    Drawable drawable = child ? (Drawable)child : (Drawable)parent;
-    DBG("glXCreateContext ok: ctx=%p drawable=0x%lx\n", (void*)ctx, drawable);
+    DBG("per-window ctx=%p (share-root=%p) drawable=0x%lx\n",
+        (void*)ctx, (void*)g_share_root_ctx, drawable);
     if (!p_glXMakeCurrent(dpy, drawable, ctx)) {
         DBG("glXMakeCurrent failed\n");
         p_glXDestroyContext(dpy, ctx);
@@ -413,10 +473,9 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
             p_XDestroyWindow(dpy, child);
             p_XFreeColormap(dpy, child_cmap);
         }
-        p_XFree(vinfo);
         return 0;
     }
-    /* VSync ON — same rationale as the WGL path. */
+    /* VSync ON — same rationale as the WGL path. Per-drawable (GLX_EXT_swap_control). */
     if (p_glXSwapIntervalEXT) p_glXSwapIntervalEXT(dpy, drawable, 1);
 
     GlxAttachment *att = (GlxAttachment *)calloc(1, sizeof(GlxAttachment));
@@ -427,7 +486,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
             p_XDestroyWindow(dpy, child);
             p_XFreeColormap(dpy, child_cmap);
         }
-        p_XFree(vinfo);
         return 0;
     }
     att->display = dpy;
@@ -439,7 +497,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeAttach(
     att->widthPx = widthPx > 0 ? widthPx : attrs.width;
     att->heightPx = heightPx > 0 ? heightPx : attrs.height;
     att->scale = 1.0f;
-    p_XFree(vinfo);
     return (jlong)(uintptr_t)att;
 }
 
@@ -450,6 +507,10 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeDetach(
     (void)env; (void)clazz;
     GlxAttachment *att = (GlxAttachment *)(uintptr_t)handle;
     if (!att) return;
+    /* Release the binding before destroying the context. The share-root seed
+     * (`g_share_root_ctx`) is intentionally left alive — it lives for the
+     * process lifetime so the share-list namespace persists across
+     * window open/close cycles. */
     if (att->display && p_glXMakeCurrent) {
         p_glXMakeCurrent(att->display, (Drawable)None, NULL);
     }
@@ -476,7 +537,9 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlxBridge_nativeMakeCurr
     (void)env; (void)clazz;
     GlxAttachment *att = (GlxAttachment *)(uintptr_t)handle;
     if (!att) return;
-    p_glXMakeCurrent(att->display, att->glx_drawable, att->glx_context);
+    int ok = p_glXMakeCurrent(att->display, att->glx_drawable, att->glx_context);
+    DBG("nativeMakeCurrent: ctx=%p drawable=0x%lx ok=%d\n",
+        (void*)att->glx_context, att->glx_drawable, ok);
 }
 
 JNIEXPORT void JNICALL

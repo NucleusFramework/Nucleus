@@ -234,6 +234,21 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     val host = TaoComposeSceneHostLinux(window)
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
+
+    // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
+    // Same SemanticsObserver pipeline as macOS / Windows. The controller
+    // resolves the X11 XID at attach time and pushes the binary snapshot
+    // through nucleus_tao's accesskit_unix Adapter, which speaks AT-SPI2
+    // over D-Bus. Orca / accerciser see the tree like any other native
+    // GTK app — modulo XWayland coordinates handled in `applyA11yBounds`.
+    val a11yController = TaoAccessibilityController(window.handle)
+    val a11yObserver = TaoSemanticsObserver(
+        controller = a11yController,
+        densityProvider = { host.density() },
+        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+    )
+    host.semanticsOwnerListener = a11yObserver
+
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
     val titleBarHeightState = host.titleBarHeightDpState.also { it.value = 32f }
 
@@ -247,6 +262,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     val linuxDe = LinuxDesktopEnvironment.Current
     window.onWindowReady { w, h ->
         host.attach()
+        // Bring the AccessKit adapter up before we hand the SemanticsOwnerListener
+        // its first push — same ordering as the macOS path. attach() resolves
+        // the X11 XID via NativeTaoBridge.nativeLinuxHandles().
+        a11yController.attach()
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
@@ -270,7 +289,20 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
         host.onResized(w, h)
         host.onRedrawRequested()
-        if (visible) window.show()
+        if (visible) {
+            window.show()
+            // The synchronous render above happened while the GTK parent was
+            // still unmapped — its child GLX drawable's backbuffer is either
+            // invalidated or never surfaced. Tao on Linux doesn't emit an
+            // Expose-equivalent on map, and a static window (no animations,
+            // no hover state) never produces a follow-up redraw on its own,
+            // so the dialog stays black until something forces a repaint.
+            // Posting a redraw here guarantees one frame after the parent
+            // is mapped. Animated windows (the main window with hover/blob
+            // effects) also benefit but were masking this bug via their
+            // continuous redraw stream.
+            window.requestRedraw()
+        }
     }
     window.onResized { w, h ->
         host.onResized(w, h)
@@ -292,9 +324,23 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // is_maximized query and may have set the wrong shape on a
         // borderline maximize/restore frame.
         host.applyRoundedShape()
+        // Push window-local bounds to AccessKit. We pass (0,0,w,h) for both
+        // outer and inner — Orca's flat-review under XWayland still gets
+        // accurate within-window positions; absolute screen coords would
+        // require an XTranslateCoordinates round-trip we leave to a follow-up.
+        if (a11yController.linuxXid != 0L) {
+            NativeTaoBridge.nativeA11ySetRootBounds(
+                a11yController.linuxXid,
+                0L, 0L, w.toLong(), h.toLong(),
+                0L, 0L, w.toLong(), h.toLong(),
+            )
+        }
     }
     window.onCloseRequested { onCloseRequest() }
-    window.onDestroyed { host.detach() }
+    window.onDestroyed {
+        a11yController.dispose()
+        host.detach()
+    }
     window.onScaleFactorChanged { host.onScaleFactorChanged(it) }
     window.onPointerMoved { x, y -> if (enabled) host.onPointerMove(x, y) }
     window.onPointerExited { if (enabled) host.onPointerExited() }
@@ -307,6 +353,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onFocusChanged { focused ->
         stateHolder.value = stateHolder.value.copy(active = focused)
         host.onFocusChanged(focused)
+        if (a11yController.linuxXid != 0L) {
+            // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
+            // on the toplevel matches the actual X focus.
+            NativeTaoBridge.nativeA11ySetWindowFocus(a11yController.linuxXid, focused)
+        }
     }
 
     if (alwaysOnTop) window.setAlwaysOnTop(true)

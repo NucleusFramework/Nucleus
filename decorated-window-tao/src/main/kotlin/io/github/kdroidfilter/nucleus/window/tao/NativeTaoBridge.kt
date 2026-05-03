@@ -297,6 +297,38 @@ internal object NativeTaoBridge {
     external fun nativeA11yPostFocusChanged(nsView: Long, nodeId: Long)
 
     /**
+     * Linux-only: pushes outer + inner window geometry (in screen-relative
+     * physical pixels) into AccessKit's root-bounds slot. Required because
+     * AT-SPI's `Component.GetExtents(SCREEN)` queries return window-local
+     * coordinates without it. We're an XWayland client thanks to
+     * `GDK_BACKEND=x11`, so XGetGeometry / XTranslateCoordinates produce
+     * accurate screen positions even on Wayland.
+     *
+     * No-op on macOS / Windows.
+     */
+    @JvmStatic
+    external fun nativeA11ySetRootBounds(
+        nsView: Long,
+        outerX: Long,
+        outerY: Long,
+        outerW: Long,
+        outerH: Long,
+        innerX: Long,
+        innerY: Long,
+        innerW: Long,
+        innerH: Long,
+    )
+
+    /**
+     * Linux-only: forwards X11 focus state to AccessKit's adapter so AT-SPI's
+     * `STATE_ACTIVE` on the toplevel matches the actual window focus. On
+     * macOS / Windows the platform UIA / NSAccessibility hooks observe focus
+     * directly.
+     */
+    @JvmStatic
+    external fun nativeA11ySetWindowFocus(nsView: Long, focused: Boolean)
+
+    /**
      * Reads the `voiceOverEnabled` user default. Returns true when VoiceOver
      * is currently running (or has been left enabled). Cheap CFPreferences
      * read; safe to poll. Updates are not pushed — callers may re-query at
@@ -371,6 +403,17 @@ internal object NativeTaoBridge {
     @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_scroll_by)
     fun dispatchA11yScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
         TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
+    }
+
+    /**
+     * Linux-only: AT-SPI `Value.SetCurrentValue` dispatcher. AccessKit's
+     * Value interface routes through `Action::SetValue` with a NumericValue
+     * payload; we forward the absolute value to Compose's SetProgress action.
+     */
+    @JvmStatic
+    @Suppress("unused") // called from JNI (a11y_linux.rs → forward_action_to_jvm)
+    fun dispatchA11ySetValue(nsView: Long, nodeId: Long, value: Double) {
+        TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value)
     }
 }
 

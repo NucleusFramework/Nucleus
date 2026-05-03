@@ -31,6 +31,14 @@ gtk = "0.18"
 # so reusing GDK's is the only way the GLX bridge can render into the GTK XID.
 gdkx11-sys = "0.18"
 glib = "0.18"
+# AT-SPI2 accessibility provider via AccessKit. Pure-Rust D-Bus (zbus) so we
+# don't have to link libatspi / libatk / glib at runtime. We're an XWayland
+# client (GDK_BACKEND=x11) so screen-space coordinates are available through
+# the X server — `Adapter::set_root_window_bounds` works correctly.
+accesskit = "0.21"
+accesskit_unix = "0.17"
+# X11 for resolving outer/inner window geometry on every ConfigureNotify.
+x11-dl = "2"
 
 [build-dependencies]
 cc = "1.0"

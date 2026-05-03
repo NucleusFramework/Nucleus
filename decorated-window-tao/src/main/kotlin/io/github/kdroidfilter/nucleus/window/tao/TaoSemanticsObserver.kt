@@ -159,6 +159,18 @@ internal class TaoSemanticsObserver(
                 onScrollBy = scrollBy?.let { fn ->
                     { dx, dy -> fn.invoke(dx, dy) }
                 },
+                // Slider absolute value setter — wired to SetProgress with
+                // clamping to the declared range. Used by AT-SPI's
+                // `Value.SetCurrentValue` on the Linux backend.
+                onSetValue = setProgress?.let { fn ->
+                    { v ->
+                        val info = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+                        val clamped = if (info != null) {
+                            v.coerceIn(info.range.start, info.range.endInclusive)
+                        } else v
+                        fn.invoke(clamped)
+                    }
+                },
             ),
         )
 
@@ -314,6 +326,24 @@ internal class TaoSemanticsObserver(
             androidx.compose.ui.semantics.LiveRegionMode.Assertive ->
                 flags = flags or TaoA11yFlag.LIVE_REGION_ASSERTIVE
             else -> Unit
+        }
+        // Multi-selection container marker — Compose carries it on the parent
+        // (e.g. a `selectableGroup` set up for multi-select). AccessKit / AT-SPI
+        // surface it via STATE_MULTISELECTABLE so screen readers can announce
+        // "n selectable items" before listing the children.
+        // SelectableGroup detection: presence of the `SelectableGroup` semantic
+        // property — same primitive Compose Material uses.
+        @Suppress("DEPRECATION")
+        if (cfg.getOrNull(SemanticsProperties.SelectableGroup) != null) {
+            flags = flags or TaoA11yFlag.MULTI_SELECTABLE
+        }
+        // Expand/collapse state. Compose mirrors this through the
+        // `Expand`/`Collapse` actions: the absence of one signals the opposite
+        // state. We surface explicit TRUE / FALSE bits because AccessKit
+        // distinguishes "expanded=true", "expanded=false", and "no expand state".
+        when {
+            cfg.contains(SemanticsActions.Expand) -> flags = flags or TaoA11yFlag.EXPANDED_FALSE
+            cfg.contains(SemanticsActions.Collapse) -> flags = flags or TaoA11yFlag.EXPANDED_TRUE
         }
 
         var actions = 0
