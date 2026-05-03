@@ -2,6 +2,8 @@ package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.snapshots.Snapshot
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -32,6 +34,26 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
      * visible UI is idle.
      */
     private val wakePending = AtomicBoolean(false)
+
+    /**
+     * Re-arm throttle. When a pumped block re-dispatches itself synchronously
+     * (very common with Compose's state-observer / snapshot-apply machinery —
+     * `LazyColumn` + scrollbar can cycle through ~150 k pumps/sec at idle),
+     * the pump→drain→re-arm→nativeWake→pump loop pegs the Tao main thread
+     * at 100 % CPU. AWT-based backends don't see this because the EDT only
+     * processes pending work at ~60 Hz; we mimic that here by deferring the
+     * re-arm `nativeWake` through a small delay rather than calling it
+     * synchronously inside [pump]. New external dispatches still wake the
+     * loop immediately — the delay only applies when the queue is non-empty
+     * *after* a drain (i.e. blocks added by the just-run blocks).
+     */
+    private val pumpReArmIntervalNs = 1_000_000_000L / 60
+    private var lastPumpNs = 0L
+    private val pumpScheduler by lazy {
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "TaoPumpScheduler").apply { isDaemon = true }
+        }
+    }
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
         pending.offer(block)
@@ -75,6 +97,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         if (ranAnything) {
             Snapshot.sendApplyNotifications()
         }
+        val pumpEndNs = System.nanoTime()
         // Open the gate so the next dispatch can re-arm. Order matters:
         // we open AFTER the drain so any re-dispatches done by the running
         // blocks above do not double-up the wake — they're already in
@@ -82,12 +105,27 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // remaining iterations or the next one.
         wakePending.set(false)
         // Blocks added during drain need a fresh wake to schedule the next
-        // pump. CAS so we don't double-up if a concurrent dispatch beat us.
+        // pump. Throttle the re-arm: if we just pumped synchronously and
+        // pending is non-empty due to a re-dispatch, defer the next wake
+        // by `pumpReArmIntervalNs` instead of waking immediately. External
+        // dispatches arriving in the meantime go through the regular
+        // [dispatch] path and wake the loop straight away.
+        val sinceLast = pumpEndNs - lastPumpNs
+        lastPumpNs = pumpEndNs
         if (!pending.isEmpty() &&
             NativeTaoBridge.isLoaded &&
             wakePending.compareAndSet(false, true)
         ) {
-            NativeTaoBridge.nativeWake()
+            if (sinceLast < pumpReArmIntervalNs) {
+                val delayNs = pumpReArmIntervalNs - sinceLast
+                pumpScheduler.schedule(
+                    { if (NativeTaoBridge.isLoaded) NativeTaoBridge.nativeWake() },
+                    delayNs,
+                    TimeUnit.NANOSECONDS,
+                )
+            } else {
+                NativeTaoBridge.nativeWake()
+            }
         }
     }
 }
