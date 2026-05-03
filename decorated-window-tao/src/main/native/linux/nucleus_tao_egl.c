@@ -268,6 +268,8 @@ typedef void            (*PFN_wl_proxy_set_queue)(wl_proxy *, wl_event_queue *);
 typedef uint32_t        (*PFN_wl_proxy_get_version)(wl_proxy *);
 typedef wl_event_queue *(*PFN_wl_display_create_queue)(wl_display *);
 typedef int             (*PFN_wl_display_roundtrip_queue)(wl_display *, wl_event_queue *);
+typedef int             (*PFN_wl_display_dispatch_queue)(wl_display *, wl_event_queue *);
+typedef int             (*PFN_wl_display_dispatch_queue_pending)(wl_display *, wl_event_queue *);
 typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 
 /* Wayland protocol opcodes (from wayland.xml; stable since the protocol
@@ -284,6 +286,7 @@ typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 #define WL_SUBSURFACE_SET_POSITION         1
 #define WL_SUBSURFACE_SET_DESYNC           5
 #define WL_SURFACE_DESTROY                 0
+#define WL_SURFACE_FRAME                   3
 #define WL_SURFACE_SET_INPUT_REGION        5
 #define WL_SURFACE_COMMIT                  6
 
@@ -359,9 +362,11 @@ static PFN_wl_proxy_add_listener      p_wl_proxy_add_listener      = NULL;
 static PFN_wl_proxy_destroy           p_wl_proxy_destroy           = NULL;
 static PFN_wl_proxy_set_queue         p_wl_proxy_set_queue         = NULL;
 static PFN_wl_proxy_get_version       p_wl_proxy_get_version       = NULL;
-static PFN_wl_display_create_queue    p_wl_display_create_queue    = NULL;
-static PFN_wl_display_roundtrip_queue p_wl_display_roundtrip_queue = NULL;
-static PFN_wl_event_queue_destroy     p_wl_event_queue_destroy     = NULL;
+static PFN_wl_display_create_queue          p_wl_display_create_queue          = NULL;
+static PFN_wl_display_roundtrip_queue       p_wl_display_roundtrip_queue       = NULL;
+static PFN_wl_display_dispatch_queue        p_wl_display_dispatch_queue        = NULL;
+static PFN_wl_display_dispatch_queue_pending p_wl_display_dispatch_queue_pending = NULL;
+static PFN_wl_event_queue_destroy           p_wl_event_queue_destroy           = NULL;
 
 static const struct wl_interface *g_wl_registry_interface     = NULL;
 static const struct wl_interface *g_wl_compositor_interface   = NULL;
@@ -369,6 +374,7 @@ static const struct wl_interface *g_wl_subcompositor_interface= NULL;
 static const struct wl_interface *g_wl_subsurface_interface   = NULL;
 static const struct wl_interface *g_wl_surface_interface      = NULL;
 static const struct wl_interface *g_wl_region_interface       = NULL;
+static const struct wl_interface *g_wl_callback_interface     = NULL;
 
 static int load_libs(void) {
     if (g_libs_loaded) return 1;
@@ -464,11 +470,15 @@ static int load_libs(void) {
         p_wl_proxy_get_version =
             (PFN_wl_proxy_get_version)   dlsym(g_libwlclient, "wl_proxy_get_version");
         p_wl_display_create_queue =
-            (PFN_wl_display_create_queue)    dlsym(g_libwlclient, "wl_display_create_queue");
+            (PFN_wl_display_create_queue)          dlsym(g_libwlclient, "wl_display_create_queue");
         p_wl_display_roundtrip_queue =
-            (PFN_wl_display_roundtrip_queue) dlsym(g_libwlclient, "wl_display_roundtrip_queue");
+            (PFN_wl_display_roundtrip_queue)       dlsym(g_libwlclient, "wl_display_roundtrip_queue");
+        p_wl_display_dispatch_queue =
+            (PFN_wl_display_dispatch_queue)        dlsym(g_libwlclient, "wl_display_dispatch_queue");
+        p_wl_display_dispatch_queue_pending =
+            (PFN_wl_display_dispatch_queue_pending) dlsym(g_libwlclient, "wl_display_dispatch_queue_pending");
         p_wl_event_queue_destroy =
-            (PFN_wl_event_queue_destroy) dlsym(g_libwlclient, "wl_event_queue_destroy");
+            (PFN_wl_event_queue_destroy)           dlsym(g_libwlclient, "wl_event_queue_destroy");
         g_wl_registry_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_registry_interface");
         g_wl_compositor_interface =
@@ -481,6 +491,8 @@ static int load_libs(void) {
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_surface_interface");
         g_wl_region_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_region_interface");
+        g_wl_callback_interface =
+            (const struct wl_interface *) dlsym(g_libwlclient, "wl_callback_interface");
     }
 #undef LOAD
 
@@ -932,6 +944,7 @@ static void (*const wl_registry_listener[])(void) = {
     (void (*)(void)) wl_registry_global_remove,
 };
 
+
 /**
  * Wayland-native attach.
  *
@@ -1205,26 +1218,13 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
         p_eglDestroyContext(edpy, ctx);
         goto fail_after_subsurface;
     }
-    /* eglSwapInterval(0) on Wayland — NOT a vsync choice, a deadlock fix.
-     *
-     * Mesa's Wayland EGL with interval=1 installs a `wl_surface.frame`
-     * callback before each swap and BLOCKS in `wl_display_dispatch_queue`
-     * until that callback fires. The callback only fires once the surface
-     * is *mapped* by the compositor — which for a wl_subsurface in default
-     * sync mode requires the PARENT surface to commit (so our `set_desync`
-     * state takes effect). The parent commit happens inside GTK's
-     * `connect_draw` handler on the same thread that our `eglSwapBuffers`
-     * is blocking → circular wait, the process freezes with no window.
-     *
-     * Setting interval=0 skips the frame-callback dance entirely. We give
-     * up frame-paced vsync on the Wayland path; the compositor still
-     * presents at refresh rate, just without throttling our render loop.
-     * A future commit can install our own frame callback on the child
-     * surface and gate redraws there to recover smooth vsync without the
-     * deadlock.
-     *
-     * Doesn't apply to the X11 path (eglSwapBuffers on X11 uses DRI3 +
-     * Present, no frame-callback semantics, no deadlock risk). */
+    /* eglSwapInterval(0) — interval=1 deadlocks on tao 0.35 + GTK 3 because
+     * Mesa's Wayland EGL blocks `eglSwapBuffers` waiting for a frame callback
+     * that can only fire after GTK runs `connect_draw` on the same thread
+     * we'd be blocking. A render thread that owns the EGL context would
+     * decouple them and let interval=1 work; until that lands, accept
+     * unsynced presents. The compositor still throttles internally via
+     * implicit sync, so we don't melt the GPU. */
     if (p_eglSwapInterval) p_eglSwapInterval(edpy, 0);
 
     EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
@@ -1288,7 +1288,8 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeDetach(
     }
     /* Wayland path: destroy the proxies in strict reverse-creation order to
      * keep the compositor's bookkeeping happy.
-     *   wl_egl_window  → wl_subsurface → wl_child_surface → globals → registry → queue
+     *   wl_egl_window → wl_subsurface → wl_child_surface → globals →
+     *   registry → queue
      * Inverting any pair triggers a `Bad object` protocol error from Mutter. */
     if (att->wl_window && p_wl_egl_window_destroy) {
         p_wl_egl_window_destroy(att->wl_window);
