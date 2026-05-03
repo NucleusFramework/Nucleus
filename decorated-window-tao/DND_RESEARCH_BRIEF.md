@@ -1,207 +1,403 @@
-# Research brief — Drag-and-drop support for the Tao backend
+# Drag-and-drop sur le backend Tao — plan d'implémentation
 
-## Goal
+> Ce document était initialement un brief de recherche. Après vérification
+> directe des sources `org.jetbrains.compose.ui:ui-desktop:1.10.3` extraites
+> du cache Gradle, l'architecture Compose côté DnD est entièrement connue.
+> Ce qui suit est donc un **plan d'implémentation**, plus une recherche.
 
-Determine the best way to add **drag-and-drop** support to a Compose Desktop
-backend that does **not** use AWT/Swing. Two distinct flavours are in scope and
-the answer should address both:
+## Architecture Compose côté DnD (vérifié, Compose-MP 1.10.3)
 
-1. **External OS DnD** — files / text / URLs dragged from the OS shell
-   (Finder, Explorer, Nautilus) onto a window, and conversely Compose-initiated
-   drags exporting data to the OS.
-2. **Compose in-app DnD** — `Modifier.dragAndDropSource` /
-   `Modifier.dragAndDropTarget` between widgets in the same window
-   (Compose Multiplatform 1.7+ unified DnD API).
+### Hook principal : `PlatformContext.dragAndDropManager`
 
-The deliverable should explain (a) whether each flavour is achievable on this
-backend, (b) what native plumbing is required per OS, and (c) how the events
-reach a `ComposeScene` that has no AWT host.
+`PlatformContext.skiko.kt:150` :
 
-## Context — what this backend looks like
+```kotlin
+@InternalComposeUiApi
+interface PlatformContext {
+    // …
+    val dragAndDropManager: PlatformDragAndDropManager get() = EmptyDragAndDropManager
+}
+```
 
-This is a Kotlin/JVM Compose Desktop project (`ComposeDeskKit / Nucleus`). The
-relevant module is `decorated-window-tao`. Unlike the standard Compose Desktop
-runtime (which sits on top of AWT's `ComposeWindow` / `SkiaLayer`), this
-backend uses:
+Le champ est `@InternalComposeUiApi` mais **pas** `internal` — il est
+surchargeable depuis `TaoPlatformContext` (qui hérite déjà de
+`PlatformContext.Empty()`). Aucune réflexion, aucune PR upstream.
 
-- **[Tao](https://github.com/tauri-apps/tao) 0.35** (Rust, fork of winit) as
-  the windowing layer. Compiled as a `cdylib` (`nucleus_tao`) and called from
-  Kotlin via JNI.
-- A **custom `ComposeScene`** (`CanvasLayersComposeScene` from compose-ui)
-  rendered with **Skia/Skiko** directly into:
-  - macOS: a `CAMetalLayer` attached to the Tao-owned `NSView`
-  - Windows: WGL on the Tao `HWND`
-  - Linux: EGL (Wayland) / GLX (X11) on the Tao GTK widget's surface
-- **No AWT involvement** in the rendering / input path. AWT classes are only
-  used as data shapes (e.g. `java.awt.event.KeyEvent` is fabricated for
-  `KEY_TYPED` events to satisfy Compose's `isTypedEvent` gate). There is **no
-  `ComposeWindow`, no `SkiaLayer`, no `JFrame`, no `DropTarget`**.
+`RootNodeOwner.skiko.kt:133` lit `platformContext.dragAndDropManager` à la
+construction du scene root. Tout est câblé automatiquement.
 
-The Rust event loop dispatches `tao::WindowEvent` to Kotlin via a JNI
-callback. Today only these are forwarded:
+### Interface à implémenter : `PlatformDragAndDropManager`
 
-- `Resized`, `Moved`, `ScaleFactorChanged`, `Focused`, `CloseRequested`,
-  `Destroyed`
-- `CursorMoved`, `CursorLeft`, `MouseInput`, `MouseWheel`
-- `KeyboardInput`, `ReceivedImeText`, `ModifiersChanged`
-- `RedrawRequested`, `MainEventsCleared`
+`PlatformDragAndDropManager.skiko.kt` :
 
-Tao does emit `WindowEvent::FileDropped { paths }`,
-`WindowEvent::HoveredFile { path }`, `WindowEvent::HoveredFileCancelled` —
-**none of them are currently consumed**. There is no `with_file_drop_handler`
-call on `WindowBuilder` either.
+```kotlin
+@InternalComposeUiApi
+interface PlatformDragAndDropManager {
+    val isRequestDragAndDropTransferRequired: Boolean get() = false
+    fun requestDragAndDropTransfer(source: PlatformDragAndDropSource, offset: Offset)
+}
 
-The Kotlin side then reshapes events and feeds them into the scene via
-`ComposeScene.sendPointerEvent(...)` / `sendKeyEvent(...)`. Pointer position
-is in physical pixels.
+@InternalComposeUiApi
+interface PlatformDragAndDropSource {
+    fun StartTransferScope.startDragAndDropTransfer(
+        offset: Offset,
+        isTransferStarted: () -> Boolean,
+    )
 
-## Why Compose's standard DnD doesn't "just work" here
+    interface StartTransferScope {
+        fun startDragAndDropTransfer(
+            transferData: DragAndDropTransferData,
+            decorationSize: Size,
+            drawDragDecoration: DrawScope.() -> Unit,
+        ): Boolean
+    }
+}
+```
 
-On Compose Desktop with AWT:
+Pour qu'un `Modifier.dragAndDropSource` déclenche un drag OS (sortant),
+`isRequestDragAndDropTransferRequired` doit retourner `true` (sinon Compose
+attend que la plateforme démarre le drag elle-même, ce qu'aucune fenêtre
+Tao ne fera) et `requestDragAndDropTransfer` ouvre la session OS.
 
-- `Modifier.dragAndDropTarget` ultimately registers a `java.awt.dnd.DropTarget`
-  on the underlying `ComposeWindow`.
-- `Modifier.dragAndDropSource` calls into AWT's `DragSource.startDrag`.
-- Mime conversion goes through `java.awt.datatransfer.Transferable`.
+### Hook entrant : `ComposeScene.rootDragAndDropNode`
 
-Because this backend has no AWT window, that bridge has nothing to register
-on. Internal-only DnD (drag inside the scene, no OS data) might still work in
-theory because the gesture is detected from pointer events — but the
-`PlatformDragAndDropManager` that Compose uses on Desktop (see
-`compose-ui/src/desktopMain` in compose-multiplatform-core) is wired against
-AWT and is not exposed to a custom `ComposeScene`. We need to verify whether
-`CanvasLayersComposeScene` exposes any hook to plug a custom DnD manager,
-or whether the manager is hard-wired through `PlatformContext`.
+`ComposeScene.skiko.kt:122` expose publiquement :
 
-`PlatformContext` extension points we already use here (see
-`TaoComposeSceneHost.kt` / `TaoPlatformContext`): `windowInfo`, `windowInsets`,
-`setPointerIcon`, `startInputMethod`, `semanticsOwnerListener`. **Is there a
-`dragAndDropManager` (or equivalent) hook?**
+```kotlin
+val rootDragAndDropNode: ComposeSceneDragAndDropNode
+```
 
-## Native primitives available per OS
+`ComposeSceneDragAndDropNode` (`@InternalComposeUiApi`) expose les méthodes
+qu'un drop natif doit appeler :
 
-These are the OS-level facilities the backend would need to drive. The
-research should confirm each one is reachable from Tao (or via direct
-Cocoa/Win32/GTK calls bypassing Tao when needed).
+- `acceptDragAndDropTransfer(event): Boolean` — appelé sur `dragEnter`,
+  retourne `false` si aucun nœud n'est intéressé (le shim doit alors
+  rejeter le drag côté OS).
+- `onStarted` / `onEntered` / `onMoved` / `onChanged` / `onExited` / `onDrop` / `onEnded`
+- `hasEligibleDropTarget: Boolean` — utilisé par le manager AWT pour décider
+  s'il faut accepter ou rejeter pendant `dragOver`.
 
-- **macOS** — `NSDraggingDestination` protocol on the content view
-  (`draggingEntered:`, `draggingUpdated:`, `prepareForDragOperation:`,
-  `performDragOperation:`, `draggingExited:`) and
-  `beginDraggingSessionWithItems:event:source:` for outgoing drags. Tao does
-  **not** expose this API; the project already drops down to Objective-C for
-  similar needs (`objc/window_drag.m` for `performWindowDragWithEvent:`,
-  `objc/a11y.m` for accessibility) so adding an `objc/dnd.m` is the precedent.
-- **Windows** — `IDropTarget` registered with `RegisterDragDrop` on the HWND,
-  and `DoDragDrop` for outgoing. Tao's `with_file_drop_handler` only covers
-  the inbound file-path case; it does **not** expose hover position or arbitrary
-  formats. The backend already subclasses the Tao HWND's WndProc (see
-  `decorated-window-tao/src/main/native/windows/`), so adding `RegisterDragDrop`
-  alongside is straightforward. Windows requires `OleInitialize` (STA) on the
-  thread that registers the drop target — note that `launcher-windows` removed
-  a redundant `CoInitialize` recently to **unblock Tao's STA** (commit
-  `3e63d55`), so the thread is already STA.
-- **Linux** — XDND protocol on X11 (`XdndAware`, `XdndPosition`, `XdndDrop`,
-  …) and `wl_data_device` on Wayland. Tao goes through GTK, so the practical
-  path is `gtk_drag_dest_set` / `drag-data-received` signal on the
-  `GtkDrawingArea`/`GtkWindow`. The project already pulls `gtk = "0.18"` and
-  `gdkx11-sys`, so GTK-level DnD bindings are reachable from the Rust side.
+### Référence à étudier : `AwtDragAndDropManager.desktop.kt`
 
-## Compose-side integration questions to resolve
+Implémentation AWT par défaut. C'est exactement le pattern à dupliquer en
+substituant les appels AWT par des appels Tao natifs :
 
-These are the unknowns the research must answer with code references to
-`compose-multiplatform-core` (`compose/ui/ui/src/desktopMain` and
-`compose/ui/ui/src/skikoMain`):
+- Constructeur : `(rootContainer: JComponent, getRootNode: () -> ComposeSceneDragAndDropNode)`
+- `requestDragAndDropTransfer` ouvre un `StartTransferScope` ad-hoc qui
+  délègue à un `ComposeTransferHandler` (sous-classe de `TransferHandler`),
+  lequel appelle `exportAsDrag(...)` — l'équivalent direct de `DoDragDrop`
+  côté Win32 / `beginDraggingSessionWithItems:` côté Cocoa.
+- `dropTargetListener` reçoit les events `DropTargetEvent` AWT, fabrique un
+  `DragAndDropEvent(action = …, nativeEvent = dtde, positionInRootImpl = …)`
+  et appelle `rootNode.onEntered/onMoved/onDrop/...`.
 
-1. How does `CanvasLayersComposeScene` route DnD events? Is there a
-   `PlatformDragAndDropManager` / `PlatformContext.dragAndDropManager` field
-   we can override from a custom `PlatformContext` (we already extend
-   `PlatformContext.Empty()`), or does the scene synthesize DnD purely from
-   pointer events + a "data provider" callback?
-2. For **outgoing** drags initiated by `Modifier.dragAndDropSource`, what
-   callback does Compose invoke when the user starts a drag? Is it a single
-   "begin session with this transferable" entry point, or does Compose drive
-   it via pointer-capture + a per-frame "request data" pull?
-3. Can the `compose.ui.draganddrop.DragAndDropTransferData` /
-   `DragAndDropTransferable` types be constructed without AWT, or do they
-   wrap `java.awt.datatransfer.Transferable` on Desktop?
-4. For purely **in-scene** drag (source and target both inside the same
-   Compose tree, no OS interaction), is the AWT `DropTarget` still needed, or
-   does the scene short-circuit?
-5. Does Compose 1.7's unified `DragAndDropEvent` carry enough info
-   (mime types, position, modifiers) that a Tao→Compose adapter can be a thin
-   shim, or does it expect AWT `DataFlavor` / `DropTargetEvent` instances?
+## Format des données — `DragAndDropEvent` et `DragAndDropTransferData`
 
-A working reference: `compose-jb`'s `DesktopPlatformDragAndDropManager` (or
-whatever it's called in current sources) — the path through `SkiaLayer` /
-`ComposeWindow` / `DropTarget`. Reading that code is the single most
-important step.
+`DragAndDrop.desktop.kt` définit :
 
-## Existing reference implementations in this repo
+```kotlin
+actual class DragAndDropEvent @ExperimentalComposeUiApi constructor(
+    val action: DragAndDropTransferAction?,
+    val nativeEvent: Any?,                  // ← n'importe quoi
+    internal val positionInRootImpl: Offset,
+)
+```
 
-These show the pattern for adding a new piece of native plumbing on this
-backend. The DnD work would mirror their structure.
+`nativeEvent` est `Any?`. La fonction d'extension publique
+`DragAndDropEvent.awtTransferable: Transferable` ne fonctionne **que** si
+`nativeEvent` est un `DropTargetDragEvent` ou `DropTargetDropEvent` AWT —
+sinon elle throw.
 
-- **Window drag** (closest analogue):
-  - Kotlin: `TaoWindow.dragWindow()` →
-    `NativeTaoBridge.nativeDragWindow(handle)`
-  - Rust: `Java_..._NativeTaoBridge_nativeDragWindow` in
-    `src/main/native/src/lib.rs:1750` — on macOS calls into
-    `objc/window_drag.m`, on Win/Linux calls Tao's `Window::drag_window()`.
-  - macOS impl: `objc/window_drag.m` — installs a `mouseDown` monitor
-    (`NSEvent.addLocalMonitorForEventsMatchingMask:`) to latch the originating
-    event, then dispatches `performWindowDragWithEvent:` on the next runloop
-    tick.
-- **Accessibility** (most complex existing native bridge):
-  - Kotlin: `NativeTaoBridge.nativeA11yAttach/Detach/ApplySnapshot`
-    (and the dispatch-callback static methods `dispatchA11yAction`,
-    `dispatchA11ySetText`, …)
-  - macOS: `objc/a11y.m` exposes a `NucleusA11yElement` tree, calls back into
-    Kotlin via `NativeTaoBridge.dispatchA11y*` static methods using
-    `JNIEnv->CallStaticVoidMethod`.
-  - Windows: `windows/nucleus_tao_a11y.c` (UI Automation provider).
-- **Title-bar drag from Compose**: `decorated-window-tao/.../TitleBar.kt`
-  uses `Modifier.pointerInput { awaitPointerEventScope { … } }` to detect a
-  press → tiny-move and then calls `window.dragWindow()` synchronously
-  during the press handler. That same gesture-detection pattern is
-  available for spotting a "drag start" inside the scene.
+Conséquences :
 
-## Constraints / non-negotiables
+- Le code utilisateur "standard" (qui appelle `event.awtTransferable` ou
+  `event.dragData()`) **continue de marcher** si le shim Tao construit un
+  `DropTargetDragEvent`/`DropTargetDropEvent` AWT comme `nativeEvent`. Ces
+  classes vivent dans `java.desktop` mais leur instanciation n'allume pas
+  le toolkit AWT — elles peuvent être créées en mode headless. La
+  contrainte est que leur constructeur exige un `DropTarget` (qui exige un
+  `Component`). On peut feinter avec un `Component` "shadow" jamais
+  affiché (cf. ce que `TaoComposeSceneHost` fait déjà pour les
+  `KEY_TYPED` synthétiques avec `javax.swing.JPanel()`).
+- Alternative : exposer un **type Tao natif** (`TaoDropEvent`) comme
+  `nativeEvent`, et fournir nos propres extensions
+  (`event.taoFiles: List<File>`, `event.taoText: String?`, …). Le code
+  utilisateur perd alors la portabilité avec les samples
+  AWT — mais le projet vise précisément les apps qui n'embarquent pas
+  AWT.
 
-- **JNI only** — no JNA at runtime (project rule).
-- Native libs ship inside the JAR under
-  `src/main/resources/nucleus/native/{linux,darwin,win32}-{x64,aarch64}/`
-  and are loaded via `NativeLibraryLoader`.
-- Must work with **GraalVM native-image** — every JNI-touched class needs a
-  `reachability-metadata.json` entry (existing one lives at
-  `decorated-window-tao/src/main/resources/META-INF/native-image/io.github.kdroidfilter/nucleus.decorated-window-tao/reachability-metadata.json`).
-- macOS event-loop callbacks land on the **macOS main thread**; Win/Linux
-  on the thread that called `nativeRunBlocking`. Any synchronous calls back
-  into Kotlin from a DnD callback must respect that.
-- Project rule: "Never redraw window controls with Compose". Doesn't apply to
-  DnD per se but signals the team's preference: lean on native facilities
-  rather than re-implementing UX in Compose.
+Recommandation : **les deux**. Le shim crée un `nativeEvent` opaque (data
+class Kotlin) et fournit des extensions publiques `event.taoDragData()` ;
+on ajoute en plus un adaptateur `Transferable` minimal pour rester
+compatible avec `awtTransferable` quand l'utilisateur en a besoin. Ça reste
+pur `java.datatransfer`/`java.awt.dnd` côté types — pas d'init Toolkit.
 
-## Deliverable
+`DragAndDropTransferData(transferable: DragAndDropTransferable, …)` côté
+sortant exige une `DragAndDropTransferable`. L'unique constructeur public
+desktop est :
 
-A concise report (markdown) covering:
+```kotlin
+fun DragAndDropTransferable(transferable: java.awt.datatransfer.Transferable): DragAndDropTransferable
+```
 
-1. **Feasibility verdict** for each of the two flavours (external OS DnD,
-   in-scene Compose DnD), separated per OS.
-2. **Compose hook** identification: exact class name and file path (in
-   `compose-multiplatform-core`) of the type that must be implemented or
-   the `PlatformContext` field that must be overridden — including signature
-   excerpts. Indicate whether the relevant API is `internal`, `@InternalComposeUiApi`,
-   or stable.
-3. **Per-OS native plan**: which Tao events to wire, which OS APIs to call
-   directly, where to place the code (analogous to the existing
-   `objc/window_drag.m` / `windows/nucleus_tao_a11y.c` precedents).
-4. **Threading & lifecycle**: how to register/unregister the drop target
-   alongside `attach()` / `detach()` in `TaoComposeSceneHost`.
-5. **Known unknowns / risks** — anything that would need a prototype to
-   validate (e.g. whether `CanvasLayersComposeScene` exposes any DnD hook at
-   all; whether Compose's `DragAndDropTransferData` is constructible without
-   AWT on Desktop).
+(retourne un `AwtDragAndDropTransferable` interne). Donc côté **sortant**,
+les utilisateurs vont fabriquer un `Transferable` AWT (ex. `StringSelection`,
+ou un `FileTransferable` custom). Le shim Tao fait alors :
 
-The goal is *not* to write the implementation — it's to produce enough
-research that the implementation is then a mechanical translation. Cite line
-numbers / file paths from `compose-multiplatform-core` wherever possible.
+```kotlin
+val awt = (transferData.transferable as? AwtDragAndDropTransferable)?.toAwtTransferable()
+```
+
+et traduit les `DataFlavor`s AWT vers les payloads natifs (NSPasteboard /
+IDataObject / GtkSelectionData) au moment de démarrer la session.
+
+`AwtDragAndDropTransferable` est `internal`, mais accessible via
+`(transferable as? AwtDragAndDropTransferable)?.toAwtTransferable()` —
+même package + reflection si besoin (la classe internalisée est juste
+`internal`, pas obfusquée).
+
+## Le backend Tao actuel (rappel)
+
+Module : `decorated-window-tao`. Compose Desktop sans AWT pour le rendu :
+
+- **[Tao 0.35](https://github.com/tauri-apps/tao)** (Rust, fork de winit),
+  compilé en `cdylib` `nucleus_tao`, appelé via JNI.
+- **`CanvasLayersComposeScene`** rendu via Skia/Skiko directement dans :
+  - macOS — `CAMetalLayer` sur le `NSView` Tao
+  - Windows — WGL sur le `HWND` Tao
+  - Linux — EGL (Wayland) / GLX (X11) sur la surface GTK
+- **Pas de `ComposeWindow`, pas de `SkiaLayer`, pas d'EDT.** AWT n'est utilisé
+  que pour fabriquer des objets de données (KeyEvent synthétique pour
+  `KEY_TYPED`).
+
+Events Tao déjà câblés (`src/main/native/src/lib.rs:1373+`) : `Resized`,
+`Moved`, `ScaleFactorChanged`, `Focused`, `CloseRequested`, `Destroyed`,
+`CursorMoved`, `CursorLeft`, `MouseInput`, `MouseWheel`, `KeyboardInput`,
+`ReceivedImeText`, `ModifiersChanged`, `RedrawRequested`,
+`MainEventsCleared`.
+
+Tao émet `WindowEvent::FileDropped { paths }`, `WindowEvent::HoveredFile { path }`,
+`WindowEvent::HoveredFileCancelled` — **non consommés**. `with_file_drop_handler`
+n'est pas appelé sur le `WindowBuilder`. Ces events suffisent pour un
+file-drop minimal sur Win/Linux mais pas pour la position de hover ni les
+formats non-fichier.
+
+Hooks `PlatformContext` déjà overridés dans
+`TaoComposeSceneHost.kt` / `TaoPlatformContext` : `windowInfo`,
+`windowInsets`, `setPointerIcon`, `startInputMethod`, `semanticsOwnerListener`.
+Ajout de `dragAndDropManager` = un override de plus.
+
+## Verdict de faisabilité
+
+| Variante | macOS | Windows | Linux X11 | Linux Wayland |
+|---|---|---|---|---|
+| **DnD intra-scène** (source ↔ target dans la même fenêtre) | ✅ | ✅ | ✅ | ✅ |
+| **DnD entrant — fichiers depuis l'OS** | ⚠️ shim ObjC requis (Tao n'émet pas) | 🟡 fast-path Tao possible (`with_file_drop_handler`) mais limité ; pour la position/format → `IDropTarget` | 🟡 fast-path Tao via GTK ; pour position/formats riches → `gtk_drag_dest_set` direct | 🟡 idem (GTK abstrait XDND/wl_data_device) |
+| **DnD entrant — texte/HTML/URI** | ⚠️ shim ObjC | ❌ Tao ne le couvre pas → `IDropTarget` obligatoire | ❌ → `gtk_drag_dest_set` | ❌ → `gtk_drag_dest_set` |
+| **DnD sortant** (`Modifier.dragAndDropSource` → OS) | ❌ shim ObjC (`beginDraggingSessionWithItems:`) | ❌ shim Win32/COM (`DoDragDrop` + `IDropSource` + `IDataObject`) | ❌ shim GTK (`gtk_drag_begin_with_coordinates`) | ❌ idem |
+
+**Aucun blocage fondamental** sur les trois OS — seulement de la plomberie
+native à écrire.
+
+## Plan natif par OS
+
+### macOS — `objc/dnd.m` (nouveau, à côté de `window_drag.m` et `a11y.m`)
+
+Tao 0.35 n'expose pas le content-view directement, mais le projet a déjà
+`nativeNsViewHandle(handle)` qui retourne le `NSView*`.
+
+**Entrant** : sous-classer (ou catégoriser via `class_addMethod`) la NSView
+Tao pour conformer à `<NSDraggingDestination>`.
+
+| Sélecteur | Mapping Compose |
+|---|---|
+| `draggingEntered:` | construire `DragAndDropEvent(action, nativeEvent, posInRoot)` ; appeler `rootNode.acceptDragAndDropTransfer(ev)` ; si `false` retourner `NSDragOperationNone` |
+| `draggingUpdated:` | `rootNode.onMoved(ev)` ; retourner masque selon `rootNode.hasEligibleDropTarget` |
+| `prepareForDragOperation:` | `YES` si `hasEligibleDropTarget` |
+| `performDragOperation:` | matérialiser depuis `[sender draggingPasteboard]` (file URLs, NSPasteboardTypeString, etc.) en un `Transferable` ; `rootNode.onDrop(ev)` |
+| `concludeDragOperation:` / `draggingExited:` | `rootNode.onExited` puis `onEnded` |
+
+`[view registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypeString, NSPasteboardTypeURL]]`
+dans `attach()`.
+
+**Sortant** : classe ObjC conforme à `<NSDraggingSource>`. À la fin du
+drag, `draggingSession:endedAtPoint:operation:` invoque
+`transferData.onTransferCompleted(action)` côté Kotlin. Image de drag
+rendue depuis `drawDragDecoration` vers un `NSImage`.
+
+### Windows — extension du WndProc subclass existant
+
+Préreq : `OleInitialize(NULL)` sur le thread propriétaire du HWND
+**avant** `RegisterDragDrop`. Le commit `3e63d55` a déjà retiré un
+`CoInitialize` redondant pour préserver l'STA Tao — la voie est libre.
+`OleUninitialize` au shutdown.
+
+**Entrant** : COM object `IDropTarget` (+ `IUnknown`).
+
+| Méthode | Mapping |
+|---|---|
+| `DragEnter(IDataObject*, keyState, pt, *effect)` | enum des `FORMATETC` ; construire `DragAndDropEvent` ; appeler `acceptDragAndDropTransfer` ; écrire effet de retour |
+| `DragOver(keyState, pt, *effect)` | `onMoved` ; effect = `DROPEFFECT_*` selon `hasEligibleDropTarget` |
+| `DragLeave()` | `onExited` puis `onEnded` |
+| `Drop(IDataObject*, keyState, pt, *effect)` | matérialiser (CF_HDROP → `DragQueryFileW`, CF_UNICODETEXT → `GlobalLock`, etc.) ; `onDrop` |
+
+`RegisterDragDrop(hwnd, target)` dans `attach()`, `RevokeDragDrop` dans
+`detach()`. Le HWND est déjà accessible via `nativeHwndHandle(handle)`.
+
+**Sortant** : `DoDragDrop(pData, pSource, allowedEffects, &result)` sur le
+thread du HWND. `IDropSource` (`QueryContinueDrag`, `GiveFeedback`) +
+`IDataObject` adapter sur le `Transferable` côté Kotlin (mapping
+`DataFlavor` → `FORMATETC`/`STGMEDIUM`). Appel **bloquant** : doit être
+pompé depuis le thread Compose, donc `requestDragAndDropTransfer` poste un
+continuation et lance `DoDragDrop` à la prochaine itération de loop.
+
+**Tao file-drop fast-path** : ne pas activer
+`with_file_drop_handler` côté Rust (Win32 n'autorise qu'un `IDropTarget`
+par HWND).
+
+### Linux — extension via GTK
+
+Le projet pull déjà `gtk = "0.18"` et `gdkx11-sys`. Tao expose la
+`GtkWindow` ; le widget pertinent est le `GtkDrawingArea` enfant
+(récupérable via le handle Linux que renvoie `nativeLinuxHandles`).
+
+**Entrant** : `gtk_drag_dest_set(widget, …)` au `attach()` avec :
+
+```c
+gtk_drag_dest_set(widget,
+    GTK_DEST_DEFAULT_MOTION | GTK_DEST_DEFAULT_HIGHLIGHT,
+    targets, n_targets,
+    GDK_ACTION_COPY | GDK_ACTION_MOVE | GDK_ACTION_LINK);
+```
+
+Targets minimum : `text/uri-list`, `text/plain;charset=utf-8`,
+`application/octet-stream`. Signaux à brancher : `drag-motion`,
+`drag-leave`, `drag-drop`, `drag-data-received`.
+
+GTK abstrait XDND (X11) et `wl_data_device` (Wayland) — un seul code.
+
+**Sortant** : `gtk_drag_begin_with_coordinates(...)`. Signaux
+`drag-data-get` (remplir `GtkSelectionData` depuis le `Transferable`) et
+`drag-end` (→ `onTransferCompleted`). Drag image via
+`gtk_drag_set_icon_surface` sur une surface Cairo rendue depuis
+`drawDragDecoration`.
+
+**Si Tao a déjà enregistré une cible de drop sur la fenêtre** : appeler
+`gtk_drag_dest_unset(window)` immédiatement après l'init Tao pour
+reprendre la propriété, puis `gtk_drag_dest_set` sur **notre** widget.
+
+## Threading & lifecycle
+
+Mêmes hooks que les bridges existants — branchements dans `attach()` /
+`detach()` de `TaoComposeSceneHost` :
+
+| OS | Thread des callbacks DnD | Thread Compose | Bridge |
+|---|---|---|---|
+| macOS | main NSRunLoop | même thread (`-XstartOnFirstThread` / GraalVM) | callbacks synchrones doivent retourner vite ; consulter un snapshot `hasEligibleDropTarget` mis à jour côté Compose |
+| Windows | thread propriétaire du HWND (= thread Compose) | même thread | tout sur un thread, pas de cross-thread |
+| Linux | GTK main loop (= thread Compose) | même thread | idem |
+
+JNI : sur macOS, cacher `JavaVM*` dans `JNI_OnLoad`, cacher
+`jclass`/`jmethodID` au `NewGlobalRef`. Pattern `AttachCurrentThread` /
+`DetachCurrentThread` défensif si la callback peut arriver sur un thread
+non attaché (rare en pratique, mais voir `objc/a11y.m` pour le pattern
+exact déjà utilisé dans le projet).
+
+GraalVM native-image : ajouter dans `reachability-metadata.json`
+(`decorated-window-tao/.../nucleus.decorated-window-tao/reachability-metadata.json`)
+les classes JNI-touchées par le shim DnD :
+- `TaoDragAndDropBridge` (object Kotlin) avec ses méthodes statiques de
+  callback,
+- les types `Transferable`/`DataFlavor`/`StringSelection` si le code les
+  utilise par réflexion (probable côté `AwtDragAndDropTransferable`),
+- toute classe `Transferable` custom écrite dans le module.
+
+## Plan d'exécution
+
+### Stage 0 — squelette `TaoDragAndDropManager` (½ journée)
+
+1. Nouveau fichier
+   `decorated-window-tao/src/main/kotlin/io/github/kdroidfilter/nucleus/window/tao/TaoDragAndDropManager.kt`.
+2. Implémentation initiale "log only" :
+   ```kotlin
+   internal class TaoDragAndDropManager(
+       private val getRootNode: () -> ComposeSceneDragAndDropNode,
+   ) : PlatformDragAndDropManager {
+       override val isRequestDragAndDropTransferRequired = true
+       override fun requestDragAndDropTransfer(source: PlatformDragAndDropSource, offset: Offset) {
+           println("requestDragAndDropTransfer offset=$offset")
+       }
+   }
+   ```
+3. Câblage dans `TaoPlatformContext` (champ `dragAndDropManager`).
+4. Câblage dans `TaoComposeSceneHost.attach()` : passer un
+   `getRootNode = { scene!!.rootDragAndDropNode }` au manager.
+5. Sample : ajouter un `Modifier.dragAndDropSource` + un
+   `Modifier.dragAndDropTarget` dans `jewel-sample` ou `sample-cmp`.
+6. **Critère de validation** : pression-glissement sur la source produit
+   le log `requestDragAndDropTransfer`. Drop intra-scène (sans appel OS)
+   marche dès cette étape grâce au routage interne du `DragAndDropNode`.
+
+### Stage 1 — DnD intra-scène complet (½ jour)
+
+Vérifier que les modifiers Compose `dragAndDropSource` ↔
+`dragAndDropTarget` fonctionnent end-to-end **sans** code natif (le
+manager peut court-circuiter et ne jamais appeler l'OS quand
+`hasEligibleDropTarget` est `true` à la position du drop).
+
+C'est le palier livrable d'une v0.1 si on n'a pas le temps d'attaquer le
+natif.
+
+### Stage 2 — macOS entrant (3-4 j)
+
+`objc/dnd.m` + JNI bridge `TaoDragAndDropBridge.kt` (statics
+`onDragEntered/Updated/Drop/Exited`). Test : drag d'un fichier depuis
+Finder, lecture de `dragData().readFiles()` côté Compose.
+
+### Stage 3 — Windows entrant (4-6 j)
+
+`windows/nucleus_tao_dnd.c` + COM object `IDropTarget`. `OleInitialize` à
+gérer dans le bootstrap WndProc subclass. Test équivalent : drag depuis
+Explorer.
+
+### Stage 4 — Linux entrant (2-3 j)
+
+GTK signals connectés depuis Rust (le moins coûteux car le binding
+existe déjà). Test : drag depuis Nautilus.
+
+### Stage 5 — Sortant tous OS (1 semaine)
+
+Plus simple que l'entrant : un seul flow par OS, l'OS est consommateur.
+Démarrer par macOS qui a la plus jolie API (`NSDraggingItem`).
+
+## Risques résiduels
+
+- **Drift de l'API Compose `@InternalComposeUiApi`** : `PlatformContext`,
+  `PlatformDragAndDropManager`, `ComposeSceneDragAndDropNode` sont tous
+  `@InternalComposeUiApi`. Compose-MP peut casser ces signatures sur une
+  bump majeure. Mitigation : isoler dans un fichier unique, faire un test
+  smoke à chaque upgrade Compose.
+- **Sandboxing macOS** : si l'app est sandboxée, les `NSURL` reçues sont
+  security-scoped — il faut `[url startAccessingSecurityScopedResource]`
+  / `stop…` pour la durée de vie du `File` exposé à l'utilisateur.
+- **Wayland drag image** : compositeur-dépendant ; certaines distros
+  ignorent l'image, on ne peut rien y faire.
+- **Drops virtuels Windows** (7-Zip, clients mail) : utilisent
+  `CFSTR_FILEDESCRIPTORW` + `CFSTR_FILECONTENTS` plutôt que CF_HDROP.
+  Hors scope v1, à documenter.
+- **Conflit `with_file_drop_handler` Tao** : sur Windows et Linux, ne
+  surtout pas l'activer en parallèle de notre registration (un seul
+  `IDropTarget`/`gtk_drag_dest_set` actif à la fois).
+- **`AwtDragAndDropTransferable` est `internal`** : pour récupérer le
+  `java.awt.datatransfer.Transferable` depuis un
+  `DragAndDropTransferData`, il faut soit du `same-package access` (en
+  déclarant dans `androidx.compose.ui.draganddrop`), soit de la
+  réflexion. Le manager AWT du framework triche déjà via cast direct car
+  il vit dans le bon package. Notre code peut faire pareil :
+  ```kotlin
+  package androidx.compose.ui.draganddrop
+   internal fun DragAndDropTransferable.toAwt(): Transferable? =
+       (this as? AwtDragAndDropTransferable)?.toAwtTransferable()
+  ```
+  petit fichier "friend" dans le module Tao qui squatte le package — ou
+  utiliser la réflexion si on préfère ne pas mélanger les packages.
