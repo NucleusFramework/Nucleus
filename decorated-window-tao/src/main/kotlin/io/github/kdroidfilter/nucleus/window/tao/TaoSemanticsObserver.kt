@@ -284,8 +284,18 @@ internal class TaoSemanticsObserver(
             composeRole == Role.Tab -> TaoA11yRole.Tab
             composeRole == Role.Image -> TaoA11yRole.Image
             composeRole == Role.DropdownList -> TaoA11yRole.PopupMenu
+            // Compose ValuePicker is what AT-SPI calls a "spin button" —
+            // a number/value input with up/down increment buttons.
+            composeRole == Role.ValuePicker -> TaoA11yRole.SpinButton
+            // Carousel: a horizontally-paginated container. AT-SPI's
+            // closest fit is Role::TabPanel (scroll-pane semantics).
+            composeRole == Role.Carousel -> TaoA11yRole.TabPanel
             else -> when {
                 isHeading -> TaoA11yRole.Heading
+                // Popup containers (Compose's Popup composable adds
+                // `IsPopup`). Map to Tooltip since the AT-SPI Tooltip role
+                // gives screen readers the right "transient" semantics.
+                cfg.contains(SemanticsProperties.IsPopup) -> TaoA11yRole.Tooltip
                 hasEditable -> TaoA11yRole.TextField
                 rangeInfo != null && setProgress -> TaoA11yRole.Slider
                 rangeInfo != null -> TaoA11yRole.Progress

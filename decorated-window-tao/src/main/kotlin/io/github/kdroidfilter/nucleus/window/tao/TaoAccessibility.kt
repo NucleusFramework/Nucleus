@@ -84,6 +84,9 @@ enum class TaoA11yRole(val code: Int) {
     Outline(17),
     Row(18),
     Cell(19),
+    SpinButton(20),
+    TabPanel(21),
+    Tooltip(22),
 }
 
 @Suppress("MagicNumber")
