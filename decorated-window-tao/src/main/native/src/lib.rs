@@ -940,6 +940,9 @@ enum UserEvent {
         handle: u64,
         focusable: bool,
     },
+    Focus {
+        handle: u64,
+    },
     SetMinInnerSize {
         handle: u64,
         // Negative width/height means "clear the minimum".
@@ -1314,6 +1317,17 @@ fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::Focus { handle } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            // Undo a prior `set_minimized(true)` first so the
+                            // window is eligible for foreground activation.
+                            w.set_minimized(false);
+                            w.set_focus();
+                        }
+                    }
+                }
                 UserEvent::SetMinInnerSize { handle, width, height } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
@@ -1613,6 +1627,19 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 ) {
     let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
     let _ = proxy.send_event(UserEvent::Wake);
+}
+
+/// Brings the window to the foreground and gives it keyboard focus. On Win32
+/// this also de-minimizes the window so the foreground activation actually
+/// takes effect (a minimized HWND ignores `SetForegroundWindow`).
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeFocus(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::Focus { handle: handle as u64 });
 }
 
 #[no_mangle]

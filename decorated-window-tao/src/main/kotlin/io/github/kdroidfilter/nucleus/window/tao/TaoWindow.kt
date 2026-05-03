@@ -180,6 +180,11 @@ class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetVisible(handle, false)
     }
 
+    /** Raises the window, restores it if minimized, and gives it keyboard focus. */
+    fun focus() {
+        NativeTaoBridge.nativeFocus(handle)
+    }
+
     /**
      * Fires once, right after the NSWindow is created. The NSView pointer is
      * already valid; the window may still be hidden if it was created with

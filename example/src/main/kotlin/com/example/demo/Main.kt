@@ -140,6 +140,7 @@ fun main(args: Array<String>) {
                 SingleInstanceManager.isSingleInstance(
                     onRestoreFileCreated = { DeepLinkHandler.writeUriTo(this) },
                     onRestoreRequest = {
+                        println("[Example] onRestoreRequest fired")
                         DeepLinkHandler.readUriFrom(this)
                         isWindowVisible = true
                         restoreRequestCount++
@@ -278,7 +279,9 @@ fun main(args: Array<String>) {
                             )
                         }
                         LaunchedEffect(restoreRequestCount) {
+                            println("[Example] LaunchedEffect(restoreRequestCount=$restoreRequestCount) ran")
                             if (restoreRequestCount > 0) {
+                                println("[Example] calling toFront() + requestFocus()")
                                 nucleusWindow.toFront()
                                 nucleusWindow.requestFocus()
                             }

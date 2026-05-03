@@ -174,6 +174,15 @@ internal object NativeTaoBridge {
         focusable: Boolean,
     )
 
+    /**
+     * Raises the window to the top of the z-order, restores it if minimized,
+     * and gives it keyboard focus. Maps to Tao's `Window::set_focus()` which
+     * routes through `SetForegroundWindow` on Win32, `[NSWindow makeKeyAndOrderFront:]`
+     * on macOS, and `gtk_window_present_with_time` on Linux.
+     */
+    @JvmStatic
+    external fun nativeFocus(handle: Long)
+
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(

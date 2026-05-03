@@ -47,13 +47,11 @@ internal class TaoNucleusWindow(
     override fun hide() = taoWindow.hide()
 
     override fun toFront() {
-        // Tao exposes no explicit `toFront`; show() raises and focuses the
-        // window on every supported platform.
-        taoWindow.show()
+        taoWindow.focus()
     }
 
     override fun requestFocus() {
-        taoWindow.show()
+        taoWindow.focus()
     }
 
     override fun setMinimized(minimized: Boolean) {

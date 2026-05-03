@@ -3,9 +3,9 @@ Using vcvarsall.bat: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\
 === Building nucleus_tao.dll (x64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
 warning: variable does not need to be mutable
-    --> src\lib.rs:1897:5
+    --> src\lib.rs:1924:5
      |
-1897 |     mut env: JNIEnv,
+1924 |     mut env: JNIEnv,
      |     ----^^^
      |     |
      |     help: remove this `mut`
@@ -28,14 +28,14 @@ warning: fields `is_active`, `consume_resync`, and `note_pushed` are never read
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `nucleus_tao` (lib) generated 2 warnings (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 6.82s
+    Finished `release` profile [optimized] target(s) in 4.10s
 
 === Building nucleus_tao.dll (ARM64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
 warning: variable does not need to be mutable
-    --> src\lib.rs:1897:5
+    --> src\lib.rs:1924:5
      |
-1897 |     mut env: JNIEnv,
+1924 |     mut env: JNIEnv,
      |     ----^^^
      |     |
      |     help: remove this `mut`
@@ -58,7 +58,7 @@ warning: fields `is_active`, `consume_resync`, and `note_pushed` are never read
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `nucleus_tao` (lib) generated 2 warnings (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 4.21s
+    Finished `release` profile [optimized] target(s) in 4.34s
 
 === Building C helpers (x64) ===
 'vswhere.exe' n'est pas reconnu en tant que commande interne
