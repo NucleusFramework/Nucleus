@@ -109,8 +109,10 @@ internal class TaoComposeSceneHostWindows(
 
         directContext = DirectContext.makeGL()
 
+        @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
         val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
             getRootNode = { scene!!.rootDragAndDropNode },
+            outboundLauncher = ::launchWindowsOutboundDrag,
         )
         scene = CanvasLayersComposeScene(
             density = Density(scale),
@@ -129,6 +131,46 @@ internal class TaoComposeSceneHostWindows(
         )
 
         registerInboundDnD()
+    }
+
+    @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
+    private fun launchWindowsOutboundDrag(
+        request: io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager.OutboundRequest,
+    ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.isLoaded) return null
+        if (hwnd == 0L) return null
+
+        val allowed = request.supportedActions.fold(0) { acc, action ->
+            acc or when (action) {
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
+                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK
+                else -> 0
+            }
+        }.let { if (it == 0) {
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+        } else it }
+
+        val files = request.files.takeIf { it.isNotEmpty() }
+            ?.map { it.absolutePath }?.toTypedArray()
+        val effect = io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.nativeStartDrag(
+            hwnd = hwnd,
+            files = files,
+            text = request.text,
+            allowedEffects = allowed,
+        )
+        return when (effect) {
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_COPY ->
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE ->
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK ->
+                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link
+            else -> null
+        }
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)

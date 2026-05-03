@@ -191,14 +191,16 @@ Ajout de `dragAndDropManager` = un override de plus.
 
 | Variante | macOS | Windows | Linux X11 | Linux Wayland |
 |---|---|---|---|---|
-| **DnD intra-scène** (source ↔ target dans la même fenêtre) | ✅ Stage 0 (manager câblé) | ✅ Stage 0 + déclenche Compose source | ✅ Stage 0 | ✅ Stage 0 |
-| **DnD entrant — fichiers depuis l'OS** | ⏳ Stage 2 | ✅ **Stage 3 livré** | ⏳ Stage 4 | ⏳ Stage 4 |
+| **DnD intra-scène** (source ↔ target dans la même fenêtre) | ✅ Stage 0 (manager câblé) | ✅ Stage 0 | ✅ Stage 0 | ✅ Stage 0 |
+| **DnD entrant — fichiers depuis l'OS** | ⏳ Stage 2 | ✅ **Stage 3** | ⏳ Stage 4 | ⏳ Stage 4 |
 | **DnD entrant — texte/HTML/URI** | ⏳ Stage 2 | ⏳ étoffer Stage 3 (1-2 j) | ⏳ Stage 4 | ⏳ Stage 4 |
-| **DnD sortant** (`Modifier.dragAndDropSource` → OS) | ⏳ Stage 5 | ⏳ Stage 5 | ⏳ Stage 5 | ⏳ Stage 5 |
+| **DnD sortant — texte** | ⏳ Stage 5 | ✅ **Stage 5** | ⏳ Stage 5 | ⏳ Stage 5 |
+| **DnD sortant — fichiers** | ⏳ Stage 5 | ✅ **Stage 5** | ⏳ Stage 5 | ⏳ Stage 5 |
 | **API utilisateur compatible Compose Desktop** (`event.awtTransferable`) | (héritera de Stage 2) | ✅ commit `d95b0b24` | (héritera de Stage 4) | (héritera de Stage 4) |
+| **Compatible GraalVM native-image** | (héritera) | ✅ tested | (héritera) | (héritera) |
 
-**Aucun blocage fondamental** sur les trois OS — seulement de la plomberie
-native restante (Stages 2, 4, 5).
+**Windows complet** (entrée + sortie, JVM + native-image, API portable). Reste
+à porter sur macOS (Stage 2 + 5) et Linux (Stage 4 + 5).
 
 ## Plan natif par OS
 
@@ -430,33 +432,70 @@ Targets minimum : `text/uri-list`, `text/plain;charset=utf-8`.
 GTK abstrait XDND (X11) et `wl_data_device` (Wayland) — un seul code
 pour les deux protocoles.
 
-### ⏳ Stage 5 — DnD sortant tous OS (1 semaine)
+### ✅ Stage 5 Windows — DnD sortant `DoDragDrop` (livré)
 
-Implémenter `requestDragAndDropTransfer` dans `TaoDragAndDropManager`
-pour réellement déclencher une session OS depuis un
-`Modifier.dragAndDropSource` :
+**Couche native** (~500 lignes ajoutées à `nucleus_tao_dnd.c`) :
+- `IDataObject` (`NDO_*`) qui clone son HGLOBAL à chaque `GetData` (le
+  destinataire prend possession via `ReleaseStgMedium`, on doit donc
+  ré-allouer à chaque appel).
+- `IEnumFORMATETC` (`NEF_*`) — itérateur sur le tableau de `FORMATETC` du
+  data object.
+- `IDropSource` (`NDS_*`) — `QueryContinueDrag` (drop sur release du
+  bouton gauche, cancel sur Escape) + `GiveFeedback` retourne
+  `DRAGDROP_S_USEDEFAULTCURSORS` (curseurs OS standard).
+- Helpers `build_hdrop` (DROPFILES + double-null-terminated WCHAR list)
+  et `build_unicode_text` (HGLOBAL WCHAR + null final).
+- JNI export `nativeStartDrag(hwnd, files, text, allowedEffects)` :
+  matérialise les payloads, alloue les COM objects, appelle `DoDragDrop`
+  (bloquant — pompe sa propre boucle modale), retourne le `DROPEFFECT_*`
+  négocié.
 
-- macOS : `[NSView beginDraggingSessionWithItems:event:source:]`. Une
-  classe ObjC conforme à `<NSDraggingSource>`. Image rendue depuis
-  `drawDragDecoration` → `NSImage` → `NSDraggingItem`.
-- Windows : `DoDragDrop(pData, pSource, allowedEffects, &result)` sur le
-  thread du HWND. **Bloquant** : doit être posté à la prochaine
-  itération de loop pour ne pas figer Compose. `IDropSource` +
-  `IDataObject` adapter sur le `Transferable` côté Kotlin (mapping
-  `DataFlavor` ↔ `FORMATETC`/`STGMEDIUM`).
+**Couche Kotlin** :
+- `NativeTaoWindowsDndBridge.nativeStartDrag` + constantes `DROP_EFFECT_*`
+  (Copy=1, Move=2, Link=4, None=0).
+- `TaoDragAndDropManager.OutboundLauncher` interface fonctionnelle +
+  `OutboundRequest(files, text, supportedActions, decorationSize, drawDragDecoration)`
+  — découple la logique commune (extraction `Transferable` →
+  files+text, mapping bitmask actions, callback `onTransferCompleted`)
+  du branchement OS-spécifique.
+- `TaoComposeSceneHostWindows.launchWindowsOutboundDrag` : mappe
+  `OutboundRequest` vers `NativeTaoWindowsDndBridge.nativeStartDrag`.
+
+**Friend-access AWT (la solution propre)** :
+- `src/main/java/androidx/compose/ui/draganddrop/TaoTransferableAccess.java`
+  — fichier **Java** qui cast `DragAndDropTransferable` →
+  `AwtDragAndDropTransferable` et appelle `toAwtTransferable()`. Java
+  n'honore pas le `internal` Kotlin, donc même-package suffit.
+- **Critique pour native-image** : pas de réflexion. `instanceof` +
+  appel d'interface = bytecode statique, zéro métadata. `kotlin("jvm")`
+  pull `src/main/java` automatiquement, aucune config Gradle requise.
+
+> ⚠️ Pièges rencontrés :
+> - Première version utilisait la réflexion (`javaClass.methods.firstOrNull
+>   { it.name == "toAwtTransferable" }`) — fonctionne en JVM, casse
+>   silencieusement en native-image (l'anonyme retourné par
+>   `DragAndDropTransferable(awt: Transferable)` n'a pas de métadata).
+>   Le Java helper résout ça à la racine.
+> - `OleInitialize` doit être appelée avant `DoDragDrop` aussi (pas
+>   seulement `RegisterDragDrop`). Reference-counted : safe d'appeler
+>   plusieurs fois.
+
+### ⏳ Stage 5 macOS / Linux — DnD sortant (à porter)
+
+Côté Kotlin, **tout est prêt** : `OutboundLauncher` est OS-agnostique,
+`TaoTransferableAccess` aussi, l'interface `OutboundRequest` carry
+`files: List<File> + text: String?`. Reste à câbler une lambda
+`launchMacOsOutboundDrag` / `launchLinuxOutboundDrag` qui appelle un
+nouveau JNI bridge.
+
+- macOS : `[NSView beginDraggingSessionWithItems:event:source:]` dans
+  `objc/dnd.m` (ajouté avec Stage 2). Une classe ObjC conforme à
+  `<NSDraggingSource>`. Image rendue depuis `drawDragDecoration` →
+  `NSImage` → `NSDraggingItem`. NSDraggingItem par format (`fileURL`,
+  `string`).
 - Linux : `gtk_drag_begin_with_coordinates`. Signaux `drag-data-get` (se
-  base sur le `Transferable`) et `drag-end` (→ `onTransferCompleted`).
-  Drag image via `gtk_drag_set_icon_surface`.
-
-Pour récupérer le `java.awt.datatransfer.Transferable` depuis le
-`DragAndDropTransferData` que Compose nous donne :
-`(transferData.transferable as? AwtDragAndDropTransferable)?.toAwtTransferable()`.
-`AwtDragAndDropTransferable` est `internal` — accès via cast simple
-échoue côté compilateur Kotlin. Deux options :
-1. Squatter le package `androidx.compose.ui.draganddrop` avec un fichier
-   "friend" dans notre module qui expose une fonction internal-package.
-2. Réflexion (`getMethod("toAwtTransferable").invoke(...)`).
-Option 1 plus propre, plus stable.
+  base sur les payloads pré-matérialisés) et `drag-end` (→ effet
+  retourné). Drag image via `gtk_drag_set_icon_surface`.
 
 ### Étoffer Windows avant Stage 2/4 (optionnel, 1-2 j)
 
@@ -495,16 +534,13 @@ d'étendre `extract_files` côté C en `extract_payload`.
   Linux). Confirmé en pratique — solution : `Revoke`/`unset` avant notre
   registration. Effet collatéral : `WindowEvent::FileDropped` côté Rust
   ne sort plus, on prend tout en charge côté Kotlin.
-- **`AwtDragAndDropTransferable` est `internal`** : pour le DnD sortant
-  (Stage 5), récupérer le `java.awt.datatransfer.Transferable` depuis un
-  `DragAndDropTransferData` exige un fichier "friend" dans le package
-  `androidx.compose.ui.draganddrop` :
-  ```kotlin
-  package androidx.compose.ui.draganddrop
-  internal fun DragAndDropTransferable.toAwt(): Transferable? =
-      (this as? AwtDragAndDropTransferable)?.toAwtTransferable()
-  ```
-  Ou réflexion — moins propre.
+- ~~**`AwtDragAndDropTransferable` est `internal`**~~ : résolu via un
+  fichier **Java** dans le package `androidx.compose.ui.draganddrop`
+  (`TaoTransferableAccess.java`). Java n'honore pas le `internal`
+  Kotlin → cast `instanceof` direct, appel d'interface en bytecode
+  statique. **Critique** : la réflexion comme alternative casse en
+  native-image (l'anonyme du factory `DragAndDropTransferable(awt)` n'a
+  pas de métadata), le Java helper évite ce piège entièrement.
 - **AWT en native-image** : la couche transparence AWT charge `JPanel`,
   `DropTarget`, `DropTargetContext`, `DropTargetDragEvent`,
   `DropTargetDropEvent`, `DataFlavor`. Coût : ~12 entrées

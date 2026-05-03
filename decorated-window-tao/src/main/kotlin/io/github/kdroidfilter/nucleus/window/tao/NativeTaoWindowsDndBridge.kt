@@ -46,6 +46,30 @@ internal object NativeTaoWindowsDndBridge {
     @JvmStatic
     external fun nativeRevoke(hwnd: Long): Int
 
+    /**
+     * Starts an outbound OS drag session via Win32 `DoDragDrop`.
+     *
+     * Blocks the calling thread (Win32 pumps its own modal message loop) until
+     * the user drops or cancels. Must run on the thread owning [hwnd]
+     * (= the Tao event-loop thread).
+     *
+     * Either [files] or [text] (or both) must be non-null/non-empty.
+     *
+     * @param allowedEffects bitmask of [DROP_EFFECT_COPY] / [DROP_EFFECT_MOVE] /
+     *   [DROP_EFFECT_LINK]
+     * @return one of [DROP_EFFECT_*][DROP_EFFECT_NONE] — the action the
+     *   destination accepted, or [DROP_EFFECT_NONE] if cancelled.
+     */
+    @JvmStatic
+    external fun nativeStartDrag(
+        hwnd: Long,
+        files: Array<String>?,
+        text: String?,
+        allowedEffects: Int,
+    ): Int
+
     const val DROP_EFFECT_NONE: Int = 0
     const val DROP_EFFECT_COPY: Int = 1
+    const val DROP_EFFECT_MOVE: Int = 2
+    const val DROP_EFFECT_LINK: Int = 4
 }

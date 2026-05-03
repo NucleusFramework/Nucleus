@@ -81,7 +81,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         BasicText(
-            text = "DRAG ME",
+            text = "DRAG TEXT",
             style = TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold),
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
@@ -89,13 +89,47 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
                 .padding(horizontal = 14.dp, vertical = 8.dp)
                 .dragAndDropSource(
                     transferData = { offset ->
-                        onLog("[DnD] source transferData requested offset=$offset")
+                        onLog("[DnD] source transferData (text) offset=$offset")
                         DragAndDropTransferData(
                             transferable = DragAndDropTransferable(StringSelection("hello-from-tao")),
                             supportedActions = listOf(DragAndDropTransferAction.Copy),
-                            onTransferCompleted = { action ->
-                                onLog("[DnD] source onTransferCompleted action=$action")
-                            },
+                            onTransferCompleted = { onLog("[DnD] text export action=$it") },
+                        )
+                    },
+                ),
+        )
+        BasicText(
+            text = "DRAG FILE",
+            style = TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF8B5CF6))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .dragAndDropSource(
+                    transferData = { offset ->
+                        onLog("[DnD] source transferData (file) offset=$offset")
+                        // Export a temp file we just write so the drop target
+                        // gets something real to receive.
+                        val tmp = java.io.File.createTempFile("tao-export-", ".txt").apply {
+                            writeText("Exported from Tao backend at offset=$offset\n")
+                            deleteOnExit()
+                        }
+                        DragAndDropTransferData(
+                            transferable = DragAndDropTransferable(
+                                java.awt.datatransfer.DataFlavor.javaFileListFlavor.let {
+                                    object : java.awt.datatransfer.Transferable {
+                                        private val flavors = arrayOf(java.awt.datatransfer.DataFlavor.javaFileListFlavor)
+                                        override fun getTransferDataFlavors() = flavors
+                                        override fun isDataFlavorSupported(f: java.awt.datatransfer.DataFlavor?) =
+                                            f == java.awt.datatransfer.DataFlavor.javaFileListFlavor
+                                        override fun getTransferData(f: java.awt.datatransfer.DataFlavor?): Any =
+                                            if (f == java.awt.datatransfer.DataFlavor.javaFileListFlavor) listOf(tmp)
+                                            else throw java.awt.datatransfer.UnsupportedFlavorException(f)
+                                    }
+                                }
+                            ),
+                            supportedActions = listOf(DragAndDropTransferAction.Copy),
+                            onTransferCompleted = { onLog("[DnD] file export action=$it path=${tmp.absolutePath}") },
                         )
                     },
                 ),

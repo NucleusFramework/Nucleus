@@ -422,3 +422,368 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeR
     OleUninitialize();
     return SUCCEEDED(hr) ? 0 : -2;
 }
+
+/* ====================================================================== */
+/* Outbound DnD — DoDragDrop session driven from Compose                   */
+/* ====================================================================== */
+
+/* ---- Helpers: build HGLOBAL payloads -------------------------------- */
+
+/* Builds a CF_HDROP HGLOBAL from a list of WCHAR paths. The destination
+ * receiving CF_HDROP via STGMEDIUM (TYMED_HGLOBAL) takes ownership of the
+ * HGLOBAL and frees it via ReleaseStgMedium. We must therefore allocate a
+ * fresh one for every GetData call. */
+static HGLOBAL build_hdrop(JNIEnv *env, jobjectArray files) {
+    if (!files) return NULL;
+    jsize n = (*env)->GetArrayLength(env, files);
+    if (n <= 0) return NULL;
+
+    /* First pass: total WCHAR count incl. per-string null + final extra null. */
+    SIZE_T total_wchars = 0;
+    for (jsize i = 0; i < n; ++i) {
+        jstring s = (jstring)(*env)->GetObjectArrayElement(env, files, i);
+        if (!s) continue;
+        jsize len = (*env)->GetStringLength(env, s);
+        total_wchars += (SIZE_T)len + 1; /* +1 for null terminator */
+        (*env)->DeleteLocalRef(env, s);
+    }
+    total_wchars += 1; /* final extra null = double-null termination */
+
+    SIZE_T cb = sizeof(DROPFILES) + total_wchars * sizeof(WCHAR);
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, cb);
+    if (!hg) return NULL;
+
+    DROPFILES *df = (DROPFILES *)GlobalLock(hg);
+    if (!df) { GlobalFree(hg); return NULL; }
+    df->pFiles = sizeof(DROPFILES);
+    df->fWide = TRUE;
+
+    WCHAR *cursor = (WCHAR *)((BYTE *)df + sizeof(DROPFILES));
+    for (jsize i = 0; i < n; ++i) {
+        jstring s = (jstring)(*env)->GetObjectArrayElement(env, files, i);
+        if (!s) continue;
+        jsize len = (*env)->GetStringLength(env, s);
+        const jchar *src = (*env)->GetStringChars(env, s, NULL);
+        if (src) {
+            for (jsize k = 0; k < len; ++k) cursor[k] = (WCHAR)src[k];
+            (*env)->ReleaseStringChars(env, s, src);
+            cursor[len] = L'\0';
+            cursor += len + 1;
+        }
+        (*env)->DeleteLocalRef(env, s);
+    }
+    *cursor = L'\0';
+
+    GlobalUnlock(hg);
+    return hg;
+}
+
+/* Builds a CF_UNICODETEXT HGLOBAL from a Java string. */
+static HGLOBAL build_unicode_text(JNIEnv *env, jstring text) {
+    if (!text) return NULL;
+    jsize len = (*env)->GetStringLength(env, text);
+    SIZE_T cb = ((SIZE_T)len + 1) * sizeof(WCHAR);
+    HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, cb);
+    if (!hg) return NULL;
+
+    WCHAR *p = (WCHAR *)GlobalLock(hg);
+    if (!p) { GlobalFree(hg); return NULL; }
+    const jchar *src = (*env)->GetStringChars(env, text, NULL);
+    if (src) {
+        for (jsize k = 0; k < len; ++k) p[k] = (WCHAR)src[k];
+        (*env)->ReleaseStringChars(env, text, src);
+    }
+    p[len] = L'\0';
+    GlobalUnlock(hg);
+    return hg;
+}
+
+/* ---- IEnumFORMATETC ------------------------------------------------- */
+
+typedef struct NucleusEnumFormatEtc {
+    IEnumFORMATETCVtbl *lpVtbl;
+    LONG     refCount;
+    UINT     count;
+    UINT     cursor;
+    FORMATETC formats[3]; /* CF_HDROP, CF_UNICODETEXT, … */
+} NucleusEnumFormatEtc;
+
+static HRESULT STDMETHODCALLTYPE NEF_QueryInterface(IEnumFORMATETC *self, REFIID riid, void **ppv) {
+    if (!ppv) return E_POINTER;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IEnumFORMATETC)) {
+        *ppv = self; IEnumFORMATETC_AddRef(self); return S_OK;
+    }
+    *ppv = NULL; return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE NEF_AddRef(IEnumFORMATETC *self) {
+    return (ULONG)InterlockedIncrement(&((NucleusEnumFormatEtc *)self)->refCount);
+}
+static ULONG STDMETHODCALLTYPE NEF_Release(IEnumFORMATETC *self) {
+    NucleusEnumFormatEtc *e = (NucleusEnumFormatEtc *)self;
+    LONG n = InterlockedDecrement(&e->refCount);
+    if (n == 0) HeapFree(GetProcessHeap(), 0, e);
+    return (ULONG)n;
+}
+static HRESULT STDMETHODCALLTYPE NEF_Next(IEnumFORMATETC *self, ULONG celt, FORMATETC *rgelt, ULONG *pceltFetched) {
+    NucleusEnumFormatEtc *e = (NucleusEnumFormatEtc *)self;
+    ULONG fetched = 0;
+    while (fetched < celt && e->cursor < e->count) {
+        rgelt[fetched] = e->formats[e->cursor];
+        e->cursor++; fetched++;
+    }
+    if (pceltFetched) *pceltFetched = fetched;
+    return (fetched == celt) ? S_OK : S_FALSE;
+}
+static HRESULT STDMETHODCALLTYPE NEF_Skip(IEnumFORMATETC *self, ULONG celt) {
+    NucleusEnumFormatEtc *e = (NucleusEnumFormatEtc *)self;
+    if (e->cursor + celt > e->count) { e->cursor = e->count; return S_FALSE; }
+    e->cursor += celt; return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE NEF_Reset(IEnumFORMATETC *self) {
+    ((NucleusEnumFormatEtc *)self)->cursor = 0; return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE NEF_Clone(IEnumFORMATETC *self, IEnumFORMATETC **ppenum) { (void)self; (void)ppenum; return E_NOTIMPL; }
+
+static IEnumFORMATETCVtbl g_enum_vtbl = {
+    NEF_QueryInterface, NEF_AddRef, NEF_Release,
+    NEF_Next, NEF_Skip, NEF_Reset, NEF_Clone,
+};
+
+static IEnumFORMATETC *make_enum(const FORMATETC *src, UINT count) {
+    NucleusEnumFormatEtc *e = (NucleusEnumFormatEtc *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NucleusEnumFormatEtc));
+    if (!e) return NULL;
+    e->lpVtbl = &g_enum_vtbl;
+    e->refCount = 1;
+    e->count = count;
+    for (UINT i = 0; i < count && i < 3; ++i) e->formats[i] = src[i];
+    return (IEnumFORMATETC *)e;
+}
+
+/* ---- IDataObject ---------------------------------------------------- */
+
+typedef struct NucleusDataObject {
+    IDataObjectVtbl *lpVtbl;
+    LONG     refCount;
+    JavaVM  *vm;
+    /* Pre-baked source data, materialized once at session start.
+     * GetData clones from these into fresh HGLOBALs as the destination
+     * takes ownership via ReleaseStgMedium. */
+    HGLOBAL  src_hdrop;        /* may be NULL */
+    HGLOBAL  src_text;         /* may be NULL */
+    UINT     n_formats;
+    FORMATETC formats[2];
+} NucleusDataObject;
+
+static HGLOBAL clone_hglobal(HGLOBAL src) {
+    if (!src) return NULL;
+    SIZE_T cb = GlobalSize(src);
+    HGLOBAL dst = GlobalAlloc(GMEM_MOVEABLE, cb);
+    if (!dst) return NULL;
+    void *psrc = GlobalLock(src);
+    void *pdst = GlobalLock(dst);
+    if (psrc && pdst) memcpy(pdst, psrc, cb);
+    if (psrc) GlobalUnlock(src);
+    if (pdst) GlobalUnlock(dst);
+    return dst;
+}
+
+static HRESULT STDMETHODCALLTYPE NDO_QueryInterface(IDataObject *self, REFIID riid, void **ppv) {
+    if (!ppv) return E_POINTER;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDataObject)) {
+        *ppv = self; IDataObject_AddRef(self); return S_OK;
+    }
+    *ppv = NULL; return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE NDO_AddRef(IDataObject *self) {
+    return (ULONG)InterlockedIncrement(&((NucleusDataObject *)self)->refCount);
+}
+static ULONG STDMETHODCALLTYPE NDO_Release(IDataObject *self) {
+    NucleusDataObject *o = (NucleusDataObject *)self;
+    LONG n = InterlockedDecrement(&o->refCount);
+    if (n == 0) {
+        if (o->src_hdrop) GlobalFree(o->src_hdrop);
+        if (o->src_text)  GlobalFree(o->src_text);
+        HeapFree(GetProcessHeap(), 0, o);
+    }
+    return (ULONG)n;
+}
+static HRESULT STDMETHODCALLTYPE NDO_GetData(IDataObject *self, FORMATETC *pfe, STGMEDIUM *psm) {
+    NucleusDataObject *o = (NucleusDataObject *)self;
+    if (!pfe || !psm) return E_INVALIDARG;
+    if (!(pfe->tymed & TYMED_HGLOBAL)) return DV_E_TYMED;
+    if (pfe->dwAspect != DVASPECT_CONTENT) return DV_E_DVASPECT;
+
+    HGLOBAL src = NULL;
+    if (pfe->cfFormat == CF_HDROP) src = o->src_hdrop;
+    else if (pfe->cfFormat == CF_UNICODETEXT) src = o->src_text;
+    else return DV_E_FORMATETC;
+    if (!src) return DV_E_FORMATETC;
+
+    HGLOBAL clone = clone_hglobal(src);
+    if (!clone) return E_OUTOFMEMORY;
+
+    psm->tymed = TYMED_HGLOBAL;
+    psm->hGlobal = clone;
+    psm->pUnkForRelease = NULL;
+    return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE NDO_GetDataHere(IDataObject *self, FORMATETC *pfe, STGMEDIUM *psm) {
+    (void)self; (void)pfe; (void)psm; return E_NOTIMPL;
+}
+static HRESULT STDMETHODCALLTYPE NDO_QueryGetData(IDataObject *self, FORMATETC *pfe) {
+    NucleusDataObject *o = (NucleusDataObject *)self;
+    if (!pfe) return E_INVALIDARG;
+    if (!(pfe->tymed & TYMED_HGLOBAL)) return DV_E_TYMED;
+    if (pfe->dwAspect != DVASPECT_CONTENT) return DV_E_DVASPECT;
+    if (pfe->cfFormat == CF_HDROP && o->src_hdrop) return S_OK;
+    if (pfe->cfFormat == CF_UNICODETEXT && o->src_text) return S_OK;
+    return DV_E_FORMATETC;
+}
+static HRESULT STDMETHODCALLTYPE NDO_GetCanonicalFormatEtc(IDataObject *self, FORMATETC *in, FORMATETC *out) {
+    (void)self;
+    if (in && out) { *out = *in; out->ptd = NULL; }
+    return DATA_S_SAMEFORMATETC;
+}
+static HRESULT STDMETHODCALLTYPE NDO_SetData(IDataObject *self, FORMATETC *pfe, STGMEDIUM *psm, BOOL fRelease) {
+    (void)self; (void)pfe; (void)psm; (void)fRelease; return E_NOTIMPL;
+}
+static HRESULT STDMETHODCALLTYPE NDO_EnumFormatEtc(IDataObject *self, DWORD direction, IEnumFORMATETC **ppenum) {
+    NucleusDataObject *o = (NucleusDataObject *)self;
+    if (!ppenum) return E_POINTER;
+    if (direction != DATADIR_GET) { *ppenum = NULL; return E_NOTIMPL; }
+    *ppenum = make_enum(o->formats, o->n_formats);
+    return *ppenum ? S_OK : E_OUTOFMEMORY;
+}
+static HRESULT STDMETHODCALLTYPE NDO_DAdvise(IDataObject *self, FORMATETC *pfe, DWORD a, IAdviseSink *s, DWORD *p) {
+    (void)self;(void)pfe;(void)a;(void)s;(void)p; return OLE_E_ADVISENOTSUPPORTED;
+}
+static HRESULT STDMETHODCALLTYPE NDO_DUnadvise(IDataObject *self, DWORD c) { (void)self;(void)c; return OLE_E_ADVISENOTSUPPORTED; }
+static HRESULT STDMETHODCALLTYPE NDO_EnumDAdvise(IDataObject *self, IEnumSTATDATA **p) { (void)self;(void)p; return OLE_E_ADVISENOTSUPPORTED; }
+
+static IDataObjectVtbl g_data_object_vtbl = {
+    NDO_QueryInterface, NDO_AddRef, NDO_Release,
+    NDO_GetData, NDO_GetDataHere, NDO_QueryGetData,
+    NDO_GetCanonicalFormatEtc, NDO_SetData, NDO_EnumFormatEtc,
+    NDO_DAdvise, NDO_DUnadvise, NDO_EnumDAdvise,
+};
+
+/* ---- IDropSource ---------------------------------------------------- */
+
+typedef struct NucleusDropSource {
+    IDropSourceVtbl *lpVtbl;
+    LONG refCount;
+} NucleusDropSource;
+
+static HRESULT STDMETHODCALLTYPE NDS_QueryInterface(IDropSource *self, REFIID riid, void **ppv) {
+    if (!ppv) return E_POINTER;
+    if (IsEqualIID(riid, &IID_IUnknown) || IsEqualIID(riid, &IID_IDropSource)) {
+        *ppv = self; IDropSource_AddRef(self); return S_OK;
+    }
+    *ppv = NULL; return E_NOINTERFACE;
+}
+static ULONG STDMETHODCALLTYPE NDS_AddRef(IDropSource *self) {
+    return (ULONG)InterlockedIncrement(&((NucleusDropSource *)self)->refCount);
+}
+static ULONG STDMETHODCALLTYPE NDS_Release(IDropSource *self) {
+    NucleusDropSource *s = (NucleusDropSource *)self;
+    LONG n = InterlockedDecrement(&s->refCount);
+    if (n == 0) HeapFree(GetProcessHeap(), 0, s);
+    return (ULONG)n;
+}
+static HRESULT STDMETHODCALLTYPE NDS_QueryContinueDrag(IDropSource *self, BOOL fEscape, DWORD grfKeyState) {
+    (void)self;
+    if (fEscape) return DRAGDROP_S_CANCEL;
+    /* Drop on left-button release. MK_LBUTTON is bit 0x01 in grfKeyState. */
+    if (!(grfKeyState & MK_LBUTTON)) return DRAGDROP_S_DROP;
+    return S_OK;
+}
+static HRESULT STDMETHODCALLTYPE NDS_GiveFeedback(IDropSource *self, DWORD dwEffect) {
+    (void)self; (void)dwEffect;
+    /* Use OS-default cursors. */
+    return DRAGDROP_S_USEDEFAULTCURSORS;
+}
+
+static IDropSourceVtbl g_drop_source_vtbl = {
+    NDS_QueryInterface, NDS_AddRef, NDS_Release,
+    NDS_QueryContinueDrag, NDS_GiveFeedback,
+};
+
+/* ---- nativeStartDrag JNI export ------------------------------------- */
+
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeStartDrag(
+    JNIEnv *env, jclass cls, jlong hwnd, jobjectArray files, jstring text, jint allowedEffects)
+{
+    (void)cls; (void)hwnd;
+
+    /* Materialize source data once. */
+    HGLOBAL hdrop = build_hdrop(env, files);
+    HGLOBAL htext = build_unicode_text(env, text);
+    if (!hdrop && !htext) return 0; /* DROPEFFECT_NONE — nothing to drag */
+
+    /* Allocate IDataObject. */
+    NucleusDataObject *obj = (NucleusDataObject *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NucleusDataObject));
+    if (!obj) {
+        if (hdrop) GlobalFree(hdrop);
+        if (htext) GlobalFree(htext);
+        return 0;
+    }
+    obj->lpVtbl = &g_data_object_vtbl;
+    obj->refCount = 1;
+    obj->vm = g_vm;
+    obj->src_hdrop = hdrop;
+    obj->src_text = htext;
+
+    UINT idx = 0;
+    if (hdrop) {
+        obj->formats[idx].cfFormat = CF_HDROP;
+        obj->formats[idx].ptd = NULL;
+        obj->formats[idx].dwAspect = DVASPECT_CONTENT;
+        obj->formats[idx].lindex = -1;
+        obj->formats[idx].tymed = TYMED_HGLOBAL;
+        idx++;
+    }
+    if (htext) {
+        obj->formats[idx].cfFormat = CF_UNICODETEXT;
+        obj->formats[idx].ptd = NULL;
+        obj->formats[idx].dwAspect = DVASPECT_CONTENT;
+        obj->formats[idx].lindex = -1;
+        obj->formats[idx].tymed = TYMED_HGLOBAL;
+        idx++;
+    }
+    obj->n_formats = idx;
+
+    /* Allocate IDropSource. */
+    NucleusDropSource *src = (NucleusDropSource *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(NucleusDropSource));
+    if (!src) {
+        IDataObject_Release((IDataObject *)obj);
+        return 0;
+    }
+    src->lpVtbl = &g_drop_source_vtbl;
+    src->refCount = 1;
+
+    /* DoDragDrop pumps its own modal loop until the user releases or escapes.
+     * The thread must be STA — guaranteed if nativeRegister was called earlier
+     * (which OleInitializes), but call it defensively here in case outbound
+     * drag is the very first DnD operation. */
+    HRESULT ole_hr = OleInitialize(NULL);
+    DWORD result_effect = DROPEFFECT_NONE;
+    HRESULT hr = DoDragDrop(
+        (IDataObject *)obj,
+        (IDropSource *)src,
+        (DWORD)allowedEffects,
+        &result_effect);
+
+    IDropSource_Release((IDropSource *)src);
+    IDataObject_Release((IDataObject *)obj);
+    if (SUCCEEDED(ole_hr)) OleUninitialize();
+
+    if (hr == DRAGDROP_S_DROP) {
+        /* Map DROPEFFECT_* to our public bitmask values. */
+        if (result_effect & DROPEFFECT_COPY) return 1;
+        if (result_effect & DROPEFFECT_MOVE) return 2;
+        if (result_effect & DROPEFFECT_LINK) return 4;
+        return 0;
+    }
+    return 0;
+}
