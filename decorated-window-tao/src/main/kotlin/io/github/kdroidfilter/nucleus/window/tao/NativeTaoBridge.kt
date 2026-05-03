@@ -320,6 +320,22 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * Linux-only: ask Rust to resolve the X11 window's screen-space origin
+     * via `XGetGeometry` + `XTranslateCoordinates(window → root)` and push
+     * it to AccessKit. This gives Orca's flat-review and screen-magnifiers
+     * accurate on-screen coordinates — without it, AccessKit reports
+     * window-local bounds and the highlight floats around (0,0).
+     *
+     * `display` and `xid` come from [nativeLinuxHandles].
+     */
+    @JvmStatic
+    external fun nativeA11yResolveX11Bounds(
+        nsView: Long,
+        display: Long,
+        xid: Long,
+    )
+
+    /**
      * Linux-only: forwards X11 focus state to AccessKit's adapter so AT-SPI's
      * `STATE_ACTIVE` on the toplevel matches the actual window focus. On
      * macOS / Windows the platform UIA / NSAccessibility hooks observe focus

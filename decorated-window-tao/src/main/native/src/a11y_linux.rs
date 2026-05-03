@@ -998,6 +998,108 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     entry.adapter.set_root_window_bounds(outer, inner);
 }
 
+/// Resolve outer/inner window geometry from the X server itself and push
+/// it to AccessKit. The JVM only has window-local coordinates; we need
+/// screen-space ones for AT-SPI's flat-review and screen-magnifier focus
+/// tracking. Calling `XGetGeometry` + `XTranslateCoordinates` against the
+/// X root gives us the true on-screen origin of the client area.
+///
+/// `xid` is the X11 Window ID (same value the JVM cached as the "handle"
+/// at attach time on Linux). `display_ptr` is GDK's Display* (from
+/// `nativeLinuxHandles`).
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yResolveX11Bounds(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    display_ptr: jlong,
+    xid: jlong,
+) {
+    eprintln!("[a11y] resolve bounds: handle={} display={:#x} xid={:#x}", handle, display_ptr as u64, xid);
+    if handle == 0 || display_ptr == 0 || xid == 0 {
+        return;
+    }
+    use x11_dl::xlib::{Xlib, Window as XWindow, XID};
+    let xlib = match Xlib::open() {
+        Ok(x) => x,
+        Err(e) => { eprintln!("[a11y] Xlib::open failed: {:?}", e); return; }
+    };
+    let display = display_ptr as *mut x11_dl::xlib::Display;
+    let xid: XID = xid as XID;
+
+    // 1. Inner client geometry (relative to its parent — usually the WM
+    //    frame). Returns width/height in client area pixels.
+    let mut root: XWindow = 0;
+    let mut x: i32 = 0;
+    let mut y: i32 = 0;
+    let mut w: u32 = 0;
+    let mut h: u32 = 0;
+    let mut border: u32 = 0;
+    let mut depth: u32 = 0;
+    unsafe {
+        if (xlib.XGetGeometry)(
+            display,
+            xid,
+            &mut root,
+            &mut x,
+            &mut y,
+            &mut w,
+            &mut h,
+            &mut border,
+            &mut depth,
+        ) == 0
+        {
+            return;
+        }
+    }
+
+    // 2. Translate (0, 0) from client window → root window: gives the
+    //    on-screen origin of the inner client area, accounting for any
+    //    WM-imposed frame insets.
+    let mut inner_root_x: i32 = 0;
+    let mut inner_root_y: i32 = 0;
+    let mut child: XWindow = 0;
+    unsafe {
+        if (xlib.XTranslateCoordinates)(
+            display,
+            xid,
+            root,
+            0,
+            0,
+            &mut inner_root_x,
+            &mut inner_root_y,
+            &mut child,
+        ) == 0
+        {
+            return;
+        }
+    }
+
+    // 3. We don't have a cheap way to compute the WM frame extents (the
+    //    `_NET_FRAME_EXTENTS` property). For most users — including Orca's
+    //    flat review and magnifier — the inner client rect is what
+    //    matters. Use it for both outer and inner; visually identical to
+    //    a borderless / CSD window which is what we are anyway (Tao on
+    //    Linux uses GTK's client-side decorations).
+    let outer = Rect {
+        x0: inner_root_x as f64,
+        y0: inner_root_y as f64,
+        x1: (inner_root_x + w as i32) as f64,
+        y1: (inner_root_y + h as i32) as f64,
+    };
+    let inner = outer;
+    eprintln!("[a11y] resolved bounds: ({},{},{}x{})", inner_root_x, inner_root_y, w, h);
+
+    let mut map = match WINDOWS.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    let Some(entry) = map.get_mut(&handle) else {
+        return;
+    };
+    entry.adapter.set_root_window_bounds(outer, inner);
+}
+
 /// Updates the window-focus state inside AccessKit. Called from Kotlin's
 /// `onFocusChanged` so AT-SPI's `STATE_ACTIVE` flag on the toplevel matches
 /// the actual X focus.

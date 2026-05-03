@@ -287,6 +287,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 }
             }
         }
+        println("[a11y/kt] onWindowReady: w=$w h=$h linuxXid=${a11yController.linuxXid}")
         host.onResized(w, h)
         host.onRedrawRequested()
         if (visible) {
@@ -303,6 +304,12 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             // continuous redraw stream.
             window.requestRedraw()
         }
+        println("[a11y/kt] onWindowReady: about to push bounds")
+        // Push real screen-space bounds once the GTK toplevel has been
+        // mapped — XTranslateCoordinates returns garbage on unmapped
+        // windows. show() above synchronously maps the toplevel.
+        pushA11yBoundsLinux(a11yController.linuxXid, window.handle)
+        println("[a11y/kt] onWindowReady: done")
     }
     window.onResized { w, h ->
         host.onResized(w, h)
@@ -324,17 +331,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // is_maximized query and may have set the wrong shape on a
         // borderline maximize/restore frame.
         host.applyRoundedShape()
-        // Push window-local bounds to AccessKit. We pass (0,0,w,h) for both
-        // outer and inner — Orca's flat-review under XWayland still gets
-        // accurate within-window positions; absolute screen coords would
-        // require an XTranslateCoordinates round-trip we leave to a follow-up.
-        if (a11yController.linuxXid != 0L) {
-            NativeTaoBridge.nativeA11ySetRootBounds(
-                a11yController.linuxXid,
-                0L, 0L, w.toLong(), h.toLong(),
-                0L, 0L, w.toLong(), h.toLong(),
-            )
-        }
+        // Push real screen-space bounds to AccessKit. Orca's flat-review
+        // and screen magnifiers need the on-screen origin to highlight the
+        // focused widget at the right pixel. The Rust side calls
+        // `XTranslateCoordinates(window → root)` to compute it.
+        pushA11yBoundsLinux(a11yController.linuxXid, window.handle)
     }
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed {
@@ -366,6 +367,36 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     icon?.toRgbaIcon()?.let { (w, h, px) -> window.setIcon(w, h, px) }
 
     return window
+}
+
+/**
+ * Resolves the X11 window's screen-space origin via Rust (XGetGeometry +
+ * XTranslateCoordinates against the X root) and pushes it to AccessKit so
+ * Orca's flat-review and the screen magnifier highlight at the correct
+ * pixel. No-op if the controller hasn't attached (`xid == 0`) or if the
+ * Tao linux-handles aren't yet resolved.
+ */
+private fun pushA11yBoundsLinux(xid: Long, windowHandle: Long) {
+    println("[a11y/kt] pushA11yBoundsLinux xid=$xid handle=$windowHandle")
+    if (xid == 0L) {
+        println("[a11y/kt]   xid is 0, skipping")
+        return
+    }
+    val handles = NativeTaoBridge.nativeLinuxHandles(windowHandle) ?: run {
+        println("[a11y/kt]   nativeLinuxHandles returned null")
+        return
+    }
+    if (handles.size != 3 || handles[0].toInt() != 1) {
+        println("[a11y/kt]   handles=${handles.toList()} not X11")
+        return
+    }
+    val display = handles[1]
+    if (display == 0L) {
+        println("[a11y/kt]   display ptr is 0")
+        return
+    }
+    println("[a11y/kt]   calling resolveX11Bounds")
+    NativeTaoBridge.nativeA11yResolveX11Bounds(xid, display, xid)
 }
 
 /**
