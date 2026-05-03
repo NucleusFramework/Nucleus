@@ -1,21 +1,42 @@
 /**
  * JNI bridge: EGL renderer for the Tao backend on Linux.
  *
- * This is the new path that will eventually replace `nucleus_tao_glx.c`. It
- * drives Skia's GL backend through `GLAssembledInterface.createFromNativePointers`
+ * Drives Skia's GL backend through `GLAssembledInterface.createFromNativePointers`
  * + `DirectContext.makeGLWithInterface(...)`, which lets us hand Skia an
  * `eglGetProcAddress`-resolved set of GL entry points instead of the
  * GLX-flavoured `GrGLMakeNativeInterface()` that Skiko's own `MakeGL()` returns.
  *
- * Phase 1 (this file): X11 window surface only. Wayland (`wl_egl_window`) +
- * `wp_fractional_scale_v1` + `wp_viewporter` will land in follow-up commits.
- * Selection between this helper and the legacy GLX one is driven by the JVM
- * system property `nucleus.tao.linux.renderer = glx | egl` (see
- * `TaoComposeSceneHostLinux.attach()`).
+ * Two attach paths share the helper:
+ *   - `nativeAttachX11(Display*, Window, …)`     — `EGL_PLATFORM_X11_KHR`
+ *   - `nativeAttachWayland(wl_display*, wl_surface*, …)` — `EGL_PLATFORM_WAYLAND_KHR`
+ *                                                     + `wl_egl_window`
  *
- * Linked libraries: -ldl. libEGL.so.1, libGL.so.1 / libOpenGL.so.0 and
- * libX11.so.6 are dlopen-ed at runtime so the build doesn't require the
- * dev packages and the .so ships standalone.
+ * Selection between this helper and the legacy `nucleus_tao_glx.c` is
+ * driven by `nucleus.tao.linux.renderer` (system property) or
+ * `NUCLEUS_TAO_LINUX_RENDERER` (env-var); see `TaoComposeSceneHostLinux`.
+ *
+ * Linked libraries: -ldl. libEGL.so.1, libGL.so.1 / libOpenGL.so.0,
+ * libX11.so.6, libXext.so.6 and libwayland-egl.so.1 are dlopen-ed at
+ * runtime so the build doesn't require the dev packages and the .so
+ * ships standalone. libwayland-egl is only required for the Wayland
+ * attach path; X11-only setups don't need it.
+ *
+ * TODO (planned follow-ups, mirror the questions raised in the
+ *       Phase-2 research brief):
+ *   - `wp_fractional_scale_v1` + `wp_viewporter` binding to honor
+ *     fractional HiDPI scales correctly on Wayland (GTK 3 reports only
+ *     integer scales, so 125% / 150% sessions currently get a buffer at
+ *     1x and the compositor upscales).
+ *   - `zxdg_decoration_manager_v1.set_mode(client_side)` so KWin /
+ *     Wayland-Plasma 5 doesn't draw a server-side titlebar around our
+ *     custom-chrome windows.
+ *   - Frame-callback occlusion timeout: `eglSwapBuffers` blocks
+ *     indefinitely when the surface is fully occluded by another window
+ *     on wlroots compositors. Detect via `xdg_toplevel.configure` losing
+ *     the `activated` state and fall back to a polling redraw.
+ *   - NVIDIA `egl-wayland2` runtime detection — driver < 560 with the
+ *     legacy egl-wayland can't resize an EGLSurface (drag-resize is
+ *     broken upstream); document the package as a runtime requirement.
  */
 
 #include <jni.h>

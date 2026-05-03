@@ -135,12 +135,13 @@ internal class TaoComposeSceneHostLinux(
 
     fun attach() {
         renderer = Renderer.fromSystemProperty()
-        // One-line breadcrumb so test runs make it obvious which path is live
-        // when the visual is otherwise indistinguishable. Logged once per
-        // window — cheap, and we strip the noise when GLX is the default.
+        // One-line breadcrumb so test runs make it obvious which path is
+        // live when the visual is otherwise indistinguishable. Logged once
+        // per window. Selector: `-Dnucleus.tao.linux.renderer=…` or
+        // `NUCLEUS_TAO_LINUX_RENDERER=…` env-var.
         java.util.logging.Logger
             .getLogger("nucleus.tao.linux")
-            .info("renderer=$renderer (sys-prop nucleus.tao.linux.renderer)")
+            .info("renderer=$renderer (selector: nucleus.tao.linux.renderer)")
         check(NativeTaoBridge.isLoaded) { "nucleus_tao not loaded" }
         check(
             when (renderer) {
