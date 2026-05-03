@@ -493,6 +493,19 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        // Re-bind THIS window's EGL context before tearing down Skia. The
+        // GPU-resource releases that follow (glDeleteFramebuffers /
+        // glDeleteTextures inside Surface.close + DirectContext.close) reach
+        // GL through the `GrGLInterface` function pointers we resolved via
+        // eglGetProcAddress; those pointers expect *some* valid context to
+        // be current, and on a multi-window app (main + popup/dialog) the
+        // currently-current context may belong to another window or be
+        // unbound altogether — leading to a segfault deep inside the
+        // driver. Making the local context current first guarantees the
+        // releases land on the right resources.
+        if (attachmentHandle != 0L) {
+            NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        }
         cachedSurface?.close()
         cachedSurface = null
         cachedRt?.close()
