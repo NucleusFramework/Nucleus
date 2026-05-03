@@ -13,6 +13,7 @@ build
 .kotlin
 site
 /tmp/
+/.tmp-compose-src/
 
 # Native libraries (built on CI via build-natives.yaml)
 **/src/main/resources/nucleus/native/
