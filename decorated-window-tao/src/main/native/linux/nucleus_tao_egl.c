@@ -36,10 +36,11 @@
  * libwayland-client.so.0 — the C protocol headers aren't pulled at build
  * time so the .so ships standalone.
  *
- * Wayland-native is gated behind `NUCLEUS_TAO_LINUX_RENDERER=wayland` for
- * now (see lib.rs); the default still forces `GDK_BACKEND=x11` to land on
- * XWayland. Once the wl_subsurface path racks up a few weeks of usage
- * the gate can be flipped or removed.
+ * Selection: GDK auto-picks the backend (= native Wayland on Wayland
+ * sessions, X11 elsewhere). Set `NUCLEUS_TAO_LINUX_RENDERER=x11` to force
+ * XWayland — useful for apps that need X11-specific features Wayland
+ * deliberately doesn't expose (always-on-top, programmatic positioning,
+ * global pointer queries, etc.).
  *
  * TODO (planned follow-ups, in priority order):
  *   - `wp_fractional_scale_v1` + `wp_viewporter` binding to honor

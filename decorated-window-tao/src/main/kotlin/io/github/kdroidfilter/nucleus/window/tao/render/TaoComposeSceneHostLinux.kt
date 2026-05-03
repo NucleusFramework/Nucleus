@@ -130,10 +130,9 @@ internal class TaoComposeSceneHostLinux(
         // (kind, display, native_window) — see NativeTaoBridge.nativeLinuxHandles.
         //   kind=1 → Xlib  (`display` = X Display*, `native_window` = XID)
         //   kind=2 → Wayland (`display` = wl_display*, `native_window` = wl_surface*)
-        // tao on Linux always lands on kind=1 because lib.rs forces
-        // `GDK_BACKEND=x11` — Wayland-native rendering is blocked on a
-        // wl_subsurface child (see nucleus_tao_egl.c header). The kind=2
-        // dispatch below stays as forward-compat infrastructure.
+        // GDK auto-picks the backend: native Wayland on Wayland sessions,
+        // X11 on X11 sessions or when NUCLEUS_TAO_LINUX_RENDERER=x11 forces
+        // GDK_BACKEND=x11 (see lib.rs).
         val handles = NativeTaoBridge.nativeLinuxHandles(window.handle)
         require(handles != null && handles.size == 3 && handles[0].toInt() != 0) {
             "Linux window handles unavailable; window not yet realised"
@@ -160,10 +159,10 @@ internal class TaoComposeSceneHostLinux(
                 h
             }
             2 -> {
-                // Wayland: physical pixels (logical × scale). Currently
-                // unreachable while lib.rs forces GDK_BACKEND=x11, but kept so
-                // that flipping the env-var (or landing the wl_subsurface
-                // patch) doesn't require revisiting this path.
+                // Wayland: physical pixels (logical × scale). Native Wayland
+                // attach via a wl_subsurface child of GTK's surface — see
+                // nucleus_tao_egl.c. tao reports integer scale only;
+                // wp_fractional_scale_v1 binding is a future commit.
                 val physW = (initialW * scale).toInt().coerceAtLeast(1)
                 val physH = (initialH * scale).toInt().coerceAtLeast(1)
                 val h = NativeTaoEglBridge.nativeAttachWayland(display, nativeWin, physW, physH)

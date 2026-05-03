@@ -1170,25 +1170,22 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 fn run_event_loop_blocking() {
-    // GTK backend selection. We can now drive native Wayland through a
-    // wl_subsurface child of GTK's wl_surface (see nucleus_tao_egl.c
-    // `nativeAttachWayland`), so the historic forcing of GDK_BACKEND=x11 is
-    // gated on an env-var. Default behaviour stays on X11/XWayland (proven
-    // path) until the Wayland subsurface path racks up a few weeks of usage.
+    // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
+    // a Wayland session, X11 elsewhere). The Wayland-native path goes through
+    // a wl_subsurface child of GTK's wl_surface — see `nativeAttachWayland`
+    // in nucleus_tao_egl.c.
     //
-    //   NUCLEUS_TAO_LINUX_RENDERER=wayland → release GDK_BACKEND, GDK
-    //                                        will auto-pick Wayland on a
-    //                                        Wayland session
-    //   anything else (default)            → force GDK_BACKEND=x11 so a
-    //                                        Wayland session lands on
-    //                                        XWayland (subsurface code
-    //                                        unreachable)
+    // Escape hatch for apps that need X11-specific features Wayland doesn't
+    // expose (always-on-top, programmatic window positioning, global pointer
+    // queries, …): set `NUCLEUS_TAO_LINUX_RENDERER=x11` to force XWayland.
+    // Setting `GDK_BACKEND` directly is also honored — we don't override an
+    // explicit user choice.
     #[cfg(target_os = "linux")]
     {
-        let opt_in_wayland = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")
-            .map(|v| v.to_string_lossy().eq_ignore_ascii_case("wayland"))
+        let force_x11 = std::env::var_os("NUCLEUS_TAO_LINUX_RENDERER")
+            .map(|v| v.to_string_lossy().eq_ignore_ascii_case("x11"))
             .unwrap_or(false);
-        if !opt_in_wayland && std::env::var_os("GDK_BACKEND").is_none() {
+        if force_x11 && std::env::var_os("GDK_BACKEND").is_none() {
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }
