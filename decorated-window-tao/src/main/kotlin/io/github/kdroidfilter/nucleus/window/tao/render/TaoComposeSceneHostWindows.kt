@@ -109,6 +109,9 @@ internal class TaoComposeSceneHostWindows(
 
         directContext = DirectContext.makeGL()
 
+        val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
+            getRootNode = { scene!!.rootDragAndDropNode },
+        )
         scene = CanvasLayersComposeScene(
             density = Density(scale),
             layoutDirection = LayoutDirection.Ltr,
@@ -118,6 +121,7 @@ internal class TaoComposeSceneHostWindows(
                 topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
+                dragAndDropManager = dndManager,
             ),
             invalidate = {
                 window.requestRedraw()
@@ -415,6 +419,7 @@ private class WindowsTaoPlatformContext(
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
+    override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
 
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =

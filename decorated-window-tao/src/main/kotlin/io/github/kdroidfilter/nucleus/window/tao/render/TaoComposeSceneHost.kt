@@ -169,6 +169,12 @@ internal class TaoComposeSceneHost(
         // every render — causing a continuous render loop that saturates the
         // main thread. We tick the clock manually at the end of each
         // onRedrawRequested.
+        // The DnD manager needs lazy access to the scene's rootDragAndDropNode,
+        // but the scene cannot be constructed before we hand it the
+        // PlatformContext that owns the manager. Resolve on each call.
+        val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
+            getRootNode = { scene!!.rootDragAndDropNode },
+        )
         scene = CanvasLayersComposeScene(
             density = Density(scale),
             layoutDirection = LayoutDirection.Ltr,
@@ -178,6 +184,7 @@ internal class TaoComposeSceneHost(
                 topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
+                dragAndDropManager = dndManager,
             ),
             invalidate = {
                 window.requestRedraw()
@@ -507,6 +514,7 @@ private class TaoPlatformContext(
     private val topInsetPx: () -> Int,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
+    override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
 ) : androidx.compose.ui.platform.PlatformContext.Empty() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic

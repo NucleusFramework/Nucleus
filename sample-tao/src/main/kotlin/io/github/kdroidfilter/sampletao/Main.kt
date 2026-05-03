@@ -1,15 +1,24 @@
 package io.github.kdroidfilter.sampletao
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.draganddrop.dragAndDropSource
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
+import androidx.compose.ui.draganddrop.DragAndDropTransferAction
+import androidx.compose.ui.draganddrop.DragAndDropTransferData
+import androidx.compose.ui.draganddrop.DragAndDropTransferable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -19,6 +28,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.rememberWindowState
+import java.awt.datatransfer.StringSelection
 import io.github.kdroidfilter.nucleus.application.DecoratedWindow
 import io.github.kdroidfilter.nucleus.application.NucleusBackend
 import io.github.kdroidfilter.nucleus.application.nucleusApplication
@@ -34,6 +44,78 @@ import io.github.kdroidfilter.sampleshared.*
 fun main() {
     GraalVmInitializer.initialize()
     runApp()
+}
+
+@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@Composable
+private fun DnDStage0Banner(onLog: (String) -> Unit) {
+    val diag = io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics
+    var dropCount by remember { mutableStateOf(0) }
+    var lastDrop by remember { mutableStateOf<String?>(null) }
+    val dropTarget = remember {
+        object : DragAndDropTarget {
+            override fun onDrop(event: DragAndDropEvent): Boolean {
+                dropCount++
+                lastDrop = "nativeEvent=${event.nativeEvent?.let { it::class.simpleName } ?: "null"}"
+                onLog("[DnD] drop #$dropCount lastDrop=$lastDrop")
+                return true
+            }
+            override fun onEntered(event: DragAndDropEvent) { onLog("[DnD] target onEntered") }
+            override fun onExited(event: DragAndDropEvent)  { onLog("[DnD] target onExited") }
+            override fun onStarted(event: DragAndDropEvent) { onLog("[DnD] target onStarted") }
+            override fun onEnded(event: DragAndDropEvent)   { onLog("[DnD] target onEnded") }
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth().height(56.dp).background(Color(0xFF1F2630))
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        BasicText(
+            text = "DRAG ME",
+            style = TextStyle(color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF3B82F6))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .dragAndDropSource(
+                    transferData = { offset ->
+                        onLog("[DnD] source transferData requested offset=$offset")
+                        DragAndDropTransferData(
+                            transferable = DragAndDropTransferable(StringSelection("hello-from-tao")),
+                            supportedActions = listOf(DragAndDropTransferAction.Copy),
+                            onTransferCompleted = { action ->
+                                onLog("[DnD] source onTransferCompleted action=$action")
+                            },
+                        )
+                    },
+                ),
+        )
+        BasicText(
+            text = "DROP HERE  (drops=$dropCount)",
+            style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 12.sp, fontWeight = FontWeight.Medium),
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF334155))
+                .border(1.dp, Color(0xFF8AB4FF), RoundedCornerShape(8.dp))
+                .padding(horizontal = 14.dp, vertical = 8.dp)
+                .dragAndDropTarget(
+                    shouldStartDragAndDrop = { true },
+                    target = dropTarget,
+                ),
+        )
+        BasicText(
+            text = lastDrop ?: "(no drop yet)",
+            style = TextStyle(color = Color(0xFFA0A4B0), fontSize = 11.sp),
+        )
+        Spacer(Modifier.weight(1f))
+        BasicText(
+            text = "mgr=${diag.constructed.intValue}  qry=${diag.isRequiredQueries.intValue}  " +
+                "req=${diag.requests.intValue}  xfer=${diag.transfers.intValue}",
+            style = TextStyle(color = Color(0xFF34D399), fontSize = 11.sp, fontWeight = FontWeight.Bold),
+        )
+    }
 }
 
 private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
@@ -126,6 +208,7 @@ private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
         }
 
         Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F1115))) {
+            DnDStage0Banner(onLog = { logEvent(events, it) })
             TabBar(selectedTab, onSelect = { selectedTab = it })
             Box(modifier = Modifier.weight(1f).fillMaxSize()) {
                 when (selectedTab) {
