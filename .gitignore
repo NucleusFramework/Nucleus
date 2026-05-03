@@ -20,3 +20,18 @@ site
 # MSVC build artifacts
 *.obj
 *.exp
+*.lib
+*.pdb
+
+# Cargo / Rust build outputs (decorated-window-tao native crate)
+**/native/target/
+
+# .NET build outputs (scripts/uia-listener)
+**/bin/
+**/obj/
+
+# Scratch notes / problem briefs at repo root
+/uia-problem.txt
+
+# UIA debug log written by nucleus_tao_a11y.dll when NUCLEUS_TAO_A11Y_DEBUG=1
+/tmp/nucleus_a11y.log

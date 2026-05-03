@@ -340,6 +340,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         }
     }
 
+    val fullscreenHolder = FullscreenTitleBarHolder()
+
     window.onWindowReady { w, h ->
         host.attach()
         a11yController.attach()
@@ -347,6 +349,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalFullscreenTitleBarHolder provides fullscreenHolder,
             ) {
                 val border = rememberUndecoratedWindowBorder(
                     state = stateHolder.value,
@@ -354,8 +357,14 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                     gnomeCornerArc = 24f,
                     kdeCornerArc = 10f,
                 )
-                Column(modifier = Modifier.fillMaxSize().then(border)) {
-                    scopeFactory().content()
+                FullscreenOverlayHost(
+                    holder = fullscreenHolder,
+                    isFullscreen = stateHolder.value.isFullscreen,
+                    modifier = Modifier.fillMaxSize().then(border),
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        scopeFactory().content()
+                    }
                 }
             }
         }

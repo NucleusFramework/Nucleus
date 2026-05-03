@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
@@ -17,6 +18,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Dp
@@ -32,9 +34,11 @@ import io.github.kdroidfilter.nucleus.window.hasMacOSLargeCornerRadius
 import io.github.kdroidfilter.nucleus.window.hasNewFullscreenControls
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
+import io.github.kdroidfilter.nucleus.window.tao.LocalFullscreenTitleBarHolder
 import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+import io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDecoBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.WindowControlsLinux
@@ -98,7 +102,6 @@ fun DecoratedWindowScope.TitleBar(
     // composition time so the modifier-driven path matches the AWT backends
     // (the `MacOSStyle` parameter at window creation is the imperative
     // equivalent — both are honoured).
-    @Suppress("UNUSED_VARIABLE")
     val newFullscreenControls = modifier.hasNewFullscreenControls()
     val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius()
     if (Platform.Current == Platform.MacOS && macOSLargeCornerRadius) {
@@ -153,51 +156,95 @@ fun DecoratedWindowScope.TitleBar(
             }
         }
 
-    GenericTitleBarImpl(
-        state = currentState,
-        modifier = rootModifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlDir,
-        applyTitleBar = { measuredHeight, titleBarState ->
-            heightHolder.value = measuredHeight.value
-            titleBarPadding(
-                measuredHeight = measuredHeight,
-                isFullscreen = titleBarState.isFullscreen,
-                controlIsRtl = controlDir == LayoutDirection.Rtl,
-                linuxControlsOnRight = linuxLayout?.controlsOnRight,
-            )
-        },
-        backgroundContent = backgroundContent,
-        content = { titleBarState ->
-            // Window controls are declared BEFORE user content so core's
-            // [TitleBarMeasurePolicy] places them at the extreme edge first
-            // (first-declared End item = rightmost in LTR; first-declared
-            // Start item = leftmost). Mirrors `decorated-window-jni`'s
-            // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
-            // ahead of `content()`.
-            when (Platform.Current) {
-                Platform.Linux -> if (linuxLayout != null) {
-                    WindowControlsLinux(
+    val overlayHolder = LocalFullscreenTitleBarHolder.current
+    val useOverlay = newFullscreenControls &&
+        currentState.isFullscreen &&
+        Platform.Current == Platform.Windows &&
+        overlayHolder != null
+
+    val titleBarRendering: @Composable () -> Unit = {
+        GenericTitleBarImpl(
+            state = currentState,
+            modifier = rootModifier,
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            applyTitleBar = { measuredHeight, titleBarState ->
+                // In overlay mode the bar lives outside the user content tree;
+                // the inline slot is collapsed so heightHolder must stay at 0
+                // (drives both the Compose top inset and the deco caption zone).
+                if (!useOverlay) {
+                    heightHolder.value = measuredHeight.value
+                }
+                titleBarPadding(
+                    measuredHeight = measuredHeight,
+                    isFullscreen = titleBarState.isFullscreen,
+                    controlIsRtl = controlDir == LayoutDirection.Rtl,
+                    linuxControlsOnRight = linuxLayout?.controlsOnRight,
+                )
+            },
+            backgroundContent = backgroundContent,
+            content = { titleBarState ->
+                // Window controls are declared BEFORE user content so core's
+                // [TitleBarMeasurePolicy] places them at the extreme edge first
+                // (first-declared End item = rightmost in LTR; first-declared
+                // Start item = leftmost). Mirrors `decorated-window-jni`'s
+                // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
+                // ahead of `content()`.
+                when (Platform.Current) {
+                    Platform.Linux -> if (linuxLayout != null) {
+                        WindowControlsLinux(
+                            win = taoWindow,
+                            state = titleBarState,
+                            isResizable = taoWindow.isResizable,
+                            layout = linuxLayout,
+                        )
+                    }
+                    Platform.Windows -> WindowControlsWindows(
                         win = taoWindow,
                         state = titleBarState,
-                        isResizable = taoWindow.isResizable,
-                        layout = linuxLayout,
+                        modifier = Modifier.align(Alignment.End),
+                        isFullscreen = titleBarState.isFullscreen,
+                        onExitFullscreen = { taoWindow.setFullscreen(false) },
                     )
+                    else -> Unit // macOS uses native AppKit traffic-lights
                 }
-                Platform.Windows -> WindowControlsWindows(
-                    win = taoWindow,
-                    state = titleBarState,
-                    modifier = Modifier.align(Alignment.End),
-                    isFullscreen = titleBarState.isFullscreen,
-                    onExitFullscreen = { taoWindow.setFullscreen(false) },
-                )
-                else -> Unit // macOS uses native AppKit traffic-lights
-            }
 
-            content(titleBarState)
-        },
-    )
+                content(titleBarState)
+            },
+        )
+    }
+
+    // newFullscreenControls: when fullscreen on Windows, hand the title-bar
+    // rendering off to the [FullscreenOverlayHost] which slides it in/out
+    // based on pointer Y. The inline slot collapses to nothing so the user
+    // content fills the screen, and the deco's caption zone is zeroed so the
+    // WndProc returns HTCLIENT everywhere (the overlay handles its own input).
+    if (useOverlay && overlayHolder != null) {
+        val ctx = currentCompositionLocalContext
+        SideEffect {
+            heightHolder.value = 0f
+            overlayHolder.titleBarHeight = style.metrics.height
+            overlayHolder.compositionLocalContext = ctx
+            overlayHolder.content = titleBarRendering
+        }
+    } else {
+        titleBarRendering()
+    }
+
+    // Push the resolved caption height to the deco WndProc on every overlay
+    // toggle. host.syncTitleBarHeight() only fires on resize/scale changes,
+    // which can race the recomposition that flips `useOverlay`.
+    if (Platform.Current == Platform.Windows) {
+        val styleHeightPx = with(LocalDensity.current) { style.metrics.height.roundToPx() }
+        LaunchedEffect(taoWindow, useOverlay) {
+            if (!NativeTaoWindowsDecoBridge.isLoaded) return@LaunchedEffect
+            val hwnd = NativeTaoBridge.nativeHwndHandle(taoWindow.handle)
+            if (hwnd == 0L) return@LaunchedEffect
+            val px = if (useOverlay) 0 else styleHeightPx
+            NativeTaoWindowsDecoBridge.nativeSetTitleBarHeight(hwnd, px)
+        }
+    }
 }
 
 /**

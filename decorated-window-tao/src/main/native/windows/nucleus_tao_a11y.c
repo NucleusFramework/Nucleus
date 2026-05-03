@@ -557,6 +557,21 @@ static void note_a11y_query(NucleusUiaProjection *p) {
         offset += (n); \
     } while (0)
 
+/* Deferred event used by apply_snapshot to flush UIA event raises through
+ * the WndProc message loop instead of doing it inline (see comment on the
+ * enqueue / flush helpers further down). */
+typedef struct DeferredEvent {
+    IRawElementProviderSimple *provider;
+    int kind;                    /* 0=property, 1=notification, 2=focus, 3=structure */
+    int propertyId;              /* kind=0 */
+    VARIANT oldValue;            /* kind=0 */
+    VARIANT newValue;            /* kind=0 */
+    BSTR announceText;           /* kind=1; freed after raise */
+    int announcePriority;        /* kind=1 */
+    struct DeferredEvent *next;
+} DeferredEvent;
+static void defer_enqueue(HWND hwnd, DeferredEvent *e);
+
 static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, size_t len) {
     if (!proj || !bytes) return FALSE;
     debug_log("apply_snapshot: len=%u", (unsigned)len);
@@ -821,6 +836,11 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     for (uint32_t i = 0; i < nodeCount; i++) {
         NucleusUiaElement *neu = ordered[i];
         if (neu->flags & A11Y_FLAG_FOCUSED) newFocusedNodeId = neu->nodeId;
+        if (neu->role == A11Y_ROLE_CHECKBOX || neu->role == A11Y_ROLE_SWITCH) {
+            debug_log("checkbox-like nodeId=%I64u present=%d oldFlags=0x%x newFlags=0x%x",
+                      neu->nodeId, priorSnapshots[i].present,
+                      priorSnapshots[i].flags, neu->flags);
+        }
         if (!priorSnapshots[i].present) continue;
 
         struct PriorSnapshot *old = &priorSnapshots[i];
@@ -862,6 +882,8 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
             e->newValue.bstrVal = SysAllocString(neu->valueStr ? neu->valueStr : L"");
         }
         if (toggleChanged && has_toggle(neu)) {
+            debug_log("diff: toggle nodeId=%I64u oldFlags=0x%x newFlags=0x%x",
+                      neu->nodeId, old->flags, neu->flags);
             APPEND_EVENT();
             PendingEvent *e = &events[eventCount++];
             ZeroMemory(e, sizeof(*e));
@@ -878,6 +900,9 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
                               : (neu->flags & A11Y_FLAG_CHECKED) ? 1 : 0;
         }
         if (numericChanged && has_range_value(neu)) {
+            debug_log("diff: range nodeId=%I64u old=%d/1000 new=%d/1000",
+                      neu->nodeId, (int)(old->numericValue * 1000),
+                      (int)(neu->numericValue * 1000));
             APPEND_EVENT();
             PendingEvent *e = &events[eventCount++];
             ZeroMemory(e, sizeof(*e));
@@ -957,7 +982,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
             xfree(e->announceText);
             continue;
         }
-        de->target = e->target;
+        de->provider = (IRawElementProviderSimple *)&e->target->lpSimpleVtbl;
         InterlockedIncrement(&e->target->refCount);  /* hold the element until flush */
         de->kind = e->kind;
         if (e->kind == 0) {
@@ -977,7 +1002,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     if (focusTarget) {
         DeferredEvent *de = (DeferredEvent *)xalloc(sizeof(DeferredEvent));
         if (de) {
-            de->target = focusTarget;
+            de->provider = (IRawElementProviderSimple *)&focusTarget->lpSimpleVtbl;
             InterlockedIncrement(&focusTarget->refCount);
             de->kind = 2;
             defer_enqueue(eventHwnd, de);
@@ -987,7 +1012,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     if (proj->root) {
         DeferredEvent *de = (DeferredEvent *)xalloc(sizeof(DeferredEvent));
         if (de) {
-            de->target = (NucleusUiaElement *)proj->root;  /* root has same vtbl prefix */
+            de->provider = (IRawElementProviderSimple *)&proj->root->lpSimpleVtbl;
             InterlockedIncrement(&proj->root->refCount);
             de->kind = 3;
             defer_enqueue(eventHwnd, de);
@@ -2301,26 +2326,10 @@ static IRawElementProviderFragmentRootVtbl g_rootFragmentRootVtbl = {
 #define A11Y_SUBCLASS_ID 0x4E55436CULL  /* 'NUCl' */
 #define A11Y_WM_FLUSH_EVENTS (WM_APP + 1)
 
-/* Deferred event: queued by apply_snapshot, flushed by the WndProc after
- * the JNI call returns and the Tao message pump resumes. Raising events
- * from inside the JNI-blocked tick prevents UIA's post-raise callbacks
- * (Navigate/scope resolution) from being serviced — STA needs to be
- * actively pumping during/after the raise. */
-typedef struct DeferredEvent {
-    /* The provider (root or element). AddRef'd by enqueuer; Released by
-     * defer_flush. Stored as IRawElementProviderSimple* so root/element
-     * heterogeneous queue is type-safe — the vtbl dispatch picks the right
-     * Release implementation. */
-    IRawElementProviderSimple *provider;
-    int kind;                    /* 0=property, 1=notification, 2=focus, 3=structure */
-    int propertyId;              /* kind=0 */
-    VARIANT oldValue;            /* kind=0 */
-    VARIANT newValue;            /* kind=0 */
-    BSTR announceText;           /* kind=1; freed after raise */
-    int announcePriority;        /* kind=1 */
-    struct DeferredEvent *next;
-} DeferredEvent;
-
+/* Deferred event queue: apply_snapshot enqueues UIA events here and
+ * PostMessage's WM_FLUSH; the WndProc subclass flushes them after the JNI
+ * call returns and the Tao pump resumes. Raising inline from JNI prevents
+ * UIA's post-raise callbacks from being serviced — STA must be pumping. */
 static CRITICAL_SECTION g_deferQueueLock;
 static DeferredEvent *g_deferQueueHead = NULL;
 static DeferredEvent *g_deferQueueTail = NULL;
@@ -2357,12 +2366,10 @@ static void defer_flush(void) {
     DeferredEvent *cur = defer_drain();
     while (cur) {
         DeferredEvent *next = cur->next;
-        IRawElementProviderSimple *prov =
-            (IRawElementProviderSimple *)&cur->target->lpSimpleVtbl;
         HRESULT hr = S_OK;
         if (cur->kind == 0) {
             hr = UiaRaiseAutomationPropertyChangedEvent(
-                prov, cur->propertyId, cur->oldValue, cur->newValue);
+                cur->provider, cur->propertyId, cur->oldValue, cur->newValue);
             VariantClear(&cur->oldValue);
             VariantClear(&cur->newValue);
         } else if (cur->kind == 1) {
@@ -2375,7 +2382,7 @@ static void defer_flush(void) {
                 if (m) pRaise = (PFN_RaiseNotif)GetProcAddress(m, "UiaRaiseNotificationEvent");
             }
             if (pRaise) {
-                hr = pRaise(prov,
+                hr = pRaise(cur->provider,
                             NotificationKind_Other,
                             cur->announcePriority == 2
                                 ? NotificationProcessing_ImportantAll
@@ -2384,13 +2391,13 @@ static void defer_flush(void) {
             }
             if (cur->announceText) SysFreeString(cur->announceText);
         } else if (cur->kind == 2) {
-            hr = UiaRaiseAutomationEvent(prov, UIA_AutomationFocusChangedEventId);
+            hr = UiaRaiseAutomationEvent(cur->provider, UIA_AutomationFocusChangedEventId);
         } else if (cur->kind == 3) {
             hr = UiaRaiseStructureChangedEvent(
-                prov, StructureChangeType_ChildrenInvalidated, NULL, 0);
+                cur->provider, StructureChangeType_ChildrenInvalidated, NULL, 0);
         }
         debug_log("defer_flush: kind=%d propId=%d hr=0x%x", cur->kind, cur->propertyId, (unsigned)hr);
-        IUnknown_Release((IUnknown *)prov);
+        IUnknown_Release((IUnknown *)cur->provider);
         xfree(cur);
         cur = next;
     }
