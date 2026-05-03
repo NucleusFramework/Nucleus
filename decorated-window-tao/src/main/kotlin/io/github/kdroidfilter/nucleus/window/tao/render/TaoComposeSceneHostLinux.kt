@@ -89,6 +89,24 @@ internal class TaoComposeSceneHostLinux(
     private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
 
+    /**
+     * Coalesces `window.requestRedraw()` to one outstanding redraw per frame.
+     * Multiple Compose call sites trigger redraws (the scene's `invalidate`
+     * lambda, the FlushingMainDispatcher, a11y schedules, resize/scale
+     * handlers); without this gate they spam Tao's `draw_tx` channel and
+     * we render at the dispatch rate (>1k/sec on continuous animations).
+     * Reset at the start of [onRedrawRequested].
+     */
+    private val redrawPending = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val frameIntervalNs = 1_000_000_000L / 60
+    private var lastFrameStartNs = 0L
+
+    private fun requestRedrawCoalesced() {
+        if (redrawPending.compareAndSet(false, true)) {
+            window.requestRedraw()
+        }
+    }
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -203,7 +221,7 @@ internal class TaoComposeSceneHostLinux(
                 dragAndDropManager = dndManager,
             ),
             invalidate = {
-                window.requestRedraw()
+                requestRedrawCoalesced()
             },
         )
     }
@@ -229,7 +247,7 @@ internal class TaoComposeSceneHostLinux(
         }
         a11ySyncScheduled = r
         flushingDispatcher.enqueue(r)
-        window.requestRedraw()
+        requestRedrawCoalesced()
     }
 
     fun setContent(content: @Composable () -> Unit) {
@@ -246,7 +264,7 @@ internal class TaoComposeSceneHostLinux(
         // see `applyPendingNativeResize`.
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
-        window.requestRedraw()
+        requestRedrawCoalesced()
     }
 
     /**
@@ -261,7 +279,7 @@ internal class TaoComposeSceneHostLinux(
         scale = newScale
         scene?.density = Density(scale)
         updateWindowInfoSize()
-        window.requestRedraw()
+        requestRedrawCoalesced()
     }
 
     /**
@@ -308,6 +326,29 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onRedrawRequested() {
+        // Software vsync: cap the frame rate at 60 Hz by sleeping the Tao
+        // main thread until the next frame interval. Required because EGL
+        // swap interval is forced to 0 on tao 0.35 + GTK 3 + Mesa Wayland
+        // (interval=1 deadlocks — see nucleus_tao_egl.c). Without this cap,
+        // continuous animations re-render at the loop iteration rate
+        // (>1 kHz), which pegs the CPU at ~70%. Sleeping here also throttles
+        // the upstream Compose dispatch / snapshot-apply loop, since those
+        // only progress when this thread runs.
+        val nowEntry = System.nanoTime()
+        val sinceLast = nowEntry - lastFrameStartNs
+        if (lastFrameStartNs != 0L && sinceLast < frameIntervalNs) {
+            val remaining = frameIntervalNs - sinceLast
+            try {
+                Thread.sleep(remaining / 1_000_000, (remaining % 1_000_000).toInt())
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
+        lastFrameStartNs = System.nanoTime()
+        // Open the redraw gate before rendering so any invalidation triggered
+        // by this frame's work (state writes, animation continuations) can
+        // re-arm a redraw for the next loop tick.
+        redrawPending.set(false)
         val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx <= 0 || heightPx <= 0) return
@@ -528,13 +569,13 @@ internal class TaoComposeSceneHostLinux(
 
         override fun dispatch(context: KCoroutineContext, block: Runnable) {
             queue.add(block)
-            window.requestRedraw()
+            requestRedrawCoalesced()
         }
 
         /** Same effect as `dispatch` but skips the no-op coroutine context. */
         fun enqueue(block: Runnable) {
             queue.add(block)
-            window.requestRedraw()
+            requestRedrawCoalesced()
         }
 
         fun drain() {
@@ -542,6 +583,9 @@ internal class TaoComposeSceneHostLinux(
             while (remaining-- > 0) {
                 val runnable = queue.poll() ?: break
                 runnable.run()
+            }
+            if (!queue.isEmpty()) {
+                requestRedrawCoalesced()
             }
         }
     }
