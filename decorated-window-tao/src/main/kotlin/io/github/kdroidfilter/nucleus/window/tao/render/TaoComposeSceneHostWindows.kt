@@ -87,7 +87,8 @@ internal class TaoComposeSceneHostWindows(
     // SwapBuffers block until the next display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence.
     // No software throttle here: the Tao event loop wakes us via invalidate
-    // → requestRedraw, and SwapBuffers caps the loop at 60Hz naturally.
+    // → requestRedraw, and SwapBuffers caps the loop at the monitor's native
+    // refresh rate (60Hz, 120Hz, 144Hz, 240Hz… — one frame per VBlank).
 
     fun attach() {
         check(NativeTaoBridge.isLoaded && NativeTaoGlBridge.isLoaded && NativeTaoWindowsDecoBridge.isLoaded) {
