@@ -19,6 +19,7 @@ import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draganddrop.DragAndDropTransferAction
 import androidx.compose.ui.draganddrop.DragAndDropTransferData
 import androidx.compose.ui.draganddrop.DragAndDropTransferable
+import androidx.compose.ui.draganddrop.awtTransferable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
@@ -56,13 +57,14 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
         object : DragAndDropTarget {
             override fun onDrop(event: DragAndDropEvent): Boolean {
                 dropCount++
-                val payload = event.nativeEvent
-                    as? io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload
-                lastDrop = if (payload != null) {
-                    "files=${payload.files.size}: ${payload.files.joinToString(limit = 2)}"
-                } else {
-                    "nativeEvent=${event.nativeEvent?.let { it::class.simpleName } ?: "null"}"
-                }
+                // Transparent AWT path — same code that works against
+                // decorated-window-jni / standard Compose Desktop.
+                lastDrop = runCatching {
+                    @Suppress("UNCHECKED_CAST")
+                    val files = event.awtTransferable
+                        .getTransferData(java.awt.datatransfer.DataFlavor.javaFileListFlavor) as List<java.io.File>
+                    "files=${files.size}: ${files.joinToString(limit = 2) { it.name }}"
+                }.getOrElse { "error: ${it.message}" }
                 onLog("[DnD] drop #$dropCount lastDrop=$lastDrop")
                 return true
             }
