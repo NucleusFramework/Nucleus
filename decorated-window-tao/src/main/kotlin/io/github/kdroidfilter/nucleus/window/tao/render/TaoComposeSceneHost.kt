@@ -130,6 +130,34 @@ internal class TaoComposeSceneHost(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    // Tracks whether Compose's pointer state believes the mouse is currently
+    // down. We can't simply forward every Press / Release Tao gives us — on
+    // macOS we observed at least one spurious Press event being delivered
+    // very early (before the user could possibly have clicked, and without
+    // a matching Release). Compose's PointerInputChangeEventProducer caches
+    // that "still-down" state for the default PointerId(0); from then on
+    // every real Press is reclassified as a Move-along-the-old-hit-path,
+    // and clicks are routed to whatever element happened to be under the
+    // phantom press's hit-test position rather than to the actual layout
+    // under the cursor.
+    //
+    // Defensive contract: a Press received while already pressed first
+    // emits a Release at the last known position to close out the stale
+    // interaction, then emits the new Press. A Release received while not
+    // pressed is dropped (Compose would otherwise crash inside the input
+    // processor on a Release for an unknown pointer).
+    private var isPressed: Boolean = false
+
+    // Set the first time we see a CursorMoved from Tao. Until then, any
+    // button event is dropped — a real user click cannot occur without the
+    // cursor first being inside the window (which generates at least one
+    // Move). Without this guard, the startup phantom Press gets through and
+    // poisons Compose's pointer state for PointerId(0): subsequent Move
+    // events are then interpreted as drag (the pointer is "still down"), so
+    // hover effects don't fire until the user manually clicks once and our
+    // dedup logic above sends a synthetic Release that clears the state.
+    private var hasReceivedCursorMove: Boolean = false
+
     // Frame pacing is delegated to the CAMetalLayer's `displaySyncEnabled`
     // (default YES): `nextDrawable` blocks for vsync, naturally capping the
     // loop at the display refresh rate. Mirrors Windows/Linux where Tao
@@ -484,11 +512,27 @@ internal class TaoComposeSceneHost(
     }
 
     /** [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`). */
+    // TODO: hover effects on macOS don't render until the user clicks once
+    //  anywhere in the window. Move events ARE delivered to Compose (verified
+    //  via logging — `isPressed` is false at startup, the first Move arrives
+    //  before any Press, hit-testing is correct), and `MutableInteractionSource`
+    //  emits `HoverInteraction.Enter()`, but `collectIsHoveredAsState()`'s
+    //  underlying State write doesn't propagate visually until something else
+    //  triggers a redraw. The first click, processed via `onPointerButton`,
+    //  somehow "unblocks" the chain — afterwards hover works for the rest of
+    //  the session. Calling `window.requestRedraw()` after every Move event
+    //  was tried and did NOT fix it, so the issue isn't a missing redraw
+    //  request; the recomposer / Snapshot apply pass itself isn't running on
+    //  hover-only state changes. Likely related to the FlushingMainDispatcher /
+    //  TaoMainDispatcher / BroadcastFrameClock interaction during early
+    //  startup, before any frame has actually been driven by a real input
+    //  event. Independent of the Press dedup fix below.
     fun onPointerMove(aFixed: Int, bFixed: Int) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        hasReceivedCursorMove = true
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
@@ -505,11 +549,33 @@ internal class TaoComposeSceneHost(
     }
 
     fun onPointerButton(buttonCode: Int, pressed: Boolean) {
+        if (!hasReceivedCursorMove) {
+            // No cursor position has been observed yet — this button event
+            // cannot correspond to a real user click. Drop it. See the
+            // comment on `hasReceivedCursorMove` for the rationale.
+            return
+        }
+        val composeButton = mapButton(buttonCode)
+        if (pressed && isPressed) {
+            // Stale "still-down" state — close it out before opening a new
+            // interaction so Compose hit-tests this Press fresh. See the
+            // comment on `isPressed` for the rationale.
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                position = Offset(lastPointerX, lastPointerY),
+                type = PointerType.Mouse,
+                button = composeButton,
+            )
+        } else if (!pressed && !isPressed) {
+            // Stray Release without a matching Press — drop it.
+            return
+        }
+        isPressed = pressed
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
             type = PointerType.Mouse,
-            button = mapButton(buttonCode),
+            button = composeButton,
         )
     }
 
