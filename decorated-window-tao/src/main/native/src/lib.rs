@@ -895,6 +895,12 @@ fn dispatch_run_event_loop_on_main() {
 
 #[derive(Debug)]
 enum UserEvent {
+    /// No-op wakeup: posted by the JVM-side `TaoMainDispatcher.dispatch()` so a
+    /// blocked `ControlFlow::Wait` loop returns immediately and `MainEventsCleared`
+    /// fires, draining the dispatcher queue. Without this, coroutines posted
+    /// while no OS event is pending (e.g. before any window is created) sit in
+    /// the queue forever and the JVM hangs in `nativeRunBlocking`.
+    Wake,
     CreateWindow {
         handle: u64,
         title: String,
@@ -1188,6 +1194,12 @@ fn run_event_loop_blocking() {
                 dispatch(0, EVENT_LAUNCHED, 0, 0);
             }
             Event::UserEvent(user) => match user {
+                UserEvent::Wake => {
+                    // No-op: the side-effect we want is the loop returning from
+                    // its `Wait` to dispatch this event, which guarantees a
+                    // following `MainEventsCleared` tick that drains
+                    // `TaoMainDispatcher`.
+                }
                 UserEvent::CreateWindow {
                     handle,
                     title,
@@ -1590,6 +1602,17 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 ) {
     let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
     let _ = proxy.send_event(UserEvent::Exit);
+}
+
+/// Wakes the Tao event loop so a queued `TaoMainDispatcher` block runs on the
+/// next tick. Cheap no-op when the loop is already busy.
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeWake(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
+    let _ = proxy.send_event(UserEvent::Wake);
 }
 
 #[no_mangle]

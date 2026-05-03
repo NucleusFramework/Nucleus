@@ -3,9 +3,9 @@ Using vcvarsall.bat: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\
 === Building nucleus_tao.dll (x64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
 warning: variable does not need to be mutable
-    --> src\lib.rs:1874:5
+    --> src\lib.rs:1897:5
      |
-1874 |     mut env: JNIEnv,
+1897 |     mut env: JNIEnv,
      |     ----^^^
      |     |
      |     help: remove this `mut`
@@ -28,14 +28,14 @@ warning: fields `is_active`, `consume_resync`, and `note_pushed` are never read
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `nucleus_tao` (lib) generated 2 warnings (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 4.66s
+    Finished `release` profile [optimized] target(s) in 6.82s
 
 === Building nucleus_tao.dll (ARM64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
 warning: variable does not need to be mutable
-    --> src\lib.rs:1874:5
+    --> src\lib.rs:1897:5
      |
-1874 |     mut env: JNIEnv,
+1897 |     mut env: JNIEnv,
      |     ----^^^
      |     |
      |     help: remove this `mut`
@@ -58,7 +58,7 @@ warning: fields `is_active`, `consume_resync`, and `note_pushed` are never read
     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
 
 warning: `nucleus_tao` (lib) generated 2 warnings (run `cargo fix --lib -p nucleus_tao` to apply 1 suggestion)
-    Finished `release` profile [optimized] target(s) in 4.97s
+    Finished `release` profile [optimized] target(s) in 4.21s
 
 === Building C helpers (x64) ===
 'vswhere.exe' n'est pas reconnu en tant que commande interne
@@ -93,17 +93,6 @@ nucleus_tao_a11y.c
    Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_a11y.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_a11y.exp
 nucleus_tao_dnd.c
    Cr‚ation de la bibliothŠque C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_dnd.lib et de l'objet C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native\windows\..\..\resources\nucleus\native\win32-aarch64\nucleus_tao_dnd.exp
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_autolaunch.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_energy_manager.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_launcher_windows.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_ssl.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_systemcolor.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_tao.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_tao_a11y.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_tao_dnd.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_tao_gl.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_tao_windows_deco.dll - AccŠs refus‚.
-C:\Users\Elie\AppData\Local\nucleus\native\WIN32-~1\nucleus_windows_theme.dll - AccŠs refus‚.
 Cleared NativeLibraryLoader cache: C:\Users\Elie\AppData\Local\nucleus\native
 
 Built DLLs:

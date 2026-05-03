@@ -190,6 +190,11 @@ object SingleInstanceManager {
             } catch (e: Exception) {
                 errorLog { "Error in watchForRestoreRequests: $e" }
             }
+        }.apply {
+            // Daemon: must not keep the JVM alive on backends without an EDT (e.g. Tao),
+            // otherwise the app process never exits when all windows close.
+            isDaemon = true
+            name = "Nucleus-SingleInstance-Watcher"
         }.start()
     }
 

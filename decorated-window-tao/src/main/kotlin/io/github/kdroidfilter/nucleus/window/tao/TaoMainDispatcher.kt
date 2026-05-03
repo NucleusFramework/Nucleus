@@ -21,6 +21,13 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
 
     override fun dispatch(context: CoroutineContext, block: Runnable) {
         pending.offer(block)
+        // Wake the Tao event loop: it runs with ControlFlow::Wait and would
+        // otherwise sleep until an OS event arrives, leaving this block
+        // undrained whenever no window is currently driving the loop
+        // (e.g. before the first frame, or after the last window closes).
+        if (NativeTaoBridge.isLoaded) {
+            NativeTaoBridge.nativeWake()
+        }
     }
 
     /** Drains everything currently pending. New blocks dispatched while

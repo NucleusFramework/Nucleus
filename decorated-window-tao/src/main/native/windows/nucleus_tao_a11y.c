@@ -126,6 +126,12 @@ int memcmp(const void *a, const void *b, size_t count) {
 #define UIA_AutomationFocusChangedEventId 20005
 #define UIA_StructureChangedEventId       20002
 
+/* HRESULT code UIA expects from a provider whose element is no longer in the
+ * tree (e.g. a fragment a UIA client cached but that has since been removed
+ * from the snapshot). Returning S_OK + NULL pRetVal from Navigate confuses
+ * UIA's tree-walking machinery and can crash UIAutomationCore. */
+#define UIA_E_ELEMENTNOTAVAILABLE 0x80040201
+
 #define UIA_ButtonControlTypeId       50000
 #define UIA_CheckBoxControlTypeId     50002
 #define UIA_EditControlTypeId         50004
@@ -278,6 +284,14 @@ struct NucleusUiaElement {
     int childCount;
     /* Sibling order index in parent->children (or projection->roots). */
     int siblingIndex;
+    /* Cleared (=0) when this element is orphaned by a snapshot push, BEFORE
+     * the snapshot Releases the byId-map ref. UIA may still hold a proxy
+     * ref to an orphan (Narrator caches walked nodes), so we keep the COM
+     * object alive but make Navigate return no neighbours and read fresh
+     * data via byid_get rather than dereferencing cached parent/child
+     * pointers — those would point at other orphans being concurrently
+     * freed in the same pass. Set to 1 on every parsed element. */
+    int isAlive;
 };
 
 struct NucleusUiaRoot {
@@ -495,7 +509,8 @@ static void byid_clear(NucleusUiaProjection *p) {
     for (int i = 0; i < p->byIdCapacity; i++) {
         NucleusUiaElement *e = p->byId[i];
         if (!e) continue;
-        element_release_data(e);
+        /* Let Release's natural ref-count cleanup handle element_release_data
+         * — see byid_free_table for rationale. */
         IUnknown_Release((IUnknown *)e);
     }
     xfree(p->byId);
@@ -505,13 +520,17 @@ static void byid_clear(NucleusUiaProjection *p) {
 }
 
 /* Frees an isolated byId map (not attached to a projection). Used for the old
- * map after diffing, once events have been raised against the new tree. */
+ * map after diffing, once events have been raised against the new tree.
+ * We rely on Element_Simple_Release to call element_release_data when the
+ * refCount hits zero — NOT calling it explicitly here because UIA may still
+ * hold transient references through its proxy/marshal layer (especially
+ * with ProviderOptions_UseComThreading). Touching the element's strings
+ * before the final Release would race with those proxies. */
 static void byid_free_table(NucleusUiaElement **table, int cap) {
     if (!table) return;
     for (int i = 0; i < cap; i++) {
         NucleusUiaElement *e = table[i];
         if (!e) continue;
-        element_release_data(e);
         IUnknown_Release((IUnknown *)e);
     }
     xfree(table);
@@ -730,6 +749,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
         el->customActions = customActions;
         el->customActionCount = customCount;
         el->projection = proj;
+        el->isAlive = 1;
 
         ordered[i] = el;
         byid_put(proj, el);
@@ -737,18 +757,13 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
 
     if (!ok) {
         for (uint32_t i = 0; i < nodeCount; i++) {
-            if (ordered[i]) {
-                element_release_data(ordered[i]);
-                IUnknown_Release((IUnknown *)ordered[i]);
-            }
+            if (ordered[i]) IUnknown_Release((IUnknown *)ordered[i]);
             xfree(priorSnapshots[i].label);
             xfree(priorSnapshots[i].valueStr);
         }
         xfree(ordered);
         xfree(priorSnapshots);
         byid_clear(proj);
-        /* Restore old state on parse failure — better to keep the previous
-         * tree visible than tear everything down. */
         byid_free_table(oldById, oldByIdCapacity);
         LeaveCriticalSection(&proj->lock);
         return FALSE;
@@ -961,6 +976,33 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     }
 
     xfree(ordered);
+
+    /* ── Sever orphan tree pointers BEFORE leaving the lock ───────────────
+     * Elements that existed in the previous snapshot but didn't survive into
+     * the new one will be Released by byid_free_table further down. Their
+     * COM identity may still be held by a UIA proxy (Narrator caches them
+     * during stress walks), and a subsequent Navigate(Parent/Sibling/Child)
+     * on such an orphan would dereference cached `el->parent` / `el->children`
+     * pointers that point at OTHER orphans which themselves got freed in this
+     * same Release pass — classic use-after-free heap corruption.
+     *
+     * Holding proj->lock here means UIA query callbacks (which also take the
+     * lock) are serialised with us, so we can safely null out the dangling
+     * pointers. Navigate's null-checks then degrade to "no neighbour", which
+     * is the correct behaviour for a tree the AT no longer believes in. */
+    if (oldByIdCapacity > 0 && oldById) {
+        for (int k = 0; k < oldByIdCapacity; k++) {
+            NucleusUiaElement *o = oldById[k];
+            if (!o) continue;
+            o->isAlive = 0;
+            o->parent = NULL;
+            xfree(o->children);
+            o->children = NULL;
+            o->childCount = 0;
+            o->siblingIndex = 0;
+        }
+    }
+
     LeaveCriticalSection(&proj->lock);
 
     BOOL clientsListening = UiaClientsAreListening();
@@ -1165,6 +1207,7 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPatternProvider(
     NucleusUiaElement *el = ELEMENT_FROM_SIMPLE(This);
     if (!pRetVal) return E_POINTER;
     *pRetVal = NULL;
+    if (!el->isAlive) return UIA_E_ELEMENTNOTAVAILABLE;
     void *vtbl = NULL;
     switch (patternId) {
         case UIA_InvokePatternId:
@@ -1205,6 +1248,7 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
     note_a11y_query(el->projection);
     if (!pRetVal) return E_POINTER;
     VariantInit(pRetVal);
+    if (!el->isAlive) return UIA_E_ELEMENTNOTAVAILABLE;
     switch (propertyId) {
         case UIA_NamePropertyId: {
             if (el->label && el->label[0]) {
@@ -1410,9 +1454,17 @@ static HRESULT STDMETHODCALLTYPE Element_Fragment_Navigate(
     NucleusUiaProjection *p = el->projection;
     if (!p) return S_OK;
     EnterCriticalSection(&p->lock);
+    /* Bail on orphaned elements (those that fell out of a recent snapshot).
+     * UIA expects UIA_E_ELEMENTNOTAVAILABLE for elements no longer in the
+     * tree — returning S_OK + NULL from Navigate destabilises
+     * UIAutomationCore's tree-walking machinery. */
+    if (!el->isAlive) {
+        LeaveCriticalSection(&p->lock);
+        return UIA_E_ELEMENTNOTAVAILABLE;
+    }
     switch (direction) {
         case NavigateDirection_Parent: {
-            if (el->parent) {
+            if (el->parent && el->parent->isAlive) {
                 *pRetVal = element_as_fragment(el->parent);
             } else if (p->root) {
                 InterlockedIncrement(&p->root->refCount);
@@ -1422,26 +1474,41 @@ static HRESULT STDMETHODCALLTYPE Element_Fragment_Navigate(
         }
         case NavigateDirection_NextSibling: {
             NucleusUiaElement **list; int count;
-            if (el->parent) { list = el->parent->children; count = el->parent->childCount; }
-            else            { list = p->roots; count = p->rootCount; }
+            if (el->parent && el->parent->isAlive) {
+                list = el->parent->children; count = el->parent->childCount;
+            } else {
+                list = p->roots; count = p->rootCount;
+            }
             int idx = el->siblingIndex + 1;
-            if (idx >= 0 && idx < count) *pRetVal = element_as_fragment(list[idx]);
+            if (list && idx >= 0 && idx < count && list[idx] && list[idx]->isAlive) {
+                *pRetVal = element_as_fragment(list[idx]);
+            }
             break;
         }
         case NavigateDirection_PreviousSibling: {
             NucleusUiaElement **list; int count;
-            if (el->parent) { list = el->parent->children; count = el->parent->childCount; }
-            else            { list = p->roots; count = p->rootCount; }
+            if (el->parent && el->parent->isAlive) {
+                list = el->parent->children; count = el->parent->childCount;
+            } else {
+                list = p->roots; count = p->rootCount;
+            }
             int idx = el->siblingIndex - 1;
-            if (idx >= 0 && idx < count) *pRetVal = element_as_fragment(list[idx]);
+            if (list && idx >= 0 && idx < count && list[idx] && list[idx]->isAlive) {
+                *pRetVal = element_as_fragment(list[idx]);
+            }
             break;
         }
         case NavigateDirection_FirstChild: {
-            if (el->childCount > 0) *pRetVal = element_as_fragment(el->children[0]);
+            if (el->children && el->childCount > 0 && el->children[0] && el->children[0]->isAlive) {
+                *pRetVal = element_as_fragment(el->children[0]);
+            }
             break;
         }
         case NavigateDirection_LastChild: {
-            if (el->childCount > 0) *pRetVal = element_as_fragment(el->children[el->childCount - 1]);
+            if (el->children && el->childCount > 0) {
+                NucleusUiaElement *last = el->children[el->childCount - 1];
+                if (last && last->isAlive) *pRetVal = element_as_fragment(last);
+            }
             break;
         }
     }
@@ -1473,6 +1540,7 @@ static HRESULT STDMETHODCALLTYPE Element_Fragment_get_BoundingRectangle(
     NucleusUiaElement *el = ELEMENT_FROM_FRAGMENT(This);
     if (!pRetVal) return E_POINTER;
     pRetVal->left = pRetVal->top = pRetVal->width = pRetVal->height = 0;
+    if (!el->isAlive) return UIA_E_ELEMENTNOTAVAILABLE;
     NucleusUiaProjection *p = el->projection;
     if (!p) return S_OK;
     HWND hwnd = p->hwnd;
@@ -1519,6 +1587,7 @@ static HRESULT STDMETHODCALLTYPE Element_Fragment_get_FragmentRoot(
     NucleusUiaElement *el = ELEMENT_FROM_FRAGMENT(This);
     if (!pRetVal) return E_POINTER;
     *pRetVal = NULL;
+    if (!el->isAlive) return UIA_E_ELEMENTNOTAVAILABLE;
     if (el->projection && el->projection->root) {
         InterlockedIncrement(&el->projection->root->refCount);
         *pRetVal = (IRawElementProviderFragmentRoot *)&el->projection->root->lpFragmentRootVtbl;
@@ -1798,10 +1867,14 @@ static HRESULT STDMETHODCALLTYPE Element_SelectionItem_get_SelectionContainer(
     NucleusUiaElement *el = ELEMENT_FROM_SELECTIONITEM(This);
     if (!pRetVal) return E_POINTER;
     *pRetVal = NULL;
-    if (el->parent) {
+    NucleusUiaProjection *p = el->projection;
+    if (!p) return S_OK;
+    EnterCriticalSection(&p->lock);
+    if (el->isAlive && el->parent && el->parent->isAlive) {
         InterlockedIncrement(&el->parent->refCount);
         *pRetVal = (IRawElementProviderSimple *)&el->parent->lpSimpleVtbl;
     }
+    LeaveCriticalSection(&p->lock);
     return S_OK;
 }
 
@@ -2334,10 +2407,20 @@ static CRITICAL_SECTION g_deferQueueLock;
 static DeferredEvent *g_deferQueueHead = NULL;
 static DeferredEvent *g_deferQueueTail = NULL;
 static volatile LONG g_deferInited = 0;
-
+/* 0 = uninitialised, 1 = initialising, 2 = ready. Two-phase state prevents
+ * the race where a second thread sees `1` while the first thread hasn't
+ * called InitializeCriticalSection yet, then enters an uninitialised CS
+ * (which corrupts the heap when CS internals use heap structures). */
 static void defer_init(void) {
-    if (InterlockedCompareExchange(&g_deferInited, 1, 0) == 0) {
+    LONG state = InterlockedCompareExchange(&g_deferInited, 1, 0);
+    if (state == 0) {
         InitializeCriticalSection(&g_deferQueueLock);
+        InterlockedExchange(&g_deferInited, 2);
+    } else if (state == 1) {
+        /* Another thread is initialising — spin until it's done. */
+        while (InterlockedCompareExchange(&g_deferInited, 2, 2) != 2) {
+            Sleep(0);
+        }
     }
 }
 

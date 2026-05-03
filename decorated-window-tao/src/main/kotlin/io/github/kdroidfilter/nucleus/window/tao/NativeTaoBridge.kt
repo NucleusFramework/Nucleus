@@ -83,6 +83,16 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeExit()
 
+    /**
+     * Wakes the Tao event loop so a coroutine just posted to
+     * [TaoMainDispatcher] runs on the next tick. Required because Tao runs
+     * with `ControlFlow::Wait` and would otherwise sleep until an OS event
+     * arrives — leaving the dispatcher queue undrained when no window is
+     * open (e.g. during early startup or after [exitApplication]).
+     */
+    @JvmStatic
+    external fun nativeWake()
+
     @JvmStatic
     external fun nativeIsAvailable(): Boolean
 
