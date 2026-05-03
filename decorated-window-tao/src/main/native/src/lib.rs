@@ -1236,13 +1236,27 @@ fn run_event_loop_blocking() {
                     resizable,
                     visible,
                 } => {
-                    let window = WindowBuilder::new()
+                    let mut builder = WindowBuilder::new()
                         .with_title(&title)
                         .with_inner_size(LogicalSize::new(width, height))
                         .with_decorations(decorations)
                         .with_resizable(resizable)
-                        .with_visible(visible)
-                        .build(target);
+                        .with_visible(visible);
+                    // Linux: request an ARGB visual so the GTK window's X
+                    // visual matches the canonical visual that Mesa's EGL
+                    // exposes through its EGLConfigs. Without this, GDK
+                    // assigns a non-canonical 24-bit RGB visual and
+                    // `eglCreateWindowSurface` fails with EGL_BAD_CONFIG
+                    // because no EGLConfig advertises that visual ID.
+                    // The GLX path is unaffected — its `glXChooseVisual`
+                    // already requests ALPHA_SIZE=8, and ARGB GTK lets the
+                    // helper render directly into the parent without the
+                    // child-window fallback.
+                    #[cfg(target_os = "linux")]
+                    {
+                        builder = builder.with_transparent(true);
+                    }
+                    let window = builder.build(target);
                     if let Ok(window) = window {
                         let logical_w = width as jint;
                         let logical_h = height as jint;

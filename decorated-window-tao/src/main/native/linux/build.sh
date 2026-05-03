@@ -1,7 +1,13 @@
 #!/bin/bash
-# Compiles two Linux shared libraries into per-architecture resource folders:
+# Compiles three Linux shared libraries into per-architecture resource folders:
 #   - libnucleus_tao.so      (Rust crate, Tao + JNI)
-#   - libnucleus_tao_glx.so  (C, GLX helper for Skia GL backend on X11)
+#   - libnucleus_tao_glx.so  (C, GLX helper for Skia GL backend on X11 — legacy path)
+#   - libnucleus_tao_egl.so  (C, EGL helper for Skia GL backend on X11 / Wayland — new path)
+#
+# The two C helpers coexist during the parallel-rollout phase. Selection
+# happens at runtime via the JVM system property
+# `nucleus.tao.linux.renderer = glx | egl` (default: glx). See
+# TaoComposeSceneHostLinux.attach().
 #
 # Outputs are placed in src/main/resources/nucleus/native/{linux-x64,linux-aarch64}/.
 #
@@ -60,7 +66,7 @@ esac
 
 popd >/dev/null
 
-# ── 2) EGL helper (libnucleus_tao_glx.so) ──────────────────────────────────
+# ── 2) JNI helper toolchain ────────────────────────────────────────────────
 
 if [ -z "${JAVA_HOME:-}" ]; then
     # Try to derive from javac if it's on PATH (matches the pattern used by
@@ -76,26 +82,44 @@ fi
 
 JNI_INCLUDE="$JAVA_HOME/include"
 JNI_INCLUDE_LINUX="$JAVA_HOME/include/linux"
-
 CC="${CC:-cc}"
-SRC="$SCRIPT_DIR/nucleus_tao_glx.c"
 
-build_egl() {
+# ── 3) GLX helper (libnucleus_tao_glx.so) — legacy path ────────────────────
+
+build_glx() {
     local OUT_DIR="$1"
     local OUT="$OUT_DIR/libnucleus_tao_glx.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SRC" -ldl -lm \
+        "$SCRIPT_DIR/nucleus_tao_glx.c" -ldl -lm \
+        -o "$OUT"
+    strip --strip-unneeded "$OUT" || true
+}
+
+# ── 4) EGL helper (libnucleus_tao_egl.so) — new path ───────────────────────
+
+build_egl() {
+    local OUT_DIR="$1"
+    local OUT="$OUT_DIR/libnucleus_tao_egl.so"
+    "$CC" -shared -fPIC -O2 -fvisibility=hidden \
+        -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
+        "$SCRIPT_DIR/nucleus_tao_egl.c" -ldl -lm \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }
 
 case "$HOST_ARCH" in
-    x86_64)   build_egl "$OUT_DIR_X64" ;;
-    aarch64|arm64) build_egl "$OUT_DIR_ARM64" ;;
+    x86_64)
+        build_glx "$OUT_DIR_X64"
+        build_egl "$OUT_DIR_X64"
+        ;;
+    aarch64|arm64)
+        build_glx "$OUT_DIR_ARM64"
+        build_egl "$OUT_DIR_ARM64"
+        ;;
 esac
 
-# ── 3) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
+# ── 5) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
 # Per the Linux module checklist in CLAUDE.md: skipping this serves the stale
 # cached copy out of ~/.cache/nucleus/native/<arch>/.
 
@@ -108,6 +132,6 @@ done
 
 echo "Built Linux native libraries:"
 case "$HOST_ARCH" in
-    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_glx.so} ;;
-    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_glx.so} ;;
+    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_glx.so,libnucleus_tao_egl.so} ;;
+    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_glx.so,libnucleus_tao_egl.so} ;;
 esac

@@ -111,6 +111,10 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoEglBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },
