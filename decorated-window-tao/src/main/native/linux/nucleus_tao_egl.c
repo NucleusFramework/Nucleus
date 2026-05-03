@@ -199,6 +199,10 @@ typedef EGLBoolean (*PFN_eglSwapBuffers)(EGLDisplay, EGLSurface);
 typedef EGLBoolean (*PFN_eglSwapInterval)(EGLDisplay, EGLint);
 typedef EGLint     (*PFN_eglGetError)(void);
 typedef void      *(*PFN_eglGetProcAddress)(const char *);
+typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
+
+#define EGL_VENDOR  0x3053
+#define EGL_VERSION 0x3054
 
 /* ── Wayland EGL helpers ────────────────────────────────────────────────── */
 
@@ -251,6 +255,7 @@ static PFN_eglSwapBuffers        p_eglSwapBuffers        = NULL;
 static PFN_eglSwapInterval       p_eglSwapInterval       = NULL;
 static PFN_eglGetError           p_eglGetError           = NULL;
 static PFN_eglGetProcAddress     p_eglGetProcAddress     = NULL;
+static PFN_eglQueryString        p_eglQueryString        = NULL;
 
 static PFN_XGetWindowAttributes  p_XGetWindowAttributes  = NULL;
 static PFN_XVisualIDFromVisual   p_XVisualIDFromVisual   = NULL;
@@ -328,6 +333,7 @@ static int load_libs(void) {
     LOAD(g_libegl, eglSwapInterval);
     LOAD(g_libegl, eglGetError);
     LOAD(g_libegl, eglGetProcAddress);
+    LOAD(g_libegl, eglQueryString);
 
     LOAD(g_libx11, XGetWindowAttributes);
     LOAD(g_libx11, XVisualIDFromVisual);
@@ -362,6 +368,46 @@ static int load_libs(void) {
         p_XGetWindowAttributes && p_XVisualIDFromVisual;
 
     return g_libs_loaded;
+}
+
+/* ── Diagnostics: log EGL vendor/version once on first attach ───────────── */
+
+/**
+ * Logs the EGL vendor/version + a NVIDIA-specific runtime hint to stderr the
+ * first time we initialize a display. Always emitted (regardless of
+ * NUCLEUS_TAO_EGL_DEBUG) because the NVIDIA hint is actionable: drag-resize on
+ * Wayland is broken on driver < 560 unless the system has the new
+ * `egl-wayland2` external-platform library installed alongside the legacy
+ * `egl-wayland`. Users hit this and file "resize stutters / locks up" without
+ * knowing what to install.
+ *
+ * Heuristic: on Wayland sessions (`is_wayland`), check the EGL vendor string —
+ * NVIDIA's contains "NVIDIA". The "is egl-wayland2 installed?" check would
+ * require parsing /proc/self/maps for `libnvidia-egl-wayland2.so` which is
+ * fragile; we just print the hint unconditionally on NVIDIA Wayland and let
+ * users decide if they need it.
+ */
+static int g_diag_logged = 0;
+static void log_egl_diagnostics_once(EGLDisplay edpy, int is_wayland) {
+    if (g_diag_logged) return;
+    g_diag_logged = 1;
+    if (!p_eglQueryString) return;
+    const char *vendor  = p_eglQueryString(edpy, EGL_VENDOR);
+    const char *version = p_eglQueryString(edpy, EGL_VERSION);
+    fprintf(stderr,
+            "[nucleus_tao_egl] EGL %s, vendor: %s, platform: %s\n",
+            version ? version : "?",
+            vendor  ? vendor  : "?",
+            is_wayland ? "Wayland" : "X11");
+    if (is_wayland && vendor && strstr(vendor, "NVIDIA")) {
+        fprintf(stderr,
+                "[nucleus_tao_egl] NOTE: NVIDIA Wayland — if drag-resize "
+                "stutters or hangs, ensure your distro ships the\n"
+                "[nucleus_tao_egl]       `egl-wayland2` package alongside "
+                "`egl-wayland` (driver 560+ uses the new dma-buf backend that\n"
+                "[nucleus_tao_egl]       supports proper EGLSurface resize; "
+                "the legacy egl-wayland cannot resize EGLSurfaces).\n");
+    }
 }
 
 /* ── Skia proc-address loader ───────────────────────────────────────────── */
@@ -459,6 +505,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachX1
         return 0;
     }
     DBG("EGL %d.%d initialized\n", maj, min);
+    log_egl_diagnostics_once(edpy, /*is_wayland=*/0);
 
     /* 2) Desktop GL — must be set before eglCreateContext. Skia chooses
      *    GL vs GLES from `glGetString(GL_VERSION)` at make-current time;
@@ -756,6 +803,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
         return 0;
     }
     DBG("EGL %d.%d initialized (Wayland)\n", maj, min);
+    log_egl_diagnostics_once(edpy, /*is_wayland=*/1);
 
     if (!p_eglBindAPI(EGL_OPENGL_API)) {
         DBG("eglBindAPI(EGL_OPENGL_API) failed on Wayland EGL\n");
