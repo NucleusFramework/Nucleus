@@ -31,10 +31,17 @@ import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
 import org.jetbrains.skia.BackendRenderTarget
+import org.jetbrains.skia.BlendMode
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
+import org.jetbrains.skia.Paint
+import org.jetbrains.skia.Path
+import org.jetbrains.skia.PathFillMode
+import org.jetbrains.skia.RRect
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.makeGLWithInterface
@@ -384,13 +391,54 @@ internal class TaoComposeSceneHostLinux(
             cachedSurface = surface
         }
 
-        surface.canvas.clear(0xFFFFFFFF.toInt())
+        // GLX renders onto an XShape-clipped X window, so the corner pixels
+        // are discarded by the X server and an opaque white clear is fine.
+        // EGL has no XShape on the EGL drawable — corners are alpha-blended,
+        // so we clear to fully transparent and let the carve pass below
+        // mask out the rounded-corner cutouts.
+        val clearColor = if (renderer == Renderer.EGL) 0x00000000 else 0xFFFFFFFF.toInt()
+        surface.canvas.clear(clearColor)
         sc.render(surface.canvas.asComposeCanvas(), now)
+        if (renderer == Renderer.EGL && cornerRadiusPx > 0 &&
+            !window.isMaximized && !window.isFullscreen
+        ) {
+            carveRoundedCorners(surface.canvas, widthPx, heightPx, cornerRadiusPx)
+        }
         surface.flushAndSubmit(syncCpu = false)
         when (renderer) {
             Renderer.GLX -> NativeTaoGlxBridge.nativePresent(attachmentHandle)
             Renderer.EGL -> NativeTaoEglBridge.nativePresent(attachmentHandle)
         }
+    }
+
+    /**
+     * Alpha-blended replacement for the XShape rounded-rectangle clip used by
+     * the GLX path. Paints the four corner cut-outs with `BlendMode.CLEAR`
+     * (which sets the destination alpha to 0) so the EGL surface shows the
+     * compositor's content behind those pixels — same visual result as XShape
+     * `ShapeBounding`, but driven entirely from the GL backbuffer so it works
+     * on Wayland too.
+     *
+     * The path is `full_rect XOR rounded_rect` via `EVEN_ODD` fill, which
+     * yields exactly the four corner pieces; AA at the rounded edge stays in
+     * the destination, only the strictly-outside pixels are zeroed.
+     */
+    private fun carveRoundedCorners(canvas: Canvas, w: Int, h: Int, radius: Int) {
+        val wf = w.toFloat()
+        val hf = h.toFloat()
+        val rf = radius.toFloat()
+        val frame = Path().apply {
+            fillMode = PathFillMode.EVEN_ODD
+            addRect(Rect.makeXYWH(0f, 0f, wf, hf))
+            addRRect(RRect.makeXYWH(0f, 0f, wf, hf, rf))
+        }
+        val paint = Paint().apply {
+            blendMode = BlendMode.CLEAR
+            isAntiAlias = true
+        }
+        canvas.drawPath(frame, paint)
+        frame.close()
+        paint.close()
     }
 
     fun onPointerMove(aFixed: Int, bFixed: Int) {
