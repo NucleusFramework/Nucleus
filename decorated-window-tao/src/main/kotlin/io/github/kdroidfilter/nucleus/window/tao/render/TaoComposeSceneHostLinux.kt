@@ -40,6 +40,7 @@ import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.Paint
 import org.jetbrains.skia.Path
+import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.PathFillMode
 import org.jetbrains.skia.RRect
 import org.jetbrains.skia.Rect
@@ -448,11 +449,14 @@ internal class TaoComposeSceneHostLinux(
         val wf = w.toFloat()
         val hf = h.toFloat()
         val rf = radius.toFloat()
-        val frame = Path().apply {
-            fillMode = PathFillMode.EVEN_ODD
-            addRect(Rect.makeXYWH(0f, 0f, wf, hf))
-            addRRect(RRect.makeXYWH(0f, 0f, wf, hf, rf))
-        }
+        // Skia m144 (skiko 0.144+) made the mutating `Path.addRect` /
+        // `addRRect` deprecated in favour of `PathBuilder`; build the
+        // carve mask there and snapshot to an immutable Path for drawing.
+        val frame = PathBuilder()
+            .setFillType(PathFillMode.EVEN_ODD)
+            .addRect(Rect.makeXYWH(0f, 0f, wf, hf))
+            .addRRect(RRect.makeXYWH(0f, 0f, wf, hf, rf))
+            .snapshot()
         val paint = Paint().apply {
             blendMode = BlendMode.CLEAR
             isAntiAlias = true
