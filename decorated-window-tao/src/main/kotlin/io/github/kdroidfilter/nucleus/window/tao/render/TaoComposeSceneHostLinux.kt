@@ -26,6 +26,8 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
 import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlinx.coroutines.CoroutineDispatcher
@@ -98,14 +100,28 @@ internal class TaoComposeSceneHostLinux(
      * Reset at the start of [onRedrawRequested].
      */
     private val redrawPending = java.util.concurrent.atomic.AtomicBoolean(false)
-    private val frameIntervalNs = 1_000_000_000L / 60
-    private var lastFrameStartNs = 0L
 
     private fun requestRedrawCoalesced() {
         if (redrawPending.compareAndSet(false, true)) {
             window.requestRedraw()
         }
     }
+
+    /**
+     * Vsync swap thread. Owns the EGL context only during the
+     * `eglSwapBuffers` call, which on Wayland blocks waiting for the
+     * compositor's frame callback (and on X11 for the next refresh).
+     * Running it on a *separate* thread is what makes `eglSwapInterval(1)`
+     * usable — the GTK main thread keeps draining `wl_display` events
+     * while the swap thread is parked on the swap, so the frame callback
+     * that unblocks the swap can actually arrive. Swapping on the GTK
+     * thread (the original implementation) deadlocks Mesa on Wayland.
+     *
+     * Pacing is intrinsic: the main thread issues a render only after
+     * `swapThread.waitForIdle()` returns, which happens at the display's
+     * refresh rate. No software cap, no scheduled wake — the OS does it.
+     */
+    private var swapThread: SwapThread? = null
 
     private var widthPx: Int = 0
     private var heightPx: Int = 0
@@ -205,6 +221,13 @@ internal class TaoComposeSceneHostLinux(
         }
         val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
         directContext = DirectContext.makeGLWithInterface(iface)
+
+        // The native attach binds the EGL context to *this* thread (the GTK
+        // main thread). Release it so the swap thread can take it for
+        // `eglSwapBuffers`. We re-bind on the main thread for every render
+        // pass via [bindContextForRender].
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        swapThread = SwapThread(attachmentHandle).also { it.start() }
 
         val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
             getRootNode = { scene!!.rootDragAndDropNode },
@@ -326,29 +349,32 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onRedrawRequested() {
-        // Software vsync: cap the frame rate at 60 Hz by sleeping the Tao
-        // main thread until the next frame interval. Required because EGL
-        // swap interval is forced to 0 on tao 0.35 + GTK 3 + Mesa Wayland
-        // (interval=1 deadlocks — see nucleus_tao_egl.c). Without this cap,
-        // continuous animations re-render at the loop iteration rate
-        // (>1 kHz), which pegs the CPU at ~70%. Sleeping here also throttles
-        // the upstream Compose dispatch / snapshot-apply loop, since those
-        // only progress when this thread runs.
-        val nowEntry = System.nanoTime()
-        val sinceLast = nowEntry - lastFrameStartNs
-        if (lastFrameStartNs != 0L && sinceLast < frameIntervalNs) {
-            val remaining = frameIntervalNs - sinceLast
-            try {
-                Thread.sleep(remaining / 1_000_000, (remaining % 1_000_000).toInt())
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            }
-        }
-        lastFrameStartNs = System.nanoTime()
-        // Open the redraw gate before rendering so any invalidation triggered
-        // by this frame's work (state writes, animation continuations) can
-        // re-arm a redraw for the next loop tick.
+        // Open the redraw gate first thing: any invalidation triggered while
+        // we're in this method (state writes inside scene.render, animation
+        // continuations resuming under sendFrame, observers firing during
+        // sendApplyNotifications) can re-arm a redraw for the next tick.
+        // Resetting *after* the early-return below would leave the gate
+        // armed permanently if we skip this frame, and Compose would never
+        // be able to schedule another redraw — i.e. the app would freeze.
         redrawPending.set(false)
+
+        // Wait for the previous frame's `eglSwapBuffers` to complete on the
+        // swap thread before issuing the next render. This is what gives us
+        // hardware vsync without melting CPU: the swap thread parks in
+        // `eglSwapBuffers` until the compositor signals it can present
+        // (16.7 ms on a 60 Hz display, 6.9 ms on a 144 Hz display, etc.),
+        // and only then releases the EGL context back to us.
+        //
+        // If the swap is still in flight after the timeout (occluded /
+        // minimised window — Wayland compositors stop sending frame
+        // callbacks in that state), skip this redraw. Compose's
+        // invalidation machinery will naturally re-arm via
+        // [requestRedrawCoalesced] when there's actual work; binding the
+        // context now would race the swap thread.
+        val st = swapThread
+        if (st != null && !st.waitForIdle()) {
+            return
+        }
         val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx <= 0 || heightPx <= 0) return
@@ -383,7 +409,11 @@ internal class TaoComposeSceneHostLinux(
                 origin = SurfaceOrigin.BOTTOM_LEFT,
                 colorFormat = SurfaceColorFormat.RGBA_8888,
                 colorSpace = ColorSpace.sRGB,
-            ) ?: run { rt.close(); return }
+            ) ?: run {
+                rt.close()
+                NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+                return
+            }
             cachedRt = rt
             cachedSurface = surface
         }
@@ -396,8 +426,12 @@ internal class TaoComposeSceneHostLinux(
         if (cornerRadiusPx > 0 && !window.isMaximized && !window.isFullscreen) {
             carveRoundedCorners(surface.canvas, widthPx, heightPx, cornerRadiusPx)
         }
+        // Submit GL commands to the driver from this thread, then release
+        // the context so the swap thread can pick it up and call
+        // `eglSwapBuffers` (which blocks for vsync).
         surface.flushAndSubmit(syncCpu = false)
-        NativeTaoEglBridge.nativePresent(attachmentHandle)
+        NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        swapThread?.requestSwap()
     }
 
     /**
@@ -533,6 +567,15 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        // Stop the swap thread first. It may be parked inside
+        // `eglSwapBuffers` waiting on a frame callback — joining without a
+        // wakeup would hang. `shutdownAndJoin` requests shutdown before
+        // signalling, and the swap thread bails out once the current swap
+        // (if any) returns. After it joins, no other thread holds the EGL
+        // context, so we can safely re-bind here for Skia teardown.
+        swapThread?.shutdownAndJoin()
+        swapThread = null
+
         // Re-bind THIS window's EGL context before tearing down Skia. The
         // GPU-resource releases that follow (glDeleteFramebuffers /
         // glDeleteTextures inside Surface.close + DirectContext.close) reach
@@ -555,6 +598,7 @@ internal class TaoComposeSceneHostLinux(
         directContext?.close()
         directContext = null
         if (attachmentHandle != 0L) {
+            NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)
             attachmentHandle = 0L
         }
@@ -562,6 +606,119 @@ internal class TaoComposeSceneHostLinux(
 
     private companion object {
         private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
+    }
+
+    /**
+     * Owns the EGL context during `eglSwapBuffers`. The render thread (GTK
+     * main thread) hands the context off via
+     * [NativeTaoEglBridge.nativeReleaseCurrent] before signalling
+     * [requestSwap]; the swap thread then re-binds via `nativeMakeCurrent`,
+     * presents (blocking on the compositor's vsync), and releases the
+     * context again. The render thread synchronises through
+     * [waitForIdle] before its next render — that's what gives us
+     * hardware-vsync pacing for free.
+     *
+     * The two threads never hold the context simultaneously: the render
+     * thread always releases before `requestSwap`, the swap thread waits
+     * on the work signal before binding, releases before signalling done.
+     */
+    private inner class SwapThread(
+        private val handle: Long,
+    ) : Thread("TaoSwapThread-${java.lang.Long.toHexString(handle)}") {
+        private val lock = ReentrantLock()
+        private val workCond = lock.newCondition()
+        private val idleCond = lock.newCondition()
+        private var swapPending = false
+        private var swapping = false
+        private var shutdown = false
+
+        init { isDaemon = true }
+
+        /** Called on the GTK main thread after `flushAndSubmit` + release. */
+        fun requestSwap() {
+            lock.withLock {
+                swapPending = true
+                workCond.signal()
+            }
+        }
+
+        /**
+         * Called on the GTK main thread at the start of the next render
+         * cycle. Blocks until the swap thread has finished any in-flight
+         * `eglSwapBuffers` and released the EGL context, or the timeout
+         * elapses. Returns `true` if the context is free to bind, `false`
+         * if the swap is still in flight after the timeout (the caller
+         * must then *skip* binding to avoid two threads holding the EGL
+         * context simultaneously — undefined behaviour on every driver).
+         *
+         * The timeout matters in practice: when a Wayland window is
+         * occluded or minimised, the compositor stops sending frame
+         * callbacks and `eglSwapBuffers` parks indefinitely. Without a
+         * timeout the GTK main thread would freeze, taking input handling
+         * with it. 100 ms = ~6 vsync periods at 60 Hz, comfortably above
+         * any plausible normal swap latency.
+         */
+        fun waitForIdle(timeoutMs: Long = 100): Boolean {
+            lock.withLock {
+                if (!swapPending && !swapping) return true
+                val deadline = System.nanoTime() + timeoutMs * 1_000_000
+                while (swapPending || swapping) {
+                    val remaining = deadline - System.nanoTime()
+                    if (remaining <= 0) return false
+                    idleCond.awaitNanos(remaining)
+                }
+                return true
+            }
+        }
+
+        fun shutdownAndJoin() {
+            lock.withLock {
+                shutdown = true
+                workCond.signalAll()
+            }
+            // Best-effort join. If the swap thread is parked inside
+            // `eglSwapBuffers` (waiting on a frame callback that GTK is
+            // about to deliver), the join can take up to one vsync
+            // interval. Two frames worth of headroom is plenty in
+            // practice — past that, leak the thread rather than risk
+            // hanging the host shutdown.
+            join(50)
+        }
+
+        override fun run() {
+            try {
+                while (true) {
+                    val doSwap = lock.withLock {
+                        while (!shutdown && !swapPending) workCond.await()
+                        if (shutdown) return
+                        swapPending = false
+                        swapping = true
+                        true
+                    }
+                    if (doSwap) {
+                        try {
+                            NativeTaoEglBridge.nativeMakeCurrent(handle)
+                            NativeTaoEglBridge.nativePresent(handle)
+                        } catch (t: Throwable) {
+                            t.printStackTrace()
+                        } finally {
+                            try {
+                                NativeTaoEglBridge.nativeReleaseCurrent(handle)
+                            } catch (_: Throwable) {
+                                // Detached underneath us; the host's
+                                // detach() handles cleanup.
+                            }
+                            lock.withLock {
+                                swapping = false
+                                idleCond.signalAll()
+                            }
+                        }
+                    }
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+            }
+        }
     }
 
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {

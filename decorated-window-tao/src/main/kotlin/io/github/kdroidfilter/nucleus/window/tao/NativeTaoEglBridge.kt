@@ -67,6 +67,16 @@ internal object NativeTaoEglBridge {
     external fun nativeMakeCurrent(handle: Long)
 
     /**
+     * Releases the EGL context from the current thread (no context current
+     * after the call). Required to hand the context between the main render
+     * thread (which builds the frame via Skia) and the swap thread (which
+     * blocks in `eglSwapBuffers` waiting for the compositor's vsync — see
+     * `TaoComposeSceneHostLinux.SwapThread`).
+     */
+    @JvmStatic
+    external fun nativeReleaseCurrent(handle: Long)
+
+    /**
      * Stores new dimensions. On X11 the EGL surface follows the X window
      * automatically (GTK reissues XResizeWindow on the parent), so this is
      * a no-op aside from the cached [widthPx] / [heightPx]. The Wayland

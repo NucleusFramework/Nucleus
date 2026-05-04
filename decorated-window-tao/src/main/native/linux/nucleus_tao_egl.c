@@ -1218,14 +1218,17 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
         p_eglDestroyContext(edpy, ctx);
         goto fail_after_subsurface;
     }
-    /* eglSwapInterval(0) — interval=1 deadlocks on tao 0.35 + GTK 3 because
-     * Mesa's Wayland EGL blocks `eglSwapBuffers` waiting for a frame callback
-     * that can only fire after GTK runs `connect_draw` on the same thread
-     * we'd be blocking. A render thread that owns the EGL context would
-     * decouple them and let interval=1 work; until that lands, accept
-     * unsynced presents. The compositor still throttles internally via
-     * implicit sync, so we don't melt the GPU. */
-    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 0);
+    /* eglSwapInterval(1) — relies on the JVM-side architecture binding the
+     * EGL context to a *dedicated* swap thread, not the GTK main thread. On
+     * Wayland the swap blocks waiting for the compositor's frame callback,
+     * which only fires when the GTK main loop pumps `wl_display_dispatch`.
+     * If the swap and the dispatch share a thread we deadlock. The Kotlin
+     * side (`TaoComposeSceneHostLinux.SwapThread`) makes the context
+     * current on a separate thread and calls `nativePresent` there, so the
+     * GTK main thread keeps draining wl events while the swap thread waits
+     * on the compositor — and we get true hardware vsync without melting
+     * the CPU. */
+    if (p_eglSwapInterval) p_eglSwapInterval(edpy, 1);
 
     EglAttachment *att = (EglAttachment *) calloc(1, sizeof(EglAttachment));
     if (!att) {
@@ -1319,6 +1322,23 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeMakeCurr
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     if (!att) return;
     p_eglMakeCurrent(att->display, att->surface, att->surface, att->context);
+}
+
+/**
+ * Releases the EGL context from the calling thread, leaving no context
+ * current. Required when handing the GL context between the GTK main
+ * thread (which records draw commands via Skia) and the swap thread
+ * (which calls `eglSwapBuffers` and blocks for vsync) — EGL contexts can
+ * only be current on one thread at a time.
+ */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeReleaseCurrent(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att) return;
+    p_eglMakeCurrent(att->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
 JNIEXPORT void JNICALL
