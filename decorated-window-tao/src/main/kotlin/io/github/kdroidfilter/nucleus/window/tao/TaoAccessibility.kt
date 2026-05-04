@@ -70,6 +70,14 @@ data class TaoA11yNode(
      * macOS and `UIA_AutomationIdPropertyId` on Windows.
      */
     val testTag: String = "",
+    /**
+     * Direct children, in tree order. Computed by the observer after the
+     * full DFS walk so each node knows its own subtree topology. Used by
+     * the wire format v7 partial-update path: emitting one node fully
+     * describes its place in the tree without forcing a re-emit of all
+     * siblings.
+     */
+    val children: List<Long> = emptyList(),
 )
 
 @Suppress("MagicNumber")
@@ -260,18 +268,14 @@ internal class TaoAccessibilityController(
     private var pendingForcedPush: Boolean = true
 
     /**
-     * Last encoded snapshot bytes pushed to native, kept around so we can skip
-     * the JNI + Rust-decode + `update_if_active` round-trip when the freshly
-     * encoded buffer is byte-identical to the previous one. Compose emits
-     * `onLayoutChange` / `onSemanticsChange` generously (e.g. sub-pixel layout
-     * jitter, animated value tweens) — many of these resolve to no observable
-     * change in the AT-SPI projection. The encode itself is unavoidable
-     * (we need the bytes to compare), but it's pure JVM work; the JNI hop and
-     * AccessKit's per-node diff dominate the wall-clock cost.
-     *
-     * `null` means "nothing pushed yet" — the next push always goes through.
+     * Previous snapshot indexed by node id. `null` means "nothing pushed yet";
+     * the next push will be encoded as a full snapshot. Subsequent pushes
+     * compare against this map and emit only the nodes whose content or
+     * children list changed (plus the parents of any added / removed
+     * children — re-emitting a parent updates its children list, which is
+     * how AccessKit observes topology changes on incremental updates).
      */
-    private var lastPushedBytes: ByteArray? = null
+    private var prevNodesById: Map<Long, TaoA11yNode>? = null
 
     /**
      * Once disposed, every public entry point becomes a no-op. Necessary
@@ -342,32 +346,81 @@ internal class TaoAccessibilityController(
             NativeTaoBridge.nativeA11yDetach(nsView)
         }
         actionHandlers.clear()
-        lastPushedBytes = null
+        prevNodesById = null
     }
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
         if (isDisposed || nsView == 0L) return
         // Smart gating: skip when no AX client is active AND no resync was
-        // requested (which would happen if an AX query landed during a skip).
-        // The initial push at attach time has `pendingForcedPush = true`, so
-        // it always seeds the native tree — that's what made the first AX
-        // query find a populated tree before we had this fix.
+        // requested. The initial push at attach time has
+        // `pendingForcedPush = true`, so it always seeds the native tree —
+        // that's what makes the first AX query find a populated tree.
         val active = NativeTaoBridge.nativeA11yIsActive()
         val needsResync = NativeTaoBridge.nativeA11yConsumeResync()
         if (!pendingForcedPush && !active && !needsResync) return
-        val bytes = TaoA11ySnapshotSerializer.encode(nodes)
-        // Skip the native round-trip when the snapshot is byte-identical to
-        // the previous one. Forced pushes (`pendingForcedPush`) and explicit
-        // resync requests bypass the skip so AT clients always get a fresh
-        // tree on (re)connection.
-        val prev = lastPushedBytes
-        if (!pendingForcedPush && !needsResync && prev != null && prev.contentEquals(bytes)) {
+
+        val newMap = nodes.associateBy { it.nodeId }
+        val focusId = nodes.firstOrNull { (it.flags and TaoA11yFlag.FOCUSED) != 0 }?.nodeId ?: 0L
+        val prev = prevNodesById
+
+        // Decide between full and partial:
+        //  - First push, forced push, or AT-requested resync → full.
+        //  - Otherwise compute the changed-node set and emit a partial.
+        if (prev == null || pendingForcedPush || needsResync) {
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
+            NativeTaoBridge.nativeA11yNotePushed()
+            pendingForcedPush = false
+            prevNodesById = newMap
             return
         }
-        NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
+
+        val toEmit = computeChangedNodes(prev, newMap, nodes)
+        if (toEmit.isEmpty()) {
+            // Nothing observable changed — keep the cached map (it's
+            // already equal) and skip the native hop entirely.
+            return
+        }
+        // Heuristic: when the delta is a large fraction of the tree, the
+        // partial-update bookkeeping (per-node children list rewrite) is
+        // not cheaper than a full re-push and it complicates AccessKit's
+        // internal diff. The 50 % cutoff matches accesskit_consumer's own
+        // batching threshold.
+        if (toEmit.size * 2 >= nodes.size) {
+            val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
+            NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
+        } else {
+            val bytes = TaoA11ySnapshotSerializer.encodePartial(toEmit, focusId)
+            NativeTaoBridge.nativeA11yApplyPartialSnapshot(nsView, bytes)
+        }
         NativeTaoBridge.nativeA11yNotePushed()
-        pendingForcedPush = false
-        lastPushedBytes = bytes
+        prevNodesById = newMap
+    }
+
+    /**
+     * Compute the minimal set of nodes that must be re-emitted to make the
+     * AT-SPI projection match [newMap].
+     *
+     *  - Any node whose contents differ from the previous version must be
+     *    re-emitted (children-list comparison is part of `equals` because
+     *    [TaoA11yNode] is a data class).
+     *  - When a child is added or removed, the parent's children list
+     *    changes; the parent's data-class equality already catches that
+     *    via the `children` field, so no extra topology bookkeeping is
+     *    needed.
+     */
+    private fun computeChangedNodes(
+        prev: Map<Long, TaoA11yNode>,
+        newMap: Map<Long, TaoA11yNode>,
+        ordered: List<TaoA11yNode>,
+    ): List<TaoA11yNode> {
+        if (prev.size == newMap.size && prev == newMap) return emptyList()
+        val out = ArrayList<TaoA11yNode>(8)
+        for (n in ordered) {
+            val before = prev[n.nodeId]
+            if (before == null || before != n) out.add(n)
+        }
+        return out
     }
 
     fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
@@ -471,27 +524,53 @@ internal class TaoAccessibilityController(
 }
 
 /**
- * Wire-format serialiser. Layout must match the parser in `objc/a11y.m`,
- * `windows/nucleus_tao_a11y.c`, and `src/a11y_linux.rs`.
+ * Wire-format serialiser. The Linux Rust decoder (`src/a11y_linux.rs`) is the
+ * authoritative parser at v7; the macOS / Windows readers are at v4 and only
+ * accept full snapshots — they reject v7 and stay dormant on this branch.
  *
- * Length-prefix fields are u16 (max 65 535 bytes per UTF-8 string). Inputs
- * exceeding that are truncated at a safe UTF-8 codepoint boundary by
- * [clampUtf8] — the alternative would be a wire-format bump to u32. 65 KB
- * per label/value is ~3× the longest reasonable AT-SPI announcement, and
- * editable-text fields read their content via the dedicated `Text` interface
- * (chunked) rather than this snapshot value, so truncation here only affects
- * the screen-reader fallback path for static `Text` composables.
+ * v7 layout (little-endian throughout):
+ *
+ *   Header (24 bytes):
+ *     u32 magic     = 0xA110A11A
+ *     u16 version   = 7
+ *     u16 flags     (bit 0 = partial update; bits 1..15 reserved)
+ *     u32 nodeCount
+ *     u64 focusId   (0 = no explicit focus, fall back to root)
+ *     u32 reserved
+ *
+ *   Per-node:
+ *     u64 nodeId
+ *     u64 parentId
+ *     u16 role
+ *     u16 flags
+ *     u16 actions
+ *     u16 extraFlags
+ *     f32 frameX, frameY, frameW, frameH
+ *     f32 minValue, maxValue, numericValue
+ *     u32 selectionStart, selectionEnd
+ *     f32 hScrollMax, hScrollValue, vScrollMax, vScrollValue
+ *     u16 labelLen + labelBytes
+ *     u16 valueLen + valueBytes
+ *     u16 customCount + (u16 nameLen + nameBytes)*
+ *     u16 testTagLen + testTagBytes
+ *     u32 childCount + (u64 childId)*
+ *
+ * Length-prefix UTF-8 fields are clamped to 65 535 bytes at codepoint
+ * boundaries by [clampUtf8] — the alternative would be widening every
+ * length to u32. 65 KB per label/value is far beyond any reasonable AT-SPI
+ * announcement; editable text is delivered via the dedicated
+ * `org.a11y.atspi.Text` interface which chunks naturally.
+ *
+ * Partial updates carry only the nodes whose contents or children list
+ * changed since the last full push. AccessKit merges them into its
+ * existing tree — un-emitted nodes keep their state.
  */
 internal object TaoA11ySnapshotSerializer {
     private const val MAGIC = 0xA110A11A.toInt()
-    private const val VERSION: Short = 6  // bumped to use reserved2 as extraFlags
+    private const val VERSION: Short = 7
+    private const val FLAG_PARTIAL: Short = 0x0001
     private const val MAX_FIELD_BYTES = 65_535
 
-    /**
-     * Encode a string to UTF-8, truncated to at most [MAX_FIELD_BYTES] bytes
-     * without splitting a multi-byte codepoint. Splits land on a UTF-8 lead
-     * byte (top two bits != `10`).
-     */
     private fun clampUtf8(s: String): ByteArray {
         val raw = s.toByteArray(Charsets.UTF_8)
         if (raw.size <= MAX_FIELD_BYTES) return raw
@@ -500,13 +579,23 @@ internal object TaoA11ySnapshotSerializer {
         return raw.copyOf(cut)
     }
 
-    fun encode(nodes: List<TaoA11yNode>): ByteArray {
-        var size = 12 // header
+    fun encodeFull(nodes: List<TaoA11yNode>): ByteArray =
+        encodeImpl(nodes, partial = false, focusId = 0L)
+
+    fun encodePartial(nodes: List<TaoA11yNode>, focusId: Long): ByteArray =
+        encodeImpl(nodes, partial = true, focusId = focusId)
+
+    private fun encodeImpl(
+        nodes: List<TaoA11yNode>,
+        partial: Boolean,
+        focusId: Long,
+    ): ByteArray {
+        var size = 24 // header
         val labelBytes = ArrayList<ByteArray>(nodes.size)
         val valueBytes = ArrayList<ByteArray>(nodes.size)
         val customBytes = ArrayList<List<ByteArray>>(nodes.size)
         val testTagBytes = ArrayList<ByteArray>(nodes.size)
-        // Per-node fixed size:
+        // Per-node fixed-section size:
         //   8(id)+8(parent)+2(role)+2(flags)+2(actions)+2(extraFlags)
         //   +16(frame)+12(range)+8(selection)+16(scroll axes) = 76
         for (n in nodes) {
@@ -518,15 +607,18 @@ internal object TaoA11ySnapshotSerializer {
             customBytes += cb
             val tb = clampUtf8(n.testTag)
             testTagBytes += tb
-            var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2 + 2 + tb.size
+            var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2 + 2 + tb.size + 4
             for (a in cb) nodeSize += 2 + a.size
+            nodeSize += 8 * n.children.size
             size += nodeSize
         }
         val buf = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
         buf.putInt(MAGIC)
         buf.putShort(VERSION)
-        buf.putShort(0) // reserved
+        buf.putShort(if (partial) FLAG_PARTIAL else 0)
         buf.putInt(nodes.size)
+        buf.putLong(focusId)
+        buf.putInt(0) // reserved
         for ((i, n) in nodes.withIndex()) {
             buf.putLong(n.nodeId)
             buf.putLong(n.parentId)
@@ -548,9 +640,6 @@ internal object TaoA11ySnapshotSerializer {
             buf.putShort(vb.size.toShort())
             buf.put(vb)
             val cb = customBytes[i]
-            // Custom-action count stays u16 — 65 535 actions per node is far
-            // beyond any sane UI (the previous limit). Inputs exceeding it
-            // are truncated.
             val cbCount = cb.size.coerceAtMost(MAX_FIELD_BYTES)
             buf.putShort(cbCount.toShort())
             for (idx in 0 until cbCount) {
@@ -561,6 +650,8 @@ internal object TaoA11ySnapshotSerializer {
             val tb = testTagBytes[i]
             buf.putShort(tb.size.toShort())
             buf.put(tb)
+            buf.putInt(n.children.size)
+            for (cid in n.children) buf.putLong(cid)
         }
         return buf.array()
     }

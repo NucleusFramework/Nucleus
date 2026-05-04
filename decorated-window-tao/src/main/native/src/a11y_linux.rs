@@ -50,7 +50,9 @@ use crate::JAVA_VM;
 // ── Wire format (kept in sync with TaoA11ySnapshotSerializer.kt) ───────────
 
 const MAGIC: u32 = 0xA110_A11A;
-const VERSION: u16 = 6;
+const VERSION: u16 = 7;
+// Header `flags` field: bit 0 = partial update.
+const FLAG_PARTIAL: u16 = 0x0001;
 
 // Role codes — match TaoA11yRole.code in TaoAccessibility.kt.
 const ROLE_UNKNOWN: u16 = 0;
@@ -118,10 +120,23 @@ const A_DISMISS: u16 = 1 << 9;
 
 struct WindowState {
     /// Last full snapshot. Returned to AccessKit on `request_initial_tree`.
+    /// Partial updates do NOT update this — they only mutate AccessKit's
+    /// internal cache. On AT (re)connection the JVM's RESYNC flag forces
+    /// the next observer tick to send a full snapshot, which refreshes
+    /// `last_tree` for any subsequent activation request.
     last_tree: Option<TreeUpdate>,
+    /// Currently-focused node id. Tracked separately so partial updates
+    /// that don't carry a focus token can reuse the previous one (an
+    /// AccessKit `TreeUpdate.focus` is required and must point to a node
+    /// AccessKit already knows about).
+    last_focus: Option<NodeId>,
+    /// Root node id, captured on the first full push. Partial updates
+    /// never re-emit the root, so we cache it here for focus fallback.
+    root: Option<NodeId>,
     /// NodeId → metadata used to interpret AccessKit-side action requests.
     /// Custom-action dispatch uses the index inside `custom_action_count` to
-    /// look up the Kotlin-side handler position.
+    /// look up the Kotlin-side handler position. Full snapshots replace
+    /// this map; partial snapshots merge into it.
     nodes: HashMap<NodeId, NodeMeta>,
     /// X11 Window XID — opaque "view handle" passed back to Kotlin on every
     /// upcall. Mirrors NSView on macOS / HWND on Windows.
@@ -252,9 +267,17 @@ fn role_from_code(code: u16, flags: u16) -> Role {
     }
 }
 
+/// Result of decoding one wire-format v7 buffer.
+struct ParsedSnapshot {
+    update: TreeUpdate,
+    metas: HashMap<NodeId, NodeMeta>,
+    root_id: Option<NodeId>,
+    is_partial: bool,
+}
+
 /// Parse one snapshot and produce both an AccessKit `TreeUpdate` and the
 /// per-node metadata used to interpret incoming action requests.
-fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, NodeId)> {
+fn parse_snapshot(buf: &[u8]) -> Option<ParsedSnapshot> {
     let mut c = Cursor::new(buf);
     let magic = c.read_u32()?;
     if magic != MAGIC {
@@ -275,18 +298,21 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         );
         return None;
     }
-    let _reserved = c.read_u16()?;
+    let flags = c.read_u16()?;
+    let is_partial = flags & FLAG_PARTIAL != 0;
     let count = c.read_u32()? as usize;
+    let header_focus_raw = c.read_i64()?;
+    let _reserved = c.read_u32()?;
 
-    // Parent → child accumulator. We populate it on the first pass and
-    // commit `set_children(...)` on the second.
-    let mut child_lists: HashMap<NodeId, Vec<NodeId>> = HashMap::with_capacity(count);
     let mut nodes: Vec<(NodeId, Node)> = Vec::with_capacity(count);
     let mut metas: HashMap<NodeId, NodeMeta> = HashMap::with_capacity(count);
-    let mut all_ids: Vec<NodeId> = Vec::with_capacity(count);
 
     let mut root_id: Option<NodeId> = None;
-    let mut focus_id: Option<NodeId> = None;
+    let mut focus_id: Option<NodeId> = if header_focus_raw > 0 {
+        Some(NodeId(header_focus_raw as u64))
+    } else {
+        None
+    };
 
     for _ in 0..count {
         let id_raw = c.read_i64()?;
@@ -325,7 +351,6 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         let test_tag = c.read_str()?;
 
         let node_id = NodeId(id_raw as u64);
-        all_ids.push(node_id);
         let role = role_from_code(role_code, flags);
         let mut node = Node::new(role);
 
@@ -546,29 +571,34 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
             node.add_action(Action::CustomAction);
         }
 
-        // Decide root vs child. The Kotlin walker emits the SemanticsOwner
-        // root with `parentId = 0`, so the *first* node in the snapshot is
-        // by construction the tree root — but we don't depend on order;
-        // instead we treat any node whose declared parent is 0 / -1 / self
-        // as a root candidate. The first such node wins.
+        // Children list (wire format v7+): explicit ids of direct children.
+        // For full snapshots this lets the parser skip the previous
+        // parent_id-based child accumulation pass; for partial snapshots
+        // it's the only correct topology source (the full tree isn't
+        // present in the buffer).
+        let child_count = c.read_u32()? as usize;
+        let mut children: Vec<NodeId> = Vec::with_capacity(child_count);
+        for _ in 0..child_count {
+            children.push(NodeId(c.read_i64()? as u64));
+        }
+        if !children.is_empty() {
+            node.set_children(children);
+        }
+
+        // Root candidate: parent = 0, -1 or self. The first wins; extras
+        // (e.g. popups in additional SemanticsOwners) are tolerated but
+        // not re-parented here — Compose's observer only enables one
+        // SemanticsOwner at a time on the Tao path, so multi-root
+        // snapshots in practice mean the encoder is misbehaving.
         let is_root_candidate = parent_raw == 0 || parent_raw == -1 || parent_raw == id_raw;
-        if is_root_candidate {
-            if root_id.is_none() {
-                root_id = Some(node_id);
-            } else {
-                // Multiple roots can happen when several SemanticsOwner are
-                // active (popups). Re-parent extras to the established root
-                // so AT-SPI sees a single tree.
-                child_lists
-                    .entry(root_id.unwrap())
-                    .or_default()
-                    .push(node_id);
-            }
-        } else {
-            child_lists
-                .entry(NodeId(parent_raw as u64))
-                .or_default()
-                .push(node_id);
+        if is_root_candidate && root_id.is_none() {
+            root_id = Some(node_id);
+        }
+
+        // Per-node focused bit (kept for backwards diagnosis); the header
+        // `focusId` is authoritative when set.
+        if focus_id.is_none() && (flags & F_FOCUSED) != 0 {
+            focus_id = Some(node_id);
         }
 
         metas.insert(
@@ -582,37 +612,55 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         nodes.push((node_id, node));
     }
 
-    let root_id = root_id?;
-
-    // Second pass: install children + force `Role::Window` on the tree root.
-    // accesskit_atspi_common only emits the AT-SPI `window_created` event for
-    // roots whose role is exactly `Role::Window` (see
-    // accesskit_atspi_common-0.14.2/src/adapter.rs:65). Without this override,
-    // Orca / accerciser see only the AccessKit application stub, not our
-    // actual UI tree.
-    let mut nodes_with_children: Vec<(NodeId, Node)> = Vec::with_capacity(nodes.len());
-    for (id, mut node) in nodes {
-        if id == root_id {
-            node.set_role(Role::Window);
+    // Force `Role::Window` on the tree root. accesskit_atspi_common only
+    // emits the AT-SPI `window_created` event for roots whose role is
+    // exactly `Role::Window` (see
+    // accesskit_atspi_common-0.14.2/src/adapter.rs:65). Without this
+    // override, Orca / accerciser see only the AccessKit application stub,
+    // not our actual UI tree. Skipped in partial mode — the root is
+    // already in AccessKit's cache from the seeding full push.
+    if !is_partial {
+        if let Some(rid) = root_id {
+            for (id, node) in nodes.iter_mut() {
+                if *id == rid {
+                    node.set_role(Role::Window);
+                    break;
+                }
+            }
         }
-        if let Some(kids) = child_lists.remove(&id) {
-            node.set_children(kids);
-        }
-        nodes_with_children.push((id, node));
     }
 
-    let focus = focus_id.unwrap_or(root_id);
-    // Identify the UI toolkit so AT-SPI clients (Accerciser's "Application
-    // info" pane, Orca's verbose diagnostics) can route toolkit-specific
-    // quirks. Mirrors what GTK reports as "GTK" and what Qt reports as "Qt".
-    let mut tree = Tree::new(root_id);
-    tree.toolkit_name = Some("Compose Multiplatform".to_string());
+    // Build the TreeUpdate.
+    //  - Full: include `Tree::new(root)` (initialises AccessKit's tree
+    //    metadata + toolkit name).
+    //  - Partial: omit `tree` so AccessKit treats the update as
+    //    incremental and keeps its existing root + tree metadata.
+    let tree = if is_partial {
+        None
+    } else {
+        let mut t = Tree::new(root_id?);
+        t.toolkit_name = Some("Compose Multiplatform".to_string());
+        Some(t)
+    };
+    // Focus: header takes precedence; fall back to F_FOCUSED bit; finally
+    // fall back to the root for full snapshots (a Tree without a focused
+    // node is invalid). Partial updates may legitimately not carry the
+    // focused node; AccessKit then keeps the previous focus assignment if
+    // we reuse it.
+    let focus = focus_id
+        .or(root_id)
+        .unwrap_or(NodeId(0));
     let update = TreeUpdate {
-        nodes: nodes_with_children,
-        tree: Some(tree),
+        nodes,
+        tree,
         focus,
     };
-    Some((update, metas, root_id))
+    Some(ParsedSnapshot {
+        update,
+        metas,
+        root_id,
+        is_partial,
+    })
 }
 
 // ── AccessKit handlers ────────────────────────────────────────────────────
@@ -852,6 +900,8 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     }
     let state = Arc::new(Mutex::new(WindowState {
         last_tree: None,
+        last_focus: None,
+        root: None,
         nodes: HashMap::new(),
         handle,
         has_been_activated: false,
@@ -916,13 +966,27 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Some(p) => p,
         None => return JNI_FALSE,
     };
-    let (update, new_nodes, _root) = parsed;
+    if parsed.is_partial {
+        // The full-snapshot entry point should never receive a partial
+        // payload; reject loudly so the JVM's gating bug surfaces in dev.
+        eprintln!("[a11y] full apply rejected: buffer carries FLAG_PARTIAL");
+        return JNI_FALSE;
+    }
 
-    // Single-lock pattern: a previous version dropped the read guard and
-    // re-acquired a write guard, leaving a window where a concurrent
-    // `nativeA11yDetach` could remove the entry between the two locks
-    // (the snapshot would then be silently discarded). Holding the WINDOWS
-    // lock across `update_if_active` serialises Apply vs Detach correctly.
+    apply_parsed(handle, parsed, /* partial = */ false)
+}
+
+/// Shared apply path for full and partial wire-format buffers. Holds the
+/// `WINDOWS` lock across `update_if_active` so concurrent Detach can't drop
+/// the snapshot between mutex regions.
+fn apply_parsed(handle: i64, parsed: ParsedSnapshot, partial: bool) -> jboolean {
+    let ParsedSnapshot {
+        mut update,
+        metas,
+        root_id,
+        ..
+    } = parsed;
+
     let mut map = match WINDOWS.lock() {
         Ok(g) => g,
         Err(_) => return JNI_FALSE,
@@ -935,11 +999,61 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
             Ok(s) => s,
             Err(_) => return JNI_FALSE,
         };
-        st.last_tree = Some(update.clone());
-        st.nodes = new_nodes;
+        if partial {
+            // Merge incoming metadata into the existing map so action
+            // dispatch keeps working for un-emitted nodes.
+            for (id, m) in metas {
+                st.nodes.insert(id, m);
+            }
+            // Reuse the previous focus when this partial doesn't carry one
+            // — TreeUpdate.focus must point to a node AccessKit knows.
+            if update.focus.0 == 0 {
+                if let Some(prev) = st.last_focus.or(st.root) {
+                    update.focus = prev;
+                }
+            } else {
+                st.last_focus = Some(update.focus);
+            }
+        } else {
+            st.last_tree = Some(update.clone());
+            st.nodes = metas;
+            st.root = root_id;
+            st.last_focus = Some(update.focus);
+        }
     }
     entry.adapter.update_if_active(|| update);
     JNI_TRUE
+}
+
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    bytes: JByteArray,
+) -> jboolean {
+    if handle == 0 {
+        return JNI_FALSE;
+    }
+    let len = match env.get_array_length(&bytes) {
+        Ok(n) if n > 0 => n as usize,
+        _ => return JNI_FALSE,
+    };
+    let mut buf = vec![0i8; len];
+    if env.get_byte_array_region(&bytes, 0, &mut buf).is_err() {
+        return JNI_FALSE;
+    }
+    let bytes_u8: &[u8] = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, len) };
+
+    let parsed = match parse_snapshot(bytes_u8) {
+        Some(p) => p,
+        None => return JNI_FALSE,
+    };
+    if !parsed.is_partial {
+        eprintln!("[a11y] partial apply rejected: buffer is not flagged FLAG_PARTIAL");
+        return JNI_FALSE;
+    }
+    apply_parsed(handle, parsed, /* partial = */ true)
 }
 
 #[no_mangle]

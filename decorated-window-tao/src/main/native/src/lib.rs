@@ -888,6 +888,34 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 ) {
 }
 
+/* No-op stubs for nativeA11yApplyPartialSnapshot on macOS / Windows. The
+ * partial wire format is Linux-only at v7; the mac/win parsers are still at
+ * v4 and reject anything else. Returning JNI_FALSE keeps the JVM-side
+ * controller from believing a partial succeeded — though in practice the
+ * controller only emits partials when a previous full push is cached, and
+ * the v4 readers reject the v7 full as well, so this branch never runs. */
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+    _env: JNIEnv,
+    _class: JClass,
+    _ns_view: jlong,
+    _bytes: jni::objects::JByteArray,
+) -> jboolean {
+    JNI_FALSE
+}
+
+#[cfg(target_os = "windows")]
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+    _env: JNIEnv,
+    _class: JClass,
+    _ns_view: jlong,
+    _bytes: jni::objects::JByteArray,
+) -> jboolean {
+    JNI_FALSE
+}
+
 /// Called from `main_thread_dispatch.m` when the user hits Cmd-Q.
 /// Posts a UserEvent::Exit on the running Tao event-loop proxy.
 #[cfg(target_os = "macos")]

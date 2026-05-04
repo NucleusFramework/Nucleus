@@ -17,17 +17,23 @@ Audit verified against the current code. Each item cites the file/line where the
 
 ## Performance / gating
 
-- [x] **Identical-snapshot push elided** — `TaoAccessibilityController.pushSnapshot`
-  now caches the previously-pushed bytes and skips the JNI / Rust-decode /
-  `update_if_active` round-trip when the freshly encoded buffer is byte-identical
-  (`TaoAccessibility.kt`). Compose fires `onLayoutChange` / `onSemanticsChange`
-  liberally for sub-pixel jitter and animation tweens — most resolve to no
-  observable change in the projection. Forced pushes and explicit resync
-  requests bypass the skip so AT clients always get a fresh tree on
-  (re)connection. Verified: bare-toggle clicks still flip `STATE_CHECKED`
-  through. A full per-node `TreeUpdate` diff (only sending changed nodes
-  to AccessKit) remains a follow-up for very large trees, but the equality
-  short-circuit covers the common idle-frame case.
+- [x] **True per-node diff on partial updates** — wire format bumped to
+  v7 (Linux). The header now carries a `flags: u16` (bit 0 = partial) plus an
+  explicit `focusId: u64`, and each per-node entry includes its own
+  children list, so partial buffers fully describe their topology without
+  relying on the rest of the tree being present. `TaoAccessibilityController`
+  caches the previously-pushed `Map<Long, TaoA11yNode>`, computes the
+  changed-node set on each push (`TaoA11yNode` data-class equality covers
+  both content and children-list changes), and emits either a full
+  snapshot (first push, forced push, AT resync, or > 50 % delta) or a
+  partial via the new `nativeA11yApplyPartialSnapshot` JNI export. The
+  Rust side merges partials into AccessKit's existing tree via
+  `update_if_active(|| TreeUpdate { tree: None, … })` and keeps a
+  `last_focus` in `WindowState` so partials that don't carry a focus
+  token reuse the previous one. Verified end-to-end: bare-toggle
+  interactive clicks still flip `STATE_CHECKED`; `email-input`
+  validation toggles `STATE_INVALID_ENTRY` on every text edit through
+  the partial path.
 
 - [x] **Linux gating respects AT_ACTIVE** — `nativeA11yIsActive`
   (`a11y_linux.rs`) now returns the real AT-connected state. The Kotlin

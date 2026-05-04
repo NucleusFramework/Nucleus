@@ -293,6 +293,17 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeA11yApplySnapshot(nsView: Long, bytes: ByteArray): Boolean
 
+    /**
+     * Linux-only: apply a wire-format v7 *partial* snapshot. Only the nodes
+     * whose data or children list changed since the previous push are
+     * included; AccessKit merges them into its existing tree. macOS / Windows
+     * stubs return false (their parsers are still v4 and reject anything
+     * else, which is acceptable on this branch — the shared encoder targets
+     * the Linux path).
+     */
+    @JvmStatic
+    external fun nativeA11yApplyPartialSnapshot(nsView: Long, bytes: ByteArray): Boolean
+
     @JvmStatic
     external fun nativeA11yPostFocusChanged(nsView: Long, nodeId: Long)
 

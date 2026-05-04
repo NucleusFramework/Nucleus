@@ -79,7 +79,22 @@ internal class TaoSemanticsObserver(
             }
         }
         controller.clearStaleHandlers(liveIds)
-        controller.pushSnapshot(nodes)
+        // Stitch each node's direct-children list. The walk emits parents
+        // before children but doesn't know its own children list at emit
+        // time; a single post-pass over the flat list is O(N) and gives
+        // the wire-format v7 partial path a stable topology to diff
+        // against.
+        val childrenByParent = HashMap<Long, ArrayList<Long>>(nodes.size)
+        for (n in nodes) {
+            if (n.parentId != 0L) {
+                childrenByParent.getOrPut(n.parentId) { ArrayList(4) }.add(n.nodeId)
+            }
+        }
+        val withChildren = if (childrenByParent.isEmpty()) nodes else nodes.map { node ->
+            val kids = childrenByParent[node.nodeId]
+            if (kids == null) node else node.copy(children = kids)
+        }
+        controller.pushSnapshot(withChildren)
     }
 
     private fun walk(
