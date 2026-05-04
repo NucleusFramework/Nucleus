@@ -17,7 +17,17 @@ Audit verified against the current code. Each item cites the file/line where the
 
 ## Performance / gating
 
-- [ ] **Full re-serialisation on every change** — `TaoSemanticsObserver.syncIfDirty()` rebuilds the whole `ArrayList<TaoA11yNode>` from scratch on each `onSemanticsChange` / `onLayoutChange`. No diff, no debounce. AccessKit accepts partial `TreeUpdate`s; we always send everything. Acceptable for the current node counts but worth revisiting if a list-heavy app hits frame budgets.
+- [x] **Identical-snapshot push elided** — `TaoAccessibilityController.pushSnapshot`
+  now caches the previously-pushed bytes and skips the JNI / Rust-decode /
+  `update_if_active` round-trip when the freshly encoded buffer is byte-identical
+  (`TaoAccessibility.kt`). Compose fires `onLayoutChange` / `onSemanticsChange`
+  liberally for sub-pixel jitter and animation tweens — most resolve to no
+  observable change in the projection. Forced pushes and explicit resync
+  requests bypass the skip so AT clients always get a fresh tree on
+  (re)connection. Verified: bare-toggle clicks still flip `STATE_CHECKED`
+  through. A full per-node `TreeUpdate` diff (only sending changed nodes
+  to AccessKit) remains a follow-up for very large trees, but the equality
+  short-circuit covers the common idle-frame case.
 
 - [x] **Linux gating respects AT_ACTIVE** — `nativeA11yIsActive`
   (`a11y_linux.rs`) now returns the real AT-connected state. The Kotlin

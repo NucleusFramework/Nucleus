@@ -260,6 +260,20 @@ internal class TaoAccessibilityController(
     private var pendingForcedPush: Boolean = true
 
     /**
+     * Last encoded snapshot bytes pushed to native, kept around so we can skip
+     * the JNI + Rust-decode + `update_if_active` round-trip when the freshly
+     * encoded buffer is byte-identical to the previous one. Compose emits
+     * `onLayoutChange` / `onSemanticsChange` generously (e.g. sub-pixel layout
+     * jitter, animated value tweens) — many of these resolve to no observable
+     * change in the AT-SPI projection. The encode itself is unavoidable
+     * (we need the bytes to compare), but it's pure JVM work; the JNI hop and
+     * AccessKit's per-node diff dominate the wall-clock cost.
+     *
+     * `null` means "nothing pushed yet" — the next push always goes through.
+     */
+    private var lastPushedBytes: ByteArray? = null
+
+    /**
      * Once disposed, every public entry point becomes a no-op. Necessary
      * because `composition.dispose()` (during app shutdown) fires
      * `onSemanticsOwnerRemoved` callbacks that schedule a final sync —
@@ -328,6 +342,7 @@ internal class TaoAccessibilityController(
             NativeTaoBridge.nativeA11yDetach(nsView)
         }
         actionHandlers.clear()
+        lastPushedBytes = null
     }
 
     fun pushSnapshot(nodes: List<TaoA11yNode>) {
@@ -341,9 +356,18 @@ internal class TaoAccessibilityController(
         val needsResync = NativeTaoBridge.nativeA11yConsumeResync()
         if (!pendingForcedPush && !active && !needsResync) return
         val bytes = TaoA11ySnapshotSerializer.encode(nodes)
+        // Skip the native round-trip when the snapshot is byte-identical to
+        // the previous one. Forced pushes (`pendingForcedPush`) and explicit
+        // resync requests bypass the skip so AT clients always get a fresh
+        // tree on (re)connection.
+        val prev = lastPushedBytes
+        if (!pendingForcedPush && !needsResync && prev != null && prev.contentEquals(bytes)) {
+            return
+        }
         NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
         NativeTaoBridge.nativeA11yNotePushed()
         pendingForcedPush = false
+        lastPushedBytes = bytes
     }
 
     fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
