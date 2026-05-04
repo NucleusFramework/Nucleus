@@ -72,11 +72,26 @@ internal class TaoSemanticsObserver(
         val nodes = ArrayList<TaoA11yNode>(64)
         val liveIds = HashSet<Long>()
         val density = densityProvider()
+        // Multi-owner reparenting: Compose registers a separate
+        // SemanticsOwner per top-level surface (the main window plus any
+        // open `Dialog` / popup). Each owner has its own root with no
+        // ancestor in Compose's tree — but AT-SPI requires a single
+        // rooted forest. We pick the first attached owner as the
+        // canonical root and graft subsequent owners' roots underneath it
+        // so a Dialog's contents show up as children of the main window
+        // (and AccessKit's modal-state machinery still works because each
+        // owner's root carries its own `IsDialog` semantic flag).
+        var primaryRootId = 0L
         for (owner in owners) {
             val root = owner.rootSemanticsNode
-            if (root.layoutInfo.let { it.isPlaced && it.isAttached }) {
-                walk(root, parentId = 0L, density = density, out = nodes, liveIds = liveIds)
+            if (!root.layoutInfo.let { it.isPlaced && it.isAttached }) continue
+            val attachTo = if (primaryRootId == 0L) {
+                primaryRootId = nodeIdToLong(root.id)
+                0L
+            } else {
+                primaryRootId
             }
+            walk(root, parentId = attachTo, density = density, out = nodes, liveIds = liveIds)
         }
         controller.clearStaleHandlers(liveIds)
         // Stitch each node's direct-children list. The walk emits parents
