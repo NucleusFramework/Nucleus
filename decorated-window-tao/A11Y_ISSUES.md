@@ -26,9 +26,44 @@ Audit verified against the current code. Each item cites the file/line where the
 
 - [ ] **`SemanticsProperties.Error` not mapped** — no occurrence in the observer. No `STATE_INVALID_ENTRY` (AT-SPI) or `IsRequiredForForm` / aria-invalid equivalent (UIA) for invalid form fields. Blocking for serious form work.
 
-- [ ] **No `Text` interface for word/character navigation** — `a11y_linux.rs:355-369` only sets `TextSelection` on `TextInput` / `MultilineTextInput` / `PasswordInput`. No `character_lengths`, no `character_positions`, no text runs. Orca/VoiceOver can move the caret but cannot navigate by word/character in non-editable `Text` composables — the label is read as a single unit.
+- [ ] **No `Text` interface on non-editable `Text` composables** — partially addressed for inputs: text-input nodes now ship a value-based `org.a11y.atspi.Text` via the vendored `SimpleTextInterface` (character_count, get_text, caret_offset, get_selection, +text-changed/caret-moved events). But static `Text` / `Label` composables still expose `name` only — no `character_lengths`, no `character_positions`, no text runs. Orca/VoiceOver can read a paragraph but cannot navigate it by word/character. Adding text-runs would lift this for static text too.
 
 - [ ] **IME composing range not exposed** — `a11y.m:850-853` stubs the marked-text protocol (returns `NSNotFound`). IME input itself works (`TaoComposeSceneHost.kt:790`) but the composing range is never reported to NSAccessibility, and there is no AT-SPI preedit equivalent on Linux. Screen readers cannot announce in-progress composition.
+
+## Vendored AccessKit fork
+
+The Linux backend now ships local copies of `accesskit_atspi_common 0.14.2`
+and `accesskit_unix 0.17.2` under
+`decorated-window-tao/src/main/native/vendor/`, redirected via
+`[patch.crates-io]` in the native `Cargo.toml`. Patches and additions are
+listed in each crate's `VENDORED.md`. Maintenance debt this introduces:
+
+- [ ] **Patches must be rebased on every AccessKit upgrade** — the fork
+  carries 9 patches (Modal/level/EditableText/SimpleText/container-live/
+  disabled-state-fix/text-changed/caret-moved/Cache stub) plus 3 new files
+  (`editable_text.rs`, `simple_text.rs`, `cache.rs`). Each is marked with
+  a `// Vendored-fork addition:` or `// Vendored-fork fix:` comment so a
+  `git grep` finds them. When AccessKit ≥ 0.18 lands with EditableText
+  upstream, drop the local impl and re-evaluate the rest.
+
+- [ ] **Upstream-tracking is manual** — there is no script that diffs our
+  vendored sources against a published crate. Any drift (e.g. a CVE in
+  the upstream we missed) has to be caught by hand. A periodic
+  `cargo download accesskit_unix==0.17.2 -x` + `diff -r` against
+  `vendor/accesskit_unix/` would surface anything we modified.
+
+- [ ] **Wire format v6 is shared between Kotlin encoder and Rust decoder
+  only** — bumping it breaks if either side rebuilds independently
+  (e.g. a hot-reloaded JAR against an old `.so`). The decoder rejects
+  mismatched versions silently (`a11y_linux.rs:257` returns `None`
+  without logging). At least add a `tracing::warn!` so version skew is
+  visible during dev iterations.
+
+- [ ] **`accesskit_unix::set_app_name` is OnceLock-only** — calling it a
+  second time (e.g. when a host embeds our backend twice) silently
+  ignores the new value (`vendor/accesskit_unix/src/context.rs:56`).
+  Acceptable today (Nucleus only attaches one window before the first
+  AT-SPI call) but worth documenting.
 
 ## Naming / hygiene
 
