@@ -27,35 +27,43 @@
 #include <stdint.h>
 #include <string.h>
 
-// ── Wire format (must match TaoAccessibilityController on the Kotlin side) ──
+// ── Wire format v7 (must match TaoA11ySnapshotSerializer on the Kotlin side) ──
 //
-//   Header:
-//     u32 magic    = 0xA110A11A (little-endian)
-//     u16 version  = 1
-//     u16 reserved
+//   Header (24 bytes):
+//     u32 magic    = 0xA110A11A
+//     u16 version  = 7
+//     u16 flags    (bit 0 = partial; rejected here — partials are Linux-only)
 //     u32 nodeCount
-//   Per node (version 4):
+//     u64 focusId  (0 = no explicit focus, fall back to root or per-node bit)
+//     u32 reserved
+//
+//   Per node:
 //     u64 nodeId
-//     u64 parentId        (0 = root → child of TaoView)
-//     u16 role            (NucleusA11yRole enum)
-//     u16 flags           (see NucleusA11yFlag)
-//     u16 actions         (see NucleusA11yAction)
-//     u16 reserved2
-//     f32 frameX,Y,W,H    (window-local logical points, top-left origin)
+//     u64 parentId       (0 = root → child of TaoView)
+//     u16 role           (NucleusA11yRole)
+//     u16 flags          (NucleusA11yFlag)
+//     u16 actions        (NucleusA11yAction)
+//     u16 extraFlags     (bit 0 = READ_ONLY, bit 1 = INVALID)
+//     f32 frameX,Y,W,H   (window-local logical points, top-left origin)
 //     f32 minValue, maxValue, value
-//     u32 selectionStart  (UTF-16 code unit, 0 if not a text field)
-//     u32 selectionEnd    (UTF-16 code unit, ≥ selectionStart)
-//     f32 hScrollMax, hScrollValue   (0,0 if no horizontal scroll axis)
-//     f32 vScrollMax, vScrollValue   (0,0 if no vertical scroll axis)
-//     u16 labelLen        (UTF-8); bytes
-//     u16 valueLen        (UTF-8); bytes
-//     u16 customActionCount
-//       per custom action: u16 nameLen (UTF-8); bytes
+//     u32 selectionStart (UTF-16 code unit, 0 if not a text field)
+//     u32 selectionEnd
+//     f32 hScrollMax, hScrollValue
+//     f32 vScrollMax, vScrollValue
+//     u16 labelLen + label
+//     u16 valueLen + value
+//     u16 customCount
+//       per custom action: u16 nameLen + name
+//     u16 testTagLen + testTag       (Compose Modifier.testTag → AXIdentifier)
+//     u32 childCount + u64 childIds  (explicit topology — partials only)
 //
 // All multi-byte fields little-endian.
 
 static const uint32_t kSnapshotMagic = 0xA110A11A;
-static const uint16_t kSnapshotVersion = 4;
+static const uint16_t kSnapshotVersion = 7;
+#define NUCLEUS_A11Y_FLAG_PARTIAL 0x0001u
+#define NUCLEUS_A11Y_EFLAG_READ_ONLY  0x0001u
+#define NUCLEUS_A11Y_EFLAG_INVALID    0x0002u
 
 // Forward declaration — definition lives at the bottom alongside the JNI
 // entry points. Used by the TaoView swizzles to bump the "AX recently used"
@@ -150,6 +158,10 @@ nucleus_tao_a11y_scroll_by(int64_t ns_view_handle, uint64_t node_id,
 @property(nonatomic, assign) uint16_t role;
 @property(nonatomic, assign) uint16_t flags;
 @property(nonatomic, assign) uint16_t actions;
+@property(nonatomic, assign) uint16_t extraFlags;      // EFLAG_READ_ONLY | EFLAG_INVALID
+@property(nonatomic, assign) BOOL readOnly;            // mirror of EFLAG_READ_ONLY
+@property(nonatomic, assign) BOOL invalidEntry;        // mirror of EFLAG_INVALID
+@property(nonatomic, copy) NSString *testTag;          // Compose Modifier.testTag → AXIdentifier
 @property(nonatomic, assign) NSRect frameInView;       // top-left origin, points
 @property(nonatomic, assign) float minValue;
 @property(nonatomic, assign) float maxValue;
@@ -385,6 +397,36 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 
 - (BOOL)isAccessibilityEnabled {
     return (self.flags & NucleusA11yFlagEnabled) != 0;
+}
+
+// Test/automation hook — Compose `Modifier.testTag(...)` round-tripped to AT
+// clients. macOS's `AXIdentifier` is the primary handle for XCUITest / UI
+// Automation. VoiceOver itself rarely reads it; it must always be present
+// (empty when not set, never nil) so AT clients see a stable selector.
+- (NSString *)accessibilityIdentifier { return self.testTag ?: @""; }
+
+// `accessibilityInvalid` (macOS 11+) carries the `NSAccessibilityInvalidValue`
+// shape: `@"true"` / `@"false"` / `@"grammar"` / `@"spelling"`. We map the
+// Compose `SemanticsProperties.Error` flag to `@"true"` when set, otherwise
+// returning `@"false"` keeps VoiceOver's "valid" state explicit (returning
+// nil makes some VO builds skip the announcement).
+- (NSString *)accessibilityInvalid {
+    return self.invalidEntry ? @"true" : @"false";
+}
+
+// Modern NSAccessibility per-selector gate. AppKit calls this to decide
+// which setters / getters to advertise; returning NO for the value mutators
+// on a read-only text field tells VoiceOver to skip the "edit text"
+// affordance and makes AT scripting reject `setAccessibilityValue:` /
+// `setAccessibilitySelectedTextRange:`.
+- (BOOL)isAccessibilitySelectorAllowed:(SEL)selector {
+    if (self.readOnly && [self isTextElement] &&
+        (selector == @selector(setAccessibilityValue:) ||
+         selector == @selector(setAccessibilitySelectedText:) ||
+         selector == @selector(setAccessibilitySelectedTextRange:))) {
+        return NO;
+    }
+    return [super isAccessibilitySelectorAllowed:selector];
 }
 
 - (BOOL)isAccessibilityFocused {
@@ -781,6 +823,7 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 // next recomposition.
 - (void)setAccessibilitySelectedTextRange:(NSRange)range {
     if (![self isTextElement]) return;
+    if (self.readOnly) return;
     if (nucleus_tao_a11y_set_selection) {
         int32_t start = (int32_t)range.location;
         int32_t end = (int32_t)(range.location + range.length);
@@ -918,6 +961,7 @@ static NSString *role_to_ns_subrole(uint16_t role, uint16_t flags) {
 
 - (void)setAccessibilityValue:(id)newValue {
     if (![self isTextElement]) return;
+    if (self.readOnly) return;
     if (!(self.actions & NucleusA11yActionSetText)) return;
     NSString *str = nil;
     if ([newValue isKindOfClass:[NSString class]]) {
@@ -1079,12 +1123,26 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     uint32_t magic = 0;
     READ_OR_FAIL(&magic, 4);
     if (magic != kSnapshotMagic) return NO;
-    uint16_t version = 0, reserved = 0;
+    uint16_t version = 0, headerFlags = 0;
     READ_OR_FAIL(&version, 2);
-    READ_OR_FAIL(&reserved, 2);
+    READ_OR_FAIL(&headerFlags, 2);
     if (version != kSnapshotVersion) return NO;
     uint32_t nodeCount = 0;
     READ_OR_FAIL(&nodeCount, 4);
+    uint64_t headerFocusId = 0;
+    READ_OR_FAIL(&headerFocusId, 8);
+    uint32_t headerReserved = 0;
+    READ_OR_FAIL(&headerReserved, 4);
+    (void)headerReserved;
+
+    // Partial updates are Linux-only on this branch. The Kotlin controller
+    // only emits them via `nativeA11yApplyPartialSnapshot`, which is a
+    // no-op on macOS — but defensive logging keeps future encoder drift
+    // visible during dev.
+    if (headerFlags & NUCLEUS_A11Y_FLAG_PARTIAL) {
+        NSLog(@"[nucleus.a11y] full apply rejected: buffer carries FLAG_PARTIAL");
+        return NO;
+    }
 
     NSMutableDictionary<NSNumber *, NucleusA11yElement *> *previous = proj.byId;
     NSMutableDictionary<NSNumber *, NucleusA11yElement *> *next =
@@ -1106,7 +1164,7 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     // First pass: parse, reuse-or-create, diff against previous values.
     for (uint32_t i = 0; i < nodeCount; i++) {
         uint64_t nodeId = 0, parentId = 0;
-        uint16_t role = 0, flags = 0, actions = 0, reserved2 = 0;
+        uint16_t role = 0, flags = 0, actions = 0, extraFlags = 0;
         float frame[4] = {0};
         float range[3] = {0};
         uint16_t labelLen = 0, valueLen = 0;
@@ -1115,7 +1173,7 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         READ_OR_FAIL(&role, 2);
         READ_OR_FAIL(&flags, 2);
         READ_OR_FAIL(&actions, 2);
-        READ_OR_FAIL(&reserved2, 2);
+        READ_OR_FAIL(&extraFlags, 2);
         READ_OR_FAIL(frame, sizeof(frame));
         READ_OR_FAIL(range, sizeof(range));
         uint32_t selStart = 0, selEnd = 0;
@@ -1152,6 +1210,25 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                 [customNames addObject:nm];
             }
         }
+
+        // testTag (Compose `Modifier.testTag`) — exposed as `AXIdentifier`
+        // for XCUITest / UI Automation. Always present in v7 (length 0 when
+        // unset).
+        uint16_t testTagLen = 0;
+        READ_OR_FAIL(&testTagLen, 2);
+        if (offset + testTagLen > len) return NO;
+        NSString *testTag = [[NSString alloc] initWithBytes:bytes + offset
+                                                     length:testTagLen
+                                                   encoding:NSUTF8StringEncoding] ?: @"";
+        offset += testTagLen;
+
+        // Explicit children list (v7+). We still derive topology from the
+        // `parentId` linkage in pass 2 below, but the bytes must be consumed
+        // here to keep the cursor aligned with subsequent records.
+        uint32_t childCount = 0;
+        READ_OR_FAIL(&childCount, 4);
+        if (offset + (size_t)childCount * 8 > len) return NO;
+        offset += (size_t)childCount * 8;
 
         NSNumber *key = @(nodeId);
         NucleusA11yElement *el = previous[key];
@@ -1198,6 +1275,10 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
         el.role = role;
         el.flags = flags;
         el.actions = actions;
+        el.extraFlags = extraFlags;
+        el.readOnly = (extraFlags & NUCLEUS_A11Y_EFLAG_READ_ONLY) != 0;
+        el.invalidEntry = (extraFlags & NUCLEUS_A11Y_EFLAG_INVALID) != 0;
+        el.testTag = testTag;
         el.frameInView = NSMakeRect(frame[0], frame[1], frame[2], frame[3]);
         el.minValue = range[0];
         el.maxValue = range[1];
@@ -1222,6 +1303,12 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
             newFocusedId = nodeId;
         }
     }
+    // The header's `focusId` is authoritative when the encoder set it; the
+    // per-node FOCUSED bit is the v4-era fallback for old encoders or for
+    // snapshots emitted before focus is established.
+    if (headerFocusId != 0 && next[@(headerFocusId)] != nil) {
+        newFocusedId = headerFocusId;
+    }
     proj.focusedNodeId = newFocusedId;
 
     // Second pass: link parent → children using the buffer's traversal order
@@ -1229,12 +1316,12 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
     // one re-scan). Re-parsing is cheap; the alternative would be a parallel
     // ordering array allocated in pass 1.
     {
-        size_t off2 = 12; // skip header
+        size_t off2 = 24; // skip v7 header (magic + version + flags + count + focusId + reserved)
         for (uint32_t i = 0; i < nodeCount; i++) {
             uint64_t nodeId = 0, parentId = 0;
             memcpy(&nodeId, bytes + off2, 8); off2 += 8;
             memcpy(&parentId, bytes + off2, 8); off2 += 8;
-            off2 += 36; // role + flags + actions + reserved2 + frame + range
+            off2 += 36; // role + flags + actions + extraFlags + frame + range
             off2 += 8;  // selectionStart + selectionEnd
             off2 += 16; // hScrollMax + hScrollValue + vScrollMax + vScrollValue
             uint16_t labelLen = 0;
@@ -1250,6 +1337,14 @@ static BOOL apply_snapshot_bytes(NucleusA11yProjection *proj,
                 memcpy(&nameLen, bytes + off2, 2); off2 += 2;
                 off2 += nameLen;
             }
+            // testTag (v7+) — read & skip; topology still derived from parentId.
+            uint16_t testTagLen = 0;
+            memcpy(&testTagLen, bytes + off2, 2); off2 += 2;
+            off2 += testTagLen;
+            // Explicit children list (v7+) — same: read & skip.
+            uint32_t childCount = 0;
+            memcpy(&childCount, bytes + off2, 4); off2 += 4;
+            off2 += (size_t)childCount * 8;
 
             NucleusA11yElement *el = next[@(nodeId)];
             if (!el) continue;
