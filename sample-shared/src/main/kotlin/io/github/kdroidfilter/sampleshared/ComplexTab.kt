@@ -3,6 +3,7 @@ package io.github.kdroidfilter.sampleshared
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -358,18 +359,27 @@ private fun ExpandablesSection() {
     var beta by remember { mutableStateOf(false) }
     var gamma by remember { mutableStateOf(true) }
     Section("Expandable groups") {
-        Expandable("alpha", "Group α (settings)", alpha, onToggle = { alpha = !alpha }) {
-            BasicText(text = "Setting A — toggle me", style = labelStyle)
-            BasicText(text = "Setting B — toggle me", style = labelStyle)
-        }
-        Expandable("beta", "Group β (advanced)", beta, onToggle = { beta = !beta }) {
-            BasicText(text = "Advanced option 1", style = labelStyle)
-            BasicText(text = "Advanced option 2", style = labelStyle)
-            BasicText(text = "Advanced option 3", style = labelStyle)
-        }
-        Expandable("gamma", "Group γ (always shown)", gamma, onToggle = { gamma = !gamma }) {
-            BasicText(text = "Inside γ — visible by default", style = labelStyle)
-        }
+        Expandable(
+            tag = "alpha",
+            title = "Group α (settings)",
+            expanded = alpha,
+            onToggle = { alpha = !alpha },
+            bodyItems = listOf("Setting A — toggle me", "Setting B — toggle me"),
+        )
+        Expandable(
+            tag = "beta",
+            title = "Group β (advanced)",
+            expanded = beta,
+            onToggle = { beta = !beta },
+            bodyItems = listOf("Advanced option 1", "Advanced option 2", "Advanced option 3"),
+        )
+        Expandable(
+            tag = "gamma",
+            title = "Group γ (always shown)",
+            expanded = gamma,
+            onToggle = { gamma = !gamma },
+            bodyItems = listOf("Inside γ — visible by default"),
+        )
     }
 }
 
@@ -379,7 +389,7 @@ private fun Expandable(
     title: String,
     expanded: Boolean,
     onToggle: () -> Unit,
-    content: @Composable () -> Unit,
+    bodyItems: List<String>,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(
@@ -402,12 +412,26 @@ private fun Expandable(
             )
         }
         if (expanded) {
+            // Pure-text body would not appear in the Tab order, so a screen
+            // reader user pressing Tab after expanding the group would never
+            // hear its contents. Fold the items into a single keyboard-
+            // focusable container with a combined contentDescription so Tab
+            // lands on it and Narrator reads the whole body.
+            val bodyDescription = "$title contents: " + bodyItems.joinToString(separator = ", ")
             Column(
                 modifier = Modifier
                     .testTag("expand-$tag-body")
-                    .padding(start = 18.dp, top = 2.dp, bottom = 2.dp),
+                    .padding(start = 18.dp, top = 2.dp, bottom = 2.dp)
+                    .focusable()
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = bodyDescription
+                    },
                 verticalArrangement = Arrangement.spacedBy(2.dp),
-            ) { content() }
+            ) {
+                for (item in bodyItems) {
+                    BasicText(text = item, style = labelStyle)
+                }
+            }
         }
     }
 }
