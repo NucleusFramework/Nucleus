@@ -40,6 +40,7 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.dismiss
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.progressBarRangeInfo
@@ -312,6 +313,68 @@ fun A11yTab(
                         liveRegion = LiveRegionMode.Assertive
                         contentDescription = status
                     },
+                    style = labelStyle,
+                )
+            }
+        }
+
+        // ── Toggleable without explicit Role (must surface as a checkable role,
+        //    not Group, so AT-SPI exposes STATE_CHECKABLE / UIA Toggle pattern) ──
+        Section("Toggleable (no role)") {
+            var t by remember { mutableStateOf(false) }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (t) Color(0xFF34D399) else Color(0xFF374151))
+                        .clickable { t = !t }
+                        .testTag("bare-toggle")
+                        .semantics {
+                            // Intentionally no `role = ...` — pure toggleable.
+                            toggleableState = if (t) ToggleableState.On else ToggleableState.Off
+                            contentDescription = "Bare toggleable"
+                        },
+                )
+                BasicText(text = if (t) "ON" else "OFF", style = labelStyle)
+            }
+        }
+
+        // ── Form-field validation (SemanticsProperties.Error → AT-SPI
+        //    STATE_INVALID_ENTRY) ───────────────────────────────────────────
+        Section("Validation error") {
+            var emailValue by remember { mutableStateOf(TextFieldValue("not-an-email")) }
+            val invalid = !emailValue.text.contains('@')
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .width(220.dp)
+                        .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
+                        .border(
+                            1.dp,
+                            if (invalid) Color(0xFFEF4444) else Color(0xFF374151),
+                            RoundedCornerShape(6.dp),
+                        )
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                ) {
+                    BasicTextField(
+                        value = emailValue,
+                        onValueChange = { emailValue = it },
+                        singleLine = true,
+                        textStyle = labelStyle,
+                        cursorBrush = androidx.compose.ui.graphics.SolidColor(Color(0xFF8AB4FF)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("email-input")
+                            .semantics {
+                                if (invalid) {
+                                    error("Invalid email address")
+                                }
+                            },
+                    )
+                }
+                BasicText(
+                    text = if (invalid) "invalid" else "ok",
                     style = labelStyle,
                 )
             }

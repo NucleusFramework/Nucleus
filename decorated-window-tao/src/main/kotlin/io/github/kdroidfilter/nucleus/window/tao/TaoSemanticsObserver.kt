@@ -68,10 +68,6 @@ internal class TaoSemanticsObserver(
      */
     fun syncIfDirty() {
         if (!dirty || controller.isDisposed) return
-        // Refresh the gating decision: if an AX client has touched the tree
-        // since our last push, the next `pushSnapshot` MUST go through even
-        // if we'd otherwise be in the idle window.
-        controller.maybeForceResync()
         dirty = false
         val nodes = ArrayList<TaoA11yNode>(64)
         val liveIds = HashSet<Long>()
@@ -205,6 +201,12 @@ internal class TaoSemanticsObserver(
         val isReadOnlyTextInput = node.config.contains(SemanticsProperties.EditableText) &&
             !node.config.contains(SemanticsActions.SetText)
         if (isReadOnlyTextInput) extraFlags = extraFlags or TaoA11yExtraFlag.READ_ONLY
+        // SemanticsProperties.Error → AT-SPI STATE_INVALID_ENTRY (Linux),
+        // AXInvalid (macOS), IsRequiredForForm-style validation (UIA). The
+        // wire format carries the flag; per-platform readers expose it.
+        if (node.config.contains(SemanticsProperties.Error)) {
+            extraFlags = extraFlags or TaoA11yExtraFlag.INVALID
+        }
 
         out.add(
             TaoA11yNode(
@@ -315,6 +317,13 @@ internal class TaoSemanticsObserver(
                 cfg.contains(SemanticsActions.ScrollBy) ||
                 cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
                 cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
+                // Plain `Modifier.toggleable { … }` (no `role =`): Compose
+                // attaches both `ToggleableState` and an OnClick action, but
+                // the toggle semantic is the more specific announcement.
+                // Map to a checkable role so AT-SPI exposes STATE_CHECKABLE /
+                // UIA the Toggle pattern — without this the node would land
+                // in the onClick→Button branch and lose its toggle state.
+                toggleable != null -> TaoA11yRole.Checkbox
                 // Clickable wins over plain text: a `Box.clickable { Text(…) }`
                 // composable (e.g. the "Clear" button or tab labels in sample-tao)
                 // should announce as a button, with the Text becoming the label.

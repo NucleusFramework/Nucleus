@@ -118,6 +118,12 @@ object TaoA11yFlag {
     const val MULTI_SELECTABLE = 1 shl 12
     const val EXPANDED_TRUE    = 1 shl 13
     const val EXPANDED_FALSE   = 1 shl 14
+    /**
+     * Reserved. The observer prunes invisible nodes (`InvisibleToUser` /
+     * `HideFromAccessibility`) before serialisation, so this bit is currently
+     * never set by Compose. Kept available for future "projected but hidden"
+     * cases (off-viewport scrollable items, aria-hidden mirroring).
+     */
     const val HIDDEN           = 1 shl 15
 }
 
@@ -128,7 +134,14 @@ object TaoA11yFlag {
  */
 @Suppress("MagicNumber")
 object TaoA11yExtraFlag {
+    /** Compose `BasicTextField(readOnly = true)` — drops `SetText` action. */
     const val READ_ONLY = 1 shl 0
+    /**
+     * Compose `SemanticsProperties.Error` — invalid form-field value. Linux
+     * exposes this as AT-SPI `STATE_INVALID_ENTRY` so screen readers announce
+     * "invalid" / form validators stop on the field.
+     */
+    const val INVALID = 1 shl 1
 }
 
 @Suppress("MagicNumber")
@@ -226,11 +239,13 @@ internal class TaoAccessibilityController(
     private var nsView: Long = 0L
 
     /**
-     * Linux-only convenience accessor: the X11 Window XID cached at attach
-     * time, or 0 before attach / on other platforms. Used by the
-     * DecoratedWindow Linux path to push focus + bounds updates to AccessKit.
+     * Opaque native view handle cached at attach time, or 0 before attach.
+     * On macOS this is the NSView pointer, on Windows the HWND, on Linux the
+     * Tao window handle (used by AccessKit as an opaque registry key — never
+     * dereferenced by the AT-SPI side). Exposed for platform integration code
+     * that needs to forward focus / bounds updates to native a11y backends.
      */
-    val linuxXid: Long get() = nsView
+    val nativeViewHandle: Long get() = nsView
 
     /**
      * Whether the next [pushSnapshot] should bypass the `nativeA11yIsActive`
@@ -243,7 +258,6 @@ internal class TaoAccessibilityController(
      * That's checked in [pushSnapshot] before deciding to skip.
      */
     private var pendingForcedPush: Boolean = true
-    private var lastPushedNonceMonotonicNs: Long = 0L
 
     /**
      * Once disposed, every public entry point becomes a no-op. Necessary
@@ -330,18 +344,6 @@ internal class TaoAccessibilityController(
         NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
         NativeTaoBridge.nativeA11yNotePushed()
         pendingForcedPush = false
-        lastPushedNonceMonotonicNs = System.nanoTime()
-    }
-
-    /**
-     * Called by the observer on a low-frequency tick (or by the runtime when
-     * a user interaction occurs). If a fresh AX query has arrived since the
-     * last push, we force the next [pushSnapshot] to actually go through —
-     * this keeps the tree current after waking up from an idle period.
-     */
-    fun maybeForceResync() {
-        // No longer needed — pushSnapshot consumes the native resync flag
-        // directly. Kept as a no-op to preserve the observer's call site.
     }
 
     fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
@@ -445,11 +447,34 @@ internal class TaoAccessibilityController(
 }
 
 /**
- * Wire-format serialiser. Layout must match the parser in `objc/a11y.m`.
+ * Wire-format serialiser. Layout must match the parser in `objc/a11y.m`,
+ * `windows/nucleus_tao_a11y.c`, and `src/a11y_linux.rs`.
+ *
+ * Length-prefix fields are u16 (max 65 535 bytes per UTF-8 string). Inputs
+ * exceeding that are truncated at a safe UTF-8 codepoint boundary by
+ * [clampUtf8] — the alternative would be a wire-format bump to u32. 65 KB
+ * per label/value is ~3× the longest reasonable AT-SPI announcement, and
+ * editable-text fields read their content via the dedicated `Text` interface
+ * (chunked) rather than this snapshot value, so truncation here only affects
+ * the screen-reader fallback path for static `Text` composables.
  */
 internal object TaoA11ySnapshotSerializer {
     private const val MAGIC = 0xA110A11A.toInt()
     private const val VERSION: Short = 6  // bumped to use reserved2 as extraFlags
+    private const val MAX_FIELD_BYTES = 65_535
+
+    /**
+     * Encode a string to UTF-8, truncated to at most [MAX_FIELD_BYTES] bytes
+     * without splitting a multi-byte codepoint. Splits land on a UTF-8 lead
+     * byte (top two bits != `10`).
+     */
+    private fun clampUtf8(s: String): ByteArray {
+        val raw = s.toByteArray(Charsets.UTF_8)
+        if (raw.size <= MAX_FIELD_BYTES) return raw
+        var cut = MAX_FIELD_BYTES
+        while (cut > 0 && (raw[cut].toInt() and 0xC0) == 0x80) cut--
+        return raw.copyOf(cut)
+    }
 
     fun encode(nodes: List<TaoA11yNode>): ByteArray {
         var size = 12 // header
@@ -458,16 +483,16 @@ internal object TaoA11ySnapshotSerializer {
         val customBytes = ArrayList<List<ByteArray>>(nodes.size)
         val testTagBytes = ArrayList<ByteArray>(nodes.size)
         // Per-node fixed size:
-        //   8(id)+8(parent)+2(role)+2(flags)+2(actions)+2(reserved)
+        //   8(id)+8(parent)+2(role)+2(flags)+2(actions)+2(extraFlags)
         //   +16(frame)+12(range)+8(selection)+16(scroll axes) = 76
         for (n in nodes) {
-            val lb = n.label.toByteArray(Charsets.UTF_8)
-            val vb = n.valueString.toByteArray(Charsets.UTF_8)
+            val lb = clampUtf8(n.label)
+            val vb = clampUtf8(n.valueString)
             labelBytes += lb
             valueBytes += vb
-            val cb = n.customActions.map { it.toByteArray(Charsets.UTF_8) }
+            val cb = n.customActions.map { clampUtf8(it) }
             customBytes += cb
-            val tb = n.testTag.toByteArray(Charsets.UTF_8)
+            val tb = clampUtf8(n.testTag)
             testTagBytes += tb
             var nodeSize = 76 + 2 + lb.size + 2 + vb.size + 2 + 2 + tb.size
             for (a in cb) nodeSize += 2 + a.size
@@ -499,8 +524,13 @@ internal object TaoA11ySnapshotSerializer {
             buf.putShort(vb.size.toShort())
             buf.put(vb)
             val cb = customBytes[i]
-            buf.putShort(cb.size.toShort())
-            for (ab in cb) {
+            // Custom-action count stays u16 — 65 535 actions per node is far
+            // beyond any sane UI (the previous limit). Inputs exceeding it
+            // are truncated.
+            val cbCount = cb.size.coerceAtMost(MAX_FIELD_BYTES)
+            buf.putShort(cbCount.toShort())
+            for (idx in 0 until cbCount) {
+                val ab = cb[idx]
                 buf.putShort(ab.size.toShort())
                 buf.put(ab)
             }

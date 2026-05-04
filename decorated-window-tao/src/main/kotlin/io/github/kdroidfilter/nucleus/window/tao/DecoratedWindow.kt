@@ -329,7 +329,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         // updated isMaximized / isFullscreen flag and skips the carve when
         // the window goes rectangular.
         // Push window-local bounds (0,0,w,h) on resize.
-        pushA11yBoundsLinux(a11yController.linuxXid, window.handle, w, h)
+        pushA11yBoundsLinux(a11yController.nativeViewHandle, window.handle, w, h)
     }
     window.onCloseRequested { onCloseRequest() }
     window.onDestroyed {
@@ -348,10 +348,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     window.onFocusChanged { focused ->
         stateHolder.value = stateHolder.value.copy(active = focused)
         host.onFocusChanged(focused)
-        if (a11yController.linuxXid != 0L) {
+        if (a11yController.nativeViewHandle != 0L) {
             // Forward focus state to AccessKit so AT-SPI's STATE_ACTIVE flag
             // on the toplevel matches the actual X focus.
-            NativeTaoBridge.nativeA11ySetWindowFocus(a11yController.linuxXid, focused)
+            NativeTaoBridge.nativeA11ySetWindowFocus(a11yController.nativeViewHandle, focused)
         }
     }
 

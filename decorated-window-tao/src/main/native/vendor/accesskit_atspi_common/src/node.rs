@@ -374,6 +374,14 @@ impl NodeWrapper<'_> {
             atspi_state.insert(State::Modal);
         }
 
+        // Vendored-fork addition: surface AccessKit's `Invalid` flag as
+        // AT-SPI `STATE_INVALID_ENTRY`. Compose's
+        // `SemanticsProperties.Error` lights this up so screen readers
+        // announce "invalid" on form-field misvalidation.
+        if state.data().invalid().is_some() {
+            atspi_state.insert(State::InvalidEntry);
+        }
+
         atspi_state
     }
 

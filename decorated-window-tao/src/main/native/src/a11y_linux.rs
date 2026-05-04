@@ -100,6 +100,7 @@ const F_HIDDEN: u16 = 1 << 15;
 
 // Extra flags (carried in what was `reserved2` before wire format v6).
 const EF_READ_ONLY: u16 = 1 << 0;
+const EF_INVALID: u16 = 1 << 1;
 
 // Action bits — match TaoA11yAction.
 const A_CLICK: u16 = 1 << 0;
@@ -255,10 +256,23 @@ fn role_from_code(code: u16, flags: u16) -> Role {
 /// per-node metadata used to interpret incoming action requests.
 fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, NodeId)> {
     let mut c = Cursor::new(buf);
-    if c.read_u32()? != MAGIC {
+    let magic = c.read_u32()?;
+    if magic != MAGIC {
+        eprintln!(
+            "[a11y] snapshot rejected: magic {:#010x} != expected {:#010x}",
+            magic, MAGIC
+        );
         return None;
     }
-    if c.read_u16()? != VERSION {
+    let version = c.read_u16()?;
+    if version != VERSION {
+        // Version skew is almost always JAR/.so build skew during dev — log
+        // loudly so it's visible without having to attach a debugger.
+        eprintln!(
+            "[a11y] snapshot rejected: wire format v{} (Rust expects v{}). \
+             JAR / .so version skew — rebuild both sides.",
+            version, VERSION
+        );
         return None;
     }
     let _reserved = c.read_u16()?;
@@ -448,6 +462,12 @@ fn parse_snapshot(buf: &[u8]) -> Option<(TreeUpdate, HashMap<NodeId, NodeMeta>, 
         // State::ReadOnly.
         if extra_flags & EF_READ_ONLY != 0 {
             node.set_read_only();
+        }
+        // Compose `SemanticsProperties.Error` — invalid form-field value.
+        // AT-SPI exposes this as `STATE_INVALID_ENTRY`; AccessKit's
+        // `set_invalid` produces the matching state.
+        if extra_flags & EF_INVALID != 0 {
+            node.set_invalid(accesskit::Invalid::True);
         }
         if flags & F_HIDDEN != 0 {
             node.set_hidden();
@@ -898,15 +918,18 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     };
     let (update, new_nodes, _root) = parsed;
 
-    let map = match WINDOWS.lock() {
+    // Single-lock pattern: a previous version dropped the read guard and
+    // re-acquired a write guard, leaving a window where a concurrent
+    // `nativeA11yDetach` could remove the entry between the two locks
+    // (the snapshot would then be silently discarded). Holding the WINDOWS
+    // lock across `update_if_active` serialises Apply vs Detach correctly.
+    let mut map = match WINDOWS.lock() {
         Ok(g) => g,
         Err(_) => return JNI_FALSE,
     };
-    let Some(entry) = map.get(&handle) else {
+    let Some(entry) = map.get_mut(&handle) else {
         return JNI_FALSE;
     };
-    // Stash the latest tree before pushing — the activation handler may
-    // race with us on a separate thread and clone whatever is current.
     {
         let mut st = match entry.state.lock() {
             Ok(s) => s,
@@ -915,22 +938,6 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         st.last_tree = Some(update.clone());
         st.nodes = new_nodes;
     }
-    // SAFETY: `update_if_active` requires `&mut Adapter`. The adapter is
-    // owned exclusively by us (the WINDOWS map is the sole owner), but we
-    // hold it through a `Box<WindowEntry>` behind a `Mutex<HashMap<...>>`
-    // — the outer lock is enough to serialize.
-    //
-    // We need a `&mut Adapter`, so we have to bypass the immutable
-    // `HashMap::get` view. Workaround: drop the immutable borrow and
-    // re-acquire mutably.
-    drop(map);
-    let mut map = match WINDOWS.lock() {
-        Ok(g) => g,
-        Err(_) => return JNI_FALSE,
-    };
-    let Some(entry) = map.get_mut(&handle) else {
-        return JNI_FALSE;
-    };
     entry.adapter.update_if_active(|| update);
     JNI_TRUE
 }
@@ -940,16 +947,19 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
-    // AccessKit's `update_if_active` is the real gate; we just hint the
-    // Kotlin observer to keep pushing. Returning true unconditionally is
-    // the same heuristic as the Windows path.
+    // Report the *real* AT-connected state. The Kotlin observer combines
+    // this with its `pendingForcedPush` flag (true on first attach) so the
+    // first snapshot still lands and populates `state.last_tree` for the
+    // eventual `request_initial_tree`. Returning true unconditionally was
+    // a leftover heuristic that defeated the JVM-side skip path — every
+    // recomposition paid a full BFS + UTF-8 encode + JNI copy even with no
+    // AT connected. Now the cost is amortised to one push per AT
+    // (de)activation transition plus the genuine semantic-change ticks
+    // while an AT is listening.
     if AT_ACTIVE.load(Ordering::Relaxed) {
         JNI_TRUE
     } else {
-        // Keep the Kotlin "pendingForcedPush" path alive so the *first*
-        // snapshot lands even before any AT connects, populating
-        // `state.last_tree` for the next `request_initial_tree`.
-        JNI_TRUE
+        JNI_FALSE
     }
 }
 
