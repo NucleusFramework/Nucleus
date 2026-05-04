@@ -1,9 +1,18 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
+import androidx.compose.runtime.snapshots.Snapshot
 import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
+
+/** Only the Linux backend (AccessKit) consumes partial snapshots; mac/win
+ *  must always receive full snapshots otherwise small state diffs would be
+ *  silently dropped by the no-op `nativeA11yApplyPartialSnapshot` stubs. */
+private val TAO_PARTIAL_SUPPORTED: Boolean =
+    System.getProperty("os.name", "").lowercase().let { os ->
+        !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
+    }
 
 /**
  * macOS accessibility plumbing.
@@ -386,7 +395,14 @@ internal class TaoAccessibilityController(
         // not cheaper than a full re-push and it complicates AccessKit's
         // internal diff. The 50 % cutoff matches accesskit_consumer's own
         // batching threshold.
-        if (toEmit.size * 2 >= nodes.size) {
+        //
+        // Only Linux (AccessKit) implements partial snapshots. On macOS and
+        // Windows `nativeA11yApplyPartialSnapshot` is a no-op stub, so a
+        // partial push silently disappears and small state changes (a single
+        // counter tick, a toggle) never reach the OS a11y tree. Always emit
+        // a full snapshot on those platforms.
+        val emitPartial = TAO_PARTIAL_SUPPORTED && toEmit.size * 2 < nodes.size
+        if (!emitPartial) {
             val bytes = TaoA11ySnapshotSerializer.encodeFull(nodes)
             NativeTaoBridge.nativeA11yApplySnapshot(nsView, bytes)
         } else {
@@ -463,6 +479,13 @@ internal class TaoAccessibilityController(
     }
 
     private fun wakeEventLoop() {
+        // Action lambdas mutate Compose state directly from a non-pump thread.
+        // pump() only emits sendApplyNotifications when it has run blocks, so
+        // without this explicit call here the state writes can sit invisible
+        // until the next unrelated dispatcher tick. Push them through now so
+        // the recomposer schedules a frame and the snapshot encoder sees the
+        // change on the next pump.
+        Snapshot.sendApplyNotifications()
         // The action just wrote to Compose state on the AppKit main thread,
         // outside any Tao event handler. The Recomposer is suspended on
         // `TaoMainDispatcher`, which is only pumped from `MAIN_EVENTS_CLEARED`

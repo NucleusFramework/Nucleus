@@ -30,13 +30,62 @@ class StructHandler : IUIAutomationStructureChangedEventHandler {
 class Program {
     static int Main(string[] args) {
         if (Thread.CurrentThread.GetApartmentState() != ApartmentState.MTA) {
-            var t = new Thread(() => Run(args));
+            int rc = 0;
+            var t = new Thread(() => { rc = Dispatch(args); });
             t.SetApartmentState(ApartmentState.MTA);
             t.Start();
             t.Join();
-            return 0;
+            return rc;
         }
+        return Dispatch(args);
+    }
+    static int Dispatch(string[] args) {
+        if (args.Length > 0 && args[0] == "query") return RunQuery(args);
         return Run(args);
+    }
+    // query <window-title-substring> <automationId> <propId>[,propId,...]
+    // Prints one line per propId: "propId=N value=[...] type=T".
+    // Uses Interop.UIAutomationClient so it sees UIA props >= 30070 that
+    // PowerShell's old System.Windows.Automation cannot resolve.
+    static int RunQuery(string[] args) {
+        if (args.Length < 4) {
+            Console.WriteLine("usage: UiaListener query <title> <autoId> <propId[,propId...]>");
+            return 2;
+        }
+        string title = args[1];
+        string autoId = args[2];
+        var propIds = Array.ConvertAll(args[3].Split(','), s => int.Parse(s.Trim()));
+
+        var uia = new CUIAutomation();
+        var walker = uia.RawViewWalker;
+        var root = uia.GetRootElement();
+        IUIAutomationElement target = null;
+        var child = walker.GetFirstChildElement(root);
+        while (child != null) {
+            try {
+                string n = child.CurrentName ?? "";
+                if (n.ToLower().Contains(title.ToLower())) { target = child; break; }
+            } catch {}
+            child = walker.GetNextSiblingElement(child);
+        }
+        if (target == null) { Console.WriteLine($"Window '{title}' not found"); return 1; }
+
+        var cond = uia.CreatePropertyCondition(30011 /* AutomationIdPropertyId */, autoId);
+        var el = target.FindFirst(TreeScope.TreeScope_Subtree, cond);
+        if (el == null) { Console.WriteLine($"AutomationId '{autoId}' not found"); return 1; }
+
+        Console.WriteLine($"Element: {el.CurrentName} (autoId={el.CurrentAutomationId})");
+        foreach (var pid in propIds) {
+            object v = null;
+            string err = null;
+            try { v = el.GetCurrentPropertyValue(pid); }
+            catch (Exception e) { err = e.Message; }
+            string tn = v == null ? "null" : v.GetType().Name;
+            string repr = v == null ? "<null>" : v.ToString();
+            if (err != null) Console.WriteLine($"propId={pid}  EXC: {err}");
+            else Console.WriteLine($"propId={pid}  value=[{repr}]  type={tn}");
+        }
+        return 0;
     }
     static int Run(string[] args) {
         Console.WriteLine($"Apartment: {Thread.CurrentThread.GetApartmentState()}");

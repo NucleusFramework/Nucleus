@@ -5,7 +5,28 @@
  * TaoA11ySnapshotSerializer (Kotlin) and projects it as a UIA fragment tree
  * rooted on the Tao-owned HWND.
  *
- * Wire format documented in objc/a11y.m header — version 4.
+ * Wire format v7 (matches a11y_linux.rs / TaoA11ySnapshotSerializer.kt):
+ *
+ * Header (24 bytes, LE):
+ *   u32 magic = 0xA110A11A
+ *   u16 version = 7
+ *   u16 flags        bit 0 = partial update (rejected on Windows; full pushes only)
+ *   u32 nodeCount
+ *   u64 focusId      (0 = unset)
+ *   u32 reserved     (must be 0)
+ *
+ * Per-node record:
+ *   u64 nodeId, u64 parentId
+ *   u16 role, u16 flags, u16 actions
+ *   u16 extraFlags   bit 0 = READ_ONLY, bit 1 = INVALID
+ *   f32[4] frame (x,y,w,h), f32[3] range (min,max,value)
+ *   u32 selStart, u32 selEnd
+ *   f32[4] scroll (hMax,hVal,vMax,vVal)
+ *   u16 labelLen + label[..]   (UTF-8)
+ *   u16 valueLen + value[..]   (UTF-8)
+ *   u16 customCount + per custom: u16 nameLen + name[..]
+ *   u16 testTagLen + testTag[..]              (v5+, UTF-8)
+ *   u32 childCount + (u64 childId)*           (v7)
  *
  * Architecture:
  *   - One NucleusUiaProjection per HWND, parses snapshots and owns the
@@ -151,7 +172,8 @@ int memcmp(const void *a, const void *b, size_t count) {
 /* ── Wire-format constants (must match TaoA11ySnapshotSerializer) ─────────── */
 
 #define SNAPSHOT_MAGIC   0xA110A11Au
-#define SNAPSHOT_VERSION 4
+#define SNAPSHOT_VERSION 7
+#define SNAPSHOT_FLAG_PARTIAL 0x0001u
 
 enum NucleusA11yRole {
     A11Y_ROLE_UNKNOWN     = 0,
@@ -188,6 +210,10 @@ enum NucleusA11yRole {
 #define A11Y_FLAG_MODAL            (1u << 9)
 #define A11Y_FLAG_LIVE_POLITE      (1u << 10)
 #define A11Y_FLAG_LIVE_ASSERTIVE   (1u << 11)
+#define A11Y_FLAG_MULTI_SELECTABLE (1u << 12)
+#define A11Y_FLAG_EXPANDED_TRUE    (1u << 13)
+#define A11Y_FLAG_EXPANDED_FALSE   (1u << 14)
+#define A11Y_FLAG_HIDDEN           (1u << 15)
 
 #define A11Y_ACTION_CLICK          (1u << 0)
 #define A11Y_ACTION_INCREMENT      (1u << 1)
@@ -199,6 +225,14 @@ enum NucleusA11yRole {
 #define A11Y_ACTION_SCROLL_LEFT    (1u << 7)
 #define A11Y_ACTION_SCROLL_RIGHT   (1u << 8)
 #define A11Y_ACTION_DISMISS        (1u << 9)
+
+/* extraFlags bits — see TaoA11yExtraFlag in TaoAccessibility.kt. */
+#define A11Y_EXTRA_FLAG_READ_ONLY  (1u << 0)
+#define A11Y_EXTRA_FLAG_INVALID    (1u << 1)
+
+/* UIA property IDs missing from the constant block above. */
+#define UIA_IsDataValidForFormPropertyId 30103
+#define UIA_ExpandCollapseStatePropertyId 30087
 
 /* ── Action callbacks (registered by lib.rs at JVM startup) ───────────────── */
 /* The Rust crate registers each callback once at boot; the stubs forward into
@@ -263,6 +297,7 @@ struct NucleusUiaElement {
     uint16_t role;
     uint16_t flags;
     uint16_t actions;
+    uint16_t extraFlags;                        /* v7: READ_ONLY / INVALID bits */
     float frameX, frameY, frameW, frameH;       /* logical points, top-left, window-local */
     float minValue, maxValue, numericValue;
     uint32_t selectionStart, selectionEnd;
@@ -270,6 +305,7 @@ struct NucleusUiaElement {
     float vScrollMax, vScrollValue;
     wchar_t *label;     /* UTF-16 */
     wchar_t *valueStr;  /* UTF-16 */
+    wchar_t *testTag;   /* UTF-16 — Modifier.testTag, surfaced as AutomationId */
     /* Custom action labels (Compose CustomAccessibilityAction.label). The
      * dispatch index is the position in this array. UIA has no native concept
      * of custom actions, so they're surfaced as Help text and exposed via
@@ -430,6 +466,7 @@ static void element_release_data(NucleusUiaElement *el) {
     if (!el) return;
     xfree(el->label);
     xfree(el->valueStr);
+    xfree(el->testTag);
     xfree(el->children);
     if (el->customActions) {
         for (int i = 0; i < el->customActionCount; i++) xfree(el->customActions[i]);
@@ -437,6 +474,7 @@ static void element_release_data(NucleusUiaElement *el) {
     }
     el->label = NULL;
     el->valueStr = NULL;
+    el->testTag = NULL;
     el->children = NULL;
     el->childCount = 0;
     el->customActions = NULL;
@@ -598,12 +636,21 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     uint32_t magic = 0;
     READ_OR_RETURN(&magic, 4);
     if (magic != SNAPSHOT_MAGIC) return FALSE;
-    uint16_t version = 0, reserved = 0;
+    uint16_t version = 0, headerFlags = 0;
     READ_OR_RETURN(&version, 2);
-    READ_OR_RETURN(&reserved, 2);
+    READ_OR_RETURN(&headerFlags, 2);
     if (version != SNAPSHOT_VERSION) return FALSE;
     uint32_t nodeCount = 0;
     READ_OR_RETURN(&nodeCount, 4);
+    uint64_t headerFocusId = 0;
+    READ_OR_RETURN(&headerFocusId, 8);
+    uint32_t headerReserved = 0;
+    READ_OR_RETURN(&headerReserved, 4);
+    (void)headerReserved;
+    /* Partial updates aren't implemented on Windows — the JVM only emits them
+     * via nativeA11yApplyPartialSnapshot which is a no-op stub here. Reject
+     * defensively so encoder drift surfaces instead of silently corrupting. */
+    if (headerFlags & SNAPSHOT_FLAG_PARTIAL) return FALSE;
 
     EnterCriticalSection(&proj->lock);
 
@@ -640,7 +687,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
     BOOL ok = TRUE;
     for (uint32_t i = 0; i < nodeCount; i++) {
         uint64_t nodeId = 0, parentId = 0;
-        uint16_t role = 0, flags = 0, actions = 0, reserved2 = 0;
+        uint16_t role = 0, flags = 0, actions = 0, extraFlags = 0;
         float frame[4] = {0};
         float range[3] = {0};
         uint32_t selStart = 0, selEnd = 0;
@@ -654,7 +701,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
         memcpy(&role, bytes + offset, 2); offset += 2;
         memcpy(&flags, bytes + offset, 2); offset += 2;
         memcpy(&actions, bytes + offset, 2); offset += 2;
-        memcpy(&reserved2, bytes + offset, 2); offset += 2;
+        memcpy(&extraFlags, bytes + offset, 2); offset += 2;
         if (offset + sizeof(frame) > len) { ok = FALSE; break; }
         memcpy(frame, bytes + offset, sizeof(frame)); offset += sizeof(frame);
         if (offset + sizeof(range) > len) { ok = FALSE; break; }
@@ -698,6 +745,47 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
             xfree(label); xfree(valueStr); ok = FALSE; break;
         }
 
+        /* v5+: testTag (Compose Modifier.testTag, surfaced as AutomationId). */
+        uint16_t testTagLen = 0;
+        if (offset + 2 > len) {
+            if (customActions) {
+                for (int k = 0; k < customCount; k++) xfree(customActions[k]);
+                xfree(customActions);
+            }
+            xfree(label); xfree(valueStr); ok = FALSE; break;
+        }
+        memcpy(&testTagLen, bytes + offset, 2); offset += 2;
+        if (offset + testTagLen > len) {
+            if (customActions) {
+                for (int k = 0; k < customCount; k++) xfree(customActions[k]);
+                xfree(customActions);
+            }
+            xfree(label); xfree(valueStr); ok = FALSE; break;
+        }
+        wchar_t *testTag = utf8_to_utf16_alloc(bytes + offset, testTagLen);
+        offset += testTagLen;
+
+        /* v7: explicit children list. We still derive the parent→child linkage
+         * from parentId in the second pass (works for full snapshots), so just
+         * advance the cursor here to keep parsing in sync. */
+        uint32_t childCount = 0;
+        if (offset + 4 > len) {
+            if (customActions) {
+                for (int k = 0; k < customCount; k++) xfree(customActions[k]);
+                xfree(customActions);
+            }
+            xfree(label); xfree(valueStr); xfree(testTag); ok = FALSE; break;
+        }
+        memcpy(&childCount, bytes + offset, 4); offset += 4;
+        if ((uint64_t)childCount * 8u > (uint64_t)(len - offset)) {
+            if (customActions) {
+                for (int k = 0; k < customCount; k++) xfree(customActions[k]);
+                xfree(customActions);
+            }
+            xfree(label); xfree(valueStr); xfree(testTag); ok = FALSE; break;
+        }
+        offset += (size_t)childCount * 8u;
+
         /* Identity reuse: if the old map carries an element with the same
          * nodeId, reuse the COM object so UIA sees a stable identity across
          * snapshots. Reusing the object means events keyed off it are matched
@@ -731,13 +819,21 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
         } else {
             priorSnapshots[i].present = 0;
             el = element_new();
-            if (!el) { xfree(label); xfree(valueStr); ok = FALSE; break; }
+            if (!el) {
+                if (customActions) {
+                    for (int k = 0; k < customCount; k++) xfree(customActions[k]);
+                    xfree(customActions);
+                }
+                xfree(label); xfree(valueStr); xfree(testTag);
+                ok = FALSE; break;
+            }
         }
         el->nodeId = nodeId;
         el->parentId = parentId;
         el->role = role;
         el->flags = flags;
         el->actions = actions;
+        el->extraFlags = extraFlags;
         el->frameX = frame[0]; el->frameY = frame[1];
         el->frameW = frame[2]; el->frameH = frame[3];
         el->minValue = range[0]; el->maxValue = range[1]; el->numericValue = range[2];
@@ -746,6 +842,7 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
         el->vScrollMax = scroll[2]; el->vScrollValue = scroll[3];
         el->label = label;
         el->valueStr = valueStr;
+        el->testTag = testTag;
         el->customActions = customActions;
         el->customActionCount = customCount;
         el->projection = proj;
@@ -847,10 +944,14 @@ static BOOL apply_snapshot(NucleusUiaProjection *proj, const uint8_t *bytes, siz
      * `priorSnapshots` array is populated from the recycle path during the
      * first pass — see element creation block above where we capture old
      * fields into priorSnapshots[i] before overwriting. */
-    uint64_t newFocusedNodeId = 0;
+    /* v7: header focusId is authoritative when non-zero; per-node FOCUSED
+     * flag remains as fallback for older encoders / nodes. */
+    uint64_t newFocusedNodeId = headerFocusId;
     for (uint32_t i = 0; i < nodeCount; i++) {
         NucleusUiaElement *neu = ordered[i];
-        if (neu->flags & A11Y_FLAG_FOCUSED) newFocusedNodeId = neu->nodeId;
+        if (newFocusedNodeId == 0 && (neu->flags & A11Y_FLAG_FOCUSED)) {
+            newFocusedNodeId = neu->nodeId;
+        }
         if (neu->role == A11Y_ROLE_CHECKBOX || neu->role == A11Y_ROLE_SWITCH) {
             debug_log("checkbox-like nodeId=%I64u present=%d oldFlags=0x%x newFlags=0x%x",
                       neu->nodeId, priorSnapshots[i].present,
@@ -1108,7 +1209,12 @@ static int has_scroll(const NucleusUiaElement *el) {
                            A11Y_ACTION_SCROLL_LEFT | A11Y_ACTION_SCROLL_RIGHT)) != 0;
 }
 static int has_expand_collapse(const NucleusUiaElement *el) {
-    return el->role == A11Y_ROLE_POPUP_MENU;
+    /* Any node carrying the EXPANDED_TRUE / EXPANDED_FALSE flag exposes
+     * ExpandCollapsePattern — Compose ships the Expand / Collapse semantic
+     * actions on plain Buttons used as accordion headers, not just on
+     * PopupMenu role. */
+    return el->role == A11Y_ROLE_POPUP_MENU ||
+           (el->flags & (A11Y_FLAG_EXPANDED_TRUE | A11Y_FLAG_EXPANDED_FALSE)) != 0;
 }
 
 static HRESULT STDMETHODCALLTYPE Element_Simple_QueryInterface(
@@ -1284,11 +1390,49 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
             break;
         }
         case UIA_AutomationIdPropertyId: {
-            /* wsprintfW supports %I64d (NOT %lld) for 64-bit ints. */
-            wchar_t buf[32];
-            wsprintfW(buf, L"node-%I64d", (long long)el->nodeId);
-            pRetVal->vt = VT_BSTR;
-            pRetVal->bstrVal = SysAllocString(buf);
+            /* Prefer Compose's Modifier.testTag when present so AT scripts can
+             * locate elements by stable identifier. Fall back to a synthesised
+             * `node-<id>` so UIA Verify doesn't flag a missing AutomationId. */
+            if (el->testTag && el->testTag[0]) {
+                pRetVal->vt = VT_BSTR;
+                pRetVal->bstrVal = SysAllocString(el->testTag);
+            } else {
+                /* wsprintfW supports %I64d (NOT %lld) for 64-bit ints. */
+                wchar_t buf[32];
+                wsprintfW(buf, L"node-%I64d", (long long)el->nodeId);
+                pRetVal->vt = VT_BSTR;
+                pRetVal->bstrVal = SysAllocString(buf);
+            }
+            break;
+        }
+        case UIA_IsDataValidForFormPropertyId: {
+            /* SemanticsProperties.Error → INVALID; UIA exposes the inverse. */
+            pRetVal->vt = VT_BOOL;
+            pRetVal->boolVal = (el->extraFlags & A11Y_EXTRA_FLAG_INVALID)
+                               ? VARIANT_FALSE : VARIANT_TRUE;
+            break;
+        }
+        case UIA_AriaPropertiesPropertyId: {
+            /* Compose ARIA hints — semicolon-separated key=value pairs. Built
+             * dynamically because multiple bits can apply at once. */
+            int hasInvalid  = (el->extraFlags & A11Y_EXTRA_FLAG_INVALID)  != 0;
+            int hasReadOnly = (el->extraFlags & A11Y_EXTRA_FLAG_READ_ONLY) != 0;
+            if (hasInvalid || hasReadOnly) {
+                wchar_t buf[64];
+                int pos = 0;
+                if (hasInvalid) {
+                    static const wchar_t kInv[] = L"invalid=true";
+                    for (int j = 0; kInv[j]; j++) buf[pos++] = kInv[j];
+                }
+                if (hasReadOnly) {
+                    if (pos > 0) buf[pos++] = L';';
+                    static const wchar_t kRo[] = L"readonly=true";
+                    for (int j = 0; kRo[j]; j++) buf[pos++] = kRo[j];
+                }
+                buf[pos] = 0;
+                pRetVal->vt = VT_BSTR;
+                pRetVal->bstrVal = SysAllocString(buf);
+            }
             break;
         }
         case UIA_IsPasswordPropertyId: {
@@ -1361,8 +1505,10 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
         }
         case UIA_ValueIsReadOnlyPropertyId: {
             if (has_value(el)) {
+                int readOnly = (el->extraFlags & A11Y_EXTRA_FLAG_READ_ONLY) ||
+                               !(el->actions & A11Y_ACTION_SET_TEXT);
                 pRetVal->vt = VT_BOOL;
-                pRetVal->boolVal = (el->actions & A11Y_ACTION_SET_TEXT) ? VARIANT_FALSE : VARIANT_TRUE;
+                pRetVal->boolVal = readOnly ? VARIANT_TRUE : VARIANT_FALSE;
             }
             break;
         }
@@ -1387,10 +1533,25 @@ static HRESULT STDMETHODCALLTYPE Element_Simple_GetPropertyValue(
             }
             break;
         }
+        case UIA_ExpandCollapseStatePropertyId: {
+            if (has_expand_collapse(el)) {
+                pRetVal->vt = VT_I4;
+                if (el->flags & A11Y_FLAG_EXPANDED_TRUE)       pRetVal->lVal = 0; /* Expanded */
+                else if (el->flags & A11Y_FLAG_EXPANDED_FALSE) pRetVal->lVal = 1; /* Collapsed */
+                else if (el->flags & A11Y_FLAG_SELECTED)       pRetVal->lVal = 0;
+                else                                            pRetVal->lVal = 1;
+            }
+            break;
+        }
         case UIA_SelectionItemIsSelectedPropertyId: {
             if (has_selection_item(el)) {
+                int sel = (el->flags & A11Y_FLAG_SELECTED) != 0;
+                if (!sel && (el->flags & A11Y_FLAG_CHECKED) &&
+                    (el->role == A11Y_ROLE_RADIOBUTTON || el->role == A11Y_ROLE_TAB)) {
+                    sel = 1;
+                }
                 pRetVal->vt = VT_BOOL;
-                pRetVal->boolVal = (el->flags & A11Y_FLAG_SELECTED) ? VARIANT_TRUE : VARIANT_FALSE;
+                pRetVal->boolVal = sel ? VARIANT_TRUE : VARIANT_FALSE;
             }
             break;
         }
@@ -1722,6 +1883,8 @@ static HRESULT STDMETHODCALLTYPE Element_Value_get_IsReadOnly(
 {
     NucleusUiaElement *el = ELEMENT_FROM_VALUE(This);
     if (!pRetVal) return E_POINTER;
+    /* Honour BasicTextField(readOnly = true) even when SET_TEXT is exposed. */
+    if (el->extraFlags & A11Y_EXTRA_FLAG_READ_ONLY) { *pRetVal = TRUE; return S_OK; }
     *pRetVal = (el->actions & A11Y_ACTION_SET_TEXT) ? FALSE : TRUE;
     return S_OK;
 }
@@ -1857,7 +2020,17 @@ static HRESULT STDMETHODCALLTYPE Element_SelectionItem_get_IsSelected(
 {
     NucleusUiaElement *el = ELEMENT_FROM_SELECTIONITEM(This);
     if (!pRetVal) return E_POINTER;
-    *pRetVal = (el->flags & A11Y_FLAG_SELECTED) ? TRUE : FALSE;
+    /* Compose RadioButtons surface their state through `toggleableState` →
+     * FLAG_CHECKED, not SemanticsProperties.Selected → FLAG_SELECTED. UIA
+     * clients (Narrator, scripted SelectionItemPattern users) read IsSelected
+     * to drive selection, so fold CHECKED into SELECTED for radio/tab roles
+     * — matches what AT-SPI's `Selected` state advertises on Linux. */
+    int selected = (el->flags & A11Y_FLAG_SELECTED) != 0;
+    if (!selected && (el->flags & A11Y_FLAG_CHECKED) &&
+        (el->role == A11Y_ROLE_RADIOBUTTON || el->role == A11Y_ROLE_TAB)) {
+        selected = 1;
+    }
+    *pRetVal = selected ? TRUE : FALSE;
     return S_OK;
 }
 
@@ -2038,8 +2211,10 @@ static HRESULT STDMETHODCALLTYPE Element_ExpandCollapse_Expand(IExpandCollapsePr
 static HRESULT STDMETHODCALLTYPE Element_ExpandCollapse_Collapse(IExpandCollapseProvider *This) {
     NucleusUiaElement *el = ELEMENT_FROM_EXPANDCOLLAPSE(This);
     if (el->projection && el->projection->hwnd) {
+        /* Compose binds the same onToggle lambda to clickable + expand/collapse,
+         * so a CLICK toggles the expanded state in the right direction. */
         nucleus_tao_a11y_invoke_action_win((int64_t)(uintptr_t)el->projection->hwnd,
-                                            el->nodeId, A11Y_ACTION_DISMISS);
+                                            el->nodeId, A11Y_ACTION_CLICK);
     }
     return S_OK;
 }
@@ -2049,11 +2224,11 @@ static HRESULT STDMETHODCALLTYPE Element_ExpandCollapse_get_ExpandCollapseState(
 {
     NucleusUiaElement *el = ELEMENT_FROM_EXPANDCOLLAPSE(This);
     if (!pRetVal) return E_POINTER;
-    /* Compose doesn't carry an explicit "expanded" flag for popup menus.
-     * Approximate via SELECTED (treated as "shown"). */
-    *pRetVal = (el->flags & A11Y_FLAG_SELECTED)
-        ? ExpandCollapseState_Expanded
-        : ExpandCollapseState_Collapsed;
+    if (el->flags & A11Y_FLAG_EXPANDED_TRUE)       *pRetVal = ExpandCollapseState_Expanded;
+    else if (el->flags & A11Y_FLAG_EXPANDED_FALSE) *pRetVal = ExpandCollapseState_Collapsed;
+    /* PopupMenu fallback: SELECTED still means "shown" for legacy menu nodes. */
+    else if (el->flags & A11Y_FLAG_SELECTED)       *pRetVal = ExpandCollapseState_Expanded;
+    else                                            *pRetVal = ExpandCollapseState_Collapsed;
     return S_OK;
 }
 
