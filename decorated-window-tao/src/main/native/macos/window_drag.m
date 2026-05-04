@@ -54,6 +54,16 @@ void nucleus_tao_install_drag_monitor(void) {
         }];
 }
 
+// Returns the NSWindow pointer owning the given NSView, or 0 if the view is
+// not yet attached. Used by the Rust side to derive an NSWindow from the
+// NSView pointer exposed via raw-window-handle (winit only ships NSView).
+long nucleus_tao_ns_view_to_ns_window(long ns_view_ptr) {
+    if (ns_view_ptr == 0) return 0;
+    NSView *view = (__bridge NSView *)(void *)(intptr_t)ns_view_ptr;
+    NSWindow *window = view.window;
+    return (long)(uintptr_t)window;
+}
+
 // Posts `performWindowDragWithEvent:` to the next main-runloop tick using the
 // most recently captured NSLeftMouseDown event. Falls back to the current
 // event if no mouseDown has been captured yet.

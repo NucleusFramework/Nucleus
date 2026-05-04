@@ -38,4 +38,5 @@ extern "C" {
     pub(crate) fn nucleus_tao_a11y_note_pushed();
     pub(crate) fn nucleus_tao_install_drag_monitor();
     pub(crate) fn nucleus_tao_start_window_drag(ns_window_ptr: i64);
+    pub(crate) fn nucleus_tao_ns_view_to_ns_window(ns_view_ptr: i64) -> i64;
 }

@@ -5,7 +5,7 @@
 // build a `Key(nativeKeyCode, nativeKeyLocation)` that matches Compose Desktop
 // exactly.
 
-use tao::keyboard::KeyCode;
+use winit::keyboard::KeyCode;
 
 // AWT KEY_LOCATION_*
 pub const LOC_STANDARD: i32 = 1;
@@ -85,7 +85,6 @@ pub fn map(code: KeyCode) -> (i32, i32) {
         Period => (46, LOC_STANDARD),         // VK_PERIOD
         Slash => (47, LOC_STANDARD),          // VK_SLASH
         IntlBackslash => (92, LOC_STANDARD),
-        Plus => (521, LOC_STANDARD),          // VK_PLUS
 
         // Whitespace / editing
         Enter => (10, LOC_STANDARD),
@@ -154,7 +153,7 @@ pub fn map(code: KeyCode) -> (i32, i32) {
         Numpad7 => (103, LOC_NUMPAD),
         Numpad8 => (104, LOC_NUMPAD),
         Numpad9 => (105, LOC_NUMPAD),
-        NumpadMultiply | NumpadStar => (106, LOC_NUMPAD), // VK_MULTIPLY
+        NumpadMultiply => (106, LOC_NUMPAD), // VK_MULTIPLY
         NumpadAdd => (107, LOC_NUMPAD),                   // VK_ADD
         NumpadComma => (108, LOC_NUMPAD),                 // VK_SEPARATOR
         NumpadSubtract => (109, LOC_NUMPAD),              // VK_SUBTRACT

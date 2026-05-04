@@ -1,6 +1,6 @@
 // Cross-platform cursor JNI export.
 //
-// macOS / Windows go directly through Tao's `set_cursor_icon`; Linux delegates
+// macOS / Windows go directly through winit's `set_cursor`; Linux delegates
 // to a dedicated GDK/XInput2 helper (see `platform::linux::cursor`) because
 // GTK 3's per-device cursor table beats legacy `XDefineCursor`.
 
@@ -9,7 +9,7 @@ use jni::sys::{jint, jlong};
 use jni::JNIEnv;
 
 #[cfg(not(target_os = "linux"))]
-use tao::window::CursorIcon;
+use winit::window::CursorIcon;
 
 #[cfg(not(target_os = "linux"))]
 use crate::state::WINDOWS;
@@ -21,7 +21,7 @@ use crate::state::WINDOWS;
 fn cursor_from_code(code: jint) -> CursorIcon {
     match code {
         1 => CursorIcon::Text,
-        2 => CursorIcon::Hand,
+        2 => CursorIcon::Pointer,
         3 => CursorIcon::Crosshair,
         4 => CursorIcon::Wait,
         5 => CursorIcon::Move,
@@ -55,7 +55,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         };
         let Some(map) = guard.as_ref() else { return };
         if let Some(window) = map.get(&(handle as u64)) {
-            window.set_cursor_icon(cursor_from_code(code));
+            window.set_cursor(cursor_from_code(code));
         }
     }
 }

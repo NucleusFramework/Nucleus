@@ -10,8 +10,8 @@ use jni::objects::GlobalRef;
 use jni::JavaVM;
 use once_cell::sync::OnceCell;
 
-use tao::event_loop::EventLoopProxy;
-use tao::window::Window;
+use winit::event_loop::EventLoopProxy;
+use winit::window::Window;
 
 use crate::events::UserEvent;
 

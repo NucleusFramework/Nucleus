@@ -204,15 +204,19 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 ) {
     #[cfg(target_os = "macos")]
     {
-        use tao::platform::macos::WindowExtMacOS;
         let guard = match WINDOWS.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
         let Some(map) = guard.as_ref() else { return };
         if let Some(window) = map.get(&(handle as u64)) {
-            let ns_window = window.ns_window() as i64;
-            unsafe { crate::platform::macos::ffi::nucleus_tao_start_window_drag(ns_window) };
+            let ns_view = crate::platform::macos::handles::ns_view_pointer(window);
+            let ns_window = unsafe {
+                crate::platform::macos::ffi::nucleus_tao_ns_view_to_ns_window(ns_view)
+            };
+            if ns_window != 0 {
+                unsafe { crate::platform::macos::ffi::nucleus_tao_start_window_drag(ns_window) };
+            }
         }
         return;
     }

@@ -4,9 +4,9 @@
 use jni::objects::JValue;
 use jni::sys::{jint, jlong};
 
-use tao::event::MouseButton;
-use tao::keyboard::ModifiersState;
-use tao::window::WindowId;
+use winit::event::MouseButton;
+use winit::keyboard::ModifiersState;
+use winit::window::WindowId;
 
 use crate::state::{CURRENT_MODIFIERS, EVENT_CALLBACK, JAVA_VM, WINDOWS};
 

@@ -5,11 +5,10 @@ use jni::objects::JClass;
 use jni::sys::{jint, jlong};
 use jni::JNIEnv;
 
-use tao::platform::macos::WindowExtMacOS;
-
 use crate::platform::macos::ffi::{
     nucleus_tao_activate_input_context, nucleus_tao_set_ime_local_rect,
 };
+use crate::platform::macos::handles::ns_view_pointer;
 use crate::state::WINDOWS;
 
 #[no_mangle]
@@ -24,7 +23,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     };
     let Some(map) = guard.as_ref() else { return };
     if let Some(window) = map.get(&(handle as u64)) {
-        let ns_view = window.ns_view() as i64;
+        let ns_view = ns_view_pointer(window);
         unsafe { nucleus_tao_activate_input_context(ns_view) };
     }
 }
@@ -59,8 +58,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         let ly = y_px as f64 / scale;
         let lw = (w_px as f64 / scale).max(1.0);
         let lh = (h_px as f64 / scale).max(1.0);
-        unsafe {
-            nucleus_tao_set_ime_local_rect(window.ns_view() as i64, lx, ly, lw, lh)
-        };
+        let ns_view = ns_view_pointer(window);
+        unsafe { nucleus_tao_set_ime_local_rect(ns_view, lx, ly, lw, lh) };
     }
 }
