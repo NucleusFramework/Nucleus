@@ -23,6 +23,7 @@ enum class Tab(val label: String) {
     Scroll("Scroll"),
     Actions("Window actions"),
     A11y("A11y"),
+    Complex("Complex"),
     Events("Events"),
 }
 
