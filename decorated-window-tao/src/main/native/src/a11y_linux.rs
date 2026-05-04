@@ -369,6 +369,15 @@ fn parse_snapshot(buf: &[u8]) -> Option<ParsedSnapshot> {
         if !label.is_empty() {
             node.set_label(label.clone());
         }
+        // AccessKit's `Role::Label` (our ROLE_STATIC_TEXT mapping) routes
+        // AT-SPI `Accessible.name` through `value()` instead of `label()`
+        // — see `accesskit_consumer::Node::label_comes_from_value` which
+        // returns `true` for `Role::Label`. Without mirroring the label
+        // into the value slot, `BasicText` content reaches the bus as an
+        // empty `name`, leaving Orca / Accerciser to announce the role
+        // ("label") with no accompanying text. Mirror only when no
+        // separate value is already carried (text inputs / progress
+        // surfaces own the value field).
 
         if !test_tag.is_empty() {
             node.set_author_id(test_tag);
@@ -384,6 +393,13 @@ fn parse_snapshot(buf: &[u8]) -> Option<ParsedSnapshot> {
             } else {
                 node.set_value(value_str);
             }
+        } else if role_code == ROLE_STATIC_TEXT && !label.is_empty() {
+            // See the comment above `node.set_label`: `Role::Label` reads
+            // its accessible name from the value slot, so for plain
+            // static-text nodes we mirror the label into the value when
+            // no other value is carried (e.g. live regions whose
+            // StateDescription already populated `value_str`).
+            node.set_value(label.clone());
         }
 
         // Compose's `SemanticsProperties.TextSelectionRange` (start, end) maps

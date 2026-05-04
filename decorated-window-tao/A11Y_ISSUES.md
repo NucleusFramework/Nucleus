@@ -65,6 +65,20 @@ Audit verified against the current code. Each item cites the file/line where the
   vendored `accesskit_atspi_common` `state()` patch. Verified via
   `email-input` testTag in `A11yTab`.
 
+- [x] **Static-text labels carry through to AT-SPI `name`** —
+  `accesskit_consumer::Node::label_comes_from_value()` returns `true` for
+  `Role::Label`, which means AT-SPI `Accessible.name` is read from the
+  AccessKit `value` slot rather than `label` for our `ROLE_STATIC_TEXT`
+  mapping. Without mirroring the wire-format `label` into the value, plain
+  `BasicText` content (status counters, live-region strings, validation
+  hints) reached the bus as a "label"-role node with an empty `name` —
+  Orca/Accerciser would announce the role with no accompanying text. The
+  parser now sets the value to the label for `ROLE_STATIC_TEXT` nodes
+  whose snapshot doesn't already carry an explicit `valueString` (text
+  inputs and progress surfaces still own that slot). Verified end-to-end:
+  full regression goes from 32/34 → 34/34, complex stress goes from
+  31/32 → 32/32, and `dump_labels.py` now reports 20 / 20 named labels.
+
 - [ ] **No `Text` interface on non-editable `Text` composables** — partially addressed for inputs: text-input nodes ship a value-based `org.a11y.atspi.Text` via the vendored `SimpleTextInterface` (character_count, get_text, caret_offset, get_selection, +text-changed/caret-moved events). Static `Text` / `Label` composables still expose `name` only — no `character_lengths`, no `character_positions`, no text runs. Orca/VoiceOver can read a paragraph but cannot navigate it by word/character. Adding text-runs would lift this for static text too.
 
 - [ ] **IME composing range not exposed** — `a11y.m:850-853` stubs the marked-text protocol (returns `NSNotFound`). IME input itself works (`TaoComposeSceneHost.kt:790`) but the composing range is never reported to NSAccessibility, and there is no AT-SPI preedit equivalent on Linux. Screen readers cannot announce in-progress composition.
