@@ -1,7 +1,7 @@
 /*
  * nucleus_tao_a11y.c — UI Automation provider for the Tao backend on Windows.
  *
- * Mirror of objc/a11y.m: parses the same wire format produced by
+ * Mirror of macos/a11y.m: parses the same wire format produced by
  * TaoA11ySnapshotSerializer (Kotlin) and projects it as a UIA fragment tree
  * rooted on the Tao-owned HWND.
  *

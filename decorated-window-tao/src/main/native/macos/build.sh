@@ -84,7 +84,7 @@ strip -x "$OUT_DIR_X64/libnucleus_tao_metal.dylib"
 # JNI exports for NSDraggingDestination/Source. Shipped as its own dylib so
 # the JNI symbols survive the Rust crate's release-mode `strip = "symbols"`.
 
-DND_SRC="$SCRIPT_DIR/../objc/dnd.m"
+DND_SRC="$SCRIPT_DIR/dnd.m"
 DND_FLAGS=(
     -dynamiclib
     -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"

@@ -4,7 +4,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
 
 /**
  * JNI bridge to the macOS NSDraggingDestination / NSDraggingSource helper for
- * the Tao backend (`objc/dnd.m`, shipped as `libnucleus_tao_dnd.dylib`).
+ * the Tao backend (`macos/dnd.m`, shipped as `libnucleus_tao_dnd.dylib`).
  *
  * Mirrors [NativeTaoWindowsDndBridge]: same callback shape, same drop-effect
  * constants. The first parameter of every callback is the NSView pointer (not

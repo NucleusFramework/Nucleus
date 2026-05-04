@@ -204,7 +204,7 @@ Ajout de `dragAndDropManager` = un override de plus.
 
 ## Plan natif par OS
 
-### macOS — `objc/dnd.m` (nouveau, à côté de `window_drag.m` et `a11y.m`)
+### macOS — `macos/dnd.m` (nouveau, à côté de `window_drag.m` et `a11y.m`)
 
 Tao 0.35 n'expose pas le content-view directement, mais le projet a déjà
 `nativeNsViewHandle(handle)` qui retourne le `NSView*`.
@@ -303,7 +303,7 @@ Mêmes hooks que les bridges existants — branchements dans `attach()` /
 JNI : sur macOS, cacher `JavaVM*` dans `JNI_OnLoad`, cacher
 `jclass`/`jmethodID` au `NewGlobalRef`. Pattern `AttachCurrentThread` /
 `DetachCurrentThread` défensif si la callback peut arriver sur un thread
-non attaché (rare en pratique, mais voir `objc/a11y.m` pour le pattern
+non attaché (rare en pratique, mais voir `macos/a11y.m` pour le pattern
 exact déjà utilisé dans le projet).
 
 GraalVM native-image : ajouter dans `reachability-metadata.json`
@@ -395,7 +395,7 @@ les classes JNI-touchées par le shim DnD :
 
 ### ⏳ Stage 2 — macOS entrant `NSDraggingDestination` (3-4 j)
 
-`objc/dnd.m` à créer à côté de `objc/window_drag.m`. Ajouter une
+`macos/dnd.m` à créer à côté de `macos/window_drag.m`. Ajouter une
 catégorie ou sous-classe sur la `NSView` Tao (déjà accessible via
 `NativeTaoBridge.nativeNsViewHandle`) implémentant le protocole
 `<NSDraggingDestination>` :
@@ -414,7 +414,7 @@ catégorie ou sous-classe sur la `NSView` Tao (déjà accessible via
 Réutiliser `TaoSyntheticDragEvent`/`DropEvent`/`TaoFilesTransferable`
 existants — la couche transparence AWT est commune à tous les OS.
 
-JNI : pattern `objc/a11y.m` (cache `JavaVM*` dans `JNI_OnLoad`,
+JNI : pattern `macos/a11y.m` (cache `JavaVM*` dans `JNI_OnLoad`,
 `AttachCurrentThread` défensif). La macOS main thread est généralement
 attachée mais le défensif est gratuit.
 
@@ -489,7 +489,7 @@ Côté Kotlin, **tout est prêt** : `OutboundLauncher` est OS-agnostique,
 nouveau JNI bridge.
 
 - macOS : `[NSView beginDraggingSessionWithItems:event:source:]` dans
-  `objc/dnd.m` (ajouté avec Stage 2). Une classe ObjC conforme à
+  `macos/dnd.m` (ajouté avec Stage 2). Une classe ObjC conforme à
   `<NSDraggingSource>`. Image rendue depuis `drawDragDecoration` →
   `NSImage` → `NSDraggingItem`. NSDraggingItem par format (`fileURL`,
   `string`).

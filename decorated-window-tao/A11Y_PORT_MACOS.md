@@ -1,18 +1,18 @@
-# Tao a11y — macOS port plan (objc/a11y.m → wire format v7)
+# Tao a11y — macOS port plan (macos/a11y.m → wire format v7)
 
 > Read [`A11Y_PORT_CONTEXT.md`](./A11Y_PORT_CONTEXT.md) first. It is the
 > shared briefing for both the macOS and Windows handoff sessions and
 > contains the wire format spec.
 
 You're picking up `wip/tao-experiment` on a real macOS host. Linux is
-shipping at v7; macOS is silently broken because `objc/a11y.m` is still
+shipping at v7; macOS is silently broken because `macos/a11y.m` is still
 parsing v4. Goal: bring it back to working state at v7.
 
 ## What you're touching
 
 ```
 decorated-window-tao/
-└── src/main/native/objc/a11y.m   ← all changes here, ~150 LOC delta
+└── src/main/native/macos/a11y.m   ← all changes here, ~150 LOC delta
 ```
 
 `build.sh` lives at `src/main/native/macos/build.sh`. It clears the
@@ -27,7 +27,7 @@ You probably also want to read:
 - The wire-format spec:
   `decorated-window-tao/A11Y_PORT_CONTEXT.md` § "Wire format v7".
 - The current macOS parser:
-  `objc/a11y.m::apply_snapshot_bytes` (around line 1075).
+  `macos/a11y.m::apply_snapshot_bytes` (around line 1075).
 - Sample apps that exercise the projection:
   `sample-shared/src/.../A11yTab.kt` and `ComplexTab.kt`.
 
@@ -206,7 +206,7 @@ already inherit this — but inspect any code path in `a11y.m` that
 defaults to "enabled" without checking the flag, and invert it to
 "enabled = `(flags & NucleusA11yFlagEnabled) != 0`".
 
-The current parser at `objc/a11y.m::accessibilityEnabled` etc. needs to
+The current parser at `macos/a11y.m::accessibilityEnabled` etc. needs to
 honour the new bit (it's `1 << 1`, same as before — semantics unchanged,
 just verify).
 

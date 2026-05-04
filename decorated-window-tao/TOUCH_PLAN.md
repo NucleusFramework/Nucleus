@@ -114,8 +114,8 @@ Map de la pression (0–1024 normalisé Windows) → `ComposeScenePointer.pressu
 
 Pas de touchscreen Mac, mais pinch / rotate / smart-magnify sont attendus.
 
-**ObjC** — nouveau `native/objc/touchpad_gestures.m`, même pattern que
-`objc/window_drag.m` :
+**ObjC** — nouveau `native/macos/touchpad_gestures.m`, même pattern que
+`macos/window_drag.m` :
 - Override / catégorie sur la TaoView
 - `magnifyWithEvent:` (NSEventTypeMagnify), `rotateWithEvent:`
   (NSEventTypeRotation), `smartMagnifyWithEvent:` (double-tap deux doigts)

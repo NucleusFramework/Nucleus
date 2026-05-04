@@ -3,7 +3,7 @@
 This file is the **handoff briefing** for two follow-up sessions running on
 real macOS and Windows hosts. It captures what was done on the Linux branch
 `wip/tao-experiment` so the same wire format and semantics can be brought to
-parity in `objc/a11y.m` (mac) and `windows/nucleus_tao_a11y.c` (win).
+parity in `macos/a11y.m` (mac) and `windows/nucleus_tao_a11y.c` (win).
 
 Read this first. Then pick up the per-platform plan
 (`A11Y_PORT_MACOS.md` or `A11Y_PORT_WINDOWS.md`) in the same directory.
@@ -13,7 +13,7 @@ Read this first. Then pick up the per-platform plan
 ```
 JVM encoder (TaoA11ySnapshotSerializer.kt)  →  wire format v7
             ├── Linux  (a11y_linux.rs)              ← at v7  ✅ shipping
-            ├── macOS  (objc/a11y.m)                ← at v4  ❌ broken
+            ├── macOS  (macos/a11y.m)               ← at v4  ❌ broken
             └── Windows (windows/nucleus_tao_a11y.c) ← at v4  ❌ broken
 ```
 
@@ -251,7 +251,7 @@ decorated-window-tao/
 ├── src/main/kotlin/.../TaoSemanticsObserver.kt    ← observer (cross-platform logic)
 ├── src/main/kotlin/.../NativeTaoBridge.kt         ← JNI surface
 ├── src/main/native/src/a11y_linux.rs              ← Linux Rust parser (REFERENCE IMPLEMENTATION)
-├── src/main/native/objc/a11y.m                    ← macOS parser (TO PORT)
+├── src/main/native/macos/a11y.m                   ← macOS parser (TO PORT)
 └── src/main/native/windows/nucleus_tao_a11y.c     ← Windows parser (TO PORT)
 ```
 

@@ -1,7 +1,7 @@
 // VoiceOver bridge.
 //
 // The JVM side builds an immutable snapshot of the Compose semantics tree,
-// serialises it to the wire format documented in `objc/a11y.m`, and pushes it
+// serialises it to the wire format documented in `macos/a11y.m`, and pushes it
 // here once per Compose tick. We forward the bytes verbatim to the ObjC
 // projection, which rebuilds its NSAccessibilityElement tree and posts the
 // appropriate notifications to AppKit.
@@ -141,7 +141,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     JNI_FALSE
 }
 
-// ── Callbacks invoked from `objc/a11y.m` ──────────────────────────────────
+// ── Callbacks invoked from `macos/a11y.m` ─────────────────────────────────
 
 /// Called when VoiceOver edits a text field via `setAccessibilityValue:`.
 /// Forwards the new string (UTF-8) to Kotlin so it can invoke

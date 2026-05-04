@@ -107,7 +107,7 @@ internal object NativeTaoBridge {
     external fun nativeAppleEventsInstall()
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/apple_events.m → nucleus_tao_apple_events_dispatch)
+    @Suppress("unused") // called from JNI (macos/apple_events.m → nucleus_tao_apple_events_dispatch)
     fun dispatchDeepLink(uri: String) {
         TaoDeepLinkBridge.onUrlFromNative(uri)
     }
@@ -400,7 +400,7 @@ internal object NativeTaoBridge {
     external fun nativeA11yNotePushed()
 
     /**
-     * Called from native (`objc/a11y.m` → `nucleus_tao_a11y_invoke_action`)
+     * Called from native (`macos/a11y.m` → `nucleus_tao_a11y_invoke_action`)
      * on the macOS main thread when VoiceOver triggers an action. Routed to
      * the registered [TaoAccessibilityController] for the given window.
      *
@@ -414,31 +414,31 @@ internal object NativeTaoBridge {
     }
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_invoke_action)
+    @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_invoke_action)
     fun dispatchA11yActionByNsView(nsView: Long, nodeId: Long, action: Int) {
         TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action)
     }
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_set_text)
+    @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_set_text)
     fun dispatchA11ySetText(nsView: Long, nodeId: Long, text: String) {
         TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text)
     }
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_set_selection)
+    @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_set_selection)
     fun dispatchA11ySetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
         TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end)
     }
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_invoke_custom_action)
+    @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_invoke_custom_action)
     fun dispatchA11yCustomAction(nsView: Long, nodeId: Long, index: Int) {
         TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index)
     }
 
     @JvmStatic
-    @Suppress("unused") // called from JNI (objc/a11y.m → nucleus_tao_a11y_scroll_by)
+    @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_scroll_by)
     fun dispatchA11yScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
         TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
     }

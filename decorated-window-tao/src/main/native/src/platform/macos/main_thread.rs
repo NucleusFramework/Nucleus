@@ -14,7 +14,7 @@
 // (transitively pulled by Compose Desktop) starts `[NSApp run]` on main
 // during early init, this gives us a reliable rendezvous point.
 //
-// Implemented in C in `objc/main_thread_dispatch.m`, compiled by build.rs.
+// Implemented in C in `macos/main_thread_dispatch.m`, compiled by build.rs.
 
 use std::ffi::c_void;
 

@@ -21,7 +21,7 @@ private val TAO_PARTIAL_SUPPORTED: Boolean =
  *  - [TaoAccessibilityController] owns the projection of one Compose
  *    `SemanticsOwner` onto the NSAccessibility tree of one TaoView. It builds
  *    flat [TaoA11yNode] lists, serialises them to the wire format documented
- *    in `objc/a11y.m`, and pushes them to native via JNI.
+ *    in `macos/a11y.m`, and pushes them to native via JNI.
  *  - [TaoAccessibilityRegistry] indexes controllers by window handle so the
  *    JNI callback ([NativeTaoBridge.dispatchA11yAction]) can find the
  *    receiver for an incoming VoiceOver action.

@@ -22,7 +22,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     unsafe { nucleus_tao_apple_events_install() };
 }
 
-/// Called from `objc/apple_events.m` on the main thread when AppKit delivers
+/// Called from `macos/apple_events.m` on the main thread when AppKit delivers
 /// a `kAEGetURL` event. Forwards the UTF-8 URL to
 /// `NativeTaoBridge.dispatchDeepLink(String)`.
 #[no_mangle]
