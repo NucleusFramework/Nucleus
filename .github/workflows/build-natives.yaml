@@ -313,6 +313,44 @@ jobs:
           path: media-control/src/main/resources/nucleus/native/win32-*/
           retention-days: 1
 
+      # decorated-window-tao: Rust crate (winit) + four C helpers.
+      # Linux is intentionally skipped — see decorated-window-tao/MIGRATION.md
+      # (Linux migration is Phase 3.4 of the tao -> winit move).
+      - name: Install Rust Windows targets (decorated-window-tao)
+        shell: bash
+        run: |
+          rustup target add x86_64-pc-windows-msvc
+          rustup target add aarch64-pc-windows-msvc
+
+      - name: Build decorated-window-tao Windows DLLs
+        shell: cmd
+        run: call decorated-window-tao\src\main\native\windows\build.bat
+
+      - name: Verify decorated-window-tao Windows natives
+        shell: bash
+        run: |
+          for f in \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_deco.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_a11y.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_a11y.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload decorated-window-tao Windows DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: decorated-window-tao-windows
+          path: decorated-window-tao/src/main/resources/nucleus/native/win32-*/
+          retention-days: 1
+
   macos:
     runs-on: macos-latest
     steps:
@@ -627,6 +665,37 @@ jobs:
         with:
           name: media-control-macos
           path: media-control/src/main/resources/nucleus/native/darwin-*/
+          retention-days: 1
+
+      # decorated-window-tao: Rust crate (winit) + two ObjC helpers
+      # (libnucleus_tao_metal, libnucleus_tao_dnd). Linux is skipped here —
+      # see decorated-window-tao/MIGRATION.md (Linux migration is Phase 3.4).
+      - name: Install Rust macOS targets (decorated-window-tao)
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+
+      - name: Build decorated-window-tao macOS dylibs
+        run: bash decorated-window-tao/src/main/native/macos/build.sh
+
+      - name: Verify decorated-window-tao macOS natives
+        run: |
+          for f in \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_dnd.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_metal.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_dnd.dylib; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload decorated-window-tao macOS dylibs
+        uses: actions/upload-artifact@v4
+        with:
+          name: decorated-window-tao-macos
+          path: decorated-window-tao/src/main/resources/nucleus/native/darwin-*/
           retention-days: 1
 
   linux:
