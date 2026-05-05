@@ -2,11 +2,11 @@ Using vcvarsall.bat: C:\Program Files\Microsoft Visual Studio\2022\Community\VC\
 
 === Building nucleus_tao.dll (x64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
-    Finished `release` profile [optimized] target(s) in 8.93s
+    Finished `release` profile [optimized] target(s) in 5.72s
 
 === Building nucleus_tao.dll (ARM64) ===
    Compiling nucleus_tao v0.1.0 (C:\Users\Elie\IdeaProjects\ComposeDeskKit\decorated-window-tao\src\main\native)
-    Finished `release` profile [optimized] target(s) in 5.56s
+    Finished `release` profile [optimized] target(s) in 5.00s
 
 === Building C helpers (x64) ===
 'vswhere.exe' n'est pas reconnu en tant que commande interne

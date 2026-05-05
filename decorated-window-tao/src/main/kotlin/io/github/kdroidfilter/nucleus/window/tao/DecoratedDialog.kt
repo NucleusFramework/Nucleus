@@ -22,12 +22,16 @@ import io.github.kdroidfilter.nucleus.window.DecoratedDialogState
  * Same parameter set and rendering pipeline as the AWT-based backends:
  * non-resizable by default, close-only chrome via [DialogTitleBar].
  *
- * On Windows the dialog establishes a native parent-child relationship with
- * the enclosing [DecoratedWindow] (`SetWindowLongPtrW(GWLP_HWNDPARENT)`) and
- * disables the parent's input while it is visible — same observable behaviour
- * as a modal AWT `JDialog`. The parent is recovered from
- * [LocalTaoWindow] read at the call site, so a `DecoratedDialog` declared
- * outside any [DecoratedWindow] degrades cleanly to a regular top-level.
+ * On Windows the dialog establishes a native owner relationship with the
+ * enclosing [DecoratedWindow] (`SetWindowLongPtrW(GWLP_HWNDPARENT)`),
+ * matching how Compose Desktop's `DialogWindow` → AWT `JDialog` behaves: the
+ * dialog sits above its owner in z-order, minimises with it, stays out of
+ * the taskbar, and disappears with it. The parent is **not** disabled — that
+ * matches `decorated-window-jni` (its `JDialog` is not `APPLICATION_MODAL`)
+ * and avoids losing the parent's keyboard focus across the dialog lifetime.
+ * The parent is captured from [LocalTaoWindow] at the call site, so a
+ * `DecoratedDialog` declared outside any [DecoratedWindow] degrades cleanly
+ * to a regular top-level.
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
@@ -61,10 +65,12 @@ fun ApplicationScope.DecoratedDialog(
 
     DecoratedWindow(
         onCloseRequest = {
-            // Restore the parent before invoking the user callback so focus
-            // returns naturally — the user typically calls exitApplication or
-            // toggles a `var showDialog` flag inside this lambda.
-            restoreParentInput(parent)
+            // Just delegate: the user callback typically toggles the `showDialog`
+            // state, which removes this DecoratedDialog from composition and
+            // triggers our DisposableEffect.onDispose. That's where the modal
+            // teardown (parent re-enable + focus handoff) actually runs — both
+            // the X click path and a pure state-toggle path share that single
+            // cleanup, so there's no asymmetry.
             latestOnClose()
         },
         state = windowState,
@@ -88,16 +94,15 @@ fun ApplicationScope.DecoratedDialog(
                 }
             }
 
-            // Native parent-child + modality. Runs inside the dialog's
-            // composition, so `windowScope.window` is the dialog's TaoWindow
-            // and its HWND is already resolvable via [TaoWindow.nativeHandle].
-            DisposableEffect(windowScope.window, parent, visible) {
-                val applied = applyDialogModality(
+            // Native owner relationship. Runs inside the dialog's composition,
+            // so `windowScope.window` is the dialog's TaoWindow and its HWND
+            // is already resolvable via [TaoWindow.nativeHandle].
+            DisposableEffect(windowScope.window, parent) {
+                applyDialogOwnerRelationship(
                     dialog = windowScope.window,
                     parent = parent,
-                    visible = visible,
                 )
-                onDispose { applied?.invoke() }
+                onDispose { /* HWND destruction restores focus to owner */ }
             }
 
             // Centre on parent before the first show. Only meaningful when
@@ -136,47 +141,30 @@ fun ApplicationScope.DecoratedDialog(
 }
 
 /**
- * Wires the Windows-only native modality. Returns a teardown lambda that
- * restores the parent's enabled state and clears the owner relationship; the
- * caller invokes it from `onDispose`. Returns `null` (and is a no-op) on
- * non-Windows platforms or when the bridge / parent is unavailable.
+ * Wires the Windows-only owner relationship between [dialog] and [parent].
+ * Mirrors `decorated-window-jni`'s `DecoratedDialog`, which uses Compose
+ * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
+ * parent as owner but **not** `APPLICATION_MODAL`, so the parent stays
+ * interactive. We never call `EnableWindow(parent, false)` for the same
+ * reason: disabling the parent strips its keyboard focus and Win32 won't
+ * restore it cleanly when the dialog closes (`SetForegroundWindow` gets
+ * rejected once we lose the foreground role), leaving the user having to
+ * click the parent to revive it.
+ *
+ * No-op on non-Windows platforms or when the bridge / parent is unavailable.
  */
-private fun applyDialogModality(
-    dialog: TaoWindow,
-    parent: TaoWindow?,
-    visible: Boolean,
-): (() -> Unit)? {
-    if (Platform.Current != Platform.Windows) return null
-    if (parent == null) return null
-    if (!NativeTaoWindowsDecoBridge.isLoaded) return null
-
-    val dialogHwnd = dialog.nativeHandle
-    val parentHwnd = parent.nativeHandle
-    if (dialogHwnd == 0L || parentHwnd == 0L) return null
-
-    NativeTaoWindowsDecoBridge.nativeSetOwner(dialogHwnd, parentHwnd)
-    if (visible) {
-        NativeTaoWindowsDecoBridge.nativeSetEnabled(parentHwnd, false)
-    }
-
-    return {
-        // Always re-enable: even if the dialog was hidden before disposal we
-        // want the parent fully responsive.
-        NativeTaoWindowsDecoBridge.nativeSetEnabled(parentHwnd, true)
-        NativeTaoWindowsDecoBridge.nativeSetOwner(dialogHwnd, 0L)
-    }
-}
-
-/** Imperative parent re-enable, used from the user-close callback so the
- *  parent recovers focus *before* the dialog is destroyed. */
-private fun restoreParentInput(parent: TaoWindow?) {
+private fun applyDialogOwnerRelationship(dialog: TaoWindow, parent: TaoWindow?) {
     if (Platform.Current != Platform.Windows) return
     if (parent == null) return
     if (!NativeTaoWindowsDecoBridge.isLoaded) return
+
+    val dialogHwnd = dialog.nativeHandle
     val parentHwnd = parent.nativeHandle
-    if (parentHwnd == 0L) return
-    NativeTaoWindowsDecoBridge.nativeSetEnabled(parentHwnd, true)
+    if (dialogHwnd == 0L || parentHwnd == 0L) return
+
+    NativeTaoWindowsDecoBridge.nativeSetOwner(dialogHwnd, parentHwnd)
 }
+
 
 /**
  * Centres [dialog] on [parent] using physical-pixel screen rects from

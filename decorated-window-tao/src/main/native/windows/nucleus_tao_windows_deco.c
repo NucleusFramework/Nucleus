@@ -115,6 +115,7 @@ static LRESULT CALLBACK decoWndProc(
     case WM_ERASEBKGND:
         return 1;
 
+
     case WM_NCCALCSIZE: {
         if (!wParam) break;
         if (state->isFullscreen) return 0;
@@ -468,17 +469,54 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 #endif
 }
 
-/* Wraps EnableWindow. Disabling the owner of a modal dialog blocks input on
- * the parent while the dialog is up — same behaviour as a native MessageBox
- * or a modal JDialog. */
-JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetEnabled(
-    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
+/* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back
+ * to GetDeviceCaps(LOGPIXELSX) when GetDpiForSystem isn't available
+ * (pre-Windows 10 1607). Used by DecoratedWindow when the window's own
+ * scale factor isn't yet resolvable (pre-onWindowReady). */
+JNIEXPORT jint JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
+    JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
-    HWND hwnd = (HWND)(uintptr_t)hwndLong;
-    if (!hwnd) return;
-    EnableWindow(hwnd, enabled ? TRUE : FALSE);
+    UINT dpi = 96;
+    HMODULE hUser32 = GetModuleHandleA("user32.dll");
+    if (hUser32) {
+        typedef UINT (WINAPI *PFN_GetDpiForSystem)(void);
+        PFN_GetDpiForSystem pGetDpiForSystem =
+            (PFN_GetDpiForSystem)GetProcAddress(hUser32, "GetDpiForSystem");
+        if (pGetDpiForSystem) {
+            dpi = pGetDpiForSystem();
+        } else {
+            HDC hdc = GetDC(NULL);
+            if (hdc) {
+                dpi = (UINT)GetDeviceCaps(hdc, LOGPIXELSX);
+                ReleaseDC(NULL, hdc);
+            }
+        }
+    }
+    if (dpi == 0) dpi = 96;
+    return (jint)((dpi * 1000) / 96);
+}
+
+/* Returns [x, y, width, height] of the primary monitor's work area (full
+ * screen minus the taskbar) in physical pixels. Used by DecoratedWindow to
+ * resolve [WindowPosition.Aligned] for the initial outer position. */
+JNIEXPORT jlongArray JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorWorkArea(
+    JNIEnv *env, jclass clazz)
+{
+    (void)clazz;
+    RECT r;
+    if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &r, 0)) return NULL;
+    jlongArray arr = (*env)->NewLongArray(env, 4);
+    if (!arr) return NULL;
+    jlong values[4];
+    values[0] = (jlong)r.left;
+    values[1] = (jlong)r.top;
+    values[2] = (jlong)(r.right - r.left);
+    values[3] = (jlong)(r.bottom - r.top);
+    (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
 }
 
 /* Returns [x, y, width, height] of the window's outer bounds in screen

@@ -44,19 +44,11 @@ internal object NativeTaoWindowsDecoBridge {
      * minimised, and does not appear in the taskbar. Pass `0` for [ownerHwnd]
      * to clear the relationship.
      *
-     * Used by `DecoratedDialog` to mirror the native parent-child semantics
-     * of an AWT `JDialog`.
+     * Used by `DecoratedDialog` to mirror the native owner semantics of an
+     * AWT `JDialog`.
      */
     @JvmStatic
     external fun nativeSetOwner(childHwnd: Long, ownerHwnd: Long)
-
-    /**
-     * Calls `EnableWindow`. Disabling the parent while a modal dialog is
-     * visible blocks all keyboard / mouse input on the parent — matching the
-     * behaviour of a native modal `JDialog`.
-     */
-    @JvmStatic
-    external fun nativeSetEnabled(hwnd: Long, enabled: Boolean)
 
     /**
      * Returns the window's outer bounds as `[x, y, width, height]` in physical
@@ -64,4 +56,23 @@ internal object NativeTaoWindowsDecoBridge {
      */
     @JvmStatic
     external fun nativeGetWindowRect(hwnd: Long): LongArray?
+
+    /**
+     * Returns the primary monitor's work area (full screen minus taskbar) as
+     * `[x, y, width, height]` in physical pixels. Used to resolve
+     * [androidx.compose.ui.window.WindowPosition.Aligned] for the initial
+     * outer position of a window.
+     */
+    @JvmStatic
+    external fun nativeGetPrimaryMonitorWorkArea(): LongArray?
+
+    /**
+     * Returns the primary monitor's scale factor encoded as `(scale * 1000)`.
+     * Falls back gracefully when `GetDpiForSystem` is unavailable. Used as a
+     * scale source while a Tao window's own scale factor is not yet
+     * resolvable (the window object exists but the native HWND has not been
+     * created yet).
+     */
+    @JvmStatic
+    external fun nativeGetPrimaryMonitorScaleMilli(): Int
 }

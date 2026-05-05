@@ -9,11 +9,15 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
+import io.github.kdroidfilter.nucleus.core.runtime.Platform
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
@@ -72,9 +76,12 @@ fun ApplicationScope.DecoratedWindow(
 
     val window = remember {
         applied.size = state.size
-        applied.position = state.position
         applied.placement = state.placement
         applied.isMinimized = state.isMinimized
+        // applied.position deliberately stays null so the LaunchedEffect below
+        // applies the initial state.position (Absolute, Aligned, …) on first
+        // composition. Pre-stamping it would short-circuit Aligned positions
+        // because the LaunchedEffect bails when `pos == applied.position`.
 
         val w = openDecoratedWindow(
             onCloseRequest = { latestOnClose() },
@@ -94,10 +101,9 @@ fun ApplicationScope.DecoratedWindow(
             content = { latestContent.invoke(this) },
         )
 
-        // Initial state application
-        (state.position as? WindowPosition.Absolute)?.let { pos ->
-            w.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
-        }
+        // Initial placement / minimised flag are applied imperatively here.
+        // Position is handled by the LaunchedEffect on `state.position` to
+        // cover both Absolute and Aligned variants uniformly.
         when (state.placement) {
             WindowPlacement.Maximized -> w.setMaximized(true)
             WindowPlacement.Fullscreen -> w.setFullscreen(true)
@@ -155,9 +161,18 @@ fun ApplicationScope.DecoratedWindow(
     }
     LaunchedEffect(window, state.position) {
         val pos = state.position
-        if (pos is WindowPosition.Absolute && pos != applied.position) {
-            window.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
-            applied.position = pos
+        if (pos == applied.position) return@LaunchedEffect
+        when (pos) {
+            is WindowPosition.Absolute -> {
+                window.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
+                applied.position = pos
+            }
+            is WindowPosition.Aligned -> {
+                if (applyAlignedPosition(window, pos, state.size)) {
+                    applied.position = pos
+                }
+            }
+            else -> Unit // PlatformDefault: leave whatever Tao chose
         }
     }
     LaunchedEffect(window, state.placement) {
@@ -210,4 +225,50 @@ fun ApplicationScope.DecoratedWindow(
             window.setIcon(0, 0, ByteArray(0))
         }
     }
+}
+
+/**
+ * Resolves a [WindowPosition.Aligned] against the primary monitor's work area
+ * and pushes the resulting outer position to [window]. Returns `true` when the
+ * position could be applied, `false` when the platform / native bridge is
+ * unavailable.
+ *
+ * Currently Windows-only: relies on `nucleus_tao_windows_deco.dll` to query
+ * the work area. macOS and Linux fall back to whatever default position Tao
+ * picked at creation.
+ */
+private fun applyAlignedPosition(
+    window: TaoWindow,
+    position: WindowPosition.Aligned,
+    size: DpSize,
+): Boolean {
+    if (Platform.Current != Platform.Windows) return false
+    if (!NativeTaoWindowsDecoBridge.isLoaded) return false
+    val workArea = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
+
+    // The native HWND doesn't exist yet at first composition (Tao creates it
+    // asynchronously on its event loop), so we always read the primary
+    // monitor's scale directly — that's the monitor Tao will place the
+    // window on by default, and it's the scale that pairs with the work-area
+    // rect we just queried.
+    val scaleMilli = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+    val scale = scaleMilli / 1000.0
+
+    // Convert the work area to logical pixels so we can offset by the
+    // dp-valued window size directly.
+    val workXDp = workArea[0] / scale
+    val workYDp = workArea[1] / scale
+    val workWDp = (workArea[2] / scale).toInt()
+    val workHDp = (workArea[3] / scale).toInt()
+
+    val winWDp = size.width.value.toInt().coerceAtLeast(0)
+    val winHDp = size.height.value.toInt().coerceAtLeast(0)
+
+    val offset: IntOffset = position.alignment.align(
+        size = IntSize(winWDp, winHDp),
+        space = IntSize(workWDp, workHDp),
+        layoutDirection = LayoutDirection.Ltr,
+    )
+    window.setOuterPosition(workXDp + offset.x, workYDp + offset.y)
+    return true
 }
