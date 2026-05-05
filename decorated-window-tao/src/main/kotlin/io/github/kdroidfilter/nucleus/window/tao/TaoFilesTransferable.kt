@@ -28,16 +28,18 @@ internal class TaoFilesTransferable(
     override fun isDataFlavorSupported(flavor: DataFlavor?): Boolean =
         flavor != null && SUPPORTED_FLAVORS.any { it == flavor }
 
-    override fun getTransferData(flavor: DataFlavor?): Any = when {
-        flavor == DataFlavor.javaFileListFlavor -> files
-        flavor == DataFlavor.stringFlavor -> files.joinToString("\n") { it.absolutePath }
-        else -> throw UnsupportedFlavorException(flavor)
-    }
+    override fun getTransferData(flavor: DataFlavor?): Any =
+        when {
+            flavor == DataFlavor.javaFileListFlavor -> files
+            flavor == DataFlavor.stringFlavor -> files.joinToString("\n") { it.absolutePath }
+            else -> throw UnsupportedFlavorException(flavor)
+        }
 
     private companion object {
-        private val SUPPORTED_FLAVORS = arrayOf(
-            DataFlavor.javaFileListFlavor,
-            DataFlavor.stringFlavor,
-        )
+        private val SUPPORTED_FLAVORS =
+            arrayOf(
+                DataFlavor.javaFileListFlavor,
+                DataFlavor.stringFlavor,
+            )
     }
 }

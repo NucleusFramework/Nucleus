@@ -16,13 +16,12 @@ import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.TitleBar
 import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
 import io.github.kdroidfilter.nucleus.window.newFullscreenControls
-
-import org.jetbrains.jewel.foundation.theme.JewelTheme
-import org.jetbrains.jewel.foundation.theme.LocalContentColor
 import jewelsample.IntUiThemes
 import jewelsample.showcase.ShowcaseIcons
 import jewelsample.showcase.views.forCurrentOs
 import jewelsample.viewmodel.MainViewModel
+import org.jetbrains.jewel.foundation.theme.JewelTheme
+import org.jetbrains.jewel.foundation.theme.LocalContentColor
 import org.jetbrains.jewel.ui.component.Dropdown
 import org.jetbrains.jewel.ui.component.Icon
 import org.jetbrains.jewel.ui.component.IconButton
@@ -42,89 +41,89 @@ internal fun DecoratedWindowScope.TitleBarView() {
     val titleBarModifier = Modifier.newFullscreenControls().macOSLargeCornerRadius()
     TitleBar(titleBarModifier, gradientStartColor = MainViewModel.projectColor) { state ->
         CompositionLocalProvider(LocalContentColor provides contentColor) {
-        Row(Modifier.align(Alignment.Start).padding(start = startPadding)) {
-            Dropdown(
-                Modifier.height(30.dp),
-                menuContent = {
-                    MainViewModel.views.forEach {
-                        selectableItem(
-                            selected = MainViewModel.currentView == it,
-                            onClick = { MainViewModel.currentView = it },
-                            keybinding = it.keyboardShortcut?.forCurrentOs(),
-                        ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+            Row(Modifier.align(Alignment.Start).padding(start = startPadding)) {
+                Dropdown(
+                    Modifier.height(30.dp),
+                    menuContent = {
+                        MainViewModel.views.forEach {
+                            selectableItem(
+                                selected = MainViewModel.currentView == it,
+                                onClick = { MainViewModel.currentView = it },
+                                keybinding = it.keyboardShortcut?.forCurrentOs(),
                             ) {
-                                Icon(it.iconKey, null, modifier = Modifier.size(20.dp), hint = Size(20))
-                                Text(it.title)
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    Icon(it.iconKey, null, modifier = Modifier.size(20.dp), hint = Size(20))
+                                    Text(it.title)
+                                }
                             }
                         }
-                    }
-                },
-            ) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    },
                 ) {
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(3.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(MainViewModel.currentView.iconKey, null, hint = Size(20))
-                        Text(MainViewModel.currentView.title)
-                    }
-                }
-            }
-        }
-
-        Text(title)
-
-        Row(Modifier.align(Alignment.End)) {
-            Tooltip({ Text("Open Jewel Github repository") }) {
-                val jewelGithubLink = "https://github.com/JetBrains/intellij-community/tree/master/platform/jewel"
-                IconButton(
-                    { Desktop.getDesktop().browse(URI.create(jewelGithubLink)) },
-                    Modifier.size(40.dp).padding(5.dp),
-                ) {
-                    Icon(ShowcaseIcons.gitHub, "Github")
-                }
-            }
-
-            Tooltip(
-                tooltip = {
-                    when (MainViewModel.theme) {
-                        IntUiThemes.Light -> Text("Switch to light theme with light header")
-                        IntUiThemes.LightWithLightHeader -> Text("Switch to dark theme")
-                        IntUiThemes.Dark -> Text("Switch to system theme")
-                        IntUiThemes.System -> Text("Switch to light theme")
-                    }
-                },
-            ) {
-                IconButton(
-                    {
-                        MainViewModel.theme =
-                            when (MainViewModel.theme) {
-                                IntUiThemes.Light -> IntUiThemes.LightWithLightHeader
-                                IntUiThemes.LightWithLightHeader -> IntUiThemes.Dark
-                                IntUiThemes.Dark -> IntUiThemes.System
-                                IntUiThemes.System -> IntUiThemes.Light
-                            }
-                    },
-                    Modifier.size(40.dp).padding(5.dp),
-                ) {
-                    val (iconKey, description) =
-                        when (MainViewModel.theme) {
-                            IntUiThemes.Light -> ShowcaseIcons.themeLight to "Light"
-                            IntUiThemes.LightWithLightHeader ->
-                                ShowcaseIcons.themeLightWithLightHeader to "Light with light header"
-                            IntUiThemes.Dark -> ShowcaseIcons.themeDark to "Dark"
-                            IntUiThemes.System -> ShowcaseIcons.themeSystem to "System"
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(MainViewModel.currentView.iconKey, null, hint = Size(20))
+                            Text(MainViewModel.currentView.title)
                         }
-                    Icon(key = iconKey, contentDescription = description, hints = arrayOf(Size(20)))
+                    }
                 }
             }
-        }
+
+            Text(title)
+
+            Row(Modifier.align(Alignment.End)) {
+                Tooltip({ Text("Open Jewel Github repository") }) {
+                    val jewelGithubLink = "https://github.com/JetBrains/intellij-community/tree/master/platform/jewel"
+                    IconButton(
+                        { Desktop.getDesktop().browse(URI.create(jewelGithubLink)) },
+                        Modifier.size(40.dp).padding(5.dp),
+                    ) {
+                        Icon(ShowcaseIcons.gitHub, "Github")
+                    }
+                }
+
+                Tooltip(
+                    tooltip = {
+                        when (MainViewModel.theme) {
+                            IntUiThemes.Light -> Text("Switch to light theme with light header")
+                            IntUiThemes.LightWithLightHeader -> Text("Switch to dark theme")
+                            IntUiThemes.Dark -> Text("Switch to system theme")
+                            IntUiThemes.System -> Text("Switch to light theme")
+                        }
+                    },
+                ) {
+                    IconButton(
+                        {
+                            MainViewModel.theme =
+                                when (MainViewModel.theme) {
+                                    IntUiThemes.Light -> IntUiThemes.LightWithLightHeader
+                                    IntUiThemes.LightWithLightHeader -> IntUiThemes.Dark
+                                    IntUiThemes.Dark -> IntUiThemes.System
+                                    IntUiThemes.System -> IntUiThemes.Light
+                                }
+                        },
+                        Modifier.size(40.dp).padding(5.dp),
+                    ) {
+                        val (iconKey, description) =
+                            when (MainViewModel.theme) {
+                                IntUiThemes.Light -> ShowcaseIcons.themeLight to "Light"
+                                IntUiThemes.LightWithLightHeader ->
+                                    ShowcaseIcons.themeLightWithLightHeader to "Light with light header"
+                                IntUiThemes.Dark -> ShowcaseIcons.themeDark to "Dark"
+                                IntUiThemes.System -> ShowcaseIcons.themeSystem to "System"
+                            }
+                        Icon(key = iconKey, contentDescription = description, hints = arrayOf(Size(20)))
+                    }
+                }
+            }
         }
     }
 }

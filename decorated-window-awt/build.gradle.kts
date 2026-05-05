@@ -36,7 +36,9 @@ mavenPublishing {
 
     pom {
         name.set("Nucleus Decorated Window AWT")
-        description.set("AWT/Compose Desktop integration of Nucleus Decorated Window (consumed by JBR and JNI backends)")
+        description.set(
+            "AWT/Compose Desktop integration of Nucleus Decorated Window (consumed by JBR and JNI backends)",
+        )
         url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {

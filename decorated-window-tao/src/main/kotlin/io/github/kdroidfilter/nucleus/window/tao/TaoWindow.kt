@@ -23,19 +23,25 @@ class TaoWindow internal constructor(
 ) {
     @Volatile
     private var readyListener: ((Int, Int) -> Unit)? = null
+
     // Multi-cast: the imperative `openDecoratedWindow` registers a listener
     // for host-rendering, and the @Composable `DecoratedWindow` adds another
     // for state-sync. They must coexist.
     private val resizedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
     private val movedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
+
     @Volatile
     private var scaleFactorListener: ((Float) -> Unit)? = null
+
     @Volatile
     private var closeRequestedListener: (() -> Unit)? = null
+
     @Volatile
     private var destroyedListener: (() -> Unit)? = null
+
     @Volatile
     private var redrawListener: (() -> Unit)? = null
+
     // Coalesces concurrent `requestRedraw` calls into one pending native request:
     // tao on Linux only drains one entry from its `draws` channel per event-loop
     // iteration, but Compose readily produces multiple invalidations per frame
@@ -47,18 +53,25 @@ class TaoWindow internal constructor(
     // the listener runs, so a redraw posted *during* render still gets through.
     private val redrawPending = AtomicBoolean(false)
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+
     @Volatile
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
+
     @Volatile
     private var pointerExitedListener: (() -> Unit)? = null
+
     @Volatile
     private var pointerButtonListener: ((Int, Boolean) -> Unit)? = null
+
     @Volatile
     private var pointerScrollListener: ((dxAwt: Float, dyAwt: Float) -> Unit)? = null
+
     @Volatile
     private var trackpadGestureListener: TrackpadGestureListener? = null
+
     @Volatile
     private var touchInputListener: TouchInputListener? = null
+
     @Volatile
     private var keyListener: KeyEventListener? = null
 
@@ -69,11 +82,11 @@ class TaoWindow internal constructor(
      */
     fun interface TrackpadGestureListener {
         fun onGesture(
-            kind: Int,         // TaoTrackpadGesture.MAGNIFY | ROTATE | SMART_MAGNIFY
-            phase: Int,        // TaoTrackpadPhase.BEGAN | CHANGED | ENDED | CANCELLED
-            xFixed: Int,       // physical pixels × 1024, view-relative, top-left
+            kind: Int, // TaoTrackpadGesture.MAGNIFY | ROTATE | SMART_MAGNIFY
+            phase: Int, // TaoTrackpadPhase.BEGAN | CHANGED | ENDED | CANCELLED
+            xFixed: Int, // physical pixels × 1024, view-relative, top-left
             yFixed: Int,
-            valueFixed: Int,   // delta × 10000 (ratio for magnify, degrees for rotate)
+            valueFixed: Int, // delta × 10000 (ratio for magnify, degrees for rotate)
         )
     }
 
@@ -88,22 +101,22 @@ class TaoWindow internal constructor(
      */
     fun interface TouchInputListener {
         fun onTouch(
-            phase: Int,        // TaoTouchEvent.PRESS | MOVE | RELEASE | CANCEL
-            id: Long,          // OS-assigned finger id
-            xFixed: Int,       // physical pixels × 1024
+            phase: Int, // TaoTouchEvent.PRESS | MOVE | RELEASE | CANCEL
+            id: Long, // OS-assigned finger id
+            xFixed: Int, // physical pixels × 1024
             yFixed: Int,
-            forceFixed: Int,   // pressure × 10000, or TaoTouchEvent.FORCE_UNKNOWN
+            forceFixed: Int, // pressure × 10000, or TaoTouchEvent.FORCE_UNKNOWN
         )
     }
 
     /** Receives keyboard events shaped like AWT for direct consumption by Compose. */
     fun interface KeyEventListener {
         fun onKey(
-            type: Int,        // TaoEventCode.KEY_DOWN | KEY_UP
-            vkCode: Int,      // AWT KeyEvent.VK_*
+            type: Int, // TaoEventCode.KEY_DOWN | KEY_UP
+            vkCode: Int, // AWT KeyEvent.VK_*
             keyLocation: Int, // AWT KeyEvent.KEY_LOCATION_*
-            modifiers: Int,   // TaoModifierMask bitmask
-            codePoint: Int,   // First Unicode scalar of typed text (or 0)
+            modifiers: Int, // TaoModifierMask bitmask
+            codePoint: Int, // First Unicode scalar of typed text (or 0)
         )
     }
 
@@ -148,11 +161,12 @@ class TaoWindow internal constructor(
      * need to address the OS window directly without going through Tao APIs.
      */
     val nativeHandle: Long
-        get() = when (Platform.Current) {
-            Platform.Windows -> NativeTaoBridge.nativeHwndHandle(handle)
-            Platform.MacOS -> NativeTaoBridge.nativeNsViewHandle(handle)
-            else -> 0L
-        }
+        get() =
+            when (Platform.Current) {
+                Platform.Windows -> NativeTaoBridge.nativeHwndHandle(handle)
+                Platform.MacOS -> NativeTaoBridge.nativeNsViewHandle(handle)
+                else -> 0L
+            }
 
     val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)
@@ -208,24 +222,37 @@ class TaoWindow internal constructor(
     }
 
     /** Logical pixels. Pass `null` to clear the minimum. */
-    fun setMinimumSize(widthDp: Double?, heightDp: Double?) {
+    fun setMinimumSize(
+        widthDp: Double?,
+        heightDp: Double?,
+    ) {
         val w = widthDp ?: -1.0
         val h = heightDp ?: -1.0
         NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
     }
 
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
-    fun setIcon(width: Int, height: Int, pixels: ByteArray) {
+    fun setIcon(
+        width: Int,
+        height: Int,
+        pixels: ByteArray,
+    ) {
         NativeTaoBridge.nativeSetWindowIcon(handle, width, height, pixels)
     }
 
     /** Logical pixels (matches [TaoApplication.openWindow]'s `width`/`height`). */
-    fun setInnerSize(widthDp: Double, heightDp: Double) {
+    fun setInnerSize(
+        widthDp: Double,
+        heightDp: Double,
+    ) {
         NativeTaoBridge.nativeSetInnerSize(handle, widthDp, heightDp)
     }
 
     /** Logical pixels. Top-left of the outer (decoration-inclusive) window. */
-    fun setOuterPosition(xDp: Double, yDp: Double) {
+    fun setOuterPosition(
+        xDp: Double,
+        yDp: Double,
+    ) {
         NativeTaoBridge.nativeSetOuterPosition(handle, xDp, yDp)
     }
 

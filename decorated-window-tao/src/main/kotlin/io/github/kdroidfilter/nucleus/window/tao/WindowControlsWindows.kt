@@ -1,9 +1,5 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
-import io.github.kdroidfilter.nucleus.window.TitleBarScope
-
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
-
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -27,6 +23,7 @@ import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.dp
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.LocalIsDarkTheme
 import io.github.kdroidfilter.nucleus.window.icons.windows.Close
 import io.github.kdroidfilter.nucleus.window.icons.windows.CloseDark
@@ -56,12 +53,23 @@ import io.github.kdroidfilter.nucleus.window.icons.windows.WindowsControlButtonI
 
 private val WINDOWS_BUTTON_WIDTH = 46.dp
 
-@Suppress("MagicNumber") private val WindowsButtonHoveredLight = Color(0x1A000000)
-@Suppress("MagicNumber") private val WindowsButtonHoveredDark  = Color(0x1AFFFFFF)
-@Suppress("MagicNumber") private val WindowsButtonPressedLight = Color(0x33000000)
-@Suppress("MagicNumber") private val WindowsButtonPressedDark  = Color(0x33FFFFFF)
-@Suppress("MagicNumber") private val WindowsCloseButtonHovered = Color(0xFFE81123)
-@Suppress("MagicNumber") private val WindowsCloseButtonPressed = Color(0xFFF1707A)
+@Suppress("MagicNumber")
+private val WindowsButtonHoveredLight = Color(0x1A000000)
+
+@Suppress("MagicNumber")
+private val WindowsButtonHoveredDark = Color(0x1AFFFFFF)
+
+@Suppress("MagicNumber")
+private val WindowsButtonPressedLight = Color(0x33000000)
+
+@Suppress("MagicNumber")
+private val WindowsButtonPressedDark = Color(0x33FFFFFF)
+
+@Suppress("MagicNumber")
+private val WindowsCloseButtonHovered = Color(0xFFE81123)
+
+@Suppress("MagicNumber")
+private val WindowsCloseButtonPressed = Color(0xFFF1707A)
 
 /**
  * Windows-style window controls (minimize / maximize-restore / close).
@@ -91,11 +99,16 @@ internal fun WindowControlsWindows(
         WindowsCaptionButton(
             onClick = { win.minimize() },
             isDark = isDark,
-            icon = if (state.isActive) {
-                if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
-            } else {
-                if (isDark) WindowsControlButtonIcons.MinimizeInactiveDark else WindowsControlButtonIcons.MinimizeInactive
-            },
+            icon =
+                if (state.isActive) {
+                    if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
+                } else {
+                    if (isDark) {
+                        WindowsControlButtonIcons.MinimizeInactiveDark
+                    } else {
+                        WindowsControlButtonIcons.MinimizeInactive
+                    }
+                },
             contentDescription = "Minimize",
         )
 
@@ -105,12 +118,20 @@ internal fun WindowControlsWindows(
             WindowsCaptionButton(
                 onClick = onExitFullscreen,
                 isDark = isDark,
-                icon = if (state.isActive) {
-                    if (isDark) WindowsControlButtonIcons.CloseFullscreenDark else WindowsControlButtonIcons.CloseFullscreen
-                } else {
-                    if (isDark) WindowsControlButtonIcons.CloseFullscreenInactiveDark
-                    else WindowsControlButtonIcons.CloseFullscreenInactive
-                },
+                icon =
+                    if (state.isActive) {
+                        if (isDark) {
+                            WindowsControlButtonIcons.CloseFullscreenDark
+                        } else {
+                            WindowsControlButtonIcons.CloseFullscreen
+                        }
+                    } else {
+                        if (isDark) {
+                            WindowsControlButtonIcons.CloseFullscreenInactiveDark
+                        } else {
+                            WindowsControlButtonIcons.CloseFullscreenInactive
+                        }
+                    },
                 contentDescription = "Exit fullscreen",
             )
         } else if (state.isMaximized) {
@@ -118,22 +139,32 @@ internal fun WindowControlsWindows(
             WindowsCaptionButton(
                 onClick = { win.setMaximized(false) },
                 isDark = isDark,
-                icon = if (state.isActive) {
-                    if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
-                } else {
-                    if (isDark) WindowsControlButtonIcons.RestoreInactiveDark else WindowsControlButtonIcons.RestoreInactive
-                },
+                icon =
+                    if (state.isActive) {
+                        if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
+                    } else {
+                        if (isDark) {
+                            WindowsControlButtonIcons.RestoreInactiveDark
+                        } else {
+                            WindowsControlButtonIcons.RestoreInactive
+                        }
+                    },
                 contentDescription = "Restore",
             )
         } else {
             WindowsCaptionButton(
                 onClick = { win.setMaximized(true) },
                 isDark = isDark,
-                icon = if (state.isActive) {
-                    if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
-                } else {
-                    if (isDark) WindowsControlButtonIcons.MaximizeInactiveDark else WindowsControlButtonIcons.MaximizeInactive
-                },
+                icon =
+                    if (state.isActive) {
+                        if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
+                    } else {
+                        if (isDark) {
+                            WindowsControlButtonIcons.MaximizeInactiveDark
+                        } else {
+                            WindowsControlButtonIcons.MaximizeInactive
+                        }
+                    },
                 contentDescription = "Maximize",
             )
         }
@@ -144,11 +175,12 @@ internal fun WindowControlsWindows(
         WindowsCaptionButton(
             onClick = { win.requestUserClose() },
             isDark = isDark,
-            icon = if (state.isActive) {
-                if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
-            } else {
-                if (isDark) WindowsControlButtonIcons.CloseInactiveDark else WindowsControlButtonIcons.CloseInactive
-            },
+            icon =
+                if (state.isActive) {
+                    if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
+                } else {
+                    if (isDark) WindowsControlButtonIcons.CloseInactiveDark else WindowsControlButtonIcons.CloseInactive
+                },
             iconHover = WindowsControlButtonIcons.CloseHover,
             isCloseButton = true,
             contentDescription = "Close",
@@ -170,34 +202,39 @@ private fun WindowsCaptionButton(
     var hovered by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
 
-    val backgroundColor = when {
-        pressed && isCloseButton -> WindowsCloseButtonPressed
-        pressed -> if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
-        hovered && isCloseButton -> WindowsCloseButtonHovered
-        hovered -> if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
-        else -> Color.Transparent
-    }
+    val backgroundColor =
+        when {
+            pressed && isCloseButton -> WindowsCloseButtonPressed
+            pressed -> if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
+            hovered && isCloseButton -> WindowsCloseButtonHovered
+            hovered -> if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
+            else -> Color.Transparent
+        }
 
     val isCloseHovered = (hovered || pressed) && isCloseButton
-    val currentIcon: Painter = rememberVectorPainter(
-        if (isCloseHovered && iconHover != null) iconHover else icon,
-    )
+    val currentIcon: Painter =
+        rememberVectorPainter(
+            if (isCloseHovered && iconHover != null) iconHover else icon,
+        )
 
     Box(
-        modifier = Modifier
-            .focusable(false)
-            .fillMaxHeight()
-            .width(WINDOWS_BUTTON_WIDTH)
-            .background(backgroundColor)
-            .onPointerEvent(PointerEventType.Enter) { hovered = true }
-            .onPointerEvent(PointerEventType.Exit) { hovered = false; pressed = false }
-            .onPointerEvent(PointerEventType.Press) { pressed = true }
-            .onPointerEvent(PointerEventType.Release) { pressed = false }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick,
-            ),
+        modifier =
+            Modifier
+                .focusable(false)
+                .fillMaxHeight()
+                .width(WINDOWS_BUTTON_WIDTH)
+                .background(backgroundColor)
+                .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                .onPointerEvent(PointerEventType.Exit) {
+                    hovered = false
+                    pressed = false
+                }.onPointerEvent(PointerEventType.Press) { pressed = true }
+                .onPointerEvent(PointerEventType.Release) { pressed = false }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         Image(painter = currentIcon, contentDescription = contentDescription)

@@ -38,12 +38,13 @@ import javax.swing.JPanel
  */
 internal object TaoSyntheticDropContext {
     private val shadowComponent: java.awt.Component = JPanel()
-    private val shadowDropTarget: DropTarget = DropTarget(
-        shadowComponent,
-        DnDConstants.ACTION_COPY_OR_MOVE,
-        null,
-        true,
-    )
+    private val shadowDropTarget: DropTarget =
+        DropTarget(
+            shadowComponent,
+            DnDConstants.ACTION_COPY_OR_MOVE,
+            null,
+            true,
+        )
 
     val context: DropTargetContext get() = shadowDropTarget.dropTargetContext
 }
@@ -54,14 +55,15 @@ internal class TaoSyntheticDragEvent(
     private val backingTransferable: Transferable,
     val payload: TaoDragAndDropPayload,
 ) : DropTargetDragEvent(
-    TaoSyntheticDropContext.context,
-    cursorLocn,
-    dropAction,
-    DnDConstants.ACTION_COPY_OR_MOVE,
-) {
+        TaoSyntheticDropContext.context,
+        cursorLocn,
+        dropAction,
+        DnDConstants.ACTION_COPY_OR_MOVE,
+    ) {
     override fun getTransferable(): Transferable = backingTransferable
 
     override fun acceptDrag(dragOperation: Int) { /* synthetic — no real peer to notify */ }
+
     override fun rejectDrag() { /* synthetic */ }
 }
 
@@ -71,15 +73,18 @@ internal class TaoSyntheticDropEvent(
     private val backingTransferable: Transferable,
     val payload: TaoDragAndDropPayload,
 ) : DropTargetDropEvent(
-    TaoSyntheticDropContext.context,
-    cursorLocn,
-    dropAction,
-    DnDConstants.ACTION_COPY_OR_MOVE,
-) {
+        TaoSyntheticDropContext.context,
+        cursorLocn,
+        dropAction,
+        DnDConstants.ACTION_COPY_OR_MOVE,
+    ) {
     override fun getTransferable(): Transferable = backingTransferable
 
     override fun acceptDrop(dropAction: Int) { /* synthetic — no peer */ }
+
     override fun rejectDrop() { /* synthetic */ }
+
     override fun dropComplete(success: Boolean) { /* synthetic — completion handled natively */ }
+
     override fun isLocalTransfer(): Boolean = false
 }

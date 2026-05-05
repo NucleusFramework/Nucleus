@@ -29,19 +29,40 @@ internal object NativeTaoWindowsDndBridge {
      */
     interface Callback {
         @Suppress("FunctionParameterNaming")
-        fun onDragEnter(hwnd: Long, x: Int, y: Int, keyState: Int, hasFiles: Boolean): Int
+        fun onDragEnter(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            hasFiles: Boolean,
+        ): Int
 
         @Suppress("FunctionParameterNaming")
-        fun onDragOver(hwnd: Long, x: Int, y: Int, keyState: Int, hasFiles: Boolean): Int
+        fun onDragOver(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            hasFiles: Boolean,
+        ): Int
 
         fun onDragLeave(hwnd: Long)
 
         @Suppress("FunctionParameterNaming")
-        fun onDrop(hwnd: Long, x: Int, y: Int, keyState: Int, files: Array<String>?): Int
+        fun onDrop(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            files: Array<String>?,
+        ): Int
     }
 
     @JvmStatic
-    external fun nativeRegister(hwnd: Long, callback: Callback): Int
+    external fun nativeRegister(
+        hwnd: Long,
+        callback: Callback,
+    ): Int
 
     @JvmStatic
     external fun nativeRevoke(hwnd: Long): Int

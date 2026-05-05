@@ -15,13 +15,14 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
  * so the Rust side's `GetModuleHandleW("nucleus_tao_a11y.dll")` succeeds.
  */
 internal object NativeTaoA11yWindowsBridge {
-    private val loaded: Boolean = run {
-        if (System.getProperty("os.name", "").lowercase().contains("win")) {
-            NativeLibraryLoader.load("nucleus_tao_a11y", NativeTaoA11yWindowsBridge::class.java)
-        } else {
-            false
+    private val loaded: Boolean =
+        run {
+            if (System.getProperty("os.name", "").lowercase().contains("win")) {
+                NativeLibraryLoader.load("nucleus_tao_a11y", NativeTaoA11yWindowsBridge::class.java)
+            } else {
+                false
+            }
         }
-    }
 
     val isLoaded: Boolean get() = loaded
 }

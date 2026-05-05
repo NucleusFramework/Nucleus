@@ -83,7 +83,12 @@ internal object NativeTaoEglBridge {
      * path will additionally invoke `wl_egl_window_resize`.
      */
     @JvmStatic
-    external fun nativeResize(handle: Long, widthPx: Int, heightPx: Int, scale: Float)
+    external fun nativeResize(
+        handle: Long,
+        widthPx: Int,
+        heightPx: Int,
+        scale: Float,
+    )
 
     /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
     @JvmStatic

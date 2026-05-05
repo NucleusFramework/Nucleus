@@ -8,7 +8,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
-import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindowFn
 import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
 import io.github.kdroidfilter.nucleus.application.NucleusDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
@@ -16,6 +15,7 @@ import io.github.kdroidfilter.nucleus.window.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import org.jetbrains.jewel.foundation.theme.JewelTheme
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindowFn
 
 private const val LUMINANCE_THRESHOLD = 0.5f
 
@@ -119,4 +119,3 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
         }
     }
 }
-

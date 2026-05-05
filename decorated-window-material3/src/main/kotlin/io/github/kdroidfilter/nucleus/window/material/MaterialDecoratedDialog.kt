@@ -7,12 +7,12 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.window.ApplicationScope
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.rememberDialogState
-import io.github.kdroidfilter.nucleus.application.DecoratedDialog as NucleusDecoratedDialog
 import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
 import io.github.kdroidfilter.nucleus.application.NucleusDecoratedDialogScope
 import io.github.kdroidfilter.nucleus.window.AwtDecoratedDialogScope
 import io.github.kdroidfilter.nucleus.window.DecoratedDialog
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
+import io.github.kdroidfilter.nucleus.application.DecoratedDialog as NucleusDecoratedDialog
 
 /** AWT-backed (JBR / JNI) Material 3 wrapper for [DecoratedDialog]. */
 @Suppress("FunctionNaming", "LongParameterList")

@@ -20,68 +20,93 @@ import java.util.concurrent.Executors
  * value reports best-effort dispatch (queued vs. impossible), not completion.
  */
 object NucleusTaskbarProgress {
-    private val worker = Executors.newSingleThreadExecutor { r ->
-        Thread(r, "nucleus-taskbar-progress").apply { isDaemon = true }
-    }
+    private val worker =
+        Executors.newSingleThreadExecutor { r ->
+            Thread(r, "nucleus-taskbar-progress").apply { isDaemon = true }
+        }
 
     fun isAvailable(): Boolean = TaskbarProgress.isAvailable()
 
-    fun setProgress(window: NucleusWindow, value: Double): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.setProgress(it, value) },
-        tao = { TaoTaskbarProgress.setProgress(it, value) },
-    )
+    fun setProgress(
+        window: NucleusWindow,
+        value: Double,
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.setProgress(it, value) },
+            tao = { TaoTaskbarProgress.setProgress(it, value) },
+        )
 
-    fun setState(window: NucleusWindow, state: TaskbarProgress.State): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.setState(it, state) },
-        tao = { TaoTaskbarProgress.setState(it, state) },
-    )
+    fun setState(
+        window: NucleusWindow,
+        state: TaskbarProgress.State,
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.setState(it, state) },
+            tao = { TaoTaskbarProgress.setState(it, state) },
+        )
 
-    fun showProgress(window: NucleusWindow, value: Double): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.showProgress(it, value) },
-        tao = { TaoTaskbarProgress.showProgress(it, value) },
-    )
+    fun showProgress(
+        window: NucleusWindow,
+        value: Double,
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.showProgress(it, value) },
+            tao = { TaoTaskbarProgress.showProgress(it, value) },
+        )
 
-    fun showError(window: NucleusWindow, value: Double = 1.0): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.showError(it, value) },
-        tao = { TaoTaskbarProgress.showError(it, value) },
-    )
+    fun showError(
+        window: NucleusWindow,
+        value: Double = 1.0,
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.showError(it, value) },
+            tao = { TaoTaskbarProgress.showError(it, value) },
+        )
 
-    fun showIndeterminate(window: NucleusWindow): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.showIndeterminate(it) },
-        tao = { TaoTaskbarProgress.showIndeterminate(it) },
-    )
+    fun showIndeterminate(window: NucleusWindow): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.showIndeterminate(it) },
+            tao = { TaoTaskbarProgress.showIndeterminate(it) },
+        )
 
-    fun showPaused(window: NucleusWindow, value: Double = 1.0): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.showPaused(it, value) },
-        tao = { TaoTaskbarProgress.showPaused(it, value) },
-    )
+    fun showPaused(
+        window: NucleusWindow,
+        value: Double = 1.0,
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.showPaused(it, value) },
+            tao = { TaoTaskbarProgress.showPaused(it, value) },
+        )
 
-    fun hideProgress(window: NucleusWindow): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.hideProgress(it) },
-        tao = { TaoTaskbarProgress.hideProgress(it) },
-    )
+    fun hideProgress(window: NucleusWindow): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.hideProgress(it) },
+            tao = { TaoTaskbarProgress.hideProgress(it) },
+        )
 
     fun requestAttention(
         window: NucleusWindow,
         type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL,
-    ): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.requestAttention(it, type) },
-        tao = { TaoTaskbarProgress.requestAttention(it, type) },
-    )
+    ): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.requestAttention(it, type) },
+            tao = { TaoTaskbarProgress.requestAttention(it, type) },
+        )
 
-    fun stopAttention(window: NucleusWindow): Boolean = dispatch(
-        window,
-        awt = { TaskbarProgress.stopAttention(it) },
-        tao = { TaoTaskbarProgress.stopAttention(it) },
-    )
+    fun stopAttention(window: NucleusWindow): Boolean =
+        dispatch(
+            window,
+            awt = { TaskbarProgress.stopAttention(it) },
+            tao = { TaoTaskbarProgress.stopAttention(it) },
+        )
 
     private inline fun dispatch(
         window: NucleusWindow,
@@ -103,30 +128,22 @@ object NucleusTaskbarProgress {
 // Ergonomic extensions: `nucleusWindow.setTaskbarProgress(0.5)` reads naturally
 // at the call site and removes the need to repeat the [NucleusTaskbarProgress]
 // receiver.
-fun NucleusWindow.setTaskbarProgress(value: Double): Boolean =
-    NucleusTaskbarProgress.setProgress(this, value)
+fun NucleusWindow.setTaskbarProgress(value: Double): Boolean = NucleusTaskbarProgress.setProgress(this, value)
 
-fun NucleusWindow.setTaskbarState(state: TaskbarProgress.State): Boolean =
-    NucleusTaskbarProgress.setState(this, state)
+fun NucleusWindow.setTaskbarState(state: TaskbarProgress.State): Boolean = NucleusTaskbarProgress.setState(this, state)
 
-fun NucleusWindow.showTaskbarProgress(value: Double): Boolean =
-    NucleusTaskbarProgress.showProgress(this, value)
+fun NucleusWindow.showTaskbarProgress(value: Double): Boolean = NucleusTaskbarProgress.showProgress(this, value)
 
-fun NucleusWindow.showTaskbarError(value: Double = 1.0): Boolean =
-    NucleusTaskbarProgress.showError(this, value)
+fun NucleusWindow.showTaskbarError(value: Double = 1.0): Boolean = NucleusTaskbarProgress.showError(this, value)
 
-fun NucleusWindow.showTaskbarIndeterminate(): Boolean =
-    NucleusTaskbarProgress.showIndeterminate(this)
+fun NucleusWindow.showTaskbarIndeterminate(): Boolean = NucleusTaskbarProgress.showIndeterminate(this)
 
-fun NucleusWindow.showTaskbarPaused(value: Double = 1.0): Boolean =
-    NucleusTaskbarProgress.showPaused(this, value)
+fun NucleusWindow.showTaskbarPaused(value: Double = 1.0): Boolean = NucleusTaskbarProgress.showPaused(this, value)
 
-fun NucleusWindow.hideTaskbarProgress(): Boolean =
-    NucleusTaskbarProgress.hideProgress(this)
+fun NucleusWindow.hideTaskbarProgress(): Boolean = NucleusTaskbarProgress.hideProgress(this)
 
 fun NucleusWindow.requestTaskbarAttention(
     type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL,
 ): Boolean = NucleusTaskbarProgress.requestAttention(this, type)
 
-fun NucleusWindow.stopTaskbarAttention(): Boolean =
-    NucleusTaskbarProgress.stopAttention(this)
+fun NucleusWindow.stopTaskbarAttention(): Boolean = NucleusTaskbarProgress.stopAttention(this)

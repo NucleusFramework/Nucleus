@@ -58,56 +58,63 @@ fun ZoomTab(modifier: Modifier = Modifier) {
             style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
         )
         BasicText(
-            text = "scale=%.2f · rotation=%.1f° · offset=(%.0f, %.0f)".format(
-                scale, rotation, offset.x, offset.y,
-            ),
+            text =
+                "scale=%.2f · rotation=%.1f° · offset=(%.0f, %.0f)".format(
+                    scale,
+                    rotation,
+                    offset.x,
+                    offset.y,
+                ),
             style = TextStyle(color = Color(0xFFA0A4B0), fontSize = 12.sp),
         )
 
         Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF15181D))
-                .pointerInput(Unit) {
-                    detectTransformGestures { _, pan, zoom, rot ->
-                        scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
-                        rotation += rot
-                        offset += pan
-                    }
-                },
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF15181D))
+                    .pointerInput(Unit) {
+                        detectTransformGestures { _, pan, zoom, rot ->
+                            scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
+                            rotation += rot
+                            offset += pan
+                        }
+                    },
             contentAlignment = Alignment.Center,
         ) {
             Box(
-                modifier = Modifier
-                    .size(220.dp)
-                    .graphicsLayer(
-                        scaleX = scale,
-                        scaleY = scale,
-                        rotationZ = rotation,
-                        translationX = offset.x,
-                        translationY = offset.y,
-                    )
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFF8AB4FF),
-                                Color(0xFF34D399),
-                                Color(0xFF8B5CF6),
+                modifier =
+                    Modifier
+                        .size(220.dp)
+                        .graphicsLayer(
+                            scaleX = scale,
+                            scaleY = scale,
+                            rotationZ = rotation,
+                            translationX = offset.x,
+                            translationY = offset.y,
+                        ).clip(RoundedCornerShape(20.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors =
+                                    listOf(
+                                        Color(0xFF8AB4FF),
+                                        Color(0xFF34D399),
+                                        Color(0xFF8B5CF6),
+                                    ),
                             ),
                         ),
-                    ),
                 contentAlignment = Alignment.Center,
             ) {
                 BasicText(
                     text = "Pinch / Rotate / Drag",
-                    style = TextStyle(
-                        color = Color.White,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold,
-                    ),
+                    style =
+                        TextStyle(
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                        ),
                 )
             }
         }
@@ -115,15 +122,15 @@ fun ZoomTab(modifier: Modifier = Modifier) {
         BasicText(
             text = "Reset",
             style = TextStyle(color = Color(0xFF8AB4FF), fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
-            modifier = Modifier
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color.White.copy(alpha = 0.06f))
-                .clickable {
-                    scale = 1f
-                    rotation = 0f
-                    offset = Offset.Zero
-                }
-                .padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.White.copy(alpha = 0.06f))
+                    .clickable {
+                        scale = 1f
+                        rotation = 0f
+                        offset = Offset.Zero
+                    }.padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
 }

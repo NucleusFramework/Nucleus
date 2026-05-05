@@ -76,11 +76,12 @@ import kotlinx.coroutines.delay
 @Composable
 fun ComplexTab(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .background(Color(0xFF12141A))
-            .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+        modifier =
+            modifier
+                .fillMaxSize()
+                .background(Color(0xFF12141A))
+                .verticalScroll(rememberScrollState())
+                .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         BasicText(
@@ -109,20 +110,24 @@ private data class TodoItem(
 @Composable
 private fun TodoListSection() {
     val nextId = remember { mutableStateOf(1L) }
-    val items = remember {
-        mutableStateListOf(
-            TodoItem(1L, "Buy milk", false),
-            TodoItem(2L, "Write tests", true),
-            TodoItem(3L, "Ship it", false),
-        ).also { nextId.value = 4L }
-    }
+    val items =
+        remember {
+            mutableStateListOf(
+                TodoItem(1L, "Buy milk", false),
+                TodoItem(2L, "Write tests", true),
+                TodoItem(3L, "Ship it", false),
+            ).also { nextId.value = 4L }
+        }
     var filter by remember { mutableStateOf(TextFieldValue("")) }
 
     val filtered by remember(items, filter) {
         derivedStateOf {
             val q = filter.text.trim().lowercase()
-            if (q.isEmpty()) items.toList()
-            else items.filter { it.title.lowercase().contains(q) }
+            if (q.isEmpty()) {
+                items.toList()
+            } else {
+                items.filter { it.title.lowercase().contains(q) }
+            }
         }
     }
     val doneCount by remember(items) { derivedStateOf { items.count { it.done } } }
@@ -131,12 +136,13 @@ private fun TodoListSection() {
         // Status line — live region so AT clients hear the count change.
         BasicText(
             text = "${items.size} item(s) · $doneCount done · showing ${filtered.size}",
-            modifier = Modifier
-                .testTag("todo-status")
-                .semantics {
-                    liveRegion = LiveRegionMode.Polite
-                    contentDescription = "${items.size} items, $doneCount done, showing ${filtered.size}"
-                },
+            modifier =
+                Modifier
+                    .testTag("todo-status")
+                    .semantics {
+                        liveRegion = LiveRegionMode.Polite
+                        contentDescription = "${items.size} items, $doneCount done, showing ${filtered.size}"
+                    },
             style = labelStyle,
         )
 
@@ -177,11 +183,12 @@ private fun TodoListSection() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             BasicText(text = "Filter:", style = labelStyle)
             Box(
-                modifier = Modifier
-                    .width(220.dp)
-                    .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
-                    .border(1.dp, Color(0xFF374151), RoundedCornerShape(6.dp))
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                modifier =
+                    Modifier
+                        .width(220.dp)
+                        .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
+                        .border(1.dp, Color(0xFF374151), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
                 BasicTextField(
                     value = filter,
@@ -189,9 +196,10 @@ private fun TodoListSection() {
                     singleLine = true,
                     textStyle = labelStyle,
                     cursorBrush = SolidColor(Color(0xFF8AB4FF)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("todo-filter"),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .testTag("todo-filter"),
                 )
             }
         }
@@ -231,9 +239,10 @@ private fun TodoListSection() {
             if (filtered.isEmpty()) {
                 BasicText(
                     text = "(no items match)",
-                    modifier = Modifier
-                        .testTag("todo-empty")
-                        .semantics { contentDescription = "no items match the filter" },
+                    modifier =
+                        Modifier
+                            .testTag("todo-empty")
+                            .semantics { contentDescription = "no items match the filter" },
                     style = labelStyle,
                 )
             }
@@ -254,31 +263,34 @@ private fun TodoRow(
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier
-            .testTag("todo-row-${item.id}")
-            .background(Color(0xFF1A1F2A), RoundedCornerShape(6.dp))
-            .padding(8.dp),
+        modifier =
+            Modifier
+                .testTag("todo-row-${item.id}")
+                .background(Color(0xFF1A1F2A), RoundedCornerShape(6.dp))
+                .padding(8.dp),
     ) {
         // Checkbox.
         Box(
-            modifier = Modifier
-                .testTag("todo-check-${item.id}")
-                .size(18.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (item.done) Color(0xFF34D399) else Color(0xFF374151))
-                .clickable { onToggle() }
-                .semantics {
-                    role = Role.Checkbox
-                    toggleableState = if (item.done) ToggleableState.On else ToggleableState.Off
-                    contentDescription = "Toggle done for ${item.title}"
-                },
+            modifier =
+                Modifier
+                    .testTag("todo-check-${item.id}")
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (item.done) Color(0xFF34D399) else Color(0xFF374151))
+                    .clickable { onToggle() }
+                    .semantics {
+                        role = Role.Checkbox
+                        toggleableState = if (item.done) ToggleableState.On else ToggleableState.Off
+                        contentDescription = "Toggle done for ${item.title}"
+                    },
         )
         // Title — content description carries the stable identity for AT clients.
         BasicText(
             text = item.title,
-            modifier = Modifier
-                .testTag("todo-title-${item.id}")
-                .semantics { contentDescription = item.title },
+            modifier =
+                Modifier
+                    .testTag("todo-title-${item.id}")
+                    .semantics { contentDescription = item.title },
             style = labelStyle,
         )
         Spacer(Modifier.weight(1f))
@@ -326,25 +338,28 @@ private fun AutoTickerSection() {
             )
             BasicText(text = "value=${"%.2f".format(value)}", style = labelStyle)
             Box(
-                modifier = Modifier
-                    .testTag("ticker-progress")
-                    .width(220.dp)
-                    .height(18.dp)
-                    .clip(RoundedCornerShape(9.dp))
-                    .background(Color(0xFF1F2937))
-                    .semantics {
-                        contentDescription = "Auto-ticker"
-                        progressBarRangeInfo = androidx.compose.ui.semantics.ProgressBarRangeInfo(
-                            current = value,
-                            range = 0f..1f,
-                        )
-                    },
+                modifier =
+                    Modifier
+                        .testTag("ticker-progress")
+                        .width(220.dp)
+                        .height(18.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(Color(0xFF1F2937))
+                        .semantics {
+                            contentDescription = "Auto-ticker"
+                            progressBarRangeInfo =
+                                androidx.compose.ui.semantics.ProgressBarRangeInfo(
+                                    current = value,
+                                    range = 0f..1f,
+                                )
+                        },
             ) {
                 Box(
-                    modifier = Modifier
-                        .fillMaxWidth(value.coerceIn(0f, 1f))
-                        .height(18.dp)
-                        .background(Color(0xFF8AB4FF), RoundedCornerShape(9.dp)),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth(value.coerceIn(0f, 1f))
+                            .height(18.dp)
+                            .background(Color(0xFF8AB4FF), RoundedCornerShape(9.dp)),
                 )
             }
         }
@@ -395,16 +410,26 @@ private fun Expandable(
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
-            modifier = Modifier
-                .testTag("expand-$tag")
-                .clickable { onToggle() }
-                .semantics {
-                    role = Role.Button
-                    contentDescription = if (expanded) "$title (expanded)" else "$title (collapsed)"
-                    if (expanded) collapse { onToggle(); true } else expand { onToggle(); true }
-                }
-                .background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
-                .padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier =
+                Modifier
+                    .testTag("expand-$tag")
+                    .clickable { onToggle() }
+                    .semantics {
+                        role = Role.Button
+                        contentDescription = if (expanded) "$title (expanded)" else "$title (collapsed)"
+                        if (expanded) {
+                            collapse {
+                                onToggle()
+                                true
+                            }
+                        } else {
+                            expand {
+                                onToggle()
+                                true
+                            }
+                        }
+                    }.background(Color(0xFF1F2937), RoundedCornerShape(6.dp))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
         ) {
             BasicText(
                 text = if (expanded) "▼  $title" else "▶  $title",
@@ -419,13 +444,14 @@ private fun Expandable(
             // lands on it and Narrator reads the whole body.
             val bodyDescription = "$title contents: " + bodyItems.joinToString(separator = ", ")
             Column(
-                modifier = Modifier
-                    .testTag("expand-$tag-body")
-                    .padding(start = 18.dp, top = 2.dp, bottom = 2.dp)
-                    .focusable()
-                    .semantics(mergeDescendants = true) {
-                        contentDescription = bodyDescription
-                    },
+                modifier =
+                    Modifier
+                        .testTag("expand-$tag-body")
+                        .padding(start = 18.dp, top = 2.dp, bottom = 2.dp)
+                        .focusable()
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = bodyDescription
+                        },
                 verticalArrangement = Arrangement.spacedBy(2.dp),
             ) {
                 for (item in bodyItems) {
@@ -448,17 +474,18 @@ private fun ConditionalFormSection() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             for (m in listOf("basic", "advanced", "off")) {
                 Box(
-                    modifier = Modifier
-                        .testTag("mode-$m")
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (mode == m) Color(0xFF8AB4FF) else Color(0xFF374151))
-                        .clickable { mode = m }
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                        .semantics {
-                            role = Role.RadioButton
-                            toggleableState = if (mode == m) ToggleableState.On else ToggleableState.Off
-                            contentDescription = "Form mode: $m"
-                        },
+                    modifier =
+                        Modifier
+                            .testTag("mode-$m")
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(if (mode == m) Color(0xFF8AB4FF) else Color(0xFF374151))
+                            .clickable { mode = m }
+                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                            .semantics {
+                                role = Role.RadioButton
+                                toggleableState = if (mode == m) ToggleableState.On else ToggleableState.Off
+                                contentDescription = "Form mode: $m"
+                            },
                 ) {
                     BasicText(text = m, style = labelStyle)
                 }
@@ -477,9 +504,10 @@ private fun ConditionalFormSection() {
             "off" -> {
                 BasicText(
                     text = "(form disabled)",
-                    modifier = Modifier
-                        .testTag("form-disabled-msg")
-                        .semantics { contentDescription = "form is disabled" },
+                    modifier =
+                        Modifier
+                            .testTag("form-disabled-msg")
+                            .semantics { contentDescription = "form is disabled" },
                     style = labelStyle,
                 )
             }
@@ -488,23 +516,29 @@ private fun ConditionalFormSection() {
 }
 
 @Composable
-private fun FormCheckbox(label: String, tag: String, checked: Boolean, onToggle: () -> Unit) {
+private fun FormCheckbox(
+    label: String,
+    tag: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(
-            modifier = Modifier
-                .testTag(tag)
-                .size(18.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(if (checked) Color(0xFF34D399) else Color(0xFF374151))
-                .clickable { onToggle() }
-                .semantics {
-                    role = Role.Checkbox
-                    toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
-                    contentDescription = label
-                },
+            modifier =
+                Modifier
+                    .testTag(tag)
+                    .size(18.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (checked) Color(0xFF34D399) else Color(0xFF374151))
+                    .clickable { onToggle() }
+                    .semantics {
+                        role = Role.Checkbox
+                        toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                        contentDescription = label
+                    },
         )
         BasicText(text = label, style = labelStyle)
     }
@@ -513,7 +547,10 @@ private fun FormCheckbox(label: String, tag: String, checked: Boolean, onToggle:
 // ── Building blocks ───────────────────────────────────────────────────────
 
 @Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
+private fun Section(
+    title: String,
+    content: @Composable () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         BasicText(
             text = title,
@@ -531,27 +568,30 @@ private fun ComplexButton(
     onClick: () -> Unit,
     enabled: Boolean = true,
 ) {
-    val base = Modifier
-        .testTag(tag)
-        .clip(RoundedCornerShape(6.dp))
-        .background(if (enabled) Color(0xFF1F2937) else Color(0xFF11151B))
-        .padding(horizontal = 10.dp, vertical = 5.dp)
-    val mod = if (enabled) {
-        base.clickable { onClick() }.semantics { role = Role.Button }
-    } else {
-        base.semantics {
-            role = Role.Button
-            this[androidx.compose.ui.semantics.SemanticsProperties.Disabled] = Unit
+    val base =
+        Modifier
+            .testTag(tag)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (enabled) Color(0xFF1F2937) else Color(0xFF11151B))
+            .padding(horizontal = 10.dp, vertical = 5.dp)
+    val mod =
+        if (enabled) {
+            base.clickable { onClick() }.semantics { role = Role.Button }
+        } else {
+            base.semantics {
+                role = Role.Button
+                this[androidx.compose.ui.semantics.SemanticsProperties.Disabled] = Unit
+            }
         }
-    }
     Box(modifier = mod) {
         BasicText(
             text = label,
-            style = TextStyle(
-                color = if (enabled) Color(0xFFE6E6E6) else Color(0xFF6B7280),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-            ),
+            style =
+                TextStyle(
+                    color = if (enabled) Color(0xFFE6E6E6) else Color(0xFF6B7280),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
         )
     }
 }

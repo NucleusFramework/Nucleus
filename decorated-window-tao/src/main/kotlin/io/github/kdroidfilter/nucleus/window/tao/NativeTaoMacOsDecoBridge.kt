@@ -39,7 +39,11 @@ internal object NativeTaoMacOsDecoBridge {
      * the dialog isn't key.
      */
     @JvmStatic
-    external fun nativeSetOwner(childNsView: Long, ownerNsView: Long, centerOnOwner: Boolean)
+    external fun nativeSetOwner(
+        childNsView: Long,
+        ownerNsView: Long,
+        centerOnOwner: Boolean,
+    )
 
     /**
      * Returns the NSWindow's outer frame as `[x, y, width, height]` in physical
@@ -81,5 +85,9 @@ internal object NativeTaoMacOsDecoBridge {
      * for a size that doesn't match what's about to land on screen.
      */
     @JvmStatic
-    external fun nativeApplyContentMinSize(nsView: Long, widthPts: Double, heightPts: Double)
+    external fun nativeApplyContentMinSize(
+        nsView: Long,
+        widthPts: Double,
+        heightPts: Double,
+    )
 }

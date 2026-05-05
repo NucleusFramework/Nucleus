@@ -1,9 +1,5 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
-import io.github.kdroidfilter.nucleus.window.TitleBarScope
-
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
-
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
@@ -25,6 +21,8 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
+import io.github.kdroidfilter.nucleus.window.TitleBarScope
 import io.github.kdroidfilter.nucleus.window.utils.linux.LinuxButtonLayout
 import io.github.kdroidfilter.nucleus.window.utils.linux.LinuxTitleBarButton
 import io.github.kdroidfilter.nucleus.window.utils.linux.linuxTitleBarIcons
@@ -148,16 +146,17 @@ private fun TitleBarScope.LinuxControlButton(
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
-        modifier = Modifier
-            .align(alignment)
-            .focusable(false)
-            .let { if (isKde) it.offset(y = (-2).dp) else it }
-            .size(LINUX_BUTTON_SIZE)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick,
-            ),
+        modifier =
+            Modifier
+                .align(alignment)
+                .focusable(false)
+                .let { if (isKde) it.offset(y = (-2).dp) else it }
+                .size(LINUX_BUTTON_SIZE)
+                .clickable(
+                    interactionSource = interactionSource,
+                    indication = null,
+                    onClick = onClick,
+                ),
         contentAlignment = Alignment.Center,
     ) {
         var hovered by remember { mutableStateOf(false) }
@@ -166,23 +165,24 @@ private fun TitleBarScope.LinuxControlButton(
         // Mirrors core/WindowControlArea: KDE keeps hover/pressed icons even
         // when the window is inactive (its inactive theme has the same shape),
         // GNOME only when active.
-        val currentIcon = when {
-            pressed && (state.isActive || isKde) -> iconPressed
-            hovered && (state.isActive || isKde) -> iconHover
-            else -> icon
-        }
+        val currentIcon =
+            when {
+                pressed && (state.isActive || isKde) -> iconPressed
+                hovered && (state.isActive || isKde) -> iconHover
+                else -> icon
+            }
 
         Image(
             painter = currentIcon,
             contentDescription = contentDescription,
-            modifier = Modifier
-                .onPointerEvent(PointerEventType.Enter) { hovered = true }
-                .onPointerEvent(PointerEventType.Exit) {
-                    hovered = false
-                    pressed = false
-                }
-                .onPointerEvent(PointerEventType.Press) { pressed = true }
-                .onPointerEvent(PointerEventType.Release) { pressed = false },
+            modifier =
+                Modifier
+                    .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        hovered = false
+                        pressed = false
+                    }.onPointerEvent(PointerEventType.Press) { pressed = true }
+                    .onPointerEvent(PointerEventType.Release) { pressed = false },
         )
     }
 }

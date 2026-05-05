@@ -33,19 +33,40 @@ internal object NativeTaoMacOsDndBridge {
      */
     interface Callback {
         @Suppress("FunctionParameterNaming")
-        fun onDragEnter(nsView: Long, x: Int, y: Int, modState: Int, hasFiles: Boolean): Int
+        fun onDragEnter(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int
 
         @Suppress("FunctionParameterNaming")
-        fun onDragOver(nsView: Long, x: Int, y: Int, modState: Int, hasFiles: Boolean): Int
+        fun onDragOver(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int
 
         fun onDragLeave(nsView: Long)
 
         @Suppress("FunctionParameterNaming")
-        fun onDrop(nsView: Long, x: Int, y: Int, modState: Int, files: Array<String>?): Int
+        fun onDrop(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int
     }
 
     @JvmStatic
-    external fun nativeRegister(nsView: Long, callback: Callback): Int
+    external fun nativeRegister(
+        nsView: Long,
+        callback: Callback,
+    ): Int
 
     @JvmStatic
     external fun nativeRevoke(nsView: Long): Int

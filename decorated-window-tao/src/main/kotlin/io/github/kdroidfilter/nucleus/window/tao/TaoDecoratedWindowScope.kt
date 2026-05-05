@@ -12,6 +12,8 @@ import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
  * body content directly under `TitleBar()`, matching the layout convention
  * used by the JBR/JNI backends.
  */
-interface TaoDecoratedWindowScope : DecoratedWindowScope, ColumnScope {
+interface TaoDecoratedWindowScope :
+    DecoratedWindowScope,
+    ColumnScope {
     val window: TaoWindow
 }

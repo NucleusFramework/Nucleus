@@ -19,21 +19,33 @@ internal object NativeTaoWindowsDecoBridge {
     val isLoaded: Boolean get() = loaded
 
     @JvmStatic
-    external fun nativeInstallDecoration(hwnd: Long, titleBarHeightPx: Int)
+    external fun nativeInstallDecoration(
+        hwnd: Long,
+        titleBarHeightPx: Int,
+    )
 
     @JvmStatic
     external fun nativeUninstallDecoration(hwnd: Long)
 
     @JvmStatic
-    external fun nativeSetTitleBarHeight(hwnd: Long, heightPx: Int)
+    external fun nativeSetTitleBarHeight(
+        hwnd: Long,
+        heightPx: Int,
+    )
 
     /** ARGB; updates the WM_ERASEBKGND fill, DWM caption/border colors, and
      * dark-mode flag based on luminance. */
     @JvmStatic
-    external fun nativeSetBackgroundColor(hwnd: Long, argb: Int)
+    external fun nativeSetBackgroundColor(
+        hwnd: Long,
+        argb: Int,
+    )
 
     @JvmStatic
-    external fun nativeSetFullscreen(hwnd: Long, fullscreen: Boolean)
+    external fun nativeSetFullscreen(
+        hwnd: Long,
+        fullscreen: Boolean,
+    )
 
     @JvmStatic
     external fun nativeIsFullscreen(hwnd: Long): Boolean
@@ -48,7 +60,10 @@ internal object NativeTaoWindowsDecoBridge {
      * AWT `JDialog`.
      */
     @JvmStatic
-    external fun nativeSetOwner(childHwnd: Long, ownerHwnd: Long)
+    external fun nativeSetOwner(
+        childHwnd: Long,
+        ownerHwnd: Long,
+    )
 
     /**
      * Returns the window's outer bounds as `[x, y, width, height]` in physical

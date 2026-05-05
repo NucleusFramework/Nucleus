@@ -33,7 +33,6 @@ internal class TaoSemanticsObserver(
     private val densityProvider: () -> Float,
     private val onScheduleSync: (TaoSemanticsObserver) -> Unit,
 ) : PlatformContext.SemanticsOwnerListener {
-
     private val owners = mutableListOf<SemanticsOwner>()
     private var dirty = false
 
@@ -57,7 +56,10 @@ internal class TaoSemanticsObserver(
         onScheduleSync(this)
     }
 
-    override fun onLayoutChange(semanticsOwner: SemanticsOwner, semanticsNodeId: Int) {
+    override fun onLayoutChange(
+        semanticsOwner: SemanticsOwner,
+        semanticsNodeId: Int,
+    ) {
         dirty = true
         onScheduleSync(this)
     }
@@ -85,12 +87,13 @@ internal class TaoSemanticsObserver(
         for (owner in owners) {
             val root = owner.rootSemanticsNode
             if (!root.layoutInfo.let { it.isPlaced && it.isAttached }) continue
-            val attachTo = if (primaryRootId == 0L) {
-                primaryRootId = nodeIdToLong(root.id)
-                0L
-            } else {
-                primaryRootId
-            }
+            val attachTo =
+                if (primaryRootId == 0L) {
+                    primaryRootId = nodeIdToLong(root.id)
+                    0L
+                } else {
+                    primaryRootId
+                }
             walk(root, parentId = attachTo, density = density, out = nodes, liveIds = liveIds)
         }
         controller.clearStaleHandlers(liveIds)
@@ -105,10 +108,15 @@ internal class TaoSemanticsObserver(
                 childrenByParent.getOrPut(n.parentId) { ArrayList(4) }.add(n.nodeId)
             }
         }
-        val withChildren = if (childrenByParent.isEmpty()) nodes else nodes.map { node ->
-            val kids = childrenByParent[node.nodeId]
-            if (kids == null) node else node.copy(children = kids)
-        }
+        val withChildren =
+            if (childrenByParent.isEmpty()) {
+                nodes
+            } else {
+                nodes.map { node ->
+                    val kids = childrenByParent[node.nodeId]
+                    if (kids == null) node else node.copy(children = kids)
+                }
+            }
         controller.pushSnapshot(withChildren)
     }
 
@@ -152,51 +160,107 @@ internal class TaoSemanticsObserver(
         // only exposes raw scroll.
         val viewportH = node.boundsInWindow.height / (if (density > 0f) density else 1f)
         val viewportW = node.boundsInWindow.width / (if (density > 0f) density else 1f)
-        val onScrollUp = pageUp?.let { { it.invoke(); Unit } }
-            ?: scrollBy?.let { fn -> { fn.invoke(0f, -viewportH * 0.9f); Unit } }
-        val onScrollDown = pageDown?.let { { it.invoke(); Unit } }
-            ?: scrollBy?.let { fn -> { fn.invoke(0f, +viewportH * 0.9f); Unit } }
-        val onScrollLeft = pageLeft?.let { { it.invoke(); Unit } }
-            ?: scrollBy?.let { fn -> { fn.invoke(-viewportW * 0.9f, 0f); Unit } }
-        val onScrollRight = pageRight?.let { { it.invoke(); Unit } }
-            ?: scrollBy?.let { fn -> { fn.invoke(+viewportW * 0.9f, 0f); Unit } }
+        val onScrollUp =
+            pageUp?.let {
+                {
+                    it.invoke()
+                    Unit
+                }
+            }
+                ?: scrollBy?.let { fn ->
+                    {
+                        fn.invoke(0f, -viewportH * 0.9f)
+                        Unit
+                    }
+                }
+        val onScrollDown =
+            pageDown?.let {
+                {
+                    it.invoke()
+                    Unit
+                }
+            }
+                ?: scrollBy?.let { fn ->
+                    {
+                        fn.invoke(0f, +viewportH * 0.9f)
+                        Unit
+                    }
+                }
+        val onScrollLeft =
+            pageLeft?.let {
+                {
+                    it.invoke()
+                    Unit
+                }
+            }
+                ?: scrollBy?.let { fn ->
+                    {
+                        fn.invoke(-viewportW * 0.9f, 0f)
+                        Unit
+                    }
+                }
+        val onScrollRight =
+            pageRight?.let {
+                {
+                    it.invoke()
+                    Unit
+                }
+            }
+                ?: scrollBy?.let { fn ->
+                    {
+                        fn.invoke(+viewportW * 0.9f, 0f)
+                        Unit
+                    }
+                }
         controller.setActionHandlers(
             id,
             TaoAccessibilityController.ActionHandlers(
                 onClick = onClick?.let { { it.invoke() } },
                 onIncrement = setProgress?.let { fn -> { stepProgress(node, fn, +1) } },
                 onDecrement = setProgress?.let { fn -> { stepProgress(node, fn, -1) } },
-                onSetText = setText?.let { fn ->
-                    { newText -> fn.invoke(androidx.compose.ui.text.AnnotatedString(newText)) }
-                },
+                onSetText =
+                    setText?.let { fn ->
+                        { newText ->
+                            fn.invoke(
+                                androidx.compose.ui.text
+                                    .AnnotatedString(newText),
+                            )
+                        }
+                    },
                 onRequestFocus = requestFocus?.let { { it.invoke() } },
                 onScrollUp = onScrollUp,
                 onScrollDown = onScrollDown,
                 onScrollLeft = onScrollLeft,
                 onScrollRight = onScrollRight,
                 onDismiss = dismiss?.let { { it.invoke() } },
-                onSetSelection = setSelection?.let { fn ->
-                    // Compose's SetSelection is `(start, end, traversalMode) -> Boolean`.
-                    // VoiceOver doesn't expose a traversalMode concept; pass false
-                    // to mean "set the editable cursor / selection directly".
-                    { start, end -> fn.invoke(start, end, false) }
-                },
+                onSetSelection =
+                    setSelection?.let { fn ->
+                        // Compose's SetSelection is `(start, end, traversalMode) -> Boolean`.
+                        // VoiceOver doesn't expose a traversalMode concept; pass false
+                        // to mean "set the editable cursor / selection directly".
+                        { start, end -> fn.invoke(start, end, false) }
+                    },
                 customActions = customActionsList.map { ca -> { ca.action.invoke() } },
-                onScrollBy = scrollBy?.let { fn ->
-                    { dx, dy -> fn.invoke(dx, dy) }
-                },
+                onScrollBy =
+                    scrollBy?.let { fn ->
+                        { dx, dy -> fn.invoke(dx, dy) }
+                    },
                 // Slider absolute value setter — wired to SetProgress with
                 // clamping to the declared range. Used by AT-SPI's
                 // `Value.SetCurrentValue` on the Linux backend.
-                onSetValue = setProgress?.let { fn ->
-                    { v ->
-                        val info = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
-                        val clamped = if (info != null) {
-                            v.coerceIn(info.range.start, info.range.endInclusive)
-                        } else v
-                        fn.invoke(clamped)
-                    }
-                },
+                onSetValue =
+                    setProgress?.let { fn ->
+                        { v ->
+                            val info = node.config.getOrNull(SemanticsProperties.ProgressBarRangeInfo)
+                            val clamped =
+                                if (info != null) {
+                                    v.coerceIn(info.range.start, info.range.endInclusive)
+                                } else {
+                                    v
+                                }
+                            fn.invoke(clamped)
+                        }
+                    },
             ),
         )
 
@@ -213,23 +277,25 @@ internal class TaoSemanticsObserver(
         val vScrollMax = vRange?.maxValue?.invoke() ?: 0f
         val vScrollValue = vRange?.value?.invoke() ?: 0f
         val selection = node.config.getOrNull(SemanticsProperties.TextSelectionRange)
-        val (selStart, selEnd) = if (selection != null) {
-            // Compose stores selection as [TextRange] over the editable text's
-            // chars. AppKit / NSAccessibility expect UTF-16 code-unit offsets,
-            // which match Kotlin's String char count for BMP-only strings.
-            // For surrogate pair code points the mapping is identical (Kotlin
-            // also counts UTF-16 code units), so passing through is correct.
-            selection.start to selection.end
-        } else {
-            0 to 0
-        }
+        val (selStart, selEnd) =
+            if (selection != null) {
+                // Compose stores selection as [TextRange] over the editable text's
+                // chars. AppKit / NSAccessibility expect UTF-16 code-unit offsets,
+                // which match Kotlin's String char count for BMP-only strings.
+                // For surrogate pair code points the mapping is identical (Kotlin
+                // also counts UTF-16 code units), so passing through is correct.
+                selection.start to selection.end
+            } else {
+                0 to 0
+            }
 
         // BasicTextField with `readOnly = true` keeps SemanticsProperties.EditableText
         // (so we still expose the value) but drops SemanticsActions.SetText. ATs
         // distinguish read-only fields from regular ones via STATE_READ_ONLY.
         var extraFlags = 0
-        val isReadOnlyTextInput = node.config.contains(SemanticsProperties.EditableText) &&
-            !node.config.contains(SemanticsActions.SetText)
+        val isReadOnlyTextInput =
+            node.config.contains(SemanticsProperties.EditableText) &&
+                !node.config.contains(SemanticsActions.SetText)
         if (isReadOnlyTextInput) extraFlags = extraFlags or TaoA11yExtraFlag.READ_ONLY
         // SemanticsProperties.Error → AT-SPI STATE_INVALID_ENTRY (Linux),
         // AXInvalid (macOS), IsRequiredForForm-style validation (UIA). The
@@ -310,63 +376,74 @@ internal class TaoSemanticsObserver(
         // and HorizontalScrollAxisRange/VerticalScrollAxisRange. Mapping it
         // to Table/Outline strips the scroll bar children we install on
         // AXScrollArea, so prioritise ScrollArea when scroll is present.
-        val hasScrollAxes = cfg.contains(SemanticsActions.ScrollBy) ||
-            cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
-            cfg.contains(SemanticsProperties.VerticalScrollAxisRange)
-        var role = when {
-            collectionInfo != null && !hasScrollAxes ->
-                if (collectionInfo.columnCount <= 1) TaoA11yRole.Outline
-                else TaoA11yRole.Table
-            collectionInfo != null && hasScrollAxes -> TaoA11yRole.ScrollArea
-            collectionItem != null -> TaoA11yRole.Row
-            composeRole == Role.Button -> TaoA11yRole.Button
-            composeRole == Role.Checkbox -> TaoA11yRole.Checkbox
-            composeRole == Role.Switch -> TaoA11yRole.Switch
-            composeRole == Role.RadioButton -> TaoA11yRole.RadioButton
-            composeRole == Role.Tab -> TaoA11yRole.Tab
-            composeRole == Role.Image -> TaoA11yRole.Image
-            composeRole == Role.DropdownList -> TaoA11yRole.PopupMenu
-            // Compose ValuePicker is what AT-SPI calls a "spin button" —
-            // a number/value input with up/down increment buttons.
-            composeRole == Role.ValuePicker -> TaoA11yRole.SpinButton
-            // Carousel: a horizontally-paginated container. AT-SPI's
-            // closest fit is Role::TabPanel (scroll-pane semantics).
-            composeRole == Role.Carousel -> TaoA11yRole.TabPanel
-            else -> when {
-                isHeading -> TaoA11yRole.Heading
-                // Popup containers (Compose's Popup composable adds
-                // `IsPopup`). Map to Tooltip since the AT-SPI Tooltip role
-                // gives screen readers the right "transient" semantics.
-                cfg.contains(SemanticsProperties.IsPopup) -> TaoA11yRole.Tooltip
-                hasEditable -> TaoA11yRole.TextField
-                rangeInfo != null && setProgress -> TaoA11yRole.Slider
-                rangeInfo != null -> TaoA11yRole.Progress
-                // Scroll containers must beat hasText/onClick — a
-                // `Modifier.verticalScroll` wrapper around a Column of texts
-                // would otherwise demote to StaticText (merged-config flag).
-                cfg.contains(SemanticsActions.ScrollBy) ||
+        val hasScrollAxes =
+            cfg.contains(SemanticsActions.ScrollBy) ||
                 cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
-                cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
-                // Plain `Modifier.toggleable { … }` (no `role =`): Compose
-                // attaches both `ToggleableState` and an OnClick action, but
-                // the toggle semantic is the more specific announcement.
-                // Map to a checkable role so AT-SPI exposes STATE_CHECKABLE /
-                // UIA the Toggle pattern — without this the node would land
-                // in the onClick→Button branch and lose its toggle state.
-                toggleable != null -> TaoA11yRole.Checkbox
-                // Clickable wins over plain text: a `Box.clickable { Text(…) }`
-                // composable (e.g. the "Clear" button or tab labels in sample-tao)
-                // should announce as a button, with the Text becoming the label.
-                onClick -> TaoA11yRole.Button
-                hasText -> TaoA11yRole.StaticText
-                else -> TaoA11yRole.Group
+                cfg.contains(SemanticsProperties.VerticalScrollAxisRange)
+        var role =
+            when {
+                collectionInfo != null && !hasScrollAxes ->
+                    if (collectionInfo.columnCount <= 1) {
+                        TaoA11yRole.Outline
+                    } else {
+                        TaoA11yRole.Table
+                    }
+                collectionInfo != null && hasScrollAxes -> TaoA11yRole.ScrollArea
+                collectionItem != null -> TaoA11yRole.Row
+                composeRole == Role.Button -> TaoA11yRole.Button
+                composeRole == Role.Checkbox -> TaoA11yRole.Checkbox
+                composeRole == Role.Switch -> TaoA11yRole.Switch
+                composeRole == Role.RadioButton -> TaoA11yRole.RadioButton
+                composeRole == Role.Tab -> TaoA11yRole.Tab
+                composeRole == Role.Image -> TaoA11yRole.Image
+                composeRole == Role.DropdownList -> TaoA11yRole.PopupMenu
+                // Compose ValuePicker is what AT-SPI calls a "spin button" —
+                // a number/value input with up/down increment buttons.
+                composeRole == Role.ValuePicker -> TaoA11yRole.SpinButton
+                // Carousel: a horizontally-paginated container. AT-SPI's
+                // closest fit is Role::TabPanel (scroll-pane semantics).
+                composeRole == Role.Carousel -> TaoA11yRole.TabPanel
+                else ->
+                    when {
+                        isHeading -> TaoA11yRole.Heading
+                        // Popup containers (Compose's Popup composable adds
+                        // `IsPopup`). Map to Tooltip since the AT-SPI Tooltip role
+                        // gives screen readers the right "transient" semantics.
+                        cfg.contains(SemanticsProperties.IsPopup) -> TaoA11yRole.Tooltip
+                        hasEditable -> TaoA11yRole.TextField
+                        rangeInfo != null && setProgress -> TaoA11yRole.Slider
+                        rangeInfo != null -> TaoA11yRole.Progress
+                        // Scroll containers must beat hasText/onClick — a
+                        // `Modifier.verticalScroll` wrapper around a Column of texts
+                        // would otherwise demote to StaticText (merged-config flag).
+                        cfg.contains(SemanticsActions.ScrollBy) ||
+                            cfg.contains(SemanticsProperties.HorizontalScrollAxisRange) ||
+                            cfg.contains(SemanticsProperties.VerticalScrollAxisRange) -> TaoA11yRole.ScrollArea
+                        // Plain `Modifier.toggleable { … }` (no `role =`): Compose
+                        // attaches both `ToggleableState` and an OnClick action, but
+                        // the toggle semantic is the more specific announcement.
+                        // Map to a checkable role so AT-SPI exposes STATE_CHECKABLE /
+                        // UIA the Toggle pattern — without this the node would land
+                        // in the onClick→Button branch and lose its toggle state.
+                        toggleable != null -> TaoA11yRole.Checkbox
+                        // Clickable wins over plain text: a `Box.clickable { Text(…) }`
+                        // composable (e.g. the "Clear" button or tab labels in sample-tao)
+                        // should announce as a button, with the Text becoming the label.
+                        onClick -> TaoA11yRole.Button
+                        hasText -> TaoA11yRole.StaticText
+                        else -> TaoA11yRole.Group
+                    }
             }
-        }
 
         var flags = 0
         // Anything carrying meaningful semantics is announceable.
-        val hasAnyContent = hasText || hasEditable || onClick || toggleable != null ||
-            composeRole != null || rangeInfo != null
+        val hasAnyContent =
+            hasText ||
+                hasEditable ||
+                onClick ||
+                toggleable != null ||
+                composeRole != null ||
+                rangeInfo != null
         if (hasAnyContent) flags = flags or TaoA11yFlag.IS_ELEMENT
         if (!cfg.contains(SemanticsProperties.Disabled)) flags = flags or TaoA11yFlag.ENABLED
         if (cfg.getOrNull(SemanticsProperties.Focused) == true) flags = flags or TaoA11yFlag.FOCUSED
@@ -417,11 +494,12 @@ internal class TaoSemanticsObserver(
         // Expose scroll bits whenever the node carries either page actions or
         // a generic ScrollBy. The handler wiring above synthesises the
         // missing direction from the available primitive.
-        val hasScroll = cfg.contains(SemanticsActions.ScrollBy) ||
-            cfg.contains(SemanticsActions.PageUp) ||
-            cfg.contains(SemanticsActions.PageDown) ||
-            cfg.contains(SemanticsActions.PageLeft) ||
-            cfg.contains(SemanticsActions.PageRight)
+        val hasScroll =
+            cfg.contains(SemanticsActions.ScrollBy) ||
+                cfg.contains(SemanticsActions.PageUp) ||
+                cfg.contains(SemanticsActions.PageDown) ||
+                cfg.contains(SemanticsActions.PageLeft) ||
+                cfg.contains(SemanticsActions.PageRight)
         if (hasScroll) {
             actions = actions or TaoA11yAction.SCROLL_UP or TaoA11yAction.SCROLL_DOWN or
                 TaoA11yAction.SCROLL_LEFT or TaoA11yAction.SCROLL_RIGHT

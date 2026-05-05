@@ -14,7 +14,7 @@ private val TAO_PARTIAL_SUPPORTED: Boolean =
         !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
     }
 
-/**
+/*
  * macOS accessibility plumbing.
  *
  * Architecture (per the macOS a11y design report, sections 1–3):
@@ -90,7 +90,9 @@ data class TaoA11yNode(
 )
 
 @Suppress("MagicNumber")
-enum class TaoA11yRole(val code: Int) {
+enum class TaoA11yRole(
+    val code: Int,
+) {
     Unknown(0),
     Group(1),
     Button(2),
@@ -119,29 +121,31 @@ enum class TaoA11yRole(val code: Int) {
 @Suppress("MagicNumber")
 object TaoA11yFlag {
     const val IS_ELEMENT = 1 shl 0
-    const val ENABLED    = 1 shl 1
-    const val FOCUSED    = 1 shl 2
-    const val SELECTED   = 1 shl 3
-    const val CHECKED    = 1 shl 4
-    const val MIXED      = 1 shl 5
-    const val HEADING    = 1 shl 6
-    const val PASSWORD   = 1 shl 7
-    const val MULTILINE  = 1 shl 8
-    const val MODAL                = 1 shl 9
-    const val LIVE_REGION_POLITE   = 1 shl 10
+    const val ENABLED = 1 shl 1
+    const val FOCUSED = 1 shl 2
+    const val SELECTED = 1 shl 3
+    const val CHECKED = 1 shl 4
+    const val MIXED = 1 shl 5
+    const val HEADING = 1 shl 6
+    const val PASSWORD = 1 shl 7
+    const val MULTILINE = 1 shl 8
+    const val MODAL = 1 shl 9
+    const val LIVE_REGION_POLITE = 1 shl 10
     const val LIVE_REGION_ASSERTIVE = 1 shl 11
+
     // Linux/AT-SPI-only bits — macOS and Windows ignore them. Wire format kept
     // at v4 because flags ride in a u16 we already had spare bits in.
     const val MULTI_SELECTABLE = 1 shl 12
-    const val EXPANDED_TRUE    = 1 shl 13
-    const val EXPANDED_FALSE   = 1 shl 14
+    const val EXPANDED_TRUE = 1 shl 13
+    const val EXPANDED_FALSE = 1 shl 14
+
     /**
      * Reserved. The observer prunes invisible nodes (`InvisibleToUser` /
      * `HideFromAccessibility`) before serialisation, so this bit is currently
      * never set by Compose. Kept available for future "projected but hidden"
      * cases (off-viewport scrollable items, aria-hidden mirroring).
      */
-    const val HIDDEN           = 1 shl 15
+    const val HIDDEN = 1 shl 15
 }
 
 /**
@@ -153,6 +157,7 @@ object TaoA11yFlag {
 object TaoA11yExtraFlag {
     /** Compose `BasicTextField(readOnly = true)` — drops `SetText` action. */
     const val READ_ONLY = 1 shl 0
+
     /**
      * Compose `SemanticsProperties.Error` — invalid form-field value. Linux
      * exposes this as AT-SPI `STATE_INVALID_ENTRY` so screen readers announce
@@ -163,16 +168,16 @@ object TaoA11yExtraFlag {
 
 @Suppress("MagicNumber")
 object TaoA11yAction {
-    const val CLICK         = 1 shl 0
-    const val INCREMENT     = 1 shl 1
-    const val DECREMENT     = 1 shl 2
-    const val SET_TEXT      = 1 shl 3
+    const val CLICK = 1 shl 0
+    const val INCREMENT = 1 shl 1
+    const val DECREMENT = 1 shl 2
+    const val SET_TEXT = 1 shl 3
     const val REQUEST_FOCUS = 1 shl 4
-    const val SCROLL_UP     = 1 shl 5
-    const val SCROLL_DOWN   = 1 shl 6
-    const val SCROLL_LEFT   = 1 shl 7
-    const val SCROLL_RIGHT  = 1 shl 8
-    const val DISMISS       = 1 shl 9
+    const val SCROLL_UP = 1 shl 5
+    const val SCROLL_DOWN = 1 shl 6
+    const val SCROLL_LEFT = 1 shl 7
+    const val SCROLL_RIGHT = 1 shl 8
+    const val DISMISS = 1 shl 9
 }
 
 /**
@@ -182,12 +187,16 @@ object TaoA11yAction {
  */
 internal object TaoAccessibilityRegistry {
     private val byHandle = ConcurrentHashMap<Long, TaoAccessibilityController>()
+
     // Action callbacks from native arrive with the NSView pointer (not the
     // window handle) so the Rust callback doesn't have to re-lock the
     // WINDOWS map. Both indexes are kept in sync.
     private val byNsView = ConcurrentHashMap<Long, TaoAccessibilityController>()
 
-    fun register(handle: Long, controller: TaoAccessibilityController) {
+    fun register(
+        handle: Long,
+        controller: TaoAccessibilityController,
+    ) {
         byHandle[handle] = controller
     }
 
@@ -195,7 +204,10 @@ internal object TaoAccessibilityRegistry {
         byHandle.remove(handle)
     }
 
-    fun registerNsView(nsView: Long, controller: TaoAccessibilityController) {
+    fun registerNsView(
+        nsView: Long,
+        controller: TaoAccessibilityController,
+    ) {
         byNsView[nsView] = controller
     }
 
@@ -204,31 +216,61 @@ internal object TaoAccessibilityRegistry {
     }
 
     /** Lookup by NSView pointer — used by the action callback from native. */
-    fun dispatchActionByNsView(nsView: Long, nodeId: Long, action: Int) {
+    fun dispatchActionByNsView(
+        nsView: Long,
+        nodeId: Long,
+        action: Int,
+    ) {
         byNsView[nsView]?.onActionInvoked(nodeId, action)
     }
 
-    fun dispatchAction(handle: Long, nodeId: Long, action: Int) {
+    fun dispatchAction(
+        handle: Long,
+        nodeId: Long,
+        action: Int,
+    ) {
         byHandle[handle]?.onActionInvoked(nodeId, action)
     }
 
-    fun dispatchSetText(nsView: Long, nodeId: Long, text: String) {
+    fun dispatchSetText(
+        nsView: Long,
+        nodeId: Long,
+        text: String,
+    ) {
         byNsView[nsView]?.onSetTextInvoked(nodeId, text)
     }
 
-    fun dispatchSetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
+    fun dispatchSetSelection(
+        nsView: Long,
+        nodeId: Long,
+        start: Int,
+        end: Int,
+    ) {
         byNsView[nsView]?.onSetSelectionInvoked(nodeId, start, end)
     }
 
-    fun dispatchCustomAction(nsView: Long, nodeId: Long, index: Int) {
+    fun dispatchCustomAction(
+        nsView: Long,
+        nodeId: Long,
+        index: Int,
+    ) {
         byNsView[nsView]?.onCustomActionInvoked(nodeId, index)
     }
 
-    fun dispatchScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
+    fun dispatchScrollBy(
+        nsView: Long,
+        nodeId: Long,
+        dx: Float,
+        dy: Float,
+    ) {
         byNsView[nsView]?.onScrollByInvoked(nodeId, dx, dy)
     }
 
-    fun dispatchSetValue(nsView: Long, nodeId: Long, value: Double) {
+    fun dispatchSetValue(
+        nsView: Long,
+        nodeId: Long,
+        value: Double,
+    ) {
         byNsView[nsView]?.onSetValueInvoked(nodeId, value)
     }
 }
@@ -308,28 +350,29 @@ internal class TaoAccessibilityController(
         // treats it as an opaque key and the native side resolves it back to
         // the actual HWND/NSView/XID.
         val os = System.getProperty("os.name", "").lowercase()
-        nsView = when {
-            os.contains("win") -> {
-                // Force-load nucleus_tao_a11y.dll so the Rust side can
-                // resolve its exports via GetModuleHandleW.
-                NativeTaoA11yWindowsBridge.isLoaded
-                NativeTaoBridge.nativeHwndHandle(windowHandle)
+        nsView =
+            when {
+                os.contains("win") -> {
+                    // Force-load nucleus_tao_a11y.dll so the Rust side can
+                    // resolve its exports via GetModuleHandleW.
+                    NativeTaoA11yWindowsBridge.isLoaded
+                    NativeTaoBridge.nativeHwndHandle(windowHandle)
+                }
+                os.contains("mac") || os.contains("darwin") ->
+                    NativeTaoBridge.nativeNsViewHandle(windowHandle)
+                else -> {
+                    // Linux: AT-SPI projection lives inside nucleus_tao itself
+                    // (no sibling .so to load). On the X11 path the handle was
+                    // historically the X11 Window XID — but `a11y_linux.rs`
+                    // treats it as an opaque `i64` registry key (see WindowState
+                    // doc comment), it never dereferences it. Using the Tao
+                    // window handle directly means the EGL+Wayland path
+                    // (kind=2, no XID) keeps a11y working without changes on
+                    // the Rust side. AT-SPI itself is D-Bus and backend-agnostic
+                    // (accesskit_unix has zero X11/Wayland deps).
+                    if (NativeTaoBridge.nativeLinuxHandles(windowHandle) != null) windowHandle else 0L
+                }
             }
-            os.contains("mac") || os.contains("darwin") ->
-                NativeTaoBridge.nativeNsViewHandle(windowHandle)
-            else -> {
-                // Linux: AT-SPI projection lives inside nucleus_tao itself
-                // (no sibling .so to load). On the X11 path the handle was
-                // historically the X11 Window XID — but `a11y_linux.rs`
-                // treats it as an opaque `i64` registry key (see WindowState
-                // doc comment), it never dereferences it. Using the Tao
-                // window handle directly means the EGL+Wayland path
-                // (kind=2, no XID) keeps a11y working without changes on
-                // the Rust side. AT-SPI itself is D-Bus and backend-agnostic
-                // (accesskit_unix has zero X11/Wayland deps).
-                if (NativeTaoBridge.nativeLinuxHandles(windowHandle) != null) windowHandle else 0L
-            }
-        }
         if (nsView == 0L) return
         // Override AT-SPI's app name before the first Adapter spins up.
         // accesskit_unix defaults to `current_exe()` — on the JVM that's
@@ -439,7 +482,10 @@ internal class TaoAccessibilityController(
         return out
     }
 
-    fun setActionHandlers(nodeId: Long, handlers: ActionHandlers) {
+    fun setActionHandlers(
+        nodeId: Long,
+        handlers: ActionHandlers,
+    ) {
         if (isDisposed) return
         actionHandlers[nodeId] = handlers
     }
@@ -449,30 +495,40 @@ internal class TaoAccessibilityController(
         actionHandlers.keys.retainAll(liveNodeIds)
     }
 
-    internal fun onActionInvoked(nodeId: Long, action: Int) {
+    internal fun onActionInvoked(
+        nodeId: Long,
+        action: Int,
+    ) {
         if (isDisposed) return
         val h = actionHandlers[nodeId] ?: return
         when (action) {
-            TaoA11yAction.CLICK         -> h.onClick?.invoke()
-            TaoA11yAction.INCREMENT     -> h.onIncrement?.invoke()
-            TaoA11yAction.DECREMENT     -> h.onDecrement?.invoke()
+            TaoA11yAction.CLICK -> h.onClick?.invoke()
+            TaoA11yAction.INCREMENT -> h.onIncrement?.invoke()
+            TaoA11yAction.DECREMENT -> h.onDecrement?.invoke()
             TaoA11yAction.REQUEST_FOCUS -> h.onRequestFocus?.invoke()
-            TaoA11yAction.SCROLL_UP     -> h.onScrollUp?.invoke()
-            TaoA11yAction.SCROLL_DOWN   -> h.onScrollDown?.invoke()
-            TaoA11yAction.SCROLL_LEFT   -> h.onScrollLeft?.invoke()
-            TaoA11yAction.SCROLL_RIGHT  -> h.onScrollRight?.invoke()
-            TaoA11yAction.DISMISS       -> h.onDismiss?.invoke()
+            TaoA11yAction.SCROLL_UP -> h.onScrollUp?.invoke()
+            TaoA11yAction.SCROLL_DOWN -> h.onScrollDown?.invoke()
+            TaoA11yAction.SCROLL_LEFT -> h.onScrollLeft?.invoke()
+            TaoA11yAction.SCROLL_RIGHT -> h.onScrollRight?.invoke()
+            TaoA11yAction.DISMISS -> h.onDismiss?.invoke()
         }
         wakeEventLoop()
     }
 
-    internal fun onSetTextInvoked(nodeId: Long, text: String) {
+    internal fun onSetTextInvoked(
+        nodeId: Long,
+        text: String,
+    ) {
         if (isDisposed) return
         actionHandlers[nodeId]?.onSetText?.invoke(text)
         wakeEventLoop()
     }
 
-    internal fun onSetSelectionInvoked(nodeId: Long, start: Int, end: Int) {
+    internal fun onSetSelectionInvoked(
+        nodeId: Long,
+        start: Int,
+        end: Int,
+    ) {
         if (isDisposed) return
         actionHandlers[nodeId]?.onSetSelection?.invoke(start, end)
         wakeEventLoop()
@@ -525,7 +581,10 @@ internal class TaoAccessibilityController(
         val onSetValue: ((Float) -> Unit)? = null,
     )
 
-    internal fun onCustomActionInvoked(nodeId: Long, index: Int) {
+    internal fun onCustomActionInvoked(
+        nodeId: Long,
+        index: Int,
+    ) {
         if (isDisposed) return
         val list = actionHandlers[nodeId]?.customActions ?: return
         if (index < 0 || index >= list.size) return
@@ -533,13 +592,20 @@ internal class TaoAccessibilityController(
         wakeEventLoop()
     }
 
-    internal fun onScrollByInvoked(nodeId: Long, dx: Float, dy: Float) {
+    internal fun onScrollByInvoked(
+        nodeId: Long,
+        dx: Float,
+        dy: Float,
+    ) {
         if (isDisposed) return
         actionHandlers[nodeId]?.onScrollBy?.invoke(dx, dy)
         wakeEventLoop()
     }
 
-    internal fun onSetValueInvoked(nodeId: Long, value: Double) {
+    internal fun onSetValueInvoked(
+        nodeId: Long,
+        value: Double,
+    ) {
         if (isDisposed) return
         actionHandlers[nodeId]?.onSetValue?.invoke(value.toFloat())
         wakeEventLoop()
@@ -602,11 +668,12 @@ internal object TaoA11ySnapshotSerializer {
         return raw.copyOf(cut)
     }
 
-    fun encodeFull(nodes: List<TaoA11yNode>): ByteArray =
-        encodeImpl(nodes, partial = false, focusId = 0L)
+    fun encodeFull(nodes: List<TaoA11yNode>): ByteArray = encodeImpl(nodes, partial = false, focusId = 0L)
 
-    fun encodePartial(nodes: List<TaoA11yNode>, focusId: Long): ByteArray =
-        encodeImpl(nodes, partial = true, focusId = focusId)
+    fun encodePartial(
+        nodes: List<TaoA11yNode>,
+        focusId: Long,
+    ): ByteArray = encodeImpl(nodes, partial = true, focusId = focusId)
 
     private fun encodeImpl(
         nodes: List<TaoA11yNode>,
@@ -649,13 +716,19 @@ internal object TaoA11ySnapshotSerializer {
             buf.putShort(n.flags.toShort())
             buf.putShort(n.actions.toShort())
             buf.putShort(n.extraFlags.toShort())
-            buf.putFloat(n.frameX); buf.putFloat(n.frameY)
-            buf.putFloat(n.frameW); buf.putFloat(n.frameH)
-            buf.putFloat(n.minValue); buf.putFloat(n.maxValue); buf.putFloat(n.numericValue)
+            buf.putFloat(n.frameX)
+            buf.putFloat(n.frameY)
+            buf.putFloat(n.frameW)
+            buf.putFloat(n.frameH)
+            buf.putFloat(n.minValue)
+            buf.putFloat(n.maxValue)
+            buf.putFloat(n.numericValue)
             buf.putInt(n.selectionStart)
             buf.putInt(n.selectionEnd)
-            buf.putFloat(n.hScrollMax); buf.putFloat(n.hScrollValue)
-            buf.putFloat(n.vScrollMax); buf.putFloat(n.vScrollValue)
+            buf.putFloat(n.hScrollMax)
+            buf.putFloat(n.hScrollValue)
+            buf.putFloat(n.vScrollMax)
+            buf.putFloat(n.vScrollValue)
             val lb = labelBytes[i]
             buf.putShort(lb.size.toShort())
             buf.put(lb)

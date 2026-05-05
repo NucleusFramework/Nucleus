@@ -16,26 +16,34 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 object TaoTaskbarProgress {
     fun isAvailable(): Boolean = TaskbarProgress.isAvailable()
 
-    fun setProgress(window: TaoWindow, value: Double): Boolean =
-        TaskbarProgress.setProgressForHwnd(resolveHwnd(window) ?: return false, value)
+    fun setProgress(
+        window: TaoWindow,
+        value: Double,
+    ): Boolean = TaskbarProgress.setProgressForHwnd(resolveHwnd(window) ?: return false, value)
 
-    fun setState(window: TaoWindow, state: TaskbarProgress.State): Boolean =
-        TaskbarProgress.setStateForHwnd(resolveHwnd(window) ?: return false, state)
+    fun setState(
+        window: TaoWindow,
+        state: TaskbarProgress.State,
+    ): Boolean = TaskbarProgress.setStateForHwnd(resolveHwnd(window) ?: return false, state)
 
-    fun showProgress(window: TaoWindow, value: Double): Boolean =
-        setState(window, TaskbarProgress.State.NORMAL) && setProgress(window, value)
+    fun showProgress(
+        window: TaoWindow,
+        value: Double,
+    ): Boolean = setState(window, TaskbarProgress.State.NORMAL) && setProgress(window, value)
 
-    fun showError(window: TaoWindow, value: Double = 1.0): Boolean =
-        setState(window, TaskbarProgress.State.ERROR) && setProgress(window, value)
+    fun showError(
+        window: TaoWindow,
+        value: Double = 1.0,
+    ): Boolean = setState(window, TaskbarProgress.State.ERROR) && setProgress(window, value)
 
-    fun showIndeterminate(window: TaoWindow): Boolean =
-        setState(window, TaskbarProgress.State.INDETERMINATE)
+    fun showIndeterminate(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.INDETERMINATE)
 
-    fun showPaused(window: TaoWindow, value: Double = 1.0): Boolean =
-        setState(window, TaskbarProgress.State.PAUSED) && setProgress(window, value)
+    fun showPaused(
+        window: TaoWindow,
+        value: Double = 1.0,
+    ): Boolean = setState(window, TaskbarProgress.State.PAUSED) && setProgress(window, value)
 
-    fun hideProgress(window: TaoWindow): Boolean =
-        setState(window, TaskbarProgress.State.NO_PROGRESS)
+    fun hideProgress(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.NO_PROGRESS)
 
     fun requestAttention(
         window: TaoWindow,
@@ -50,10 +58,11 @@ object TaoTaskbarProgress {
      * the underlying APIs are window-agnostic. Returns `null` only if Windows
      * fails to resolve a real HWND.
      */
-    private fun resolveHwnd(window: TaoWindow): Long? = when (Platform.Current) {
-        Platform.Windows -> window.nativeHandle.takeIf { it != 0L }
-        else -> 0L
-    }
+    private fun resolveHwnd(window: TaoWindow): Long? =
+        when (Platform.Current) {
+            Platform.Windows -> window.nativeHandle.takeIf { it != 0L }
+            else -> 0L
+        }
 }
 
 /**
@@ -66,16 +75,25 @@ fun rememberTaoTaskbarProgress(): TaoTaskbarProgressScope? {
     return remember(window) { TaoTaskbarProgressScope(window) }
 }
 
-class TaoTaskbarProgressScope internal constructor(val window: TaoWindow) {
+class TaoTaskbarProgressScope internal constructor(
+    val window: TaoWindow,
+) {
     fun setProgress(value: Double) = TaoTaskbarProgress.setProgress(window, value)
+
     fun setState(state: TaskbarProgress.State) = TaoTaskbarProgress.setState(window, state)
+
     fun showProgress(value: Double) = TaoTaskbarProgress.showProgress(window, value)
+
     fun showError(value: Double = 1.0) = TaoTaskbarProgress.showError(window, value)
+
     fun showIndeterminate() = TaoTaskbarProgress.showIndeterminate(window)
+
     fun showPaused(value: Double = 1.0) = TaoTaskbarProgress.showPaused(window, value)
+
     fun hideProgress() = TaoTaskbarProgress.hideProgress(window)
-    fun requestAttention(
-        type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL,
-    ) = TaoTaskbarProgress.requestAttention(window, type)
+
+    fun requestAttention(type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL) =
+        TaoTaskbarProgress.requestAttention(window, type)
+
     fun stopAttention() = TaoTaskbarProgress.stopAttention(window)
 }

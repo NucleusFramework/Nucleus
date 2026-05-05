@@ -132,4 +132,3 @@ fun NucleusApplicationScope.MaterialDecoratedWindow(
         }
     }
 }
-

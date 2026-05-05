@@ -1,12 +1,12 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.snapshots.Snapshot
+import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
-import kotlinx.coroutines.CoroutineDispatcher
 
 /**
  * Coroutine dispatcher that posts blocks onto the Tao main thread.
@@ -55,7 +55,10 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         }
     }
 
-    override fun dispatch(context: CoroutineContext, block: Runnable) {
+    override fun dispatch(
+        context: CoroutineContext,
+        block: Runnable,
+    ) {
         pending.offer(block)
         // Wake the Tao event loop. Tao runs with `ControlFlow::Wait` and
         // would otherwise sleep until an OS event arrives, leaving this

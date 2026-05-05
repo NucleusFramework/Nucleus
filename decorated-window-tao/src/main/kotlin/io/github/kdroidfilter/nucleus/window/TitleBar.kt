@@ -231,8 +231,7 @@ fun DecoratedWindowScope.TitleBar(
             // the bar overlaps user content the same way Safari does.
             .let {
                 if (isMacOS) it.offset(y = menuBarOffset).zIndex(if (menuBarOffset > 0.dp) 1f else 0f) else it
-            }
-            .then(modifier)
+            }.then(modifier)
             .titleBarHitTestHandler(taoWindow)
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
                 // Suppress the double-click → toggle-maximize gesture while the

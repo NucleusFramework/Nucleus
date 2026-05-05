@@ -7,13 +7,13 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
-import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindow
 import io.github.kdroidfilter.nucleus.application.NucleusApplicationScope
 import io.github.kdroidfilter.nucleus.application.NucleusDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
 import io.github.kdroidfilter.nucleus.window.DecoratedWindow
 import io.github.kdroidfilter.nucleus.window.NucleusDecoratedWindowTheme
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
+import io.github.kdroidfilter.nucleus.application.DecoratedWindow as NucleusDecoratedWindow
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable

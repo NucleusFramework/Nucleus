@@ -34,5 +34,6 @@ data class DecoratedWindowMetrics(
 
 val LocalDecoratedWindowStyle =
     staticCompositionLocalOf<DecoratedWindowStyle> {
-        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults.darkWindowStyle()
+        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults
+            .darkWindowStyle()
     }

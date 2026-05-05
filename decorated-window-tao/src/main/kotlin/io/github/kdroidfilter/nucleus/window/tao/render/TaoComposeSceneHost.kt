@@ -4,12 +4,6 @@ import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import kotlin.coroutines.CoroutineContext as KCoroutineContext
-import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.launch
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -18,20 +12,12 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.input.pointer.PointerId
-import androidx.compose.ui.scene.ComposeScenePointer
-import io.github.kdroidfilter.nucleus.window.tao.TaoCursorIcon
-import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
-import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
-import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadGesture
-import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadPhase
-import kotlin.math.cos
-import kotlin.math.sin
-import java.awt.Cursor
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -40,17 +26,31 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+import io.github.kdroidfilter.nucleus.window.tao.TaoCursorIcon
+import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
 import io.github.kdroidfilter.nucleus.window.tao.TaoMainDispatcher
+import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
+import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadGesture
+import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadPhase
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
+import java.awt.Cursor
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.coroutines.CoroutineContext as KCoroutineContext
 
 /**
  * Drives a Compose scene onto a Tao-owned NSView via the Metal helper.
@@ -122,6 +122,7 @@ internal class TaoComposeSceneHost(
     private var directContext: DirectContext? = null
     private var scene: ComposeScene? = null
     private val frameClock = BroadcastFrameClock()
+
     // Dispatcher that funnels Compose's async work (notably MouseWheel scroll
     // dispatching, which uses the scene's coroutineContext) onto the render
     // thread. Without it, Compose attempts measure/layout from a worker
@@ -170,7 +171,6 @@ internal class TaoComposeSceneHost(
     // backends rely on `wglSwapIntervalEXT(1)` / GLX swap interval. A software
     // throttle here only drops frames the GPU is ready to present.
 
-
     fun attach() {
         check(NativeTaoBridge.isLoaded && NativeMetalBridge.isLoaded) {
             "Tao native libraries not loaded"
@@ -209,25 +209,28 @@ internal class TaoComposeSceneHost(
         // but the scene cannot be constructed before we hand it the
         // PlatformContext that owns the manager. Resolve on each call.
         @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-        val dndManager = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
-            getRootNode = { scene!!.rootDragAndDropNode },
-            outboundLauncher = ::launchMacOsOutboundDrag,
-        )
-        scene = CanvasLayersComposeScene(
-            density = Density(scale),
-            layoutDirection = LayoutDirection.Ltr,
-            coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-            platformContext = TaoPlatformContext(
-                windowHandle = window.handle,
-                topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
-                windowInfo = windowInfo,
-                semanticsOwnerListener = semanticsOwnerListener,
-                dragAndDropManager = dndManager,
-            ),
-            invalidate = {
-                window.requestRedraw()
-            },
-        )
+        val dndManager =
+            io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropManager(
+                getRootNode = { scene!!.rootDragAndDropNode },
+                outboundLauncher = ::launchMacOsOutboundDrag,
+            )
+        scene =
+            CanvasLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = LayoutDirection.Ltr,
+                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                platformContext =
+                    TaoPlatformContext(
+                        windowHandle = window.handle,
+                        topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+                        windowInfo = windowInfo,
+                        semanticsOwnerListener = semanticsOwnerListener,
+                        dragAndDropManager = dndManager,
+                    ),
+                invalidate = {
+                    window.requestRedraw()
+                },
+            )
 
         registerInboundDnD()
     }
@@ -239,28 +242,39 @@ internal class TaoComposeSceneHost(
         if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.isLoaded) return null
         if (nsViewHandle == 0L) return null
 
-        val allowed = request.supportedActions.fold(0) { acc, action ->
-            acc or when (action) {
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
-                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
-                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE
-                androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
-                    io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK
-                else -> 0
-            }
-        }.let { if (it == 0) {
-            io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
-        } else it }
+        val allowed =
+            request.supportedActions
+                .fold(0) { acc, action ->
+                    acc or
+                        when (action) {
+                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy ->
+                                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Move ->
+                                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE
+                            androidx.compose.ui.draganddrop.DragAndDropTransferAction.Link ->
+                                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK
+                            else -> 0
+                        }
+                }.let {
+                    if (it == 0) {
+                        io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+                    } else {
+                        it
+                    }
+                }
 
-        val files = request.files.takeIf { it.isNotEmpty() }
-            ?.map { it.absolutePath }?.toTypedArray()
-        val effect = io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.nativeStartDrag(
-            nsView = nsViewHandle,
-            files = files,
-            text = request.text,
-            allowedEffects = allowed,
-        )
+        val files =
+            request.files
+                .takeIf { it.isNotEmpty() }
+                ?.map { it.absolutePath }
+                ?.toTypedArray()
+        val effect =
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.nativeStartDrag(
+                nsView = nsViewHandle,
+                files = files,
+                text = request.text,
+                allowedEffects = allowed,
+            )
         return when (effect) {
             io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY ->
                 androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy
@@ -281,11 +295,13 @@ internal class TaoComposeSceneHost(
             return
         }
         val callback = InboundDnDCallback()
-        val rc = io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.nativeRegister(
-            nsView = nsViewHandle,
-            callback = callback,
-        )
-        io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("registerForDraggedTypes rc=$rc")
+        val rc =
+            io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.nativeRegister(
+                nsView = nsViewHandle,
+                callback = callback,
+            )
+        io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics
+            .log("registerForDraggedTypes rc=$rc")
     }
 
     /**
@@ -296,7 +312,6 @@ internal class TaoComposeSceneHost(
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback :
         io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.Callback {
-
         private fun rootNode() = scene?.rootDragAndDropNode
 
         private fun makeDragEvent(
@@ -304,22 +319,27 @@ internal class TaoComposeSceneHost(
             yPx: Int,
             files: Array<String>?,
         ): androidx.compose.ui.draganddrop.DragAndDropEvent {
-            val payload = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload(
-                files = files?.toList() ?: emptyList(),
-            )
-            val transferable = io.github.kdroidfilter.nucleus.window.tao.TaoFilesTransferable(
-                files = payload.files.map { java.io.File(it) },
-            )
-            val native = io.github.kdroidfilter.nucleus.window.tao.TaoSyntheticDragEvent(
-                cursorLocn = java.awt.Point(xPx, yPx),
-                dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
-                backingTransferable = transferable,
-                payload = payload,
-            )
+            val payload =
+                io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload(
+                    files = files?.toList() ?: emptyList(),
+                )
+            val transferable =
+                io.github.kdroidfilter.nucleus.window.tao.TaoFilesTransferable(
+                    files = payload.files.map { java.io.File(it) },
+                )
+            val native =
+                io.github.kdroidfilter.nucleus.window.tao.TaoSyntheticDragEvent(
+                    cursorLocn = java.awt.Point(xPx, yPx),
+                    dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
+                    backingTransferable = transferable,
+                    payload = payload,
+                )
             return androidx.compose.ui.draganddrop.DragAndDropEvent(
                 action = androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy,
                 nativeEvent = native,
-                positionInRootImpl = androidx.compose.ui.geometry.Offset(xPx.toFloat(), yPx.toFloat()),
+                positionInRootImpl =
+                    androidx.compose.ui.geometry
+                        .Offset(xPx.toFloat(), yPx.toFloat()),
             )
         }
 
@@ -328,34 +348,46 @@ internal class TaoComposeSceneHost(
             yPx: Int,
             files: Array<String>?,
         ): androidx.compose.ui.draganddrop.DragAndDropEvent {
-            val payload = io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload(
-                files = files?.toList() ?: emptyList(),
-            )
-            val transferable = io.github.kdroidfilter.nucleus.window.tao.TaoFilesTransferable(
-                files = payload.files.map { java.io.File(it) },
-            )
-            val native = io.github.kdroidfilter.nucleus.window.tao.TaoSyntheticDropEvent(
-                cursorLocn = java.awt.Point(xPx, yPx),
-                dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
-                backingTransferable = transferable,
-                payload = payload,
-            )
+            val payload =
+                io.github.kdroidfilter.nucleus.window.tao.TaoDragAndDropPayload(
+                    files = files?.toList() ?: emptyList(),
+                )
+            val transferable =
+                io.github.kdroidfilter.nucleus.window.tao.TaoFilesTransferable(
+                    files = payload.files.map { java.io.File(it) },
+                )
+            val native =
+                io.github.kdroidfilter.nucleus.window.tao.TaoSyntheticDropEvent(
+                    cursorLocn = java.awt.Point(xPx, yPx),
+                    dropAction = java.awt.dnd.DnDConstants.ACTION_COPY,
+                    backingTransferable = transferable,
+                    payload = payload,
+                )
             return androidx.compose.ui.draganddrop.DragAndDropEvent(
                 action = androidx.compose.ui.draganddrop.DragAndDropTransferAction.Copy,
                 nativeEvent = native,
-                positionInRootImpl = androidx.compose.ui.geometry.Offset(xPx.toFloat(), yPx.toFloat()),
+                positionInRootImpl =
+                    androidx.compose.ui.geometry
+                        .Offset(xPx.toFloat(), yPx.toFloat()),
             )
         }
 
-        override fun onDragEnter(nsView: Long, x: Int, y: Int, modState: Int, hasFiles: Boolean): Int {
+        override fun onDragEnter(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
             io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log(
                 "onDragEnter x=$x y=$y hasFiles=$hasFiles",
             )
             if (!hasFiles) {
                 return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             }
-            val node = rootNode()
-                ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            val node =
+                rootNode()
+                    ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             val accepted = node.acceptDragAndDropTransfer(ev)
             if (accepted) {
@@ -369,9 +401,16 @@ internal class TaoComposeSceneHost(
             }
         }
 
-        override fun onDragOver(nsView: Long, x: Int, y: Int, modState: Int, hasFiles: Boolean): Int {
-            val node = rootNode()
-                ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+        override fun onDragOver(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            val node =
+                rootNode()
+                    ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDragEvent(x, y, null)
             node.onMoved(ev)
             return if (node.hasEligibleDropTarget) {
@@ -382,19 +421,27 @@ internal class TaoComposeSceneHost(
         }
 
         override fun onDragLeave(nsView: Long) {
-            io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log("onDragLeave")
+            io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics
+                .log("onDragLeave")
             val node = rootNode() ?: return
             val ev = makeDragEvent(-1, -1, null)
             node.onExited(ev)
             node.onEnded(ev)
         }
 
-        override fun onDrop(nsView: Long, x: Int, y: Int, modState: Int, files: Array<String>?): Int {
+        override fun onDrop(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int {
             io.github.kdroidfilter.nucleus.window.tao.TaoDnDDiagnostics.log(
                 "onDrop x=$x y=$y files=${files?.size ?: 0}",
             )
-            val node = rootNode()
-                ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            val node =
+                rootNode()
+                    ?: return io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
             val ev = makeDropEvent(x, y, files)
             val accepted = node.onDrop(ev)
             node.onEnded(ev)
@@ -410,7 +457,10 @@ internal class TaoComposeSceneHost(
         scene?.setContent(content)
     }
 
-    fun onResized(widthPxNew: Int, heightPxNew: Int) {
+    fun onResized(
+        widthPxNew: Int,
+        heightPxNew: Int,
+    ) {
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
@@ -447,10 +497,11 @@ internal class TaoComposeSceneHost(
      */
     fun scheduleA11ySync(block: () -> Unit) {
         if (a11ySyncScheduled != null) return
-        val r = Runnable {
-            a11ySyncScheduled = null
-            block()
-        }
+        val r =
+            Runnable {
+                a11ySyncScheduled = null
+                block()
+            }
         a11ySyncScheduled = r
         flushingDispatcher.enqueue(r)
         window.requestRedraw()
@@ -476,13 +527,14 @@ internal class TaoComposeSceneHost(
         var presented = false
         try {
             val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-            val surface = Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.TOP_LEFT,
-                colorFormat = SurfaceColorFormat.BGRA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: return
+            val surface =
+                Surface.makeFromBackendRenderTarget(
+                    context = ctx,
+                    rt = rt,
+                    origin = SurfaceOrigin.TOP_LEFT,
+                    colorFormat = SurfaceColorFormat.BGRA_8888,
+                    colorSpace = ColorSpace.sRGB,
+                ) ?: return
             try {
                 // CAMetalLayer drawables are not auto-cleared between frames; an
                 // uninitialised texture on Apple Silicon shows up as undefined
@@ -517,7 +569,8 @@ internal class TaoComposeSceneHost(
         }
     }
 
-    /** [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`). */
+    // [aFixed] / [bFixed] are physical pixels × 1024 (see `CURSOR_FIXED_SCALE`).
+
     // TODO: hover effects on macOS don't render until the user clicks once
     //  anywhere in the window. Move events ARE delivered to Compose (verified
     //  via logging — `isPressed` is false at startup, the first Move arrives
@@ -533,7 +586,10 @@ internal class TaoComposeSceneHost(
     //  TaoMainDispatcher / BroadcastFrameClock interaction during early
     //  startup, before any frame has actually been driven by a real input
     //  event. Independent of the Press dedup fix below.
-    fun onPointerMove(aFixed: Int, bFixed: Int) {
+    fun onPointerMove(
+        aFixed: Int,
+        bFixed: Int,
+    ) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
@@ -554,7 +610,10 @@ internal class TaoComposeSceneHost(
         )
     }
 
-    fun onPointerButton(buttonCode: Int, pressed: Boolean) {
+    fun onPointerButton(
+        buttonCode: Int,
+        pressed: Boolean,
+    ) {
         if (!hasReceivedCursorMove) {
             // No cursor position has been observed yet — this button event
             // cannot correspond to a real user click. Drop it. See the
@@ -590,7 +649,10 @@ internal class TaoComposeSceneHost(
      * (see [TaoWindow.onPointerScroll]). Compose's `MacOSCocoaConfig` will then
      * apply `× 10dp.toPx() × -scrollAmount` to convert into pixel scroll.
      */
-    fun onPointerScroll(dxAwt: Float, dyAwt: Float) {
+    fun onPointerScroll(
+        dxAwt: Float,
+        dyAwt: Float,
+    ) {
         scene?.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),
@@ -610,9 +672,11 @@ internal class TaoComposeSceneHost(
     // events, so pinch-zoom / rotate / pan all work with no app-side change.
 
     private var gestureActive = false
+
     // Centre of the gesture in physical pixels (top-left origin).
     private var gestureCenterX = 0f
     private var gestureCenterY = 0f
+
     // Cumulative scale (1.0 at gesture start; multiplied by (1 + magnification)
     // on each Magnify event) and angle in radians.
     private var gestureScale = 1f
@@ -625,7 +689,13 @@ internal class TaoComposeSceneHost(
      * for rotate, ignored for smart-magnify).
      */
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    fun onTrackpadGesture(kind: Int, phase: Int, xFixed: Int, yFixed: Int, valueFixed: Int) {
+    fun onTrackpadGesture(
+        kind: Int,
+        phase: Int,
+        xFixed: Int,
+        yFixed: Int,
+        valueFixed: Int,
+    ) {
         if (scene == null) return
         val xPx = xFixed / TRACKPAD_POSITION_SCALE
         val yPx = yFixed / TRACKPAD_POSITION_SCALE
@@ -671,7 +741,10 @@ internal class TaoComposeSceneHost(
         }
     }
 
-    private fun startGesture(centerX: Float, centerY: Float) {
+    private fun startGesture(
+        centerX: Float,
+        centerY: Float,
+    ) {
         gestureActive = true
         gestureCenterX = centerX
         gestureCenterY = centerY
@@ -679,7 +752,10 @@ internal class TaoComposeSceneHost(
         gestureAngle = 0f
     }
 
-    private fun applyDelta(kind: Int, value: Float) {
+    private fun applyDelta(
+        kind: Int,
+        value: Float,
+    ) {
         when (kind) {
             TaoTrackpadGesture.MAGNIFY -> {
                 // Compose's pinch detection responds to relative distance change,
@@ -708,20 +784,21 @@ internal class TaoComposeSceneHost(
         val dx = radius * cosA
         val dy = radius * sinA
         val pressed = eventType != PointerEventType.Release
-        val pointers = listOf(
-            ComposeScenePointer(
-                id = PointerId(TRACKPAD_POINTER_ID_A),
-                position = Offset(gestureCenterX - dx, gestureCenterY - dy),
-                pressed = pressed,
-                type = PointerType.Touch,
-            ),
-            ComposeScenePointer(
-                id = PointerId(TRACKPAD_POINTER_ID_B),
-                position = Offset(gestureCenterX + dx, gestureCenterY + dy),
-                pressed = pressed,
-                type = PointerType.Touch,
-            ),
-        )
+        val pointers =
+            listOf(
+                ComposeScenePointer(
+                    id = PointerId(TRACKPAD_POINTER_ID_A),
+                    position = Offset(gestureCenterX - dx, gestureCenterY - dy),
+                    pressed = pressed,
+                    type = PointerType.Touch,
+                ),
+                ComposeScenePointer(
+                    id = PointerId(TRACKPAD_POINTER_ID_B),
+                    position = Offset(gestureCenterX + dx, gestureCenterY + dy),
+                    pressed = pressed,
+                    type = PointerType.Touch,
+                ),
+            )
         sc.sendPointerEvent(eventType = eventType, pointers = pointers)
     }
 
@@ -757,46 +834,49 @@ internal class TaoComposeSceneHost(
         val isMeta = (modifiers and TaoModifierMask.META) != 0
         val isAlt = (modifiers and TaoModifierMask.ALT) != 0
         val isShift = (modifiers and TaoModifierMask.SHIFT) != 0
-        val composeEvent = when (type) {
-            TaoEventCode.KEY_DOWN, TaoEventCode.KEY_UP -> {
-                KeyEvent(
-                    key = Key(nativeKeyCode = vkCode, nativeKeyLocation = keyLocation),
-                    type = if (type == TaoEventCode.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
-                    codePoint = codePoint,
-                    isCtrlPressed = isCtrl,
-                    isMetaPressed = isMeta,
-                    isAltPressed = isAlt,
-                    isShiftPressed = isShift,
-                )
+        val composeEvent =
+            when (type) {
+                TaoEventCode.KEY_DOWN, TaoEventCode.KEY_UP -> {
+                    KeyEvent(
+                        key = Key(nativeKeyCode = vkCode, nativeKeyLocation = keyLocation),
+                        type = if (type == TaoEventCode.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                        codePoint = codePoint,
+                        isCtrlPressed = isCtrl,
+                        isMetaPressed = isMeta,
+                        isAltPressed = isAlt,
+                        isShiftPressed = isShift,
+                    )
+                }
+                TaoEventCode.KEY_TYPED -> {
+                    val ch = codePoint.toChar()
+                    val awtModifiers =
+                        (if (isShift) java.awt.event.InputEvent.SHIFT_DOWN_MASK else 0) or
+                            (if (isCtrl) java.awt.event.InputEvent.CTRL_DOWN_MASK else 0) or
+                            (if (isAlt) java.awt.event.InputEvent.ALT_DOWN_MASK else 0) or
+                            (if (isMeta) java.awt.event.InputEvent.META_DOWN_MASK else 0)
+                    val awtEvent =
+                        java.awt.event.KeyEvent(
+                            SyntheticEventSource,
+                            java.awt.event.KeyEvent.KEY_TYPED,
+                            System.currentTimeMillis(),
+                            awtModifiers,
+                            java.awt.event.KeyEvent.VK_UNDEFINED,
+                            ch,
+                            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
+                        )
+                    KeyEvent(
+                        key = Key(nativeKeyCode = 0, nativeKeyLocation = keyLocation),
+                        type = KeyEventType.Unknown,
+                        codePoint = codePoint,
+                        isCtrlPressed = isCtrl,
+                        isMetaPressed = isMeta,
+                        isAltPressed = isAlt,
+                        isShiftPressed = isShift,
+                        nativeEvent = awtEvent,
+                    )
+                }
+                else -> return false
             }
-            TaoEventCode.KEY_TYPED -> {
-                val ch = codePoint.toChar()
-                val awtModifiers = (if (isShift) java.awt.event.InputEvent.SHIFT_DOWN_MASK else 0) or
-                    (if (isCtrl) java.awt.event.InputEvent.CTRL_DOWN_MASK else 0) or
-                    (if (isAlt) java.awt.event.InputEvent.ALT_DOWN_MASK else 0) or
-                    (if (isMeta) java.awt.event.InputEvent.META_DOWN_MASK else 0)
-                val awtEvent = java.awt.event.KeyEvent(
-                    SyntheticEventSource,
-                    java.awt.event.KeyEvent.KEY_TYPED,
-                    System.currentTimeMillis(),
-                    awtModifiers,
-                    java.awt.event.KeyEvent.VK_UNDEFINED,
-                    ch,
-                    java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
-                )
-                KeyEvent(
-                    key = Key(nativeKeyCode = 0, nativeKeyLocation = keyLocation),
-                    type = KeyEventType.Unknown,
-                    codePoint = codePoint,
-                    isCtrlPressed = isCtrl,
-                    isMetaPressed = isMeta,
-                    isAltPressed = isAlt,
-                    isShiftPressed = isShift,
-                    nativeEvent = awtEvent,
-                )
-            }
-            else -> return false
-        }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
         if (sc.sendKeyEvent(composeEvent)) return true
         return keyHandler?.invoke(composeEvent) == true
@@ -851,7 +931,8 @@ internal class TaoComposeSceneHost(
         }
         if (nsViewHandle != 0L) {
             if (io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.isLoaded) {
-                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge.nativeRevoke(nsViewHandle)
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDndBridge
+                    .nativeRevoke(nsViewHandle)
             }
             nsViewHandle = 0L
         }
@@ -874,7 +955,10 @@ internal class TaoComposeSceneHost(
      * with redraws being what triggers them in the first place.
      */
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {
-        override fun dispatch(context: KCoroutineContext, block: Runnable) {
+        override fun dispatch(
+            context: KCoroutineContext,
+            block: Runnable,
+        ) {
             // Only delegate to TaoMainDispatcher (auto-pumps on MAIN_EVENTS_CLEARED).
             // Do NOT call window.requestRedraw() here: every Compose snapshot
             // write goes through this dispatcher, and forcing a redraw on
@@ -904,7 +988,7 @@ internal class TaoComposeSceneHost(
     }
 }
 
-/**
+/*
  * `PlatformContext` for the Tao backend. Mirrors what `ComposeSceneMediator`
  * does on Compose Desktop: when Compose hovers over content with a pointer-icon
  * modifier (notably `BasicTextField` → `PointerIcon.Text`), it calls
@@ -915,6 +999,7 @@ internal class TaoComposeSceneHost(
  * instances wrap a `java.awt.Cursor` inside the internal `AwtCursor` class —
  * we read it back via reflection (its public-but-not-API `getCursor` method).
  */
+
 /**
  * Mutable [androidx.compose.ui.platform.WindowInfo] backed by snapshot state.
  * Mirrors the upstream `WindowInfoImpl` (which is `internal` to compose-ui).
@@ -949,7 +1034,8 @@ private class TaoPlatformContext(
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
             override val systemBars: androidx.compose.ui.platform.PlatformInsets =
-                androidx.compose.ui.platform.PlatformInsets(getTop = topInsetPx)
+                androidx.compose.ui.platform
+                    .PlatformInsets(getTop = topInsetPx)
             override val captionBar: androidx.compose.ui.platform.PlatformInsets get() = systemBars
         }
 
@@ -984,23 +1070,24 @@ private class TaoPlatformContext(
         try {
             coroutineScope {
                 launch {
-                    androidx.compose.runtime.snapshotFlow {
-                        request.focusedRectInRoot()
-                    }.collect { rect ->
-                        if (rect != null) {
-                            // `focusedRectInRoot` is in root-pixel space; pass
-                            // it as a real-sized rect — AppKit's press-and-hold
-                            // logic gates on `firstRectForCharacterRange:`
-                            // returning non-zero size.
-                            NativeTaoBridge.nativeSetImeRect(
-                                windowHandle,
-                                rect.left.toInt(),
-                                rect.top.toInt(),
-                                rect.width.toInt().coerceAtLeast(1),
-                                rect.height.toInt().coerceAtLeast(1),
-                            )
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            request.focusedRectInRoot()
+                        }.collect { rect ->
+                            if (rect != null) {
+                                // `focusedRectInRoot` is in root-pixel space; pass
+                                // it as a real-sized rect — AppKit's press-and-hold
+                                // logic gates on `firstRectForCharacterRange:`
+                                // returning non-zero size.
+                                NativeTaoBridge.nativeSetImeRect(
+                                    windowHandle,
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.width.toInt().coerceAtLeast(1),
+                                    rect.height.toInt().coerceAtLeast(1),
+                                )
+                            }
                         }
-                    }
                 }
                 awaitCancellation()
             }

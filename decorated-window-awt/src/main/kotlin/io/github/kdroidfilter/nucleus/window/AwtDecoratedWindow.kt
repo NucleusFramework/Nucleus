@@ -41,7 +41,9 @@ import java.awt.geom.RoundRectangle2D
  * to the backing [ComposeWindow]. Returned to consumers of the JBR/JNI backends.
  */
 @Stable
-interface AwtDecoratedWindowScope : DecoratedWindowScope, FrameWindowScope {
+interface AwtDecoratedWindowScope :
+    DecoratedWindowScope,
+    FrameWindowScope {
     override val window: ComposeWindow
 }
 

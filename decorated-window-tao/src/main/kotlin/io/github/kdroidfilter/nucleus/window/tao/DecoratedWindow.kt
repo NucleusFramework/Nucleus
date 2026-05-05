@@ -2,8 +2,6 @@
 
 package io.github.kdroidfilter.nucleus.window.tao
 
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
-
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
@@ -18,6 +16,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.DpSize
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
@@ -29,9 +28,10 @@ import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindo
  * `TitleBar` composable. [DecoratedWindow] consumes this once the window has
  * been shown to centre the native traffic-light buttons inside our custom bar.
  */
-internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.compose.runtime.MutableState<Float>> {
-    error("LocalRequestedTitleBarHeight not provided — DecoratedWindow installs it.")
-}
+internal val LocalRequestedTitleBarHeight =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Float>> {
+        error("LocalRequestedTitleBarHeight not provided — DecoratedWindow installs it.")
+    }
 
 /**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
@@ -74,30 +74,51 @@ internal fun ApplicationScope.openDecoratedWindow(
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
-    val window = taoApplication.openWindow(
-        title = title,
-        width = width,
-        height = height,
-        // On macOS we keep native decorations (traffic-light buttons live there).
-        // On Windows + Linux we drop them — we draw the close/min/max buttons
-        // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
-        // the user's [TitleBar] composable, mirroring decorated-window-jni.
-        decorations = Platform.Current == Platform.MacOS,
-        resizable = resizable,
-        visible = false, // we show after first paint
-    )
+    val window =
+        taoApplication.openWindow(
+            title = title,
+            width = width,
+            height = height,
+            // On macOS we keep native decorations (traffic-light buttons live there).
+            // On Windows + Linux we drop them — we draw the close/min/max buttons
+            // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
+            // the user's [TitleBar] composable, mirroring decorated-window-jni.
+            decorations = Platform.Current == Platform.MacOS,
+            resizable = resizable,
+            visible = false, // we show after first paint
+        )
 
     if (Platform.Current == Platform.Windows) {
         return openDecoratedWindowWindows(
-            window, title, visible, enabled, focusable, alwaysOnTop,
-            icon, minimumSize, onCloseRequest, onPreviewKeyEvent, onKeyEvent, content,
+            window,
+            title,
+            visible,
+            enabled,
+            focusable,
+            alwaysOnTop,
+            icon,
+            minimumSize,
+            onCloseRequest,
+            onPreviewKeyEvent,
+            onKeyEvent,
+            content,
         )
     }
 
     if (Platform.Current == Platform.Linux) {
         return openDecoratedWindowLinux(
-            window, title, visible, enabled, focusable, alwaysOnTop,
-            icon, minimumSize, onCloseRequest, onPreviewKeyEvent, onKeyEvent, content,
+            window,
+            title,
+            visible,
+            enabled,
+            focusable,
+            alwaysOnTop,
+            icon,
+            minimumSize,
+            onCloseRequest,
+            onPreviewKeyEvent,
+            onKeyEvent,
+            content,
         )
     }
 
@@ -119,11 +140,12 @@ internal fun ApplicationScope.openDecoratedWindow(
     // native on every change; the controller owns the per-window state and
     // routes VoiceOver actions back into Compose semantics actions.
     val a11yController = TaoAccessibilityController(window.handle)
-    val a11yObserver = TaoSemanticsObserver(
-        controller = a11yController,
-        densityProvider = { host.density() },
-        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
-    )
+    val a11yObserver =
+        TaoSemanticsObserver(
+            controller = a11yController,
+            densityProvider = { host.density() },
+            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+        )
     host.semanticsOwnerListener = a11yObserver
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
@@ -203,10 +225,11 @@ internal fun ApplicationScope.openDecoratedWindow(
         if (stateHolder.value.isMaximized != maxNow ||
             stateHolder.value.isFullscreen != fsNow
         ) {
-            stateHolder.value = stateHolder.value.copy(
-                maximized = maxNow,
-                fullscreen = fsNow,
-            )
+            stateHolder.value =
+                stateHolder.value.copy(
+                    maximized = maxNow,
+                    fullscreen = fsNow,
+                )
         }
     }
     window.onCloseRequested { onCloseRequest() }
@@ -268,11 +291,12 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // over D-Bus. Orca / accerciser see the tree like any other native
     // GTK app — modulo XWayland coordinates handled in `applyA11yBounds`.
     val a11yController = TaoAccessibilityController(window.handle)
-    val a11yObserver = TaoSemanticsObserver(
-        controller = a11yController,
-        densityProvider = { host.density() },
-        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
-    )
+    val a11yObserver =
+        TaoSemanticsObserver(
+            controller = a11yController,
+            densityProvider = { host.density() },
+            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+        )
     host.semanticsOwnerListener = a11yObserver
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
@@ -305,12 +329,13 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 // loop). See [TaoLinuxUriHandler].
                 LocalUriHandler provides TaoLinuxUriHandler,
             ) {
-                val border = rememberUndecoratedWindowBorder(
-                    state = stateHolder.value,
-                    linuxDe = linuxDe,
-                    gnomeCornerArc = 24f,
-                    kdeCornerArc = 10f,
-                )
+                val border =
+                    rememberUndecoratedWindowBorder(
+                        state = stateHolder.value,
+                        linuxDe = linuxDe,
+                        gnomeCornerArc = 24f,
+                        kdeCornerArc = 10f,
+                    )
                 FullscreenOverlayHost(
                     holder = fullscreenHolder,
                     isFullscreen = stateHolder.value.isFullscreen,
@@ -353,10 +378,11 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         if (stateHolder.value.isMaximized != maxNow ||
             stateHolder.value.isFullscreen != fsNow
         ) {
-            stateHolder.value = stateHolder.value.copy(
-                maximized = maxNow,
-                fullscreen = fsNow,
-            )
+            stateHolder.value =
+                stateHolder.value.copy(
+                    maximized = maxNow,
+                    fullscreen = fsNow,
+                )
         }
         // EGL replaces the XShape rounded-clip with a Skia post-render
         // BlendMode.CLEAR carve in `host.onRedrawRequested` — the next
@@ -408,12 +434,23 @@ private fun ApplicationScope.openDecoratedWindowLinux(
  * widgets as window-relative, which is a regression from
  * pixel-perfect highlights but keeps the app running.
  */
-private fun pushA11yBoundsLinux(xid: Long, windowHandle: Long, w: Int, h: Int) {
+private fun pushA11yBoundsLinux(
+    xid: Long,
+    windowHandle: Long,
+    w: Int,
+    h: Int,
+) {
     if (xid == 0L) return
     NativeTaoBridge.nativeA11ySetRootBounds(
         xid,
-        0L, 0L, w.toLong(), h.toLong(),
-        0L, 0L, w.toLong(), h.toLong(),
+        0L,
+        0L,
+        w.toLong(),
+        h.toLong(),
+        0L,
+        0L,
+        w.toLong(),
+        h.toLong(),
     )
 }
 
@@ -450,11 +487,12 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     // as macOS. The controller resolves the HWND on attach via
     // `nativeHwndHandle` and pushes the binary snapshot to nucleus_tao_a11y.dll.
     val a11yController = TaoAccessibilityController(window.handle)
-    val a11yObserver = TaoSemanticsObserver(
-        controller = a11yController,
-        densityProvider = { host.density() },
-        onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
-    )
+    val a11yObserver =
+        TaoSemanticsObserver(
+            controller = a11yController,
+            densityProvider = { host.density() },
+            onScheduleSync = { obs -> host.scheduleA11ySync { obs.syncIfDirty() } },
+        )
     host.semanticsOwnerListener = a11yObserver
 
     val stateHolder = mutableStateOf(DecoratedWindowState.of(active = true))
@@ -479,12 +517,13 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
             ) {
-                val border = rememberUndecoratedWindowBorder(
-                    state = stateHolder.value,
-                    linuxDe = LinuxDesktopEnvironment.Unknown,
-                    gnomeCornerArc = 24f,
-                    kdeCornerArc = 10f,
-                )
+                val border =
+                    rememberUndecoratedWindowBorder(
+                        state = stateHolder.value,
+                        linuxDe = LinuxDesktopEnvironment.Unknown,
+                        gnomeCornerArc = 24f,
+                        kdeCornerArc = 10f,
+                    )
                 FullscreenOverlayHost(
                     holder = fullscreenHolder,
                     isFullscreen = stateHolder.value.isFullscreen,
@@ -513,10 +552,11 @@ private fun ApplicationScope.openDecoratedWindowWindows(
         if (stateHolder.value.isMaximized != maxNow ||
             stateHolder.value.isFullscreen != fsNow
         ) {
-            stateHolder.value = stateHolder.value.copy(
-                maximized = maxNow,
-                fullscreen = fsNow,
-            )
+            stateHolder.value =
+                stateHolder.value.copy(
+                    maximized = maxNow,
+                    fullscreen = fsNow,
+                )
         }
     }
     window.onCloseRequested { onCloseRequest() }

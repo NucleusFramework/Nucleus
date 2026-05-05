@@ -35,7 +35,12 @@ internal object NativeTaoGlBridge {
     /** Stores the new dimensions and updates the GL viewport. Call on resize
      * or scale-factor change before the next render. */
     @JvmStatic
-    external fun nativeResize(handle: Long, widthPx: Int, heightPx: Int, scale: Float)
+    external fun nativeResize(
+        handle: Long,
+        widthPx: Int,
+        heightPx: Int,
+        scale: Float,
+    )
 
     /** Pumps the back-buffer to screen via `SwapBuffers`. Must be invoked
      * **after** `Surface.flushAndSubmit`. */

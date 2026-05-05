@@ -18,7 +18,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class Tab(val label: String) {
+enum class Tab(
+    val label: String,
+) {
     Demo("Demo"),
     Scroll("Scroll"),
     Zoom("Zoom"),
@@ -45,19 +47,26 @@ fun TabBar(
             ) {
                 BasicText(
                     text = tab.label,
-                    style = TextStyle(
-                        color = if (isSelected) Color(0xFF8AB4FF) else Color(0xFFA0A4B0),
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                    ),
+                    style =
+                        TextStyle(
+                            color = if (isSelected) Color(0xFF8AB4FF) else Color(0xFFA0A4B0),
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        ),
                 )
             }
         }
     }
 }
 
-fun logEvent(events: SnapshotStateList<String>, text: String) {
-    val time = java.time.LocalTime.now().withNano(0)
+fun logEvent(
+    events: SnapshotStateList<String>,
+    text: String,
+) {
+    val time =
+        java.time.LocalTime
+            .now()
+            .withNano(0)
     events.add(0, "[$time] $text")
     if (events.size > 200) events.removeRange(200, events.size)
 }

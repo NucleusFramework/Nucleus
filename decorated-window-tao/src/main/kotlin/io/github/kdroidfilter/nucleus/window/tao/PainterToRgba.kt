@@ -4,20 +4,18 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.ImageBitmapConfig
+import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.graphics.drawscope.CanvasDrawScope
 
 /**
  * Rasterises a [Painter] into a row-major premultiplied RGBA byte array suitable
  * for `tao::window::Icon::from_rgba`. Returns `null` if the painter has no
  * intrinsic size — Tao requires explicit dimensions.
  */
-internal fun Painter.toRgbaIcon(
-    sizePx: Int = 64,
-): Triple<Int, Int, ByteArray>? {
+internal fun Painter.toRgbaIcon(sizePx: Int = 64): Triple<Int, Int, ByteArray>? {
     val bitmap = ImageBitmap(sizePx, sizePx, ImageBitmapConfig.Argb8888)
     val canvas = Canvas(bitmap)
     val drawScope = CanvasDrawScope()

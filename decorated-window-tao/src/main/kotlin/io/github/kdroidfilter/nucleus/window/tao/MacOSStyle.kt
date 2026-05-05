@@ -20,8 +20,9 @@ enum class MacOSStyle {
     Modern,
 }
 
-internal fun MacOSStyle.shouldApplyLargeCornerRadius(): Boolean = when (this) {
-    MacOSStyle.Auto -> NativeMetalBridge.nativeIsMacOSTahoeOrLater()
-    MacOSStyle.Classic -> false
-    MacOSStyle.Modern -> true
-}
+internal fun MacOSStyle.shouldApplyLargeCornerRadius(): Boolean =
+    when (this) {
+        MacOSStyle.Auto -> NativeMetalBridge.nativeIsMacOSTahoeOrLater()
+        MacOSStyle.Classic -> false
+        MacOSStyle.Modern -> true
+    }

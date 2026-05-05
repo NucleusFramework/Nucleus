@@ -30,19 +30,21 @@ fun EventsTab(
     Column(modifier = modifier.padding(20.dp)) {
         BasicText(
             text = "Events log (newest first)",
-            style = TextStyle(
-                color = Color(0xFF7A8088),
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-            ),
+            style =
+                TextStyle(
+                    color = Color(0xFF7A8088),
+                    fontSize = 11.sp,
+                    letterSpacing = 0.8.sp,
+                ),
         )
 
         Box(
-            modifier = Modifier
-                .padding(top = 12.dp)
-                .fillMaxSize()
-                .clip(RoundedCornerShape(10.dp))
-                .background(Color.Black.copy(alpha = 0.35f)),
+            modifier =
+                Modifier
+                    .padding(top = 12.dp)
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.Black.copy(alpha = 0.35f)),
         ) {
             if (events.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
@@ -60,11 +62,12 @@ fun EventsTab(
                         BasicText(
                             text = line,
                             modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp),
-                            style = TextStyle(
-                                color = Color(0xFFE6E6E6),
-                                fontSize = 12.sp,
-                                fontFamily = FontFamily.Monospace,
-                            ),
+                            style =
+                                TextStyle(
+                                    color = Color(0xFFE6E6E6),
+                                    fontSize = 12.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                ),
                         )
                     }
                 }

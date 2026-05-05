@@ -8,6 +8,8 @@ import io.github.kdroidfilter.nucleus.window.DecoratedDialogScope
  * Tao-owned [window] handle. Mirrors `AwtDecoratedDialogScope`'s relationship
  * with the core scope.
  */
-interface TaoDecoratedDialogScope : DecoratedDialogScope, ColumnScope {
+interface TaoDecoratedDialogScope :
+    DecoratedDialogScope,
+    ColumnScope {
     val window: TaoWindow
 }

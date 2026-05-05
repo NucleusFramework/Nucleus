@@ -39,12 +39,13 @@ import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
-val PALETTE = listOf(
-    Color(0xFF6366F1), // indigo
-    Color(0xFFEC4899), // pink
-    Color(0xFF06B6D4), // cyan
-    Color(0xFFF59E0B), // amber
-)
+val PALETTE =
+    listOf(
+        Color(0xFF6366F1), // indigo
+        Color(0xFFEC4899), // pink
+        Color(0xFF06B6D4), // cyan
+        Color(0xFFF59E0B), // amber
+    )
 
 @Composable
 fun FancyDemo(
@@ -57,33 +58,35 @@ fun FancyDemo(
     val phase by transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 14_000, easing = LinearEasing),
-        ),
+        animationSpec =
+            infiniteRepeatable(
+                animation = tween(durationMillis = 14_000, easing = LinearEasing),
+            ),
         label = "phase",
     )
 
     var cursor by remember { mutableStateOf<Offset?>(null) }
 
     Box(
-        modifier = modifier.pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent()
-                    when (event.type) {
-                        PointerEventType.Move,
-                        PointerEventType.Enter,
-                        -> cursor = event.changes.first().position
-                        PointerEventType.Exit -> cursor = null
-                        PointerEventType.Press -> {
-                            cursor = event.changes.first().position
-                            onClick()
+        modifier =
+            modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        when (event.type) {
+                            PointerEventType.Move,
+                            PointerEventType.Enter,
+                            -> cursor = event.changes.first().position
+                            PointerEventType.Exit -> cursor = null
+                            PointerEventType.Press -> {
+                                cursor = event.changes.first().position
+                                onClick()
+                            }
+                            else -> Unit
                         }
-                        else -> Unit
                     }
                 }
-            }
-        },
+            },
     ) {
         AnimatedMeshBackground(phase, cursor, enabledBlobs)
         GlassCard(clicks)
@@ -97,43 +100,46 @@ private fun AnimatedMeshBackground(
     enabledBlobs: List<Boolean>,
 ) {
     Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF07080B))
-            .blur(120.dp)
-            .drawBehind {
-                val tau = (PI * 2).toFloat()
-                val w = size.width
-                val h = size.height
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(Color(0xFF07080B))
+                .blur(120.dp)
+                .drawBehind {
+                    val tau = (PI * 2).toFloat()
+                    val w = size.width
+                    val h = size.height
 
-                PALETTE.forEachIndexed { idx, color ->
-                    if (idx >= enabledBlobs.size || !enabledBlobs[idx]) return@forEachIndexed
-                    val phaseI = (phase + idx * 0.27f) * tau
-                    val cx = w * (0.5f + sin(phaseI) * 0.42f)
-                    val cy = h * (0.5f + cos(phaseI * 1.3f + idx) * 0.42f)
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(color.copy(alpha = 0.85f), color.copy(alpha = 0f)),
-                            center = Offset(cx, cy),
+                    PALETTE.forEachIndexed { idx, color ->
+                        if (idx >= enabledBlobs.size || !enabledBlobs[idx]) return@forEachIndexed
+                        val phaseI = (phase + idx * 0.27f) * tau
+                        val cx = w * (0.5f + sin(phaseI) * 0.42f)
+                        val cy = h * (0.5f + cos(phaseI * 1.3f + idx) * 0.42f)
+                        drawCircle(
+                            brush =
+                                Brush.radialGradient(
+                                    colors = listOf(color.copy(alpha = 0.85f), color.copy(alpha = 0f)),
+                                    center = Offset(cx, cy),
+                                    radius = w * 0.45f,
+                                ),
                             radius = w * 0.45f,
-                        ),
-                        radius = w * 0.45f,
-                        center = Offset(cx, cy),
-                    )
-                }
+                            center = Offset(cx, cy),
+                        )
+                    }
 
-                cursor?.let { c ->
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(Color.White.copy(alpha = 0.30f), Color.Transparent),
-                            center = c,
+                    cursor?.let { c ->
+                        drawCircle(
+                            brush =
+                                Brush.radialGradient(
+                                    colors = listOf(Color.White.copy(alpha = 0.30f), Color.Transparent),
+                                    center = c,
+                                    radius = w * 0.18f,
+                                ),
                             radius = w * 0.18f,
-                        ),
-                        radius = w * 0.18f,
-                        center = c,
-                    )
-                }
-            },
+                            center = c,
+                        )
+                    }
+                },
     )
 }
 
@@ -144,42 +150,45 @@ private fun GlassCard(clicks: Int) {
         contentAlignment = Alignment.Center,
     ) {
         Column(
-            modifier = Modifier
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color.White.copy(alpha = 0.06f))
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.12f),
-                    shape = RoundedCornerShape(24.dp),
-                )
-                .padding(horizontal = 48.dp, vertical = 36.dp),
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(Color.White.copy(alpha = 0.06f))
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = 0.12f),
+                        shape = RoundedCornerShape(24.dp),
+                    ).padding(horizontal = 48.dp, vertical = 36.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
             BasicText(
                 text = "Compose × Skia",
-                style = TextStyle(
-                    color = Color(0xFFF5F5FA),
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.SemiBold,
-                ),
+                style =
+                    TextStyle(
+                        color = Color(0xFFF5F5FA),
+                        fontSize = 36.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
             )
             Spacer(Modifier.height(12.dp))
             BasicText(
                 text = "shared body — pick a tab to compare backends",
-                style = TextStyle(
-                    color = Color(0xFFB7B9C4),
-                    fontSize = 14.sp,
-                ),
+                style =
+                    TextStyle(
+                        color = Color(0xFFB7B9C4),
+                        fontSize = 14.sp,
+                    ),
             )
             Spacer(Modifier.height(28.dp))
             BasicText(
                 text = "clicks · $clicks",
-                style = TextStyle(
-                    color = Color(0xFF8AB4FF),
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium,
-                ),
+                style =
+                    TextStyle(
+                        color = Color(0xFF8AB4FF),
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                    ),
             )
         }
     }

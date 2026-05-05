@@ -41,5 +41,6 @@ data class TitleBarMetrics(
 
 val LocalTitleBarStyle =
     staticCompositionLocalOf<TitleBarStyle> {
-        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults.darkTitleBarStyle()
+        io.github.kdroidfilter.nucleus.window.DecoratedWindowDefaults
+            .darkTitleBarStyle()
     }

@@ -72,20 +72,25 @@ internal fun FullscreenOverlayHost(
         }
     }
 
-    val rootModifier = if (isFullscreen) {
-        modifier.pointerInput(holder.titleBarHeight) {
-            val titleBarHeightPx = with(density) { holder.titleBarHeight.toPx() }
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent(PointerEventPass.Initial)
-                    val y = event.changes.firstOrNull()?.position?.y ?: continue
-                    visible = y < titleBarHeightPx
+    val rootModifier =
+        if (isFullscreen) {
+            modifier.pointerInput(holder.titleBarHeight) {
+                val titleBarHeightPx = with(density) { holder.titleBarHeight.toPx() }
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val y =
+                            event.changes
+                                .firstOrNull()
+                                ?.position
+                                ?.y ?: continue
+                        visible = y < titleBarHeightPx
+                    }
                 }
             }
+        } else {
+            modifier
         }
-    } else {
-        modifier
-    }
 
     Box(modifier = rootModifier) {
         content()
@@ -97,10 +102,11 @@ internal fun FullscreenOverlayHost(
             )
             val ctx = holder.compositionLocalContext
             Box(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-                    .offset(y = offsetY),
+                modifier =
+                    Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .offset(y = offsetY),
             ) {
                 if (ctx != null) {
                     CompositionLocalProvider(ctx) {

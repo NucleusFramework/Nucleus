@@ -32,11 +32,32 @@ fun DecoratedWindowScope.TitleBar(
     val awtScope = this as AwtDecoratedWindowScope
     when (Platform.Current) {
         Platform.Linux ->
-            awtScope.LinuxTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            awtScope.LinuxTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                backgroundContent,
+                content,
+            )
         Platform.Windows ->
-            awtScope.WindowsTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            awtScope.WindowsTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                backgroundContent,
+                content,
+            )
         Platform.MacOS ->
-            awtScope.MacOSTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            awtScope.MacOSTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                backgroundContent,
+                content,
+            )
         Platform.Unknown ->
             error("TitleBar is not supported on this platform(${System.getProperty("os.name")})")
     }

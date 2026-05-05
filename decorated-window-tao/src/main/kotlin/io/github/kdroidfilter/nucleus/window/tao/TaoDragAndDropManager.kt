@@ -35,7 +35,6 @@ internal class TaoDragAndDropManager(
     private val getRootNode: () -> ComposeSceneDragAndDropNode,
     private val outboundLauncher: OutboundLauncher? = null,
 ) : PlatformDragAndDropManager {
-
     /**
      * Per-platform implementation of the actual OS drag session. Receives the
      * extracted payload (already coerced from the user's [Transferable] into
@@ -77,44 +76,48 @@ internal class TaoDragAndDropManager(
         TaoDnDDiagnostics.log("requestDragAndDropTransfer offset=$offset")
 
         var started = false
-        val scope = object : PlatformDragAndDropSource.StartTransferScope {
-            override fun startDragAndDropTransfer(
-                transferData: DragAndDropTransferData,
-                decorationSize: Size,
-                drawDragDecoration: DrawScope.() -> Unit,
-            ): Boolean {
-                TaoDnDDiagnostics.transfers.intValue++
-                val launcher = outboundLauncher ?: run {
-                    TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no outbound launcher")
-                    return false
-                }
+        val scope =
+            object : PlatformDragAndDropSource.StartTransferScope {
+                override fun startDragAndDropTransfer(
+                    transferData: DragAndDropTransferData,
+                    decorationSize: Size,
+                    drawDragDecoration: DrawScope.() -> Unit,
+                ): Boolean {
+                    TaoDnDDiagnostics.transfers.intValue++
+                    val launcher =
+                        outboundLauncher ?: run {
+                            TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no outbound launcher")
+                            return false
+                        }
 
-                val awt = transferData.awtTransferable() ?: run {
-                    TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — non-AWT transferable")
-                    return false
-                }
-                val files = awt.extractFiles()
-                val text = awt.extractText()
-                if (files.isEmpty() && text == null) {
-                    TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no exportable data")
-                    return false
-                }
+                    val awt =
+                        transferData.awtTransferable() ?: run {
+                            TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — non-AWT transferable")
+                            return false
+                        }
+                    val files = awt.extractFiles()
+                    val text = awt.extractText()
+                    if (files.isEmpty() && text == null) {
+                        TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no exportable data")
+                        return false
+                    }
 
-                val request = OutboundRequest(
-                    files = files,
-                    text = text,
-                    supportedActions = transferData.supportedActions.toList(),
-                    decorationSize = decorationSize,
-                    drawDragDecoration = drawDragDecoration,
-                )
-                TaoDnDDiagnostics.log("starting OS drag files=${files.size} text=${text != null}")
-                val result = launcher.launch(request)
-                TaoDnDDiagnostics.log("OS drag completed action=$result")
-                transferData.onTransferCompleted?.invoke(result)
-                started = result != null
-                return true
+                    val request =
+                        OutboundRequest(
+                            files = files,
+                            text = text,
+                            supportedActions = transferData.supportedActions.toList(),
+                            decorationSize = decorationSize,
+                            drawDragDecoration = drawDragDecoration,
+                        )
+                    TaoDnDDiagnostics.log("starting OS drag files=${files.size} text=${text != null}")
+                    val result = launcher.launch(request)
+                    TaoDnDDiagnostics.log("OS drag completed action=$result")
+                    transferData.onTransferCompleted?.invoke(result)
+                    started = result != null
+                    return true
+                }
             }
-        }
         with(source) { scope.startDragAndDropTransfer(offset) { started } }
     }
 
@@ -129,22 +132,29 @@ internal class TaoDragAndDropManager(
      * native-image friendly.
      */
     private fun DragAndDropTransferData.awtTransferable(): Transferable? =
-        androidx.compose.ui.draganddrop.TaoTransferableAccess.toAwt(this.transferable)
+        androidx.compose.ui.draganddrop.TaoTransferableAccess
+            .toAwt(this.transferable)
 
     @Suppress("UNCHECKED_CAST")
-    private fun Transferable.extractFiles(): List<File> = if (
-        isDataFlavorSupported(DataFlavor.javaFileListFlavor)
-    ) {
-        runCatching {
-            getTransferData(DataFlavor.javaFileListFlavor) as List<File>
-        }.getOrDefault(emptyList())
-    } else emptyList()
+    private fun Transferable.extractFiles(): List<File> =
+        if (
+            isDataFlavorSupported(DataFlavor.javaFileListFlavor)
+        ) {
+            runCatching {
+                getTransferData(DataFlavor.javaFileListFlavor) as List<File>
+            }.getOrDefault(emptyList())
+        } else {
+            emptyList()
+        }
 
-    private fun Transferable.extractText(): String? = if (
-        isDataFlavorSupported(DataFlavor.stringFlavor)
-    ) {
-        runCatching {
-            getTransferData(DataFlavor.stringFlavor) as? String
-        }.getOrNull()
-    } else null
+    private fun Transferable.extractText(): String? =
+        if (
+            isDataFlavorSupported(DataFlavor.stringFlavor)
+        ) {
+            runCatching {
+                getTransferData(DataFlavor.stringFlavor) as? String
+            }.getOrNull()
+        } else {
+            null
+        }
 }
