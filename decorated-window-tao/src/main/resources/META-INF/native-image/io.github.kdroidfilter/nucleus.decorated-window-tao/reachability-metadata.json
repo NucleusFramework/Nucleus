@@ -95,7 +95,16 @@
         },
         {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge",
-            "jniAccessible": true
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onMenuBarOffsetChanged",
+                    "parameterTypes": [
+                        "long",
+                        "float"
+                    ]
+                }
+            ]
         },
         {
             "type": "io.github.kdroidfilter.nucleus.window.tao.render.MetalFrame",
