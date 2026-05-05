@@ -208,6 +208,26 @@
                 { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
             ]
         },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxTouchBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxTouchBridge$Callback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux$InboundTouchCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
+                { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
+            ]
+        },
         { "type": "java.io.File" },
         { "type": "java.util.ArrayList", "methods": [{ "name": "<init>" }] },
         { "type": "java.awt.datatransfer.DataFlavor", "allDeclaredFields": true, "allDeclaredMethods": true },

@@ -103,6 +103,25 @@ pub(crate) const TRACKPAD_PHASE_CANCELLED: jint = 3;
 // range for any plausible cumulative gesture magnitude.
 pub(crate) const TRACKPAD_VALUE_FIXED_SCALE: f64 = 10_000.0;
 
+// ── Touch event wire encoding (Linux only — Windows + macOS go via Tao) ──
+//
+// Linux touchscreen events are intercepted by `platform/linux/touch.rs` from
+// GTK 3 (`GdkEventTouch`) and forwarded through a per-window callback. The
+// dispatch sends the *full* set of currently-down pointers on every event so
+// the JVM side can call `ComposeScene.sendPointerEvent` with a `pointers`
+// list — Compose treats absence as release. `pressed_mask` carries one bit
+// per pointer so the released-this-event finger can be reported with
+// `pressed=false` while still being present in the array.
+
+#[allow(dead_code)]
+pub(crate) const TOUCH_EVENT_PRESS:   jint = 0;
+#[allow(dead_code)]
+pub(crate) const TOUCH_EVENT_MOVE:    jint = 1;
+#[allow(dead_code)]
+pub(crate) const TOUCH_EVENT_RELEASE: jint = 2;
+#[allow(dead_code)]
+pub(crate) const TOUCH_EVENT_CANCEL:  jint = 3;
+
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
 pub(crate) const MOUSE_BUTTON_MIDDLE: jint = 2;
@@ -211,7 +230,7 @@ pub(crate) fn dispatch_key(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, dead_code)]
 pub(crate) fn dispatch_trackpad_gesture(
     handle: u64,
     kind: jint,
