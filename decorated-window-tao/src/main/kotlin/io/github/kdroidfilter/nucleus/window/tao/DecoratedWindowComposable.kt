@@ -65,88 +65,96 @@ fun ApplicationScope.DecoratedWindow(
 
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
-    val applied = remember {
-        object {
-            var size: DpSize? = null
-            var position: WindowPosition? = null
-            var placement: WindowPlacement? = null
-            var isMinimized: Boolean? = null
-        }
-    }
-
-    val window = remember {
-        applied.size = state.size
-        applied.placement = state.placement
-        applied.isMinimized = state.isMinimized
-        // applied.position deliberately stays null so the LaunchedEffect below
-        // applies the initial state.position (Absolute, Aligned, …) on first
-        // composition. Pre-stamping it would short-circuit Aligned positions
-        // because the LaunchedEffect bails when `pos == applied.position`.
-
-        val w = openDecoratedWindow(
-            onCloseRequest = { latestOnClose() },
-            title = title,
-            icon = icon,
-            width = state.size.width.value.toDouble(),
-            height = state.size.height.value.toDouble(),
-            minimumSize = minimumSize,
-            visible = false,
-            resizable = resizable,
-            enabled = enabled,
-            focusable = focusable,
-            alwaysOnTop = false,
-            onPreviewKeyEvent = { latestPreview(it) },
-            onKeyEvent = { latestKey(it) },
-            macOSStyle = macOSStyle,
-            content = { latestContent.invoke(this) },
-        )
-
-        // Initial placement / minimised flag are applied imperatively here.
-        // Position is handled by the LaunchedEffect on `state.position` to
-        // cover both Absolute and Aligned variants uniformly.
-        when (state.placement) {
-            WindowPlacement.Maximized -> w.setMaximized(true)
-            WindowPlacement.Fullscreen -> w.setFullscreen(true)
-            WindowPlacement.Floating -> Unit
-        }
-        if (state.isMinimized) {
-            w.setMinimized(true)
-        }
-
-        // Native → state sync (resize / move). Read scale per-event since the
-        // user can move the window between displays of differing densities.
-        w.onResized { wPx, hPx ->
-            val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
-            val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
-            if (newSize != applied.size) {
-                applied.size = newSize
-                latestState.size = newSize
-            }
-            // Tao doesn't emit a dedicated "placement changed" event, but
-            // every fullscreen / maximize / restore transition resizes the
-            // window. Re-query both flags here to keep `state.placement` in
-            // sync when the user exits fullscreen via Esc / green button or
-            // hits the system maximize gesture.
-            val placementNow = when {
-                w.isFullscreen -> WindowPlacement.Fullscreen
-                w.isMaximized -> WindowPlacement.Maximized
-                else -> WindowPlacement.Floating
-            }
-            if (placementNow != applied.placement) {
-                applied.placement = placementNow
-                latestState.placement = placementNow
+    val applied =
+        remember {
+            object {
+                var size: DpSize? = null
+                var position: WindowPosition? = null
+                var placement: WindowPlacement? = null
+                var isMinimized: Boolean? = null
             }
         }
-        w.onMoved { xPx, yPx ->
-            val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
-            val newPos = WindowPosition((xPx / scale).dp, (yPx / scale).dp)
-            if (newPos != applied.position) {
-                applied.position = newPos
-                latestState.position = newPos
+
+    val window =
+        remember {
+            applied.size = state.size
+            applied.placement = state.placement
+            applied.isMinimized = state.isMinimized
+            // applied.position deliberately stays null so the LaunchedEffect below
+            // applies the initial state.position (Absolute, Aligned, …) on first
+            // composition. Pre-stamping it would short-circuit Aligned positions
+            // because the LaunchedEffect bails when `pos == applied.position`.
+
+            val w =
+                openDecoratedWindow(
+                    onCloseRequest = { latestOnClose() },
+                    title = title,
+                    icon = icon,
+                    width =
+                        state.size.width.value
+                            .toDouble(),
+                    height =
+                        state.size.height.value
+                            .toDouble(),
+                    minimumSize = minimumSize,
+                    visible = false,
+                    resizable = resizable,
+                    enabled = enabled,
+                    focusable = focusable,
+                    alwaysOnTop = false,
+                    onPreviewKeyEvent = { latestPreview(it) },
+                    onKeyEvent = { latestKey(it) },
+                    macOSStyle = macOSStyle,
+                    content = { latestContent.invoke(this) },
+                )
+
+            // Initial placement / minimised flag are applied imperatively here.
+            // Position is handled by the LaunchedEffect on `state.position` to
+            // cover both Absolute and Aligned variants uniformly.
+            when (state.placement) {
+                WindowPlacement.Maximized -> w.setMaximized(true)
+                WindowPlacement.Fullscreen -> w.setFullscreen(true)
+                WindowPlacement.Floating -> Unit
             }
+            if (state.isMinimized) {
+                w.setMinimized(true)
+            }
+
+            // Native → state sync (resize / move). Read scale per-event since the
+            // user can move the window between displays of differing densities.
+            w.onResized { wPx, hPx ->
+                val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
+                val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
+                if (newSize != applied.size) {
+                    applied.size = newSize
+                    latestState.size = newSize
+                }
+                // Tao doesn't emit a dedicated "placement changed" event, but
+                // every fullscreen / maximize / restore transition resizes the
+                // window. Re-query both flags here to keep `state.placement` in
+                // sync when the user exits fullscreen via Esc / green button or
+                // hits the system maximize gesture.
+                val placementNow =
+                    when {
+                        w.isFullscreen -> WindowPlacement.Fullscreen
+                        w.isMaximized -> WindowPlacement.Maximized
+                        else -> WindowPlacement.Floating
+                    }
+                if (placementNow != applied.placement) {
+                    applied.placement = placementNow
+                    latestState.placement = placementNow
+                }
+            }
+            w.onMoved { xPx, yPx ->
+                val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
+                val newPos = WindowPosition((xPx / scale).dp, (yPx / scale).dp)
+                if (newPos != applied.position) {
+                    applied.position = newPos
+                    latestState.position = newPos
+                }
+            }
+            w
         }
-        w
-    }
 
     DisposableEffect(window) {
         onDispose { window.requestClose() }
@@ -155,7 +163,12 @@ fun ApplicationScope.DecoratedWindow(
     // ── State → window sync ──
     LaunchedEffect(window, state.size) {
         if (state.size != applied.size) {
-            window.setInnerSize(state.size.width.value.toDouble(), state.size.height.value.toDouble())
+            window.setInnerSize(
+                state.size.width.value
+                    .toDouble(),
+                state.size.height.value
+                    .toDouble(),
+            )
             applied.size = state.size
         }
     }
@@ -168,7 +181,13 @@ fun ApplicationScope.DecoratedWindow(
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
-                if (applyAlignedPosition(window, pos, state.size)) {
+                // Use max(state.size, minimumSize) so the centring math matches
+                // the size the window will actually occupy on screen — Tao
+                // grows the window to honour `minimumSize` asynchronously, and
+                // `state.size` still holds the (smaller) requested size at this
+                // point.
+                val effectiveSize = effectiveAlignedSize(state.size, minimumSize)
+                if (applyAlignedPosition(window, pos, effectiveSize)) {
                     applied.position = pos
                 }
             }
@@ -233,11 +252,11 @@ fun ApplicationScope.DecoratedWindow(
  * position could be applied, `false` when the platform / native bridge is
  * unavailable.
  *
- * Supported on Windows (`nucleus_tao_windows_deco.dll`) and macOS
- * (`libnucleus_tao_macos_deco.dylib`). Both bridges expose the work area as
- * `[x, y, w, h]` in physical pixels with a top-left origin, so the dp math
- * below is platform-agnostic. Linux falls back to whatever default position
- * Tao picked at creation.
+ * Supported on Windows (`nucleus_tao_windows_deco.dll`), macOS
+ * (`libnucleus_tao_macos_deco.dylib`) and Linux (via the GDK-backed entry
+ * points on the main `libnucleus_tao.so`). All three bridges expose the work
+ * area as `[x, y, w, h]` in physical pixels with a top-left origin, so the
+ * dp math below is platform-agnostic.
  *
  * On macOS [size] is treated as a fallback only — the actual NSWindow outer
  * size is queried via `nativeGetWindowRect`. Tao's `set_min_inner_size`
@@ -258,19 +277,26 @@ private fun applyAlignedPosition(
     // monitor's scale directly — that's the monitor Tao will place the
     // window on by default, and it's the scale that pairs with the work-area
     // rect we just queried.
-    val (workArea, scaleMilli) = when (Platform.Current) {
-        Platform.Windows -> {
-            if (!NativeTaoWindowsDecoBridge.isLoaded) return false
-            val wa = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
-            wa to NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+    val (workArea, scaleMilli) =
+        when (Platform.Current) {
+            Platform.Windows -> {
+                if (!NativeTaoWindowsDecoBridge.isLoaded) return false
+                val wa = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
+                wa to NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+            }
+            Platform.MacOS -> {
+                if (!NativeTaoMacOsDecoBridge.isLoaded) return false
+                val wa = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
+                wa to NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+            }
+            Platform.Linux -> {
+                if (!NativeTaoBridge.isLoaded) return false
+                warnIfWaylandIgnoresPosition(window)
+                val wa = NativeTaoBridge.nativeLinuxPrimaryMonitorWorkArea(window.handle) ?: return false
+                wa to NativeTaoBridge.nativeLinuxPrimaryMonitorScaleMilli(window.handle).coerceAtLeast(1000)
+            }
+            else -> return false
         }
-        Platform.MacOS -> {
-            if (!NativeTaoMacOsDecoBridge.isLoaded) return false
-            val wa = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
-            wa to NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
-        }
-        else -> return false
-    }
     val scale = scaleMilli / 1000.0
 
     // Convert the work area to logical pixels so we can offset by the
@@ -280,16 +306,65 @@ private fun applyAlignedPosition(
     val workWDp = (workArea[2] / scale).toInt()
     val workHDp = (workArea[3] / scale).toInt()
 
-    val (winWDp, winHDp) = actualWindowSizeDp(window, scale)
-        ?: (size.width.value.toInt().coerceAtLeast(0) to size.height.value.toInt().coerceAtLeast(0))
+    val (winWDp, winHDp) =
+        actualWindowSizeDp(window, scale)
+            ?: (
+                size.width.value
+                    .toInt()
+                    .coerceAtLeast(0) to
+                    size.height.value
+                        .toInt()
+                        .coerceAtLeast(0)
+            )
 
-    val offset: IntOffset = position.alignment.align(
-        size = IntSize(winWDp, winHDp),
-        space = IntSize(workWDp, workHDp),
-        layoutDirection = LayoutDirection.Ltr,
-    )
+    val offset: IntOffset =
+        position.alignment.align(
+            size = IntSize(winWDp, winHDp),
+            space = IntSize(workWDp, workHDp),
+            layoutDirection = LayoutDirection.Ltr,
+        )
     window.setOuterPosition(workXDp + offset.x, workYDp + offset.y)
     return true
+}
+
+private fun effectiveAlignedSize(
+    size: DpSize,
+    minimumSize: DpSize?,
+): DpSize {
+    if (minimumSize == null) return size
+    val w = if (size.width.value < minimumSize.width.value) minimumSize.width else size.width
+    val h = if (size.height.value < minimumSize.height.value) minimumSize.height else size.height
+    return DpSize(w, h)
+}
+
+/**
+ * One-shot warning emitted the first time a [WindowPosition.Aligned] is
+ * resolved on a native Wayland session: the Wayland xdg-shell protocol forbids
+ * clients from setting the absolute position of a toplevel, so the centring
+ * math below runs but Tao's `set_outer_position` is a no-op — the compositor
+ * keeps full authority over placement. Set `NUCLEUS_TAO_LINUX_RENDERER=x11`
+ * (or `GDK_BACKEND=x11`) to fall back to XWayland if precise positioning is
+ * required.
+ *
+ * The window's backend is derived from [NativeTaoBridge.nativeLinuxHandles]
+ * (slot 0: 1 = Xlib, 2 = Wayland) so we don't have to second-guess GDK env
+ * vars or the auto-pick logic in `event_loop.rs`.
+ */
+private val waylandPositionWarned =
+    java.util.concurrent.atomic
+        .AtomicBoolean(false)
+
+private fun warnIfWaylandIgnoresPosition(window: TaoWindow) {
+    if (waylandPositionWarned.get()) return
+    val handles = NativeTaoBridge.nativeLinuxHandles(window.handle) ?: return
+    if (handles.isEmpty() || handles[0] != 2L) return
+    if (!waylandPositionWarned.compareAndSet(false, true)) return
+    System.err.println(
+        "[DecoratedWindow] WindowPosition.Aligned ignored on native Wayland: " +
+            "the xdg-shell protocol does not allow clients to set toplevel " +
+            "positions; the compositor decides placement. Set " +
+            "NUCLEUS_TAO_LINUX_RENDERER=x11 to fall back to XWayland.",
+    )
 }
 
 /**
@@ -301,7 +376,10 @@ private fun applyAlignedPosition(
  * skew introduced by Tao's `set_min_inner_size` (see that function's
  * doc-comment).
  */
-private fun actualWindowSizeDp(window: TaoWindow, scale: Double): Pair<Int, Int>? {
+private fun actualWindowSizeDp(
+    window: TaoWindow,
+    scale: Double,
+): Pair<Int, Int>? {
     if (Platform.Current != Platform.MacOS) return null
     val nsView = window.nativeHandle
     if (nsView == 0L) return null

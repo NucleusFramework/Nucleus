@@ -26,7 +26,12 @@ internal object NativeTaoBridge {
      */
     interface EventCallback {
         @Suppress("FunctionParameterNaming")
-        fun onEvent(handle: Long, code: Int, a: Int, b: Int)
+        fun onEvent(
+            handle: Long,
+            code: Int,
+            a: Int,
+            b: Int,
+        )
 
         /**
          * Keyboard event callback (separate from [onEvent] because it carries
@@ -142,6 +147,25 @@ internal object NativeTaoBridge {
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic
     external fun nativeScaleFactor(handle: Long): Int
+
+    /**
+     * Linux only: returns `[x, y, width, height]` of the primary monitor's
+     * work area (full screen minus panels / docks) in physical pixels with a
+     * top-left origin. Falls back to the full monitor geometry when GDK can't
+     * report a work area (some Wayland compositors). Used to resolve
+     * [androidx.compose.ui.window.WindowPosition.Aligned] for the initial
+     * outer position of a window. Returns `null` if the handle is unknown.
+     */
+    @JvmStatic
+    external fun nativeLinuxPrimaryMonitorWorkArea(handle: Long): LongArray?
+
+    /**
+     * Linux only: returns the primary monitor's scale factor encoded as
+     * `(scale * 1000)`. Used as a scale source for the centring math when the
+     * window's own scale factor is not yet resolvable.
+     */
+    @JvmStatic
+    external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /** Synchronous — must be called on the macOS main thread during a press. */
     @JvmStatic
@@ -291,7 +315,10 @@ internal object NativeTaoBridge {
     external fun nativeA11yDetach(nsView: Long)
 
     @JvmStatic
-    external fun nativeA11yApplySnapshot(nsView: Long, bytes: ByteArray): Boolean
+    external fun nativeA11yApplySnapshot(
+        nsView: Long,
+        bytes: ByteArray,
+    ): Boolean
 
     /**
      * Linux-only: apply a wire-format v7 *partial* snapshot. Only the nodes
@@ -302,10 +329,16 @@ internal object NativeTaoBridge {
      * the Linux path).
      */
     @JvmStatic
-    external fun nativeA11yApplyPartialSnapshot(nsView: Long, bytes: ByteArray): Boolean
+    external fun nativeA11yApplyPartialSnapshot(
+        nsView: Long,
+        bytes: ByteArray,
+    ): Boolean
 
     @JvmStatic
-    external fun nativeA11yPostFocusChanged(nsView: Long, nodeId: Long)
+    external fun nativeA11yPostFocusChanged(
+        nsView: Long,
+        nodeId: Long,
+    )
 
     /**
      * Linux-only: pushes outer + inner window geometry (in screen-relative
@@ -353,7 +386,10 @@ internal object NativeTaoBridge {
      * directly.
      */
     @JvmStatic
-    external fun nativeA11ySetWindowFocus(nsView: Long, focused: Boolean)
+    external fun nativeA11ySetWindowFocus(
+        nsView: Long,
+        focused: Boolean,
+    )
 
     /**
      * Reads the `voiceOverEnabled` user default. Returns true when VoiceOver
@@ -409,37 +445,63 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     @Suppress("unused") // called from JNI
-    fun dispatchA11yAction(handle: Long, nodeId: Long, action: Int) {
+    fun dispatchA11yAction(
+        handle: Long,
+        nodeId: Long,
+        action: Int,
+    ) {
         TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action)
     }
 
     @JvmStatic
     @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_invoke_action)
-    fun dispatchA11yActionByNsView(nsView: Long, nodeId: Long, action: Int) {
+    fun dispatchA11yActionByNsView(
+        nsView: Long,
+        nodeId: Long,
+        action: Int,
+    ) {
         TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action)
     }
 
     @JvmStatic
     @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_set_text)
-    fun dispatchA11ySetText(nsView: Long, nodeId: Long, text: String) {
+    fun dispatchA11ySetText(
+        nsView: Long,
+        nodeId: Long,
+        text: String,
+    ) {
         TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text)
     }
 
     @JvmStatic
     @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_set_selection)
-    fun dispatchA11ySetSelection(nsView: Long, nodeId: Long, start: Int, end: Int) {
+    fun dispatchA11ySetSelection(
+        nsView: Long,
+        nodeId: Long,
+        start: Int,
+        end: Int,
+    ) {
         TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end)
     }
 
     @JvmStatic
     @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_invoke_custom_action)
-    fun dispatchA11yCustomAction(nsView: Long, nodeId: Long, index: Int) {
+    fun dispatchA11yCustomAction(
+        nsView: Long,
+        nodeId: Long,
+        index: Int,
+    ) {
         TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index)
     }
 
     @JvmStatic
     @Suppress("unused") // called from JNI (macos/a11y.m → nucleus_tao_a11y_scroll_by)
-    fun dispatchA11yScrollBy(nsView: Long, nodeId: Long, dx: Float, dy: Float) {
+    fun dispatchA11yScrollBy(
+        nsView: Long,
+        nodeId: Long,
+        dx: Float,
+        dy: Float,
+    ) {
         TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
     }
 
@@ -450,7 +512,11 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     @Suppress("unused") // called from JNI (a11y_linux.rs → forward_action_to_jvm)
-    fun dispatchA11ySetValue(nsView: Long, nodeId: Long, value: Double) {
+    fun dispatchA11ySetValue(
+        nsView: Long,
+        nodeId: Long,
+        value: Double,
+    ) {
         TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value)
     }
 }
