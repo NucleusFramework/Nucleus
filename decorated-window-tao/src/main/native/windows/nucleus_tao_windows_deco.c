@@ -445,3 +445,61 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
     DecoState *state = getState(hwnd);
     return (state && state->isFullscreen) ? JNI_TRUE : JNI_FALSE;
 }
+
+/* Establishes a parent-child (owner) relationship between two HWNDs via
+ * GWLP_HWNDPARENT. The child window:
+ *   - stays above the owner in z-order
+ *   - is hidden when the owner is minimised
+ *   - does not appear in the taskbar
+ * Used by DecoratedDialog to make the dialog behave like a real JDialog.
+ * Pass ownerHwndLong == 0 to clear the owner. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetOwner(
+    JNIEnv *env, jclass clazz, jlong childHwndLong, jlong ownerHwndLong)
+{
+    (void)env; (void)clazz;
+    HWND child = (HWND)(uintptr_t)childHwndLong;
+    HWND owner = (HWND)(uintptr_t)ownerHwndLong;
+    if (!child) return;
+#if defined(_WIN64)
+    SetWindowLongPtrW(child, GWLP_HWNDPARENT, (LONG_PTR)owner);
+#else
+    SetWindowLongW(child, GWLP_HWNDPARENT, (LONG)(LONG_PTR)owner);
+#endif
+}
+
+/* Wraps EnableWindow. Disabling the owner of a modal dialog blocks input on
+ * the parent while the dialog is up — same behaviour as a native MessageBox
+ * or a modal JDialog. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetEnabled(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean enabled)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+    EnableWindow(hwnd, enabled ? TRUE : FALSE);
+}
+
+/* Returns [x, y, width, height] of the window's outer bounds in screen
+ * coordinates (physical pixels). Used by DecoratedDialog to centre itself on
+ * its parent. Returns NULL if hwnd is invalid. */
+JNIEXPORT jlongArray JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowRect(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return NULL;
+    RECT r;
+    if (!GetWindowRect(hwnd, &r)) return NULL;
+    jlongArray arr = (*env)->NewLongArray(env, 4);
+    if (!arr) return NULL;
+    jlong values[4];
+    values[0] = (jlong)r.left;
+    values[1] = (jlong)r.top;
+    values[2] = (jlong)(r.right - r.left);
+    values[3] = (jlong)(r.bottom - r.top);
+    (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}

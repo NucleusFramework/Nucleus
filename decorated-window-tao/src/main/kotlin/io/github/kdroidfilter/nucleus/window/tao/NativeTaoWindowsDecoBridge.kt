@@ -37,4 +37,31 @@ internal object NativeTaoWindowsDecoBridge {
 
     @JvmStatic
     external fun nativeIsFullscreen(hwnd: Long): Boolean
+
+    /**
+     * Sets the owner of [childHwnd] to [ownerHwnd] via `GWLP_HWNDPARENT`. The
+     * child stays above the owner in z-order, is hidden when the owner is
+     * minimised, and does not appear in the taskbar. Pass `0` for [ownerHwnd]
+     * to clear the relationship.
+     *
+     * Used by `DecoratedDialog` to mirror the native parent-child semantics
+     * of an AWT `JDialog`.
+     */
+    @JvmStatic
+    external fun nativeSetOwner(childHwnd: Long, ownerHwnd: Long)
+
+    /**
+     * Calls `EnableWindow`. Disabling the parent while a modal dialog is
+     * visible blocks all keyboard / mouse input on the parent — matching the
+     * behaviour of a native modal `JDialog`.
+     */
+    @JvmStatic
+    external fun nativeSetEnabled(hwnd: Long, enabled: Boolean)
+
+    /**
+     * Returns the window's outer bounds as `[x, y, width, height]` in physical
+     * screen pixels, or `null` if the HWND is invalid.
+     */
+    @JvmStatic
+    external fun nativeGetWindowRect(hwnd: Long): LongArray?
 }
