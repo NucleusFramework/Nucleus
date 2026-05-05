@@ -1,9 +1,14 @@
 package io.github.kdroidfilter.nucleus.window
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -24,6 +29,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.zIndex
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.ControlButtonsDirection
@@ -55,6 +61,12 @@ private val isLinuxKde: Boolean =
     Platform.Current == Platform.Linux &&
         LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
+// Matches `decorated-window-jni/TitleBar.MacOS.kt::MENU_BAR_ANIMATION_MS`.
+// The Compose menu-bar offset animation has to track AppKit's own
+// auto-hide/auto-show transition timing so the title bar slides in lockstep
+// with the system menu bar — visually identical to Safari's fullscreen.
+private const val MENU_BAR_ANIMATION_MS = 200
+
 /**
  * Platform-aware title bar for the Tao-backed [DecoratedWindow].
  *
@@ -75,7 +87,7 @@ private val isLinuxKde: Boolean =
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
-@Suppress("FunctionNaming", "LongParameterList")
+@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 fun DecoratedWindowScope.TitleBar(
     modifier: Modifier = Modifier,
@@ -96,19 +108,98 @@ fun DecoratedWindowScope.TitleBar(
     // native button-centering constraints once the window is shown.
     val heightHolder = LocalRequestedTitleBarHeight.current
 
-    // Modifier-driven flags. `newFullscreenControls` is consumed for parity
-    // with jbr/jni; tao's macOS path already animates the menu-bar offset
-    // separately. `macOSLargeCornerRadius` re-runs the NSToolbar install at
-    // composition time so the modifier-driven path matches the AWT backends
-    // (the `MacOSStyle` parameter at window creation is the imperative
-    // equivalent — both are honoured).
+    // Modifier-driven flags. `macOSLargeCornerRadius` re-runs the NSToolbar
+    // install at composition time so the modifier-driven path matches the
+    // AWT backends (the `MacOSStyle` parameter at window creation is the
+    // imperative equivalent — both are honoured).
     val newFullscreenControls = modifier.hasNewFullscreenControls()
     val macOSLargeCornerRadius = modifier.hasMacOSLargeCornerRadius()
-    if (Platform.Current == Platform.MacOS && macOSLargeCornerRadius) {
+    val isMacOS = Platform.Current == Platform.MacOS
+    if (isMacOS && macOSLargeCornerRadius) {
         LaunchedEffect(taoWindow) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
             if (nsView != 0L && NativeMetalBridge.isLoaded) {
                 NativeMetalBridge.nativeApplyLargeCornerRadius(nsView, true)
+            }
+        }
+    }
+
+    // ── newFullscreenControls (macOS) ─────────────────────────────────────
+    // Mirrors `decorated-window-jni/TitleBar.MacOS.kt`. In native fullscreen
+    // on a non-notch screen the system menu bar auto-hides; when it slides
+    // back in we offset the title bar (and the AppKit traffic-light
+    // replacements) by the menu bar height so they read like Safari.
+    val isFullscreenWithNewControls =
+        isMacOS && newFullscreenControls && currentState.isFullscreen
+
+    // Push the flag to native so the FS observer installs the menu bar
+    // monitor automatically across fullscreen transitions (mirrors JNI's
+    // `nativeSetNewFullscreenControls`).
+    DisposableEffect(taoWindow, newFullscreenControls) {
+        if (isMacOS && newFullscreenControls && NativeMetalBridge.isLoaded) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L) {
+                NativeMetalBridge.nativeSetNewFullscreenControls(nsView, true)
+            }
+        }
+        onDispose {
+            if (isMacOS && newFullscreenControls && NativeMetalBridge.isLoaded) {
+                val ptr = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+                if (ptr != 0L) {
+                    NativeMetalBridge.nativeSetNewFullscreenControls(ptr, false)
+                }
+            }
+        }
+    }
+
+    // Install/remove the native menu bar monitor while we're fullscreen +
+    // opted-in. Belt-and-braces with the FS observer's own install on
+    // didEnterFS — composition can outlive a transition (or vice-versa).
+    DisposableEffect(taoWindow, isFullscreenWithNewControls) {
+        if (isFullscreenWithNewControls && NativeMetalBridge.isLoaded) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L) {
+                NativeMetalBridge.nativeInstallMenuBarMonitor(nsView)
+            }
+        }
+        onDispose {
+            if (isMacOS && NativeMetalBridge.isLoaded) {
+                val ptr = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+                if (ptr != 0L) {
+                    NativeMetalBridge.nativeRemoveMenuBarMonitor(ptr)
+                }
+            }
+        }
+    }
+
+    // Drop the per-window StateFlow when the title bar leaves the tree so
+    // the ConcurrentHashMap doesn't accumulate stale entries.
+    DisposableEffect(taoWindow) {
+        onDispose {
+            if (isMacOS) {
+                val ptr = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+                if (ptr != 0L) NativeMetalBridge.removeMenuBarOffsetFlow(ptr)
+            }
+        }
+    }
+
+    val currentNsView = if (isMacOS) NativeTaoBridge.nativeNsViewHandle(taoWindow.handle) else 0L
+    val menuBarOffsetPt by remember(currentNsView) {
+        NativeMetalBridge.menuBarOffsetFlow(currentNsView)
+    }.collectAsState()
+
+    val menuBarOffset by animateDpAsState(
+        targetValue = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp,
+        animationSpec = tween(durationMillis = MENU_BAR_ANIMATION_MS),
+    )
+
+    // Push the animated offset back to native so the AppKit traffic-light
+    // replacements follow the Compose title bar pixel-for-pixel.
+    LaunchedEffect(menuBarOffset, isMacOS) {
+        if (isMacOS && NativeMetalBridge.isLoaded) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+            if (nsView != 0L) {
+                NativeMetalBridge.nativeSetMenuBarOffset(nsView, menuBarOffset.value)
             }
         }
     }
@@ -134,7 +225,14 @@ fun DecoratedWindowScope.TitleBar(
 
     @OptIn(ExperimentalComposeUiApi::class)
     val rootModifier =
-        modifier
+        Modifier
+            // macOS only — slide the title bar down when the system menu bar
+            // appears in fullscreen. Pure visual offset (no layout reflow):
+            // the bar overlaps user content the same way Safari does.
+            .let {
+                if (isMacOS) it.offset(y = menuBarOffset).zIndex(if (menuBarOffset > 0.dp) 1f else 0f) else it
+            }
+            .then(modifier)
             .titleBarHitTestHandler(taoWindow)
             .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
                 // Suppress the double-click → toggle-maximize gesture while the
@@ -184,6 +282,17 @@ fun DecoratedWindowScope.TitleBar(
                     controlIsRtl = controlDir == LayoutDirection.Rtl,
                     linuxControlsOnRight = linuxLayout?.controlsOnRight,
                 )
+            },
+            onPlace = {
+                // macOS fullscreen: keep the AppKit replacement traffic-lights
+                // pinned to whatever Y the Compose title bar is currently at.
+                // Mirrors `decorated-window-jni`'s `nativeUpdateFullScreenButtons`.
+                if (isMacOS && currentState.isFullscreen && NativeMetalBridge.isLoaded) {
+                    val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
+                    if (nsView != 0L) {
+                        NativeMetalBridge.nativeUpdateFullScreenButtons(nsView)
+                    }
+                }
             },
             backgroundContent = backgroundContent,
             content = { titleBarState ->
