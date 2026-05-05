@@ -32,12 +32,12 @@ import io.github.kdroidfilter.nucleus.window.DecoratedDialogState
 import io.github.kdroidfilter.nucleus.window.GenericTitleBarImpl
 import io.github.kdroidfilter.nucleus.window.LocalControlButtonsDirection
 import io.github.kdroidfilter.nucleus.window.TitleBarScope
+import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
+import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoDecoratedDialogScope
-import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
-import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import io.github.kdroidfilter.nucleus.window.utils.linux.linuxTitleBarIcons
 import io.github.kdroidfilter.nucleus.window.utils.windows.windowsTitleBarIcons
 
@@ -94,7 +94,7 @@ fun DecoratedDialogScope.DialogTitleBar(
 
     GenericTitleBarImpl(
         state = windowState,
-        modifier = modifier,
+        modifier = modifier.titleBarHitTestHandler(taoWindow),
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlDir,
@@ -116,17 +116,19 @@ fun DecoratedDialogScope.DialogTitleBar(
             // [TitleBarMeasurePolicy] places them at the extreme edge first
             // — same convention as [TitleBar].
             when (Platform.Current) {
-                Platform.Windows -> DialogWindowsCloseButton(
-                    onClick = { taoWindow.requestUserClose() },
-                    modifier = Modifier.align(Alignment.End),
-                    style = style,
-                )
-                Platform.Linux -> DialogLinuxCloseButton(
-                    onClick = { taoWindow.requestUserClose() },
-                    state = windowState,
-                    style = style,
-                    modifier = Modifier.align(Alignment.End),
-                )
+                Platform.Windows ->
+                    DialogWindowsCloseButton(
+                        onClick = { taoWindow.requestUserClose() },
+                        modifier = Modifier.align(Alignment.End),
+                        style = style,
+                    )
+                Platform.Linux ->
+                    DialogLinuxCloseButton(
+                        onClick = { taoWindow.requestUserClose() },
+                        state = windowState,
+                        style = style,
+                        modifier = Modifier.align(Alignment.End),
+                    )
                 else -> Unit // macOS uses native AppKit traffic-lights
             }
 
@@ -152,32 +154,33 @@ private fun TitleBarScope.DialogWindowsCloseButton(
         LocalLayoutDirection provides LocalControlButtonsDirection.current,
     ) {
         Box(
-            modifier = modifier
-                .focusable(false)
-                .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                )
-                .onPointerEvent(PointerEventType.Enter) { hovered = true }
-                .onPointerEvent(PointerEventType.Exit) {
-                    hovered = false
-                    pressed = false
-                }
-                .onPointerEvent(PointerEventType.Press) { pressed = true }
-                .onPointerEvent(PointerEventType.Release) { pressed = false },
+            modifier =
+                modifier
+                    .focusable(false)
+                    .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
+                    .clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    ).onPointerEvent(PointerEventType.Enter) { hovered = true }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        hovered = false
+                        pressed = false
+                    }.onPointerEvent(PointerEventType.Press) { pressed = true }
+                    .onPointerEvent(PointerEventType.Release) { pressed = false },
             contentAlignment = Alignment.Center,
         ) {
-            val bg = when {
-                pressed -> WindowsCloseButtonPressed
-                hovered -> WindowsCloseButtonHovered
-                else -> Color.Transparent
-            }
+            val bg =
+                when {
+                    pressed -> WindowsCloseButtonPressed
+                    hovered -> WindowsCloseButtonHovered
+                    else -> Color.Transparent
+                }
             Box(
-                modifier = Modifier
-                    .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
-                    .background(bg),
+                modifier =
+                    Modifier
+                        .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
+                        .background(bg),
             )
             Image(
                 painter = if (pressed || hovered) icons.closeHover else icons.close,
@@ -208,37 +211,45 @@ private fun TitleBarScope.DialogLinuxCloseButton(
         LocalLayoutDirection provides LocalControlButtonsDirection.current,
     ) {
         Box(
-            modifier = modifier
-                .focusable(false)
-                .let { if (isKdeDlg) it.size(style.metrics.titlePaneButtonSize) else it.size(style.metrics.titlePaneButtonSize) }
-                .clickable(
-                    interactionSource = interactionSource,
-                    indication = null,
-                    onClick = onClick,
-                )
-                .onPointerEvent(PointerEventType.Enter) { hovered = true }
-                .onPointerEvent(PointerEventType.Exit) {
-                    hovered = false
-                    pressed = false
-                }
-                .onPointerEvent(PointerEventType.Press) { pressed = true }
-                .onPointerEvent(PointerEventType.Release) { pressed = false },
+            modifier =
+                modifier
+                    .focusable(false)
+                    .let {
+                        if (isKdeDlg) {
+                            it.size(
+                                style.metrics.titlePaneButtonSize,
+                            )
+                        } else {
+                            it.size(style.metrics.titlePaneButtonSize)
+                        }
+                    }.clickable(
+                        interactionSource = interactionSource,
+                        indication = null,
+                        onClick = onClick,
+                    ).onPointerEvent(PointerEventType.Enter) { hovered = true }
+                    .onPointerEvent(PointerEventType.Exit) {
+                        hovered = false
+                        pressed = false
+                    }.onPointerEvent(PointerEventType.Press) { pressed = true }
+                    .onPointerEvent(PointerEventType.Release) { pressed = false },
             contentAlignment = Alignment.Center,
         ) {
             val isCloseInteracted = hovered || pressed
-            val currentIcon = when {
-                pressed && (state.isActive || isKdeDlg) -> closePressed
-                hovered && (state.isActive || isKdeDlg) -> closeHover
-                else -> icons.close
-            }
+            val currentIcon =
+                when {
+                    pressed && (state.isActive || isKdeDlg) -> closePressed
+                    hovered && (state.isActive || isKdeDlg) -> closeHover
+                    else -> icons.close
+                }
             val iconTint = style.colors.controlButtonIconColor
             val iconHoverTint = style.colors.controlButtonIconHoverColor
-            val colorFilter = when {
-                isCloseInteracted -> null
-                (hovered || pressed) && iconHoverTint != Color.Unspecified -> ColorFilter.tint(iconHoverTint)
-                iconTint != Color.Unspecified -> ColorFilter.tint(iconTint)
-                else -> null
-            }
+            val colorFilter =
+                when {
+                    isCloseInteracted -> null
+                    (hovered || pressed) && iconHoverTint != Color.Unspecified -> ColorFilter.tint(iconHoverTint)
+                    iconTint != Color.Unspecified -> ColorFilter.tint(iconTint)
+                    else -> null
+                }
             Image(
                 painter = currentIcon,
                 contentDescription = "Close",

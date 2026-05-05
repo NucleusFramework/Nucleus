@@ -10,9 +10,9 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -133,34 +133,36 @@ fun DecoratedWindowScope.TitleBar(
     var lastPress by remember { mutableLongStateOf(0L) }
 
     @OptIn(ExperimentalComposeUiApi::class)
-    val rootModifier = modifier
-        .titleBarHitTestHandler(taoWindow)
-        .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
-            // Suppress the double-click → toggle-maximize gesture while the
-            // window is fullscreen. On macOS `[NSWindow zoom:]` exits
-            // fullscreen, so without this guard a double-click anywhere in
-            // the title bar would unexpectedly leave fullscreen — and with
-            // `[setMovable:NO]` AppKit no longer handles that itself.
-            if (currentState.isFullscreen) return@onPointerEvent
-            if (
-                this.currentEvent.button == PointerButton.Primary &&
-                this.currentEvent.changes.any { !it.isConsumed }
-            ) {
-                val now = System.currentTimeMillis()
-                if (now - lastPress in
-                    viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+    val rootModifier =
+        modifier
+            .titleBarHitTestHandler(taoWindow)
+            .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
+                // Suppress the double-click → toggle-maximize gesture while the
+                // window is fullscreen. On macOS `[NSWindow zoom:]` exits
+                // fullscreen, so without this guard a double-click anywhere in
+                // the title bar would unexpectedly leave fullscreen — and with
+                // `[setMovable:NO]` AppKit no longer handles that itself.
+                if (currentState.isFullscreen) return@onPointerEvent
+                if (
+                    this.currentEvent.button == PointerButton.Primary &&
+                    this.currentEvent.changes.any { !it.isConsumed }
                 ) {
-                    taoWindow.setMaximized(!taoWindow.isMaximized)
+                    val now = System.currentTimeMillis()
+                    if (now - lastPress in
+                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                    ) {
+                        taoWindow.setMaximized(!taoWindow.isMaximized)
+                    }
+                    lastPress = now
                 }
-                lastPress = now
             }
-        }
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
-    val useOverlay = newFullscreenControls &&
-        currentState.isFullscreen &&
-        Platform.Current == Platform.Windows &&
-        overlayHolder != null
+    val useOverlay =
+        newFullscreenControls &&
+            currentState.isFullscreen &&
+            Platform.Current == Platform.Windows &&
+            overlayHolder != null
 
     val titleBarRendering: @Composable () -> Unit = {
         GenericTitleBarImpl(
@@ -192,21 +194,23 @@ fun DecoratedWindowScope.TitleBar(
                 // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
                 // ahead of `content()`.
                 when (Platform.Current) {
-                    Platform.Linux -> if (linuxLayout != null) {
-                        WindowControlsLinux(
+                    Platform.Linux ->
+                        if (linuxLayout != null) {
+                            WindowControlsLinux(
+                                win = taoWindow,
+                                state = titleBarState,
+                                isResizable = taoWindow.isResizable,
+                                layout = linuxLayout,
+                            )
+                        }
+                    Platform.Windows ->
+                        WindowControlsWindows(
                             win = taoWindow,
                             state = titleBarState,
-                            isResizable = taoWindow.isResizable,
-                            layout = linuxLayout,
+                            modifier = Modifier.align(Alignment.End),
+                            isFullscreen = titleBarState.isFullscreen,
+                            onExitFullscreen = { taoWindow.setFullscreen(false) },
                         )
-                    }
-                    Platform.Windows -> WindowControlsWindows(
-                        win = taoWindow,
-                        state = titleBarState,
-                        modifier = Modifier.align(Alignment.End),
-                        isFullscreen = titleBarState.isFullscreen,
-                        onExitFullscreen = { taoWindow.setFullscreen(false) },
-                    )
                     else -> Unit // macOS uses native AppKit traffic-lights
                 }
 
@@ -265,11 +269,12 @@ internal fun titleBarPadding(
 ): PaddingValues =
     when (Platform.Current) {
         Platform.MacOS -> {
-            val inset = if (isFullscreen) {
-                MAC_FULLSCREEN_BUTTONS_INSET
-            } else {
-                macTrafficLightInset(measuredHeight)
-            }
+            val inset =
+                if (isFullscreen) {
+                    MAC_FULLSCREEN_BUTTONS_INSET
+                } else {
+                    macTrafficLightInset(measuredHeight)
+                }
             if (controlIsRtl) PaddingValues(end = inset) else PaddingValues(start = inset)
         }
         Platform.Linux -> {
@@ -307,7 +312,7 @@ private fun macTrafficLightInset(height: Dp): Dp {
 // `nativeConfigureChrome`, so clicks in the title bar reach Compose
 // undisturbed. The native side defers `performWindowDragWithEvent:` via
 // `dispatch_async`, mirroring JNI exactly.
-private fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
+internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
     pointerInput(window) {
         val ctx = currentCoroutineContext()
         awaitPointerEventScope {
