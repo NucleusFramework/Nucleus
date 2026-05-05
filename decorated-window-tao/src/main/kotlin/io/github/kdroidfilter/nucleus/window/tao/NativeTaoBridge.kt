@@ -167,6 +167,29 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
+    /**
+     * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
+     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
+     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
+     * [ownerHandle] to clear the relationship.
+     */
+    @JvmStatic
+    external fun nativeLinuxSetDialogOwner(
+        childHandle: Long,
+        ownerHandle: Long,
+    )
+
+    /**
+     * Linux only: returns `[x, y, width, height]` of the window's outer
+     * (decoration-inclusive) bounds in physical pixels with a top-left origin.
+     * Matches the shape returned by the Windows / macOS counterparts so the
+     * centring math in `DecoratedDialog` stays portable. Returns `null` when
+     * the geometry isn't yet resolvable.
+     */
+    @JvmStatic
+    external fun nativeLinuxGetWindowRect(handle: Long): LongArray?
+
     /** Synchronous — must be called on the macOS main thread during a press. */
     @JvmStatic
     external fun nativeDragWindow(handle: Long)

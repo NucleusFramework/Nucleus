@@ -23,11 +23,12 @@ import io.github.kdroidfilter.nucleus.window.DecoratedDialogState
  * Same parameter set and rendering pipeline as the AWT-based backends:
  * non-resizable by default, close-only chrome via [DialogTitleBar].
  *
- * On Windows and macOS the dialog establishes a native owner relationship
+ * On every platform the dialog establishes a native owner relationship
  * with the enclosing [DecoratedWindow] — `SetWindowLongPtrW(GWLP_HWNDPARENT)`
- * on Win32, `[NSWindow addChildWindow:ordered:]` on AppKit. The dialog sits
- * above its owner in z-order, follows it across minimisation / Spaces, stays
- * out of the taskbar, and disappears with it. The parent is **not** disabled
+ * on Win32, `[NSWindow addChildWindow:ordered:]` on AppKit, and
+ * `gtk_window_set_transient_for` on Linux/GTK. The dialog sits above its
+ * owner in z-order, follows it across minimisation / Spaces / workspace
+ * switches, stays out of the taskbar, and disappears with it. The parent is **not** disabled
  * — that matches `decorated-window-jni` (its `JDialog` is not
  * `APPLICATION_MODAL`) and avoids losing the parent's keyboard focus across
  * the dialog lifetime. The parent is captured from [LocalTaoWindow] at the
@@ -73,22 +74,29 @@ fun ApplicationScope.DecoratedDialog(
     // native bridge centres atomically right before `addChildWindow:` to
     // avoid the flash, so we don't pre-compute a position here.
     val autoCenterRequested = state.position !is WindowPosition.Absolute
-    val initialPosition = remember(parent) {
-        val explicit = state.position
-        if (explicit is WindowPosition.Absolute) return@remember explicit
-        if (Platform.Current != Platform.Windows) return@remember explicit
-        val centered = centerOnParentWindows(parent, state.size.width.value, state.size.height.value)
-            ?: return@remember explicit
-        state.position = centered
-        centered
-    }
+    val initialPosition =
+        remember(parent) {
+            val explicit = state.position
+            if (explicit is WindowPosition.Absolute) return@remember explicit
+            val centered =
+                when (Platform.Current) {
+                    Platform.Windows ->
+                        centerOnParentWindows(parent, state.size.width.value, state.size.height.value)
+                    Platform.Linux ->
+                        centerOnParentLinux(parent, state.size.width.value, state.size.height.value)
+                    else -> null
+                } ?: return@remember explicit
+            state.position = centered
+            centered
+        }
 
     // DialogState only carries size + position; reuse the WindowState plumbing
     // of DecoratedWindow underneath and forward changes both ways.
-    val windowState = rememberWindowState(
-        size = state.size,
-        position = initialPosition,
-    )
+    val windowState =
+        rememberWindowState(
+            size = state.size,
+            position = initialPosition,
+        )
 
     DecoratedWindow(
         onCloseRequest = {
@@ -113,13 +121,14 @@ fun ApplicationScope.DecoratedDialog(
         onKeyEvent = onKeyEvent,
         content = {
             val windowScope = this
-            val dialogScope = remember(windowScope) {
-                object : TaoDecoratedDialogScope, ColumnScope by windowScope {
-                    override val window: TaoWindow = windowScope.window
-                    override val state: DecoratedDialogState
-                        get() = DecoratedDialogState.of(active = windowScope.state.isActive)
+            val dialogScope =
+                remember(windowScope) {
+                    object : TaoDecoratedDialogScope, ColumnScope by windowScope {
+                        override val window: TaoWindow = windowScope.window
+                        override val state: DecoratedDialogState
+                            get() = DecoratedDialogState.of(active = windowScope.state.isActive)
+                    }
                 }
-            }
 
             // Native owner relationship. Runs inside the dialog's composition,
             // so `windowScope.window` is the dialog's TaoWindow and its HWND
@@ -176,7 +185,7 @@ fun ApplicationScope.DecoratedDialog(
  * before `addChildWindow:` makes it appear, avoiding a one-frame flash at
  * Tao's default origin.
  *
- * No-op on Linux or when the bridge / parent is unavailable.
+ * No-op when the relevant bridge or the parent is unavailable.
  */
 private fun applyDialogOwnerRelationship(
     dialog: TaoWindow,
@@ -199,6 +208,15 @@ private fun applyDialogOwnerRelationship(
             val parentView = parent.nativeHandle
             if (dialogView == 0L || parentView == 0L) return
             NativeTaoMacOsDecoBridge.nativeSetOwner(dialogView, parentView, autoCenter)
+        }
+        Platform.Linux -> {
+            // GTK route: `gtk_window_set_transient_for` covers z-order /
+            // minimisation / focus return; `skip_taskbar_hint` and
+            // `destroy_with_parent` round out the JDialog semantics. The
+            // actual centring is already done synchronously on the JVM side
+            // (see [centerOnParentLinux]) before the dialog window is shown,
+            // so we don't need a native pre-position step like macOS.
+            NativeTaoBridge.nativeLinuxSetDialogOwner(dialog.handle, parent.handle)
         }
         else -> Unit
     }
@@ -225,6 +243,39 @@ private fun centerOnParentWindows(
     val hwnd = parent.nativeHandle
     if (hwnd == 0L) return null
     val parentRectPhys = NativeTaoWindowsDecoBridge.nativeGetWindowRect(hwnd) ?: return null
+
+    val scaleMilli = NativeTaoBridge.nativeScaleFactor(parent.handle).coerceAtLeast(1)
+    val scale = scaleMilli / 1000.0
+
+    val parentXDp = parentRectPhys[0] / scale
+    val parentYDp = parentRectPhys[1] / scale
+    val parentWDp = parentRectPhys[2] / scale
+    val parentHDp = parentRectPhys[3] / scale
+
+    val cx = (parentXDp + (parentWDp - dialogWidthDp) / 2.0).toFloat()
+    val cy = (parentYDp + (parentHDp - dialogHeightDp) / 2.0).toFloat()
+    return WindowPosition.Absolute(cx.dp, cy.dp)
+}
+
+/**
+ * Linux counterpart of [centerOnParentWindows]. Pulls the parent's outer rect
+ * via the GTK-backed `nativeLinuxGetWindowRect` and converts physical → logical
+ * pixels using the parent's own scale factor. Returns `null` when the parent
+ * isn't realised yet, in which case Tao keeps its default origin.
+ *
+ * Centring on the JVM side (rather than via `gtk_window_set_position(
+ * CENTER_ON_PARENT)`) keeps the contract symmetric with Windows and
+ * macOS — `DecoratedDialog` plumbs the resolved [WindowPosition.Absolute]
+ * through the standard `WindowState` pipeline so the LE position effect fires
+ * with the centred coords *before* the window is shown.
+ */
+private fun centerOnParentLinux(
+    parent: TaoWindow?,
+    dialogWidthDp: Float,
+    dialogHeightDp: Float,
+): WindowPosition.Absolute? {
+    if (parent == null) return null
+    val parentRectPhys = NativeTaoBridge.nativeLinuxGetWindowRect(parent.handle) ?: return null
 
     val scaleMilli = NativeTaoBridge.nativeScaleFactor(parent.handle).coerceAtLeast(1)
     val scale = scaleMilli / 1000.0
