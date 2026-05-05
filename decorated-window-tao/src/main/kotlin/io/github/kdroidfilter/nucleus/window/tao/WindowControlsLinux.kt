@@ -54,6 +54,8 @@ internal fun TitleBarScope.WindowControlsLinux(
     state: DecoratedWindowState,
     isResizable: Boolean,
     layout: LinuxButtonLayout = rememberLinuxButtonLayout(),
+    isFullscreen: Boolean = false,
+    onExitFullscreen: (() -> Unit)? = null,
 ) {
     val icons = linuxTitleBarIcons()
     val buttonAlignment = if (layout.controlsOnRight) Alignment.End else Alignment.Start
@@ -80,6 +82,18 @@ internal fun TitleBarScope.WindowControlsLinux(
                 )
             }
             LinuxTitleBarButton.MAXIMIZE -> {
+                if (isFullscreen && onExitFullscreen != null) {
+                    LinuxControlButton(
+                        onClick = onExitFullscreen,
+                        state = state,
+                        icon = icons.maximize,
+                        iconHover = icons.maximizeHover,
+                        iconPressed = icons.maximizePressed,
+                        contentDescription = "Exit fullscreen",
+                        alignment = buttonAlignment,
+                    )
+                    continue
+                }
                 if (!isResizable) continue
                 if (state.isMaximized) {
                     LinuxControlButton(

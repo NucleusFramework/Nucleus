@@ -161,7 +161,7 @@ fun DecoratedWindowScope.TitleBar(
     val useOverlay =
         newFullscreenControls &&
             currentState.isFullscreen &&
-            Platform.Current == Platform.Windows &&
+            (Platform.Current == Platform.Windows || Platform.Current == Platform.Linux) &&
             overlayHolder != null
 
     val titleBarRendering: @Composable () -> Unit = {
@@ -201,6 +201,8 @@ fun DecoratedWindowScope.TitleBar(
                                 state = titleBarState,
                                 isResizable = taoWindow.isResizable,
                                 layout = linuxLayout,
+                                isFullscreen = titleBarState.isFullscreen,
+                                onExitFullscreen = { taoWindow.setFullscreen(false) },
                             )
                         }
                     Platform.Windows ->

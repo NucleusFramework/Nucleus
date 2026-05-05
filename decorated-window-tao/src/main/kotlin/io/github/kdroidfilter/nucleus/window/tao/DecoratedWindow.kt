@@ -285,6 +285,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
         }
     }
 
+    val fullscreenHolder = FullscreenTitleBarHolder()
+
     val linuxDe = LinuxDesktopEnvironment.Current
     window.onWindowReady { w, h ->
         host.attach()
@@ -297,6 +299,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
                 // loop). See [TaoLinuxUriHandler].
@@ -308,8 +311,14 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                     gnomeCornerArc = 24f,
                     kdeCornerArc = 10f,
                 )
-                Column(modifier = Modifier.fillMaxSize().then(border)) {
-                    scopeFactory().content()
+                FullscreenOverlayHost(
+                    holder = fullscreenHolder,
+                    isFullscreen = stateHolder.value.isFullscreen,
+                    modifier = Modifier.fillMaxSize().then(border),
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        scopeFactory().content()
+                    }
                 }
             }
         }
