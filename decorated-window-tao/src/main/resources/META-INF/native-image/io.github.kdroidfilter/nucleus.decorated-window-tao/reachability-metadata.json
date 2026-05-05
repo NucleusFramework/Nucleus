@@ -52,6 +52,17 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onTouchInput",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "long",
+                        "int",
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },
@@ -86,6 +97,17 @@
                         "long",
                         "int",
                         "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onTouchInput",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "long",
                         "int",
                         "int",
                         "int"

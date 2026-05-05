@@ -101,26 +101,34 @@ pub(crate) const TRACKPAD_PHASE_CANCELLED: jint = 3;
 // Magnify deltas are small floats (≈0.01..0.5 per event); rotate deltas are
 // degrees. A 10 000× fixed scale keeps four decimal places and stays in i32
 // range for any plausible cumulative gesture magnitude.
+#[allow(dead_code)]
 pub(crate) const TRACKPAD_VALUE_FIXED_SCALE: f64 = 10_000.0;
 
-// ── Touch event wire encoding (Linux only — Windows + macOS go via Tao) ──
+// ── Touch event wire encoding ─────────────────────────────────────────────
 //
-// Linux touchscreen events are intercepted by `platform/linux/touch.rs` from
-// GTK 3 (`GdkEventTouch`) and forwarded through a per-window callback. The
-// dispatch sends the *full* set of currently-down pointers on every event so
-// the JVM side can call `ComposeScene.sendPointerEvent` with a `pointers`
-// list — Compose treats absence as release. `pressed_mask` carries one bit
-// per pointer so the released-this-event finger can be reported with
-// `pressed=false` while still being present in the array.
+// On Linux, touchscreen events are intercepted by `platform/linux/touch.rs`
+// from GTK 3 (`GdkEventTouch`) and forwarded through a per-window callback
+// that sends the *full* set of currently-down pointers on every event.
+//
+// On Windows, Tao itself emits `WindowEvent::Touch` (via WM_POINTER /
+// WM_TOUCH — `RegisterTouchWindow` is enabled by default in Tao 0.35), so
+// we dispatch one *per-finger* event through `dispatch_touch_input` and let
+// the JVM side aggregate the active set before calling `sendPointerEvent`.
+// `phase` uses the same constants as the Linux multi-finger path so the
+// JVM-side enum (`TaoTouchEvent`) is shared.
 
-#[allow(dead_code)]
 pub(crate) const TOUCH_EVENT_PRESS:   jint = 0;
-#[allow(dead_code)]
 pub(crate) const TOUCH_EVENT_MOVE:    jint = 1;
-#[allow(dead_code)]
 pub(crate) const TOUCH_EVENT_RELEASE: jint = 2;
-#[allow(dead_code)]
 pub(crate) const TOUCH_EVENT_CANCEL:  jint = 3;
+
+// Force is reported as a unit-interval value [0.0, 1.0] when the platform
+// supports it (Windows 8+ via WM_POINTER's pressure field), or `-1` when
+// unknown (no pressure-capable digitizer). Fixed scale × 10 000 keeps four
+// decimal places — same convention as `TRACKPAD_VALUE_FIXED_SCALE`.
+pub(crate) const TOUCH_FORCE_FIXED_SCALE: f64 = 10_000.0;
+#[allow(dead_code)]
+pub(crate) const TOUCH_FORCE_UNKNOWN: jint = -1;
 
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
@@ -254,6 +262,42 @@ pub(crate) fn dispatch_trackpad_gesture(
             JValue::Int(x_fixed),
             JValue::Int(y_fixed),
             JValue::Int(value_fixed),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+/// Per-finger touch dispatch. Fired from the Tao event loop on Windows for
+/// every `WindowEvent::Touch`. The JVM side aggregates the active pointer
+/// set; we keep no state on the Rust side so a finger id is forwarded
+/// verbatim — Tao's contract guarantees a fresh id stream after `Ended`.
+#[allow(clippy::too_many_arguments, dead_code)]
+pub(crate) fn dispatch_touch_input(
+    handle: u64,
+    phase: jint,
+    id: u64,
+    x_fixed: jint,
+    y_fixed: jint,
+    force_fixed: jint,
+) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
+    let Some(callback) = guard.as_ref() else { return };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onTouchInput",
+        "(JIJIII)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(phase),
+            JValue::Long(id as jlong),
+            JValue::Int(x_fixed),
+            JValue::Int(y_fixed),
+            JValue::Int(force_fixed),
         ],
     );
     if env.exception_check().unwrap_or(false) {

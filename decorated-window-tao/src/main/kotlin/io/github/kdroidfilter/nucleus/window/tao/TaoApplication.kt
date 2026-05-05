@@ -107,5 +107,16 @@ object TaoApplication {
         ) {
             lookup(handle)?.dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed)
         }
+
+        override fun onTouchInput(
+            handle: Long,
+            phase: Int,
+            id: Long,
+            xFixed: Int,
+            yFixed: Int,
+            forceFixed: Int,
+        ) {
+            lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed)
+        }
     }
 }
