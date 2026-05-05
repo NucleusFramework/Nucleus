@@ -261,6 +261,7 @@ private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
                         enabledBlobs = enabledBlobs,
                     )
                     Tab.Scroll -> ScrollTab(modifier = Modifier.fillMaxSize())
+                    Tab.Zoom -> ZoomTab(modifier = Modifier.fillMaxSize())
                     Tab.Actions -> ActionsTab(
                         modifier = Modifier.fillMaxSize(),
                         window = taoWindow,

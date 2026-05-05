@@ -105,6 +105,14 @@ internal fun ApplicationScope.openDecoratedWindow(
     host.previewKeyHandler = onPreviewKeyEvent
     host.keyHandler = onKeyEvent
 
+    // Trackpad pinch / rotate / smart-magnify, intercepted before AppKit
+    // dispatches them down the responder chain (Tao 0.35 doesn't surface
+    // these events). Synthesised as two-finger Touch pointers in the host
+    // so cross-platform `detectTransformGestures` reacts uniformly.
+    window.onTrackpadGesture { kind, phase, x, y, value ->
+        if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
+    }
+
     // ── macOS accessibility ────────────────────────────────────────────────
     // Spin up the per-window NSAccessibility projection. The observer hooks
     // into Compose's SemanticsOwnerListener and pushes a flat snapshot to

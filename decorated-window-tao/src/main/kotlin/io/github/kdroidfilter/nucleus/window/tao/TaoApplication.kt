@@ -96,5 +96,16 @@ object TaoApplication {
         ) {
             lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint)
         }
+
+        override fun onTrackpadGesture(
+            handle: Long,
+            kind: Int,
+            phase: Int,
+            xFixed: Int,
+            yFixed: Int,
+            valueFixed: Int,
+        ) {
+            lookup(handle)?.dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed)
+        }
     }
 }

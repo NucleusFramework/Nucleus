@@ -41,6 +41,17 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onTrackpadGesture",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },
@@ -60,6 +71,17 @@
                 },
                 {
                     "name": "onKeyEvent",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onTrackpadGesture",
                     "parameterTypes": [
                         "long",
                         "int",

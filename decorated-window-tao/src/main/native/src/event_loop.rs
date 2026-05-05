@@ -72,6 +72,10 @@ pub(crate) fn run_event_loop_blocking() {
         crate::platform::macos::ffi::nucleus_tao_install_cmd_q_handler();
         crate::platform::macos::ffi::nucleus_tao_enable_press_and_hold();
         crate::platform::macos::ffi::nucleus_tao_install_drag_monitor();
+        crate::platform::macos::ffi::nucleus_tao_register_trackpad_gesture_callback(
+            crate::platform::macos::trackpad_gesture_callback,
+        );
+        crate::platform::macos::ffi::nucleus_tao_install_trackpad_gesture_monitor();
     }
 
     event_loop.run(move |event, target, control_flow| {

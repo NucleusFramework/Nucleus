@@ -77,6 +77,32 @@ pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
 // Sub-pixel precision through the JNI int payload.
 pub(crate) const SCROLL_FIXED_SCALE: f64 = 100.0;
 
+// Trackpad gesture wire encoding (macOS only). The Rust dispatcher forwards
+// these values verbatim from `macos/touchpad_gestures.m` to the JVM, where
+// `TaoTrackpadGesture` / `TaoTrackpadPhase` decode them. The constants are
+// kept here for documentation; `#[allow(dead_code)]` because the Rust path
+// never matches against them — only the C side and Kotlin side do.
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_GESTURE_MAGNIFY: jint = 0;
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_GESTURE_ROTATE: jint = 1;
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_GESTURE_SMART_MAGNIFY: jint = 2;
+
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_PHASE_BEGAN: jint = 0;
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_PHASE_CHANGED: jint = 1;
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_PHASE_ENDED: jint = 2;
+#[allow(dead_code)]
+pub(crate) const TRACKPAD_PHASE_CANCELLED: jint = 3;
+
+// Magnify deltas are small floats (≈0.01..0.5 per event); rotate deltas are
+// degrees. A 10 000× fixed scale keeps four decimal places and stays in i32
+// range for any plausible cumulative gesture magnitude.
+pub(crate) const TRACKPAD_VALUE_FIXED_SCALE: f64 = 10_000.0;
+
 pub(crate) const MOUSE_BUTTON_LEFT: jint = 0;
 pub(crate) const MOUSE_BUTTON_RIGHT: jint = 1;
 pub(crate) const MOUSE_BUTTON_MIDDLE: jint = 2;
@@ -177,6 +203,38 @@ pub(crate) fn dispatch_key(
             JValue::Int(location),
             JValue::Int(modifiers),
             JValue::Int(code_point),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn dispatch_trackpad_gesture(
+    handle: u64,
+    kind: jint,
+    phase: jint,
+    x_fixed: jint,
+    y_fixed: jint,
+    value_fixed: jint,
+) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else { return };
+    let Some(callback) = guard.as_ref() else { return };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else { return };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onTrackpadGesture",
+        "(JIIIII)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(kind),
+            JValue::Int(phase),
+            JValue::Int(x_fixed),
+            JValue::Int(y_fixed),
+            JValue::Int(value_fixed),
         ],
     );
     if env.exception_check().unwrap_or(false) {

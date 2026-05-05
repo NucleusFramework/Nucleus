@@ -44,7 +44,23 @@ class TaoWindow internal constructor(
     private var pointerExitedListener: (() -> Unit)? = null
     private var pointerButtonListener: ((Int, Boolean) -> Unit)? = null
     private var pointerScrollListener: ((dxAwt: Float, dyAwt: Float) -> Unit)? = null
+    private var trackpadGestureListener: TrackpadGestureListener? = null
     private var keyListener: KeyEventListener? = null
+
+    /**
+     * macOS-only trackpad gesture listener. Receives raw magnify / rotate /
+     * smart-magnify deltas already reshaped by the Rust bridge — see
+     * [NativeTaoBridge.EventCallback.onTrackpadGesture] for the wire format.
+     */
+    fun interface TrackpadGestureListener {
+        fun onGesture(
+            kind: Int,         // TaoTrackpadGesture.MAGNIFY | ROTATE | SMART_MAGNIFY
+            phase: Int,        // TaoTrackpadPhase.BEGAN | CHANGED | ENDED | CANCELLED
+            xFixed: Int,       // physical pixels × 1024, view-relative, top-left
+            yFixed: Int,
+            valueFixed: Int,   // delta × 10000 (ratio for magnify, degrees for rotate)
+        )
+    }
 
     /** Receives keyboard events shaped like AWT for direct consumption by Compose. */
     fun interface KeyEventListener {
@@ -258,6 +274,21 @@ class TaoWindow internal constructor(
 
     fun onKeyEvent(listener: KeyEventListener) {
         keyListener = listener
+    }
+
+    /** macOS only — see [TrackpadGestureListener]. No-op on Windows / Linux. */
+    fun onTrackpadGesture(listener: TrackpadGestureListener) {
+        trackpadGestureListener = listener
+    }
+
+    internal fun dispatchTrackpadGesture(
+        kind: Int,
+        phase: Int,
+        xFixed: Int,
+        yFixed: Int,
+        valueFixed: Int,
+    ) {
+        trackpadGestureListener?.onGesture(kind, phase, xFixed, yFixed, valueFixed)
     }
 
     internal fun dispatchKey(

@@ -50,6 +50,32 @@ internal object NativeTaoBridge {
             modifiers: Int,
             codePoint: Int,
         )
+
+        /**
+         * macOS-only trackpad gesture callback (pinch / rotate / smart-magnify).
+         * Tao does not expose these natively, so they are intercepted via an
+         * NSEvent local monitor in `macos/touchpad_gestures.m` and forwarded
+         * here through Rust's `dispatch_trackpad_gesture` helper.
+         *
+         * [kind] is [TaoTrackpadGesture.MAGNIFY] / [ROTATE] / [SMART_MAGNIFY].
+         * [phase] is [TaoTrackpadPhase.BEGAN] / [CHANGED] / [ENDED] / [CANCELLED]
+         * (smart-magnify is a one-shot reported as [CHANGED]).
+         * [xFixed]/[yFixed] are physical pixels × 1024 (matches CursorMoved).
+         * [valueFixed] is the per-event delta × 10 000 — magnification ratio
+         * for [MAGNIFY], degrees for [ROTATE], 0 for [SMART_MAGNIFY].
+         *
+         * Default implementation no-ops so non-macOS callers can ignore it.
+         */
+        @Suppress("LongParameterList", "FunctionParameterNaming")
+        fun onTrackpadGesture(
+            handle: Long,
+            kind: Int,
+            phase: Int,
+            xFixed: Int,
+            yFixed: Int,
+            valueFixed: Int,
+        ) {
+        }
     }
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
@@ -594,6 +620,23 @@ object TaoEventCode {
 
     /** `a`/`b` carry `x`/`y` in physical pixels. */
     const val MOVED: Int = 21
+}
+
+/** Trackpad gesture kind reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
+@Suppress("MagicNumber")
+object TaoTrackpadGesture {
+    const val MAGNIFY: Int = 0
+    const val ROTATE: Int = 1
+    const val SMART_MAGNIFY: Int = 2
+}
+
+/** Trackpad gesture phase reported by [NativeTaoBridge.EventCallback.onTrackpadGesture]. */
+@Suppress("MagicNumber")
+object TaoTrackpadPhase {
+    const val BEGAN: Int = 0
+    const val CHANGED: Int = 1
+    const val ENDED: Int = 2
+    const val CANCELLED: Int = 3
 }
 
 /** Modifier-state bitmask that mirrors the Rust side. */

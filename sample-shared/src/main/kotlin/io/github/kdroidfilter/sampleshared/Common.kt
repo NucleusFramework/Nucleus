@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 enum class Tab(val label: String) {
     Demo("Demo"),
     Scroll("Scroll"),
+    Zoom("Zoom"),
     Actions("Window actions"),
     A11y("A11y"),
     Complex("Complex"),

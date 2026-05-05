@@ -38,4 +38,15 @@ extern "C" {
     pub(crate) fn nucleus_tao_a11y_note_pushed();
     pub(crate) fn nucleus_tao_install_drag_monitor();
     pub(crate) fn nucleus_tao_start_window_drag(ns_window_ptr: i64);
+    pub(crate) fn nucleus_tao_register_trackpad_gesture_callback(
+        cb: extern "C" fn(
+            ns_window_ptr: i64,
+            kind: i32,
+            phase: i32,
+            x_px: f64,
+            y_px: f64,
+            value: f64,
+        ),
+    );
+    pub(crate) fn nucleus_tao_install_trackpad_gesture_monitor();
 }

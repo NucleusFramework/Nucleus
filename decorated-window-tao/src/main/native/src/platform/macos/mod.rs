@@ -18,5 +18,7 @@ pub(crate) mod handles;
 pub(crate) mod ime;
 pub(crate) mod main_thread;
 pub(crate) mod text_overlay;
+pub(crate) mod trackpad;
 
 pub(crate) use main_thread::{dispatch_run_event_loop_on_main, is_main_thread};
+pub(crate) use trackpad::trackpad_gesture_callback;
