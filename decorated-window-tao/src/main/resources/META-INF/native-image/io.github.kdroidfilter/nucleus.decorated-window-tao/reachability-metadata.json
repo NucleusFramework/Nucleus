@@ -107,6 +107,10 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDecoBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoEglBridge",
             "jniAccessible": true
         },

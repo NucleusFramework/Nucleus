@@ -106,7 +106,35 @@ clang -arch x86_64 "${DND_FLAGS[@]}" \
     -o "$OUT_DIR_X64/libnucleus_tao_dnd.dylib" "$DND_SRC"
 strip -x "$OUT_DIR_X64/libnucleus_tao_dnd.dylib"
 
-# ── 4) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
+# ── 4) Objective-C decoration helper (libnucleus_tao_macos_deco.dylib) ──────
+# JNI exports for the addChildWindow / NSScreen lookups used by DecoratedDialog.
+# Mirrors `windows/nucleus_tao_windows_deco.dll`. Shipped as its own dylib so
+# the JNI symbols survive the Rust crate's release-mode `strip = "symbols"`.
+
+DECO_SRC="$SCRIPT_DIR/decoration.m"
+DECO_FLAGS=(
+    -dynamiclib
+    -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"
+    -framework Cocoa
+    -framework AppKit
+    -mmacosx-version-min=10.15
+    -fobjc-arc
+    -Oz
+    -flto
+    -fvisibility=hidden
+    -Wl,-dead_strip
+    -Wl,-x
+)
+
+clang -arch arm64 "${DECO_FLAGS[@]}" \
+    -o "$OUT_DIR_ARM64/libnucleus_tao_macos_deco.dylib" "$DECO_SRC"
+strip -x "$OUT_DIR_ARM64/libnucleus_tao_macos_deco.dylib"
+
+clang -arch x86_64 "${DECO_FLAGS[@]}" \
+    -o "$OUT_DIR_X64/libnucleus_tao_macos_deco.dylib" "$DECO_SRC"
+strip -x "$OUT_DIR_X64/libnucleus_tao_macos_deco.dylib"
+
+# ── 5) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
 # NativeLibraryLoader uses the platform-standard cache directory, which is
 # `~/Library/Caches/nucleus/native` on macOS (not `~/.cache/...` à la Linux).
 
@@ -118,5 +146,5 @@ for CACHE_DIR in "$HOME/Library/Caches/nucleus/native" "$HOME/.cache/nucleus/nat
 done
 
 echo "Built per-architecture dylibs:"
-ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib}
-ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib}
+ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib}
+ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib}
