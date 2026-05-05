@@ -87,6 +87,15 @@ internal class TaoComposeSceneHost(
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
+    // ARGB clear color for the Skia surface. Defaults to opaque white to
+    // preserve the AWT/Compose-Desktop look, but the TitleBar composable
+    // updates it to the resolved title-bar background so any Compose region
+    // without an explicit background — most visibly the gap above the
+    // offsetted title bar during the macOS fullscreen menu-bar slide-in —
+    // matches the chrome color rather than flashing white.
+    val clearColorArgbState: androidx.compose.runtime.MutableState<Int> =
+        androidx.compose.runtime.mutableStateOf(0xFFFFFFFF.toInt())
+
     /**
      * App-level pre-dispatch hook. Receives every Compose [KeyEvent] before it
      * reaches the scene; returning `true` consumes the event and prevents
@@ -486,10 +495,12 @@ internal class TaoComposeSceneHost(
             try {
                 // CAMetalLayer drawables are not auto-cleared between frames; an
                 // uninitialised texture on Apple Silicon shows up as undefined
-                // memory (often magenta-ish). Clear to opaque white so any
-                // Compose region without an explicit background looks like a
-                // standard AWT/Compose-Desktop window.
-                surface.canvas.clear(0xFFFFFFFF.toInt())
+                // memory (often magenta-ish). Clear to the title-bar background
+                // (pushed in by TitleBar) so any Compose region without an
+                // explicit background — most visibly the gap above the offset
+                // title bar during the fullscreen menu-bar slide-in — matches
+                // the chrome color rather than flashing white.
+                surface.canvas.clear(clearColorArgbState.value)
                 val nanoTime = System.nanoTime()
                 sc.render(surface.canvas.asComposeCanvas(), nanoTime)
                 surface.flushAndSubmit(syncCpu = false)

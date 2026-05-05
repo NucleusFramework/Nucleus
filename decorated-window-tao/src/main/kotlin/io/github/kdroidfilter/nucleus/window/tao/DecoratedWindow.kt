@@ -34,6 +34,16 @@ internal val LocalRequestedTitleBarHeight = staticCompositionLocalOf<androidx.co
 }
 
 /**
+ * Holds the ARGB clear color the Skia render loop applies to each frame,
+ * pushed in by the `TitleBar` composable from the resolved title-bar
+ * background. macOS-only: Linux/Windows hosts ignore it (they have native
+ * window chrome with proper backgrounds). Defaults to opaque white via
+ * [TaoComposeSceneHost.clearColorArgbState] when no TitleBar is mounted.
+ */
+internal val LocalRequestedClearColor =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
+
+/**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
  * descendant composable. Mirrors `androidx.compose.ui.window.LocalWindow` from
  * Compose Desktop, but for Tao-owned windows. Returns `null` outside of a
@@ -173,6 +183,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalRequestedClearColor provides host.clearColorArgbState,
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
