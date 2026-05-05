@@ -20,7 +20,7 @@ use std::ffi::c_void;
 
 use crate::event_loop::run_event_loop_blocking;
 use crate::platform::macos::ffi::{nucleus_tao_is_main_thread, nucleus_tao_run_on_main_blocking};
-use crate::state::EVENT_LOOP_PROXY;
+use crate::state::send_user_event;
 
 pub(crate) fn is_main_thread() -> bool {
     unsafe { nucleus_tao_is_main_thread() != 0 }
@@ -40,7 +40,5 @@ pub(crate) fn dispatch_run_event_loop_on_main() {
 /// Posts a `UserEvent::Exit` on the running Tao event-loop proxy.
 #[no_mangle]
 pub extern "C" fn nucleus_tao_post_exit() {
-    if let Some(proxy) = EVENT_LOOP_PROXY.get() {
-        let _ = proxy.send_event(crate::events::UserEvent::Exit);
-    }
+    send_user_event(crate::events::UserEvent::Exit);
 }

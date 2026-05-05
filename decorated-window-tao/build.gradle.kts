@@ -74,7 +74,7 @@ val buildNativeLinux by tasks.registering(Exec::class) {
     onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
     inputs.dir(file("src/main/native/src"))
     inputs.file(file("src/main/native/Cargo.toml"))
-    inputs.file(file("src/main/native/linux/nucleus_tao_glx.c"))
+    inputs.file(file("src/main/native/linux/nucleus_tao_egl.c"))
     outputs.dir(outputDir)
     workingDir(file("src/main/native/linux"))
     commandLine("bash", "build.sh")
@@ -103,7 +103,7 @@ mavenPublishing {
         name.set("Nucleus Decorated Window Tao")
         description.set(
             "Experimental no-AWT decorated window backend for Compose Desktop, " +
-                "powered by Tao via direct JNI. macOS only, GraalVM native-image first.",
+                "powered by Tao via direct JNI for macOS, Windows, and Linux.",
         )
         url.set("https://github.com/kdroidFilter/Nucleus")
 

@@ -9,7 +9,7 @@ use jni::sys::{jboolean, jdouble, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use crate::events::UserEvent;
-use crate::state::{EVENT_LOOP_PROXY, JAVA_VM, WINDOWS};
+use crate::state::{clear_event_loop_proxy, send_user_event, JAVA_VM, WINDOWS};
 
 #[no_mangle]
 pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeRunBlocking(
@@ -52,6 +52,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     if let Ok(mut guard) = crate::state::EVENT_CALLBACK.lock() {
         guard.take();
     }
+    clear_event_loop_proxy();
 }
 
 #[no_mangle]
@@ -70,8 +71,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Ok(s) => s.into(),
         Err(_) => return,
     };
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::CreateWindow {
+    send_user_event(UserEvent::CreateWindow {
         handle: handle as u64,
         title,
         width,
@@ -89,8 +89,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     visible: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetVisible {
+    send_user_event(UserEvent::SetVisible {
         handle: handle as u64,
         visible: visible != JNI_FALSE,
     });
@@ -107,8 +106,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Ok(s) => s.into(),
         Err(_) => return,
     };
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetTitle {
+    send_user_event(UserEvent::SetTitle {
         handle: handle as u64,
         title,
     });
@@ -120,8 +118,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _class: JClass,
     handle: jlong,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::RequestRedraw {
+    send_user_event(UserEvent::RequestRedraw {
         handle: handle as u64,
     });
 }
@@ -132,8 +129,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _class: JClass,
     handle: jlong,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::RequestClose {
+    send_user_event(UserEvent::RequestClose {
         handle: handle as u64,
     });
 }
@@ -143,8 +139,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _env: JNIEnv,
     _class: JClass,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::Exit);
+    send_user_event(UserEvent::Exit);
 }
 
 /// Wakes the Tao event loop so a queued `TaoMainDispatcher` block runs on the
@@ -154,8 +149,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _env: JNIEnv,
     _class: JClass,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::Wake);
+    send_user_event(UserEvent::Wake);
 }
 
 /// Brings the window to the foreground and gives it keyboard focus. On Win32
@@ -167,8 +161,9 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     _class: JClass,
     handle: jlong,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::Focus { handle: handle as u64 });
+    send_user_event(UserEvent::Focus {
+        handle: handle as u64,
+    });
 }
 
 #[no_mangle]
@@ -240,9 +235,15 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Ok(g) => g,
         Err(_) => return JNI_FALSE,
     };
-    let Some(map) = guard.as_ref() else { return JNI_FALSE };
+    let Some(map) = guard.as_ref() else {
+        return JNI_FALSE;
+    };
     if let Some(window) = map.get(&(handle as u64)) {
-        if window.is_maximized() { JNI_TRUE } else { JNI_FALSE }
+        if window.is_maximized() {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
     } else {
         JNI_FALSE
     }
@@ -255,8 +256,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     maximized: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetMaximized {
+    send_user_event(UserEvent::SetMaximized {
         handle: handle as u64,
         maximized: maximized != JNI_FALSE,
     });
@@ -269,8 +269,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     minimized: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetMinimized {
+    send_user_event(UserEvent::SetMinimized {
         handle: handle as u64,
         minimized: minimized != JNI_FALSE,
     });
@@ -283,8 +282,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     always_on_top: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetAlwaysOnTop {
+    send_user_event(UserEvent::SetAlwaysOnTop {
         handle: handle as u64,
         always_on_top: always_on_top != JNI_FALSE,
     });
@@ -297,8 +295,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     focusable: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetFocusable {
+    send_user_event(UserEvent::SetFocusable {
         handle: handle as u64,
         focusable: focusable != JNI_FALSE,
     });
@@ -312,8 +309,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     width: jdouble,
     height: jdouble,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetMinInnerSize {
+    send_user_event(UserEvent::SetMinInnerSize {
         handle: handle as u64,
         width,
         height,
@@ -329,7 +325,6 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     height: jint,
     pixels: jni::objects::JByteArray,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
     let buf = if pixels.is_null() || width <= 0 || height <= 0 {
         Vec::new()
     } else {
@@ -338,7 +333,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
             Err(_) => return,
         }
     };
-    let _ = proxy.send_event(UserEvent::SetWindowIcon {
+    send_user_event(UserEvent::SetWindowIcon {
         handle: handle as u64,
         width: width.max(0) as u32,
         height: height.max(0) as u32,
@@ -354,8 +349,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     width: jdouble,
     height: jdouble,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetInnerSize {
+    send_user_event(UserEvent::SetInnerSize {
         handle: handle as u64,
         width,
         height,
@@ -370,8 +364,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     x: jdouble,
     y: jdouble,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetOuterPosition {
+    send_user_event(UserEvent::SetOuterPosition {
         handle: handle as u64,
         x,
         y,
@@ -388,9 +381,15 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Ok(g) => g,
         Err(_) => return JNI_FALSE,
     };
-    let Some(map) = guard.as_ref() else { return JNI_FALSE };
+    let Some(map) = guard.as_ref() else {
+        return JNI_FALSE;
+    };
     if let Some(w) = map.get(&(handle as u64)) {
-        if w.fullscreen().is_some() { JNI_TRUE } else { JNI_FALSE }
+        if w.fullscreen().is_some() {
+            JNI_TRUE
+        } else {
+            JNI_FALSE
+        }
     } else {
         JNI_FALSE
     }
@@ -403,8 +402,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
     handle: jlong,
     fullscreen: jboolean,
 ) {
-    let Some(proxy) = EVENT_LOOP_PROXY.get() else { return };
-    let _ = proxy.send_event(UserEvent::SetFullscreen {
+    send_user_event(UserEvent::SetFullscreen {
         handle: handle as u64,
         fullscreen: fullscreen != JNI_FALSE,
     });
@@ -422,7 +420,11 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
         Ok(g) => g,
         Err(_) => return 1000,
     };
-    let Some(map) = guard.as_ref() else { return 1000 };
-    let Some(window) = map.get(&(handle as u64)) else { return 1000 };
+    let Some(map) = guard.as_ref() else {
+        return 1000;
+    };
+    let Some(window) = map.get(&(handle as u64)) else {
+        return 1000;
+    };
     (window.scale_factor() * 1000.0) as jint
 }

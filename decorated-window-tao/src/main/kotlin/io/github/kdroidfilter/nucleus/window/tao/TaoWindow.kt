@@ -1,13 +1,15 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
  *
- * Methods are thread-safe: they post commands as user events to the event
- * loop, which executes them on the macOS main thread.
+ * Native commands are thread-safe: they post commands as user events to the
+ * event loop, which executes them on the platform event-loop thread. Listener
+ * registration is also safe to call across threads.
  */
 class TaoWindow internal constructor(
     val handle: Long,
@@ -19,15 +21,20 @@ class TaoWindow internal constructor(
      */
     val isResizable: Boolean = true,
 ) {
+    @Volatile
     private var readyListener: ((Int, Int) -> Unit)? = null
     // Multi-cast: the imperative `openDecoratedWindow` registers a listener
     // for host-rendering, and the @Composable `DecoratedWindow` adds another
     // for state-sync. They must coexist.
-    private val resizedListeners = mutableListOf<(Int, Int) -> Unit>()
-    private val movedListeners = mutableListOf<(Int, Int) -> Unit>()
+    private val resizedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
+    private val movedListeners = CopyOnWriteArrayList<(Int, Int) -> Unit>()
+    @Volatile
     private var scaleFactorListener: ((Float) -> Unit)? = null
+    @Volatile
     private var closeRequestedListener: (() -> Unit)? = null
+    @Volatile
     private var destroyedListener: (() -> Unit)? = null
+    @Volatile
     private var redrawListener: (() -> Unit)? = null
     // Coalesces concurrent `requestRedraw` calls into one pending native request:
     // tao on Linux only drains one entry from its `draws` channel per event-loop
@@ -39,12 +46,18 @@ class TaoWindow internal constructor(
     // displaying black. Cleared in `dispatch(REDRAW_REQUESTED)`, just before
     // the listener runs, so a redraw posted *during* render still gets through.
     private val redrawPending = AtomicBoolean(false)
-    private val focusListeners = mutableListOf<(Boolean) -> Unit>()
+    private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+    @Volatile
     private var pointerMoveListener: ((Int, Int) -> Unit)? = null
+    @Volatile
     private var pointerExitedListener: (() -> Unit)? = null
+    @Volatile
     private var pointerButtonListener: ((Int, Boolean) -> Unit)? = null
+    @Volatile
     private var pointerScrollListener: ((dxAwt: Float, dyAwt: Float) -> Unit)? = null
+    @Volatile
     private var trackpadGestureListener: TrackpadGestureListener? = null
+    @Volatile
     private var keyListener: KeyEventListener? = null
 
     /**

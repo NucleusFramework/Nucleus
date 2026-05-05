@@ -1638,7 +1638,8 @@ static void nucleus_tao_install_screen_change_observers(NucleusA11yProjection *p
     if (!window) return;
     if (!proj.observers) proj.observers = [NSMutableArray new];
 
-    void (^handler)(NSNotification *) = ^(NSNotification *_unused) {
+    void (^handler)(NSNotification *) = ^(NSNotification *notification) {
+        (void)notification;
         NSView *liveView = proj.taoView;
         if (liveView && liveView.window) {
             NSAccessibilityPostNotification(liveView,

@@ -11,16 +11,15 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 
 use crate::events::{
-    current_modifier_bits, dispatch, dispatch_key, handle_for, mouse_button_code,
-    pack_modifiers, UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT,
-    EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED,
-    EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
-    EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
-    EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY,
-    SCROLL_FIXED_SCALE,
+    current_modifier_bits, dispatch, dispatch_key, handle_for, mouse_button_code, pack_modifiers,
+    UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
+    EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
+    EVENT_MAIN_EVENTS_CLEARED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED,
+    EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE,
+    EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE,
 };
 use crate::keymap;
-use crate::state::{CURRENT_MODIFIERS, EVENT_LOOP_PROXY, WINDOWS};
+use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 
 #[cfg(target_os = "linux")]
 use crate::platform::linux::cursor::reapply_stored_cursor;
@@ -62,7 +61,7 @@ pub(crate) fn run_event_loop_blocking() {
         builder.with_any_thread(true);
     }
     let event_loop = builder.build();
-    let _ = EVENT_LOOP_PROXY.set(event_loop.create_proxy());
+    set_event_loop_proxy(event_loop.create_proxy());
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
     // local monitors must be added there). Press-and-hold accent picker and
@@ -175,13 +174,17 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::RequestClose { handle } => {
-                    let mut guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_mut() {
-                        if map.remove(&handle).is_some() {
-                            #[cfg(target_os = "linux")]
-                            crate::platform::linux::cursor::forget_cursor(handle);
-                            dispatch(handle, EVENT_DESTROYED, 0, 0);
-                        }
+                    let removed = {
+                        let mut guard = WINDOWS.lock().unwrap();
+                        guard
+                            .as_mut()
+                            .map(|map| map.remove(&handle).is_some())
+                            .unwrap_or(false)
+                    };
+                    if removed {
+                        #[cfg(target_os = "linux")]
+                        crate::platform::linux::cursor::forget_cursor(handle);
+                        dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                 }
                 UserEvent::SetMaximized { handle, maximized } => {
@@ -200,7 +203,10 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::SetAlwaysOnTop { handle, always_on_top } => {
+                UserEvent::SetAlwaysOnTop {
+                    handle,
+                    always_on_top,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
@@ -227,7 +233,11 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::SetMinInnerSize { handle, width, height } => {
+                UserEvent::SetMinInnerSize {
+                    handle,
+                    width,
+                    height,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
@@ -249,7 +259,12 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::SetWindowIcon { handle, width, height, pixels } => {
+                UserEvent::SetWindowIcon {
+                    handle,
+                    width,
+                    height,
+                    pixels,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
@@ -263,7 +278,11 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
-                UserEvent::SetInnerSize { handle, width, height } => {
+                UserEvent::SetInnerSize {
+                    handle,
+                    width,
+                    height,
+                } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
@@ -295,26 +314,55 @@ pub(crate) fn run_event_loop_blocking() {
                     *control_flow = ControlFlow::Exit;
                 }
             },
-            Event::WindowEvent { window_id, event, .. } => {
-                let Some(handle) = handle_for(window_id) else { return };
+            Event::WindowEvent {
+                window_id, event, ..
+            } => {
+                let Some(handle) = handle_for(window_id) else {
+                    return;
+                };
                 match event {
                     WindowEvent::CloseRequested => {
                         dispatch(handle, EVENT_CLOSE_REQUESTED, 0, 0);
                     }
                     WindowEvent::Destroyed => {
+                        let removed = {
+                            let mut guard = WINDOWS.lock().unwrap();
+                            guard
+                                .as_mut()
+                                .map(|map| map.remove(&handle).is_some())
+                                .unwrap_or(false)
+                        };
+                        if removed {
+                            #[cfg(target_os = "linux")]
+                            crate::platform::linux::cursor::forget_cursor(handle);
+                        }
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                     WindowEvent::Resized(size) => {
-                        dispatch(handle, EVENT_RESIZED, size.width as jint, size.height as jint);
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            size.width as jint,
+                            size.height as jint,
+                        );
                     }
                     WindowEvent::Moved(pos) => {
                         dispatch(handle, EVENT_MOVED, pos.x, pos.y);
                     }
                     WindowEvent::ScaleFactorChanged { scale_factor, .. } => {
-                        dispatch(handle, EVENT_SCALE_FACTOR_CHANGED, (scale_factor * 1000.0) as jint, 0);
+                        dispatch(
+                            handle,
+                            EVENT_SCALE_FACTOR_CHANGED,
+                            (scale_factor * 1000.0) as jint,
+                            0,
+                        );
                     }
                     WindowEvent::Focused(focused) => {
-                        let code = if focused { EVENT_FOCUSED } else { EVENT_UNFOCUSED };
+                        let code = if focused {
+                            EVENT_FOCUSED
+                        } else {
+                            EVENT_UNFOCUSED
+                        };
                         dispatch(handle, code, 0, 0);
                     }
                     WindowEvent::CursorMoved { position, .. } => {
@@ -353,9 +401,7 @@ pub(crate) fn run_event_loop_blocking() {
                             MouseScrollDelta::LineDelta(x, y) => {
                                 (EVENT_SCROLL_LINE, x as f64, y as f64)
                             }
-                            MouseScrollDelta::PixelDelta(p) => {
-                                (EVENT_SCROLL_PIXEL, p.x, p.y)
-                            }
+                            MouseScrollDelta::PixelDelta(p) => (EVENT_SCROLL_PIXEL, p.x, p.y),
                             _ => return,
                         };
                         dispatch(
