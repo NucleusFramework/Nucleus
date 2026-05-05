@@ -233,25 +233,44 @@ fun ApplicationScope.DecoratedWindow(
  * position could be applied, `false` when the platform / native bridge is
  * unavailable.
  *
- * Currently Windows-only: relies on `nucleus_tao_windows_deco.dll` to query
- * the work area. macOS and Linux fall back to whatever default position Tao
- * picked at creation.
+ * Supported on Windows (`nucleus_tao_windows_deco.dll`) and macOS
+ * (`libnucleus_tao_macos_deco.dylib`). Both bridges expose the work area as
+ * `[x, y, w, h]` in physical pixels with a top-left origin, so the dp math
+ * below is platform-agnostic. Linux falls back to whatever default position
+ * Tao picked at creation.
+ *
+ * On macOS [size] is treated as a fallback only — the actual NSWindow outer
+ * size is queried via `nativeGetWindowRect`. Tao's `set_min_inner_size`
+ * enforces a synchronous resize when the requested size is smaller than the
+ * `DecoratedWindow` `minimumSize`, which lands in the Tao queue *before*
+ * the LE pump runs the position effect; trusting `state.size` (still
+ * holding the `rememberWindowState()` default until the resulting `Resized`
+ * event makes it back to the JVM) would centre the window using a size that
+ * doesn't match what's on screen and produce a visible mid-show jump.
  */
 private fun applyAlignedPosition(
     window: TaoWindow,
     position: WindowPosition.Aligned,
     size: DpSize,
 ): Boolean {
-    if (Platform.Current != Platform.Windows) return false
-    if (!NativeTaoWindowsDecoBridge.isLoaded) return false
-    val workArea = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
-
-    // The native HWND doesn't exist yet at first composition (Tao creates it
-    // asynchronously on its event loop), so we always read the primary
+    // The native window doesn't exist yet at first composition (Tao creates
+    // it asynchronously on its event loop), so we always read the primary
     // monitor's scale directly — that's the monitor Tao will place the
     // window on by default, and it's the scale that pairs with the work-area
     // rect we just queried.
-    val scaleMilli = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+    val (workArea, scaleMilli) = when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeTaoWindowsDecoBridge.isLoaded) return false
+            val wa = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
+            wa to NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+        }
+        Platform.MacOS -> {
+            if (!NativeTaoMacOsDecoBridge.isLoaded) return false
+            val wa = NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorWorkArea() ?: return false
+            wa to NativeTaoMacOsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1000)
+        }
+        else -> return false
+    }
     val scale = scaleMilli / 1000.0
 
     // Convert the work area to logical pixels so we can offset by the
@@ -261,8 +280,8 @@ private fun applyAlignedPosition(
     val workWDp = (workArea[2] / scale).toInt()
     val workHDp = (workArea[3] / scale).toInt()
 
-    val winWDp = size.width.value.toInt().coerceAtLeast(0)
-    val winHDp = size.height.value.toInt().coerceAtLeast(0)
+    val (winWDp, winHDp) = actualWindowSizeDp(window, scale)
+        ?: (size.width.value.toInt().coerceAtLeast(0) to size.height.value.toInt().coerceAtLeast(0))
 
     val offset: IntOffset = position.alignment.align(
         size = IntSize(winWDp, winHDp),
@@ -271,4 +290,24 @@ private fun applyAlignedPosition(
     )
     window.setOuterPosition(workXDp + offset.x, workYDp + offset.y)
     return true
+}
+
+/**
+ * Reads the realised NSWindow outer size in dp via the macOS deco bridge, or
+ * `null` when the window isn't yet on screen / the bridge is unavailable /
+ * the platform doesn't expose a window-rect query.
+ *
+ * Used by [applyAlignedPosition] to defeat the `state.size` ↔ actual-size
+ * skew introduced by Tao's `set_min_inner_size` (see that function's
+ * doc-comment).
+ */
+private fun actualWindowSizeDp(window: TaoWindow, scale: Double): Pair<Int, Int>? {
+    if (Platform.Current != Platform.MacOS) return null
+    val nsView = window.nativeHandle
+    if (nsView == 0L) return null
+    val rect = NativeTaoMacOsDecoBridge.nativeGetWindowRect(nsView) ?: return null
+    val w = (rect[2] / scale).toInt()
+    val h = (rect[3] / scale).toInt()
+    if (w <= 0 || h <= 0) return null
+    return w to h
 }

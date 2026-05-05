@@ -67,4 +67,19 @@ internal object NativeTaoMacOsDecoBridge {
      */
     @JvmStatic
     external fun nativeGetPrimaryMonitorScaleMilli(): Int
+
+    /**
+     * Applies a content-area minimum size to the window backing [nsView] and
+     * synchronously enlarges the NSWindow (preserving its top-left corner)
+     * when the current content is smaller. Sizes are in **points** (logical
+     * pixels); pass `0.0` (or negative) to leave a dimension unchanged.
+     *
+     * Bypasses Tao's UserEvent queue so [DecoratedWindow] can apply the
+     * constraint inside `onWindowReady` *before* the position [LaunchedEffect]
+     * runs — otherwise the centring math would key off the stale `state.size`
+     * (e.g. `rememberWindowState()`'s 800×600 default) and centre the window
+     * for a size that doesn't match what's about to land on screen.
+     */
+    @JvmStatic
+    external fun nativeApplyContentMinSize(nsView: Long, widthPts: Double, heightPts: Double)
 }

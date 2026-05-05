@@ -142,6 +142,24 @@ internal fun ApplicationScope.openDecoratedWindow(
         // NSWindow focus forwarder). Must follow attach() so the NSView
         // exists and the window is reachable.
         a11yController.attach()
+        // Apply `minimumSize` synchronously *now*, while the window is still
+        // hidden (visible=false). Tao's own `setMinimumSize` is queued via
+        // its UserEvent loop and may not be drained before the LE that
+        // computes `WindowPosition.Aligned` fires — and centring against the
+        // pre-min-size frame puts the window off-centre once the resize
+        // catches up. Routing through the deco bridge bypasses the queue so
+        // the next read of `[NSWindow frame]` (done by
+        // `applyAlignedPosition`) sees the post-resize size.
+        if (minimumSize != null && NativeTaoMacOsDecoBridge.isLoaded) {
+            val nsView = NativeTaoBridge.nativeNsViewHandle(window.handle)
+            if (nsView != 0L) {
+                NativeTaoMacOsDecoBridge.nativeApplyContentMinSize(
+                    nsView,
+                    minimumSize.width.value.toDouble(),
+                    minimumSize.height.value.toDouble(),
+                )
+            }
+        }
         host.setContent {
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),

@@ -155,3 +155,63 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDecoBridge_nativeGe
     if (scale <= 0) return 1000;
     return (jint)llround(scale * 1000.0);
 }
+
+/* Sets the NSWindow's content-area minimum size and immediately enlarges the
+ * window (preserving the top-left corner) when its current content is smaller.
+ *
+ * Mirrors Tao's `set_min_inner_size`, but bypasses Tao's UserEvent queue so
+ * `DecoratedWindow` can apply the constraint *synchronously inside*
+ * `onWindowReady` — by the time the LE position effect runs (one pump cycle
+ * later), `[NSWindow frame]` already reflects the post-min-size size, so the
+ * `WindowPosition.Aligned` centring math doesn't centre against the stale
+ * `state.size` (which would put the window off-screen-right when
+ * `rememberWindowState()`'s default 800×600 is smaller than the requested
+ * `minimumSize`).
+ *
+ * Sizes are in **points** (logical pixels). Pass non-positive values to
+ * leave the corresponding dimension unchanged. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDecoBridge_nativeApplyContentMinSize(
+    JNIEnv *env, jclass clazz, jlong nsViewLong, jdouble widthPts, jdouble heightPts)
+{
+    (void)env; (void)clazz;
+    if (!nsViewLong) return;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewLong;
+    NSWindow *window = view.window;
+    if (!window) return;
+
+    CGFloat minW = widthPts > 0 ? (CGFloat)widthPts : window.contentMinSize.width;
+    CGFloat minH = heightPts > 0 ? (CGFloat)heightPts : window.contentMinSize.height;
+    [window setContentMinSize:NSMakeSize(minW, minH)];
+
+    // Convert content-min to frame-min via `frameRectForContentRect:` so the
+    // resize math accounts for any chrome (title bar, borders) the window
+    // might have. With NSWindowStyleMaskFullSizeContentView (set by
+    // `nativeConfigureChrome`), content rect = frame rect — chrome
+    // contribution is 0 — but the conversion stays correct for both cases.
+    NSRect contentRect = NSMakeRect(0, 0, minW, minH);
+    NSRect minFrameRect = [window frameRectForContentRect:contentRect];
+    CGFloat minFrameW = minFrameRect.size.width;
+    CGFloat minFrameH = minFrameRect.size.height;
+
+    NSRect currentFrame = window.frame;
+    BOOL needsResize = NO;
+    if (currentFrame.size.width < minFrameW) {
+        currentFrame.size.width = minFrameW;
+        needsResize = YES;
+    }
+    if (currentFrame.size.height < minFrameH) {
+        // macOS frames have a bottom-left origin; growing the height upward
+        // (which is what we want — keep the visible top edge fixed) means
+        // shifting `origin.y` down by the delta.
+        currentFrame.origin.y -= (minFrameH - currentFrame.size.height);
+        currentFrame.size.height = minFrameH;
+        needsResize = YES;
+    }
+    if (needsResize) {
+        // `display:NO` skips the immediate redraw — the window is hidden at
+        // this point (DecoratedWindow opens with `visible = false`), so we
+        // don't need it. The frame is updated synchronously regardless.
+        [window setFrame:currentFrame display:NO];
+    }
+}
