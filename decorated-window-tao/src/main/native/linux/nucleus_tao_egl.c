@@ -1134,6 +1134,19 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeAttachWa
              * `set_input_region` — we can destroy our handle right away. */
             p_wl_proxy_marshal_flags(empty_region, WL_REGION_DESTROY, NULL,
                 p_wl_proxy_get_version(empty_region), WL_MARSHAL_FLAG_DESTROY);
+            /* Explicit commit so the input region becomes active immediately
+             * — without it, the empty region only takes effect at the first
+             * `eglSwapBuffers` (which carries an implicit commit). DnD events
+             * arriving before that first frame would otherwise reach the
+             * subsurface and steal pointer focus from the GTK parent, which
+             * is exactly the bug we're fixing. The subsurface is in desync
+             * mode (set just above), so this commit applies independently of
+             * the parent's transaction.
+             *
+             * `wl_surface.commit` takes no arguments — `flags=0` is correct. */
+            p_wl_proxy_marshal_flags(
+                child_surface, WL_SURFACE_COMMIT, NULL,
+                p_wl_proxy_get_version(child_surface), 0);
         }
     }
 
