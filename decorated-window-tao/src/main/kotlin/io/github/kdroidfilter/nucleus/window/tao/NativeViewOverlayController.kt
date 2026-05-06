@@ -315,6 +315,7 @@ internal class NativeViewOverlayController(
         val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx == 0 || heightPx == 0) return
+        if (attachmentHandle == 0L) return
         renderMetalFrame(
             attachmentHandle = attachmentHandle,
             directContext = ctx,
@@ -331,10 +332,11 @@ internal class NativeViewOverlayController(
         scene = null
         directContext?.close()
         directContext = null
-        if (attachmentHandle != 0L) {
-            NativeMetalBridge.nativeDetach(attachmentHandle)
-            attachmentHandle = 0
-        }
+        // Zero out before freeing so a render lambda still in the host's
+        // snapshot iteration bails — same hazard as TaoPopupSceneLayer.close.
+        val handle = attachmentHandle
+        attachmentHandle = 0
+        if (handle != 0L) NativeMetalBridge.nativeDetach(handle)
         NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(overlayNsView)
         overlayNsView = 0
     }

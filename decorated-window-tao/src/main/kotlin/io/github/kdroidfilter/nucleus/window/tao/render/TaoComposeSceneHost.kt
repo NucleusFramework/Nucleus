@@ -572,12 +572,14 @@ internal class TaoComposeSceneHost(
         } finally {
             // Drive every registered popup's per-frame render after the
             // main present so each popup CAMetalLayer stays in lock-step
-            // with the host. Snapshot iteration in case a callback
-            // mutates `popupRenderers` (e.g. a popup disposes itself
-            // mid-render).
+            // with the host. Iterate by token + look up live so that a
+            // popup disposed mid-iteration (e.g. via a sibling popup's
+            // `innerScene.render` triggering Compose state changes that
+            // dismiss this one) is skipped instead of having its lambda
+            // called on a freed attachment.
             if (popupRenderers.isNotEmpty()) {
-                for (render in popupRenderers.values.toList()) {
-                    render()
+                for (token in popupRenderers.keys.toList()) {
+                    popupRenderers[token]?.invoke()
                 }
             }
         }
@@ -865,7 +867,8 @@ internal class TaoComposeSceneHost(
         }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
         if (popupKeyHandlers.isNotEmpty()) {
-            for (handler in popupKeyHandlers.values.toList()) {
+            for (token in popupKeyHandlers.keys.toList()) {
+                val handler = popupKeyHandlers[token] ?: continue
                 if (handler(composeEvent)) return true
             }
         }

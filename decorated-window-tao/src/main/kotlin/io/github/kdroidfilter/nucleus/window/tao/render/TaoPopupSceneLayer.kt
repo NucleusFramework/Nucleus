@@ -102,7 +102,7 @@ internal class TaoPopupSceneLayer(
         require(it != 0L) { "Failed to allocate popup NSPanel" }
     }
 
-    private val attachmentHandle: Long = NativeMetalBridge.nativeAttachOverlay(
+    private var attachmentHandle: Long = NativeMetalBridge.nativeAttachOverlay(
         PopupNativeBridge.nativeContentNsView(panelHandle),
     ).also {
         require(it != 0L) { "Failed to attach popup CAMetalLayer" }
@@ -295,7 +295,15 @@ internal class TaoPopupSceneLayer(
         PopupNativeBridge.nativeSetEventCallback(panelHandle, null)
         innerScene.close()
         directContext.close()
-        NativeMetalBridge.nativeDetach(attachmentHandle)
+        // Zero out before freeing the C struct so any pending render
+        // lambda still sitting in the host's snapshot iteration bails
+        // instead of dereferencing freed memory. Compose can dispose a
+        // sibling popup (or this very popup) as a side effect of an
+        // earlier popup's `innerScene.render`, which the host has
+        // already snapshot-captured.
+        val handle = attachmentHandle
+        attachmentHandle = 0
+        NativeMetalBridge.nativeDetach(handle)
         PopupNativeBridge.nativeRelease(panelHandle)
     }
 
@@ -348,6 +356,7 @@ internal class TaoPopupSceneLayer(
 
     private fun renderFrame() {
         if (widthPx <= 0 || heightPx <= 0) return
+        if (attachmentHandle == 0L) return
         renderMetalFrame(
             attachmentHandle = attachmentHandle,
             directContext = directContext,
