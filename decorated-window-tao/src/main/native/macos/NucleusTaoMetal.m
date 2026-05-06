@@ -163,6 +163,12 @@ typedef struct {
     // Read by the Kotlin layer (via nativeIsFullscreen) so it can hide its
     // custom Compose title bar — AppKit auto-shows its own native one.
     atomic_int is_fullscreen;
+    // 1 if the CAMetalLayer was created with `presentsWithTransaction =
+    // YES` (overlay-flavored attachments). nativePresent uses the
+    // commit→waitUntilScheduled→present pattern in that case so the new
+    // drawable lands in the same CoreAnimation transaction as the
+    // surrounding bounds changes — i.e. no live-resize tearing.
+    int presents_with_transaction;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -751,6 +757,15 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttachOve
     // (panel content view background, sibling subviews, etc.) bleed
     // through wherever the scene didn't paint.
     layer.opaque = NO;
+    // Sync drawable presentation with the host's CoreAnimation transaction
+    // so the overlay's Metal frame lands at the same instant AppKit's
+    // bounds/frame changes do — eliminates the visible lag/desync where
+    // the overlay seemed to chase the host during a window live-resize.
+    layer.presentsWithTransaction = YES;
+    // 2 drawables instead of the 3-default: overlay surfaces are smaller
+    // than the host and don't need triple-buffering to avoid GPU stalls;
+    // halving the swapchain depth shortens nextDrawable wait under load.
+    layer.maximumDrawableCount = 2;
     layer.contentsScale = view.window.backingScaleFactor > 0
         ? view.window.backingScaleFactor
         : [NSScreen mainScreen].backingScaleFactor;
@@ -769,6 +784,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttachOve
     att->device = device;
     att->queue  = [device newCommandQueue];
     att->view   = view;
+    att->presents_with_transaction = 1;
     return (jlong)(uintptr_t)att;
 }
 
@@ -1150,8 +1166,21 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresent(
         (void *)(uintptr_t) drawablePtr;
 
     id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
-    [commandBuffer presentDrawable:drawable];
-    [commandBuffer commit];
+    if (att->presents_with_transaction) {
+        // `presentsWithTransaction = YES` (overlay path): we have to NOT
+        // call `[commandBuffer presentDrawable:]` and instead present the
+        // drawable explicitly from the main thread *after* the GPU has
+        // scheduled the work. That schedules the surface flip with the
+        // surrounding CATransaction so AppKit can flush bounds + drawable
+        // atomically. Required for tear-free live-resize on overlay
+        // CAMetalLayers.
+        [commandBuffer commit];
+        [commandBuffer waitUntilScheduled];
+        [drawable present];
+    } else {
+        [commandBuffer presentDrawable:drawable];
+        [commandBuffer commit];
+    }
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────
