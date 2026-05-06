@@ -726,6 +726,52 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttach(
     return (jlong)(uintptr_t)att;
 }
 
+/* Companion to nativeAttach for overlay surfaces (popup NSPanels, in-window
+ * overlay subviews, …): same Metal pipeline (begin/present/resize/detach
+ * are interchangeable with the regular handle), but the underlying
+ * CAMetalLayer is created with `opaque = NO` so a Compose scene rendered
+ * into it can leave alpha-zero regions where the surface beneath shows
+ * through. We also skip the fullscreen observer install — overlays are
+ * children of a host NSView whose own observer already manages the FS
+ * dance. */
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttachOverlay(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return 0;
+
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device == nil) return 0;
+
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    layer.device = device;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    // Crucial: opaque=NO so an alpha-cleared Compose render lets the host
+    // (panel content view background, sibling subviews, etc.) bleed
+    // through wherever the scene didn't paint.
+    layer.opaque = NO;
+    layer.contentsScale = view.window.backingScaleFactor > 0
+        ? view.window.backingScaleFactor
+        : [NSScreen mainScreen].backingScaleFactor;
+
+    dispatch_block_t setup = ^{
+        view.layer = layer;
+        view.wantsLayer = YES;
+        layer.frame = view.bounds;
+    };
+    if ([NSThread isMainThread]) setup();
+    else                          dispatch_sync(dispatch_get_main_queue(), setup);
+
+    NucleusTaoMetalAttachment *att = (NucleusTaoMetalAttachment *)
+        calloc(1, sizeof(NucleusTaoMetalAttachment));
+    att->layer  = layer;
+    att->device = device;
+    att->queue  = [device newCommandQueue];
+    att->view   = view;
+    return (jlong)(uintptr_t)att;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeConfigureChrome(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {

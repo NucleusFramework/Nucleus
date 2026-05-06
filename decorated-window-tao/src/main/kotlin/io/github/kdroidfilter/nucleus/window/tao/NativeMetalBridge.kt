@@ -71,6 +71,17 @@ internal object NativeMetalBridge {
     external fun nativeAttach(nsViewPtr: Long): Long
 
     /**
+     * Companion to [nativeAttach] for overlay surfaces (popup NSPanels,
+     * in-window overlay subviews, …). Same Metal pipeline (begin / present /
+     * resize / detach are interchangeable with the regular handle), but the
+     * underlying `CAMetalLayer` is created with `opaque = NO` so a Compose
+     * scene rendered into it can leave alpha-zero regions where the surface
+     * beneath shows through.
+     */
+    @JvmStatic
+    external fun nativeAttachOverlay(nsViewPtr: Long): Long
+
+    /**
      * Applies the macOS chrome trick: full-size content view + transparent
      * title bar + hidden title. The native traffic-light buttons remain
      * visible at the top-left while our Compose content fills the window.

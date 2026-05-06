@@ -134,7 +134,62 @@ clang -arch x86_64 "${DECO_FLAGS[@]}" \
     -o "$OUT_DIR_X64/libnucleus_tao_macos_deco.dylib" "$DECO_SRC"
 strip -x "$OUT_DIR_X64/libnucleus_tao_macos_deco.dylib"
 
-# ── 5) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
+# ── 5) Objective-C popup panel helper (libnucleus_tao_macos_popup.dylib) ───
+# Phase 1 of the Compose-popup-via-NSPanel architecture. Builds a borderless
+# transparent NSPanel attached as a child window of the host NSWindow. Will
+# host a CAMetalLayer + ComposeScene in subsequent phases.
+
+POPUP_SRC="$SCRIPT_DIR/popup_panel.m"
+POPUP_FLAGS=(
+    -dynamiclib
+    -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"
+    -framework Cocoa
+    -framework AppKit
+    -mmacosx-version-min=10.15
+    -fobjc-arc
+    -Oz
+    -flto
+    -fvisibility=hidden
+    -Wl,-dead_strip
+    -Wl,-x
+)
+
+clang -arch arm64 "${POPUP_FLAGS[@]}" \
+    -o "$OUT_DIR_ARM64/libnucleus_tao_macos_popup.dylib" "$POPUP_SRC"
+strip -x "$OUT_DIR_ARM64/libnucleus_tao_macos_popup.dylib"
+
+clang -arch x86_64 "${POPUP_FLAGS[@]}" \
+    -o "$OUT_DIR_X64/libnucleus_tao_macos_popup.dylib" "$POPUP_SRC"
+strip -x "$OUT_DIR_X64/libnucleus_tao_macos_popup.dylib"
+
+# ── 6) Objective-C native-view helper (libnucleus_tao_macos_native_view.dylib) ─
+# Minimal NSView interop primitives consumed by the `NativeView`
+# composable. Same flag profile as the popup helper.
+
+NV_SRC="$SCRIPT_DIR/native_view.m"
+NV_FLAGS=(
+    -dynamiclib
+    -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"
+    -framework Cocoa
+    -framework AppKit
+    -mmacosx-version-min=10.15
+    -fobjc-arc
+    -Oz
+    -flto
+    -fvisibility=hidden
+    -Wl,-dead_strip
+    -Wl,-x
+)
+
+clang -arch arm64 "${NV_FLAGS[@]}" \
+    -o "$OUT_DIR_ARM64/libnucleus_tao_macos_native_view.dylib" "$NV_SRC"
+strip -x "$OUT_DIR_ARM64/libnucleus_tao_macos_native_view.dylib"
+
+clang -arch x86_64 "${NV_FLAGS[@]}" \
+    -o "$OUT_DIR_X64/libnucleus_tao_macos_native_view.dylib" "$NV_SRC"
+strip -x "$OUT_DIR_X64/libnucleus_tao_macos_native_view.dylib"
+
+# ── 7) Clear NativeLibraryLoader cache so fresh dylibs are picked up ───────
 # NativeLibraryLoader uses the platform-standard cache directory, which is
 # `~/Library/Caches/nucleus/native` on macOS (not `~/.cache/...` à la Linux).
 
@@ -146,5 +201,5 @@ for CACHE_DIR in "$HOME/Library/Caches/nucleus/native" "$HOME/.cache/nucleus/nat
 done
 
 echo "Built per-architecture dylibs:"
-ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib}
-ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib}
+ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib,libnucleus_tao_macos_popup.dylib,libnucleus_tao_macos_native_view.dylib}
+ls -lh "$OUT_DIR_X64"/{libnucleus_tao.dylib,libnucleus_tao_metal.dylib,libnucleus_tao_dnd.dylib,libnucleus_tao_macos_deco.dylib,libnucleus_tao_macos_popup.dylib,libnucleus_tao_macos_native_view.dylib}

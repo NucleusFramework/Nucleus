@@ -250,6 +250,7 @@ private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
         }
 
         Column(modifier = Modifier.fillMaxSize().background(Color(0xFF0F1115))) {
+            Phase1PopupTest(window = taoWindow, onLog = { logEvent(events, it) })
             DnDStage0Banner(onLog = { logEvent(events, it) })
             TabBar(selectedTab, onSelect = { selectedTab = it })
             Box(modifier = Modifier.weight(1f).fillMaxSize()) {
@@ -276,6 +277,7 @@ private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
                     Tab.A11y -> A11yTab(modifier = Modifier.fillMaxSize())
                     Tab.Complex -> ComplexTab(modifier = Modifier.fillMaxSize())
                     Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
+                    Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
                 }
             }
         }

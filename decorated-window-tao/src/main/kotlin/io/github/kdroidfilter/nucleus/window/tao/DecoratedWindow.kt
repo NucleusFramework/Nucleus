@@ -20,6 +20,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -173,6 +174,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalTaoPopupHost provides host.popupHost(),
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
