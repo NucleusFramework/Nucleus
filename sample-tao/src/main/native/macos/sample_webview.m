@@ -1,9 +1,9 @@
 // sample_webview.m
 //
 // Minimal WKWebView factory for the sample-tao "WebView" tab demo. NOT a
-// production-grade WebView wrapper — only "create + load URL + release",
-// just enough to exercise the `NativeView` interop and prove that
-// Compose `Popup`s appear above a real native subview.
+// production-grade WebView wrapper — only "create + load URL + navigate +
+// release", just enough to exercise the `NativeView` interop and prove
+// that Compose `Popup`s appear above a real native subview.
 //
 // Builds into `libsample_tao_webview.dylib`. Loaded from
 // `NativeLibraryLoader.load("sample_tao_webview")`.
@@ -43,6 +43,78 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeLoadUrl(
     NSURL *url = [NSURL URLWithString:str];
     if (url == nil) return;
     [webview loadRequest:[NSURLRequest requestWithURL:url]];
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoBack(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    [webview goBack];
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoForward(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    [webview goForward];
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeReload(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    [webview reload];
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoBack(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return JNI_FALSE;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    return webview.canGoBack ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoForward(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return JNI_FALSE;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    return webview.canGoForward ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeIsLoading(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return JNI_FALSE;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    return webview.isLoading ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCurrentUrl(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    if (viewPtr == 0) return NULL;
+    WKWebView *webview = (__bridge WKWebView *)(void *)(uintptr_t)viewPtr;
+    NSString *urlStr = webview.URL.absoluteString;
+    if (urlStr == nil) return NULL;
+    return (*env)->NewStringUTF(env, [urlStr UTF8String]);
 }
 
 JNIEXPORT void JNICALL

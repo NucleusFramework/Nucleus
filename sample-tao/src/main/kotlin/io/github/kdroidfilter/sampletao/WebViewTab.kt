@@ -1,5 +1,12 @@
 package io.github.kdroidfilter.sampletao
 
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -16,38 +23,46 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.NativeView
 import io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents
+import kotlinx.coroutines.delay
+
+private const val INITIAL_URL = "https://nucleusframework.dev"
 
 /**
  * **WebView demo tab.**
  *
  * A live `WKWebView` mounted via `NativeView`, with a Compose-rendered
- * watermark (containing a focus-test `BasicTextField`) painted on top
- * via `NativeView`'s `content` slot.
+ * floating navigation pill (back / forward / reload + URL field)
+ * painted on top via `NativeView`'s `content` slot.
  *
  * The overlay slot lives in a borderless transparent NSPanel above the
  * host window — it intercepts pointer events inside its bounds (so the
- * text field can be clicked + typed into), passes everything else
+ * URL field can be clicked + typed into), and passes everything else
  * through to the WebView. macOS-only.
  */
 @Composable
@@ -55,6 +70,29 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
     if (Platform.Current != Platform.MacOS || !SampleWebViewBridge.isLoaded) {
         UnsupportedPlatform(modifier)
         return
+    }
+
+    var handle by remember { mutableStateOf(0L) }
+    var urlInput by remember { mutableStateOf(INITIAL_URL) }
+    var urlFocused by remember { mutableStateOf(false) }
+    var canGoBack by remember { mutableStateOf(false) }
+    var canGoForward by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+
+    // Lightweight polling: WKWebView's KVO would be cleaner but a
+    // 120ms tick is plenty for a sample. Skips updating the URL field
+    // while the user is editing it so we don't fight their cursor.
+    LaunchedEffect(handle) {
+        if (handle == 0L) return@LaunchedEffect
+        while (true) {
+            canGoBack = SampleWebViewBridge.nativeCanGoBack(handle)
+            canGoForward = SampleWebViewBridge.nativeCanGoForward(handle)
+            isLoading = SampleWebViewBridge.nativeIsLoading(handle)
+            if (!urlFocused) {
+                SampleWebViewBridge.nativeCurrentUrl(handle)?.let { urlInput = it }
+            }
+            delay(120L)
+        }
     }
 
     Box(
@@ -70,16 +108,21 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             // every recomposition.
             val loadedFlag = remember { booleanArrayOf(false) }
             NativeView(
-                factory = { SampleWebViewBridge.nativeCreate() },
+                factory = {
+                    SampleWebViewBridge.nativeCreate().also { handle = it }
+                },
                 modifier = Modifier.fillMaxSize(),
                 cornerRadius = 12.dp,
-                update = { handle ->
+                update = { ptr ->
                     if (!loadedFlag[0]) {
                         loadedFlag[0] = true
-                        SampleWebViewBridge.nativeLoadUrl(handle, "https://nucleusframework.dev")
+                        SampleWebViewBridge.nativeLoadUrl(ptr, INITIAL_URL)
                     }
                 },
-                onRelease = { SampleWebViewBridge.nativeRelease(it) },
+                onRelease = {
+                    SampleWebViewBridge.nativeRelease(it)
+                    handle = 0L
+                },
             ) {
                 // Compose UI rendered ON TOP of the WebView. Lives in a
                 // separate NSPanel with its own ComposeScene, so it
@@ -87,10 +130,23 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(16.dp),
+                        .padding(24.dp),
                     contentAlignment = Alignment.BottomEnd,
                 ) {
-                    Watermark()
+                    NavPill(
+                        url = urlInput,
+                        onUrlChange = { urlInput = it },
+                        onUrlFocusChange = { urlFocused = it },
+                        onSubmit = {
+                            if (handle != 0L) SampleWebViewBridge.nativeLoadUrl(handle, urlInput)
+                        },
+                        canGoBack = canGoBack,
+                        canGoForward = canGoForward,
+                        isLoading = isLoading,
+                        onBack = { if (handle != 0L && canGoBack) SampleWebViewBridge.nativeGoBack(handle) },
+                        onForward = { if (handle != 0L && canGoForward) SampleWebViewBridge.nativeGoForward(handle) },
+                        onReload = { if (handle != 0L) SampleWebViewBridge.nativeReload(handle) },
+                    )
                 }
             }
         }
@@ -98,79 +154,171 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun Watermark() {
-    var text by remember { mutableStateOf("") }
-    var clickCount by remember { mutableIntStateOf(0) }
-    var hasFocus by remember { mutableStateOf(false) }
-    val focusRequester = remember { FocusRequester() }
-
-    Row(
+private fun NavPill(
+    url: String,
+    onUrlChange: (String) -> Unit,
+    onUrlFocusChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    isLoading: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onReload: () -> Unit,
+) {
+    Box(
         modifier = Modifier
+            .padding(8.dp)
             .height(56.dp)
-            .width(360.dp)
+            .width(520.dp)
             .clip(RoundedCornerShape(28.dp))
             .background(Color(0xCC0F172A))
             .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(28.dp))
-            .consumeOverlayPointerEvents()
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .consumeOverlayPointerEvents(),
     ) {
-        // Diagnostic clickable badge: every click increments the counter
-        // — proves the Compose click pipeline reaches the overlay scene.
-        Box(
+        Row(
             modifier = Modifier
-                .size(36.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF34D399))
-                .clickable { clickCount++ },
-            contentAlignment = Alignment.Center,
+                .fillMaxSize()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            BasicText(
-                text = clickCount.toString(),
-                style = TextStyle(color = Color(0xFF0F172A), fontSize = 14.sp, fontWeight = FontWeight.Bold),
+            NavIconButton(symbol = "‹", enabled = canGoBack, onClick = onBack)
+            NavIconButton(symbol = "›", enabled = canGoForward, onClick = onForward)
+            NavIconButton(
+                symbol = "⟳",
+                enabled = true,
+                onClick = onReload,
+                spinning = isLoading,
+            )
+            Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color.White.copy(alpha = 0.18f)))
+            UrlField(
+                url = url,
+                onUrlChange = onUrlChange,
+                onFocusChange = onUrlFocusChange,
+                onSubmit = onSubmit,
+                modifier = Modifier.weight(1f),
             )
         }
-        Box(modifier = Modifier.width(1.dp).height(20.dp).background(Color.White.copy(alpha = 0.18f)))
-        // BasicTextField fills the entire visible field shape — its
-        // built-in pointer pipeline owns the I-beam cursor, the
-        // focus-on-tap, and (crucially) the multi-tap detector that
-        // turns double-click into word selection / triple-click into
-        // select-all. Wrapping it in an outer `clickable` + inner
-        // `fillMaxWidth()` instead made every click look like a fresh
-        // single-tap to the wrapper, never reaching the field's
-        // selection gesture.
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(36.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color.White.copy(alpha = if (hasFocus) 0.16f else 0.06f))
-                .border(
-                    1.dp,
-                    if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
-                    RoundedCornerShape(18.dp),
-                )
-                .padding(horizontal = 12.dp),
-        ) {
-            BasicTextField(
-                value = text,
-                onValueChange = { text = it },
-                singleLine = true,
-                textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
-                cursorBrush = SolidColor(Color(0xFF60A5FA)),
+        if (isLoading) {
+            IndeterminateBar(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .focusRequester(focusRequester)
-                    .onFocusChanged { hasFocus = it.isFocused },
-                decorationBox = { innerTextField ->
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.CenterStart,
-                    ) { innerTextField() }
-                },
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .align(Alignment.BottomCenter),
             )
         }
+    }
+}
+
+@Composable
+private fun IndeterminateBar(modifier: Modifier = Modifier) {
+    val transition = rememberInfiniteTransition(label = "loading-bar")
+    val progress by transition.animateFloat(
+        initialValue = -0.3f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1100, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "loading-bar-progress",
+    )
+    Canvas(modifier = modifier) {
+        val segmentWidth = size.width * 0.3f
+        val x = size.width * progress
+        drawRect(
+            color = Color(0xFF60A5FA),
+            topLeft = Offset(x, 0f),
+            size = Size(segmentWidth, size.height),
+        )
+    }
+}
+
+@Composable
+private fun NavIconButton(
+    symbol: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    spinning: Boolean = false,
+) {
+    val rotation = if (spinning) {
+        val transition = rememberInfiniteTransition(label = "spin")
+        val angle by transition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "spin-angle",
+        )
+        angle
+    } else 0f
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(Color.White.copy(alpha = if (enabled) 0.10f else 0.04f))
+            .alpha(if (enabled) 1f else 0.4f)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier),
+        contentAlignment = Alignment.Center,
+    ) {
+        BasicText(
+            text = symbol,
+            style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 16.sp, fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.graphicsLayer { rotationZ = rotation },
+        )
+    }
+}
+
+@Composable
+private fun UrlField(
+    url: String,
+    onUrlChange: (String) -> Unit,
+    onFocusChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var hasFocus by remember { mutableStateOf(false) }
+    // BasicTextField fills the entire visible field shape — its
+    // built-in pointer pipeline owns the I-beam cursor, the
+    // focus-on-tap, and the multi-tap selection detector. Wrapping
+    // it in an outer `clickable` + inner `fillMaxWidth()` instead
+    // made every click look like a fresh single-tap to the wrapper.
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.White.copy(alpha = if (hasFocus) 0.16f else 0.06f))
+            .border(
+                1.dp,
+                if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
+                RoundedCornerShape(18.dp),
+            )
+            .padding(horizontal = 12.dp),
+    ) {
+        BasicTextField(
+            value = url,
+            onValueChange = onUrlChange,
+            singleLine = true,
+            textStyle = TextStyle(color = Color.White, fontSize = 13.sp),
+            cursorBrush = SolidColor(Color(0xFF60A5FA)),
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+            keyboardActions = KeyboardActions(onGo = { onSubmit() }, onDone = { onSubmit() }),
+            modifier = Modifier
+                .fillMaxSize()
+                .onFocusChanged {
+                    hasFocus = it.isFocused
+                    onFocusChange(it.isFocused)
+                },
+            decorationBox = { innerTextField ->
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.CenterStart,
+                ) { innerTextField() }
+            },
+        )
     }
 }
 
