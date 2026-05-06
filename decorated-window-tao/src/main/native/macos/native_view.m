@@ -30,6 +30,7 @@
 // Threading: every entry point runs on the macOS main thread.
 
 #import <Cocoa/Cocoa.h>
+#import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <jni.h>
 #include <stdatomic.h>
@@ -290,11 +291,19 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
     CGFloat hPt = (CGFloat)heightPx / scale;
 
     CGFloat parentH = parent.frame.size.height;
-    if (parent.isFlipped) {
-        [child setFrame:NSMakeRect(xPt, yPt, wPt, hPt)];
-    } else {
-        [child setFrame:NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt)];
-    }
+    NSRect newFrame = parent.isFlipped
+        ? NSMakeRect(xPt, yPt, wPt, hPt)
+        : NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt);
+
+    // Wrap in a CATransaction with disableActions so the layer-backed
+    // subview (typically a WKWebView) doesn't kick off the default 0.25s
+    // implicit position/bounds animation on every layout pass — that's
+    // the dominant source of jank during a window live-resize, the layer
+    // visibly chases the actual frame instead of snapping.
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [child setFrame:newFrame];
+    [CATransaction commit];
 }
 
 /* Sets the CALayer cornerRadius / masksToBounds on the embedded subview
@@ -324,6 +333,8 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
     if (radiusPt > halfMin) radiusPt = halfMin;
 
     child.wantsLayer = YES;
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     if (radiusPt > 0) {
         child.layer.cornerRadius = radiusPt;
         child.layer.masksToBounds = YES;
@@ -331,6 +342,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
         child.layer.cornerRadius = 0;
         child.layer.masksToBounds = NO;
     }
+    [CATransaction commit];
 }
 
 /* ================================================================== */
@@ -382,11 +394,13 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
     CGFloat wPt = (CGFloat)widthPx / scale;
     CGFloat hPt = (CGFloat)heightPx / scale;
     CGFloat parentH = parent.frame.size.height;
-    if (parent.isFlipped) {
-        [overlay setFrame:NSMakeRect(xPt, yPt, wPt, hPt)];
-    } else {
-        [overlay setFrame:NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt)];
-    }
+    NSRect newFrame = parent.isFlipped
+        ? NSMakeRect(xPt, yPt, wPt, hPt)
+        : NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt);
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    [overlay setFrame:newFrame];
+    [CATransaction commit];
 }
 
 JNIEXPORT void JNICALL

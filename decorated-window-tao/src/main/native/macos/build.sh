@@ -172,6 +172,7 @@ NV_FLAGS=(
     -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_DARWIN"
     -framework Cocoa
     -framework AppKit
+    -framework QuartzCore
     -mmacosx-version-min=10.15
     -fobjc-arc
     -Oz

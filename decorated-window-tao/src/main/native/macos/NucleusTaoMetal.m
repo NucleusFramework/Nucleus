@@ -1084,9 +1084,15 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeResize(
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
     dispatch_block_t resize = ^{
+        // Suppress implicit animations on `frame` / `drawableSize` /
+        // `contentsScale` — during a live-resize the layer would
+        // otherwise visibly chase the actual size.
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
+        [CATransaction commit];
     };
     if ([NSThread isMainThread]) resize();
     else                          dispatch_sync(dispatch_get_main_queue(), resize);
