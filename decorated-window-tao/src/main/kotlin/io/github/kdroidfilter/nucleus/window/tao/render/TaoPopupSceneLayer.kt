@@ -7,7 +7,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -25,12 +24,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.PopupNativeBridge
-import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
-import org.jetbrains.skia.SurfaceOrigin
 
 /**
  * Phase 3 — `ComposeSceneLayer` implementation that backs each Compose
@@ -352,32 +346,12 @@ internal class TaoPopupSceneLayer(
 
     private fun renderFrame() {
         if (widthPx <= 0 || heightPx <= 0) return
-        val frame = NativeMetalBridge.nativeBeginFrame(attachmentHandle) ?: return
-        var presented = false
-        try {
-            val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-            val surface = Surface.makeFromBackendRenderTarget(
-                context = directContext,
-                rt = rt,
-                origin = SurfaceOrigin.TOP_LEFT,
-                colorFormat = SurfaceColorFormat.BGRA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: return
-            try {
-                surface.canvas.clear(0x00000000)
-                innerScene.render(surface.canvas.asComposeCanvas(), System.nanoTime())
-                surface.flushAndSubmit(syncCpu = false)
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-                presented = true
-            } finally {
-                surface.close()
-                rt.close()
-            }
-        } finally {
-            if (!presented) {
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-            }
-        }
+        renderMetalFrame(
+            attachmentHandle = attachmentHandle,
+            directContext = directContext,
+            scene = innerScene,
+            clearColor = 0x00000000,
+        )
     }
 
     private companion object {

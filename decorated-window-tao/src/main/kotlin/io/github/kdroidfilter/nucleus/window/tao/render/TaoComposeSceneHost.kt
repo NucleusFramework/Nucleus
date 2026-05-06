@@ -12,7 +12,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -47,12 +46,7 @@ import io.github.kdroidfilter.nucleus.window.tao.TaoMainDispatcher
 import io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
-import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
-import org.jetbrains.skia.SurfaceOrigin
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
@@ -551,54 +545,31 @@ internal class TaoComposeSceneHost(
     fun onRedrawRequested() {
         val ctx = directContext ?: return
         val sc = scene ?: return
-
-        val frame = NativeMetalBridge.nativeBeginFrame(attachmentHandle) ?: return
-
-        var presented = false
         try {
-            val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-            val surface = Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.TOP_LEFT,
-                colorFormat = SurfaceColorFormat.BGRA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: return
-            try {
-                // CAMetalLayer drawables are not auto-cleared between frames; an
-                // uninitialised texture on Apple Silicon shows up as undefined
-                // memory (often magenta-ish). Clear to opaque white so any
-                // Compose region without an explicit background looks like a
-                // standard AWT/Compose-Desktop window.
-                surface.canvas.clear(0xFFFFFFFF.toInt())
-                val nanoTime = System.nanoTime()
-                sc.render(surface.canvas.asComposeCanvas(), nanoTime)
-                surface.flushAndSubmit(syncCpu = false)
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-                presented = true
+            // CAMetalLayer drawables aren't auto-cleared between frames;
+            // on Apple Silicon an uninitialised texture surfaces as
+            // undefined memory (often magenta). Clear to opaque white so
+            // any Compose region without an explicit background looks
+            // like a regular AWT/Compose-Desktop window.
+            renderMetalFrame(
+                attachmentHandle = attachmentHandle,
+                directContext = ctx,
+                scene = sc,
+                clearColor = 0xFFFFFFFF.toInt(),
                 // Drain Compose's async work (sendFrame continuations,
-                // recomposer steps) **synchronously** here so their state
-                // writes happen now and trigger `invalidate` → next
-                // requestRedraw inside the same Tao loop iteration. Without
-                // this, the work would sit in TaoMainDispatcher.pending until
-                // the loop happens to wake again — which on macOS only
-                // reliably occurs on input events. This mirrors Skiko's
-                // FrameDispatcher pattern: render → drain pending coroutine
-                // work → next frame.
-                TaoMainDispatcher.pump()
-            } finally {
-                surface.close()
-                rt.close()
-            }
+                // recomposer steps) synchronously so their state writes
+                // happen now and trigger invalidate → next requestRedraw
+                // in the same Tao loop iteration. Without this the work
+                // would sit in TaoMainDispatcher.pending until the loop
+                // wakes again, which on macOS only reliably happens on
+                // input events. Mirrors Skiko's FrameDispatcher pattern.
+                onAfterPresent = TaoMainDispatcher::pump,
+            )
         } finally {
-            if (!presented) {
-                // Drawable was retained in beginFrame; release via present to balance.
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-            }
             // Drive every registered popup's per-frame render after the
-            // main present so each popup CAMetalLayer is updated in lock-
-            // step with the host. Snapshot iteration in case a callback
-            // mutates `popupRenderers` (e.g. Phase 3 disposes a popup
+            // main present so each popup CAMetalLayer stays in lock-step
+            // with the host. Snapshot iteration in case a callback
+            // mutates `popupRenderers` (e.g. a popup disposes itself
             // mid-render).
             if (popupRenderers.isNotEmpty()) {
                 for (render in popupRenderers.values.toList()) {

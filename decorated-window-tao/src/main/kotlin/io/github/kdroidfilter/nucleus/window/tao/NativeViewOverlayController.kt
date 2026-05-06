@@ -3,7 +3,6 @@ package io.github.kdroidfilter.nucleus.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
@@ -21,12 +20,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.dispatchSyntheticKeyTyped
-import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
+import io.github.kdroidfilter.nucleus.window.tao.render.renderMetalFrame
 import org.jetbrains.skia.DirectContext
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
-import org.jetbrains.skia.SurfaceOrigin
 
 /**
  * Owns the sibling overlay NSView used by [NativeView]'s `content` slot,
@@ -268,30 +263,12 @@ internal class NativeViewOverlayController(
         val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx == 0 || heightPx == 0) return
-        val frame = NativeMetalBridge.nativeBeginFrame(attachmentHandle) ?: return
-        var presented = false
-        try {
-            val rt = BackendRenderTarget.makeMetal(frame.widthPx, frame.heightPx, frame.texturePtr)
-            val surface = Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.TOP_LEFT,
-                colorFormat = SurfaceColorFormat.BGRA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: return
-            try {
-                surface.canvas.clear(0x00000000)
-                sc.render(surface.canvas.asComposeCanvas(), System.nanoTime())
-                surface.flushAndSubmit(syncCpu = false)
-                NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-                presented = true
-            } finally {
-                surface.close()
-                rt.close()
-            }
-        } finally {
-            if (!presented) NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
-        }
+        renderMetalFrame(
+            attachmentHandle = attachmentHandle,
+            directContext = ctx,
+            scene = sc,
+            clearColor = 0x00000000,
+        )
     }
 
     fun dispose() {
