@@ -155,12 +155,11 @@ internal object NativeMetalBridge {
 
     /**
      * True while the user is dragging a window edge (`NSView.inLiveResize`).
-     * Used by the host's redraw pump to skip overlay/popup re-rendering for
-     * the duration of the drag — the CAMetalLayer keeps its last-presented
-     * texture visible and the next post-resize frame repaints normally.
+     * Takes a raw NSView pointer rather than an attachment handle so it
+     * can be probed before [nativeAttach] / [nativeAttachOverlay] has run.
      */
     @JvmStatic
-    external fun nativeIsInLiveResize(handle: Long): Boolean
+    external fun nativeIsInLiveResize(nsViewPtr: Long): Boolean
 
     /**
      * Repositions the standard NSWindow buttons (close / miniaturise / zoom)
