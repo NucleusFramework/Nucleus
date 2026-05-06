@@ -577,7 +577,15 @@ internal class TaoComposeSceneHost(
             // `innerScene.render` triggering Compose state changes that
             // dismiss this one) is skipped instead of having its lambda
             // called on a freed attachment.
-            if (popupRenderers.isNotEmpty()) {
+            //
+            // Skip the loop entirely while AppKit is dragging a window
+            // edge: the overlay + popup CAMetalLayers keep their last
+            // presented texture visible (briefly stale), the main scene
+            // continues to paint smoothly, and the next post-resize
+            // frame repaints everything once `inLiveResize` clears.
+            if (popupRenderers.isNotEmpty() &&
+                !NativeMetalBridge.nativeIsInLiveResize(attachmentHandle)
+            ) {
                 for (token in popupRenderers.keys.toList()) {
                     popupRenderers[token]?.invoke()
                 }
