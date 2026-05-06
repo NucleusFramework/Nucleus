@@ -10,8 +10,11 @@ import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
@@ -22,9 +25,15 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoEglBridge
+import io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxTouchBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
 import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
+import io.github.kdroidfilter.nucleus.window.tao.TaoTouchEvent
+import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadGesture
+import io.github.kdroidfilter.nucleus.window.tao.TaoTrackpadPhase
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
+import kotlin.math.cos
+import kotlin.math.sin
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
@@ -252,6 +261,7 @@ internal class TaoComposeSceneHostLinux(
         )
 
         registerInboundDnD()
+        registerTouch()
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -434,6 +444,186 @@ internal class TaoComposeSceneHostLinux(
                 io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxDndBridge.DROP_EFFECT_NONE
             }
         }
+    }
+
+    // ── Touch & trackpad gestures (Linux) ─────────────────────────────────
+    //
+    // Touchscreen multi-touch and trackpad pinch / rotate are bridged from
+    // GTK 3 via `platform/linux/touch.rs` (see TOUCH_LINUX_RESEARCH_RESPONSE.md
+    // for the full design). The native side translates GdkEventTouch and
+    // GdkEventTouchpadPinch into the wire format below; we marshal them
+    // into Compose pointer events here.
+    //
+    // Trackpad gesture path: same trick as the macOS host — synthesise two
+    // ComposeScenePointer Touch points around the gesture focal point with
+    // distance varying by accumulated scale and angle by accumulated
+    // rotation, so `detectTransformGestures` reacts to pinch/rotate with
+    // strictly cross-platform application code. Smart-magnify is macOS-only
+    // and is never reported on Linux (no GDK equivalent).
+
+    private fun registerTouch() {
+        if (!NativeTaoLinuxTouchBridge.isLoaded) return
+        val callback = InboundTouchCallback()
+        NativeTaoLinuxTouchBridge.nativeRegister(window.handle, callback)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability
+     * metadata can register it explicitly — same pattern as
+     * [InboundDnDCallback].
+     */
+    @OptIn(ExperimentalComposeUiApi::class)
+    private inner class InboundTouchCallback : NativeTaoLinuxTouchBridge.Callback {
+        override fun onTouchEvent(
+            handle: Long,
+            eventType: Int,
+            count: Int,
+            ids: LongArray,
+            xsFixed: LongArray,
+            ysFixed: LongArray,
+            pressedMask: Long,
+        ) {
+            val sc = scene ?: return
+            if (count <= 0) return
+            val pointers = ArrayList<ComposeScenePointer>(count)
+            for (i in 0 until count) {
+                val pressed = (pressedMask and (1L shl i)) != 0L
+                pointers.add(
+                    ComposeScenePointer(
+                        id = PointerId(ids[i]),
+                        position = Offset(
+                            xsFixed[i] / TOUCH_POSITION_SCALE,
+                            ysFixed[i] / TOUCH_POSITION_SCALE,
+                        ),
+                        pressed = pressed,
+                        type = PointerType.Touch,
+                    ),
+                )
+            }
+            val composeType = when (eventType) {
+                TaoTouchEvent.PRESS -> PointerEventType.Press
+                TaoTouchEvent.MOVE -> PointerEventType.Move
+                TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> PointerEventType.Release
+                else -> return
+            }
+            sc.sendPointerEvent(eventType = composeType, pointers = pointers)
+            if (eventType == TaoTouchEvent.CANCEL) {
+                sc.cancelPointerInput()
+            }
+        }
+
+        override fun onTrackpadGesture(
+            handle: Long,
+            kind: Int,
+            phase: Int,
+            xFixed: Long,
+            yFixed: Long,
+            valueFixed: Long,
+        ) {
+            dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed)
+        }
+    }
+
+    // Mirrors `TaoComposeSceneHost.onTrackpadGesture` (macOS) — kept inline
+    // rather than abstracted into a shared helper because the two hosts have
+    // diverged in other dimensions (rendering, scale handling, lifecycle)
+    // and a thin shared trait would obscure more than it factors.
+    private var gestureActive = false
+    private var gestureCenterX = 0f
+    private var gestureCenterY = 0f
+    private var gestureScale = 1f
+    private var gestureAngle = 0f
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun dispatchTrackpadGesture(
+        kind: Int,
+        phase: Int,
+        xFixed: Long,
+        yFixed: Long,
+        valueFixed: Long,
+    ) {
+        if (scene == null) return
+        val xPx = xFixed / TOUCH_POSITION_SCALE
+        val yPx = yFixed / TOUCH_POSITION_SCALE
+        val value = valueFixed / TRACKPAD_VALUE_SCALE
+        when (phase) {
+            TaoTrackpadPhase.BEGAN -> {
+                startGesture(xPx, yPx)
+                applyGestureDelta(kind, value)
+                sendGesturePointers(PointerEventType.Press)
+            }
+            TaoTrackpadPhase.CHANGED -> {
+                if (!gestureActive) {
+                    startGesture(xPx, yPx)
+                } else {
+                    // Track the focal point on every tick so a pinch-while-
+                    // dragging keeps its pan component (the synthetic centroid
+                    // moves with the focal point between events).
+                    gestureCenterX = xPx
+                    gestureCenterY = yPx
+                }
+                applyGestureDelta(kind, value)
+                sendGesturePointers(PointerEventType.Move)
+            }
+            TaoTrackpadPhase.ENDED -> endGesture(cancelled = false)
+            TaoTrackpadPhase.CANCELLED -> endGesture(cancelled = true)
+        }
+    }
+
+    private fun startGesture(centerX: Float, centerY: Float) {
+        gestureActive = true
+        gestureCenterX = centerX
+        gestureCenterY = centerY
+        gestureScale = 1f
+        gestureAngle = 0f
+    }
+
+    private fun applyGestureDelta(kind: Int, value: Float) {
+        when (kind) {
+            TaoTrackpadGesture.MAGNIFY ->
+                gestureScale *= (1f + value).coerceAtLeast(MIN_GESTURE_SCALE)
+            TaoTrackpadGesture.ROTATE -> {
+                // Rust converts GDK's per-event radians into degrees so this
+                // matches the macOS NSEvent.rotation contract exactly. Sign
+                // flip for Compose's y-down screen frame.
+                gestureAngle -= value * (Math.PI.toFloat() / DEGREES_PER_RADIAN)
+            }
+        }
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun sendGesturePointers(eventType: PointerEventType) {
+        val sc = scene ?: return
+        val radius = TRACKPAD_BASE_RADIUS_PX * gestureScale
+        val cosA = cos(gestureAngle)
+        val sinA = sin(gestureAngle)
+        val dx = radius * cosA
+        val dy = radius * sinA
+        val pressed = eventType != PointerEventType.Release
+        val pointers = listOf(
+            ComposeScenePointer(
+                id = PointerId(TRACKPAD_POINTER_ID_A),
+                position = Offset(gestureCenterX - dx, gestureCenterY - dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
+            ComposeScenePointer(
+                id = PointerId(TRACKPAD_POINTER_ID_B),
+                position = Offset(gestureCenterX + dx, gestureCenterY + dy),
+                pressed = pressed,
+                type = PointerType.Touch,
+            ),
+        )
+        sc.sendPointerEvent(eventType = eventType, pointers = pointers)
+    }
+
+    private fun endGesture(cancelled: Boolean) {
+        if (!gestureActive) return
+        sendGesturePointers(PointerEventType.Release)
+        gestureActive = false
+        gestureScale = 1f
+        gestureAngle = 0f
+        if (cancelled) scene?.cancelPointerInput()
     }
 
     /** Current scale factor (logical→physical multiplier). */
@@ -763,6 +953,9 @@ internal class TaoComposeSceneHostLinux(
             io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxDndBridge
                 .nativeRevoke(window.handle)
         }
+        if (NativeTaoLinuxTouchBridge.isLoaded && window.handle != 0L) {
+            NativeTaoLinuxTouchBridge.nativeRevoke(window.handle)
+        }
         // Stop the swap thread first. It may be parked inside
         // `eglSwapBuffers` waiting on a frame callback — joining without a
         // wakeup would hang. `shutdownAndJoin` requests shutdown before
@@ -802,6 +995,19 @@ internal class TaoComposeSceneHostLinux(
 
     private companion object {
         private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
+
+        // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
+        // `TRACKPAD_VALUE_FIXED_SCALE` in `events.rs`.
+        private const val TOUCH_POSITION_SCALE: Float = 1024f
+        private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
+
+        // Synth pinch radius / pointer ids — same values as the macOS host
+        // (see `TaoComposeSceneHost`'s companion); kept in sync manually.
+        private const val TRACKPAD_BASE_RADIUS_PX: Float = 120f
+        private const val TRACKPAD_POINTER_ID_A: Long = 0xA001L
+        private const val TRACKPAD_POINTER_ID_B: Long = 0xA002L
+        private const val DEGREES_PER_RADIAN: Float = 180f
+        private const val MIN_GESTURE_SCALE: Float = 0.05f
     }
 
     /**

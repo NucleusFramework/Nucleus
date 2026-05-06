@@ -76,6 +76,32 @@ internal object NativeTaoBridge {
             valueFixed: Int,
         ) {
         }
+
+        /**
+         * Windows touchscreen input. Tao emits one `WindowEvent::Touch` per
+         * finger update (WM_POINTER / WM_TOUCH), forwarded here verbatim.
+         * The JVM side aggregates the active set before issuing
+         * `ComposeScene.sendPointerEvent`.
+         *
+         * [phase] is one of [TaoTouchEvent.PRESS] / [MOVE] / [RELEASE] / [CANCEL].
+         * [id] is the OS-assigned finger id (reusable after [RELEASE]).
+         * [xFixed]/[yFixed] are physical pixels × 1024 (matches
+         * [TaoEventCode.CURSOR_MOVED]).
+         * [forceFixed] is the touch pressure × 10 000 in `[0, 10000]`, or
+         * `-1` when the digitizer doesn't report pressure.
+         *
+         * Default no-op so non-Windows callers can ignore it.
+         */
+        @Suppress("LongParameterList", "FunctionParameterNaming")
+        fun onTouchInput(
+            handle: Long,
+            phase: Int,
+            id: Long,
+            xFixed: Int,
+            yFixed: Int,
+            forceFixed: Int,
+        ) {
+        }
     }
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */

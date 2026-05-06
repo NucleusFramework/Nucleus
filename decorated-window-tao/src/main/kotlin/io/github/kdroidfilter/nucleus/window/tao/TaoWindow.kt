@@ -58,6 +58,8 @@ class TaoWindow internal constructor(
     @Volatile
     private var trackpadGestureListener: TrackpadGestureListener? = null
     @Volatile
+    private var touchInputListener: TouchInputListener? = null
+    @Volatile
     private var keyListener: KeyEventListener? = null
 
     /**
@@ -72,6 +74,25 @@ class TaoWindow internal constructor(
             xFixed: Int,       // physical pixels × 1024, view-relative, top-left
             yFixed: Int,
             valueFixed: Int,   // delta × 10000 (ratio for magnify, degrees for rotate)
+        )
+    }
+
+    /**
+     * Windows-only touchscreen listener (Tao emits `WindowEvent::Touch` via
+     * WM_POINTER / WM_TOUCH). One callback per finger update — the host is
+     * responsible for aggregating the active set before issuing a Compose
+     * `sendPointerEvent`. See [NativeTaoBridge.EventCallback.onTouchInput].
+     *
+     * Linux uses a separate per-window bridge ([NativeTaoLinuxTouchBridge])
+     * because GTK 3 doesn't surface touch through Tao's event stream.
+     */
+    fun interface TouchInputListener {
+        fun onTouch(
+            phase: Int,        // TaoTouchEvent.PRESS | MOVE | RELEASE | CANCEL
+            id: Long,          // OS-assigned finger id
+            xFixed: Int,       // physical pixels × 1024
+            yFixed: Int,
+            forceFixed: Int,   // pressure × 10000, or TaoTouchEvent.FORCE_UNKNOWN
         )
     }
 
@@ -292,6 +313,21 @@ class TaoWindow internal constructor(
     /** macOS only — see [TrackpadGestureListener]. No-op on Windows / Linux. */
     fun onTrackpadGesture(listener: TrackpadGestureListener) {
         trackpadGestureListener = listener
+    }
+
+    /** Windows only — see [TouchInputListener]. No-op on Linux / macOS. */
+    fun onTouchInput(listener: TouchInputListener) {
+        touchInputListener = listener
+    }
+
+    internal fun dispatchTouchInput(
+        phase: Int,
+        id: Long,
+        xFixed: Int,
+        yFixed: Int,
+        forceFixed: Int,
+    ) {
+        touchInputListener?.onTouch(phase, id, xFixed, yFixed, forceFixed)
     }
 
     internal fun dispatchTrackpadGesture(

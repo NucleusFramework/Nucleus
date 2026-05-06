@@ -6,17 +6,19 @@ use std::collections::HashMap;
 use jni::sys::jint;
 
 use tao::dpi::LogicalSize;
-use tao::event::{ElementState, Event, MouseScrollDelta, StartCause, WindowEvent};
+use tao::event::{ElementState, Event, MouseScrollDelta, StartCause, TouchPhase, WindowEvent};
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 
 use crate::events::{
-    current_modifier_bits, dispatch, dispatch_key, handle_for, mouse_button_code, pack_modifiers,
-    UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
-    EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
-    EVENT_MAIN_EVENTS_CLEARED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED,
-    EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE,
-    EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE,
+    current_modifier_bits, dispatch, dispatch_key, dispatch_touch_input, handle_for,
+    mouse_button_code, pack_modifiers, UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED,
+    EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN,
+    EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED, EVENT_MOUSE_DOWN,
+    EVENT_MOUSE_UP, EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
+    EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY,
+    SCROLL_FIXED_SCALE, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS,
+    TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
 use crate::keymap;
 use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
@@ -452,6 +454,32 @@ pub(crate) fn run_event_loop_blocking() {
                             location,
                             current_modifier_bits(),
                             code_point,
+                        );
+                    }
+                    WindowEvent::Touch(touch) => {
+                        // Tao 0.35 enables `RegisterTouchWindow` on Windows by
+                        // default, so the OS no longer synthesises mouse-event
+                        // fallbacks for touchscreen input — we must route the
+                        // raw touches ourselves or `LazyColumn`, drag-gestures,
+                        // pinch-zoom, etc. don't react on tablets / 2-in-1s.
+                        let phase = match touch.phase {
+                            TouchPhase::Started => TOUCH_EVENT_PRESS,
+                            TouchPhase::Moved => TOUCH_EVENT_MOVE,
+                            TouchPhase::Ended => TOUCH_EVENT_RELEASE,
+                            TouchPhase::Cancelled => TOUCH_EVENT_CANCEL,
+                            _ => return,
+                        };
+                        let force_fixed = match touch.force {
+                            Some(f) => (f.normalized() * TOUCH_FORCE_FIXED_SCALE) as jint,
+                            None => TOUCH_FORCE_UNKNOWN,
+                        };
+                        dispatch_touch_input(
+                            handle,
+                            phase,
+                            touch.id,
+                            (touch.location.x * CURSOR_FIXED_SCALE) as jint,
+                            (touch.location.y * CURSOR_FIXED_SCALE) as jint,
+                            force_fixed,
                         );
                     }
                     _ => {}

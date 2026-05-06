@@ -10,10 +10,13 @@ import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -24,6 +27,7 @@ import io.github.kdroidfilter.nucleus.window.tao.NativeTaoGlBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDecoBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoEventCode
 import io.github.kdroidfilter.nucleus.window.tao.TaoModifierMask
+import io.github.kdroidfilter.nucleus.window.tao.TaoTouchEvent
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
@@ -132,6 +136,110 @@ internal class TaoComposeSceneHostWindows(
         )
 
         registerInboundDnD()
+        registerTouchInput()
+    }
+
+    // ── Touch (Windows) ───────────────────────────────────────────────────
+    //
+    // Tao 0.35 enables `RegisterTouchWindow` on Windows by default, so the
+    // OS no longer synthesises mouse events for touchscreen input. Without
+    // routing `WindowEvent::Touch` to Compose, `LazyColumn` scroll, drag
+    // gestures, and `detectTransformGestures` (pinch / rotate) would not
+    // react on tablets / 2-in-1s — same gap Compose Desktop officiel hits
+    // on this platform (JBR-2702).
+    //
+    // The Rust side dispatches one event per finger update; we accumulate
+    // the active set here and issue a single `sendPointerEvent` with the
+    // full pointer list every time, since Compose treats absence as a
+    // release.
+
+    private data class ActiveTouch(
+        val id: Long,
+        var xPx: Float,
+        var yPx: Float,
+        var pressed: Boolean,
+        var pressure: Float,
+    )
+
+    /** Insertion order matters for stable pointer ordering across events. */
+    private val activeTouches = LinkedHashMap<Long, ActiveTouch>()
+
+    private fun registerTouchInput() {
+        window.onTouchInput { phase, id, xFixed, yFixed, forceFixed ->
+            onTouchInput(phase, id, xFixed, yFixed, forceFixed)
+        }
+    }
+
+    @OptIn(ExperimentalComposeUiApi::class)
+    private fun onTouchInput(
+        phase: Int,
+        id: Long,
+        xFixed: Int,
+        yFixed: Int,
+        forceFixed: Int,
+    ) {
+        val sc = scene ?: return
+        val xPx = xFixed / TOUCH_POSITION_SCALE
+        val yPx = yFixed / TOUCH_POSITION_SCALE
+        val pressure = if (forceFixed == TaoTouchEvent.FORCE_UNKNOWN) {
+            // No digitizer pressure data — Compose expects a non-zero value
+            // for an active contact, so report the standard "average touch".
+            1f
+        } else {
+            forceFixed / TOUCH_FORCE_SCALE
+        }
+
+        val composeType = when (phase) {
+            TaoTouchEvent.PRESS -> {
+                activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
+                PointerEventType.Press
+            }
+            TaoTouchEvent.MOVE -> {
+                val existing = activeTouches[id]
+                if (existing != null) {
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressure = pressure
+                } else {
+                    // Synthetic Press for an unknown id — defensive in case Tao
+                    // ever forwards a Move without a prior Started (palm-reject
+                    // race observed on some Surface drivers).
+                    activeTouches[id] = ActiveTouch(id, xPx, yPx, pressed = true, pressure = pressure)
+                }
+                PointerEventType.Move
+            }
+            TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> {
+                val existing = activeTouches[id]
+                if (existing != null) {
+                    existing.xPx = xPx
+                    existing.yPx = yPx
+                    existing.pressed = false
+                } else {
+                    return
+                }
+                PointerEventType.Release
+            }
+            else -> return
+        }
+
+        val pointers = activeTouches.values.map { t ->
+            ComposeScenePointer(
+                id = PointerId(t.id),
+                position = Offset(t.xPx, t.yPx),
+                pressed = t.pressed,
+                type = PointerType.Touch,
+            )
+        }
+        sc.sendPointerEvent(eventType = composeType, pointers = pointers)
+
+        // Purge after the dispatch so the JVM saw the released finger one
+        // last time with `pressed=false` — same convention as Linux.
+        if (phase == TaoTouchEvent.RELEASE || phase == TaoTouchEvent.CANCEL) {
+            activeTouches.remove(id)
+            if (phase == TaoTouchEvent.CANCEL) {
+                sc.cancelPointerInput()
+            }
+        }
     }
 
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
@@ -550,6 +658,11 @@ internal class TaoComposeSceneHostWindows(
 
     private companion object {
         private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
+
+        // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
+        // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
+        private const val TOUCH_POSITION_SCALE: Float = 1024f
+        private const val TOUCH_FORCE_SCALE: Float = 10_000f
     }
 
     private inner class FlushingMainDispatcher : CoroutineDispatcher() {
