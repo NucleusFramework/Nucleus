@@ -7,8 +7,6 @@ import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
@@ -20,7 +18,9 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost
+import io.github.kdroidfilter.nucleus.window.tao.render.dispatchSyntheticKeyTyped
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
@@ -62,13 +62,13 @@ internal class NativeViewOverlayController(
         override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
             val sc = scene ?: return
             val pointerButton = when (button) {
-                1 -> PointerButton.Primary
-                2 -> PointerButton.Secondary
+                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
                 else -> null
             }
             val eventType = when (type) {
-                EVT_PTR_DOWN -> PointerEventType.Press
-                EVT_PTR_UP -> PointerEventType.Release
+                TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
+                TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                 else -> PointerEventType.Move
             }
             sc.sendPointerEvent(
@@ -103,14 +103,14 @@ internal class NativeViewOverlayController(
 
         override fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int) {
             val sc = scene ?: return
-            val isShift = modifiers and 0x1 != 0
-            val isCtrl = modifiers and 0x2 != 0
-            val isAlt = modifiers and 0x4 != 0
-            val isMeta = modifiers and 0x8 != 0
+            val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
+            val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
+            val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
+            val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
             sc.sendKeyEvent(
                 KeyEvent(
                     key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
-                    type = if (type == EVT_KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                    type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
                     codePoint = codePoint,
                     isShiftPressed = isShift,
                     isCtrlPressed = isCtrl,
@@ -118,39 +118,8 @@ internal class NativeViewOverlayController(
                     isMetaPressed = isMeta,
                 ),
             )
-            // Compose desktop's `BasicTextField` only inserts a character
-            // when it receives a synthetic `KEY_TYPED` AWT event piggy-
-            // backed inside a Compose `KeyEvent` — that's the gate
-            // `KeyEvent.isTypedEvent` looks for. Without this, KeyDown
-            // alone moves focus / fires onKeyEvent but never types text.
-            // Same trick `TaoComposeSceneHost.onKeyEvent` and
-            // `TaoPopupRenderer.EventCallback.onKeyEvent` use.
-            if (type == EVT_KEY_DOWN && codePoint.isPrintableTextInput(isCtrl, isMeta)) {
-                val awtModifiers =
-                    (if (isShift) java.awt.event.InputEvent.SHIFT_DOWN_MASK else 0) or
-                        (if (isCtrl) java.awt.event.InputEvent.CTRL_DOWN_MASK else 0) or
-                        (if (isAlt) java.awt.event.InputEvent.ALT_DOWN_MASK else 0) or
-                        (if (isMeta) java.awt.event.InputEvent.META_DOWN_MASK else 0)
-                sc.sendKeyEvent(
-                    KeyEvent(
-                        key = Key(nativeKeyCode = 0, nativeKeyLocation = 0),
-                        type = KeyEventType.Unknown,
-                        codePoint = codePoint,
-                        isShiftPressed = isShift,
-                        isCtrlPressed = isCtrl,
-                        isAltPressed = isAlt,
-                        isMetaPressed = isMeta,
-                        nativeEvent = java.awt.event.KeyEvent(
-                            SyntheticEventSource,
-                            java.awt.event.KeyEvent.KEY_TYPED,
-                            System.currentTimeMillis(),
-                            awtModifiers,
-                            java.awt.event.KeyEvent.VK_UNDEFINED,
-                            codePoint.toChar(),
-                            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
-                        ),
-                    ),
-                )
+            if (type == TaoNativeWireFormat.KEY_DOWN) {
+                sc.dispatchSyntheticKeyTyped(codePoint, isShift, isCtrl, isAlt, isMeta)
             }
         }
     }
@@ -242,7 +211,7 @@ internal class NativeViewOverlayController(
                 platformContext = object : PlatformContext.Empty() {
                     override val windowInfo: WindowInfo get() = popupWindowInfo
                     override fun setPointerIcon(pointerIcon: PointerIcon) {
-                        popupHost.setCursor(mapPointerIconToTao(pointerIcon))
+                        popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
                     }
                 },
                 invalidate = { popupHost.requestRedraw() },
@@ -343,55 +312,5 @@ internal class NativeViewOverlayController(
 
     private companion object {
         private val EmptyRegions = FloatArray(0)
-        private const val EVT_PTR_DOWN = 1
-        private const val EVT_PTR_UP = 2
-        private const val EVT_KEY_DOWN = 1
-
-        // Dummy AWT Component used as `source` for the synthetic
-        // `KEY_TYPED` events we feed Compose. `java.awt.event.KeyEvent`
-        // requires a non-null Component; we never dispatch back to AWT.
-        private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
-
-        /** Heuristic — same logic as TaoComposeSceneHost. */
-        private fun Int.isPrintableTextInput(isCtrl: Boolean, isMeta: Boolean): Boolean {
-            if (isCtrl || isMeta) return false
-            // ASCII control range / unmapped; Cmd / Ctrl combos handled
-            // separately by Compose's shortcut path.
-            return this >= 0x20 && this != 0x7F
-        }
-
-        /**
-         * Mirrors `TaoPlatformContext.mapPointerIcon` — kept private to
-         * avoid leaking a `PointerIcon` → `Int` dependency through the
-         * `TaoPopupHost` interface (which only sees the wire-format
-         * integer code).
-         */
-        private fun mapPointerIconToTao(icon: PointerIcon): Int {
-            when {
-                icon === PointerIcon.Default -> return TaoCursorIcon.DEFAULT
-                icon === PointerIcon.Text -> return TaoCursorIcon.TEXT
-                icon === PointerIcon.Hand -> return TaoCursorIcon.HAND
-                icon === PointerIcon.Crosshair -> return TaoCursorIcon.CROSSHAIR
-            }
-            return runCatching {
-                val cursor = icon.javaClass.getMethod("getCursor").invoke(icon) as? java.awt.Cursor
-                when (cursor?.type) {
-                    java.awt.Cursor.TEXT_CURSOR -> TaoCursorIcon.TEXT
-                    java.awt.Cursor.HAND_CURSOR -> TaoCursorIcon.HAND
-                    java.awt.Cursor.CROSSHAIR_CURSOR -> TaoCursorIcon.CROSSHAIR
-                    java.awt.Cursor.WAIT_CURSOR -> TaoCursorIcon.WAIT
-                    java.awt.Cursor.MOVE_CURSOR -> TaoCursorIcon.MOVE
-                    java.awt.Cursor.E_RESIZE_CURSOR, java.awt.Cursor.W_RESIZE_CURSOR ->
-                        TaoCursorIcon.EW_RESIZE
-                    java.awt.Cursor.N_RESIZE_CURSOR, java.awt.Cursor.S_RESIZE_CURSOR ->
-                        TaoCursorIcon.NS_RESIZE
-                    java.awt.Cursor.NE_RESIZE_CURSOR, java.awt.Cursor.SW_RESIZE_CURSOR ->
-                        TaoCursorIcon.NESW_RESIZE
-                    java.awt.Cursor.NW_RESIZE_CURSOR, java.awt.Cursor.SE_RESIZE_CURSOR ->
-                        TaoCursorIcon.NWSE_RESIZE
-                    else -> TaoCursorIcon.DEFAULT
-                }
-            }.getOrDefault(TaoCursorIcon.DEFAULT)
-        }
     }
 }

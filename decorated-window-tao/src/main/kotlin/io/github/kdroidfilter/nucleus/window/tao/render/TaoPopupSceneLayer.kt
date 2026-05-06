@@ -165,13 +165,13 @@ internal class TaoPopupSceneLayer(
     private inner class PopupEventCallback : PopupNativeBridge.EventCallback {
         override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
             val pointerButton = when (button) {
-                1 -> PointerButton.Primary
-                2 -> PointerButton.Secondary
+                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
                 else -> null
             }
             val eventType = when (type) {
-                EVT_PTR_DOWN -> PointerEventType.Press
-                EVT_PTR_UP -> PointerEventType.Release
+                TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
+                TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                 else -> PointerEventType.Move
             }
             innerScene.sendPointerEvent(
@@ -192,13 +192,13 @@ internal class TaoPopupSceneLayer(
         }
 
         override fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int) {
-            val isShift = modifiers and MOD_SHIFT != 0
-            val isCtrl = modifiers and MOD_CTRL != 0
-            val isAlt = modifiers and MOD_ALT != 0
-            val isMeta = modifiers and MOD_META != 0
+            val isShift = modifiers and TaoNativeWireFormat.MOD_SHIFT != 0
+            val isCtrl = modifiers and TaoNativeWireFormat.MOD_CTRL != 0
+            val isAlt = modifiers and TaoNativeWireFormat.MOD_ALT != 0
+            val isMeta = modifiers and TaoNativeWireFormat.MOD_META != 0
             val ev = KeyEvent(
                 key = Key(nativeKeyCode = vkCode, nativeKeyLocation = 0),
-                type = if (type == EVT_KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
+                type = if (type == TaoNativeWireFormat.KEY_DOWN) KeyEventType.KeyDown else KeyEventType.KeyUp,
                 codePoint = codePoint,
                 isShiftPressed = isShift,
                 isCtrlPressed = isCtrl,
@@ -207,27 +207,8 @@ internal class TaoPopupSceneLayer(
             )
             if (onPreviewKeyEvent?.invoke(ev) == true) return
             val consumed = innerScene.sendKeyEvent(ev)
-            if (type == EVT_KEY_DOWN && codePoint.isPrintableTextInput(isCtrl, isMeta)) {
-                innerScene.sendKeyEvent(
-                    KeyEvent(
-                        key = Key(nativeKeyCode = 0, nativeKeyLocation = 0),
-                        type = KeyEventType.Unknown,
-                        codePoint = codePoint,
-                        isShiftPressed = isShift,
-                        isCtrlPressed = isCtrl,
-                        isAltPressed = isAlt,
-                        isMetaPressed = isMeta,
-                        nativeEvent = java.awt.event.KeyEvent(
-                            SyntheticEventSource,
-                            java.awt.event.KeyEvent.KEY_TYPED,
-                            System.currentTimeMillis(),
-                            awtModifiers(isShift, isCtrl, isAlt, isMeta),
-                            java.awt.event.KeyEvent.VK_UNDEFINED,
-                            codePoint.toChar(),
-                            java.awt.event.KeyEvent.KEY_LOCATION_UNKNOWN,
-                        ),
-                    ),
-                )
+            if (type == TaoNativeWireFormat.KEY_DOWN) {
+                innerScene.dispatchSyntheticKeyTyped(codePoint, isShift, isCtrl, isAlt, isMeta)
             }
             if (consumed) return
             onKeyEvent?.invoke(ev)
@@ -237,8 +218,8 @@ internal class TaoPopupSceneLayer(
     private inner class PopupOutsideListener : PopupNativeBridge.OutsideClickListener {
         override fun onOutsideClick(type: Int, button: Int) {
             val pointerButton = when (button) {
-                1 -> PointerButton.Primary
-                2 -> PointerButton.Secondary
+                TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
+                TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
                 else -> PointerButton.Tertiary
             }
             onOutsidePointerEvent?.invoke(PointerEventType.Press, pointerButton)
@@ -403,25 +384,5 @@ internal class TaoPopupSceneLayer(
         // Far enough offscreen to be invisible on any reasonable monitor
         // setup, but still inside the integer range we hand to the bridge.
         private const val OFFSCREEN_OFFSET_PX: Int = 100_000
-        // Wire constants — must match the C #defines in popup_panel.m.
-        private const val EVT_PTR_DOWN = 1
-        private const val EVT_PTR_UP = 2
-        private const val EVT_KEY_DOWN = 1
-
-        private const val MOD_SHIFT = 0x1
-        private const val MOD_CTRL = 0x2
-        private const val MOD_ALT = 0x4
-        private const val MOD_META = 0x8
-
-        private val SyntheticEventSource: java.awt.Component = javax.swing.JPanel()
-
-        private fun Int.isPrintableTextInput(isCtrl: Boolean, isMeta: Boolean): Boolean =
-            this >= 0x20 && this != 0x7F && !isCtrl && !isMeta
-
-        private fun awtModifiers(isShift: Boolean, isCtrl: Boolean, isAlt: Boolean, isMeta: Boolean): Int =
-            (if (isShift) java.awt.event.InputEvent.SHIFT_DOWN_MASK else 0) or
-                (if (isCtrl) java.awt.event.InputEvent.CTRL_DOWN_MASK else 0) or
-                (if (isAlt) java.awt.event.InputEvent.ALT_DOWN_MASK else 0) or
-                (if (isMeta) java.awt.event.InputEvent.META_DOWN_MASK else 0)
     }
 }
