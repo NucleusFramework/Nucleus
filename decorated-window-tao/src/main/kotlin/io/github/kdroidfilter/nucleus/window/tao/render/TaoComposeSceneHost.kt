@@ -32,6 +32,8 @@ import kotlin.math.sin
 import java.awt.Cursor
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.ComposeSceneContext
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -40,7 +42,9 @@ import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.tao.MacOSStyle
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+import io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsNativeViewBridge
 import io.github.kdroidfilter.nucleus.window.tao.TaoMainDispatcher
+import io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost
 import io.github.kdroidfilter.nucleus.window.tao.TaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.shouldApplyLargeCornerRadius
 import org.jetbrains.skia.BackendRenderTarget
@@ -213,13 +217,11 @@ internal class TaoComposeSceneHost(
             getRootNode = { scene!!.rootDragAndDropNode },
             outboundLauncher = ::launchMacOsOutboundDrag,
         )
-        // Phase 3: switch from `CanvasLayersComposeScene` to
-        // `PlatformLayersComposeScene` so that Compose's `Popup` framework
-        // routes layer creation through our `TaoComposeSceneContext`. Each
-        // popup becomes a `TaoPopupSceneLayer` backed by its own
-        // borderless transparent NSPanel — that's how popups appear above
-        // any AppKit subview that may sit inside the host window
-        // (e.g. a `WKWebView` mounted via `NativeView`).
+        // Use `PlatformLayersComposeScene` so Compose's Popup framework
+        // routes layer creation through `TaoComposeSceneContext`: each
+        // Popup/DropdownMenu becomes a `TaoPopupSceneLayer` backed by its
+        // own NSPanel, which is what makes popups appear above any AppKit
+        // subview embedded in the host window (e.g. a `WKWebView`).
         val taoPlatformContext = TaoPlatformContext(
             windowHandle = window.handle,
             topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
@@ -229,19 +231,17 @@ internal class TaoComposeSceneHost(
         )
         val popupHostInstance = popupHost()
         val composeSceneContext = if (popupHostInstance != null) {
-            io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneContext(
+            TaoComposeSceneContext(
                 platformContext = taoPlatformContext,
                 popupHost = popupHostInstance,
             )
         } else {
-            // Fall back to "popups in same canvas" if attach() couldn't
-            // resolve the NSView handle yet (shouldn't happen in practice
-            // — attach() is called after the first Resized event).
-            object : androidx.compose.ui.scene.ComposeSceneContext {
+            // Fallback if attach() hasn't resolved the NSView handle yet.
+            object : ComposeSceneContext {
                 override val platformContext: PlatformContext = taoPlatformContext
             }
         }
-        scene = androidx.compose.ui.scene.PlatformLayersComposeScene(
+        scene = PlatformLayersComposeScene(
             density = Density(scale),
             layoutDirection = LayoutDirection.Ltr,
             size = IntSize(widthPx, heightPx),
@@ -485,47 +485,34 @@ internal class TaoComposeSceneHost(
     // each other when multiple popups are active.
     private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
 
-    /**
-     * Per-overlay key handlers consulted by [onKeyEvent] before the
-     * main scene's dispatch. Returning `true` consumes the event so it
-     * doesn't reach the main scene. Used to route keys to a focused
-     * overlay (e.g. a `BasicTextField` in `NativeView`'s `content` slot)
-     * — Tao's key forwarding lands here before AppKit's responder chain
-     * does, so overlays can't receive `keyDown:` natively and need this
-     * piggy-back path.
-     */
-    private val popupKeyHandlers:
-        MutableMap<Any, (androidx.compose.ui.input.key.KeyEvent) -> Boolean> = LinkedHashMap()
+    // Tao's macOS pipeline intercepts keys before AppKit's responder
+    // chain, so an overlay NSView can't receive `keyDown:` natively. The
+    // host's `onKeyEvent` consults these handlers first; returning `true`
+    // consumes the event before the main scene sees it.
+    private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
 
-    /**
-     * Adapter exposing this scene host as a [TaoPopupHost] so the
-     * Phase-2+ popup renderer can hook into our render loop. Returns
-     * `null` until [attach] has resolved a non-zero NSView handle.
-     */
-    fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
+    fun nativeViewHost(): TaoNativeViewHost? {
         if (nsViewHandle == 0L) return null
-        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsNativeViewBridge.isLoaded) return null
+        if (!NativeTaoMacOsNativeViewBridge.isLoaded) return null
         val outer = this
-        return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
+        return object : TaoNativeViewHost {
             override fun attach(childHandle: Long) {
-                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsNativeViewBridge
-                    .nativeAddSubview(outer.nsViewHandle, childHandle)
+                NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
             override fun detach(childHandle: Long) {
-                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsNativeViewBridge
-                    .nativeRemoveSubview(childHandle)
+                NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
             }
             override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsNativeViewBridge
+                NativeTaoMacOsNativeViewBridge
                     .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
             }
         }
     }
 
-    fun popupHost(): io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost? {
+    fun popupHost(): TaoPopupHost? {
         if (nsViewHandle == 0L) return null
         val outer = this
-        return object : io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost {
+        return object : TaoPopupHost {
             override val parentNsView: Long get() = outer.nsViewHandle
             override val scale: Float get() = outer.scale
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
@@ -538,10 +525,7 @@ internal class TaoComposeSceneHost(
             override fun unregisterRenderer(token: Any) {
                 popupRenderers.remove(token)
             }
-            override fun registerKeyHandler(
-                token: Any,
-                handler: (androidx.compose.ui.input.key.KeyEvent) -> Boolean,
-            ) {
+            override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
                 popupKeyHandlers[token] = handler
             }
             override fun unregisterKeyHandler(token: Any) {
@@ -905,10 +889,6 @@ internal class TaoComposeSceneHost(
             else -> return false
         }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
-        // Route to a registered overlay before the main scene gets the
-        // event. Tao's macOS pipeline intercepts keys before AppKit's
-        // responder chain — without this, overlays (e.g. a BasicTextField
-        // inside NativeView's content slot) would never receive keys.
         if (popupKeyHandlers.isNotEmpty()) {
             for (handler in popupKeyHandlers.values.toList()) {
                 if (handler(composeEvent)) return true

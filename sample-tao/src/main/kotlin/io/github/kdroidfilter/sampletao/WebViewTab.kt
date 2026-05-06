@@ -17,7 +17,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -171,16 +170,6 @@ private fun Watermark() {
                 },
             )
         }
-    }
-
-    LaunchedEffect(hasFocus) {
-        println("[WebViewTab] TextField focus = $hasFocus")
-    }
-    LaunchedEffect(clickCount) {
-        if (clickCount > 0) println("[WebViewTab] click counter = $clickCount")
-    }
-    LaunchedEffect(text) {
-        println("[WebViewTab] text = \"$text\"")
     }
 }
 

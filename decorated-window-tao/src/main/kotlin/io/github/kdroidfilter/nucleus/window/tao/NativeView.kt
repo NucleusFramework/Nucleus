@@ -57,18 +57,14 @@ fun NativeView(
     val handle = remember { factory() }
 
     if (Platform.Current == Platform.MacOS && host != null && popupHost != null && handle != 0L) {
-        // Track latest layout bounds so the overlay (created lazily
-        // inside onGloballyPositioned) gets positioned even when the
-        // first layout pass beats `DisposableEffect`.
         val overlay = remember(host, popupHost) {
             NativeViewOverlayController(host, popupHost)
         }
 
         DisposableEffect(host, handle, overlay) {
             host.attach(handle)
-            // Attach the overlay AFTER the user's native subview so the
-            // overlay sits on top in AppKit's subview list — otherwise
-            // the WebView/etc. paints over the watermark.
+            // Overlay must attach AFTER the user's subview so AppKit
+            // paints it on top in the subview list.
             overlay.attach()
             onDispose {
                 overlay.dispose()
@@ -78,9 +74,6 @@ fun NativeView(
         }
         androidx.compose.runtime.SideEffect { latestUpdate(handle) }
 
-        // Mount overlay content + provide the controller so descendants'
-        // `consumeOverlayPointerEvents` modifiers can register their
-        // bounds.
         DisposableEffect(overlay) {
             overlay.setContent {
                 CompositionLocalProvider(LocalNativeViewOverlayController provides overlay) {
@@ -90,6 +83,9 @@ fun NativeView(
             onDispose { /* dispose handled above */ }
         }
 
+        // Cache the last applied rect so layout passes that don't change
+        // bounds skip the JNI hop entirely.
+        val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
         Box(
             modifier = modifier.onGloballyPositioned { coords ->
                 val pos = coords.positionInRoot()
@@ -97,6 +93,10 @@ fun NativeView(
                 val yPx = pos.y.roundToInt()
                 val wPx = coords.size.width.coerceAtLeast(1)
                 val hPx = coords.size.height.coerceAtLeast(1)
+                if (lastRect[0] == xPx && lastRect[1] == yPx &&
+                    lastRect[2] == wPx && lastRect[3] == hPx
+                ) return@onGloballyPositioned
+                lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
                 host.setFrame(handle, xPx, yPx, wPx, hPx)
                 overlay.setBounds(xPx, yPx, wPx, hPx)
             },

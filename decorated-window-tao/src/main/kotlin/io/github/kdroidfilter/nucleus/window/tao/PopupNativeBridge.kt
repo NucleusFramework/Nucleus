@@ -21,9 +21,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
  * bottom-left, points-based screen coords using the parent window's
  * `backingScaleFactor`.
  */
-// `internal` once Phase 7 ships; kept package-public so the sample-tao
-// Phase 1 smoke test can drive it from outside the module.
-object PopupNativeBridge {
+internal object PopupNativeBridge {
     private const val LIBRARY_NAME = "nucleus_tao_macos_popup"
 
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, PopupNativeBridge::class.java)

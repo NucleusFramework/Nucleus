@@ -60,7 +60,6 @@ internal class NativeViewOverlayController(
      */
     private inner class OverlayCallback : NativeTaoMacOsNativeViewBridge.OverlayEventCallback {
         override fun onPointerEvent(type: Int, x: Float, y: Float, button: Int, modifiers: Int) {
-            println("[NativeViewOverlay] onPointerEvent type=$type x=$x y=$y button=$button (scene=${scene != null})")
             val sc = scene ?: return
             val pointerButton = when (button) {
                 1 -> PointerButton.Primary
@@ -103,7 +102,6 @@ internal class NativeViewOverlayController(
         }
 
         override fun onKeyEvent(type: Int, vkCode: Int, codePoint: Int, modifiers: Int) {
-            println("[NativeViewOverlay] onKeyEvent type=$type vk=$vkCode cp=$codePoint (scene=${scene != null})")
             val sc = scene ?: return
             val isShift = modifiers and 0x1 != 0
             val isCtrl = modifiers and 0x2 != 0
@@ -186,9 +184,7 @@ internal class NativeViewOverlayController(
         // overlay scene.
         popupHost.registerKeyHandler(rendererToken) { event ->
             val sc = scene
-            val isFirst = NativeTaoMacOsNativeViewBridge.nativeIsFirstResponder(overlayNsView)
-            println("[NativeViewOverlay] popupKeyHandler key=${event.key} type=${event.type} firstResponder=$isFirst sceneReady=${sc != null}")
-            if (sc != null && isFirst) {
+            if (sc != null && NativeTaoMacOsNativeViewBridge.nativeIsFirstResponder(overlayNsView)) {
                 sc.sendKeyEvent(event)
                 true
             } else {
@@ -213,10 +209,19 @@ internal class NativeViewOverlayController(
         setBoundsInternal(xPx, yPx, widthPxNew, heightPxNew)
     }
 
+    private var lastFrameX: Int = Int.MIN_VALUE
+    private var lastFrameY: Int = Int.MIN_VALUE
+
     private fun setBoundsInternal(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
+        val frameUnchanged = firstBoundsApplied &&
+            xPx == lastFrameX && yPx == lastFrameY &&
+            widthPxNew == widthPx && heightPxNew == heightPx
+        if (frameUnchanged) return
         NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
             overlayNsView, xPx, yPx, widthPxNew, heightPxNew,
         )
+        lastFrameX = xPx
+        lastFrameY = yPx
         if (widthPxNew == widthPx && heightPxNew == heightPx && firstBoundsApplied) return
         widthPx = widthPxNew
         heightPx = heightPxNew
@@ -258,11 +263,12 @@ internal class NativeViewOverlayController(
     }
 
     fun registerRegion(key: Any, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-        val rect = intArrayOf(xPx, yPx, widthPx, heightPx)
         val previous = regions[key]
-        if (previous != null && previous.contentEquals(rect)) return
-        regions[key] = rect
-        println("[NativeViewOverlay] registerRegion ($xPx,$yPx,$widthPx,$heightPx) total=${regions.size}")
+        if (previous != null &&
+            previous[0] == xPx && previous[1] == yPx &&
+            previous[2] == widthPx && previous[3] == heightPx
+        ) return
+        regions[key] = intArrayOf(xPx, yPx, widthPx, heightPx)
         flushRegions()
     }
 
