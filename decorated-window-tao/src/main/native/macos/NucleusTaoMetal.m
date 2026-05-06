@@ -1141,9 +1141,10 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeIsInTrans
 
 JNIEXPORT jboolean JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeIsInLiveResize(
-        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
-    if (nsViewPtr == 0) return JNI_FALSE;
-    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+        JNIEnv *env, jclass clazz, jlong handle) {
+    if (handle == 0) return JNI_FALSE;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    NSView *view = att->view;
     if (view == nil) return JNI_FALSE;
     return view.inLiveResize ? JNI_TRUE : JNI_FALSE;
 }

@@ -584,7 +584,7 @@ internal class TaoComposeSceneHost(
             // continues to paint smoothly, and the next post-resize
             // frame repaints everything once `inLiveResize` clears.
             if (popupRenderers.isNotEmpty() &&
-                !NativeMetalBridge.nativeIsInLiveResize(nsViewHandle)
+                !NativeMetalBridge.nativeIsInLiveResize(attachmentHandle)
             ) {
                 for (token in popupRenderers.keys.toList()) {
                     popupRenderers[token]?.invoke()

@@ -223,15 +223,6 @@ internal class NativeViewOverlayController(
     private var lastFrameX: Int = Int.MIN_VALUE
     private var lastFrameY: Int = Int.MIN_VALUE
 
-    // Set when a size change arrives mid-live-resize. The expensive
-    // `scene.size` + `nativeResize` path is deferred so the host's pump
-    // (which already skips overlay/popup rendering during the drag) has
-    // less work to do; the next renderFrame after `inLiveResize` clears
-    // applies the deferred values before painting.
-    private var pendingResize: Boolean = false
-    private var pendingWidthPx: Int = 0
-    private var pendingHeightPx: Int = 0
-
     private fun setBoundsInternal(xPx: Int, yPx: Int, widthPxNew: Int, heightPxNew: Int) {
         val frameUnchanged = firstBoundsApplied &&
             xPx == lastFrameX && yPx == lastFrameY &&
@@ -247,22 +238,6 @@ internal class NativeViewOverlayController(
         overlayOffsetX = xPx
         overlayOffsetY = yPx
         if (widthPxNew == widthPx && heightPxNew == heightPx && firstBoundsApplied) return
-
-        // Defer the scene + Metal resize while AppKit is dragging an edge.
-        // Updating `drawableSize` without rendering leaves the next frame
-        // showing indeterminate garbage on zoom-in (the old texture is
-        // released and the new drawable comes back uninitialised); keeping
-        // `drawableSize` at the old value lets the layer's contentsGravity
-        // scale the last presented texture into the new bounds — slightly
-        // blurry on zoom-in, fine on zoom-out, never garbage.
-        if (firstBoundsApplied &&
-            NativeMetalBridge.nativeIsInLiveResize(popupHost.parentNsView)
-        ) {
-            pendingResize = true
-            pendingWidthPx = widthPxNew
-            pendingHeightPx = heightPxNew
-            return
-        }
         widthPx = widthPxNew
         heightPx = heightPxNew
 
@@ -350,19 +325,8 @@ internal class NativeViewOverlayController(
     private fun renderFrame() {
         val ctx = directContext ?: return
         val sc = scene ?: return
-        if (attachmentHandle == 0L) return
-        // Apply any size update that was deferred during a live-resize
-        // before painting; the host's pump only invokes us when
-        // `inLiveResize` is false, so this lands once at drag-end and
-        // crisply repaints at the new size in a single frame.
-        if (pendingResize) {
-            widthPx = pendingWidthPx
-            heightPx = pendingHeightPx
-            sc.size = IntSize(widthPx, heightPx)
-            NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-            pendingResize = false
-        }
         if (widthPx == 0 || heightPx == 0) return
+        if (attachmentHandle == 0L) return
         renderMetalFrame(
             attachmentHandle = attachmentHandle,
             directContext = ctx,
