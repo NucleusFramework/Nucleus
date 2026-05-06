@@ -12,15 +12,18 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneContext
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.dispatchSyntheticKeyTyped
 import io.github.kdroidfilter.nucleus.window.tao.render.renderMetalFrame
+import kotlin.coroutines.CoroutineContext
 import org.jetbrains.skia.DirectContext
 
 /**
@@ -42,11 +45,44 @@ internal class NativeViewOverlayController(
     private val rendererToken: Any = Any()
     private var widthPx: Int = 0
     private var heightPx: Int = 0
+    private var overlayOffsetX: Int = 0
+    private var overlayOffsetY: Int = 0
     private val scale: Float = popupHost.scale
 
-    private val popupWindowInfo: WindowInfo = object : WindowInfo {
+    /**
+     * Reports the host window's container size, not the overlay's, so
+     * Compose's `Popup` framework allows popup positions outside the
+     * overlay bounds. Without this, an upward-overflowing context menu
+     * would be clamped inside the overlay's rect.
+     */
+    private val overlayWindowInfo: WindowInfo = object : WindowInfo {
         override val isWindowFocused: Boolean = true
-        override val containerSize: IntSize get() = IntSize(widthPx, heightPx)
+        override val containerSize: IntSize get() = popupHost.parentWindowSize
+    }
+
+    /**
+     * `TaoPopupHost` adapter handed to popups originating in the overlay's
+     * scene. Forwards every plumbing call to the host while contributing
+     * the overlay's live position as `coordinateOffset`. `TaoPopupSceneLayer`
+     * adds it to `boundsInWindow` before talking to AppKit so a popup
+     * anchored at e.g. `(50, 0)` in overlay-local coords lands at the
+     * correct place in the host NSWindow.
+     */
+    private val overlayPopupHost: TaoPopupHost = object : TaoPopupHost {
+        override val parentNsView: Long get() = popupHost.parentNsView
+        override val scale: Float get() = popupHost.scale
+        override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
+        override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
+        override val coordinateOffset: IntOffset
+            get() = IntOffset(overlayOffsetX, overlayOffsetY)
+        override fun requestRedraw() = popupHost.requestRedraw()
+        override fun registerRenderer(token: Any, render: () -> Unit) =
+            popupHost.registerRenderer(token, render)
+        override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
+        override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) =
+            popupHost.registerKeyHandler(token, handler)
+        override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
+        override fun setCursor(iconCode: Int) = popupHost.setCursor(iconCode)
     }
 
     /**
@@ -186,6 +222,10 @@ internal class NativeViewOverlayController(
         )
         lastFrameX = xPx
         lastFrameY = yPx
+        // Tracked live so `overlayPopupHost.coordinateOffset` returns the
+        // right value when popups reposition mid-flight.
+        overlayOffsetX = xPx
+        overlayOffsetY = yPx
         if (widthPxNew == widthPx && heightPxNew == heightPx && firstBoundsApplied) return
         widthPx = widthPxNew
         heightPx = heightPxNew
@@ -198,17 +238,29 @@ internal class NativeViewOverlayController(
                 NativeMetalBridge.nativeDevicePtr(attachmentHandle),
                 NativeMetalBridge.nativeQueuePtr(attachmentHandle),
             )
-            scene = CanvasLayersComposeScene(
+            val ourPlatformContext = object : PlatformContext.Empty() {
+                override val windowInfo: WindowInfo get() = overlayWindowInfo
+                override fun setPointerIcon(pointerIcon: PointerIcon) {
+                    popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
+                }
+            }
+            // PlatformLayersComposeScene + TaoComposeSceneContext route any
+            // popup mounted from inside the overlay (text-field context
+            // menus, dropdowns, tooltips) through `TaoPopupSceneLayer` —
+            // i.e. into a real NSPanel parented to the host NSWindow.
+            // That's how those popups can extend beyond the overlay's
+            // bounds, intercept clicks themselves (instead of falling
+            // through to the user's native subview), and dismiss on
+            // outside-click via the panel's NSEvent local monitor.
+            scene = PlatformLayersComposeScene(
                 density = Density(scale),
                 layoutDirection = LayoutDirection.Ltr,
                 size = IntSize(widthPx, heightPx),
                 coroutineContext = popupHost.sceneCoroutineContext,
-                platformContext = object : PlatformContext.Empty() {
-                    override val windowInfo: WindowInfo get() = popupWindowInfo
-                    override fun setPointerIcon(pointerIcon: PointerIcon) {
-                        popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
-                    }
-                },
+                composeSceneContext = TaoComposeSceneContext(
+                    platformContext = ourPlatformContext,
+                    popupHost = overlayPopupHost,
+                ),
                 invalidate = { popupHost.requestRedraw() },
             )
             pendingContent?.let { scene?.setContent(it); pendingContent = null }

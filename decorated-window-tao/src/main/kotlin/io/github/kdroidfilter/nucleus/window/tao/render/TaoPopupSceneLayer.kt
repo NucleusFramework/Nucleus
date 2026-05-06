@@ -240,13 +240,15 @@ internal class TaoPopupSceneLayer(
         get() = _bounds
         set(value) {
             _bounds = value
-            // Reposition the NSPanel — `value` is parent-window pixels
-            // with a top-left origin (matching what Compose's popup
-            // RootMeasurePolicy writes here).
+            // `value` is in the parent scene's coordinate system
+            // (top-left origin). For host-window-rooted scenes the offset
+            // is zero; for `NativeView`'s overlay scene it is the overlay's
+            // own position within the host NSWindow.
+            val offset = host.coordinateOffset
             PopupNativeBridge.nativeSetFrameInWindow(
                 panel = panelHandle,
-                xPx = value.left,
-                yPx = value.top,
+                xPx = value.left + offset.x,
+                yPx = value.top + offset.y,
                 widthPx = value.width.coerceAtLeast(1),
                 heightPx = value.height.coerceAtLeast(1),
             )

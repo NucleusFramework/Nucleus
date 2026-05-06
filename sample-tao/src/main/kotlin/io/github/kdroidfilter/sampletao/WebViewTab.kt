@@ -76,7 +76,7 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                 update = { handle ->
                     if (!loadedFlag[0]) {
                         loadedFlag[0] = true
-                        SampleWebViewBridge.nativeLoadUrl(handle, "https://apple.com")
+                        SampleWebViewBridge.nativeLoadUrl(handle, "https://nucleusframework.dev")
                     }
                 },
                 onRelease = { SampleWebViewBridge.nativeRelease(it) },
@@ -99,7 +99,7 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
 
 @Composable
 private fun Watermark() {
-    var text by remember { mutableStateOf("Type here…") }
+    var text by remember { mutableStateOf("") }
     var clickCount by remember { mutableIntStateOf(0) }
     var hasFocus by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }

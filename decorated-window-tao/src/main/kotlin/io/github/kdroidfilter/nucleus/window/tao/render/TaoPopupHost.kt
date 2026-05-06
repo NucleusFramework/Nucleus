@@ -3,6 +3,7 @@ package io.github.kdroidfilter.nucleus.window.tao.render
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.coroutines.CoroutineContext
 
@@ -31,6 +32,16 @@ internal interface TaoPopupHost {
 
     /** Coroutine context to feed inner scenes (parent context + frame clock + flushing dispatcher). */
     val sceneCoroutineContext: CoroutineContext
+
+    /**
+     * Offset added to a popup's `boundsInWindow` before positioning the
+     * NSPanel in the host NSWindow. Non-zero when the popup originates
+     * from a nested scene (e.g. `NativeView`'s overlay) whose origin is
+     * not at the host window's top-left. Without it, popup framework
+     * coordinates from the nested scene would be interpreted as host-
+     * window coords and end up at the wrong place.
+     */
+    val coordinateOffset: IntOffset get() = IntOffset.Zero
 
     fun requestRedraw()
 
