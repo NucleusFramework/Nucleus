@@ -50,14 +50,25 @@ internal class NativeViewOverlayController(
     private val scale: Float = popupHost.scale
 
     /**
-     * Reports the host window's container size, not the overlay's, so
-     * Compose's `Popup` framework allows popup positions outside the
-     * overlay bounds. Without this, an upward-overflowing context menu
-     * would be clamped inside the overlay's rect.
+     * `containerSize` is set so popups can extend past the overlay's
+     * own rect (e.g. a context-menu popping up above its anchor when
+     * the textfield sits near the overlay's top edge), but still stay
+     * inside the host window. Reporting just `parentWindowSize` lets the
+     * popup framework's clamping pick coords that, once shifted by
+     * `overlayOffset` for the actual NSPanel placement, land outside the
+     * window. Subtracting the offset from each axis (clamped at 1) is
+     * the size still available below/right of the overlay's origin.
      */
     private val overlayWindowInfo: WindowInfo = object : WindowInfo {
         override val isWindowFocused: Boolean = true
-        override val containerSize: IntSize get() = popupHost.parentWindowSize
+        override val containerSize: IntSize
+            get() {
+                val parent = popupHost.parentWindowSize
+                return IntSize(
+                    (parent.width - overlayOffsetX).coerceAtLeast(1),
+                    (parent.height - overlayOffsetY).coerceAtLeast(1),
+                )
+            }
     }
 
     /**
