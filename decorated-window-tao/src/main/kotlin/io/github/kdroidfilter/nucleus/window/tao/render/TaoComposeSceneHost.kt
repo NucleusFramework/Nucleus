@@ -500,6 +500,10 @@ internal class TaoComposeSceneHost(
                 NativeTaoMacOsNativeViewBridge
                     .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
             }
+            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+                NativeTaoMacOsNativeViewBridge
+                    .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
+            }
         }
     }
 

@@ -72,10 +72,11 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             NativeView(
                 factory = { SampleWebViewBridge.nativeCreate() },
                 modifier = Modifier.fillMaxSize(),
+                cornerRadius = 12.dp,
                 update = { handle ->
                     if (!loadedFlag[0]) {
                         loadedFlag[0] = true
-                        SampleWebViewBridge.nativeLoadUrl(handle, "https://example.com")
+                        SampleWebViewBridge.nativeLoadUrl(handle, "https://apple.com")
                     }
                 },
                 onRelease = { SampleWebViewBridge.nativeRelease(it) },

@@ -297,6 +297,42 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
     }
 }
 
+/* Sets the CALayer cornerRadius / masksToBounds on the embedded subview
+ * so a Compose host can clip a `WKWebView`/`AVPlayerView`/etc. with
+ * rounded or fully-circular corners. `Modifier.clip()` on the Compose
+ * side has no effect on AppKit subviews — that's the standard interop
+ * limitation also seen in `AndroidView` / `UIKitView`. radiusPx is in
+ * physical pixels and is capped here at min(w, h) / 2 so callers can
+ * pass a huge value (or `Dp.Infinity` translated to `Float.MAX_VALUE`)
+ * to mean "make it a circle".
+ */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetSubviewCornerRadius(
+    JNIEnv *env, jclass clazz, jlong parentPtr, jlong childPtr, jfloat radiusPx)
+{
+    (void)env; (void)clazz;
+    NSView *parent = view_from_long(parentPtr);
+    NSView *child  = view_from_long(childPtr);
+    if (child == nil) return;
+
+    CGFloat scale = parent.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    CGFloat radiusPt = (CGFloat)radiusPx / scale;
+    if (radiusPt < 0) radiusPt = 0;
+
+    CGFloat halfMin = MIN(child.bounds.size.width, child.bounds.size.height) / 2.0;
+    if (radiusPt > halfMin) radiusPt = halfMin;
+
+    child.wantsLayer = YES;
+    if (radiusPt > 0) {
+        child.layer.cornerRadius = radiusPt;
+        child.layer.masksToBounds = YES;
+    } else {
+        child.layer.cornerRadius = 0;
+        child.layer.masksToBounds = NO;
+    }
+}
+
 /* ================================================================== */
 /*  JNI exports — sibling overlay NSView                              */
 /*  Class: NativeTaoMacOsNativeViewBridge                              */

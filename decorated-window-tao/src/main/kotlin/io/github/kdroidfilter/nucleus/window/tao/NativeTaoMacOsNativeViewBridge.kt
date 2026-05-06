@@ -46,6 +46,21 @@ internal object NativeTaoMacOsNativeViewBridge {
         heightPx: Int,
     )
 
+    /**
+     * Sets `CALayer.cornerRadius` + `masksToBounds` on the subview so it
+     * renders with rounded/circular corners. Compose's `Modifier.clip()`
+     * doesn't propagate to embedded AppKit views (same limitation as
+     * `AndroidView` / `UIKitView`), so this is the workaround. [radiusPx]
+     * is capped natively at `min(w, h) / 2`, so callers can pass
+     * `Float.POSITIVE_INFINITY` to mean "fully circular".
+     */
+    @JvmStatic
+    external fun nativeSetSubviewCornerRadius(
+        parentNsView: Long,
+        childNsView: Long,
+        radiusPx: Float,
+    )
+
     // ── Sibling overlay NSView ────────────────────────────────────────
 
     /**
