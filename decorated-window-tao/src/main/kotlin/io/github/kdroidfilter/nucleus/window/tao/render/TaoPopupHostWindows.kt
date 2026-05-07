@@ -51,6 +51,17 @@ internal interface TaoPopupHostWindows {
 
     fun requestRedraw()
 
+    /**
+     * Registers a callback invoked when the host window's screen
+     * position changes (user drag, programmatic move, multi-monitor
+     * arrangement). Overlay/popup HWNDs are top-level WS_POPUP windows
+     * whose screen coords don't auto-track their owner — each layer
+     * must re-issue its `nativeSetOverlayFrame` / `nativeSetFrameInWindow`
+     * here to follow the owner.
+     */
+    fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit)
+    fun unregisterOwnerMoveListener(token: Any)
+
     fun registerRenderer(token: Any, render: () -> Unit)
     fun unregisterRenderer(token: Any)
 

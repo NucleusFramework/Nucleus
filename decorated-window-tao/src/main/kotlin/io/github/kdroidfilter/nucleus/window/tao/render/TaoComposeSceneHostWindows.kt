@@ -111,6 +111,9 @@ internal class TaoComposeSceneHostWindows(
      */
     private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
 
+    /** Callbacks invoked when the owner window's screen position changes. */
+    private val ownerMoveListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
     /**
      * Set whenever something on the same thread might have changed the
      * current WGL context behind Skia's back: a popup/overlay renderer
@@ -202,6 +205,10 @@ internal class TaoComposeSceneHostWindows(
 
         registerInboundDnD()
         registerTouchInput()
+
+        // Notify overlay/popup layers when the host window moves on screen
+        // — top-level WS_POPUP children of the owner don't auto-track.
+        window.onMoved { _, _ -> onOwnerMoved() }
     }
 
     // ── Touch (Windows) ───────────────────────────────────────────────────
@@ -818,7 +825,19 @@ internal class TaoComposeSceneHostWindows(
             override fun unregisterKeyHandler(token: Any) {
                 outer.popupKeyHandlers.remove(token)
             }
+            override fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit) {
+                outer.ownerMoveListeners[token] = onMoved
+            }
+            override fun unregisterOwnerMoveListener(token: Any) {
+                outer.ownerMoveListeners.remove(token)
+            }
         }
+    }
+
+    /** Fired by the [TaoWindow.onMoved] hook installed in [attach]. */
+    private fun onOwnerMoved() {
+        if (ownerMoveListeners.isEmpty()) return
+        for (cb in ownerMoveListeners.values.toList()) cb()
     }
 
     fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {

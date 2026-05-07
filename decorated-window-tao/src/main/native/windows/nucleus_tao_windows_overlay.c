@@ -418,6 +418,15 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
         prevDpi = pSetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
 
+    /* WS_POPUP top-level owned by the main HWND. Top-level so DWM
+     * honors the per-pixel alpha of the back buffer (child HWNDs are
+     * composited as opaque RGBA — alpha=0 pixels would render as black
+     * instead of transparent). HTTRANSPARENT from WM_NCHITTEST routes
+     * clicks via WindowFromPoint semantics to whatever's underneath
+     * at the screen point, including child HWNDs of the owner.
+     *
+     * Window-follow is implemented Kotlin-side via TaoWindow.onMoved
+     * — re-issue nativeSetOverlayFrame on each owner movement. */
     HWND hwnd = CreateWindowExW(
         WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
         kOverlayClassName, L"",
@@ -438,9 +447,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     s->owner = owner;
     InitializeCriticalSection(&s->regionLock);
     SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)s);
-
-    OwnerNode *n = getOrCreateOwnerNode(owner);
-    if (n) registerOverlayWithOwner(n, s);
 
     /* Set up the transparent WGL context BEFORE showing the window so
      * DwmEnableBlurBehindWindow + DWM polish (rounded corners, dark mode,
@@ -471,7 +477,9 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     if (heightPx < 1) heightPx = 1;
     s->xPx = xPx; s->yPx = yPx;
     s->widthPx = widthPx; s->heightPx = heightPx;
-
+    /* Convert owner-local coords to screen coords for SetWindowPos
+     * (top-level WS_POPUP coords are screen-absolute). Called both on
+     * Compose layout changes AND on TaoWindow.onMoved (Kotlin side). */
     POINT origin = {0, 0};
     ClientToScreen(s->owner, &origin);
     SetWindowPos(s->hwnd, NULL,

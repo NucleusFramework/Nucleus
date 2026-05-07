@@ -58,6 +58,7 @@ internal class NativeViewOverlayControllerWindows(
 ) {
     private val rendererToken: Any = Any()
     private val keyHandlerToken: Any = Any()
+    private val moveListenerToken: Any = Any()
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var overlayOffsetX: Int = 0
@@ -86,6 +87,10 @@ internal class NativeViewOverlayControllerWindows(
         override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) =
             popupHost.registerKeyHandler(token, handler)
         override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
+        override fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit) =
+            popupHost.registerOwnerMoveListener(token, onMoved)
+        override fun unregisterOwnerMoveListener(token: Any) =
+            popupHost.unregisterOwnerMoveListener(token)
     }
 
     private val overlayWindowInfo: WindowInfo = object : WindowInfo {
@@ -152,9 +157,18 @@ internal class NativeViewOverlayControllerWindows(
         NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(overlayHandle, OverlayCallback())
         popupHost.registerRenderer(rendererToken) { renderFrame() }
         popupHost.registerKeyHandler(keyHandlerToken) { event ->
-            // Phase 8: forward keys; consume only if the inner scene consumed them.
             val sc = scene ?: return@registerKeyHandler false
             sc.sendKeyEvent(event)
+        }
+        // Re-issue nativeSetOverlayFrame whenever the host moves on
+        // screen — the overlay is a top-level WS_POPUP whose screen
+        // coords don't auto-track the owner.
+        popupHost.registerOwnerMoveListener(moveListenerToken) {
+            if (overlayHandle != 0L && firstBoundsApplied) {
+                NativeTaoWindowsOverlayBridge.nativeSetOverlayFrame(
+                    overlayHandle, lastFrameX, lastFrameY, widthPx, heightPx,
+                )
+            }
         }
         pendingBounds?.let { setBoundsInternal(it[0], it[1], it[2], it[3]) }
         pendingBounds = null
@@ -293,6 +307,7 @@ internal class NativeViewOverlayControllerWindows(
         if (overlayHandle == 0L) return
         popupHost.unregisterRenderer(rendererToken)
         popupHost.unregisterKeyHandler(keyHandlerToken)
+        popupHost.unregisterOwnerMoveListener(moveListenerToken)
         scene?.close()
         scene = null
         // directContext is the host's — don't close.

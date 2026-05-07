@@ -58,6 +58,7 @@ internal class TaoPopupSceneLayerWindows(
     private var _compositionLocalContext: CompositionLocalContext? = null
 
     private val rendererToken: Any = Any()
+    private val moveListenerToken: Any = Any()
     private var widthPx: Int = host.parentWindowSize.width.coerceAtLeast(1)
     private var heightPx: Int = host.parentWindowSize.height.coerceAtLeast(1)
     private val scale: Float = host.scale
@@ -165,6 +166,21 @@ internal class TaoPopupSceneLayerWindows(
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, PopupEventCallback())
         PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, _focusable)
         host.registerRenderer(rendererToken) { renderFrame() }
+        // Re-issue nativeSetFrameInWindow whenever the host moves on
+        // screen — the popup is top-level and its screen coords don't
+        // auto-track the owner.
+        host.registerOwnerMoveListener(moveListenerToken) {
+            if (panelHandle != 0L && _bounds != IntRect.Zero) {
+                val offset = host.coordinateOffset
+                PopupNativeBridgeWindows.nativeSetFrameInWindow(
+                    panel = panelHandle,
+                    xPx = _bounds.left + offset.x,
+                    yPx = _bounds.top + offset.y,
+                    widthPx = _bounds.width.coerceAtLeast(1),
+                    heightPx = _bounds.height.coerceAtLeast(1),
+                )
+            }
+        }
     }
 
     // ── ComposeSceneLayer surface ──────────────────────────────────────
@@ -215,6 +231,7 @@ internal class TaoPopupSceneLayerWindows(
 
     override fun close() {
         host.unregisterRenderer(rendererToken)
+        host.unregisterOwnerMoveListener(moveListenerToken)
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, null)
         innerScene.close()
