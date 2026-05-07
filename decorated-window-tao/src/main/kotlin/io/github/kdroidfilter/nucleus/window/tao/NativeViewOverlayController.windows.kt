@@ -158,8 +158,14 @@ internal class NativeViewOverlayControllerWindows(
         NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(overlayHandle, OverlayCallback())
         popupHost.registerRenderer(rendererToken) { renderFrame() }
         popupHost.registerKeyHandler(keyHandlerToken) { event ->
-            val sc = scene ?: return@registerKeyHandler false
-            sc.sendKeyEvent(event)
+            val sc = scene
+            if (sc == null) {
+                System.err.println("[overlay] key handler: no scene")
+                return@registerKeyHandler false
+            }
+            val consumed = sc.sendKeyEvent(event)
+            System.err.println("[overlay] key dispatched, consumed=$consumed event=$event")
+            consumed
         }
         // Re-issue nativeSetOverlayFrame whenever the host moves on
         // screen — the overlay is a top-level WS_POPUP whose screen

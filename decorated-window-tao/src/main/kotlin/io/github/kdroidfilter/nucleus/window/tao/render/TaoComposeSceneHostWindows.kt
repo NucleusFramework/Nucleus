@@ -771,6 +771,7 @@ internal class TaoComposeSceneHostWindows(
                 }
                 else -> return false
             }
+        System.err.println("[host] onKeyEvent type=$type vk=$vkCode cp=$codePoint popupHandlers=${popupKeyHandlers.size}")
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
         // Overlay/popup scenes get a chance to consume the event before
         // the main scene. Mirrors the macOS popupKeyHandlers chain.
