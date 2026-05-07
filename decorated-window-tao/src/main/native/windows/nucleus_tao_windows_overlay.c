@@ -75,6 +75,11 @@ struct OverlayState {
 
     /* WGL resources owned by overlay_gl.c. */
     GlSurface gl;
+
+    /* Cursor handle to apply in WM_SETCURSOR. NULL → use the class
+     * default (IDC_ARROW). Updated by nativeSetCursor when Compose's
+     * setPointerIcon fires from the overlay scene's PlatformContext. */
+    HCURSOR cursor;
 };
 
 struct OwnerNode {
@@ -266,10 +271,20 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         return 1;
 
     case WM_DWMCOMPOSITIONCHANGED:
-        /* DWM compositor restart drops the empty-blur-region trick that
-         * makes the WGL alpha channel honored. Re-arm it. */
         if (s) nucleus_tao_overlay_gl_rearm_blur(&s->gl);
         return 0;
+
+    case WM_SETCURSOR:
+        /* Apply the per-overlay cursor when the pointer is in the
+         * overlay's client area. lParam HIWORD is the message hit-test
+         * code (HTCLIENT etc.); we only override for HTCLIENT — the
+         * resize/border zones (HTLEFT etc.) shouldn't apply since we
+         * don't have any. */
+        if (s && s->cursor && HIWORD(l) == HTCLIENT) {
+            SetCursor(s->cursor);
+            return TRUE;
+        }
+        break;
     }
     return DefWindowProcW(hwnd, msg, w, l);
 }
@@ -590,6 +605,28 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     if (!s || !s->gl.hdc) return;
     SwapBuffers(s->gl.hdc);
     DwmFlush();
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeSetCursor(
+    JNIEnv *env, jclass clazz, jlong overlay, jint cursorCode) {
+    (void)env; (void)clazz;
+    OverlayState *s = (OverlayState *)(uintptr_t)overlay;
+    if (!s) return;
+    LPCWSTR id;
+    switch (cursorCode) {
+        case 1: id = (LPCWSTR)IDC_IBEAM; break;
+        case 2: id = (LPCWSTR)IDC_HAND;  break;
+        case 3: id = (LPCWSTR)IDC_CROSS; break;
+        default: id = (LPCWSTR)IDC_ARROW; break;
+    }
+    s->cursor = LoadCursorW(NULL, id);
+    /* Re-set the cursor immediately if the pointer is currently on us. */
+    POINT pt;
+    if (GetCursorPos(&pt)) {
+        HWND hover = WindowFromPoint(pt);
+        if (hover == s->hwnd && s->cursor) SetCursor(s->cursor);
+    }
 }
 
 JNIEXPORT void JNICALL

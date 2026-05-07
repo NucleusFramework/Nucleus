@@ -7,6 +7,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.input.key.KeyEvent
@@ -215,6 +216,15 @@ internal class NativeViewOverlayControllerWindows(
 
             val ourPlatformContext = object : PlatformContext.Empty() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
+                override fun setPointerIcon(pointerIcon: PointerIcon) {
+                    val code = when (pointerIcon) {
+                        PointerIcon.Text -> NativeTaoWindowsOverlayBridge.CURSOR_TEXT
+                        PointerIcon.Hand -> NativeTaoWindowsOverlayBridge.CURSOR_HAND
+                        PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
+                        else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
+                    }
+                    NativeTaoWindowsOverlayBridge.nativeSetCursor(overlayHandle, code)
+                }
             }
             // PlatformLayersComposeScene + TaoComposeSceneContextWindows
             // routes popups originating in this overlay scene

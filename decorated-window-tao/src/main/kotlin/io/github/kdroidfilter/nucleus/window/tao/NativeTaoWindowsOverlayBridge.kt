@@ -62,4 +62,20 @@ internal object NativeTaoWindowsOverlayBridge {
 
     @JvmStatic
     external fun nativeReleaseOverlay(overlay: Long)
+
+    /**
+     * Sets the cursor displayed when the pointer hovers the overlay.
+     * [cursorCode] is one of [CURSOR_DEFAULT], [CURSOR_TEXT], [CURSOR_HAND],
+     * [CURSOR_CROSSHAIR]. The value is stored on the overlay's state and
+     * applied in `WM_SETCURSOR`. Called from the overlay scene's
+     * `PlatformContext.setPointerIcon` whenever Compose decides the cursor
+     * should change (e.g. hovering a `BasicTextField` → IBeam).
+     */
+    @JvmStatic
+    external fun nativeSetCursor(overlay: Long, cursorCode: Int)
+
+    const val CURSOR_DEFAULT: Int = 0
+    const val CURSOR_TEXT: Int = 1
+    const val CURSOR_HAND: Int = 2
+    const val CURSOR_CROSSHAIR: Int = 3
 }
