@@ -47,6 +47,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.tao.LocalTaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.NativeView
 import io.github.kdroidfilter.nucleus.window.tao.NucleusPlatformView
 import io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents
@@ -77,6 +78,10 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
         return
     }
 
+    val taoWindow = LocalTaoWindow.current
+    val parentHwnd = remember(taoWindow) {
+        if (Platform.Current == Platform.Windows) taoWindow?.nativeHandle ?: 0L else 0L
+    }
     var controller: SampleWebViewController? by remember { mutableStateOf(null) }
     var urlInput by remember { mutableStateOf(INITIAL_URL) }
     var urlFocused by remember { mutableStateOf(false) }
@@ -114,7 +119,7 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             val loadedFlag = remember { booleanArrayOf(false) }
             NativeView(
                 factory = {
-                    val view = createSampleWebViewPlatformView { c -> controller = c }
+                    val view = createSampleWebViewPlatformView(parentHwnd) { c -> controller = c }
                     view
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -328,6 +333,7 @@ private fun UrlField(
  * drive navigation without knowing which backend is live.
  */
 private fun createSampleWebViewPlatformView(
+    parentHwnd: Long,
     onController: (SampleWebViewController?) -> Unit,
 ): NucleusPlatformView = when (Platform.Current) {
     Platform.MacOS -> {
@@ -348,6 +354,22 @@ private fun createSampleWebViewPlatformView(
             override val gtkWidgetHandle: Long = ptr
             override fun dispose() {
                 SampleWebViewLinuxBridge.nativeRelease(ptr)
+                onController(null)
+            }
+        }
+    }
+    Platform.Windows -> {
+        require(parentHwnd != 0L) { "WebViewTab: parent HWND not yet realised; LocalTaoWindow missing" }
+        val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
+        require(ptr != 0L) { "wry WebView creation failed (WebView2 Runtime missing?)" }
+        onController(WindowsSampleWebViewController(ptr))
+        object : NucleusPlatformView.HWnd {
+            override val hwndHandle: Long = ptr
+            override fun resize(widthPx: Int, heightPx: Int) {
+                SampleWebViewWindowsBridge.nativeSetBounds(ptr, widthPx, heightPx)
+            }
+            override fun dispose() {
+                SampleWebViewWindowsBridge.nativeRelease(ptr)
                 onController(null)
             }
         }

@@ -43,3 +43,6 @@ decorated-window-tao/src/main/native/vendor/**/.cargo-ok
 
 # IDE temporary lock files
 .*~
+
+# Cargo build outputs (sample-tao wry crate)
+sample-tao/src/main/native/windows-rs/target/
