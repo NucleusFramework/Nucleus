@@ -160,6 +160,49 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsOverlayBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsOverlayBridge$OverlayEventCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsOverlayBridge$OverlayKeyCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onKeyEvent", "parameterTypes": ["int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.PopupNativeBridgeWindows",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.PopupNativeBridgeWindows$EventCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.PopupNativeBridgeWindows$OutsideClickListener",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
+            ]
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoMacOsDecoBridge",
             "jniAccessible": true
         },
