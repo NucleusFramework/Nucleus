@@ -111,6 +111,21 @@ internal class TaoComposeSceneHostWindows(
      */
     private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
 
+    /**
+     * Set whenever something on the same thread might have changed the
+     * current WGL context behind Skia's back: a popup/overlay renderer
+     * registered (its DirectContext.makeGL() does an internal
+     * wglMakeCurrent), a popupRenderers tick ran. Consumed at the start
+     * of [onRedrawRequested] — calls `directContext.resetGLAll()` on
+     * the host's DirectContext so Skia re-fetches GL state before
+     * `flushAndSubmit` issues commands.
+     *
+     * Without this, the host's DirectContext keeps a stale GL state
+     * cache after an overlay's first paint and `flushAndSubmit` reaches
+     * a NULL bind point inside the driver (reproduced on NVIDIA).
+     */
+    private var hostContextDirtied: Boolean = false
+
     // Frame pacing is delegated to VSync — `wglSwapIntervalEXT(1)` makes
     // SwapBuffers block until the next display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence.
@@ -578,6 +593,18 @@ internal class TaoComposeSceneHostWindows(
         // Make sure the WGL context is current on this thread (defensive — it
         // already was since `attach`, but other tools/tests can clear it).
         NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        // Consume the dirtied flag: an overlay/popup created since our last
+        // tick did its own DirectContext.makeGL() (internal wglMakeCurrent
+        // on a sibling HGLRC), or a popupRenderers loop swapped contexts.
+        // Tell Skia "external code touched GL state" so it re-fetches via
+        // glGet* before issuing flush/submit commands. resetGLAll is cheap
+        // (state-cache invalidation only); calling it on every frame
+        // unconditionally is too heavy for some drivers (nvoglv64 chokes),
+        // so we gate on the flag.
+        if (hostContextDirtied) {
+            ctx.resetGLAll()
+            hostContextDirtied = false
+        }
 
         // Wrap the default framebuffer (id 0). Skia's GL backend uses
         // BOTTOM_LEFT origin with the GL convention; SurfaceOrigin handles the
@@ -627,9 +654,11 @@ internal class TaoComposeSceneHostWindows(
         if (popupRenderers.isNotEmpty()) {
             val snapshot = popupRenderers.values.toList()
             for (render in snapshot) render()
-            // Restore host context + tell Skia "external code touched GL state".
+            // Restore host context for any code path that runs before the
+            // next onRedrawRequested. Skia state stays stale until next
+            // frame — flag for resetGLAll on entry.
             NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
-            ctx.resetGLAll()
+            hostContextDirtied = true
         }
     }
 
@@ -772,9 +801,14 @@ internal class TaoComposeSceneHostWindows(
             override fun requestRedraw() = outer.window.requestRedraw()
             override fun registerRenderer(token: Any, render: () -> Unit) {
                 outer.popupRenderers[token] = render
+                // Registration site does DirectContext.makeGL() which
+                // switches the WGL context behind Skia's back — the
+                // host's GL state cache is now stale.
+                outer.hostContextDirtied = true
             }
             override fun unregisterRenderer(token: Any) {
                 outer.popupRenderers.remove(token)
+                outer.hostContextDirtied = true
             }
             override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
                 outer.popupKeyHandlers[token] = handler
