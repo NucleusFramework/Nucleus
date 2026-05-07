@@ -227,11 +227,27 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         return pointInsideAnyRegion(s, pt.x, pt.y) ? HTCLIENT : HTTRANSPARENT;
     }
 
-    case WM_LBUTTONDOWN: if (s) dispatchPointer(s, EVT_PTR_DOWN, BTN_PRIMARY, l);   return 0;
+    case WM_LBUTTONDOWN:
+    case WM_RBUTTONDOWN:
+    case WM_MBUTTONDOWN:
+        /* Drag Win32 keyboard focus back to the owner (main HWND) on
+         * any click into the overlay. The overlay has WS_EX_NOACTIVATE
+         * so it can't be focused itself; the WebView2 child HWND
+         * grabs Win32 focus on its own clicks and HOLDS it, which
+         * means subsequent WM_KEYDOWN events go to WebView2 instead of
+         * the main HWND — and the popupKeyHandlers chain never fires.
+         * SetFocus(owner) on overlay click brings keys back to the
+         * main pipeline so Compose's focused overlay TextField
+         * receives typed input. */
+        if (s && s->owner) SetFocus(s->owner);
+        if (s) {
+            int btn = (msg == WM_LBUTTONDOWN) ? BTN_PRIMARY :
+                      (msg == WM_RBUTTONDOWN) ? BTN_SECONDARY : BTN_MIDDLE;
+            dispatchPointer(s, EVT_PTR_DOWN, btn, l);
+        }
+        return 0;
     case WM_LBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_PRIMARY, l);   return 0;
-    case WM_RBUTTONDOWN: if (s) dispatchPointer(s, EVT_PTR_DOWN, BTN_SECONDARY, l); return 0;
     case WM_RBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_SECONDARY, l); return 0;
-    case WM_MBUTTONDOWN: if (s) dispatchPointer(s, EVT_PTR_DOWN, BTN_MIDDLE, l);    return 0;
     case WM_MBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_MIDDLE, l);    return 0;
     case WM_MOUSEMOVE:   if (s) dispatchPointer(s, EVT_PTR_MOVE, BTN_NONE, l);      return 0;
 
