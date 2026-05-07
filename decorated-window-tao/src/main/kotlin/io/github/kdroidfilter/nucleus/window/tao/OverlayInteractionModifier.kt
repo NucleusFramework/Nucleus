@@ -55,10 +55,6 @@ fun Modifier.consumeOverlayPointerEvents(): Modifier = composed {
         val yPx = pos.y.roundToInt()
         val wPx = coords.size.width
         val hPx = coords.size.height
-        System.err.println(
-            "[consumeOverlayPointerEvents] onGloballyPositioned key=${System.identityHashCode(key)} " +
-                "rect=($xPx,$yPx,$wPx,$hPx) mac=${mac != null} linux=${linux != null}",
-        )
         mac?.registerRegion(key, xPx, yPx, wPx, hPx)
         linux?.registerRegion(key, xPx, yPx, wPx, hPx)
     }

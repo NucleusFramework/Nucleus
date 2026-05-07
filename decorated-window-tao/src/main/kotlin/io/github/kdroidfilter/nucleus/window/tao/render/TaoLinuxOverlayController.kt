@@ -1,7 +1,9 @@
 package io.github.kdroidfilter.nucleus.window.tao.render
 
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.unit.IntSize
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+import io.github.kdroidfilter.nucleus.window.tao.TaoMouseButton
 
 /**
  * Linux-only counterpart of macOS's `NativeViewOverlayController` —
@@ -70,6 +72,11 @@ internal class TaoLinuxOverlayControllerImpl(
     /** Compose physical / scale → GTK logical pixels. */
     private val scaleProvider: () -> Float,
     /**
+     * Host content size in physical pixels. Used by
+     * [setPopupCaptureActive] to size the full-window capture box.
+     */
+    private val hostSizeProvider: () -> IntSize,
+    /**
      * Where to dispatch the synthetic pointer events the EventBox
      * sends through. The host's `onPointerMove` / `onPointerButton`
      * mutate `lastPointerX/Y` and forward to the active
@@ -99,11 +106,20 @@ internal class TaoLinuxOverlayControllerImpl(
      * `LogicalPosition::to_physical(scale)` would have produced) and
      * dispatches into the host. Logical px → physical px = ×scale.
      */
-    private inner class InputCallback : NativeTaoLinuxWidgetBridge.OverlayInputCallback {
+    private inner class InputCallback(private val ownerKey: Any) : NativeTaoLinuxWidgetBridge.OverlayInputCallback {
         override fun onEvent(type: Int, xLogical: Int, yLogical: Int, button: Int, pressed: Int) {
             if (type == 3) {
                 // FOCUS_OUT — coords are 0/0 placeholders.
-                focusReleaseDispatcher()
+                // Skip the synthetic outside-click dispatch when the
+                // capture box is active: the focus loss was caused by
+                // our own capture EventBox grabbing focus to keep the
+                // just-opened Compose popup interactive. Firing the
+                // outside-click here would dismiss the popup
+                // immediately and send the user's next click into a
+                // popup that no longer exists.
+                if (!popupCaptureActive) {
+                    focusReleaseDispatcher()
+                }
                 return
             }
             val s = scaleProvider().takeIf { it > 0f } ?: 1f
@@ -111,10 +127,91 @@ internal class TaoLinuxOverlayControllerImpl(
             val yPx = (yLogical * s).toInt()
             moveDispatcher(xPx, yPx)
             when (type) {
-                1 -> buttonDispatcher(button, true)   // press
-                2 -> buttonDispatcher(button, false)  // release
+                1 -> {
+                    // Press. Dispatch first, then arm the capture box
+                    // expansion if a Compose context menu likely just
+                    // opened (right-click via a user-registered rect).
+                    buttonDispatcher(button, true)
+                    handlePressForPopupCapture(button, ownerKey)
+                }
+                2 -> {
+                    // Release. Dispatch first so Compose sees the
+                    // full press/release pair, then tear the capture
+                    // box down (if this release dismisses the popup).
+                    buttonDispatcher(button, false)
+                    handleReleaseForPopupCapture(button, ownerKey)
+                }
             }
         }
+    }
+
+    /**
+     * Auto-managed reference count for the full-window capture
+     * EventBox. A right-click via any user-registered overlay rect
+     * activates capture (so the Compose context menu Compose just
+     * opened gets full-area clickability — including items extending
+     * beyond the originating rect). The next left-click via the
+     * capture box dismisses it (Compose closes the menu, then we
+     * shrink back to per-rect overlays so the embedded widget regains
+     * interactivity).
+     *
+     * TODO(linux-popups): drop this heuristic once `xdg_popup` /
+     *   `PlatformLayersComposeScene` integration ships — popups will
+     *   render in their own surface and clicks will land natively
+     *   without inflating the host's input region. See the commit
+     *   history of `feat/tao-linux-native-view` for the in-progress
+     *   implementation that proved out shared-EGL contexts and
+     *   `DirectContext.resetGLAll`; the missing piece is Wayland
+     *   `xdg_popup` positioning + grab plumbing.
+     */
+    private val popupCaptureKey: Any = object {}
+    private var popupCaptureActive = false
+
+    /**
+     * Set on press, cleared on the matching release. Suppresses a
+     * teardown that would otherwise fire mid-click (e.g. when the
+     * right-click that *opens* the popup arrives via the capture box
+     * because a previous popup left it up): we'd remove the box
+     * before the release lands and Compose would see an unmatched
+     * press, which never closes a menu.
+     */
+    private var capturePressPending = false
+
+    private fun handlePressForPopupCapture(button: Int, sourceKey: Any) {
+        if (sourceKey === popupCaptureKey) {
+            // Press came through the capture box — defer teardown to
+            // the matching release so Compose sees a complete
+            // press/release pair.
+            capturePressPending = true
+            return
+        }
+        if (button == TaoMouseButton.RIGHT && !popupCaptureActive) {
+            expandPopupCapture()
+        }
+    }
+
+    private fun handleReleaseForPopupCapture(button: Int, sourceKey: Any) {
+        if (sourceKey === popupCaptureKey && capturePressPending) {
+            capturePressPending = false
+            // Capture click cycle complete — popup has dismissed
+            // itself (left-click dismissal) or accepted a menu item
+            // (which also dismisses). Either way, the embedded
+            // widget should regain interactivity now.
+            shrinkPopupCapture()
+        }
+    }
+
+    private fun expandPopupCapture() {
+        val size = hostSizeProvider()
+        if (size.width <= 0 || size.height <= 0) return
+        registerRegion(popupCaptureKey, 0, 0, size.width, size.height)
+        popupCaptureActive = true
+    }
+
+    private fun shrinkPopupCapture() {
+        if (!popupCaptureActive) return
+        unregisterRegion(popupCaptureKey)
+        popupCaptureActive = false
     }
 
     override fun registerRegion(
@@ -139,7 +236,7 @@ internal class TaoLinuxOverlayControllerImpl(
             handle = NativeTaoLinuxWidgetBridge.nativeAddInputBox(gtkWindow)
             if (handle == 0L) return
             boxes[key] = handle
-            NativeTaoLinuxWidgetBridge.nativeSetInputBoxCallback(handle, InputCallback())
+            NativeTaoLinuxWidgetBridge.nativeSetInputBoxCallback(handle, InputCallback(key))
         }
         NativeTaoLinuxWidgetBridge.nativeMoveInputBox(handle, xL, yL, wL, hL)
     }

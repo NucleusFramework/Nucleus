@@ -845,15 +845,6 @@ internal class TaoComposeSceneHostLinux(
     fun onPointerMove(aFixed: Int, bFixed: Int) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
-        // Throttled log: print only when y differs by more than 50 px
-        // from the last logged value to avoid spamming.
-        if (kotlin.math.abs(yPx - lastLoggedMoveY) > 50f) {
-            System.err.println(
-                "[TaoComposeSceneHostLinux] onPointerMove pos=($xPx,$yPx)",
-            )
-            System.err.flush()
-            lastLoggedMoveY = yPx
-        }
         lastPointerX = xPx
         lastPointerY = yPx
         scene?.sendPointerEvent(
@@ -862,7 +853,6 @@ internal class TaoComposeSceneHostLinux(
             type = PointerType.Mouse,
         )
     }
-    private var lastLoggedMoveY: Float = Float.NEGATIVE_INFINITY
 
     fun onPointerExited() {
         // ⚠️ Don't dispatch PointerEventType.Exit here on Linux.
@@ -882,11 +872,6 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onPointerButton(buttonCode: Int, pressed: Boolean) {
-        System.err.println(
-            "[TaoComposeSceneHostLinux] onPointerButton button=$buttonCode pressed=$pressed " +
-                "pos=($lastPointerX,$lastPointerY) sceneNonNull=${scene != null}",
-        )
-        System.err.flush()
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -1036,6 +1021,7 @@ internal class TaoComposeSceneHostLinux(
                     .nativeLinuxGtkWindow(window.handle)
             },
             scaleProvider = { scale },
+            hostSizeProvider = { IntSize(widthPx, heightPx) },
             moveDispatcher = { xPx, yPx ->
                 // Reuse the same fixed-precision wire format as Tao's
                 // native CursorMoved dispatcher (×1024). `onPointerMove`

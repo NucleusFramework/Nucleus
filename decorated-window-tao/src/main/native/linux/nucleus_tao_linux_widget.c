@@ -277,13 +277,6 @@ static gboolean on_get_child_position(GtkWidget *overlay, GtkWidget *child,
                                       GdkRectangle *allocation, void *user_data) {
     (void) overlay; (void) user_data;
     widget_rect_t *r = (widget_rect_t *) g.g_object_get_data(child, NUCLEUS_RECT_KEY);
-    fprintf(stderr, "[nucleus_tao_widget] get-child-position child=%p rect=%p valid=%d",
-            (void *) child, (void *) r, r ? r->valid : -1);
-    if (r != NULL && r->valid) {
-        fprintf(stderr, " (%d,%d,%d,%d)\n", r->x, r->y, r->w, r->h);
-    } else {
-        fprintf(stderr, " (default fallback)\n");
-    }
     if (r == NULL || !r->valid) return GTK_FALSE;
     if (allocation == NULL) return GTK_FALSE;
     allocation->x = r->x;
@@ -467,8 +460,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
 {
     (void) env; (void) clazz;
-    fprintf(stderr, "[nucleus_tao_widget] nativeRequestKeyboardFocus gtk_window=0x%lx\n",
-            (unsigned long) gtk_window_ptr);
     if (!ensure_gtk_loaded()) return;
     if (gtk_window_ptr == 0) return;
     GtkWindow *win = (GtkWindow *) (uintptr_t) gtk_window_ptr;
@@ -594,7 +585,6 @@ static gboolean on_input_box_button_release(GtkWidget *widget, void *event_ptr,
 static gboolean on_input_box_focus_out(GtkWidget *widget, void *event_ptr,
                                        void *user_data) {
     (void) event_ptr; (void) user_data;
-    fprintf(stderr, "[nucleus_tao_widget] EventBox FOCUS-OUT widget=%p\n", (void *) widget);
     invoke_callback(widget, EVT_OVERLAY_FOCUS_OUT, 0, 0, 0);
     return GTK_FALSE; /* let GTK handle its own focus chain bookkeeping */
 }
@@ -678,7 +668,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
         (void (*)(void)) on_input_box_focus_out, NULL, NULL, 0);
     g.gtk_overlay_add_overlay((GtkOverlay *) overlay, box);
     g.gtk_widget_show(box);
-    fprintf(stderr, "[nucleus_tao_widget] nativeAddInputBox -> %p\n", (void *) box);
     return (jlong) (uintptr_t) box;
 }
 
@@ -692,8 +681,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
     if (box_ptr == 0) return;
     if (w_logical <= 0 || h_logical <= 0) return;
     GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
-    fprintf(stderr, "[nucleus_tao_widget] nativeMoveInputBox box=%p (%d,%d,%d,%d)\n",
-            (void *) box, x_logical, y_logical, w_logical, h_logical);
 
     widget_rect_t *rect = (widget_rect_t *)
         g.g_object_get_data(box, NUCLEUS_RECT_KEY);
@@ -740,7 +727,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
     if (!ensure_gtk_loaded()) return;
     if (box_ptr == 0) return;
     GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
-    fprintf(stderr, "[nucleus_tao_widget] nativeRemoveInputBox box=%p\n", (void *) box);
     /* Release callback global ref before destroying. */
     jobject cb = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
     if (cb != NULL) {
@@ -762,7 +748,6 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
     }
     if (p_gtk_widget_get_type != NULL && g.g_type_check_instance_is_a != NULL) {
         if (!g.g_type_check_instance_is_a(box, p_gtk_widget_get_type())) {
-            fprintf(stderr, "[nucleus_tao_widget]   already destroyed, skipping\n");
             return;
         }
     }
