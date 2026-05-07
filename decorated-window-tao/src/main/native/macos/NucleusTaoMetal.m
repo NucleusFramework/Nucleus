@@ -1154,6 +1154,75 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresent(
     [commandBuffer commit];
 }
 
+/* Toggles CAMetalLayer.presentsWithTransaction. With the flag ON, the
+ * layer defers its surface swap so it can be flushed atomically inside
+ * the enclosing CATransaction together with AppKit mutations made by
+ * `nativePresentWithInterop`'s callback. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeSetPresentsWithTransaction(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean enabled) {
+    (void)env; (void)clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    BOOL flag = enabled == JNI_TRUE;
+    dispatch_block_t apply = ^{
+        att->layer.presentsWithTransaction = flag;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/* Atomic present-with-transaction path. See the Kotlin doc on
+ * NativeMetalBridge.nativePresentWithInterop for the full sequence.
+ *
+ * Requires `presentsWithTransaction = YES` on the layer (set by
+ * nativeSetPresentsWithTransaction) so [drawable present] joins our
+ * outer CATransaction instead of being scheduled out of band. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresentWithInterop(
+        JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr, jobject interopActions) {
+    if (handle == 0 || drawablePtr == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+
+    id<CAMetalDrawable> drawable = (__bridge_transfer id<CAMetalDrawable>)
+        (void *)(uintptr_t) drawablePtr;
+
+    [CATransaction begin];
+
+    id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
+    [commandBuffer commit];
+    // Block until the GPU has scheduled our work — required before an
+    // explicit [drawable present] under presentsWithTransaction = YES.
+    [commandBuffer waitUntilScheduled];
+    [drawable present];
+
+    if (interopActions != NULL) {
+        // Cache Runnable.run() once. Module-local statics are fine: the
+        // method ID for java.lang.Runnable.run is stable for the JVM lifetime.
+        static jclass sRunnableClass = NULL;
+        static jmethodID sRunMethod = NULL;
+        if (sRunMethod == NULL) {
+            jclass local = (*env)->FindClass(env, "java/lang/Runnable");
+            if (local != NULL) {
+                sRunnableClass = (*env)->NewGlobalRef(env, local);
+                (*env)->DeleteLocalRef(env, local);
+                if (sRunnableClass != NULL) {
+                    sRunMethod = (*env)->GetMethodID(env, sRunnableClass, "run", "()V");
+                }
+            }
+        }
+        if (sRunMethod != NULL) {
+            (*env)->CallVoidMethod(env, interopActions, sRunMethod);
+            if ((*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionDescribe(env);
+                (*env)->ExceptionClear(env);
+            }
+        }
+    }
+
+    [CATransaction commit];
+}
+
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────
 //
 // Mirrors `decorated-window-jni`'s JniMacTitleBarBridge entries so the Tao

@@ -259,6 +259,13 @@
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
             ]
         },
+        {
+            "type": "java.lang.Runnable",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "run", "parameterTypes": [] }
+            ]
+        },
         { "type": "java.io.File" },
         { "type": "java.util.ArrayList", "methods": [{ "name": "<init>" }] },
         { "type": "java.awt.datatransfer.DataFlavor", "allDeclaredFields": true, "allDeclaredMethods": true },

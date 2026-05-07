@@ -228,9 +228,30 @@ internal class NativeViewOverlayController(
             xPx == lastFrameX && yPx == lastFrameY &&
             widthPxNew == widthPx && heightPxNew == heightPx
         if (frameUnchanged) return
-        NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-            overlayNsView, xPx, yPx, widthPxNew, heightPxNew,
-        )
+        val capturedHandle = overlayNsView
+        if (firstBoundsApplied) {
+            // Steady state: route the AppKit setFrame through the host's
+            // interop transaction so the overlay reposition commits in
+            // the same CATransaction as the user's NSView frame change.
+            // Without this, a parent animation moving both at once would
+            // visually de-sync by one frame (overlay catches up next paint).
+            host.scheduleInterop {
+                NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
+                    capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
+                )
+            }
+        } else {
+            // First call: apply eagerly. `nativeAttachOverlay` (just
+            // below) reads `view.bounds` to seed `layer.frame`; if we
+            // defer the setFrame, the Metal layer ends up sized to the
+            // parent's full bounds and the overlay renders at the wrong
+            // location until the next frame catches up — which on
+            // layer-hosted NSViews is never (CALayer.frame doesn't auto-
+            // follow NSView.frame post layer assignment).
+            NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
+                capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
+            )
+        }
         lastFrameX = xPx
         lastFrameY = yPx
         // Tracked live so `overlayPopupHost.coordinateOffset` returns the

@@ -149,6 +149,46 @@ internal object NativeMetalBridge {
         drawablePtr: Long,
     )
 
+    /**
+     * Toggles `CAMetalLayer.presentsWithTransaction`. When `true`, the layer
+     * defers its surface swap so it can be committed atomically inside the
+     * enclosing `CATransaction` along with sibling AppKit mutations (subview
+     * frame changes, etc). Mirror of Compose iOS's `metalLayer.presentsWithTransaction`
+     * in `MetalRedrawer.ios.kt:335`.
+     *
+     * Cost: with the flag ON, presents block on `[commandBuffer waitUntilScheduled]`
+     * before flipping (~1 frame of latency). Toggle OFF when no `NativeView`
+     * is mounted to keep the fast async-present path.
+     */
+    @JvmStatic
+    external fun nativeSetPresentsWithTransaction(
+        handle: Long,
+        enabled: Boolean,
+    )
+
+    /**
+     * Present-with-transaction path used when interop AppKit subviews need
+     * to commit atomically with the Compose frame. Performs, in order:
+     *
+     *  1. `[CATransaction begin]`
+     *  2. submit a present-only `MTLCommandBuffer` and `[commit]`
+     *  3. `[commandBuffer waitUntilScheduled]` (GPU has the frame queued)
+     *  4. `[drawable present]` (joins the open `CATransaction`)
+     *  5. invoke `interopActions.run()` — Kotlin runs queued AppKit mutations,
+     *     each of which lands in the same `CATransaction`
+     *  6. `[CATransaction commit]` — flushes Metal present + AppKit mutations
+     *     atomically to the screen
+     *
+     * Requires [nativeSetPresentsWithTransaction] to have been called with
+     * `true` for [handle] beforehand. Mirrors `MetalRedrawer.ios.kt:367-383`.
+     */
+    @JvmStatic
+    external fun nativePresentWithInterop(
+        handle: Long,
+        drawablePtr: Long,
+        interopActions: Runnable,
+    )
+
     /** True while AppKit is animating a fullscreen transition on the window. */
     @JvmStatic
     external fun nativeIsInTransition(handle: Long): Boolean

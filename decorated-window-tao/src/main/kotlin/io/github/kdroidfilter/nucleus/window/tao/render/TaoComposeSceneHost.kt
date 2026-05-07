@@ -134,6 +134,35 @@ internal class TaoComposeSceneHost(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    // ── Interop transaction (mirrors UIKitInteropTransaction) ────────
+    //
+    // AppKit subview mutations made via the `NativeView` composable are
+    // queued here and drained once per frame, atomically with the Metal
+    // present, so a frame change on the embedded NSView can't visually
+    // lag the Compose frame by one tick. Lifecycle:
+    //  1. NativeView.attach/detach/setFrame/... on this host's
+    //     `nativeViewHost()` → `transaction.add { ... }`
+    //  2. onRedrawRequested retrieves + swaps the queue, sets
+    //     `presentsWithTransaction` on the layer, and either drives
+    //     `nativePresentWithInterop` (sync path) or the regular
+    //     async `nativePresent` when no interop is active.
+
+    private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
+    private var interopAttachCount: Int = 0
+    /** Renderer's view of whether interop is currently active — lags the
+     *  transaction's flag by one frame on the OFF transition so the
+     *  final sync flush still goes through `presentsWithTransaction`. */
+    private var rendererIsInteropActive: Boolean = false
+    /** Cached state of `CAMetalLayer.presentsWithTransaction` to avoid
+     *  redundant JNI calls on every frame. */
+    private var layerPresentsWithTransaction: Boolean = false
+
+    private fun retrieveTransaction(): TaoInteropTransaction {
+        val result = transaction
+        transaction = MutableTaoInteropTransaction(isInteropActive = interopAttachCount > 0)
+        return result
+    }
+
     // Tracks whether Compose's pointer state believes the mouse is currently
     // down. We can't simply forward every Press / Release Tao gives us — on
     // macOS we observed at least one spurious Press event being delivered
@@ -491,20 +520,56 @@ internal class TaoComposeSceneHost(
         val outer = this
         return object : TaoNativeViewHost {
             override fun attach(childHandle: Long) {
+                // Eager. NativeView.kt's DisposableEffect relies on the
+                // ordering `host.attach() -> overlay.attach()` so the
+                // overlay's `nativeCreateOverlay` lands ABOVE the user's
+                // subview in the parent's subview list (NSView z-order
+                // = order of addition for siblings positioned with
+                // NSWindowAbove relativeTo:nil). Deferring this would
+                // re-order the adds and bury the overlay behind the
+                // WKWebView. The visual-sync win we want is for
+                // *reposition*, not for mount, so subview list mutation
+                // stays eager.
+                if (outer.interopAttachCount == 0) {
+                    outer.transaction.isInteropActive = true
+                }
+                outer.interopAttachCount++
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
             override fun detach(childHandle: Long) {
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
+                outer.interopAttachCount--
+                if (outer.interopAttachCount == 0) {
+                    outer.transaction.isInteropActive = false
+                }
             }
             override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                NativeTaoMacOsNativeViewBridge
-                    .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
+                outer.scheduleInteropAction {
+                    NativeTaoMacOsNativeViewBridge
+                        .nativeSetSubviewFrame(outer.nsViewHandle, handle, xPx, yPx, widthPx, heightPx)
+                }
             }
             override fun setCornerRadius(handle: Long, radiusPx: Float) {
-                NativeTaoMacOsNativeViewBridge
-                    .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
+                outer.scheduleInteropAction {
+                    NativeTaoMacOsNativeViewBridge
+                        .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
+                }
+            }
+            override fun scheduleInterop(action: () -> Unit) {
+                outer.scheduleInteropAction(action)
             }
         }
+    }
+
+    /**
+     * Enqueues an AppKit mutation to be drained inside the next frame's
+     * transaction. Accessible to the overlay controller so its own
+     * `nativeSetOverlayFrame` calls share the same atomic CATransaction
+     * as the user's subview frame change.
+     */
+    internal fun scheduleInteropAction(action: TaoInteropAction) {
+        transaction.add(action)
+        window.requestRedraw()
     }
 
     fun popupHost(): TaoPopupHost? {
@@ -549,6 +614,28 @@ internal class TaoComposeSceneHost(
     fun onRedrawRequested() {
         val ctx = directContext ?: return
         val sc = scene ?: return
+
+        // Snapshot the interop transaction state for this frame. The
+        // queue is swapped here, so any further mutation calls after
+        // this point land in the next frame's transaction.
+        val tx = retrieveTransaction()
+        val needsTransaction = tx.actions.isNotEmpty() ||
+            rendererIsInteropActive != tx.isInteropActive
+        if (needsTransaction != layerPresentsWithTransaction && attachmentHandle != 0L) {
+            NativeMetalBridge.nativeSetPresentsWithTransaction(attachmentHandle, needsTransaction)
+            layerPresentsWithTransaction = needsTransaction
+        }
+        // Flip ON early so the layer is configured for this frame; the
+        // OFF flip happens lazily after the transaction has been drained
+        // (mirrors MetalRedrawer.ios.kt:337-339).
+        if (tx.isInteropActive) rendererIsInteropActive = true
+
+        // If the present lambda never fires (e.g. nativeBeginFrame
+        // returned null) we still need to apply the queued AppKit
+        // mutations — otherwise add/remove/setFrame would silently leak
+        // until the next successful frame.
+        var transactionDrained = false
+
         try {
             // CAMetalLayer drawables aren't auto-cleared between frames;
             // on Apple Silicon an uninitialised texture surfaces as
@@ -560,6 +647,22 @@ internal class TaoComposeSceneHost(
                 directContext = ctx,
                 scene = sc,
                 clearColor = 0xFFFFFFFF.toInt(),
+                present = { handle, drawablePtr ->
+                    if (needsTransaction) {
+                        NativeMetalBridge.nativePresentWithInterop(
+                            handle,
+                            drawablePtr,
+                            Runnable {
+                                tx.performTransaction()
+                                transactionDrained = true
+                                if (!tx.isInteropActive) rendererIsInteropActive = false
+                            },
+                        )
+                    } else {
+                        NativeMetalBridge.nativePresent(handle, drawablePtr)
+                        transactionDrained = true
+                    }
+                },
                 // Drain Compose's async work (sendFrame continuations,
                 // recomposer steps) synchronously so their state writes
                 // happen now and trigger invalidate → next requestRedraw
@@ -570,6 +673,13 @@ internal class TaoComposeSceneHost(
                 onAfterPresent = TaoMainDispatcher::pump,
             )
         } finally {
+            if (!transactionDrained && tx.actions.isNotEmpty()) {
+                // Render path bailed before our present lambda fired
+                // (nativeBeginFrame returned null). Apply mutations
+                // best-effort without atomic sync so they aren't lost.
+                tx.performTransaction()
+                if (!tx.isInteropActive) rendererIsInteropActive = false
+            }
             // Drive every registered popup's per-frame render after the
             // main present so each popup CAMetalLayer stays in lock-step
             // with the host. Iterate by token + look up live so that a

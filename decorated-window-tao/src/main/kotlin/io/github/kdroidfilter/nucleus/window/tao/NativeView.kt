@@ -156,6 +156,19 @@ internal interface TaoNativeViewHost {
     fun detach(childHandle: Long)
     fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
     fun setCornerRadius(handle: Long, radiusPx: Float)
+
+    /**
+     * Enqueues an AppKit mutation to run inside the next frame's
+     * `CATransaction`, atomically with the Compose Metal present.
+     * Used by `NativeViewOverlayController` to keep its overlay
+     * NSView's `setFrame` in lock-step with the user subview's frame
+     * change.
+     *
+     * Default fallback runs the action immediately — preserves
+     * behaviour for hosts that don't yet implement the transaction
+     * model (no visual sync, but still functionally correct).
+     */
+    fun scheduleInterop(action: () -> Unit) { action() }
 }
 
 /**

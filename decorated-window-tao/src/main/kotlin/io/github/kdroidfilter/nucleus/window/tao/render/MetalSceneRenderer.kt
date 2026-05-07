@@ -25,6 +25,14 @@ import org.jetbrains.skia.SurfaceOrigin
  * [Surface.makeFromBackendRenderTarget] returns null the drawable is
  * still presented (untextured) so the Metal command queue stays
  * balanced.
+ *
+ * [present] lets callers swap the default async present
+ * (`NativeMetalBridge.nativePresent`) for the synchronous
+ * `nativePresentWithInterop` path when AppKit subview mutations need to
+ * commit atomically with the Compose frame. The lambda is invoked
+ * exactly once per successful `nativeBeginFrame` — including from the
+ * failure-path `finally` — so callers relying on it to drain side state
+ * (e.g. an interop transaction) don't need to handle missed calls.
  */
 @OptIn(InternalComposeUiApi::class)
 internal inline fun renderMetalFrame(
@@ -32,6 +40,9 @@ internal inline fun renderMetalFrame(
     directContext: DirectContext,
     scene: ComposeScene,
     clearColor: Int,
+    crossinline present: (handle: Long, drawablePtr: Long) -> Unit = { h, d ->
+        NativeMetalBridge.nativePresent(h, d)
+    },
     onAfterPresent: () -> Unit = {},
 ) {
     val frame = NativeMetalBridge.nativeBeginFrame(attachmentHandle) ?: return
@@ -52,7 +63,7 @@ internal inline fun renderMetalFrame(
             surface.canvas.clear(clearColor)
             scene.render(surface.canvas.asComposeCanvas(), System.nanoTime())
             surface.flushAndSubmit(syncCpu = false)
-            NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
+            present(attachmentHandle, frame.drawablePtr)
             presented = true
             onAfterPresent()
         } finally {
@@ -62,6 +73,6 @@ internal inline fun renderMetalFrame(
     } finally {
         // Drawable was retained in beginFrame — release via present to
         // balance even when wrapping or rendering failed.
-        if (!presented) NativeMetalBridge.nativePresent(attachmentHandle, frame.drawablePtr)
+        if (!presented) present(attachmentHandle, frame.drawablePtr)
     }
 }
