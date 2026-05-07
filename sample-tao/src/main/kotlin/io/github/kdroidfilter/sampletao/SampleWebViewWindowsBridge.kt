@@ -55,7 +55,13 @@ internal object SampleWebViewWindowsBridge {
     @JvmStatic
     external fun nativeIsLoading(handle: Long): Boolean
 
-    /** Resizes the WebView2 controller's client area. */
+    /**
+     * Sets the WebView2 controller's drawing rect inside the parent
+     * HWND's client area. wry on Windows attaches the controller
+     * directly to the parent HWND (no intermediate hosting HWND), so
+     * the controller's `put_Bounds(x, y, w, h)` is what positions the
+     * WebView visually — not `SetWindowPos` on the returned HWND.
+     */
     @JvmStatic
-    external fun nativeSetBounds(handle: Long, widthPx: Int, heightPx: Int)
+    external fun nativeSetBounds(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
 }

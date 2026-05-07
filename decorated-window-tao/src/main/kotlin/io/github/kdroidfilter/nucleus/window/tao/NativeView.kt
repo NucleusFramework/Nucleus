@@ -167,6 +167,7 @@ private fun HwndEmbedding(
                 host.setFrame(handle, xPx, yPx, wPx, hPx)
                 overlay?.setBounds(xPx, yPx, wPx, hPx)
                 view.resize(wPx, hPx)
+                view.setBounds(xPx, yPx, wPx, hPx)
             }
             if (rectChanged || lastRadius[0] != cornerRadiusPx) {
                 lastRadius[0] = cornerRadiusPx

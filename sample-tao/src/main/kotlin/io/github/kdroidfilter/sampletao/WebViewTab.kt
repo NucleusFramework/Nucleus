@@ -365,8 +365,13 @@ private fun createSampleWebViewPlatformView(
         onController(WindowsSampleWebViewController(ptr))
         object : NucleusPlatformView.HWnd {
             override val hwndHandle: Long = ptr
-            override fun resize(widthPx: Int, heightPx: Int) {
-                SampleWebViewWindowsBridge.nativeSetBounds(ptr, widthPx, heightPx)
+            override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                // wry's WebView2 controller attaches directly to the parent
+                // HWND (no hosting HWND), so the controller's bounds (x, y,
+                // w, h) is what positions the WebView. setFrame on the
+                // returned HWND has no visual effect — the controller draws
+                // on top regardless of the HWND rect.
+                SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
             }
             override fun dispose() {
                 SampleWebViewWindowsBridge.nativeRelease(ptr)

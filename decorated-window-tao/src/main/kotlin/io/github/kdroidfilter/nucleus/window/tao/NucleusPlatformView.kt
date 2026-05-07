@@ -27,6 +27,17 @@ sealed interface NucleusPlatformView {
     fun resize(widthPx: Int, heightPx: Int) {}
 
     /**
+     * Called with the embedded view's full bounds (position + size) in
+     * physical pixels relative to the host window's client area. Default
+     * is a no-op so most implementors can rely on the host's standard
+     * `SetParent` + `SetWindowPos` (macOS NSView, Linux GtkWidget,
+     * generic Windows HWND). Override when the embedded view is a
+     * controller-style API (e.g. wry's WebView2) whose drawing rect is
+     * decoupled from the platform HWND's window rect.
+     */
+    fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {}
+
+    /**
      * Asks the view to release keyboard focus. Used when the host
      * window or a sibling Compose layer takes focus and the embedded
      * view should visually deselect.

@@ -241,13 +241,20 @@ pub extern "system" fn Java_io_github_kdroidfilter_sampletao_SampleWebViewWindow
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
+    x_px: jni::sys::jint,
+    y_px: jni::sys::jint,
     width_px: jni::sys::jint,
     height_px: jni::sys::jint,
 ) {
     if let Ok(g) = HANDLES.lock() {
         if let Some(wv) = g.by_hwnd.get(&(handle as isize)) {
+            // wry attaches the WebView2 controller directly to the parent
+            // HWND on Windows; controller bounds (x, y, w, h) are in the
+            // parent's client area in physical pixels. NativeView passes
+            // physical pixels straight from Compose's coords, so we use
+            // PhysicalPosition/PhysicalSize to skip wry's DPI rescaling.
             let _ = wv.0.set_bounds(Rect {
-                position: dpi::PhysicalPosition::new(0, 0).into(),
+                position: dpi::PhysicalPosition::new(x_px, y_px).into(),
                 size: dpi::PhysicalSize::new(width_px.max(1), height_px.max(1)).into(),
             });
         }
