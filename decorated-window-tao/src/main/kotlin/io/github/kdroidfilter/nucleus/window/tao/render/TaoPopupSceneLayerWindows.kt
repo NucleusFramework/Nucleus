@@ -72,7 +72,8 @@ internal class TaoPopupSceneLayerWindows(
         require(it != 0L) { "Failed to allocate popup HWND" }
     }
 
-    private val directContext: DirectContext
+    /** Single-HGLRC architecture: shared with the host + every other popup. */
+    private val directContext: DirectContext = host.hostDirectContext
 
     private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
         object : androidx.compose.ui.platform.WindowInfo {
@@ -158,15 +159,9 @@ internal class TaoPopupSceneLayerWindows(
     }
 
     init {
-        // Make the popup's WGL context current so DirectContext.makeGL()
-        // binds to it. The popup HGLRC was created with hShareContext =
-        // host HGLRC so server-side GL objects (shaders/programs/textures)
-        // are shared across the host + every popup of this process.
-        require(PopupNativeBridgeWindows.nativeMakeCurrent(panelHandle)) {
-            "Failed to make popup WGL context current"
-        }
-        directContext = DirectContext.makeGL()
-
+        // Single-HGLRC: directContext is the host's, no makeGL needed
+        // here. The popup's HDC will share the host's HGLRC via
+        // wglMakeCurrent on each renderFrame.
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, PopupEventCallback())
         PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, _focusable)
         host.registerRenderer(rendererToken) { renderFrame() }
@@ -223,7 +218,7 @@ internal class TaoPopupSceneLayerWindows(
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, null)
         innerScene.close()
-        directContext.close()
+        // directContext is the host's — don't close.
         PopupNativeBridgeWindows.nativeRelease(panelHandle)
     }
 

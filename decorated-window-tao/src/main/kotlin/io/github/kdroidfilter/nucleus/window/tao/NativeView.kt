@@ -99,48 +99,34 @@ private fun HwndEmbedding(
     val popupHost = io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHostWindows.current
     val handle = view.hwndHandle
     val latestContent by rememberUpdatedState(content)
-    @Suppress("UNUSED_VARIABLE")
-    val ignoredContent = latestContent // Keep the lambda alive when overlay is gated off.
 
-    if (Platform.Current != Platform.Windows || host == null || handle == 0L) {
+    if (Platform.Current != Platform.Windows || host == null || popupHost == null || handle == 0L) {
         Box(modifier)
         return
     }
 
-    // Overlay kill-switch: NVIDIA's WGL ICD has reproducible issues on
-    // some driver vintages when a sibling HGLRC is created in the same
-    // process even with shared share group + identical pixel formats.
-    // Default OFF on Windows; opt-in via -Dnucleus.tao.windows.overlay=true.
-    // Off-mode mirrors Linux (subview only, content slot ignored) so the
-    // embedded WebView still works end-to-end.
-    val overlayEnabled = remember {
-        System.getProperty("nucleus.tao.windows.overlay")?.toBoolean() == true
+    val overlay = remember(host, popupHost) {
+        NativeViewOverlayControllerWindows(host, popupHost)
     }
-    val overlay: NativeViewOverlayControllerWindows? =
-        if (overlayEnabled && popupHost != null) {
-            remember(host, popupHost) {
-                NativeViewOverlayControllerWindows(host, popupHost)
-            }
-        } else null
 
     DisposableEffect(host, handle, overlay) {
         host.attach(handle)
-        overlay?.attach()
+        // Overlay attach AFTER the user's subview so Z-order is correct
+        // (owned popup HWNDs are guaranteed above their owner by Win32).
+        overlay.attach()
         onDispose {
-            overlay?.dispose()
+            overlay.dispose()
             host.detach(handle)
         }
     }
 
-    if (overlay != null) {
-        DisposableEffect(overlay) {
-            overlay.setContent {
-                CompositionLocalProvider(LocalNativeViewOverlayControllerWindows provides overlay) {
-                    latestContent()
-                }
+    DisposableEffect(overlay) {
+        overlay.setContent {
+            CompositionLocalProvider(LocalNativeViewOverlayControllerWindows provides overlay) {
+                latestContent()
             }
-            onDispose { /* dispose handled above */ }
         }
+        onDispose { /* dispose handled above */ }
     }
 
     val density = LocalDensity.current
@@ -165,7 +151,7 @@ private fun HwndEmbedding(
             if (rectChanged) {
                 lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
                 host.setFrame(handle, xPx, yPx, wPx, hPx)
-                overlay?.setBounds(xPx, yPx, wPx, hPx)
+                overlay.setBounds(xPx, yPx, wPx, hPx)
                 view.resize(wPx, hPx)
                 view.setBounds(xPx, yPx, wPx, hPx)
             }

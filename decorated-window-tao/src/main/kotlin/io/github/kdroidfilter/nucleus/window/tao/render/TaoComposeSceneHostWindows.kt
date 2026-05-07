@@ -791,6 +791,7 @@ internal class TaoComposeSceneHostWindows(
 
     fun popupHost(): TaoPopupHostWindows? {
         if (hwnd == 0L) return null
+        val ctx = directContext ?: return null
         val outer = this
         return object : TaoPopupHostWindows {
             override val parentHwnd: Long get() = outer.hwnd
@@ -798,6 +799,7 @@ internal class TaoComposeSceneHostWindows(
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+            override val hostDirectContext: DirectContext get() = ctx
             override fun requestRedraw() = outer.window.requestRedraw()
             override fun registerRenderer(token: Any, render: () -> Unit) {
                 outer.popupRenderers[token] = render

@@ -6,6 +6,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import kotlin.coroutines.CoroutineContext
+import org.jetbrains.skia.DirectContext
 
 /**
  * Windows counterpart to [TaoPopupHost]. Plumbing the overlay scene
@@ -37,6 +38,16 @@ internal interface TaoPopupHostWindows {
      * top-left.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
+
+    /**
+     * The HOST scene's Skia DirectContext — shared with every
+     * overlay/popup on Windows. Single-HGLRC architecture: the native
+     * side gives every overlay/popup HWND the host's HGLRC (via
+     * `wglMakeCurrent(overlayDC, hostHGLRC)`), so all surfaces draw
+     * through one Skia context. resetGLAll() between draws handles the
+     * default-framebuffer state delta when wglMakeCurrent swaps HDCs.
+     */
+    val hostDirectContext: DirectContext
 
     fun requestRedraw()
 

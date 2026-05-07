@@ -76,6 +76,7 @@ internal class NativeViewOverlayControllerWindows(
         override val scale: Float get() = popupHost.scale
         override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
         override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
+        override val hostDirectContext: DirectContext get() = popupHost.hostDirectContext
         override val coordinateOffset: IntOffset
             get() = IntOffset(overlayOffsetX, overlayOffsetY)
         override fun requestRedraw() = popupHost.requestRedraw()
@@ -131,7 +132,13 @@ internal class NativeViewOverlayControllerWindows(
     }
 
     private var overlayHandle: Long = 0
-    private var directContext: DirectContext? = null
+    /**
+     * Single-HGLRC architecture: all overlays + popups + the host
+     * share the host's `DirectContext`. The overlay controller doesn't
+     * create its own — `popupHost.hostDirectContext` is the source of
+     * truth.
+     */
+    private val directContext: DirectContext = popupHost.hostDirectContext
     private var scene: ComposeScene? = null
     private val regions: MutableMap<Any, IntArray> = LinkedHashMap()
     private var pendingContent: (@Composable () -> Unit)? = null
@@ -185,16 +192,12 @@ internal class NativeViewOverlayControllerWindows(
         if (!firstBoundsApplied) {
             firstBoundsApplied = true
 
-            // Make the overlay's WGL context current so DirectContext.makeGL()
-            // binds to it. The overlay's HGLRC was created in the host's
-            // share group via wglCreateContextAttribsARB(.., hostHGLRC, ..),
-            // so shaders/programs/textures the host has already allocated
-            // are visible here. Skia keeps its OWN per-context state
-            // (FBO/VAO bindings) — that's why each HWND needs its own
-            // GrDirectContext.
-            val ok = NativeTaoWindowsOverlayBridge.nativeMakeCurrent(overlayHandle)
-            require(ok) { "Failed to make overlay WGL context current" }
-            directContext = DirectContext.makeGL()
+            // Single-HGLRC: the overlay HDC uses the host's HGLRC. We
+            // don't call DirectContext.makeGL() — `directContext` is the
+            // host's, already initialized. Each renderFrame() switches
+            // the host HGLRC to draw into the overlay's HDC and calls
+            // resetGLAll on the shared directContext to re-sync Skia's
+            // GL state cache for the new framebuffer.
 
             val ourPlatformContext = object : PlatformContext.Empty() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
@@ -264,23 +267,23 @@ internal class NativeViewOverlayControllerWindows(
     }
 
     private fun renderFrame() {
-        val ctx = directContext ?: return
         val sc = scene ?: return
         if (widthPx == 0 || heightPx == 0) return
         if (overlayHandle == 0L) return
         if (!NativeTaoWindowsOverlayBridge.nativeMakeCurrent(overlayHandle)) return
-        // Skia's GL state cache is now stale (the host had its own state
-        // before we switched). resetGLAll forces Skia to re-fetch — cheap.
-        ctx.resetGLAll()
+        // Switched the host's HGLRC to draw into the overlay's HDC —
+        // FBO 0 now refers to the overlay's back-buffer. resetGLAll
+        // tells Skia "external code touched GL state" so it re-fetches
+        // the current framebuffer binding before issuing draws.
+        directContext.resetGLAll()
         renderGlFrame(
             widthPx = widthPx,
             heightPx = heightPx,
-            directContext = ctx,
+            directContext = directContext,
             scene = sc,
             // Premultiplied transparent black: alpha=0, RGB=0. DWM honors
             // the alpha channel via the empty-blur-region trick armed at
-            // overlay creation; pixels Compose paints with non-zero alpha
-            // composite over the user's child HWND beneath.
+            // overlay creation.
             clearColorArgb = 0x00000000,
             present = { NativeTaoWindowsOverlayBridge.nativeSwapBuffers(overlayHandle) },
         )
@@ -292,8 +295,7 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.unregisterKeyHandler(keyHandlerToken)
         scene?.close()
         scene = null
-        directContext?.close()
-        directContext = null
+        // directContext is the host's — don't close.
         NativeTaoWindowsOverlayBridge.nativeReleaseOverlay(overlayHandle)
         overlayHandle = 0
     }

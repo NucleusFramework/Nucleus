@@ -198,7 +198,32 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
     HDC hdc = GetDC(hwnd);
     if (!hdc) return FALSE;
 
-    /* Reuse the host's exact pixel format — required for share group. */
+    /* SINGLE-HGLRC ARCHITECTURE: we DON'T create a new HGLRC for the
+     * overlay. Instead we set the overlay HDC to the host's exact pixel
+     * format, then expose the host's HGLRC as our hglrc — wglMakeCurrent
+     * will switch the host's HGLRC to draw into the overlay's HDC.
+     *
+     * Why: NVIDIA's WGL ICD reproducibly crashes nvoglv64.dll inside
+     * Skia's flushAndSubmit when the host's HGLRC and a sibling HGLRC
+     * coexist in the same process — even with identical pixel formats
+     * and the share-group join via wglCreateContextAttribsARB
+     * (hShareContext = hostHGLRC). The single-HGLRC path eliminates
+     * the multi-context surface entirely. Skia keeps a single
+     * DirectContext (the host's), shared across host + every overlay
+     * + every popup. resetGLAll() between HDC switches handles the
+     * "default framebuffer changed" state delta.
+     *
+     * We still apply DwmEnableBlurBehindWindow + DWM polish on the
+     * overlay HWND so DWM honors its back-buffer alpha (the host HWND
+     * stays opaque because it's not armed). */
+    HGLRC hostHglrc = pHostHglrc ? pHostHglrc() : NULL;
+    if (!hostHglrc) {
+        /* Host hasn't initialized its WGL yet (shouldn't happen in
+         * practice — overlay creation always follows host attach). */
+        ReleaseDC(hwnd, hdc);
+        return FALSE;
+    }
+
     int hostFormat = 0;
     PIXELFORMATDESCRIPTOR pfd;
     ZeroMemory(&pfd, sizeof(pfd));
@@ -208,65 +233,16 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
         hostFormat = pHostPixelFormat(&pfd);
     }
     if (hostFormat == 0) {
-        /* Fallback: pick a transparent format ourselves. The share-group
-         * link will likely fail later (mismatched formats), but at least
-         * the overlay creates so we get a useful error rather than a silent
-         * 0 return. */
-        ZeroMemory(&pfd, sizeof(pfd));
-        pfd.nSize = sizeof(pfd);
-        pfd.nVersion = 1;
-        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
-        pfd.iPixelType = PFD_TYPE_RGBA;
-        pfd.cColorBits = 32;
-        pfd.cAlphaBits = 8;
-        pfd.cStencilBits = 8;
-        hostFormat = ChoosePixelFormat(hdc, &pfd);
+        ReleaseDC(hwnd, hdc);
+        return FALSE;
     }
     if (!SetPixelFormat(hdc, hostFormat, &pfd)) {
         ReleaseDC(hwnd, hdc);
         return FALSE;
     }
 
-    /* Create the overlay HGLRC and join the host's share group via
-     * `hShareContext = hostHGLRC`. This is the atomic alternative to
-     * wglShareLists — bypasses its "no pre-existing objects in second
-     * context" restriction (the host's context already has Skia/Compose
-     * shaders + programs in it). */
-    HGLRC hostHglrc = pHostHglrc ? pHostHglrc() : NULL;
-    HGLRC hglrc = NULL;
-    if (pwglCreateContextAttribsARB) {
-        const int ctxAttribs[] = {
-            WGL_CONTEXT_MAJOR_VERSION_ARB, 3,
-            WGL_CONTEXT_MINOR_VERSION_ARB, 3,
-            WGL_CONTEXT_PROFILE_MASK_ARB, WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB,
-            0
-        };
-        hglrc = pwglCreateContextAttribsARB(hdc, hostHglrc, ctxAttribs);
-    }
-    if (!hglrc) {
-        /* Fallback: create unshared and try wglShareLists post hoc. The
-         * resulting share group may be flaky on NVIDIA — but better than
-         * nothing if the ARB path is unavailable on a very old driver. */
-        hglrc = wglCreateContext(hdc);
-        if (hglrc && hostHglrc) {
-            wglShareLists(hostHglrc, hglrc);
-        }
-    }
-    if (!hglrc) {
-        ReleaseDC(hwnd, hdc);
-        return FALSE;
-    }
-
     gl->hdc = hdc;
-    gl->hglrc = hglrc;
-
-    /* Set wglSwapIntervalEXT(0) — DwmFlush provides vsync. */
-    HGLRC prevDc_ctx = wglGetCurrentContext();
-    HDC   prevDc     = wglGetCurrentDC();
-    if (wglMakeCurrent(hdc, hglrc)) {
-        if (pwglSwapIntervalEXT) pwglSwapIntervalEXT(0);
-        wglMakeCurrent(prevDc, prevDc_ctx);
-    }
+    gl->hglrc = hostHglrc; /* Borrowed reference — NOT deleted on destroy. */
 
     armBlurBehind(hwnd);
     applyDwmPolish(hwnd);
@@ -275,10 +251,10 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
 
 void nucleus_tao_overlay_gl_destroy(GlSurface *gl) {
     if (!gl) return;
-    if (gl->hglrc) {
-        if (wglGetCurrentContext() == gl->hglrc) wglMakeCurrent(NULL, NULL);
-        wglDeleteContext(gl->hglrc);
-    }
+    /* gl->hglrc is the host's HGLRC — don't delete it. Just release the
+     * HDC. If the host's HGLRC happens to be current on this HDC,
+     * wglMakeCurrent(NULL, NULL) would also clear the host's binding,
+     * so the host re-makes-current on its next render anyway. */
     if (gl->hdc && gl->hwnd) ReleaseDC(gl->hwnd, gl->hdc);
     gl->hdc = NULL;
     gl->hglrc = NULL;
