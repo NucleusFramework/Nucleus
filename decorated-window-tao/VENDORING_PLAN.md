@@ -82,11 +82,11 @@ If the E2E test fails: revert the phase commit, reopen the patch, do **not** sta
 
 **E2E gate (Linux X11 + Wayland):**
 
-- [ ] Drag each corner of the window: cursor turns into the diagonal resize cursor in a clearly larger area (~16 px), drag works smoothly.
-- [ ] Drag each edge: cursor turns into the perpendicular resize cursor; drag works.
-- [ ] Click 1 px inside the window from a corner: no resize triggered, click is dispatched to Compose.
-- [ ] Window drag (titlebar grab) still works.
-- [ ] Maximize / restore / fullscreen transitions unaffected.
+- [x] Drag each corner of the window: cursor turns into the diagonal resize cursor in a clearly larger area (~16 px), drag works smoothly.
+- [x] Drag each edge: cursor turns into the perpendicular resize cursor; drag works.
+- [x] Click 1 px inside the window from a corner: no resize triggered, click is dispatched to Compose.
+- [x] Window drag (titlebar grab) still works.
+- [x] Maximize / restore / fullscreen transitions unaffected.
 
 ---
 
@@ -104,9 +104,9 @@ If the E2E test fails: revert the phase commit, reopen the patch, do **not** sta
 
 **E2E gate (Linux):**
 
-- [ ] Hover a Compose `BasicTextField`: cursor turns into I-beam and stays I-beam while moving inside the field.
-- [ ] Hover a clickable button with `pointerHoverIcon(PointerIcon.Hand)`: cursor stays as Hand.
-- [ ] Move pointer to a window edge: cursor switches to resize cursor, then back to the Compose cursor when leaving the edge zone.
+- [x] Hover a Compose `BasicTextField`: cursor turns into I-beam and stays I-beam while moving inside the field.
+- [x] Hover a clickable button with `pointerHoverIcon(PointerIcon.Hand)`: cursor stays as Hand.
+- [x] Move pointer to a window edge: cursor switches to resize cursor, then back to the Compose cursor when leaving the edge zone.
 - [ ] Multi-pointer (XInput2) still works on a touch-enabled device.
 
 ---
@@ -125,9 +125,9 @@ If the E2E test fails: revert the phase commit, reopen the patch, do **not** sta
 
 **E2E gate (Linux):**
 
-- [ ] First-frame paint via EGL succeeds (no `EGL_BAD_NATIVE_WINDOW`).
-- [ ] `nativeLinuxHandles` returns a non-zero `nativeWindow` synchronously in the `WINDOW_READY` callback.
-- [ ] No flicker / black frame on window open.
+- [x] First-frame paint via EGL succeeds (no `EGL_BAD_NATIVE_WINDOW`).
+- [x] `nativeLinuxHandles` returns a non-zero `nativeWindow` synchronously in the `WINDOW_READY` callback.
+- [x] No flicker / black frame on window open.
 
 ---
 
