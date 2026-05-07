@@ -31,6 +31,7 @@
 
 #include <jni.h>
 #include <windows.h>
+#include <dwmapi.h>
 #include "nucleus_tao_windows_overlay_internal.h"
 
 /* ============================================================ */
@@ -73,18 +74,8 @@ struct OverlayState {
     int heightPx;
 
     /* WGL resources owned by overlay_gl.c. */
-    HDC   hdc;
-    HGLRC hglrc;
+    GlSurface gl;
 };
-
-HDC   nucleus_tao_overlay_get_hdc(OverlayState *s)   { return s ? s->hdc   : NULL; }
-HGLRC nucleus_tao_overlay_get_hglrc(OverlayState *s) { return s ? s->hglrc : NULL; }
-HWND  nucleus_tao_overlay_get_hwnd(OverlayState *s)  { return s ? s->hwnd  : NULL; }
-void  nucleus_tao_overlay_set_gl_resources(OverlayState *s, HDC hdc, HGLRC hglrc) {
-    if (!s) return;
-    s->hdc = hdc;
-    s->hglrc = hglrc;
-}
 
 struct OwnerNode {
     HWND owner;
@@ -277,7 +268,7 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     case WM_DWMCOMPOSITIONCHANGED:
         /* DWM compositor restart drops the empty-blur-region trick that
          * makes the WGL alpha channel honored. Re-arm it. */
-        if (s) nucleus_tao_overlay_gl_rearm_blur(s);
+        if (s) nucleus_tao_overlay_gl_rearm_blur(&s->gl);
         return 0;
     }
     return DefWindowProcW(hwnd, msg, w, l);
@@ -454,7 +445,8 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     /* Set up the transparent WGL context BEFORE showing the window so
      * DwmEnableBlurBehindWindow + DWM polish (rounded corners, dark mode,
      * extended frame for shadow) is in effect on the very first paint. */
-    if (!nucleus_tao_overlay_gl_init(s)) {
+    s->gl.hwnd = hwnd;
+    if (!nucleus_tao_overlay_gl_init(&s->gl)) {
         /* Init failed — tear down everything we created and return 0. */
         unregisterOverlayFromOwner(s);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
@@ -529,6 +521,25 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     if (prev) (*env)->DeleteGlobalRef(env, prev);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeMakeCurrent(
+    JNIEnv *env, jclass clazz, jlong overlay) {
+    (void)env; (void)clazz;
+    OverlayState *s = (OverlayState *)(uintptr_t)overlay;
+    if (!s || !s->gl.hdc || !s->gl.hglrc) return JNI_FALSE;
+    return wglMakeCurrent(s->gl.hdc, s->gl.hglrc) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeSwapBuffers(
+    JNIEnv *env, jclass clazz, jlong overlay) {
+    (void)env; (void)clazz;
+    OverlayState *s = (OverlayState *)(uintptr_t)overlay;
+    if (!s || !s->gl.hdc) return;
+    SwapBuffers(s->gl.hdc);
+    DwmFlush();
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeReleaseOverlay(
     JNIEnv *env, jclass clazz, jlong overlay) {
@@ -540,7 +551,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
 
     /* Tear down WGL before destroying the HWND so wglDeleteContext sees
      * a live HDC. */
-    nucleus_tao_overlay_gl_destroy(s);
+    nucleus_tao_overlay_gl_destroy(&s->gl);
 
     if (IsWindow(s->hwnd)) {
         SetWindowLongPtrW(s->hwnd, GWLP_USERDATA, 0);

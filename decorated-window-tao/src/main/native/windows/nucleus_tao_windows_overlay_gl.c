@@ -184,14 +184,13 @@ static void applyDwmPolish(HWND hwnd) {
     DwmExtendFrameIntoClientArea(hwnd, &margins);
 }
 
-void nucleus_tao_overlay_gl_rearm_blur(OverlayState *s) {
-    HWND h = nucleus_tao_overlay_get_hwnd(s);
-    if (h) armBlurBehind(h);
+void nucleus_tao_overlay_gl_rearm_blur(GlSurface *gl) {
+    if (gl && gl->hwnd) armBlurBehind(gl->hwnd);
 }
 
-BOOL nucleus_tao_overlay_gl_init(OverlayState *s) {
-    HWND hwnd = nucleus_tao_overlay_get_hwnd(s);
-    if (!hwnd) return FALSE;
+BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
+    if (!gl || !gl->hwnd) return FALSE;
+    HWND hwnd = gl->hwnd;
 
     loadWglExtensions();
     resolveHostBridge();
@@ -258,7 +257,8 @@ BOOL nucleus_tao_overlay_gl_init(OverlayState *s) {
         return FALSE;
     }
 
-    nucleus_tao_overlay_set_gl_resources(s, hdc, hglrc);
+    gl->hdc = hdc;
+    gl->hglrc = hglrc;
 
     /* Set wglSwapIntervalEXT(0) — DwmFlush provides vsync. */
     HGLRC prevDc_ctx = wglGetCurrentContext();
@@ -273,42 +273,17 @@ BOOL nucleus_tao_overlay_gl_init(OverlayState *s) {
     return TRUE;
 }
 
-void nucleus_tao_overlay_gl_destroy(OverlayState *s) {
-    HDC   hdc   = nucleus_tao_overlay_get_hdc(s);
-    HGLRC hglrc = nucleus_tao_overlay_get_hglrc(s);
-    HWND  hwnd  = nucleus_tao_overlay_get_hwnd(s);
-    if (hglrc) {
-        if (wglGetCurrentContext() == hglrc) wglMakeCurrent(NULL, NULL);
-        wglDeleteContext(hglrc);
+void nucleus_tao_overlay_gl_destroy(GlSurface *gl) {
+    if (!gl) return;
+    if (gl->hglrc) {
+        if (wglGetCurrentContext() == gl->hglrc) wglMakeCurrent(NULL, NULL);
+        wglDeleteContext(gl->hglrc);
     }
-    if (hdc && hwnd) ReleaseDC(hwnd, hdc);
-    nucleus_tao_overlay_set_gl_resources(s, NULL, NULL);
+    if (gl->hdc && gl->hwnd) ReleaseDC(gl->hwnd, gl->hdc);
+    gl->hdc = NULL;
+    gl->hglrc = NULL;
 }
 
-/* ============================================================ */
-/*  JNI exports — overlay side                                  */
-/* ============================================================ */
-
-JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeMakeCurrent(
-    JNIEnv *env, jclass clazz, jlong overlay) {
-    (void)env; (void)clazz;
-    OverlayState *s = (OverlayState *)(uintptr_t)overlay;
-    HDC   hdc   = nucleus_tao_overlay_get_hdc(s);
-    HGLRC hglrc = nucleus_tao_overlay_get_hglrc(s);
-    if (!hdc || !hglrc) return JNI_FALSE;
-    return wglMakeCurrent(hdc, hglrc) ? JNI_TRUE : JNI_FALSE;
-}
-
-JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nativeSwapBuffers(
-    JNIEnv *env, jclass clazz, jlong overlay) {
-    (void)env; (void)clazz;
-    OverlayState *s = (OverlayState *)(uintptr_t)overlay;
-    HDC hdc = nucleus_tao_overlay_get_hdc(s);
-    if (!hdc) return;
-    SwapBuffers(hdc);
-    /* DwmFlush() syncs to the DWM compositor — cheaper-and-stutter-free
-     * substitute for `wglSwapIntervalEXT(1)` under windowed compositing. */
-    DwmFlush();
-}
+/* JNI exports for nativeMakeCurrent / nativeSwapBuffers live in
+ * overlay.c and popup.c respectively — each owns the lifecycle struct
+ * containing the GlSurface. */
