@@ -20,6 +20,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.LinuxDesktopEnvironment
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -184,6 +185,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalTaoPopupHost provides host.popupHost(),
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
@@ -311,6 +314,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
+                io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoLinuxOverlayController
+                    provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
                 // loop). See [TaoLinuxUriHandler].

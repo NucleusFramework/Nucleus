@@ -155,6 +155,15 @@ internal class TaoComposeSceneHostLinux(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    /**
+     * Captured at the first composition via [setContent]. Exposes the
+     * standard `FocusManager.clearFocus(force = true)` API which the
+     * scene-level [androidx.compose.ui.scene.ComposeSceneFocusManager]
+     * doesn't surface — needed to break a `BasicTextField`'s
+     * "Captured" focus state when the user dismisses a context menu.
+     */
+    private var capturedFocusManager: androidx.compose.ui.focus.FocusManager? = null
+
     // Corner-radius mirrors `decorated-window-core/DecoratedWindowCore.kt`'s
     // `RoundRectangle2D.Float(0, 0, w, h, gnomeCornerArc, gnomeCornerArc)` —
     // RoundRectangle2D's `arcw`/`arch` arguments are the full arc *width*
@@ -651,7 +660,19 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent {
+            // Capture the standard FocusManager from the composition
+            // so the overlay controller can call `clearFocus(force =
+            // true)` to break a `BasicTextField`'s "Captured" focus
+            // state when a context menu dismisses (the scene-level
+            // `releaseFocus()` only clears Active/ActiveParent and
+            // leaves the caret visible).
+            val fm = androidx.compose.ui.platform.LocalFocusManager.current
+            androidx.compose.runtime.SideEffect {
+                capturedFocusManager = fm
+            }
+            content()
+        }
     }
 
     fun onResized(widthPxNew: Int, heightPxNew: Int) {
@@ -946,6 +967,143 @@ internal class TaoComposeSceneHostLinux(
         return keyHandler?.invoke(composeEvent) == true
     }
 
+    /**
+     * Plumbing for the `GtkWidget` variant of `NucleusPlatformView`.
+     * Resolves Tao's `GtkApplicationWindow*` once (it doesn't change
+     * for the lifetime of the window), routes attach/detach/setFrame
+     * calls to the C-side widget bridge, and converts Compose's
+     * physical-pixel coords to GTK's logical-pixel coords.
+     *
+     * Returns null until [attach] has run *and* the widget bridge
+     * library is available (missing on non-Linux builds and on Linux
+     * builds that didn't ship the .so).
+     */
+    fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
+        if (window.handle == 0L) return null
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge.isLoaded) return null
+        val gtkWindow = io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+            .nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow == 0L) return null
+        val outer = this
+        return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
+            override fun attach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeAttach(gtkWindow, childHandle)
+            }
+
+            override fun detach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeDetach(childHandle)
+            }
+
+            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                // Compose feeds physical pixels; GTK 3 lays out in
+                // logical pixels (the compositor applies the device
+                // scale on its own).
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val xLogical = (xPx / s).toInt()
+                val yLogical = (yPx / s).toInt()
+                val wLogical = (widthPx / s).toInt().coerceAtLeast(1)
+                val hLogical = (heightPx / s).toInt().coerceAtLeast(1)
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
+            }
+
+            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+                // Per-widget rounded clipping isn't trivial in GTK 3
+                // (would need a GtkCssProvider with a unique class
+                // name and a `border-radius` declaration). Leaving as
+                // a no-op for now; callers that need rounded corners
+                // on Linux fall back to drawing a Compose
+                // RoundedCornerShape on top of the widget area.
+            }
+        }
+    }
+
+    /**
+     * Plumbing for the overlay slot of `NativeView` on Linux. Returns
+     * a freshly-created controller bound to this host's EGL
+     * attachment so [io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents]
+     * modifiers in the `content` lambda can register their bounds and
+     * have the EGL surface's input region updated accordingly.
+     *
+     * One controller per window — multiple `NativeView`s inside the
+     * same window share its rect set, which is fine because input
+     * region is a window-level single list.
+     */
+    private val overlayController: TaoLinuxOverlayControllerImpl =
+        TaoLinuxOverlayControllerImpl(
+            // Resolve lazily — the GtkApplicationWindow handle is
+            // stable after attach() but Tao may not have wired it
+            // yet at host construction time.
+            gtkWindowProvider = {
+                if (window.handle == 0L) 0L
+                else io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+                    .nativeLinuxGtkWindow(window.handle)
+            },
+            scaleProvider = { scale },
+            hostSizeProvider = { IntSize(widthPx, heightPx) },
+            moveDispatcher = { xPx, yPx ->
+                // Reuse the same fixed-precision wire format as Tao's
+                // native CursorMoved dispatcher (×1024). `onPointerMove`
+                // divides back by 1024 to recover the physical-px
+                // float position.
+                onPointerMove(xPx * 1024, yPx * 1024)
+            },
+            buttonDispatcher = { button, pressed ->
+                onPointerButton(button, pressed)
+            },
+            focusReleaseDispatcher = {
+                // 1) Deselect the currently-focused widget (e.g. the
+                //    URL field's BasicTextField) — mirrors macOS's
+                //    `resignFirstResponder` callback. Without this,
+                //    a focused TextField keeps showing the caret
+                //    after the user clicks elsewhere.
+                //    `clearFocus(force = true)` (via the standard
+                //    `FocusManager` captured in [setContent]) is
+                //    needed to break a TextField's "Captured" focus
+                //    state during active editing — the scene-level
+                //    `releaseFocus()` only clears Active/ActiveParent.
+                capturedFocusManager?.clearFocus(force = true)
+                    ?: scene?.focusManager?.releaseFocus()
+
+                // 2) Synthesize an outside-click so any open Compose
+                //    Popup (e.g. the BasicTextField's Cut/Copy/Paste
+                //    context menu) hits its `dismissOnClickOutside`
+                //    handler and closes. focusManager.releaseFocus()
+                //    alone doesn't dismiss popups — they're tied to
+                //    pointer hit-testing, not the focus chain. We
+                //    target window-corner (1, 1): inside window
+                //    bounds (so Compose accepts the event) but
+                //    outside any Compose interactive widget in the
+                //    sample, so no other onClick fires.
+                val sc = scene ?: return@TaoLinuxOverlayControllerImpl
+                val dismissPos = androidx.compose.ui.geometry.Offset(1f, 1f)
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Move,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                )
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Press,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                    button = androidx.compose.ui.input.pointer.PointerButton.Primary,
+                )
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Release,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                    button = androidx.compose.ui.input.pointer.PointerButton.Primary,
+                )
+            },
+        )
+
+    fun overlayController(): TaoLinuxOverlayController? {
+        if (window.handle == 0L) return null
+        return overlayController
+    }
+
     fun detach() {
         if (io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
@@ -986,6 +1144,9 @@ internal class TaoComposeSceneHostLinux(
         scene = null
         directContext?.close()
         directContext = null
+        // Clear any input region we may have set while the window was
+        // alive; harmless even if the EGL surface is about to go away.
+        overlayController.dispose()
         if (attachmentHandle != 0L) {
             NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)

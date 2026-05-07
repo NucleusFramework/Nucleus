@@ -26,6 +26,7 @@ enum class Tab(val label: String) {
     A11y("A11y"),
     Complex("Complex"),
     Events("Events"),
+    WebView("WebView"),
 }
 
 @Composable

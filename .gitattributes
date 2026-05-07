@@ -2,3 +2,7 @@
 
 *.bat text eol=crlf
 *.jar binary
+
+# Vendored upstream crates — exclude from GitHub Linguist language stats
+decorated-window-tao/src/main/native/vendor/accesskit_atspi_common/** linguist-vendored
+decorated-window-tao/src/main/native/vendor/accesskit_unix/** linguist-vendored

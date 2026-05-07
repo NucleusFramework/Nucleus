@@ -67,7 +67,7 @@
 #include <string.h>
 #include <dlfcn.h>
 
-#define NUCLEUS_TAO_EGL_DEBUG 0
+#define NUCLEUS_TAO_EGL_DEBUG 1
 #if NUCLEUS_TAO_EGL_DEBUG
 #define DBG(...) fprintf(stderr, "[nucleus_tao_egl] " __VA_ARGS__)
 #else
@@ -281,6 +281,7 @@ typedef void            (*PFN_wl_event_queue_destroy)(wl_event_queue *);
 #define WL_COMPOSITOR_CREATE_SURFACE       0
 #define WL_COMPOSITOR_CREATE_REGION        1
 #define WL_REGION_DESTROY                  0
+#define WL_REGION_ADD                      1
 #define WL_SUBCOMPOSITOR_GET_SUBSURFACE    1
 #define WL_SUBSURFACE_DESTROY              0
 #define WL_SUBSURFACE_SET_POSITION         1
@@ -1411,6 +1412,150 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeHeight(
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     return att ? (jint) att->heightPx : 0;
+}
+
+/* ── Input region (overlay slot of `NativeView`) ─────────────────────────
+ *
+ * Switches the EGL surface from the default "fully input-transparent"
+ * mode (where every click falls through to GTK and reaches the embedded
+ * native widget) to a region-restricted mode: the compositor / X server
+ * only routes input to our surface when the cursor sits inside one of
+ * the supplied rects. Outside those rects, input still falls through to
+ * GTK as before. This is the Linux equivalent of macOS's
+ * `NucleusTaoNativeOverlayView.hitTest:` returning `nil` for points
+ * outside any registered region.
+ *
+ * [rectsPx] is a flat (x, y, w, h) × [count] float array in surface-
+ * local pixels with a top-left origin (matches Compose `boundsInWindow`
+ * → physical px). `count == 0` resets to the default empty region
+ * (full passthrough).
+ *
+ * Wayland: marshals `wl_compositor.create_region` + `wl_region.add` for
+ * each rect + `wl_surface.set_input_region` + `wl_surface.commit`.
+ *
+ * X11 child-window fallback: applies `XShapeCombineRectangles(ShapeInput,
+ * rects, ShapeSet)` on `child_xid`. Only effective when a child window
+ * was created (visual-mismatch fallback path) — the default-visual X11
+ * path renders directly into GTK's xwin and has nothing we can shape
+ * without breaking GTK input. We log a warning in that case; full
+ * X11-default support would require always materialising a child window
+ * for Compose, which is left as a follow-up. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoEglBridge_nativeSetInputRegion(
+    JNIEnv *env, jclass clazz, jlong handle, jfloatArray rectsPx, jint count)
+{
+    (void) clazz;
+    fprintf(stderr, "[nucleus_tao_egl] nativeSetInputRegion handle=0x%lx count=%d\n",
+            (unsigned long) handle, (int) count);
+    if (handle == 0) return;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    fprintf(stderr, "[nucleus_tao_egl]   wl_child_surface=%p wl_compositor=%p child_xid=0x%lx\n",
+            (void *) att->wl_child_surface, (void *) att->wl_compositor,
+            (unsigned long) att->child_xid);
+
+    if (count < 0) count = 0;
+    int safe_count = 0;
+    if (count > 0 && rectsPx != NULL) {
+        jsize len = (*env)->GetArrayLength(env, rectsPx);
+        safe_count = (int) (len / 4);
+        if (safe_count > count) safe_count = count;
+    }
+    if (safe_count > 0 && rectsPx != NULL) {
+        jfloat *raw = (*env)->GetFloatArrayElements(env, rectsPx, NULL);
+        if (raw != NULL) {
+            for (int i = 0; i < safe_count; i++) {
+                fprintf(stderr, "[nucleus_tao_egl]   rect[%d] = (%g, %g, %g, %g)\n",
+                        i, raw[i*4+0], raw[i*4+1], raw[i*4+2], raw[i*4+3]);
+            }
+            (*env)->ReleaseFloatArrayElements(env, rectsPx, raw, JNI_ABORT);
+        }
+    }
+
+    /* Wayland path. ───────────────────────────────────────────────── */
+    if (att->wl_child_surface != NULL && att->wl_compositor != NULL &&
+        g_wl_region_interface != NULL && p_wl_proxy_marshal_flags != NULL) {
+
+        wl_proxy *region = p_wl_proxy_marshal_flags(
+            (wl_proxy *) att->wl_compositor, WL_COMPOSITOR_CREATE_REGION,
+            g_wl_region_interface,
+            p_wl_proxy_get_version((wl_proxy *) att->wl_compositor),
+            0, NULL);
+        if (region != NULL) {
+            if (att->wl_queue != NULL && p_wl_proxy_set_queue) {
+                p_wl_proxy_set_queue(region, att->wl_queue);
+            }
+            /* Pull the float quartets into integer surface coords —
+             * `wl_region.add` takes ints. We round-down position and
+             * round-up size so the region never undershoots the rect
+             * Compose drew (avoids 1-pixel unclickable seams on
+             * fractional layouts). */
+            if (safe_count > 0 && rectsPx != NULL) {
+                jfloat *raw = (*env)->GetFloatArrayElements(env, rectsPx, NULL);
+                if (raw != NULL) {
+                    for (int i = 0; i < safe_count; i++) {
+                        int x = (int) raw[i * 4 + 0];
+                        int y = (int) raw[i * 4 + 1];
+                        int w = (int) (raw[i * 4 + 2] + 0.5f);
+                        int h = (int) (raw[i * 4 + 3] + 0.5f);
+                        if (w <= 0 || h <= 0) continue;
+                        p_wl_proxy_marshal_flags(
+                            region, WL_REGION_ADD, NULL,
+                            p_wl_proxy_get_version(region), 0,
+                            x, y, w, h);
+                    }
+                    (*env)->ReleaseFloatArrayElements(env, rectsPx, raw, JNI_ABORT);
+                }
+            }
+            p_wl_proxy_marshal_flags(
+                (wl_proxy *) att->wl_child_surface, WL_SURFACE_SET_INPUT_REGION,
+                NULL, p_wl_proxy_get_version((wl_proxy *) att->wl_child_surface), 0,
+                region);
+            p_wl_proxy_marshal_flags(
+                region, WL_REGION_DESTROY, NULL,
+                p_wl_proxy_get_version(region), WL_MARSHAL_FLAG_DESTROY);
+            /* Commit so the new input region takes effect on the next
+             * frame; subsurface is in desync mode so this lands without
+             * waiting for the GTK parent. */
+            p_wl_proxy_marshal_flags(
+                (wl_proxy *) att->wl_child_surface, WL_SURFACE_COMMIT, NULL,
+                p_wl_proxy_get_version((wl_proxy *) att->wl_child_surface), 0);
+        }
+        return;
+    }
+
+    /* X11 child-window fallback. ─────────────────────────────────── */
+    if (att->xdisplay != NULL && att->child_xid != (Window) 0 &&
+        p_XShapeCombineRectangles != NULL) {
+        XRectangle stack_rects[32];
+        XRectangle *rects = stack_rects;
+        if (safe_count > (int) (sizeof(stack_rects) / sizeof(stack_rects[0]))) {
+            rects = (XRectangle *) calloc((size_t) safe_count, sizeof(XRectangle));
+            if (rects == NULL) return;
+        }
+        if (safe_count > 0 && rectsPx != NULL) {
+            jfloat *raw = (*env)->GetFloatArrayElements(env, rectsPx, NULL);
+            if (raw != NULL) {
+                for (int i = 0; i < safe_count; i++) {
+                    rects[i].x      = (short) raw[i * 4 + 0];
+                    rects[i].y      = (short) raw[i * 4 + 1];
+                    rects[i].width  = (unsigned short) (raw[i * 4 + 2] + 0.5f);
+                    rects[i].height = (unsigned short) (raw[i * 4 + 3] + 0.5f);
+                }
+                (*env)->ReleaseFloatArrayElements(env, rectsPx, raw, JNI_ABORT);
+            }
+        }
+        p_XShapeCombineRectangles(
+            att->xdisplay, att->child_xid, ShapeInput, 0, 0,
+            rects, safe_count, ShapeSet, Unsorted);
+        if (rects != stack_rects) free(rects);
+        return;
+    }
+
+    /* X11 default visual: no separate Compose window, can't shape
+     * without breaking GTK. Falls back to current full-passthrough
+     * behaviour — overlay clicks won't be intercepted. */
+    DBG("nativeSetInputRegion: no shape-able backend (X11 default visual);"
+        " overlay clicks pass through to GTK.\n");
 }
 
 /**

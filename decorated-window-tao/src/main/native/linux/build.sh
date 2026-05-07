@@ -1,7 +1,10 @@
 #!/bin/bash
-# Compiles two Linux shared libraries into per-architecture resource folders:
-#   - libnucleus_tao.so      (Rust crate, Tao + JNI)
-#   - libnucleus_tao_egl.so  (C, EGL helper for Skia GL backend on X11 / Wayland)
+# Compiles three Linux shared libraries into per-architecture resource folders:
+#   - libnucleus_tao.so              (Rust crate, Tao + JNI)
+#   - libnucleus_tao_egl.so          (C, EGL helper for Skia GL backend on
+#                                     X11 / Wayland)
+#   - libnucleus_tao_linux_widget.so (C, GTK widget reparenting helpers used
+#                                     by the GtkWidget variant of NativeView)
 #
 # Outputs are placed in src/main/resources/nucleus/native/{linux-x64,linux-aarch64}/.
 #
@@ -95,7 +98,24 @@ case "$HOST_ARCH" in
     aarch64|arm64) build_egl "$OUT_DIR_ARM64" ;;
 esac
 
-# ── 4) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
+# ── 4) GTK widget embedding helper (libnucleus_tao_linux_widget.so) ────────
+
+build_widget() {
+    local OUT_DIR="$1"
+    local OUT="$OUT_DIR/libnucleus_tao_linux_widget.so"
+    "$CC" -shared -fPIC -O2 -fvisibility=hidden \
+        -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
+        "$SCRIPT_DIR/nucleus_tao_linux_widget.c" -ldl \
+        -o "$OUT"
+    strip --strip-unneeded "$OUT" || true
+}
+
+case "$HOST_ARCH" in
+    x86_64)        build_widget "$OUT_DIR_X64"   ;;
+    aarch64|arm64) build_widget "$OUT_DIR_ARM64" ;;
+esac
+
+# ── 5) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
 # Per the Linux module checklist in CLAUDE.md: skipping this serves the stale
 # cached copy out of ~/.cache/nucleus/native/<arch>/.
 
@@ -108,6 +128,6 @@ done
 
 echo "Built Linux native libraries:"
 case "$HOST_ARCH" in
-    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_egl.so} ;;
-    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_egl.so} ;;
+    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so} ;;
+    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so} ;;
 esac
