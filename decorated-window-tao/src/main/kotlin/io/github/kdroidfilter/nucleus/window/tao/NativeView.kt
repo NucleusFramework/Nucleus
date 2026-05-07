@@ -81,30 +81,52 @@ fun NativeView(
  * when the runtime isn't Windows or the host scene plumbing isn't
  * available.
  *
- * Phase 2: subview only — the user's HWND is reparented, sized, and
- * clipped under the Tao main HWND. The [content] slot is silently
- * ignored (subview-only mode mirrors Linux's behavior); Phases 3-5
- * wire up the overlay HWND so Compose UI can paint above the embedded
- * native view.
+ * The [content] slot mounts a Compose scene rendered into a top-level
+ * owned overlay HWND with a transparent WGL context joined to the
+ * host's share group. Outside any region wrapped with
+ * `Modifier.consumeOverlayPointerEvents()`, clicks fall through via
+ * `WM_NCHITTEST` returning `HTTRANSPARENT` so the embedded child HWND
+ * underneath gets them.
  */
 @Composable
 private fun HwndEmbedding(
     view: NucleusPlatformView.HWnd,
     modifier: Modifier,
     cornerRadius: Dp,
-    @Suppress("UNUSED_PARAMETER") content: @Composable () -> Unit,
+    content: @Composable () -> Unit,
 ) {
     val host = LocalTaoNativeViewHost.current
+    val popupHost = io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHostWindows.current
     val handle = view.hwndHandle
+    val latestContent by rememberUpdatedState(content)
 
-    if (Platform.Current != Platform.Windows || host == null || handle == 0L) {
+    if (Platform.Current != Platform.Windows || host == null || popupHost == null || handle == 0L) {
         Box(modifier)
         return
     }
 
-    DisposableEffect(host, handle) {
+    val overlay = remember(host, popupHost) {
+        NativeViewOverlayControllerWindows(host, popupHost)
+    }
+
+    DisposableEffect(host, handle, overlay) {
         host.attach(handle)
-        onDispose { host.detach(handle) }
+        // Overlay attaches AFTER the user's subview so Z-order is correct
+        // (owned popup HWNDs are guaranteed above their owner by Win32).
+        overlay.attach()
+        onDispose {
+            overlay.dispose()
+            host.detach(handle)
+        }
+    }
+
+    DisposableEffect(overlay) {
+        overlay.setContent {
+            CompositionLocalProvider(LocalNativeViewOverlayControllerWindows provides overlay) {
+                latestContent()
+            }
+        }
+        onDispose { /* dispose handled above */ }
     }
 
     val density = LocalDensity.current
@@ -129,6 +151,7 @@ private fun HwndEmbedding(
             if (rectChanged) {
                 lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
                 host.setFrame(handle, xPx, yPx, wPx, hPx)
+                overlay.setBounds(xPx, yPx, wPx, hPx)
                 view.resize(wPx, hPx)
             }
             if (rectChanged || lastRadius[0] != cornerRadiusPx) {

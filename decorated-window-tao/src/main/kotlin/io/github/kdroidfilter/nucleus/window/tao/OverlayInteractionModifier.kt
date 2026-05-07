@@ -39,13 +39,15 @@ import kotlin.math.roundToInt
 fun Modifier.consumeOverlayPointerEvents(): Modifier = composed {
     val mac = LocalNativeViewOverlayController.current
     val linux = LocalTaoLinuxOverlayController.current
-    if (mac == null && linux == null) return@composed this
+    val windows = LocalNativeViewOverlayControllerWindows.current
+    if (mac == null && linux == null && windows == null) return@composed this
 
     val key = remember { Any() }
-    DisposableEffect(mac, linux, key) {
+    DisposableEffect(mac, linux, windows, key) {
         onDispose {
             mac?.unregisterRegion(key)
             linux?.unregisterRegion(key)
+            windows?.unregisterRegion(key)
         }
     }
 
@@ -57,5 +59,6 @@ fun Modifier.consumeOverlayPointerEvents(): Modifier = composed {
         val hPx = coords.size.height
         mac?.registerRegion(key, xPx, yPx, wPx, hPx)
         linux?.registerRegion(key, xPx, yPx, wPx, hPx)
+        windows?.registerRegion(key, xPx, yPx, wPx, hPx)
     }
 }

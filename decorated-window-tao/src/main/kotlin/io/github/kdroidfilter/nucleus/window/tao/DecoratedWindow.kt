@@ -534,6 +534,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHostWindows
+                    provides host.popupHost(),
             ) {
                 val border =
                     rememberUndecoratedWindowBorder(

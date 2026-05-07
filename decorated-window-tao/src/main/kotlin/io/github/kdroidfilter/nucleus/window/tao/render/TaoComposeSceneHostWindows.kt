@@ -87,6 +87,29 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    /**
+     * Renderers registered by overlay/popup scenes. Drained AFTER the
+     * main scene's render in [onRedrawRequested] so each tick paints
+     * into every live overlay/popup HWND in the same Tao event-loop wake.
+     *
+     * Cross-context sync (per NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context
+     * synchronization"): before draining, we call
+     * `directContext.flushAndSubmit()` so the GPU sees host commands
+     * before any share-group consumer reads from them; after draining,
+     * we re-make the host context current and call
+     * `directContext.resetGLAll()` so Skia re-syncs its per-context GL
+     * state cache (the overlay's own renderer will have switched contexts
+     * behind Skia's back).
+     */
+    private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Key handlers consulted before the main scene's key dispatch
+     * (Phase 8). Overlay scenes register here when they hold a focusable
+     * Compose node.
+     */
+    private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
+
     // Frame pacing is delegated to VSync — `wglSwapIntervalEXT(1)` makes
     // SwapBuffers block until the next display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence.
@@ -565,6 +588,25 @@ internal class TaoComposeSceneHostWindows(
             surface.close()
             rt.close()
         }
+
+        // Drain overlay/popup renderers. Cross-context sync (per
+        // NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context synchronization"):
+        //   1. Host already flushed/presented above (flushAndSubmit +
+        //      SwapBuffers via nativePresent did the equivalent of
+        //      glFlush — the Skia-skiko backend issues glFlush internally
+        //      when committing the surface).
+        //   2. Each renderer below switches to its own HGLRC, calls
+        //      resetGLAll on its own DirectContext, paints, swaps.
+        //   3. After the loop we re-make-current the host context and
+        //      resetGLAll on the host's DirectContext — Skia's GL state
+        //      cache no longer reflects truth after the external switches.
+        if (popupRenderers.isNotEmpty()) {
+            val snapshot = popupRenderers.values.toList()
+            for (render in snapshot) render()
+            // Restore host context + tell Skia "external code touched GL state".
+            NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+            ctx.resetGLAll()
+        }
     }
 
     fun onPointerMove(
@@ -670,6 +712,11 @@ internal class TaoComposeSceneHostWindows(
                 else -> return false
             }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
+        // Overlay/popup scenes get a chance to consume the event before
+        // the main scene. Mirrors the macOS popupKeyHandlers chain.
+        for (handler in popupKeyHandlers.values) {
+            if (handler(composeEvent)) return true
+        }
         if (sc.sendKeyEvent(composeEvent)) return true
         return keyHandler?.invoke(composeEvent) == true
     }
@@ -688,6 +735,31 @@ internal class TaoComposeSceneHostWindows(
 
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
+
+    fun popupHost(): TaoPopupHostWindows? {
+        if (hwnd == 0L) return null
+        val outer = this
+        return object : TaoPopupHostWindows {
+            override val parentHwnd: Long get() = outer.hwnd
+            override val scale: Float get() = outer.scale
+            override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
+                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+            override fun requestRedraw() = outer.window.requestRedraw()
+            override fun registerRenderer(token: Any, render: () -> Unit) {
+                outer.popupRenderers[token] = render
+            }
+            override fun unregisterRenderer(token: Any) {
+                outer.popupRenderers.remove(token)
+            }
+            override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
+                outer.popupKeyHandlers[token] = handler
+            }
+            override fun unregisterKeyHandler(token: Any) {
+                outer.popupKeyHandlers.remove(token)
+            }
+        }
+    }
 
     fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
         if (hwnd == 0L) return null
