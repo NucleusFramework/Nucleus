@@ -6,3 +6,7 @@
 # Vendored upstream crates — exclude from GitHub Linguist language stats
 decorated-window-tao/src/main/native/vendor/accesskit_atspi_common/** linguist-vendored
 decorated-window-tao/src/main/native/vendor/accesskit_unix/** linguist-vendored
+decorated-window-tao/src/main/native/vendor/tao/** linguist-vendored
+
+# Patches are text files with LF endings
+decorated-window-tao/src/main/native/vendor/tao-patches/*.patch text eol=lf
