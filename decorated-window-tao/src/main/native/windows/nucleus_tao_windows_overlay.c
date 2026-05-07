@@ -31,6 +31,7 @@
 
 #include <jni.h>
 #include <windows.h>
+#include "nucleus_tao_windows_overlay_internal.h"
 
 /* ============================================================ */
 /*  Constants + globals                                         */
@@ -70,7 +71,20 @@ struct OverlayState {
     int yPx;
     int widthPx;
     int heightPx;
+
+    /* WGL resources owned by overlay_gl.c. */
+    HDC   hdc;
+    HGLRC hglrc;
 };
+
+HDC   nucleus_tao_overlay_get_hdc(OverlayState *s)   { return s ? s->hdc   : NULL; }
+HGLRC nucleus_tao_overlay_get_hglrc(OverlayState *s) { return s ? s->hglrc : NULL; }
+HWND  nucleus_tao_overlay_get_hwnd(OverlayState *s)  { return s ? s->hwnd  : NULL; }
+void  nucleus_tao_overlay_set_gl_resources(OverlayState *s, HDC hdc, HGLRC hglrc) {
+    if (!s) return;
+    s->hdc = hdc;
+    s->hglrc = hglrc;
+}
 
 struct OwnerNode {
     HWND owner;
@@ -257,21 +271,14 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     }
 
     case WM_ERASEBKGND:
+        /* Suppress GDI fill — SwapBuffers owns the pixels. */
         return 1;
 
-    case WM_PAINT: {
-        /* Phase 3 placeholder: solid red so we can validate Z-order +
-         * size + region click-through before WGL is wired up. Phase 4
-         * removes this and lets DefWindowProc + WM_ERASEBKGND=1 produce
-         * a no-op while SwapBuffers owns the pixels. */
-        PAINTSTRUCT ps;
-        HDC hdc = BeginPaint(hwnd, &ps);
-        HBRUSH br = CreateSolidBrush(RGB(220, 30, 30));
-        FillRect(hdc, &ps.rcPaint, br);
-        DeleteObject(br);
-        EndPaint(hwnd, &ps);
+    case WM_DWMCOMPOSITIONCHANGED:
+        /* DWM compositor restart drops the empty-blur-region trick that
+         * makes the WGL alpha channel honored. Re-arm it. */
+        if (s) nucleus_tao_overlay_gl_rearm_blur(s);
         return 0;
-    }
     }
     return DefWindowProcW(hwnd, msg, w, l);
 }
@@ -444,6 +451,19 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     OwnerNode *n = getOrCreateOwnerNode(owner);
     if (n) registerOverlayWithOwner(n, s);
 
+    /* Set up the transparent WGL context BEFORE showing the window so
+     * DwmEnableBlurBehindWindow + DWM polish (rounded corners, dark mode,
+     * extended frame for shadow) is in effect on the very first paint. */
+    if (!nucleus_tao_overlay_gl_init(s)) {
+        /* Init failed — tear down everything we created and return 0. */
+        unregisterOverlayFromOwner(s);
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
+        DestroyWindow(hwnd);
+        DeleteCriticalSection(&s->regionLock);
+        HeapFree(GetProcessHeap(), 0, s);
+        return 0;
+    }
+
     ShowWindow(hwnd, SW_SHOWNOACTIVATE);
     return (jlong)(uintptr_t)s;
 }
@@ -517,6 +537,10 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     if (!s) return;
 
     unregisterOverlayFromOwner(s);
+
+    /* Tear down WGL before destroying the HWND so wglDeleteContext sees
+     * a live HDC. */
+    nucleus_tao_overlay_gl_destroy(s);
 
     if (IsWindow(s->hwnd)) {
         SetWindowLongPtrW(s->hwnd, GWLP_USERDATA, 0);
