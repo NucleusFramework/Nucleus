@@ -689,6 +689,30 @@ internal class TaoComposeSceneHostWindows(
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
 
+    fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
+        if (hwnd == 0L) return null
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge.isLoaded) return null
+        val parent = hwnd
+        return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
+            override fun attach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeAttach(parent, childHandle)
+            }
+            override fun detach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeDetach(childHandle)
+            }
+            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeSetFrame(parent, handle, xPx, yPx, widthPx, heightPx)
+            }
+            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeSetCornerRadius(parent, handle, radiusPx)
+            }
+        }
+    }
+
     // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
     // recomposition collapses into a single push at the next render tick.
     private var a11ySyncScheduled: Runnable? = null

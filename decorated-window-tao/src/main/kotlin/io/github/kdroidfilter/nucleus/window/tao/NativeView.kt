@@ -72,8 +72,76 @@ fun NativeView(
     when (view) {
         is NucleusPlatformView.NsView -> NsViewEmbedding(view, modifier, cornerRadius, content)
         is NucleusPlatformView.GtkWidget -> GtkWidgetEmbedding(view, modifier, content)
-        is NucleusPlatformView.HWnd -> Box(modifier) // Not yet implemented.
+        is NucleusPlatformView.HWnd -> HwndEmbedding(view, modifier, cornerRadius, content)
     }
+}
+
+/**
+ * Windows HWND embedding path. Falls back to an empty `Box(modifier)`
+ * when the runtime isn't Windows or the host scene plumbing isn't
+ * available.
+ *
+ * Phase 2: subview only — the user's HWND is reparented, sized, and
+ * clipped under the Tao main HWND. The [content] slot is silently
+ * ignored (subview-only mode mirrors Linux's behavior); Phases 3-5
+ * wire up the overlay HWND so Compose UI can paint above the embedded
+ * native view.
+ */
+@Composable
+private fun HwndEmbedding(
+    view: NucleusPlatformView.HWnd,
+    modifier: Modifier,
+    cornerRadius: Dp,
+    @Suppress("UNUSED_PARAMETER") content: @Composable () -> Unit,
+) {
+    val host = LocalTaoNativeViewHost.current
+    val handle = view.hwndHandle
+
+    if (Platform.Current != Platform.Windows || host == null || handle == 0L) {
+        Box(modifier)
+        return
+    }
+
+    DisposableEffect(host, handle) {
+        host.attach(handle)
+        onDispose { host.detach(handle) }
+    }
+
+    val density = LocalDensity.current
+    val cornerRadiusPx = remember(cornerRadius, density) {
+        when {
+            cornerRadius == Dp.Unspecified -> 0f
+            cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
+            else -> with(density) { cornerRadius.toPx() }
+        }
+    }
+    val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
+    val lastRadius = remember { floatArrayOf(Float.NaN) }
+    Box(
+        modifier = modifier.onGloballyPositioned { coords ->
+            val pos = coords.positionInRoot()
+            val xPx = pos.x.roundToInt()
+            val yPx = pos.y.roundToInt()
+            val wPx = coords.size.width.coerceAtLeast(1)
+            val hPx = coords.size.height.coerceAtLeast(1)
+            val rectChanged = lastRect[0] != xPx || lastRect[1] != yPx ||
+                lastRect[2] != wPx || lastRect[3] != hPx
+            if (rectChanged) {
+                lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
+                host.setFrame(handle, xPx, yPx, wPx, hPx)
+                view.resize(wPx, hPx)
+            }
+            if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                lastRadius[0] = cornerRadiusPx
+                val radiusToApply = if (cornerRadiusPx.isInfinite()) {
+                    min(wPx, hPx) / 2f
+                } else {
+                    cornerRadiusPx
+                }
+                host.setCornerRadius(handle, radiusToApply)
+            }
+        },
+    )
 }
 
 /**

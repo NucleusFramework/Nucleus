@@ -533,6 +533,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
                 val border =
                     rememberUndecoratedWindowBorder(
