@@ -115,6 +115,18 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_
                  SWP_NOZORDER | SWP_NOACTIVATE | SWP_DEFERERASE);
 }
 
+JNIEXPORT jboolean JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeIsFocusInTree(
+    JNIEnv *env, jclass clazz, jlong parentHwnd) {
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    if (!IsWindow(parent)) return JNI_FALSE;
+    HWND focused = GetFocus();
+    if (!focused) return JNI_FALSE;
+    if (focused == parent) return JNI_TRUE;
+    return IsChild(parent, focused) ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeSetCornerRadius(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jlong childHwnd, jfloat radiusPx) {

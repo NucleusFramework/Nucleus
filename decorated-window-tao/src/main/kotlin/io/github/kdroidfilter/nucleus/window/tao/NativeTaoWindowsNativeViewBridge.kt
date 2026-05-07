@@ -44,4 +44,15 @@ internal object NativeTaoWindowsNativeViewBridge {
         childHwnd: Long,
         radiusPx: Float,
     )
+
+    /**
+     * Returns true if the calling thread's currently-focused HWND is
+     * [parentHwnd] itself or any descendant. Used by the Windows
+     * `DecoratedWindow` to keep the window visually "active" when
+     * keyboard focus moves to an embedded child HWND like WebView2 —
+     * Tao reports the main HWND as unfocused (Win32 focus is on the
+     * child) but for app purposes the window is still in use.
+     */
+    @JvmStatic
+    external fun nativeIsFocusInTree(parentHwnd: Long): Boolean
 }

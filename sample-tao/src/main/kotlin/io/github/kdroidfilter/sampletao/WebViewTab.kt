@@ -305,9 +305,12 @@ private fun UrlField(
             // BasicTextField only applies the I-beam over the rendered text
             // glyphs, which on a singleLine field is a thin strip at the top
             // (textStyle = 13.sp inside a 36.dp box, top-aligned). Apply it on
-            // the outer field rect so the whole pill shows the I-beam — what
-            // every HTML/native text input does.
-            .pointerHoverIcon(PointerIcon.Text)
+            // the outer field rect with overrideDescendants = true so the
+            // whole pill shows the I-beam — what every HTML/native text input
+            // does. Without overrideDescendants, BasicTextField's inner
+            // pointerHoverIcon(Default) for the non-text padding overrides
+            // ours and we end up with I-beam only at the very top.
+            .pointerHoverIcon(PointerIcon.Text, overrideDescendants = true)
             .padding(horizontal = 12.dp),
     ) {
         BasicTextField(

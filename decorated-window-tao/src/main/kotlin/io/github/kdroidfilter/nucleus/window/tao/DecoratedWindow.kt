@@ -261,7 +261,17 @@ internal fun ApplicationScope.openDecoratedWindow(
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        stateHolder.value = stateHolder.value.copy(active = focused)
+        // When focus moves to an embedded child HWND (e.g., WebView2 on
+        // Windows), Tao reports the main HWND as unfocused, but for app
+        // purposes the window is still in active use — keep the chrome's
+        // active visual. Only flip to inactive when focus truly left our
+        // window tree (Alt-Tab to another app, etc.). The bridge below
+        // is no-op on platforms where its DLL isn't loaded (isLoaded is
+        // false on macOS), so this is safe to share across paths.
+        val effective = focused ||
+            (NativeTaoWindowsNativeViewBridge.isLoaded &&
+                NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle))
+        stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
     }
 
@@ -594,7 +604,17 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     }
     window.onRedrawRequested { host.onRedrawRequested() }
     window.onFocusChanged { focused ->
-        stateHolder.value = stateHolder.value.copy(active = focused)
+        // When focus moves to an embedded child HWND (e.g., WebView2 on
+        // Windows), Tao reports the main HWND as unfocused, but for app
+        // purposes the window is still in active use — keep the chrome's
+        // active visual. Only flip to inactive when focus truly left our
+        // window tree (Alt-Tab to another app, etc.). The bridge below
+        // is no-op on platforms where its DLL isn't loaded (isLoaded is
+        // false on macOS), so this is safe to share across paths.
+        val effective = focused ||
+            (NativeTaoWindowsNativeViewBridge.isLoaded &&
+                NativeTaoWindowsNativeViewBridge.nativeIsFocusInTree(window.nativeHandle))
+        stateHolder.value = stateHolder.value.copy(active = effective)
         host.onFocusChanged(focused)
     }
 
