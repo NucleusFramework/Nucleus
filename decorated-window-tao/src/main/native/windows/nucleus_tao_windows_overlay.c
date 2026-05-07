@@ -501,7 +501,51 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsOverlayBridge_nat
     if (count > 0 && rectsXYWHPx) {
         (*env)->GetFloatArrayRegion(env, rectsXYWHPx, 0, count * 4, s->regions);
     }
+    /* Snapshot rect data while holding the lock so we can build the
+     * HRGN below without keeping the critical section open during the
+     * GDI calls. */
+    int snapshotCount = s->regionCount;
+    float snapshot[MAX_REGIONS * 4];
+    if (snapshotCount > 0) {
+        for (int i = 0; i < snapshotCount * 4; i++) snapshot[i] = s->regions[i];
+    }
     LeaveCriticalSection(&s->regionLock);
+
+    /* Build a window region as the union of all interactive rects, in
+     * overlay-local coords. SetWindowRgn restricts BOTH visibility AND
+     * hit-testing to the region — outside it, the overlay HWND has no
+     * presence, so clicks fall through directly to whatever's behind
+     * (the WebView child HWND of the owner). This is the proper
+     * Win32 way to do "click-through except in this rect" for a
+     * top-level WS_POPUP — HTTRANSPARENT only routes to top-level
+     * siblings, not to child HWNDs of the owner. */
+    if (!IsWindow(s->hwnd)) return;
+    HRGN combined = NULL;
+    if (snapshotCount == 0) {
+        /* No interactive regions yet — overlay has no clickable / visible
+         * area. An empty region still draws nothing and consumes nothing. */
+        combined = CreateRectRgn(0, 0, 0, 0);
+    } else {
+        for (int i = 0; i < snapshotCount; i++) {
+            int x = (int)snapshot[i * 4 + 0];
+            int y = (int)snapshot[i * 4 + 1];
+            int w = (int)snapshot[i * 4 + 2];
+            int h = (int)snapshot[i * 4 + 3];
+            HRGN rect = CreateRectRgn(x, y, x + w, y + h);
+            if (!rect) continue;
+            if (!combined) {
+                combined = rect;
+            } else {
+                CombineRgn(combined, combined, rect, RGN_OR);
+                DeleteObject(rect);
+            }
+        }
+        if (!combined) combined = CreateRectRgn(0, 0, 0, 0);
+    }
+    /* SetWindowRgn takes ownership on success; on failure we delete. */
+    if (!SetWindowRgn(s->hwnd, combined, TRUE)) {
+        DeleteObject(combined);
+    }
 }
 
 JNIEXPORT void JNICALL

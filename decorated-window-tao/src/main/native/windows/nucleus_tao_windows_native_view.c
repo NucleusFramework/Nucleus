@@ -27,6 +27,14 @@ void *memset(void *dest, int c, size_t count) {
     return dest;
 }
 
+#pragma function(memcpy)
+void *memcpy(void *dest, const void *src, size_t count) {
+    unsigned char *d = (unsigned char *)dest;
+    const unsigned char *s = (const unsigned char *)src;
+    while (count--) *d++ = *s++;
+    return dest;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
     (void)hinst; (void)reason; (void)reserved;
     return TRUE;
