@@ -500,13 +500,16 @@ impl<T: 'static> EventLoop<T> {
                   let (left, top) = window.position();
                   let (w, h) = (window.width(), window.height());
                   let (right, bottom) = (left + w, top + h);
-                  let border = window.scale_factor() * 5;
+                  let scale = window.scale_factor();
+                  let edge_band = scale * 8;
+                  let corner = scale * 16;
                   let edge = crate::window::hit_test(
                     (left, top, right, bottom),
                     cx as _,
                     cy as _,
-                    border,
-                    border,
+                    edge_band,
+                    edge_band,
+                    corner,
                   );
 
                   let edge = match &edge {
@@ -529,25 +532,27 @@ impl<T: 'static> EventLoop<T> {
                 let (left, top) = window.position();
                 let (w, h) = window.size();
                 let (right, bottom) = (left + w, top + h);
-                let border = window.scale_factor() * 5;
-                let edge = crate::window::hit_test(
+                let scale = window.scale_factor();
+                let edge_band = scale * 8;
+                let corner = scale * 16;
+                let direction = crate::window::hit_test(
                   (left, top, right, bottom),
                   cx as _,
                   cy as _,
-                  border,
-                  border,
-                )
-                .map(|d| d.to_gtk_edge())
-                // we return `WindowEdge::__Unknown` to be ignored later.
-                // we must return 8 or bigger, otherwise it will be the same as one of the other 7 variants of `WindowEdge` enum.
-                .unwrap_or(WindowEdge::__Unknown(8));
-                // Ignore the `__Unknown` variant so the window receives the click correctly if it is not on the edges.
-                match edge {
-                  WindowEdge::__Unknown(_) => (),
-                  _ => {
-                    // FIXME: calling `window.begin_resize_drag` uses the default cursor, it should show a resizing cursor instead
-                    window.begin_resize_drag(edge, LMB as i32, cx as i32, cy as i32, event.time())
+                  edge_band,
+                  edge_band,
+                  corner,
+                );
+                if let Some(direction) = direction {
+                  // Set the resize cursor before begin_resize_drag, otherwise GTK
+                  // shows the default cursor for the entire drag.
+                  if let Some(gdk_window) = window.window() {
+                    gdk_window.set_cursor(
+                      Cursor::from_name(&gdk_window.display(), direction.to_cursor_str()).as_ref(),
+                    );
                   }
+                  let edge = direction.to_gtk_edge();
+                  window.begin_resize_drag(edge, LMB as i32, cx as i32, cy as i32, event.time());
                 }
               }
 
@@ -561,13 +566,16 @@ impl<T: 'static> EventLoop<T> {
                       let (left, top) = window.position();
                       let (w, h) = (window.width(), window.height());
                       let (right, bottom) = (left + w, top + h);
-                      let border = window.scale_factor() * 5;
+                      let scale = window.scale_factor();
+                      let edge_band = scale * 8;
+                      let corner = scale * 16;
                       let edge = crate::window::hit_test(
                         (left, top, right, bottom),
                         cx as _,
                         cy as _,
-                        border,
-                        border,
+                        edge_band,
+                        edge_band,
+                        corner,
                       )
                       .map(|d| d.to_gtk_edge())
                       // we return `WindowEdge::__Unknown` to be ignored later.

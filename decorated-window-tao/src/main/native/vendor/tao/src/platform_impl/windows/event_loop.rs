@@ -2217,6 +2217,9 @@ unsafe fn public_window_callback_inner<T: 'static>(
             cy,
             border_x,
             border_y,
+            // Windows already widens corner hit-testing via the system metrics
+            // (HTTOPLEFT etc.); pass border_x to preserve the existing behaviour.
+            border_x,
           )
           .map(|d| d.to_win32());
 

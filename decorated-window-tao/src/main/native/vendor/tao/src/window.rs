@@ -1668,7 +1668,28 @@ pub(crate) fn hit_test(
   cy: i32,
   border_x: i32,
   border_y: i32,
+  corner: i32,
 ) -> Option<ResizeDirection> {
+  // Corner zones extend further into the window than edge bands so the user
+  // can grab a diagonal resize without aiming at a 5×5-pixel square.
+  let in_left_corner = cx < left + corner;
+  let in_right_corner = cx >= right - corner;
+  let in_top_corner = cy < top + corner;
+  let in_bottom_corner = cy >= bottom - corner;
+
+  if in_top_corner && in_left_corner {
+    return Some(ResizeDirection::NorthWest);
+  }
+  if in_top_corner && in_right_corner {
+    return Some(ResizeDirection::NorthEast);
+  }
+  if in_bottom_corner && in_left_corner {
+    return Some(ResizeDirection::SouthWest);
+  }
+  if in_bottom_corner && in_right_corner {
+    return Some(ResizeDirection::SouthEast);
+  }
+
   const LEFT: isize = 0b0001;
   const RIGHT: isize = 0b0010;
   const TOP: isize = 0b0100;

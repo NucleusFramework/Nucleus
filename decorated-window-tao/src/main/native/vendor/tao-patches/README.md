@@ -12,9 +12,9 @@ Local patch series applied on top of vendored tao (see `../tao/`).
 Patches are applied in numeric order. Each patch is paired with the removal
 of an external workaround in the parent module — see `../../../../VENDORING_PLAN.md`.
 
-| #     | File                            | Phase | Platform | Summary |
-| ----- | ------------------------------- | ----- | -------- | ------- |
-| _none yet_ |                            |       |          |         |
+| #     | File                              | Phase | Platform | Summary |
+| ----- | --------------------------------- | ----- | -------- | ------- |
+| 0001  | `0001-linux-resize-zones.patch`   | 1     | Linux    | Widen resize edge band to 8 px and corner zone to 16 px (logical), set the resize cursor before `begin_resize_drag` so it persists during the drag. Adds a `corner` parameter to `crate::window::hit_test`. |
 
 ## Bump procedure (e.g. 0.35 → 0.36)
 
