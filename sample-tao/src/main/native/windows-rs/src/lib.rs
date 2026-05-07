@@ -67,11 +67,15 @@ impl HasWindowHandle for ParentHwnd {
 
 fn build_webview(parent_hwnd: isize, initial_url: &str) -> Option<(isize, WebView)> {
     let parent = ParentHwnd(parent_hwnd);
+    // Use PhysicalPosition/PhysicalSize: NativeView passes physical
+    // pixels straight from Compose's coords.size. LogicalSize would
+    // make wry re-apply DPI scaling and the WebView2 controller would
+    // end up 1.5–1.75× too big on hidpi screens.
     let webview = WebViewBuilder::new()
         .with_url(initial_url)
         .with_bounds(Rect {
-            position: dpi::LogicalPosition::new(0, 0).into(),
-            size: dpi::LogicalSize::new(800, 600).into(),
+            position: dpi::PhysicalPosition::new(0, 0).into(),
+            size: dpi::PhysicalSize::new(800, 600).into(),
         })
         .build_as_child(&parent)
         .ok()?;
@@ -243,8 +247,8 @@ pub extern "system" fn Java_io_github_kdroidfilter_sampletao_SampleWebViewWindow
     if let Ok(g) = HANDLES.lock() {
         if let Some(wv) = g.by_hwnd.get(&(handle as isize)) {
             let _ = wv.0.set_bounds(Rect {
-                position: dpi::LogicalPosition::new(0, 0).into(),
-                size: dpi::LogicalSize::new(width_px.max(1), height_px.max(1)).into(),
+                position: dpi::PhysicalPosition::new(0, 0).into(),
+                size: dpi::PhysicalSize::new(width_px.max(1), height_px.max(1)).into(),
             });
         }
     }
