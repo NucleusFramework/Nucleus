@@ -205,13 +205,27 @@ internal class TaoLinuxOverlayControllerImpl(
     private fun expandPopupCapture() {
         val size = hostSizeProvider()
         if (size.width <= 0 || size.height <= 0) return
+        // Reuses the existing capture EventBox if it was created in
+        // a previous popup cycle (kept alive by [shrinkPopupCapture]
+        // to avoid GLib-GObject warnings from rapid create+destroy
+        // churn on Wayland NVIDIA).
         registerRegion(popupCaptureKey, 0, 0, size.width, size.height)
         popupCaptureActive = true
     }
 
     private fun shrinkPopupCapture() {
         if (!popupCaptureActive) return
-        unregisterRegion(popupCaptureKey)
+        // Don't destroy the capture EventBox — repeated create+destroy
+        // cycles trigger `g_signal_handler_disconnect` warnings about
+        // stale handler IDs and `g_object_get_data` assertions on
+        // partially-torn-down GObjects (visible as
+        // `GLib-GObject-CRITICAL` log spam plus pointer-input lag
+        // after 2-3 popup cycles). Move the box offscreen to a 1×1
+        // allocation instead — visible_window=FALSE EventBoxes hit-
+        // test against their allocation, so a 1×1 box at (-1,-1)
+        // never catches any clicks. The box is fully torn down via
+        // [dispose] when the window closes.
+        registerRegion(popupCaptureKey, -1, -1, 1, 1)
         popupCaptureActive = false
         // Note: we deliberately do NOT call `focusReleaseDispatcher`
         // here. Doing so (synchronously OR deferred to the next
