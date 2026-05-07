@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.tao.NativeView
+import io.github.kdroidfilter.nucleus.window.tao.NucleusPlatformView
 import io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents
 import kotlinx.coroutines.delay
 
@@ -109,19 +110,22 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             val loadedFlag = remember { booleanArrayOf(false) }
             NativeView(
                 factory = {
-                    SampleWebViewBridge.nativeCreate().also { handle = it }
+                    val ptr = SampleWebViewBridge.nativeCreate().also { handle = it }
+                    object : NucleusPlatformView.NsView {
+                        override val nsViewHandle: Long = ptr
+                        override fun dispose() {
+                            SampleWebViewBridge.nativeRelease(ptr)
+                            handle = 0L
+                        }
+                    }
                 },
                 modifier = Modifier.fillMaxSize(),
                 cornerRadius = 12.dp,
-                update = { ptr ->
-                    if (!loadedFlag[0]) {
+                update = { view ->
+                    if (!loadedFlag[0] && view is NucleusPlatformView.NsView) {
                         loadedFlag[0] = true
-                        SampleWebViewBridge.nativeLoadUrl(ptr, INITIAL_URL)
+                        SampleWebViewBridge.nativeLoadUrl(view.nsViewHandle, INITIAL_URL)
                     }
-                },
-                onRelease = {
-                    SampleWebViewBridge.nativeRelease(it)
-                    handle = 0L
                 },
             ) {
                 // Compose UI rendered ON TOP of the WebView. Lives in a
