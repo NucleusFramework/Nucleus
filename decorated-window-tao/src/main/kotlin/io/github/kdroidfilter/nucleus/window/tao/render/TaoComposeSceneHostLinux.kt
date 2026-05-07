@@ -155,6 +155,15 @@ internal class TaoComposeSceneHostLinux(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    /**
+     * Captured at the first composition via [setContent]. Exposes the
+     * standard `FocusManager.clearFocus(force = true)` API which the
+     * scene-level [androidx.compose.ui.scene.ComposeSceneFocusManager]
+     * doesn't surface — needed to break a `BasicTextField`'s
+     * "Captured" focus state when the user dismisses a context menu.
+     */
+    private var capturedFocusManager: androidx.compose.ui.focus.FocusManager? = null
+
     // Corner-radius mirrors `decorated-window-core/DecoratedWindowCore.kt`'s
     // `RoundRectangle2D.Float(0, 0, w, h, gnomeCornerArc, gnomeCornerArc)` —
     // RoundRectangle2D's `arcw`/`arch` arguments are the full arc *width*
@@ -651,7 +660,19 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent {
+            // Capture the standard FocusManager from the composition
+            // so the overlay controller can call `clearFocus(force =
+            // true)` to break a `BasicTextField`'s "Captured" focus
+            // state when a context menu dismisses (the scene-level
+            // `releaseFocus()` only clears Active/ActiveParent and
+            // leaves the caret visible).
+            val fm = androidx.compose.ui.platform.LocalFocusManager.current
+            androidx.compose.runtime.SideEffect {
+                capturedFocusManager = fm
+            }
+            content()
+        }
     }
 
     fun onResized(widthPxNew: Int, heightPxNew: Int) {
@@ -1038,7 +1059,13 @@ internal class TaoComposeSceneHostLinux(
                 //    `resignFirstResponder` callback. Without this,
                 //    a focused TextField keeps showing the caret
                 //    after the user clicks elsewhere.
-                scene?.focusManager?.releaseFocus()
+                //    `clearFocus(force = true)` (via the standard
+                //    `FocusManager` captured in [setContent]) is
+                //    needed to break a TextField's "Captured" focus
+                //    state during active editing — the scene-level
+                //    `releaseFocus()` only clears Active/ActiveParent.
+                capturedFocusManager?.clearFocus(force = true)
+                    ?: scene?.focusManager?.releaseFocus()
 
                 // 2) Synthesize an outside-click so any open Compose
                 //    Popup (e.g. the BasicTextField's Cut/Copy/Paste

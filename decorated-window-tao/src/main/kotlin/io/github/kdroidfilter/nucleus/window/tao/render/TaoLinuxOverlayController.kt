@@ -72,8 +72,9 @@ internal class TaoLinuxOverlayControllerImpl(
     /** Compose physical / scale → GTK logical pixels. */
     private val scaleProvider: () -> Float,
     /**
-     * Host content size in physical pixels. Used by
-     * [setPopupCaptureActive] to size the full-window capture box.
+     * Host content size in physical pixels. Used to size the
+     * full-window capture box that catches clicks on Compose popups
+     * extending beyond user-registered overlay rects.
      */
     private val hostSizeProvider: () -> IntSize,
     /**
@@ -212,6 +213,22 @@ internal class TaoLinuxOverlayControllerImpl(
         if (!popupCaptureActive) return
         unregisterRegion(popupCaptureKey)
         popupCaptureActive = false
+        // Note: we deliberately do NOT call `focusReleaseDispatcher`
+        // here. Doing so (synchronously OR deferred to the next
+        // frame) interferes with the menu item's onClick action —
+        // BasicTextField's Cut / Copy / Paste implementations
+        // depend on the TextField focus + popup state staying
+        // intact while their action runs.
+        //
+        // TODO(linux-popups): a follow-up should restore the
+        //   "click outside Compose UI releases TextField focus"
+        //   behaviour after a context-menu cycle. The capture box
+        //   leaves the GTK focus chain in a state where no overlay
+        //   rect owns focus, so `focus-out-event` never fires for
+        //   subsequent embedded-widget clicks. Proper fix likely
+        //   requires the per-popup `xdg_popup` architecture
+        //   (see other linux-popups TODOs); for now the user can
+        //   click another Compose widget to change focus.
     }
 
     override fun registerRegion(
