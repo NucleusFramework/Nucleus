@@ -9,14 +9,18 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
+import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneContextWindows
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoNativeWireFormat
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupHostWindows
 import io.github.kdroidfilter.nucleus.window.tao.render.renderGlFrame
+import kotlin.coroutines.CoroutineContext
 import org.jetbrains.skia.DirectContext
 
 /**
@@ -59,6 +63,29 @@ internal class NativeViewOverlayControllerWindows(
     private var overlayOffsetX: Int = 0
     private var overlayOffsetY: Int = 0
     private val scale: Float = popupHost.scale
+
+    /**
+     * Wrapper around the host's [TaoPopupHostWindows] that adds the
+     * overlay's live position as `coordinateOffset`. Popups originating
+     * in the overlay's scene see their `boundsInWindow` in overlay-local
+     * coords; the layer adds the offset before talking to the popup
+     * bridge so the popup HWND lands at the correct screen position.
+     */
+    private val overlayPopupHost: TaoPopupHostWindows = object : TaoPopupHostWindows {
+        override val parentHwnd: Long get() = popupHost.parentHwnd
+        override val scale: Float get() = popupHost.scale
+        override val parentWindowSize: IntSize get() = popupHost.parentWindowSize
+        override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
+        override val coordinateOffset: IntOffset
+            get() = IntOffset(overlayOffsetX, overlayOffsetY)
+        override fun requestRedraw() = popupHost.requestRedraw()
+        override fun registerRenderer(token: Any, render: () -> Unit) =
+            popupHost.registerRenderer(token, render)
+        override fun unregisterRenderer(token: Any) = popupHost.unregisterRenderer(token)
+        override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) =
+            popupHost.registerKeyHandler(token, handler)
+        override fun unregisterKeyHandler(token: Any) = popupHost.unregisterKeyHandler(token)
+    }
 
     private val overlayWindowInfo: WindowInfo = object : WindowInfo {
         override val isWindowFocused: Boolean = true
@@ -172,16 +199,22 @@ internal class NativeViewOverlayControllerWindows(
             val ourPlatformContext = object : PlatformContext.Empty() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
             }
-            // CanvasLayersComposeScene for Phase 5 — popups stay clipped
-            // to the overlay's own bounds. Phase 7 swaps in
             // PlatformLayersComposeScene + TaoComposeSceneContextWindows
-            // so popups become real top-level HWNDs.
-            scene = CanvasLayersComposeScene(
+            // routes popups originating in this overlay scene
+            // (text-field context menus, dropdowns, tooltips) through
+            // TaoPopupSceneLayerWindows — i.e. into a real top-level
+            // HWND owned by the host main HWND. They can extend beyond
+            // the overlay's bounds, intercept their own clicks, and
+            // dismiss on outside-click via the popup's SetCapture monitor.
+            scene = PlatformLayersComposeScene(
                 density = Density(scale),
                 layoutDirection = LayoutDirection.Ltr,
                 size = IntSize(widthPx, heightPx),
                 coroutineContext = popupHost.sceneCoroutineContext,
-                platformContext = ourPlatformContext,
+                composeSceneContext = TaoComposeSceneContextWindows(
+                    platformContext = ourPlatformContext,
+                    popupHost = overlayPopupHost,
+                ),
                 invalidate = { popupHost.requestRedraw() },
             )
             pendingContent?.let { scene?.setContent(it); pendingContent = null }
