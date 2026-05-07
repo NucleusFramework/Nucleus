@@ -1047,14 +1047,42 @@ internal class TaoComposeSceneHostLinux(
                 onPointerButton(button, pressed)
             },
             focusReleaseDispatcher = {
-                // Compose's `focusManager.releaseFocus()` deselects
-                // the currently-focused widget (e.g. the URL field's
-                // BasicTextField) — mirrors macOS's
-                // `resignFirstResponder` callback. Triggered when
-                // GTK's `focus-out-event` fires on our EventBox =
-                // the user clicked outside the overlay (typically on
-                // the embedded WebView).
+                // 1) Deselect the currently-focused widget (e.g. the
+                //    URL field's BasicTextField) — mirrors macOS's
+                //    `resignFirstResponder` callback. Without this,
+                //    a focused TextField keeps showing the caret
+                //    after the user clicks elsewhere.
                 scene?.focusManager?.releaseFocus()
+
+                // 2) Synthesize an outside-click so any open Compose
+                //    Popup (e.g. the BasicTextField's Cut/Copy/Paste
+                //    context menu) hits its `dismissOnClickOutside`
+                //    handler and closes. focusManager.releaseFocus()
+                //    alone doesn't dismiss popups — they're tied to
+                //    pointer hit-testing, not the focus chain. We
+                //    target window-corner (1, 1): inside window
+                //    bounds (so Compose accepts the event) but
+                //    outside any Compose interactive widget in the
+                //    sample, so no other onClick fires.
+                val sc = scene ?: return@TaoLinuxOverlayControllerImpl
+                val dismissPos = androidx.compose.ui.geometry.Offset(1f, 1f)
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Move,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                )
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Press,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                    button = androidx.compose.ui.input.pointer.PointerButton.Primary,
+                )
+                sc.sendPointerEvent(
+                    eventType = androidx.compose.ui.input.pointer.PointerEventType.Release,
+                    position = dismissPos,
+                    type = androidx.compose.ui.input.pointer.PointerType.Mouse,
+                    button = androidx.compose.ui.input.pointer.PointerButton.Primary,
+                )
             },
         )
 
