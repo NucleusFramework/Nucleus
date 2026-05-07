@@ -62,6 +62,17 @@ internal interface TaoPopupHostWindows {
     fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit)
     fun unregisterOwnerMoveListener(token: Any)
 
+    /**
+     * Registers a callback invoked when the host window loses keyboard
+     * focus (user clicked the embedded WebView, Alt-Tabbed to another
+     * app, etc.). Overlay/popup scenes use this to clear their
+     * Compose-side focused TextField so its visual indicator
+     * (highlight border, blinking caret) goes away when the user has
+     * clearly moved attention elsewhere.
+     */
+    fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit)
+    fun unregisterOwnerFocusLostListener(token: Any)
+
     fun registerRenderer(token: Any, render: () -> Unit)
     fun unregisterRenderer(token: Any)
 

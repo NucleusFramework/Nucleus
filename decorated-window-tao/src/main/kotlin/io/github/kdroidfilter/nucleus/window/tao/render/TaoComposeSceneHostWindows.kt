@@ -114,6 +114,9 @@ internal class TaoComposeSceneHostWindows(
     /** Callbacks invoked when the owner window's screen position changes. */
     private val ownerMoveListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
 
+    /** Callbacks invoked when the host window loses keyboard focus. */
+    private val ownerFocusLostListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
     /**
      * Set whenever something on the same thread might have changed the
      * current WGL context behind Skia's back: a popup/overlay renderer
@@ -209,6 +212,18 @@ internal class TaoComposeSceneHostWindows(
         // Notify overlay/popup layers when the host window moves on screen
         // — top-level WS_POPUP children of the owner don't auto-track.
         window.onMoved { _, _ -> onOwnerMoved() }
+
+        // Notify overlay/popup layers when the host window loses keyboard
+        // focus — for instance, the user clicked the embedded WebView,
+        // which grabs Win32 focus and holds it. The overlay's
+        // Compose-side TextField focus should release so its visual
+        // indicator (highlight border, blinking caret) goes away.
+        window.onFocusChanged { focused -> if (!focused) onOwnerFocusLost() }
+    }
+
+    private fun onOwnerFocusLost() {
+        if (ownerFocusLostListeners.isEmpty()) return
+        for (cb in ownerFocusLostListeners.values.toList()) cb()
     }
 
     // ── Touch (Windows) ───────────────────────────────────────────────────
@@ -771,7 +786,6 @@ internal class TaoComposeSceneHostWindows(
                 }
                 else -> return false
             }
-        System.err.println("[host] onKeyEvent type=$type vk=$vkCode cp=$codePoint popupHandlers=${popupKeyHandlers.size}")
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
         // Overlay/popup scenes get a chance to consume the event before
         // the main scene. Mirrors the macOS popupKeyHandlers chain.
@@ -831,6 +845,12 @@ internal class TaoComposeSceneHostWindows(
             }
             override fun unregisterOwnerMoveListener(token: Any) {
                 outer.ownerMoveListeners.remove(token)
+            }
+            override fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit) {
+                outer.ownerFocusLostListeners[token] = onLost
+            }
+            override fun unregisterOwnerFocusLostListener(token: Any) {
+                outer.ownerFocusLostListeners.remove(token)
             }
         }
     }

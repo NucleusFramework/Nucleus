@@ -60,6 +60,7 @@ internal class NativeViewOverlayControllerWindows(
     private val rendererToken: Any = Any()
     private val keyHandlerToken: Any = Any()
     private val moveListenerToken: Any = Any()
+    private val focusLostListenerToken: Any = Any()
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var overlayOffsetX: Int = 0
@@ -92,6 +93,10 @@ internal class NativeViewOverlayControllerWindows(
             popupHost.registerOwnerMoveListener(token, onMoved)
         override fun unregisterOwnerMoveListener(token: Any) =
             popupHost.unregisterOwnerMoveListener(token)
+        override fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit) =
+            popupHost.registerOwnerFocusLostListener(token, onLost)
+        override fun unregisterOwnerFocusLostListener(token: Any) =
+            popupHost.unregisterOwnerFocusLostListener(token)
     }
 
     private val overlayWindowInfo: WindowInfo = object : WindowInfo {
@@ -158,14 +163,8 @@ internal class NativeViewOverlayControllerWindows(
         NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(overlayHandle, OverlayCallback())
         popupHost.registerRenderer(rendererToken) { renderFrame() }
         popupHost.registerKeyHandler(keyHandlerToken) { event ->
-            val sc = scene
-            if (sc == null) {
-                System.err.println("[overlay] key handler: no scene")
-                return@registerKeyHandler false
-            }
-            val consumed = sc.sendKeyEvent(event)
-            System.err.println("[overlay] key dispatched, consumed=$consumed event=$event")
-            consumed
+            val sc = scene ?: return@registerKeyHandler false
+            sc.sendKeyEvent(event)
         }
         // Re-issue nativeSetOverlayFrame whenever the host moves on
         // screen — the overlay is a top-level WS_POPUP whose screen
@@ -176,6 +175,15 @@ internal class NativeViewOverlayControllerWindows(
                     overlayHandle, lastFrameX, lastFrameY, widthPx, heightPx,
                 )
             }
+        }
+        // When the host loses keyboard focus (e.g., user clicked the
+        // WebView, which grabs Win32 focus), drop the overlay scene's
+        // Compose focus so the URL TextField's highlight border / caret
+        // stop drawing. focusManager.releaseFocus() walks the tree and
+        // clears the active focused node.
+        popupHost.registerOwnerFocusLostListener(focusLostListenerToken) {
+            scene?.focusManager?.releaseFocus()
+            popupHost.requestRedraw()
         }
         pendingBounds?.let { setBoundsInternal(it[0], it[1], it[2], it[3]) }
         pendingBounds = null
@@ -324,6 +332,7 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.unregisterRenderer(rendererToken)
         popupHost.unregisterKeyHandler(keyHandlerToken)
         popupHost.unregisterOwnerMoveListener(moveListenerToken)
+        popupHost.unregisterOwnerFocusLostListener(focusLostListenerToken)
         scene?.close()
         scene = null
         // directContext is the host's — don't close.
