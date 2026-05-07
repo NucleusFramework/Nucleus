@@ -168,6 +168,10 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },

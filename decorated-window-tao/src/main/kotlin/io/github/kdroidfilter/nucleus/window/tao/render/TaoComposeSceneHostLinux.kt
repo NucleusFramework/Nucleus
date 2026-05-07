@@ -946,6 +946,59 @@ internal class TaoComposeSceneHostLinux(
         return keyHandler?.invoke(composeEvent) == true
     }
 
+    /**
+     * Plumbing for the `GtkWidget` variant of `NucleusPlatformView`.
+     * Resolves Tao's `GtkApplicationWindow*` once (it doesn't change
+     * for the lifetime of the window), routes attach/detach/setFrame
+     * calls to the C-side widget bridge, and converts Compose's
+     * physical-pixel coords to GTK's logical-pixel coords.
+     *
+     * Returns null until [attach] has run *and* the widget bridge
+     * library is available (missing on non-Linux builds and on Linux
+     * builds that didn't ship the .so).
+     */
+    fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
+        if (window.handle == 0L) return null
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge.isLoaded) return null
+        val gtkWindow = io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+            .nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow == 0L) return null
+        val outer = this
+        return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
+            override fun attach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeAttach(gtkWindow, childHandle)
+            }
+
+            override fun detach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeDetach(childHandle)
+            }
+
+            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                // Compose feeds physical pixels; GTK 3 lays out in
+                // logical pixels (the compositor applies the device
+                // scale on its own).
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val xLogical = (xPx / s).toInt()
+                val yLogical = (yPx / s).toInt()
+                val wLogical = (widthPx / s).toInt().coerceAtLeast(1)
+                val hLogical = (heightPx / s).toInt().coerceAtLeast(1)
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge
+                    .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
+            }
+
+            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+                // Per-widget rounded clipping isn't trivial in GTK 3
+                // (would need a GtkCssProvider with a unique class
+                // name and a `border-radius` declaration). Leaving as
+                // a no-op for now; callers that need rounded corners
+                // on Linux fall back to drawing a Compose
+                // RoundedCornerShape on top of the widget area.
+            }
+        }
+    }
+
     fun detach() {
         if (io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L

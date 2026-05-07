@@ -196,6 +196,15 @@ internal object NativeTaoBridge {
     @JvmStatic
     external fun nativeLinuxHandles(handle: Long): LongArray?
 
+    /**
+     * Linux only: returns the underlying `GtkApplicationWindow*` (cast
+     * to `Long`) for [handle], or 0 if the handle is unknown. Used by
+     * the GtkWidget embedding path of [NativeView] to reparent
+     * user-supplied widgets into Tao's content widget tree.
+     */
+    @JvmStatic
+    external fun nativeLinuxGtkWindow(handle: Long): Long
+
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic
     external fun nativeScaleFactor(handle: Long): Int

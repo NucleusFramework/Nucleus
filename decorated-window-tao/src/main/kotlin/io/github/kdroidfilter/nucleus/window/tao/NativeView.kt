@@ -10,6 +10,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -26,40 +29,22 @@ import kotlin.math.roundToInt
  * The user supplies a [NucleusPlatformView] from [factory] — a sealed
  * type whose variant decides the embedding strategy:
  *
- *  - [NucleusPlatformView.NsView] — macOS, real AppKit subview embedding.
- *  - [NucleusPlatformView.HWnd] — Windows, child HWND (not implemented yet).
- *  - [NucleusPlatformView.Texture] — Linux, texture-based composition
- *    (not implemented yet).
+ *  - [NucleusPlatformView.NsView] — macOS, real AppKit subview
+ *    embedding. Supports the [content] overlay slot via a sibling
+ *    overlay NSView with its own `CAMetalLayer` + `ComposeScene`.
+ *  - [NucleusPlatformView.GtkWidget] — Linux, GTK widget reparented
+ *    into Tao's content widget. **No overlay support**: the [content]
+ *    slot is silently ignored.
+ *  - [NucleusPlatformView.HWnd] — Windows, child HWND (not implemented
+ *    yet).
  *
- * Variants whose backend isn't implemented (or whose runtime type doesn't
- * match the current OS) fall back to an empty `Box(modifier)`.
+ * Variants whose backend isn't implemented (or whose runtime type
+ * doesn't match the current OS) fall back to an empty `Box(modifier)`.
  *
- * Compose's `Modifier.clip()` does **not** propagate to embedded native
- * views (same limitation as `AndroidView` / `UIKitView`). Use
+ * Compose's `Modifier.clip()` does **not** propagate to embedded
+ * native views (same limitation as `AndroidView` / `UIKitView`). Use
  * [cornerRadius] for rounded/circular clipping; pass [Dp.Infinity] to
  * make it fully circular regardless of size.
- *
- * The optional [content] trailing slot renders Compose UI **on top of**
- * the native view via a sibling overlay NSView with its own
- * `CAMetalLayer` + `ComposeScene`. The overlay's hit-test is region-
- * based: areas not wrapped with [Modifier.consumeOverlayPointerEvents]
- * are hit-test-transparent — clicks pass through to the native view
- * underneath (typically a `WKWebView`).
- *
- * Usage:
- * ```
- * NativeView(
- *     factory = { object : NucleusPlatformView.NsView {
- *         override val nsViewHandle = wkWebViewHandle
- *     } },
- *     modifier = Modifier.fillMaxSize(),
- *     cornerRadius = 12.dp,
- * ) {
- *     Box(Modifier.fillMaxSize().padding(16.dp), contentAlignment = Alignment.BottomEnd) {
- *         Watermark(modifier = Modifier.consumeOverlayPointerEvents())
- *     }
- * }
- * ```
  */
 @Composable
 fun NativeView(
@@ -79,8 +64,8 @@ fun NativeView(
 
     when (view) {
         is NucleusPlatformView.NsView -> NsViewEmbedding(view, modifier, cornerRadius, content)
-        is NucleusPlatformView.HWnd -> Box(modifier) // Phase 2 — not yet implemented.
-        is NucleusPlatformView.Texture -> Box(modifier) // Phase 2 — not yet implemented.
+        is NucleusPlatformView.GtkWidget -> GtkWidgetEmbedding(view, modifier)
+        is NucleusPlatformView.HWnd -> Box(modifier) // Not yet implemented.
     }
 }
 
@@ -174,6 +159,66 @@ private fun NsViewEmbedding(
                 host.setCornerRadius(handle, radiusToApply)
             }
         },
+    )
+}
+
+/**
+ * Linux GTK widget embedding path — direct equivalent of
+ * [NsViewEmbedding] but without the overlay slot. Falls back to an
+ * empty `Box(modifier)` when the runtime isn't Linux or the GTK host
+ * isn't available.
+ *
+ * The user's `GtkWidget*` is reparented into Tao's content widget at
+ * attach time, sized via `gtk_widget_set_size_request`, and removed at
+ * dispose. The Compose surface composites on top of GTK with alpha;
+ * the [Box] is left transparent so the widget shows through.
+ */
+@Composable
+private fun GtkWidgetEmbedding(
+    view: NucleusPlatformView.GtkWidget,
+    modifier: Modifier,
+) {
+    val host = LocalTaoNativeViewHost.current
+    val handle = view.gtkWidgetHandle
+
+    if (Platform.Current != Platform.Linux || host == null || handle == 0L) {
+        Box(modifier)
+        return
+    }
+
+    DisposableEffect(host, handle) {
+        host.attach(handle)
+        onDispose { host.detach(handle) }
+    }
+
+    val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
+    Box(
+        modifier = modifier
+            // Punch a fully transparent hole in the Compose scene at
+            // the embedded widget's bounds. Without this, any opaque
+            // ancestor `background(...)` painted earlier in the scene
+            // (e.g. the dark theme background of WebViewTab) would
+            // sit on top of GTK's surface buffer in the EGL composite
+            // step and hide the embedded widget. `BlendMode.Clear`
+            // resets the destination alpha to 0 in the painted rect
+            // so the compositor blends through to the GTK widget
+            // underneath.
+            .drawBehind {
+                drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
+            }
+            .onGloballyPositioned { coords ->
+                val pos = coords.positionInRoot()
+                val xPx = pos.x.roundToInt()
+                val yPx = pos.y.roundToInt()
+                val wPx = coords.size.width.coerceAtLeast(1)
+                val hPx = coords.size.height.coerceAtLeast(1)
+                if (lastRect[0] != xPx || lastRect[1] != yPx ||
+                    lastRect[2] != wPx || lastRect[3] != hPx
+                ) {
+                    lastRect[0] = xPx; lastRect[1] = yPx; lastRect[2] = wPx; lastRect[3] = hPx
+                    host.setFrame(handle, xPx, yPx, wPx, hPx)
+                }
+            },
     )
 }
 

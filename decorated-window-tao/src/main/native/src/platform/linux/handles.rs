@@ -73,6 +73,35 @@ fn fill_linux_handles(window: &Window, out: &mut [jlong; 3]) {
     }
 }
 
+/// Returns the underlying `GtkApplicationWindow*` (cast to `jlong`)
+/// for the given Tao window, or 0 if the window is unavailable. The
+/// pointer is the raw GObject* used by `libgtk-3`, suitable for
+/// passing to the C-side widget embedding helpers in
+/// `nucleus_tao_linux_widget.c`.
+#[no_mangle]
+pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxGtkWindow(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+) -> jlong {
+    use tao::platform::unix::WindowExtUnix;
+
+    let mut out: jlong = 0;
+    if let Ok(guard) = WINDOWS.lock() {
+        if let Some(map) = guard.as_ref() {
+            if let Some(window) = map.get(&(handle as u64)) {
+                let gtk_window = window.gtk_window();
+                let raw: *mut gtk::ffi::GtkApplicationWindow =
+                    glib::translate::ToGlibPtr::<*mut gtk::ffi::GtkApplicationWindow>::to_glib_none(
+                        gtk_window,
+                    ).0;
+                out = raw as jlong;
+            }
+        }
+    }
+    out
+}
+
 fn gdk_x11_display_for_window(window: &Window) -> Option<jlong> {
     use gtk::prelude::WidgetExt;
     use tao::platform::unix::WindowExtUnix;

@@ -57,41 +57,45 @@ private const val INITIAL_URL = "https://nucleusframework.dev"
 /**
  * **WebView demo tab.**
  *
- * A live `WKWebView` mounted via `NativeView`, with a Compose-rendered
- * floating navigation pill (back / forward / reload + URL field)
- * painted on top via `NativeView`'s `content` slot.
+ * A live native WebView mounted via `NativeView`, with a Compose-
+ * rendered floating navigation pill (back / forward / reload + URL
+ * field) painted on top via `NativeView`'s `content` slot.
  *
- * The overlay slot lives in a borderless transparent NSPanel above the
- * host window — it intercepts pointer events inside its bounds (so the
- * URL field can be clicked + typed into), and passes everything else
- * through to the WebView. macOS-only.
+ *  - **macOS**: real `WKWebView` embedded as an `NSView` sibling.
+ *    Overlay slot lives in a borderless transparent NSPanel above the
+ *    host window and intercepts pointer events inside its bounds.
+ *  - **Linux**: real `WebKitWebView` reparented into Tao's GTK
+ *    content widget tree via `NucleusPlatformView.GtkWidget`. **No
+ *    overlay slot** — the `content` lambda is rendered by Compose on
+ *    top of GTK and may visually overlap the page, but the WebView
+ *    receives all pointer/keyboard events directly through GTK.
  */
 @Composable
 internal fun WebViewTab(modifier: Modifier = Modifier) {
-    if (Platform.Current != Platform.MacOS || !SampleWebViewBridge.isLoaded) {
+    if (!isSampleWebViewSupported()) {
         UnsupportedPlatform(modifier)
         return
     }
 
-    var handle by remember { mutableStateOf(0L) }
+    var controller: SampleWebViewController? by remember { mutableStateOf(null) }
     var urlInput by remember { mutableStateOf(INITIAL_URL) }
     var urlFocused by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
-    // Lightweight polling: WKWebView's KVO would be cleaner but a
-    // 120ms tick is plenty for a sample. Skips updating the URL field
-    // while the user is editing it so we don't fight their cursor.
-    LaunchedEffect(handle) {
-        if (handle == 0L) return@LaunchedEffect
+    // Lightweight polling: backend-native navigation observers
+    // (WKWebView KVO / WebKitWebView property notify) would be
+    // cleaner but a 120ms tick is plenty for a sample. Skips updating
+    // the URL field while the user is editing it so we don't fight
+    // their cursor.
+    LaunchedEffect(controller) {
+        val c = controller ?: return@LaunchedEffect
         while (true) {
-            canGoBack = SampleWebViewBridge.nativeCanGoBack(handle)
-            canGoForward = SampleWebViewBridge.nativeCanGoForward(handle)
-            isLoading = SampleWebViewBridge.nativeIsLoading(handle)
-            if (!urlFocused) {
-                SampleWebViewBridge.nativeCurrentUrl(handle)?.let { urlInput = it }
-            }
+            canGoBack = c.canGoBack()
+            canGoForward = c.canGoForward()
+            isLoading = c.isLoading()
+            if (!urlFocused) c.currentUrl()?.let { urlInput = it }
             delay(120L)
         }
     }
@@ -110,21 +114,16 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             val loadedFlag = remember { booleanArrayOf(false) }
             NativeView(
                 factory = {
-                    val ptr = SampleWebViewBridge.nativeCreate().also { handle = it }
-                    object : NucleusPlatformView.NsView {
-                        override val nsViewHandle: Long = ptr
-                        override fun dispose() {
-                            SampleWebViewBridge.nativeRelease(ptr)
-                            handle = 0L
-                        }
-                    }
+                    val view = createSampleWebViewPlatformView { c -> controller = c }
+                    view
                 },
                 modifier = Modifier.fillMaxSize(),
                 cornerRadius = 12.dp,
-                update = { view ->
-                    if (!loadedFlag[0] && view is NucleusPlatformView.NsView) {
+                update = { _ ->
+                    val c = controller
+                    if (!loadedFlag[0] && c != null) {
                         loadedFlag[0] = true
-                        SampleWebViewBridge.nativeLoadUrl(view.nsViewHandle, INITIAL_URL)
+                        c.loadUrl(INITIAL_URL)
                     }
                 },
             ) {
@@ -141,15 +140,13 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                         url = urlInput,
                         onUrlChange = { urlInput = it },
                         onUrlFocusChange = { urlFocused = it },
-                        onSubmit = {
-                            if (handle != 0L) SampleWebViewBridge.nativeLoadUrl(handle, urlInput)
-                        },
+                        onSubmit = { controller?.loadUrl(urlInput) },
                         canGoBack = canGoBack,
                         canGoForward = canGoForward,
                         isLoading = isLoading,
-                        onBack = { if (handle != 0L && canGoBack) SampleWebViewBridge.nativeGoBack(handle) },
-                        onForward = { if (handle != 0L && canGoForward) SampleWebViewBridge.nativeGoForward(handle) },
-                        onReload = { if (handle != 0L) SampleWebViewBridge.nativeReload(handle) },
+                        onBack = { if (canGoBack) controller?.goBack() },
+                        onForward = { if (canGoForward) controller?.goForward() },
+                        onReload = { controller?.reload() },
                     )
                 }
             }
@@ -324,6 +321,40 @@ private fun UrlField(
             },
         )
     }
+}
+
+/**
+ * Builds the right [NucleusPlatformView] flavour for the running OS:
+ * NSView wrapper on macOS, GtkWidget wrapper on Linux. Hands the
+ * resulting controller back via [onController] so the Composable can
+ * drive navigation without knowing which backend is live.
+ */
+private fun createSampleWebViewPlatformView(
+    onController: (SampleWebViewController?) -> Unit,
+): NucleusPlatformView = when (Platform.Current) {
+    Platform.MacOS -> {
+        val ptr = SampleWebViewBridge.nativeCreate()
+        onController(MacOsSampleWebViewController(ptr))
+        object : NucleusPlatformView.NsView {
+            override val nsViewHandle: Long = ptr
+            override fun dispose() {
+                SampleWebViewBridge.nativeRelease(ptr)
+                onController(null)
+            }
+        }
+    }
+    Platform.Linux -> {
+        val ptr = SampleWebViewLinuxBridge.nativeCreate()
+        onController(LinuxSampleWebViewController(ptr))
+        object : NucleusPlatformView.GtkWidget {
+            override val gtkWidgetHandle: Long = ptr
+            override fun dispose() {
+                SampleWebViewLinuxBridge.nativeRelease(ptr)
+                onController(null)
+            }
+        }
+    }
+    else -> error("WebView demo unsupported on ${Platform.Current}")
 }
 
 @Composable
