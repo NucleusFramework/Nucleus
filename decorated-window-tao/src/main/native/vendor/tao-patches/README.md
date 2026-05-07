@@ -16,6 +16,7 @@ of an external workaround in the parent module — see `../../../../VENDORING_PL
 | ----- | --------------------------------- | ----- | -------- | ------- |
 | 0001  | `0001-linux-resize-zones.patch`           | 1     | Linux    | Widen resize edge band to 8 px and corner zone to 16 px (logical), set the resize cursor before `begin_resize_drag` so it persists during the drag. Adds a `corner` parameter to `crate::window::hit_test`. |
 | 0002  | `0002-linux-cursor-preserve-on-motion.patch` | 2 | Linux    | Only override the cursor on edge-zone entry / exit. Outside resize zones the application-level cursor (text I-beam, hand, custom icon) is preserved across motion events. |
+| 0003  | `0003-linux-realize-on-build.patch`       | 3     | Linux    | Realise the GtkApplicationWindow at the end of `Window::new` so the underlying GdkWindow (X11 XID / Wayland wl_surface) is valid synchronously when the constructor returns. |
 
 ## Bump procedure (e.g. 0.35 → 0.36)
 

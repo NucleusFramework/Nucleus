@@ -281,6 +281,14 @@ impl Window {
     let _ = win.set_skip_taskbar(pl_attribs.skip_taskbar);
     win.set_background_color(attributes.background_color);
 
+    // Force the underlying GdkWindow to exist before returning. GTK realises
+    // widgets lazily (on the first `show`/`map`), so without this call the
+    // X11 XID / Wayland wl_surface obtained from the window are not valid
+    // until later in the event loop. Embedders that need those handles
+    // synchronously (e.g. to attach an EGL surface in a WINDOW_READY
+    // callback) would otherwise see a zero handle on first frame.
+    win.window.realize();
+
     Ok(win)
   }
 

@@ -125,20 +125,6 @@ pub(crate) fn run_event_loop_blocking() {
                         let logical_w = width as jint;
                         let logical_h = height as jint;
 
-                        // GTK realizes its widgets lazily, so the underlying
-                        // `GdkWindow` (= source of the X11 XID / Wayland
-                        // wl_surface that the EGL helper needs) doesn't
-                        // exist yet right after `build()`. Force realization
-                        // here so `nativeLinuxHandles` returns a valid handle
-                        // synchronously when the JVM-side WINDOW_READY
-                        // callback runs. macOS / Windows do this implicitly.
-                        #[cfg(target_os = "linux")]
-                        {
-                            use gtk::prelude::WidgetExt;
-                            use tao::platform::unix::WindowExtUnix;
-                            window.gtk_window().realize();
-                        }
-
                         {
                             let mut guard = WINDOWS.lock().unwrap();
                             if let Some(map) = guard.as_mut() {
