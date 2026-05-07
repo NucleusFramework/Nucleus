@@ -19,6 +19,7 @@ import io.github.kdroidfilter.nucleus.core.runtime.Platform
 import io.github.kdroidfilter.nucleus.window.DecoratedWindowState
 import io.github.kdroidfilter.nucleus.window.LocalTitleBarInfo
 import io.github.kdroidfilter.nucleus.window.TitleBarInfo
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHost
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostLinux
 import io.github.kdroidfilter.nucleus.window.tao.render.TaoComposeSceneHostWindows
@@ -32,6 +33,16 @@ internal val LocalRequestedTitleBarHeight =
     staticCompositionLocalOf<androidx.compose.runtime.MutableState<Float>> {
         error("LocalRequestedTitleBarHeight not provided — DecoratedWindow installs it.")
     }
+
+/**
+ * Holds the ARGB clear color the Skia render loop applies to each frame,
+ * pushed in by the `TitleBar` composable from the resolved title-bar
+ * background. macOS-only: Linux/Windows hosts ignore it (they have native
+ * window chrome with proper backgrounds). Defaults to opaque white via
+ * [TaoComposeSceneHost.clearColorArgbState] when no TitleBar is mounted.
+ */
+internal val LocalRequestedClearColor =
+    staticCompositionLocalOf<androidx.compose.runtime.MutableState<Int>?> { null }
 
 /**
  * Exposes the [TaoWindow] backing the current `DecoratedWindow` to any
@@ -195,6 +206,9 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
+                LocalRequestedClearColor provides host.clearColorArgbState,
+                LocalTaoPopupHost provides host.popupHost(),
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
             ) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     scopeFactory().content()
@@ -324,6 +338,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalTaoWindow provides window,
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
+                LocalTaoNativeViewHost provides host.nativeViewHost(),
+                io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoLinuxOverlayController
+                    provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
                 // loop). See [TaoLinuxUriHandler].

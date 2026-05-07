@@ -726,6 +726,52 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttach(
     return (jlong)(uintptr_t)att;
 }
 
+/* Companion to nativeAttach for overlay surfaces (popup NSPanels, in-window
+ * overlay subviews, …): same Metal pipeline (begin/present/resize/detach
+ * are interchangeable with the regular handle), but the underlying
+ * CAMetalLayer is created with `opaque = NO` so a Compose scene rendered
+ * into it can leave alpha-zero regions where the surface beneath shows
+ * through. We also skip the fullscreen observer install — overlays are
+ * children of a host NSView whose own observer already manages the FS
+ * dance. */
+JNIEXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttachOverlay(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return 0;
+
+    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
+    if (device == nil) return 0;
+
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    layer.device = device;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    layer.framebufferOnly = YES;
+    // Crucial: opaque=NO so an alpha-cleared Compose render lets the host
+    // (panel content view background, sibling subviews, etc.) bleed
+    // through wherever the scene didn't paint.
+    layer.opaque = NO;
+    layer.contentsScale = view.window.backingScaleFactor > 0
+        ? view.window.backingScaleFactor
+        : [NSScreen mainScreen].backingScaleFactor;
+
+    dispatch_block_t setup = ^{
+        view.layer = layer;
+        view.wantsLayer = YES;
+        layer.frame = view.bounds;
+    };
+    if ([NSThread isMainThread]) setup();
+    else                          dispatch_sync(dispatch_get_main_queue(), setup);
+
+    NucleusTaoMetalAttachment *att = (NucleusTaoMetalAttachment *)
+        calloc(1, sizeof(NucleusTaoMetalAttachment));
+    att->layer  = layer;
+    att->device = device;
+    att->queue  = [device newCommandQueue];
+    att->view   = view;
+    return (jlong)(uintptr_t)att;
+}
+
 JNIEXPORT void JNICALL
 Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeConfigureChrome(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
@@ -1038,9 +1084,15 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeResize(
     if (handle == 0) return;
     NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
     dispatch_block_t resize = ^{
+        // Suppress implicit animations on `frame` / `drawableSize` /
+        // `contentsScale` — during a live-resize the layer would
+        // otherwise visibly chase the actual size.
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
+        [CATransaction commit];
     };
     if ([NSThread isMainThread]) resize();
     else                          dispatch_sync(dispatch_get_main_queue(), resize);
@@ -1100,6 +1152,75 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresent(
     id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
     [commandBuffer presentDrawable:drawable];
     [commandBuffer commit];
+}
+
+/* Toggles CAMetalLayer.presentsWithTransaction. With the flag ON, the
+ * layer defers its surface swap so it can be flushed atomically inside
+ * the enclosing CATransaction together with AppKit mutations made by
+ * `nativePresentWithInterop`'s callback. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeSetPresentsWithTransaction(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean enabled) {
+    (void)env; (void)clazz;
+    if (handle == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+    BOOL flag = enabled == JNI_TRUE;
+    dispatch_block_t apply = ^{
+        att->layer.presentsWithTransaction = flag;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/* Atomic present-with-transaction path. See the Kotlin doc on
+ * NativeMetalBridge.nativePresentWithInterop for the full sequence.
+ *
+ * Requires `presentsWithTransaction = YES` on the layer (set by
+ * nativeSetPresentsWithTransaction) so [drawable present] joins our
+ * outer CATransaction instead of being scheduled out of band. */
+JNIEXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativePresentWithInterop(
+        JNIEnv *env, jclass clazz, jlong handle, jlong drawablePtr, jobject interopActions) {
+    if (handle == 0 || drawablePtr == 0) return;
+    NucleusTaoMetalAttachment *att = HANDLE_OF(handle);
+
+    id<CAMetalDrawable> drawable = (__bridge_transfer id<CAMetalDrawable>)
+        (void *)(uintptr_t) drawablePtr;
+
+    [CATransaction begin];
+
+    id<MTLCommandBuffer> commandBuffer = [att->queue commandBuffer];
+    [commandBuffer commit];
+    // Block until the GPU has scheduled our work — required before an
+    // explicit [drawable present] under presentsWithTransaction = YES.
+    [commandBuffer waitUntilScheduled];
+    [drawable present];
+
+    if (interopActions != NULL) {
+        // Cache Runnable.run() once. Module-local statics are fine: the
+        // method ID for java.lang.Runnable.run is stable for the JVM lifetime.
+        static jclass sRunnableClass = NULL;
+        static jmethodID sRunMethod = NULL;
+        if (sRunMethod == NULL) {
+            jclass local = (*env)->FindClass(env, "java/lang/Runnable");
+            if (local != NULL) {
+                sRunnableClass = (*env)->NewGlobalRef(env, local);
+                (*env)->DeleteLocalRef(env, local);
+                if (sRunnableClass != NULL) {
+                    sRunMethod = (*env)->GetMethodID(env, sRunnableClass, "run", "()V");
+                }
+            }
+        }
+        if (sRunMethod != NULL) {
+            (*env)->CallVoidMethod(env, interopActions, sRunMethod);
+            if ((*env)->ExceptionCheck(env)) {
+                (*env)->ExceptionDescribe(env);
+                (*env)->ExceptionClear(env);
+            }
+        }
+    }
+
+    [CATransaction commit];
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────

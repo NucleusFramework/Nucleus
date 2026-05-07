@@ -23,9 +23,6 @@ use crate::events::{
 use crate::keymap;
 use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 
-#[cfg(target_os = "linux")]
-use crate::platform::linux::cursor::reapply_stored_cursor;
-
 pub(crate) fn run_event_loop_blocking() {
     // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
     // a Wayland session, X11 elsewhere). The Wayland-native path goes through
@@ -128,20 +125,6 @@ pub(crate) fn run_event_loop_blocking() {
                         let logical_w = width as jint;
                         let logical_h = height as jint;
 
-                        // GTK realizes its widgets lazily, so the underlying
-                        // `GdkWindow` (= source of the X11 XID / Wayland
-                        // wl_surface that the EGL helper needs) doesn't
-                        // exist yet right after `build()`. Force realization
-                        // here so `nativeLinuxHandles` returns a valid handle
-                        // synchronously when the JVM-side WINDOW_READY
-                        // callback runs. macOS / Windows do this implicitly.
-                        #[cfg(target_os = "linux")]
-                        {
-                            use gtk::prelude::WidgetExt;
-                            use tao::platform::unix::WindowExtUnix;
-                            window.gtk_window().realize();
-                        }
-
                         {
                             let mut guard = WINDOWS.lock().unwrap();
                             if let Some(map) = guard.as_mut() {
@@ -184,8 +167,6 @@ pub(crate) fn run_event_loop_blocking() {
                             .unwrap_or(false)
                     };
                     if removed {
-                        #[cfg(target_os = "linux")]
-                        crate::platform::linux::cursor::forget_cursor(handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
                 }
@@ -327,16 +308,10 @@ pub(crate) fn run_event_loop_blocking() {
                         dispatch(handle, EVENT_CLOSE_REQUESTED, 0, 0);
                     }
                     WindowEvent::Destroyed => {
-                        let removed = {
-                            let mut guard = WINDOWS.lock().unwrap();
-                            guard
-                                .as_mut()
-                                .map(|map| map.remove(&handle).is_some())
-                                .unwrap_or(false)
-                        };
-                        if removed {
-                            #[cfg(target_os = "linux")]
-                            crate::platform::linux::cursor::forget_cursor(handle);
+                        if let Ok(mut guard) = WINDOWS.lock() {
+                            if let Some(map) = guard.as_mut() {
+                                map.remove(&handle);
+                            }
                         }
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
@@ -368,14 +343,6 @@ pub(crate) fn run_event_loop_blocking() {
                         dispatch(handle, code, 0, 0);
                     }
                     WindowEvent::CursorMoved { position, .. } => {
-                        // Re-apply our XI2 device cursor BEFORE dispatching the
-                        // event to the JVM. tao's GTK signal handler ran first
-                        // and reset `gdk_window_set_cursor("default")` on the
-                        // parent for resize-edge detection — without this
-                        // re-apply our hover icon would only flash for a
-                        // single pixel of motion before being overwritten.
-                        #[cfg(target_os = "linux")]
-                        reapply_stored_cursor(handle);
                         dispatch(
                             handle,
                             EVENT_CURSOR_MOVED,

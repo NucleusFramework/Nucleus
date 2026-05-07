@@ -1,0 +1,131 @@
+diff -ruN '--exclude=Cargo.lock' '--exclude=target' a/tao/src/platform_impl/linux/event_loop.rs tao/src/platform_impl/linux/event_loop.rs
+--- a/tao/src/platform_impl/linux/event_loop.rs	2026-05-07 19:16:20.190465591 +0300
++++ b/tao/src/platform_impl/linux/event_loop.rs	2026-05-07 19:15:33.467360563 +0300
+@@ -500,13 +500,16 @@
+                   let (left, top) = window.position();
+                   let (w, h) = (window.width(), window.height());
+                   let (right, bottom) = (left + w, top + h);
+-                  let border = window.scale_factor() * 5;
++                  let scale = window.scale_factor();
++                  let edge_band = scale * 8;
++                  let corner = scale * 16;
+                   let edge = crate::window::hit_test(
+                     (left, top, right, bottom),
+                     cx as _,
+                     cy as _,
+-                    border,
+-                    border,
++                    edge_band,
++                    edge_band,
++                    corner,
+                   );
+ 
+                   let edge = match &edge {
+@@ -529,25 +532,27 @@
+                 let (left, top) = window.position();
+                 let (w, h) = window.size();
+                 let (right, bottom) = (left + w, top + h);
+-                let border = window.scale_factor() * 5;
+-                let edge = crate::window::hit_test(
++                let scale = window.scale_factor();
++                let edge_band = scale * 8;
++                let corner = scale * 16;
++                let direction = crate::window::hit_test(
+                   (left, top, right, bottom),
+                   cx as _,
+                   cy as _,
+-                  border,
+-                  border,
+-                )
+-                .map(|d| d.to_gtk_edge())
+-                // we return `WindowEdge::__Unknown` to be ignored later.
+-                // we must return 8 or bigger, otherwise it will be the same as one of the other 7 variants of `WindowEdge` enum.
+-                .unwrap_or(WindowEdge::__Unknown(8));
+-                // Ignore the `__Unknown` variant so the window receives the click correctly if it is not on the edges.
+-                match edge {
+-                  WindowEdge::__Unknown(_) => (),
+-                  _ => {
+-                    // FIXME: calling `window.begin_resize_drag` uses the default cursor, it should show a resizing cursor instead
+-                    window.begin_resize_drag(edge, LMB as i32, cx as i32, cy as i32, event.time())
++                  edge_band,
++                  edge_band,
++                  corner,
++                );
++                if let Some(direction) = direction {
++                  // Set the resize cursor before begin_resize_drag, otherwise GTK
++                  // shows the default cursor for the entire drag.
++                  if let Some(gdk_window) = window.window() {
++                    gdk_window.set_cursor(
++                      Cursor::from_name(&gdk_window.display(), direction.to_cursor_str()).as_ref(),
++                    );
+                   }
++                  let edge = direction.to_gtk_edge();
++                  window.begin_resize_drag(edge, LMB as i32, cx as i32, cy as i32, event.time());
+                 }
+               }
+ 
+@@ -561,13 +566,16 @@
+                       let (left, top) = window.position();
+                       let (w, h) = (window.width(), window.height());
+                       let (right, bottom) = (left + w, top + h);
+-                      let border = window.scale_factor() * 5;
++                      let scale = window.scale_factor();
++                      let edge_band = scale * 8;
++                      let corner = scale * 16;
+                       let edge = crate::window::hit_test(
+                         (left, top, right, bottom),
+                         cx as _,
+                         cy as _,
+-                        border,
+-                        border,
++                        edge_band,
++                        edge_band,
++                        corner,
+                       )
+                       .map(|d| d.to_gtk_edge())
+                       // we return `WindowEdge::__Unknown` to be ignored later.
+diff -ruN '--exclude=Cargo.lock' '--exclude=target' a/tao/src/platform_impl/windows/event_loop.rs tao/src/platform_impl/windows/event_loop.rs
+--- a/tao/src/platform_impl/windows/event_loop.rs	2026-05-07 19:16:20.191536974 +0300
++++ b/tao/src/platform_impl/windows/event_loop.rs	2026-05-07 19:15:46.022591463 +0300
+@@ -2217,6 +2217,9 @@
+             cy,
+             border_x,
+             border_y,
++            // Windows already widens corner hit-testing via the system metrics
++            // (HTTOPLEFT etc.); pass border_x to preserve the existing behaviour.
++            border_x,
+           )
+           .map(|d| d.to_win32());
+ 
+diff -ruN '--exclude=Cargo.lock' '--exclude=target' a/tao/src/window.rs tao/src/window.rs
+--- a/tao/src/window.rs	2026-05-07 19:16:20.191729601 +0300
++++ b/tao/src/window.rs	2026-05-07 19:14:53.284621913 +0300
+@@ -1668,7 +1668,28 @@
+   cy: i32,
+   border_x: i32,
+   border_y: i32,
++  corner: i32,
+ ) -> Option<ResizeDirection> {
++  // Corner zones extend further into the window than edge bands so the user
++  // can grab a diagonal resize without aiming at a 5×5-pixel square.
++  let in_left_corner = cx < left + corner;
++  let in_right_corner = cx >= right - corner;
++  let in_top_corner = cy < top + corner;
++  let in_bottom_corner = cy >= bottom - corner;
++
++  if in_top_corner && in_left_corner {
++    return Some(ResizeDirection::NorthWest);
++  }
++  if in_top_corner && in_right_corner {
++    return Some(ResizeDirection::NorthEast);
++  }
++  if in_bottom_corner && in_left_corner {
++    return Some(ResizeDirection::SouthWest);
++  }
++  if in_bottom_corner && in_right_corner {
++    return Some(ResizeDirection::SouthEast);
++  }
++
+   const LEFT: isize = 0b0001;
+   const RIGHT: isize = 0b0010;
+   const TOP: isize = 0b0100;

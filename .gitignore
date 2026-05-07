@@ -27,6 +27,10 @@ site
 # Cargo / Rust build outputs (decorated-window-tao native crate)
 **/native/target/
 
+# Cargo registry metadata (vendored crates)
+decorated-window-tao/src/main/native/vendor/**/.cargo_vcs_info.json
+decorated-window-tao/src/main/native/vendor/**/.cargo-ok
+
 # .NET build outputs (scripts/uia-listener)
 **/bin/
 **/obj/
@@ -36,3 +40,6 @@ site
 
 # UIA debug log written by nucleus_tao_a11y.dll when NUCLEUS_TAO_A11Y_DEBUG=1
 /tmp/nucleus_a11y.log
+
+# IDE temporary lock files
+.*~

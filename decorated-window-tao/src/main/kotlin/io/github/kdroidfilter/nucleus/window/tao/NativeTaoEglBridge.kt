@@ -101,6 +101,36 @@ internal object NativeTaoEglBridge {
     external fun nativeHeight(handle: Long): Int
 
     /**
+     * Switches the EGL surface from "fully input-transparent" to
+     * region-restricted input routing. Used by the overlay slot of
+     * [NativeView] on Linux: only points inside one of [rectsPx] are
+     * delivered to the Compose surface; everything else falls through
+     * to GTK / the embedded native widget — same UX as macOS's
+     * `NucleusTaoNativeOverlayView.hitTest:` returning `nil` for
+     * non-interactive areas.
+     *
+     * [rectsPx] is a flat `(x, y, w, h) × count` float array in
+     * surface-local pixels with a top-left origin (matches Compose
+     * `boundsInWindow`). [count] = 0 resets to the default empty
+     * region (full passthrough).
+     *
+     * Backend coverage:
+     *  - **Wayland**: `wl_compositor.create_region` + `wl_region.add` per
+     *    rect + `wl_surface.set_input_region` + `wl_surface.commit`.
+     *  - **X11 child-window fallback** (visual mismatch): applies
+     *    `XShapeCombineRectangles(ShapeInput, ShapeSet)` on the child.
+     *  - **X11 default-visual**: no separate Compose window, no shape
+     *    we can apply without breaking GTK; falls through silently
+     *    (overlay clicks won't be intercepted in that path).
+     */
+    @JvmStatic
+    external fun nativeSetInputRegion(
+        handle: Long,
+        rectsPx: FloatArray,
+        count: Int,
+    )
+
+    /**
      * Returns the address of a C function `void* fn(void* ctx, const char*
      * name)` matching Skia's `GrGLGetProc` signature. Pass to
      * [org.jetbrains.skia.GLAssembledInterface.createFromNativePointers] with

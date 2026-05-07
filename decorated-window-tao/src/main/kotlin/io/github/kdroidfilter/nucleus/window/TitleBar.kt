@@ -18,6 +18,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -41,6 +42,7 @@ import io.github.kdroidfilter.nucleus.window.hasNewFullscreenControls
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import io.github.kdroidfilter.nucleus.window.tao.LocalFullscreenTitleBarHolder
+import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedClearColor
 import io.github.kdroidfilter.nucleus.window.tao.LocalRequestedTitleBarHeight
 import io.github.kdroidfilter.nucleus.window.tao.NativeMetalBridge
 import io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
@@ -192,6 +194,21 @@ fun DecoratedWindowScope.TitleBar(
         targetValue = if (isFullscreenWithNewControls) menuBarOffsetPt.dp else 0.dp,
         animationSpec = tween(durationMillis = MENU_BAR_ANIMATION_MS),
     )
+
+    // Push the resolved title-bar background into the Skia clear color
+    // (re-applied every frame in `TaoComposeSceneHost`) so any Compose
+    // region without an explicit background — most visibly the gap above
+    // the offset title bar during the macOS fullscreen menu-bar slide-in —
+    // matches the chrome color rather than flashing white. This is the
+    // tao equivalent of the AWT NSWindow background jbr/jni get for free
+    // from the user's theme.
+    val titleBarBackground by style.colors.backgroundFor(currentState)
+    if (isMacOS) {
+        val clearColorState = LocalRequestedClearColor.current
+        SideEffect {
+            clearColorState?.value = titleBarBackground.toArgb()
+        }
+    }
 
     // Push the animated offset back to native so the AppKit traffic-light
     // replacements follow the Compose title bar pixel-for-pixel.

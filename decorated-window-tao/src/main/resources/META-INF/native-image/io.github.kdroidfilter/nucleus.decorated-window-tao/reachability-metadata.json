@@ -168,6 +168,17 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge$OverlayInputCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
+            ]
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },
@@ -257,6 +268,13 @@
             "methods": [
                 { "name": "onTouchEvent",      "parameterTypes": ["long","int","int","long[]","long[]","long[]","long"] },
                 { "name": "onTrackpadGesture", "parameterTypes": ["long","int","int","long","long","long"] }
+            ]
+        },
+        {
+            "type": "java.lang.Runnable",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "run", "parameterTypes": [] }
             ]
         },
         { "type": "java.io.File" },
