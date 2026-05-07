@@ -493,6 +493,12 @@ impl<T: 'static> EventLoop<T> {
 
             // Allow resizing unmaximized non-fullscreen undecorated window
             let fullscreen_ = fullscreen.clone();
+            // Tracks whether we last installed a resize cursor on this window.
+            // We only touch the cursor on edge entry / exit transitions so any
+            // application-level cursor (text I-beam, hand, custom icon) stays
+            // intact while the pointer moves through the bulk of the window.
+            let in_resize_zone = Rc::new(AtomicBool::new(false));
+            let in_resize_zone_ = in_resize_zone.clone();
             window.connect_motion_notify_event(move |window, event| {
               if !window.is_decorated() && window.is_resizable() && !window.is_maximized() {
                 if let Some(window) = window.window() {
@@ -512,11 +518,23 @@ impl<T: 'static> EventLoop<T> {
                     corner,
                   );
 
-                  let edge = match &edge {
-                    Some(e) if !fullscreen_.load(Ordering::Relaxed) => e.to_cursor_str(),
-                    _ => "default",
-                  };
-                  window.set_cursor(Cursor::from_name(&window.display(), edge).as_ref());
+                  match edge {
+                    Some(direction) if !fullscreen_.load(Ordering::Relaxed) => {
+                      window.set_cursor(
+                        Cursor::from_name(&window.display(), direction.to_cursor_str()).as_ref(),
+                      );
+                      in_resize_zone_.store(true, Ordering::Relaxed);
+                    }
+                    _ => {
+                      // Pointer left the edge band: clear the surface cursor
+                      // so any inherited / per-device cursor (e.g. one set by
+                      // an embedded toolkit) shows through. Skipped when we
+                      // never installed a resize cursor in the first place.
+                      if in_resize_zone_.swap(false, Ordering::Relaxed) {
+                        window.set_cursor(None);
+                      }
+                    }
+                  }
                 }
               }
               glib::Propagation::Proceed
