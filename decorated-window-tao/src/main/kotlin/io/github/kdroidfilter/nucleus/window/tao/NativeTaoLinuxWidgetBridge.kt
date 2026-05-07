@@ -47,4 +47,78 @@ internal object NativeTaoLinuxWidgetBridge {
         widthLogical: Int,
         heightLogical: Int,
     )
+
+    /**
+     * Releases GTK's focused widget on [gtkWindowPtr] (`gtk_window_set_focus(NULL)`).
+     * Kept for API completeness; the GtkEventBox-based overlay path
+     * makes this redundant in practice (the EventBox grabs focus on
+     * press, replacing the WebView-eats-keys problem this used to
+     * fix).
+     */
+    @JvmStatic
+    external fun nativeRequestKeyboardFocus(gtkWindowPtr: Long)
+
+    /**
+     * Creates an invisible `GtkEventBox` overlay child inside the
+     * GtkOverlay we inject into Tao's content `GtkBox`, positioned
+     * via the `get-child-position` signal. Returns the EventBox
+     * pointer (cast to Long) — pass it to [nativeMoveInputBox] /
+     * [nativeRemoveInputBox]. Returns 0 on failure (e.g. Tao's
+     * content isn't a `GtkBox`, or the GTK lib didn't load).
+     *
+     * Each EventBox added is stacked **above** previously added
+     * overlay children in z-order (matches `gtk_overlay_add_overlay`
+     * semantics), so it captures clicks for its rect even when an
+     * embedded user widget (e.g. `WebKitWebView`) is positioned at
+     * the same location. The event isn't consumed — `button-press-event`
+     * bubbles up to the GtkApplicationWindow where Tao's window-level
+     * handler picks it up and forwards to the Compose scene.
+     */
+    @JvmStatic
+    external fun nativeAddInputBox(gtkWindowPtr: Long): Long
+
+    /**
+     * Repositions an EventBox previously created by [nativeAddInputBox].
+     * Coords in **logical** GTK pixels (Compose physical / scale).
+     */
+    @JvmStatic
+    external fun nativeMoveInputBox(
+        boxPtr: Long,
+        xLogical: Int,
+        yLogical: Int,
+        widthLogical: Int,
+        heightLogical: Int,
+    )
+
+    /** Destroys an EventBox previously created by [nativeAddInputBox]. */
+    @JvmStatic
+    external fun nativeRemoveInputBox(boxPtr: Long)
+
+    /**
+     * Receives motion / press / release events forwarded from the
+     * native EventBox handlers. Coords are **logical pixels** in
+     * GtkApplicationWindow space (already translated via
+     * `gtk_widget_translate_coordinates`).
+     *
+     * `type`: 0 = move, 1 = press, 2 = release.
+     * `pressed`: 1 if currently pressed, 0 otherwise.
+     */
+    interface OverlayInputCallback {
+        @Suppress("FunctionParameterNaming")
+        fun onEvent(type: Int, xLogical: Int, yLogical: Int, button: Int, pressed: Int)
+    }
+
+    /**
+     * Registers a callback to receive overlay input events from the
+     * EventBox associated with [boxPtr]. Pass null to clear. The
+     * callback is invoked synchronously from GTK's main thread inside
+     * the signal handlers, *before* the event would have bubbled up
+     * to Tao — so updating Compose's last cursor position here
+     * guarantees subsequent click hit-testing lands on the right
+     * widget. Necessary on Linux because Tao's
+     * `cursor.window_at_position()` returns EventBox-local coords
+     * when WebKit's accelerated subsurface has the seat focus.
+     */
+    @JvmStatic
+    external fun nativeSetInputBoxCallback(boxPtr: Long, callback: OverlayInputCallback?)
 }

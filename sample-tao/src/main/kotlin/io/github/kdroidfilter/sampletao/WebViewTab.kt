@@ -127,9 +127,7 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                     }
                 },
             ) {
-                // Compose UI rendered ON TOP of the WebView. Lives in a
-                // separate NSPanel with its own ComposeScene, so it
-                // intercepts events + supports focus / keyboard input.
+                // Compose UI rendered ON TOP of the WebView
                 Box(
                     modifier = Modifier
                         .fillMaxSize()

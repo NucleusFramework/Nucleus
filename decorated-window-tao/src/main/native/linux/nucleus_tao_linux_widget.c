@@ -37,6 +37,7 @@
 #include <jni.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <dlfcn.h>
@@ -69,10 +70,22 @@ typedef struct {
 
 /* ── Function pointer table (resolved lazily) ───────────────────────── */
 
+typedef void          GtkWindow;       /* opaque */
 typedef GtkWidget *(*PFN_gtk_bin_get_child)(GtkWidget *bin);
 typedef GtkWidget *(*PFN_gtk_widget_get_parent)(GtkWidget *widget);
 typedef void       (*PFN_gtk_container_add)(GtkContainer *c, GtkWidget *w);
 typedef void       (*PFN_gtk_container_remove)(GtkContainer *c, GtkWidget *w);
+typedef void       (*PFN_gtk_window_set_focus)(GtkWindow *w, GtkWidget *focus);
+typedef GtkWidget *(*PFN_gtk_event_box_new)(void);
+typedef void       (*PFN_gtk_event_box_set_visible_window)(GtkWidget *box, gboolean visible);
+typedef GtkWidget *(*PFN_gtk_widget_get_toplevel)(GtkWidget *w);
+typedef gboolean   (*PFN_gtk_widget_translate_coordinates)(
+    GtkWidget *src, GtkWidget *dst, int sx, int sy, int *dx, int *dy);
+typedef void       (*PFN_gtk_widget_add_events)(GtkWidget *w, int events);
+typedef void       (*PFN_gtk_widget_set_can_focus)(GtkWidget *w, gboolean can_focus);
+typedef void       (*PFN_gtk_widget_set_app_paintable)(GtkWidget *w, gboolean paintable);
+typedef gboolean   (*PFN_gtk_widget_grab_focus)(GtkWidget *w);
+typedef void       (*PFN_gtk_widget_destroy)(GtkWidget *w);
 typedef GtkWidget *(*PFN_gtk_overlay_new)(void);
 typedef void       (*PFN_gtk_overlay_add_overlay)(GtkOverlay *o, GtkWidget *w);
 typedef GtkWidget *(*PFN_gtk_box_new)(GtkOrientation orientation, gint spacing);
@@ -112,6 +125,16 @@ static struct {
     PFN_gtk_widget_set_valign     gtk_widget_set_valign;
     PFN_gtk_widget_show           gtk_widget_show;
     PFN_gtk_widget_queue_resize   gtk_widget_queue_resize;
+    PFN_gtk_window_set_focus      gtk_window_set_focus;
+    PFN_gtk_event_box_new         gtk_event_box_new;
+    PFN_gtk_event_box_set_visible_window gtk_event_box_set_visible_window;
+    PFN_gtk_widget_get_toplevel   gtk_widget_get_toplevel;
+    PFN_gtk_widget_translate_coordinates gtk_widget_translate_coordinates;
+    PFN_gtk_widget_add_events     gtk_widget_add_events;
+    PFN_gtk_widget_set_can_focus  gtk_widget_set_can_focus;
+    PFN_gtk_widget_set_app_paintable gtk_widget_set_app_paintable;
+    PFN_gtk_widget_grab_focus     gtk_widget_grab_focus;
+    PFN_gtk_widget_destroy        gtk_widget_destroy;
     PFN_g_type_check_instance_is_a g_type_check_instance_is_a;
     PFN_gtk_box_get_type          gtk_box_get_type;
     PFN_g_object_set_data         g_object_set_data;
@@ -149,6 +172,16 @@ static int ensure_gtk_loaded(void) {
     g.gtk_widget_set_valign       = (PFN_gtk_widget_set_valign)       dlsym(libgtk, "gtk_widget_set_valign");
     g.gtk_widget_show             = (PFN_gtk_widget_show)             dlsym(libgtk, "gtk_widget_show");
     g.gtk_widget_queue_resize     = (PFN_gtk_widget_queue_resize)     dlsym(libgtk, "gtk_widget_queue_resize");
+    g.gtk_window_set_focus        = (PFN_gtk_window_set_focus)        dlsym(libgtk, "gtk_window_set_focus");
+    g.gtk_event_box_new           = (PFN_gtk_event_box_new)           dlsym(libgtk, "gtk_event_box_new");
+    g.gtk_event_box_set_visible_window = (PFN_gtk_event_box_set_visible_window) dlsym(libgtk, "gtk_event_box_set_visible_window");
+    g.gtk_widget_get_toplevel     = (PFN_gtk_widget_get_toplevel)     dlsym(libgtk, "gtk_widget_get_toplevel");
+    g.gtk_widget_translate_coordinates = (PFN_gtk_widget_translate_coordinates) dlsym(libgtk, "gtk_widget_translate_coordinates");
+    g.gtk_widget_add_events       = (PFN_gtk_widget_add_events)       dlsym(libgtk, "gtk_widget_add_events");
+    g.gtk_widget_set_can_focus    = (PFN_gtk_widget_set_can_focus)    dlsym(libgtk, "gtk_widget_set_can_focus");
+    g.gtk_widget_set_app_paintable = (PFN_gtk_widget_set_app_paintable) dlsym(libgtk, "gtk_widget_set_app_paintable");
+    g.gtk_widget_grab_focus       = (PFN_gtk_widget_grab_focus)       dlsym(libgtk, "gtk_widget_grab_focus");
+    g.gtk_widget_destroy          = (PFN_gtk_widget_destroy)          dlsym(libgtk, "gtk_widget_destroy");
     g.gtk_box_get_type            = (PFN_gtk_box_get_type)            dlsym(libgtk, "gtk_box_get_type");
 
     g.g_type_check_instance_is_a  = (PFN_g_type_check_instance_is_a)  dlsym(libgobj, "g_type_check_instance_is_a");
@@ -164,6 +197,12 @@ static int ensure_gtk_loaded(void) {
         !g.gtk_widget_set_size_request ||
         !g.gtk_widget_set_halign || !g.gtk_widget_set_valign ||
         !g.gtk_widget_show || !g.gtk_widget_queue_resize ||
+        !g.gtk_window_set_focus || !g.gtk_event_box_new ||
+        !g.gtk_event_box_set_visible_window ||
+        !g.gtk_widget_get_toplevel || !g.gtk_widget_translate_coordinates ||
+        !g.gtk_widget_add_events ||
+        !g.gtk_widget_set_can_focus || !g.gtk_widget_set_app_paintable ||
+        !g.gtk_widget_grab_focus || !g.gtk_widget_destroy ||
         !g.gtk_box_get_type || !g.g_type_check_instance_is_a ||
         !g.g_object_set_data || !g.g_object_set_data_full ||
         !g.g_object_get_data || !g.g_signal_connect_data) {
@@ -171,6 +210,52 @@ static int ensure_gtk_loaded(void) {
     }
     g.initialized = 1;
     return 1;
+}
+
+/* ── JNI callback (for input-box motion / button forwarding) ────────── */
+
+static JavaVM      *sJVM = NULL;
+static jclass       sCallbackClass = NULL;
+static jmethodID    sOnEventMethod = NULL; /* (IIIII)V — type, x, y, button, pressed */
+
+static void ensure_callback_cache(JNIEnv *env, jobject sample) {
+    if (sOnEventMethod != NULL) return;
+    if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
+    if (sample == NULL) return;
+    jclass local = (*env)->GetObjectClass(env, sample);
+    if (local == NULL) return;
+    sCallbackClass = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+    if (sCallbackClass == NULL) return;
+    sOnEventMethod = (*env)->GetMethodID(env, sCallbackClass, "onEvent", "(IIIII)V");
+}
+
+static JNIEnv *attach_jvm_thread(void) {
+    if (sJVM == NULL) return NULL;
+    JNIEnv *env = NULL;
+    jint status = (*sJVM)->GetEnv(sJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sJVM)->AttachCurrentThreadAsDaemon(sJVM, (void **)&env, NULL) != JNI_OK) return NULL;
+    } else if (status != JNI_OK) {
+        return NULL;
+    }
+    return env;
+}
+
+#define EVT_OVERLAY_MOVE      0
+#define EVT_OVERLAY_PRESS     1
+#define EVT_OVERLAY_RELEASE   2
+#define EVT_OVERLAY_FOCUS_OUT 3
+
+static void invoke_callback(GtkWidget *box, int type, int x, int y, int button) {
+    if (sOnEventMethod == NULL) return;
+    jobject cb = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
+    if (cb == NULL) return;
+    JNIEnv *env = attach_jvm_thread();
+    if (env == NULL) return;
+    (*env)->CallVoidMethod(env, cb, sOnEventMethod, (jint) type, (jint) x, (jint) y,
+                           (jint) button, (jint) (type == EVT_OVERLAY_PRESS ? 1 : 0));
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
 /* ── Per-widget rect storage + overlay positioning ─────────────────── */
@@ -192,6 +277,13 @@ static gboolean on_get_child_position(GtkWidget *overlay, GtkWidget *child,
                                       GdkRectangle *allocation, void *user_data) {
     (void) overlay; (void) user_data;
     widget_rect_t *r = (widget_rect_t *) g.g_object_get_data(child, NUCLEUS_RECT_KEY);
+    fprintf(stderr, "[nucleus_tao_widget] get-child-position child=%p rect=%p valid=%d",
+            (void *) child, (void *) r, r ? r->valid : -1);
+    if (r != NULL && r->valid) {
+        fprintf(stderr, " (%d,%d,%d,%d)\n", r->x, r->y, r->w, r->h);
+    } else {
+        fprintf(stderr, " (default fallback)\n");
+    }
     if (r == NULL || !r->valid) return GTK_FALSE;
     if (allocation == NULL) return GTK_FALSE;
     allocation->x = r->x;
@@ -354,4 +446,328 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
     if (overlay != NULL) {
         g.gtk_widget_queue_resize(overlay);
     }
+}
+
+/* Clears the GTK window's focused widget. The Compose overlay slot
+ * intercepts pointer events at the EGL subsurface (input region),
+ * which means GTK never sees the click and keeps its previous focus
+ * — typically the embedded WebKitWebView. With a focused widget
+ * grabbing key events, GTK's `key-press-event` signal stops at that
+ * widget and never reaches Tao's window-level handler, so the
+ * Compose TextField never receives the keystroke.
+ *
+ * Releasing the focus (`gtk_window_set_focus(window, NULL)`) makes
+ * key events propagate to the window-level handler instead, where
+ * Tao picks them up and forwards them to the Compose scene. The
+ * Compose-side focus chain then routes them to the focused
+ * TextField. Equivalent in spirit to macOS's
+ * `[window makeFirstResponder:overlay]` on click. */
+EXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRequestKeyboardFocus(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    fprintf(stderr, "[nucleus_tao_widget] nativeRequestKeyboardFocus gtk_window=0x%lx\n",
+            (unsigned long) gtk_window_ptr);
+    if (!ensure_gtk_loaded()) return;
+    if (gtk_window_ptr == 0) return;
+    GtkWindow *win = (GtkWindow *) (uintptr_t) gtk_window_ptr;
+    g.gtk_window_set_focus(win, NULL);
+}
+
+/* ── Input-box overlay: click forwarder for `consumeOverlayPointerEvents` ──
+ *
+ * The Linux equivalent of macOS's region-based `hitTest:` overlay. We
+ * cannot use `wl_surface.set_input_region` on the EGL subsurface to
+ * intercept clicks: nothing on our side listens for `wl_pointer.button`
+ * events on that subsurface, so any click delivered to it gets dropped
+ * by libwayland-client. Instead we synchronise an invisible
+ * `GtkEventBox` overlay child with the Compose layout: the EventBox
+ * sits at the `consumeOverlayPointerEvents` rect inside the GtkOverlay
+ * we already inject, **above** the user's embedded widget in z-order
+ * (GtkOverlay's add order). When the user clicks the rect, GTK
+ * delivers `button-press-event` to the EventBox, which lets the event
+ * bubble up unhandled all the way to `GtkApplicationWindow`, where
+ * Tao's `connect_button_press_event` picks it up and forwards it to
+ * the Compose scene — the standard event path. The user's GtkWidget
+ * underneath never sees the click for that region.
+ *
+ * The EventBox additionally `gtk_widget_grab_focus()` itself on press
+ * so subsequent keystrokes route through GTK's focus chain (EventBox
+ * doesn't consume key events, so they bubble up to Tao the same way).
+ * That replaces the earlier `gtk_window_set_focus(NULL)` hack and
+ * makes typing into a Compose `BasicTextField` inside the overlay
+ * Just Work. */
+
+/* GdkEventButton partial layout — fields we read. Real GTK 3 layout:
+ *   GdkEventType type; GdkWindow *window; gint8 send_event; guint32 time;
+ *   gdouble x; gdouble y; gdouble *axes; guint state; guint button;
+ *   GdkDevice *device; gdouble x_root; gdouble y_root;
+ *
+ * Note: `gint8 send_event` is followed by 3 bytes of padding before
+ * the next 4-byte aligned field on most ABIs. We let the compiler
+ * insert the natural padding by leaving struct alignment at default. */
+typedef struct {
+    int           type;         /* GdkEventType */
+    void         *window;
+    signed char   send_event;
+    /* compiler inserts padding here for next-field alignment */
+    unsigned int  time;
+    double        x;
+    double        y;
+    double       *axes;
+    unsigned int  state;
+    unsigned int  button;       /* 1 = LEFT, 2 = MIDDLE, 3 = RIGHT */
+    /* device, x_root, y_root, etc. follow */
+} gdk_event_button_t;
+
+/* Motion event has the same prefix up through y; doesn't have button. */
+typedef struct {
+    int           type;
+    void         *window;
+    signed char   send_event;
+    unsigned int  time;
+    double        x;
+    double        y;
+} gdk_event_motion_t;
+
+/* Map GTK's native button code (1 = LEFT, 2 = MIDDLE, 3 = RIGHT) to
+ * Tao's AWT-style encoding (`TaoMouseButton.LEFT = 0`, `RIGHT = 1`,
+ * `MIDDLE = 2`). Anything else stays a passthrough — Compose's
+ * `mapButton` falls back to `Primary` for unknown codes. */
+static int gtk_button_to_tao(unsigned int gtk_button) {
+    switch (gtk_button) {
+        case 1: return 0; /* LEFT */
+        case 2: return 2; /* MIDDLE */
+        case 3: return 1; /* RIGHT */
+        default: return (int) gtk_button;
+    }
+}
+
+static int translate_to_toplevel(GtkWidget *widget, double ex, double ey, int *out_x, int *out_y) {
+    *out_x = -1; *out_y = -1;
+    if (g.gtk_widget_get_toplevel == NULL || g.gtk_widget_translate_coordinates == NULL) return 0;
+    GtkWidget *toplevel = g.gtk_widget_get_toplevel(widget);
+    if (toplevel == NULL) return 0;
+    return g.gtk_widget_translate_coordinates(widget, toplevel, (int) ex, (int) ey, out_x, out_y) ? 1 : 0;
+}
+
+static gboolean on_input_box_button_press(GtkWidget *widget, void *event_ptr,
+                                          void *user_data) {
+    (void) user_data;
+    gdk_event_button_t *e = (gdk_event_button_t *) event_ptr;
+    if (e == NULL) return GTK_FALSE;
+    int wx, wy;
+    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
+    /* Forward window-relative coords + press to Compose, bypassing
+     * Tao's `cursor.window_at_position()` which on Wayland reports
+     * EventBox-local coords because of WebKit's accelerated subsurface
+     * stealing the seat focus. The callback updates the host's
+     * `lastPointerX/Y` BEFORE Tao's bubbled-up button-press handler
+     * fires, so the click hits-tests at the right place in Compose. */
+    int taoBtn = gtk_button_to_tao(e->button);
+    invoke_callback(widget, EVT_OVERLAY_MOVE, wx, wy, /*button*/ 0);
+    invoke_callback(widget, EVT_OVERLAY_PRESS, wx, wy, taoBtn);
+    if (g.gtk_widget_grab_focus != NULL) g.gtk_widget_grab_focus(widget);
+    /* TRUE = consume the event. We have already dispatched it to
+     * Compose via the callback; letting GTK bubble it would cause
+     * Tao's handler to ALSO send a click — duplicate event. */
+    return GTK_TRUE;
+}
+
+static gboolean on_input_box_button_release(GtkWidget *widget, void *event_ptr,
+                                            void *user_data) {
+    (void) user_data;
+    gdk_event_button_t *e = (gdk_event_button_t *) event_ptr;
+    if (e == NULL) return GTK_FALSE;
+    int wx, wy;
+    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
+    invoke_callback(widget, EVT_OVERLAY_RELEASE, wx, wy, gtk_button_to_tao(e->button));
+    return GTK_TRUE;
+}
+
+/* Fires when the EventBox loses GTK keyboard focus — typically when
+ * the user clicks somewhere outside our overlay (e.g. on the embedded
+ * WebView). Equivalent to macOS's `resignFirstResponder` callback;
+ * Compose's `focusManager.releaseFocus()` is invoked on the Kotlin
+ * side so a focused `BasicTextField` visually deselects. */
+static gboolean on_input_box_focus_out(GtkWidget *widget, void *event_ptr,
+                                       void *user_data) {
+    (void) event_ptr; (void) user_data;
+    fprintf(stderr, "[nucleus_tao_widget] EventBox FOCUS-OUT widget=%p\n", (void *) widget);
+    invoke_callback(widget, EVT_OVERLAY_FOCUS_OUT, 0, 0, 0);
+    return GTK_FALSE; /* let GTK handle its own focus chain bookkeeping */
+}
+
+static gboolean on_input_box_motion_notify(GtkWidget *widget, void *event_ptr,
+                                           void *user_data) {
+    (void) user_data;
+    gdk_event_motion_t *e = (gdk_event_motion_t *) event_ptr;
+    if (e == NULL) return GTK_FALSE;
+    int wx, wy;
+    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
+    invoke_callback(widget, EVT_OVERLAY_MOVE, wx, wy, /*button*/ 0);
+    /* Consume so Tao's GtkApplicationWindow-level motion handler
+     * doesn't ALSO fire — its `cursor.window_at_position()` reports
+     * EventBox-local coords (broken by WebKit's accelerated
+     * subsurface stealing seat focus), which collides with our
+     * already-correct callback dispatch and produces alternating
+     * Move events at conflicting positions. The visible symptom is a
+     * cursor that flickers between the I-beam (when Compose hits the
+     * TextField at the right pos) and the default arrow (when it
+     * misses with the wrong pos). */
+    return GTK_TRUE;
+}
+
+EXPORT jlong JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeAddInputBox(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded()) return 0;
+    if (gtk_window_ptr == 0) return 0;
+    GtkWidget *gtk_window = (GtkWidget *) (uintptr_t) gtk_window_ptr;
+
+    GtkWidget *overlay = resolve_overlay_for_window(gtk_window);
+    if (overlay == NULL) return 0;
+
+    GtkWidget *box = g.gtk_event_box_new();
+    if (box == NULL) return 0;
+    /* CRITICAL: visible_window = FALSE so the EventBox does NOT have
+     * its own GdkWindow. With visible_window = TRUE (default), GTK
+     * creates an X / Wayland sub-window that captures pointer events
+     * and reports motion coordinates **relative to itself**, not the
+     * GtkApplicationWindow. Tao's `connect_motion_notify_event`
+     * handler reads `cursor.window_at_position()` which returns
+     * EventBox-local coords; Compose stores these in `lastPointerX/Y`,
+     * and the subsequent click is dispatched to the wrong widget
+     * because the position no longer matches the rect Compose laid
+     * out. With visible_window = FALSE the EventBox uses its parent's
+     * GdkWindow, motion events are reported in window coords
+     * (correct), and click capture still works through GTK's widget
+     * hit-test on the EventBox's allocation. */
+    g.gtk_event_box_set_visible_window(box, GTK_FALSE);
+    /* Need can-focus for keyboard routing on click — without this,
+     * grab_focus is a no-op and keys keep going to the previously
+     * focused widget (= embedded WebView). */
+    g.gtk_widget_set_can_focus(box, GTK_TRUE);
+    /* Don't paint a background — the EventBox is purely an event
+     * sink, the visual rendering is Compose's job. */
+    g.gtk_widget_set_app_paintable(box, GTK_TRUE);
+    /* Allocate the rect cache (same pointer-key as embedded
+     * widgets), with destroy notify so it's freed when the EventBox
+     * itself is finalised. */
+    widget_rect_t *rect = (widget_rect_t *) calloc(1, sizeof(*rect));
+    if (rect != NULL) {
+        g.g_object_set_data_full(box, NUCLEUS_RECT_KEY, rect, free);
+    }
+    g.g_signal_connect_data(
+        box, "button-press-event",
+        (void (*)(void)) on_input_box_button_press, NULL, NULL, 0);
+    g.g_signal_connect_data(
+        box, "button-release-event",
+        (void (*)(void)) on_input_box_button_release, NULL, NULL, 0);
+    /* GDK_POINTER_MOTION_MASK = 1 << 2 = 4. Without this bit set,
+     * motion-notify-event is not delivered to this widget. */
+    g.gtk_widget_add_events(box, /*GDK_POINTER_MOTION_MASK*/ 4);
+    g.g_signal_connect_data(
+        box, "motion-notify-event",
+        (void (*)(void)) on_input_box_motion_notify, NULL, NULL, 0);
+    g.g_signal_connect_data(
+        box, "focus-out-event",
+        (void (*)(void)) on_input_box_focus_out, NULL, NULL, 0);
+    g.gtk_overlay_add_overlay((GtkOverlay *) overlay, box);
+    g.gtk_widget_show(box);
+    fprintf(stderr, "[nucleus_tao_widget] nativeAddInputBox -> %p\n", (void *) box);
+    return (jlong) (uintptr_t) box;
+}
+
+EXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeMoveInputBox(
+    JNIEnv *env, jclass clazz, jlong box_ptr,
+    jint x_logical, jint y_logical, jint w_logical, jint h_logical)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded()) return;
+    if (box_ptr == 0) return;
+    if (w_logical <= 0 || h_logical <= 0) return;
+    GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
+    fprintf(stderr, "[nucleus_tao_widget] nativeMoveInputBox box=%p (%d,%d,%d,%d)\n",
+            (void *) box, x_logical, y_logical, w_logical, h_logical);
+
+    widget_rect_t *rect = (widget_rect_t *)
+        g.g_object_get_data(box, NUCLEUS_RECT_KEY);
+    if (rect == NULL) {
+        rect = (widget_rect_t *) calloc(1, sizeof(*rect));
+        if (rect == NULL) return;
+        g.g_object_set_data_full(box, NUCLEUS_RECT_KEY, rect, free);
+    }
+    if (rect->valid && rect->x == x_logical && rect->y == y_logical &&
+        rect->w == w_logical && rect->h == h_logical) return;
+    rect->x = x_logical; rect->y = y_logical;
+    rect->w = w_logical; rect->h = h_logical;
+    rect->valid = 1;
+
+    GtkWidget *overlay = g.gtk_widget_get_parent(box);
+    if (overlay != NULL) g.gtk_widget_queue_resize(overlay);
+}
+
+EXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeSetInputBoxCallback(
+    JNIEnv *env, jclass clazz, jlong box_ptr, jobject callback)
+{
+    (void) clazz;
+    if (!ensure_gtk_loaded()) return;
+    if (box_ptr == 0) return;
+    GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
+    /* Drop any previous callback global ref. */
+    jobject prev = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
+    if (prev != NULL) {
+        (*env)->DeleteGlobalRef(env, prev);
+        g.g_object_set_data(box, "nucleus_tao_overlay_cb", NULL);
+    }
+    if (callback == NULL) return;
+    ensure_callback_cache(env, callback);
+    jobject globalRef = (*env)->NewGlobalRef(env, callback);
+    g.g_object_set_data(box, "nucleus_tao_overlay_cb", globalRef);
+}
+
+EXPORT void JNICALL
+Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRemoveInputBox(
+    JNIEnv *env, jclass clazz, jlong box_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded()) return;
+    if (box_ptr == 0) return;
+    GtkWidget *box = (GtkWidget *) (uintptr_t) box_ptr;
+    fprintf(stderr, "[nucleus_tao_widget] nativeRemoveInputBox box=%p\n", (void *) box);
+    /* Release callback global ref before destroying. */
+    jobject cb = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
+    if (cb != NULL) {
+        (*env)->DeleteGlobalRef(env, cb);
+        g.g_object_set_data(box, "nucleus_tao_overlay_cb", NULL);
+    }
+    /* During app shutdown, GTK destroys the toplevel which transitively
+     * destroys our EventBox before our DisposableEffect onDispose runs.
+     * Calling gtk_widget_destroy on a stale pointer crashes with
+     * `assertion 'GTK_IS_WIDGET (widget)' failed`. Validate the type
+     * tag first via the GObject ABI so we silently skip in that case
+     * instead of polluting the logs. */
+    static gulong (*p_gtk_widget_get_type)(void) = NULL;
+    if (p_gtk_widget_get_type == NULL) {
+        void *libgtk = dlopen("libgtk-3.so.0", RTLD_NOW | RTLD_GLOBAL);
+        if (libgtk != NULL) {
+            p_gtk_widget_get_type = (gulong (*)(void)) dlsym(libgtk, "gtk_widget_get_type");
+        }
+    }
+    if (p_gtk_widget_get_type != NULL && g.g_type_check_instance_is_a != NULL) {
+        if (!g.g_type_check_instance_is_a(box, p_gtk_widget_get_type())) {
+            fprintf(stderr, "[nucleus_tao_widget]   already destroyed, skipping\n");
+            return;
+        }
+    }
+    /* gtk_widget_destroy unparents from the GtkOverlay and releases
+     * the GdkWindow + signal handlers; the rect cache attached via
+     * g_object_set_data_full is freed by the destroy notify. */
+    g.gtk_widget_destroy(box);
 }

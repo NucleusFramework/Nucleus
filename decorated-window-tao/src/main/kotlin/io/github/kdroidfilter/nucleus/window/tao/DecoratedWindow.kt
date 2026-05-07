@@ -304,6 +304,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalRequestedTitleBarHeight provides titleBarHeightState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoLinuxOverlayController
+                    provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
                 // `Desktop.browse` → initialises XAWT → deadlocks our GLX
                 // loop). See [TaoLinuxUriHandler].

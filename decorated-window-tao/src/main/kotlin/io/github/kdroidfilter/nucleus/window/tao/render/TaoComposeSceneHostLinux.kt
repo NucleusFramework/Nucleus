@@ -845,6 +845,15 @@ internal class TaoComposeSceneHostLinux(
     fun onPointerMove(aFixed: Int, bFixed: Int) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
+        // Throttled log: print only when y differs by more than 50 px
+        // from the last logged value to avoid spamming.
+        if (kotlin.math.abs(yPx - lastLoggedMoveY) > 50f) {
+            System.err.println(
+                "[TaoComposeSceneHostLinux] onPointerMove pos=($xPx,$yPx)",
+            )
+            System.err.flush()
+            lastLoggedMoveY = yPx
+        }
         lastPointerX = xPx
         lastPointerY = yPx
         scene?.sendPointerEvent(
@@ -853,6 +862,7 @@ internal class TaoComposeSceneHostLinux(
             type = PointerType.Mouse,
         )
     }
+    private var lastLoggedMoveY: Float = Float.NEGATIVE_INFINITY
 
     fun onPointerExited() {
         // ⚠️ Don't dispatch PointerEventType.Exit here on Linux.
@@ -872,6 +882,11 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onPointerButton(buttonCode: Int, pressed: Boolean) {
+        System.err.println(
+            "[TaoComposeSceneHostLinux] onPointerButton button=$buttonCode pressed=$pressed " +
+                "pos=($lastPointerX,$lastPointerY) sceneNonNull=${scene != null}",
+        )
+        System.err.flush()
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -999,6 +1014,55 @@ internal class TaoComposeSceneHostLinux(
         }
     }
 
+    /**
+     * Plumbing for the overlay slot of `NativeView` on Linux. Returns
+     * a freshly-created controller bound to this host's EGL
+     * attachment so [io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents]
+     * modifiers in the `content` lambda can register their bounds and
+     * have the EGL surface's input region updated accordingly.
+     *
+     * One controller per window — multiple `NativeView`s inside the
+     * same window share its rect set, which is fine because input
+     * region is a window-level single list.
+     */
+    private val overlayController: TaoLinuxOverlayControllerImpl =
+        TaoLinuxOverlayControllerImpl(
+            // Resolve lazily — the GtkApplicationWindow handle is
+            // stable after attach() but Tao may not have wired it
+            // yet at host construction time.
+            gtkWindowProvider = {
+                if (window.handle == 0L) 0L
+                else io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge
+                    .nativeLinuxGtkWindow(window.handle)
+            },
+            scaleProvider = { scale },
+            moveDispatcher = { xPx, yPx ->
+                // Reuse the same fixed-precision wire format as Tao's
+                // native CursorMoved dispatcher (×1024). `onPointerMove`
+                // divides back by 1024 to recover the physical-px
+                // float position.
+                onPointerMove(xPx * 1024, yPx * 1024)
+            },
+            buttonDispatcher = { button, pressed ->
+                onPointerButton(button, pressed)
+            },
+            focusReleaseDispatcher = {
+                // Compose's `focusManager.releaseFocus()` deselects
+                // the currently-focused widget (e.g. the URL field's
+                // BasicTextField) — mirrors macOS's
+                // `resignFirstResponder` callback. Triggered when
+                // GTK's `focus-out-event` fires on our EventBox =
+                // the user clicked outside the overlay (typically on
+                // the embedded WebView).
+                scene?.focusManager?.releaseFocus()
+            },
+        )
+
+    fun overlayController(): TaoLinuxOverlayController? {
+        if (window.handle == 0L) return null
+        return overlayController
+    }
+
     fun detach() {
         if (io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxDndBridge.isLoaded &&
             window.handle != 0L
@@ -1039,6 +1103,9 @@ internal class TaoComposeSceneHostLinux(
         scene = null
         directContext?.close()
         directContext = null
+        // Clear any input region we may have set while the window was
+        // alive; harmless even if the EGL surface is about to go away.
+        overlayController.dispose()
         if (attachmentHandle != 0L) {
             NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)

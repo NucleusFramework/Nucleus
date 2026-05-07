@@ -172,6 +172,13 @@
             "jniAccessible": true
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoLinuxWidgetBridge$OverlayInputCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
+            ]
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },

@@ -6,40 +6,60 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoLinuxOverlayController
 import kotlin.math.roundToInt
 
 /**
  * Marks the modified Compose region as a pointer-event **consumer**
- * inside a surrounding [NativeView]'s `content` overlay slot. AppKit
+ * inside a surrounding [NativeView]'s `content` overlay slot. Native
  * pointer events that land inside the modified bounds are intercepted
- * by the overlay panel and routed to its `ComposeScene` (so a
+ * by the Compose overlay and routed to its scene (so a
  * `BasicTextField`, `Button`, etc. wrapped with this modifier behave
  * like normal Compose UI). Events outside any consumer region pass
- * through to the underlying native subview (typically a `WKWebView`).
+ * through to the underlying native widget (typically a `WKWebView` /
+ * `WebKitWebView`).
  *
- * Without this modifier, the overlay slot is effectively paint-only —
- * Compose pixels above the native view, but every click reaches the
- * view underneath. Wrap interactive widgets with
- * `consumeOverlayPointerEvents()` so they actually receive their
- * input.
- *
- * Outside a [NativeView]'s content slot (or on Windows / Linux), this
- * modifier is a no-op so call sites stay portable.
+ *  - **macOS**: the consumer rect is registered with the overlay
+ *    controller, which feeds the sibling overlay NSView's
+ *    region-based `hitTest:`. AppKit's native `mouseDown:` handler
+ *    automatically calls `[window makeFirstResponder:overlay]` so
+ *    keystrokes route to the overlay's `ComposeScene` without any
+ *    extra Kotlin-side hop.
+ *  - **Linux**: the consumer rect is registered with the Linux
+ *    overlay controller, which updates the EGL subsurface's input
+ *    region (`wl_surface.set_input_region` / `XShape ShapeInput`).
+ *    Releasing GTK's focused widget on press happens at a different
+ *    layer (`GtkWidgetEmbedding`'s outer Box) so this modifier stays
+ *    a pure observer of layout — adding a `pointerInput` here was
+ *    found to silently swallow events from descendants in some
+ *    Compose configurations.
+ *  - **Windows / outside any `NativeView`**: no-op so call sites
+ *    stay portable.
  */
 fun Modifier.consumeOverlayPointerEvents(): Modifier = composed {
-    val controller = LocalNativeViewOverlayController.current ?: return@composed this
+    val mac = LocalNativeViewOverlayController.current
+    val linux = LocalTaoLinuxOverlayController.current
+    if (mac == null && linux == null) return@composed this
+
     val key = remember { Any() }
-    DisposableEffect(controller, key) {
-        onDispose { controller.unregisterRegion(key) }
+    DisposableEffect(mac, linux, key) {
+        onDispose {
+            mac?.unregisterRegion(key)
+            linux?.unregisterRegion(key)
+        }
     }
+
     onGloballyPositioned { coords ->
         val pos = coords.positionInRoot()
-        controller.registerRegion(
-            key = key,
-            xPx = pos.x.roundToInt(),
-            yPx = pos.y.roundToInt(),
-            widthPx = coords.size.width,
-            heightPx = coords.size.height,
+        val xPx = pos.x.roundToInt()
+        val yPx = pos.y.roundToInt()
+        val wPx = coords.size.width
+        val hPx = coords.size.height
+        System.err.println(
+            "[consumeOverlayPointerEvents] onGloballyPositioned key=${System.identityHashCode(key)} " +
+                "rect=($xPx,$yPx,$wPx,$hPx) mac=${mac != null} linux=${linux != null}",
         )
+        mac?.registerRegion(key, xPx, yPx, wPx, hPx)
+        linux?.registerRegion(key, xPx, yPx, wPx, hPx)
     }
 }

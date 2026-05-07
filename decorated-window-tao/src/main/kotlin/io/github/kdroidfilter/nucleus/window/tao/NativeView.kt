@@ -11,13 +11,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoLinuxOverlayController
 import io.github.kdroidfilter.nucleus.window.tao.render.LocalTaoPopupHost
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -64,7 +71,7 @@ fun NativeView(
 
     when (view) {
         is NucleusPlatformView.NsView -> NsViewEmbedding(view, modifier, cornerRadius, content)
-        is NucleusPlatformView.GtkWidget -> GtkWidgetEmbedding(view, modifier)
+        is NucleusPlatformView.GtkWidget -> GtkWidgetEmbedding(view, modifier, content)
         is NucleusPlatformView.HWnd -> Box(modifier) // Not yet implemented.
     }
 }
@@ -164,22 +171,34 @@ private fun NsViewEmbedding(
 
 /**
  * Linux GTK widget embedding path — direct equivalent of
- * [NsViewEmbedding] but without the overlay slot. Falls back to an
- * empty `Box(modifier)` when the runtime isn't Linux or the GTK host
- * isn't available.
+ * [NsViewEmbedding]. The [content] slot **is** supported on Linux,
+ * unlike the simpler "no overlay" mode the file used to ship with:
+ * the embedded `GtkWidget*` paints into GTK's window buffer, the
+ * Compose scene composites on top with alpha, and `content` lives
+ * inline in that scene — overlap with the embedded rect is naturally
+ * handled by Compose's own draw order.
  *
- * The user's `GtkWidget*` is reparented into Tao's content widget at
- * attach time, sized via `gtk_widget_set_size_request`, and removed at
- * dispose. The Compose surface composites on top of GTK with alpha;
- * the [Box] is left transparent so the widget shows through.
+ * Hit-test passthrough is region-based, mirroring macOS:
+ * descendants of [content] that wrap themselves in
+ * [io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents]
+ * register their bounds with the host's [TaoLinuxOverlayController];
+ * the EGL surface's input region is the union of those rects, so
+ * outside of them every click falls through to GTK and reaches the
+ * embedded widget.
+ *
+ * Falls back to an empty `Box(modifier)` when the runtime isn't
+ * Linux or the GTK host isn't available.
  */
 @Composable
 private fun GtkWidgetEmbedding(
     view: NucleusPlatformView.GtkWidget,
     modifier: Modifier,
+    content: @Composable () -> Unit,
 ) {
     val host = LocalTaoNativeViewHost.current
+    val overlayController = LocalTaoLinuxOverlayController.current
     val handle = view.gtkWidgetHandle
+    val latestContent by rememberUpdatedState(content)
 
     if (Platform.Current != Platform.Linux || host == null || handle == 0L) {
         Box(modifier)
@@ -193,18 +212,22 @@ private fun GtkWidgetEmbedding(
 
     val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
     Box(
+        // `drawWithContent` lets us strictly order:
+        //   1. Clear the destination to alpha=0 so any opaque
+        //      ancestor `background(...)` painted earlier in the
+        //      scene doesn't sit on top of GTK's surface buffer in
+        //      the EGL composite step and hide the embedded widget.
+        //   2. Then draw children (the overlay `content()`) on top.
+        // Doing this with a sibling `Box(...).drawBehind { Clear }`
+        // worked for opaque widgets but caused the partial-erase
+        // artefact on AA glyph edges — Compose's draw ordering with
+        // `matchParentSize` siblings + internal RenderNodes (ripple,
+        // shadows) doesn't always serialise the way you'd expect. A
+        // single `drawWithContent` is unambiguous.
         modifier = modifier
-            // Punch a fully transparent hole in the Compose scene at
-            // the embedded widget's bounds. Without this, any opaque
-            // ancestor `background(...)` painted earlier in the scene
-            // (e.g. the dark theme background of WebViewTab) would
-            // sit on top of GTK's surface buffer in the EGL composite
-            // step and hide the embedded widget. `BlendMode.Clear`
-            // resets the destination alpha to 0 in the painted rect
-            // so the compositor blends through to the GTK widget
-            // underneath.
-            .drawBehind {
+            .drawWithContent {
                 drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
+                drawContent()
             }
             .onGloballyPositioned { coords ->
                 val pos = coords.positionInRoot()
@@ -219,7 +242,38 @@ private fun GtkWidgetEmbedding(
                     host.setFrame(handle, xPx, yPx, wPx, hPx)
                 }
             },
-    )
+    ) {
+        // Wrap the overlay slot in an offscreen graphics layer:
+        // children paint into a private buffer (initially fully
+        // transparent), then the buffer composites onto the cleared
+        // parent canvas. This isolates Compose's internal AA
+        // blending from our `BlendMode.Clear` background — without
+        // it, glyph edges with alpha < 1 blend with the
+        // already-cleared destination in odd ways and look
+        // partially erased.
+        Box(
+            modifier = Modifier.graphicsLayer {
+                compositingStrategy = CompositingStrategy.Offscreen
+            },
+        ) {
+            // Overlay slot — rendered inside the *same* Compose
+            // scene as the rest of the window (no second scene /
+            // Metal layer like macOS). Interactive widgets register
+            // with [overlayController] via
+            // [Modifier.consumeOverlayPointerEvents] so their rect
+            // joins the EGL surface's input region. Outside of those
+            // rects clicks fall through to the embedded GTK widget.
+            if (overlayController != null) {
+                CompositionLocalProvider(
+                    LocalTaoLinuxOverlayController provides overlayController,
+                ) {
+                    latestContent()
+                }
+            } else {
+                latestContent()
+            }
+        }
+    }
 }
 
 /** Plumbing CompositionLocal — provided by `DecoratedWindow`. */
