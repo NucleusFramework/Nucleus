@@ -237,6 +237,7 @@ internal class NativeViewOverlayControllerWindows(
                         PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
                         else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
                     }
+                    System.err.println("[cursor] setPointerIcon icon=$pointerIcon code=$code overlay=$overlayHandle")
                     NativeTaoWindowsOverlayBridge.nativeSetCursor(overlayHandle, code)
                 }
             }

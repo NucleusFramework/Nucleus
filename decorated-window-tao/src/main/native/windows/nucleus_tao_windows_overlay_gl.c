@@ -53,7 +53,13 @@ static volatile LONG sWglExtLoaded = 0;
 #define WGL_CONTEXT_PROFILE_MASK_ARB              0x9126
 #define WGL_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB 0x00000002
 
-/* Cached host bridge function pointers. */
+/* Cached host bridge function pointers. Resolved opportunistically via
+ * GetModuleHandle/GetProcAddress; if that fails (e.g. under GraalVM
+ * native-image where the DLL filename is mangled, or if the host DLL
+ * isn't loaded yet), we fall back to wglGetCurrent{Context,DC}() —
+ * the host's WGL state is current at overlay creation time anyway,
+ * because nativeCreateOverlay is called from inside Compose composition
+ * which runs mid-render. */
 typedef HGLRC (*PFN_nucleus_tao_host_hglrc)(void);
 typedef int   (*PFN_nucleus_tao_host_pixel_format)(PIXELFORMATDESCRIPTOR *);
 static PFN_nucleus_tao_host_hglrc        pHostHglrc        = NULL;
@@ -216,23 +222,33 @@ BOOL nucleus_tao_overlay_gl_init(GlSurface *gl) {
      * We still apply DwmEnableBlurBehindWindow + DWM polish on the
      * overlay HWND so DWM honors its back-buffer alpha (the host HWND
      * stays opaque because it's not armed). */
+    /* Resolve host HGLRC + pixel format. Two paths:
+     *   (A) Cross-DLL accessors exported by nucleus_tao_gl.dll
+     *       (preferred — works at any time, before/during/after host render)
+     *   (B) Snapshot wglGetCurrent{Context,DC}()
+     *       (fallback — works because overlay creation runs mid-render
+     *        when host's WGL is current). Used when GetModuleHandle
+     *        returns NULL — e.g. GraalVM native-image renames the DLL
+     *        on extraction. */
     HGLRC hostHglrc = pHostHglrc ? pHostHglrc() : NULL;
-    if (!hostHglrc) {
-        /* Host hasn't initialized its WGL yet (shouldn't happen in
-         * practice — overlay creation always follows host attach). */
-        ReleaseDC(hwnd, hdc);
-        return FALSE;
-    }
-
     int hostFormat = 0;
     PIXELFORMATDESCRIPTOR pfd;
     ZeroMemory(&pfd, sizeof(pfd));
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
-    if (pHostPixelFormat) {
-        hostFormat = pHostPixelFormat(&pfd);
-    }
+    if (pHostPixelFormat) hostFormat = pHostPixelFormat(&pfd);
+
+    if (!hostHglrc) hostHglrc = wglGetCurrentContext();
     if (hostFormat == 0) {
+        HDC hostDc = wglGetCurrentDC();
+        if (hostDc) {
+            hostFormat = GetPixelFormat(hostDc);
+            if (hostFormat) {
+                DescribePixelFormat(hostDc, hostFormat, sizeof(pfd), &pfd);
+            }
+        }
+    }
+    if (!hostHglrc || hostFormat == 0) {
         ReleaseDC(hwnd, hdc);
         return FALSE;
     }
