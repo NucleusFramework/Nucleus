@@ -12,9 +12,11 @@ package io.github.kdroidfilter.nucleus.window.tao
  *    exposes a raw `GtkWidget*` handle (typically a `WebKitWebView`,
  *    `GtkGLArea`, etc.). **No overlay slot** — the `content` lambda
  *    of `NativeView` is ignored on Linux.
- *  - [HWnd] on Windows — child HWND embedding via `SetParent`. Not
- *    implemented yet; the variant exists so the API can ship cross-
- *    platform without later breaking changes.
+ *  - [HWnd] on Windows — child HWND reparented under the Tao main HWND
+ *    via `SetParent`, sized via `SetWindowPos`, clipped with
+ *    `SetWindowRgn(CreateRoundRectRgn)` for rounded corners. Supports
+ *    the [content] overlay slot via a sibling top-level WS_POPUP HWND
+ *    with a transparent WGL context (see `NativeViewOverlayControllerWindows`).
  *
  * The default empty implementations let host code call lifecycle
  * methods unconditionally without forcing every variant to override
@@ -75,10 +77,10 @@ sealed interface NucleusPlatformView {
     }
 
     /**
-     * Windows variant — child HWND attached via `SetParent`, with an
-     * overlay HWND using `WS_EX_LAYERED | WS_EX_TRANSPARENT` for the
-     * Compose `content` slot. **Not implemented yet** — the variant
-     * exists so the API surface is forward-compatible.
+     * Windows variant — child HWND reparented under the Tao main HWND
+     * via `SetParent`, with the [content] overlay slot rendered in a
+     * sibling top-level WS_POPUP HWND owning its own transparent WGL
+     * context (see `NativeViewOverlayControllerWindows`).
      */
     interface HWnd : NucleusPlatformView {
         /** Pointer to the user-supplied `HWND` (cast to Long). */

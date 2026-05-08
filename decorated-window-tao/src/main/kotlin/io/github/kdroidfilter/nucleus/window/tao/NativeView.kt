@@ -42,8 +42,9 @@ import kotlin.math.roundToInt
  *  - [NucleusPlatformView.GtkWidget] — Linux, GTK widget reparented
  *    into Tao's content widget. **No overlay support**: the [content]
  *    slot is silently ignored.
- *  - [NucleusPlatformView.HWnd] — Windows, child HWND (not implemented
- *    yet).
+ *  - [NucleusPlatformView.HWnd] — Windows, child HWND reparented under
+ *    the Tao main HWND. Supports the [content] overlay slot via a
+ *    sibling top-level WS_POPUP HWND with a transparent WGL context.
  *
  * Variants whose backend isn't implemented (or whose runtime type
  * doesn't match the current OS) fall back to an empty `Box(modifier)`.

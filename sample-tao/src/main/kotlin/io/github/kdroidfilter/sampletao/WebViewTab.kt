@@ -361,23 +361,34 @@ private fun createSampleWebViewPlatformView(
         }
     }
     Platform.Windows -> {
-        require(parentHwnd != 0L) { "WebViewTab: parent HWND not yet realised; LocalTaoWindow missing" }
-        val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
-        require(ptr != 0L) { "wry WebView creation failed (WebView2 Runtime missing?)" }
-        onController(WindowsSampleWebViewController(ptr))
-        object : NucleusPlatformView.HWnd {
-            override val hwndHandle: Long = ptr
-            override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                // wry's WebView2 controller attaches directly to the parent
-                // HWND (no hosting HWND), so the controller's bounds (x, y,
-                // w, h) is what positions the WebView. setFrame on the
-                // returned HWND has no visual effect — the controller draws
-                // on top regardless of the HWND rect.
-                SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
+        // The Tao HWND may not be realised yet on the very first
+        // composition of this tab. Returning a HWnd with handle = 0L
+        // lets `HwndEmbedding`'s fallback render an empty `Box` until
+        // the next composition where `LocalTaoWindow.nativeHandle` is
+        // populated. Hard-failing here would crash the sample at startup.
+        if (parentHwnd == 0L) {
+            object : NucleusPlatformView.HWnd {
+                override val hwndHandle: Long = 0L
+                override fun dispose() {}
             }
-            override fun dispose() {
-                SampleWebViewWindowsBridge.nativeRelease(ptr)
-                onController(null)
+        } else {
+            val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
+            require(ptr != 0L) { "wry WebView creation failed (WebView2 Runtime missing?)" }
+            onController(WindowsSampleWebViewController(ptr))
+            object : NucleusPlatformView.HWnd {
+                override val hwndHandle: Long = ptr
+                override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                    // wry's WebView2 controller attaches directly to the
+                    // parent HWND (no hosting HWND), so the controller's
+                    // bounds (x, y, w, h) is what positions the WebView.
+                    // setFrame on the returned HWND has no visual effect —
+                    // the controller draws on top regardless of the HWND rect.
+                    SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
+                }
+                override fun dispose() {
+                    SampleWebViewWindowsBridge.nativeRelease(ptr)
+                    onController(null)
+                }
             }
         }
     }
