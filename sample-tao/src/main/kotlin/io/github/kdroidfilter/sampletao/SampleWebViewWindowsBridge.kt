@@ -3,14 +3,21 @@ package io.github.kdroidfilter.sampletao
 import io.github.kdroidfilter.nucleus.core.runtime.NativeLibraryLoader
 
 /**
- * JNI bridge to `windows-rs/src/lib.rs` — a `wry`-backed real WebView2
- * instance for the sample-tao "WebView" tab demo.
+ * JNI bridge to the C++ WebView2 wrapper at
+ * `windows/sample_webview.cpp` — a direct
+ * `CoreWebView2CompositionController` + DirectComposition implementation
+ * for the sample-tao "WebView" tab demo.
  *
- * `nativeCreate(parentHwnd, initialUrl)` creates the WebView as a
- * child of the Tao main HWND and returns the hosting HWND that
- * `NativeView` can reparent into its own bounds. WebView2 Runtime
- * must be installed on the target machine (bundled with Edge on
- * modern Windows; install the Evergreen Bootstrapper if missing).
+ * `nativeCreate(parentHwnd, initialUrl)` creates the WebView in a DComp
+ * tree owned by us and returns an opaque handle. The WebView is
+ * positioned and clipped via [nativeSetBounds] and [nativeSetCornerRadius]
+ * — DComp clipping is what makes `cornerRadius` actually visible on
+ * Windows (`SetWindowRgn` doesn't work because WebView2 paints via
+ * DComp, bypassing the GDI region pipeline).
+ *
+ * WebView2 Runtime must be installed on the target machine (bundled
+ * with Edge on modern Windows; install the Evergreen Bootstrapper if
+ * missing).
  *
  * Threading: every entry point must run on the Tao main thread (=
  * the thread that owns `parentHwnd`). WebView2's controller is STA,
@@ -22,9 +29,18 @@ internal object SampleWebViewWindowsBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(
         LIBRARY_NAME,
         SampleWebViewWindowsBridge::class.java,
+        // The C++ side calls `LoadLibraryW("WebView2Loader.dll")` after
+        // adding its own directory to the DLL search path; the loader
+        // must therefore sit next to sample_tao_webview.dll in the
+        // extracted cache directory.
+        sidecarFiles = listOf("WebView2Loader.dll"),
     )
 
-    /** Creates a wry WebView under [parentHwnd] and returns its hosting HWND. */
+    /**
+     * Creates a WebView2 instance attached to a DComp tree owned by the
+     * native side, anchored on [parentHwnd]. Returns an opaque handle (NOT
+     * an HWND — the WebView has no Win32 child HWND visible to callers).
+     */
     @JvmStatic
     external fun nativeCreate(parentHwnd: Long, initialUrl: String): Long
 
@@ -56,12 +72,20 @@ internal object SampleWebViewWindowsBridge {
     external fun nativeIsLoading(handle: Long): Boolean
 
     /**
-     * Sets the WebView2 controller's drawing rect inside the parent
-     * HWND's client area. wry on Windows attaches the controller
-     * directly to the parent HWND (no intermediate hosting HWND), so
-     * the controller's `put_Bounds(x, y, w, h)` is what positions the
-     * WebView visually — not `SetWindowPos` on the returned HWND.
+     * Sets the WebView's drawing rect. We position via the DComp visual's
+     * offset (`SetOffsetX/Y`) and size the controller via `put_Bounds` in
+     * controller-local coords (origin at the top-left of our root visual).
+     * Coords are in physical pixels relative to the parent HWND's client area.
      */
     @JvmStatic
     external fun nativeSetBounds(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int)
+
+    /**
+     * Applies a uniform rounded-rectangle clip on the WebView via DComp's
+     * `IDCompositionRectangleClip`. Pass `0f` to remove. Cornerradius is
+     * capped natively at `min(w, h) / 2` so callers can pass `+Inf` for
+     * fully circular.
+     */
+    @JvmStatic
+    external fun nativeSetCornerRadius(handle: Long, radiusPx: Float)
 }

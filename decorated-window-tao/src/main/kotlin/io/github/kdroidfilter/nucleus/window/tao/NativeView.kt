@@ -101,10 +101,18 @@ private fun HwndEmbedding(
     val handle = view.hwndHandle
     val latestContent by rememberUpdatedState(content)
 
-    if (Platform.Current != Platform.Windows || host == null || popupHost == null || handle == 0L) {
+    if (Platform.Current != Platform.Windows || host == null || popupHost == null) {
         Box(modifier)
         return
     }
+    // [handle == 0L] used to bail out here too, but DComp-backed views
+    // (WebView2 via its CompositionController) intentionally expose a
+    // null HWND because they live in a visual tree, not as Win32 child
+    // windows. The host's `attach`/`setFrame`/`setCornerRadius` calls
+    // are no-ops on a non-window handle (defensive `IsWindow` check on
+    // the C side) — safe to let through. Positioning + clipping happens
+    // entirely via the view-impl's own [setBounds] / [setCornerRadius]
+    // overrides (e.g. WebView2 driving its DComp visual).
 
     val overlay = remember(host, popupHost) {
         NativeViewOverlayControllerWindows(host, popupHost)
@@ -163,7 +171,14 @@ private fun HwndEmbedding(
                 } else {
                     cornerRadiusPx
                 }
+                // Two complementary clip paths: the host applies
+                // `SetWindowRgn` on the user HWND (works for regular
+                // GDI/HWND-painted children), AND the view-impl gets
+                // a chance to apply its own clip on whatever surface
+                // it renders into. The latter is what makes WebView2's
+                // DComp-painted content actually round its corners.
                 host.setCornerRadius(handle, radiusToApply)
+                view.setCornerRadius(radiusToApply)
             }
         },
     )
@@ -257,6 +272,7 @@ private fun NsViewEmbedding(
                     cornerRadiusPx
                 }
                 host.setCornerRadius(handle, radiusToApply)
+                view.setCornerRadius(radiusToApply)
             }
         },
     )

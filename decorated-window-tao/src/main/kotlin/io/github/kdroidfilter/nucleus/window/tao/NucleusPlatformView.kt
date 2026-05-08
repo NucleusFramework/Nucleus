@@ -47,6 +47,20 @@ sealed interface NucleusPlatformView {
     fun clearFocus() {}
 
     /**
+     * Applies a uniform rounded-rectangle clip to the embedded view in
+     * physical pixels. Default no-op — implementors override when the
+     * platform host's generic clipping path (e.g. `SetWindowRgn` on
+     * Windows, `CALayer.cornerRadius` on macOS) cannot reach the view's
+     * rendered surface. The canonical case is Windows WebView2, which
+     * paints via DirectComposition and ignores `SetWindowRgn`; the impl
+     * applies the clip on its own DComp visual instead.
+     *
+     * Pass [Float.POSITIVE_INFINITY] for fully circular clipping;
+     * the impl should cap at `min(w, h) / 2`.
+     */
+    fun setCornerRadius(radiusPx: Float) {}
+
+    /**
      * Final teardown. After this returns, the platform handle is no
      * longer accessed by Nucleus. Implementations should release any
      * native resources they own.

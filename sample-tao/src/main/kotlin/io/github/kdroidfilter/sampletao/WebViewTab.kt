@@ -373,17 +373,22 @@ private fun createSampleWebViewPlatformView(
             }
         } else {
             val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
-            require(ptr != 0L) { "wry WebView creation failed (WebView2 Runtime missing?)" }
+            require(ptr != 0L) { "WebView2 init failed (WebView2 Runtime missing?)" }
             onController(WindowsSampleWebViewController(ptr))
             object : NucleusPlatformView.HWnd {
-                override val hwndHandle: Long = ptr
+                // Opaque handle, NOT a real HWND. We don't expose a Win32
+                // child HWND to NativeView's reparenting path because the
+                // WebView lives in a DComp tree owned by the C++ side.
+                // Returning 0L causes `host.attach`/`detach` to no-op
+                // safely; positioning happens entirely via setBounds.
+                override val hwndHandle: Long = 0L
                 override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
-                    // wry's WebView2 controller attaches directly to the
-                    // parent HWND (no hosting HWND), so the controller's
-                    // bounds (x, y, w, h) is what positions the WebView.
-                    // setFrame on the returned HWND has no visual effect —
-                    // the controller draws on top regardless of the HWND rect.
                     SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
+                }
+                override fun setCornerRadius(radiusPx: Float) {
+                    // Real DComp clip — `SetWindowRgn` on a fake HWND
+                    // wouldn't reach the WebView2 surface anyway.
+                    SampleWebViewWindowsBridge.nativeSetCornerRadius(ptr, radiusPx)
                 }
                 override fun dispose() {
                     SampleWebViewWindowsBridge.nativeRelease(ptr)
