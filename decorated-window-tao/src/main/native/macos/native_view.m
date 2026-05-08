@@ -367,7 +367,22 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
     if (parent == nil) return 0;
     NucleusTaoNativeOverlayView *overlay =
         [[NucleusTaoNativeOverlayView alloc] initWithFrame:parent.bounds];
-    overlay.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    // Intentionally NO autoresizingMask. We previously set
+    // `NSViewWidthSizable | NSViewHeightSizable` so the overlay would
+    // visually track parent resizes "for free", but that creates two
+    // independent frame writers competing during a window live-resize:
+    //
+    //   1. AppKit autoresize fires synchronously per-resize-tick and
+    //      stretches the overlay's frame to match the parent's new
+    //      bounds.
+    //   2. Compose's `NativeView.onGloballyPositioned` → `setFrame`
+    //      lands one frame later, committed inside the host's interop
+    //      CATransaction.
+    //
+    // Each tick the overlay flips between AppKit's auto-stretched
+    // frame and Compose's explicit frame — the visible result is the
+    // overlay's drawn region jittering during every drag. Compose
+    // owns the overlay's frame end-to-end; AppKit must stay out.
     overlay.wantsLayer = YES;
     [parent addSubview:overlay positioned:NSWindowAbove relativeTo:nil];
     void *retained = (__bridge_retained void *)overlay;

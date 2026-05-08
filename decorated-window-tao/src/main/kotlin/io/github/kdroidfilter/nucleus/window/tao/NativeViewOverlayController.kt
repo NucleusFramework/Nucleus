@@ -229,76 +229,105 @@ internal class NativeViewOverlayController(
             widthPxNew == widthPx && heightPxNew == heightPx
         if (frameUnchanged) return
         val capturedHandle = overlayNsView
+
+        // Steady-state path: defer EVERYTHING (AppKit setFrame, Metal
+        // layer resize, ComposeScene size) into a single CATransaction
+        // committed by the host's interop scheduler. The three updates
+        // MUST land atomically because they read each other:
+        //
+        //   * `nativeResize` does `att->layer.frame = att->view.bounds`,
+        //     so it has to run AFTER `nativeSetOverlayFrame` updated
+        //     `view.frame` (and thus `view.bounds`) — otherwise the
+        //     CAMetalLayer keeps its old `.frame` and the next presented
+        //     drawable shows the new-size texture clipped/positioned
+        //     inside the old-size layer rect. Visually: the overlay
+        //     "lags" or flickers during a window live-resize.
+        //   * `scene.size` is the ComposeScene's own viewport for
+        //     popup clamping / hit-test bounds; doing it in the same
+        //     transaction keeps it in lock-step with the surface size.
+        //
+        // The bookkeeping (`lastFrame*`, `widthPx`, `heightPx`, `overlayOffset*`)
+        // updates synchronously so a follow-up `setBoundsInternal` call
+        // sees the latest values; the captured locals carry the new
+        // values into the deferred block independent of any racing
+        // bookkeeping change.
         if (firstBoundsApplied) {
-            // Steady state: route the AppKit setFrame through the host's
-            // interop transaction so the overlay reposition commits in
-            // the same CATransaction as the user's NSView frame change.
-            // Without this, a parent animation moving both at once would
-            // visually de-sync by one frame (overlay catches up next paint).
+            val capturedAttachment = attachmentHandle
+            val capturedScale = scale
+            val capturedScene = scene
             host.scheduleInterop {
                 NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
                     capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
                 )
+                if (capturedAttachment != 0L) {
+                    NativeMetalBridge.nativeResize(
+                        capturedAttachment, widthPxNew, heightPxNew, capturedScale,
+                    )
+                }
+                if (widthPxNew != widthPx || heightPxNew != heightPx) {
+                    capturedScene?.size = IntSize(widthPxNew, heightPxNew)
+                }
             }
-        } else {
-            // First call: apply eagerly. `nativeAttachOverlay` (just
-            // below) reads `view.bounds` to seed `layer.frame`; if we
-            // defer the setFrame, the Metal layer ends up sized to the
-            // parent's full bounds and the overlay renders at the wrong
-            // location until the next frame catches up — which on
-            // layer-hosted NSViews is never (CALayer.frame doesn't auto-
-            // follow NSView.frame post layer assignment).
-            NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-                capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
-            )
+            lastFrameX = xPx
+            lastFrameY = yPx
+            overlayOffsetX = xPx
+            overlayOffsetY = yPx
+            widthPx = widthPxNew
+            heightPx = heightPxNew
+            popupHost.requestRedraw()
+            return
         }
+
+        // First call: apply eagerly. `nativeAttachOverlay` (below) reads
+        // `view.bounds` to seed `layer.frame`; if we defer the setFrame,
+        // the Metal layer ends up sized to the parent's full bounds and
+        // the overlay renders at the wrong location until the next
+        // frame catches up — which on layer-hosted NSViews is never
+        // (CALayer.frame doesn't auto-follow NSView.frame post layer
+        // assignment).
+        NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
+            capturedHandle, xPx, yPx, widthPxNew, heightPxNew,
+        )
         lastFrameX = xPx
         lastFrameY = yPx
-        // Tracked live so `overlayPopupHost.coordinateOffset` returns the
-        // right value when popups reposition mid-flight.
         overlayOffsetX = xPx
         overlayOffsetY = yPx
-        if (widthPxNew == widthPx && heightPxNew == heightPx && firstBoundsApplied) return
         widthPx = widthPxNew
         heightPx = heightPxNew
 
-        if (!firstBoundsApplied) {
-            firstBoundsApplied = true
-            attachmentHandle = NativeMetalBridge.nativeAttachOverlay(overlayNsView)
-            require(attachmentHandle != 0L) { "Failed to attach overlay CAMetalLayer" }
-            directContext = DirectContext.makeMetal(
-                NativeMetalBridge.nativeDevicePtr(attachmentHandle),
-                NativeMetalBridge.nativeQueuePtr(attachmentHandle),
-            )
-            val ourPlatformContext = object : PlatformContext.Empty() {
-                override val windowInfo: WindowInfo get() = overlayWindowInfo
-                override fun setPointerIcon(pointerIcon: PointerIcon) {
-                    popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
-                }
+        firstBoundsApplied = true
+        attachmentHandle = NativeMetalBridge.nativeAttachOverlay(overlayNsView)
+        require(attachmentHandle != 0L) { "Failed to attach overlay CAMetalLayer" }
+        directContext = DirectContext.makeMetal(
+            NativeMetalBridge.nativeDevicePtr(attachmentHandle),
+            NativeMetalBridge.nativeQueuePtr(attachmentHandle),
+        )
+        val ourPlatformContext = object : PlatformContext.Empty() {
+            override val windowInfo: WindowInfo get() = overlayWindowInfo
+            override fun setPointerIcon(pointerIcon: PointerIcon) {
+                popupHost.setCursor(pointerIcon.toTaoCursorIconCode())
             }
-            // PlatformLayersComposeScene + TaoComposeSceneContext route any
-            // popup mounted from inside the overlay (text-field context
-            // menus, dropdowns, tooltips) through `TaoPopupSceneLayer` —
-            // i.e. into a real NSPanel parented to the host NSWindow.
-            // That's how those popups can extend beyond the overlay's
-            // bounds, intercept clicks themselves (instead of falling
-            // through to the user's native subview), and dismiss on
-            // outside-click via the panel's NSEvent local monitor.
-            scene = PlatformLayersComposeScene(
-                density = Density(scale),
-                layoutDirection = LayoutDirection.Ltr,
-                size = IntSize(widthPx, heightPx),
-                coroutineContext = popupHost.sceneCoroutineContext,
-                composeSceneContext = TaoComposeSceneContext(
-                    platformContext = ourPlatformContext,
-                    popupHost = overlayPopupHost,
-                ),
-                invalidate = { popupHost.requestRedraw() },
-            )
-            pendingContent?.let { scene?.setContent(it); pendingContent = null }
-        } else {
-            scene?.size = IntSize(widthPx, heightPx)
         }
+        // PlatformLayersComposeScene + TaoComposeSceneContext route any
+        // popup mounted from inside the overlay (text-field context
+        // menus, dropdowns, tooltips) through `TaoPopupSceneLayer` —
+        // i.e. into a real NSPanel parented to the host NSWindow.
+        // That's how those popups can extend beyond the overlay's
+        // bounds, intercept clicks themselves (instead of falling
+        // through to the user's native subview), and dismiss on
+        // outside-click via the panel's NSEvent local monitor.
+        scene = PlatformLayersComposeScene(
+            density = Density(scale),
+            layoutDirection = LayoutDirection.Ltr,
+            size = IntSize(widthPx, heightPx),
+            coroutineContext = popupHost.sceneCoroutineContext,
+            composeSceneContext = TaoComposeSceneContext(
+                platformContext = ourPlatformContext,
+                popupHost = overlayPopupHost,
+            ),
+            invalidate = { popupHost.requestRedraw() },
+        )
+        pendingContent?.let { scene?.setContent(it); pendingContent = null }
 
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         popupHost.requestRedraw()
