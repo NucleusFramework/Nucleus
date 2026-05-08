@@ -176,6 +176,14 @@
             ]
         },
         {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.NativeViewOverlayControllerWindows$OverlayCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] }
+            ]
+        },
+        {
             "type": "io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsOverlayBridge$OverlayKeyCallback",
             "jniAccessible": true,
             "methods": [
@@ -197,6 +205,22 @@
         },
         {
             "type": "io.github.kdroidfilter.nucleus.window.tao.PopupNativeBridgeWindows$OutsideClickListener",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupSceneLayerWindows$PopupEventCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] },
+                { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "io.github.kdroidfilter.nucleus.window.tao.render.TaoPopupSceneLayerWindows$PopupOutsideListener",
             "jniAccessible": true,
             "methods": [
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }

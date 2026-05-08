@@ -291,12 +291,11 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
         return 0;
 
     case WM_SETCURSOR:
-        /* Apply the per-overlay cursor when the pointer is in the
-         * overlay's client area. lParam HIWORD is the message hit-test
-         * code (HTCLIENT etc.); we only override for HTCLIENT — the
-         * resize/border zones (HTLEFT etc.) shouldn't apply since we
-         * don't have any. */
-        if (s && s->cursor && HIWORD(l) == HTCLIENT) {
+        /* WM_SETCURSOR lParam packs:
+         *   LOWORD = hit-test code (HTCLIENT, HTLEFT, ...)
+         *   HIWORD = mouse message id (WM_MOUSEMOVE etc.)
+         * We override the cursor only inside the client area. */
+        if (s && s->cursor && LOWORD(l) == HTCLIENT) {
             SetCursor(s->cursor);
             return TRUE;
         }

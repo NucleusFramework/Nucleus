@@ -156,6 +156,36 @@ internal class NativeViewOverlayControllerWindows(
     private var firstBoundsApplied = false
     private var pendingBounds: IntArray? = null
 
+    /**
+     * Per-region manual cursor override (consumeOverlayPointerEvents `cursor` param).
+     * Tracked per-key so nested or overlapping regions can each push/pop cursors
+     * without stomping each other; the most recently pushed value wins.
+     */
+    private val manualCursorByKey: LinkedHashMap<Any, PointerIcon> = LinkedHashMap()
+    private val manualCursor: PointerIcon?
+        get() = if (manualCursorByKey.isEmpty()) null else manualCursorByKey.values.last()
+
+    private fun applyCursor(icon: PointerIcon) {
+        val code = when (icon) {
+            PointerIcon.Text -> NativeTaoWindowsOverlayBridge.CURSOR_TEXT
+            PointerIcon.Hand -> NativeTaoWindowsOverlayBridge.CURSOR_HAND
+            PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
+            else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
+        }
+        if (overlayHandle != 0L) NativeTaoWindowsOverlayBridge.nativeSetCursor(overlayHandle, code)
+    }
+
+    fun pushManualCursor(key: Any, icon: PointerIcon) {
+        manualCursorByKey.remove(key)
+        manualCursorByKey[key] = icon
+        applyCursor(icon)
+    }
+
+    fun popManualCursor(key: Any) {
+        if (manualCursorByKey.remove(key) == null) return
+        applyCursor(manualCursor ?: PointerIcon.Default)
+    }
+
     fun attach() {
         if (overlayHandle != 0L) return
         overlayHandle = NativeTaoWindowsOverlayBridge.nativeCreateOverlay(popupHost.parentHwnd)
@@ -231,14 +261,13 @@ internal class NativeViewOverlayControllerWindows(
             val ourPlatformContext = object : PlatformContext.Empty() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
                 override fun setPointerIcon(pointerIcon: PointerIcon) {
-                    val code = when (pointerIcon) {
-                        PointerIcon.Text -> NativeTaoWindowsOverlayBridge.CURSOR_TEXT
-                        PointerIcon.Hand -> NativeTaoWindowsOverlayBridge.CURSOR_HAND
-                        PointerIcon.Crosshair -> NativeTaoWindowsOverlayBridge.CURSOR_CROSSHAIR
-                        else -> NativeTaoWindowsOverlayBridge.CURSOR_DEFAULT
-                    }
-                    System.err.println("[cursor] setPointerIcon icon=$pointerIcon code=$code overlay=$overlayHandle")
-                    NativeTaoWindowsOverlayBridge.nativeSetCursor(overlayHandle, code)
+                    // While a manual cursor override is active (consumeOverlayPointerEvents
+                    // with a `cursor` hint), ignore Compose's resolution. BasicTextField
+                    // applies its own pointerHoverIcon(Default, overrideDescendants=true)
+                    // on the click area surrounding the text glyphs, which would otherwise
+                    // overwrite the I-beam mid-hover.
+                    if (manualCursor != null) return
+                    applyCursor(pointerIcon)
                 }
             }
             // PlatformLayersComposeScene + TaoComposeSceneContextWindows
@@ -336,6 +365,7 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.unregisterOwnerFocusLostListener(focusLostListenerToken)
         scene?.close()
         scene = null
+        manualCursorByKey.clear()
         // directContext is the host's — don't close.
         NativeTaoWindowsOverlayBridge.nativeReleaseOverlay(overlayHandle)
         overlayHandle = 0

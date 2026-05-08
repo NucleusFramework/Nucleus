@@ -37,7 +37,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.pointer.PointerIcon
-import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -302,15 +301,7 @@ private fun UrlField(
                 if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
                 RoundedCornerShape(18.dp),
             )
-            // BasicTextField only applies the I-beam over the rendered text
-            // glyphs, which on a singleLine field is a thin strip at the top
-            // (textStyle = 13.sp inside a 36.dp box, top-aligned). Apply it on
-            // the outer field rect with overrideDescendants = true so the
-            // whole pill shows the I-beam — what every HTML/native text input
-            // does. Without overrideDescendants, BasicTextField's inner
-            // pointerHoverIcon(Default) for the non-text padding overrides
-            // ours and we end up with I-beam only at the very top.
-            .pointerHoverIcon(PointerIcon.Text, overrideDescendants = true)
+            .consumeOverlayPointerEvents(cursor = PointerIcon.Text)
             .padding(horizontal = 12.dp),
     ) {
         BasicTextField(
