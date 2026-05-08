@@ -1,13 +1,16 @@
 package io.github.kdroidfilter.nucleus.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.focus.FocusManager
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.input.key.KeyEvent
@@ -61,6 +64,38 @@ internal class NativeViewOverlayControllerWindows(
     private val keyHandlerToken: Any = Any()
     private val moveListenerToken: Any = Any()
     private val focusLostListenerToken: Any = Any()
+    private val popupClosingToken: Any = Any()
+
+    /**
+     * Captured from the overlay scene's composition via [LocalFocusManager].
+     * `clearFocus(force = true)` (standard FocusManager) breaks a
+     * `BasicTextField`'s "Captured" focus state — the scene-level
+     * `releaseFocus()` only clears Active/ActiveParent, leaving an
+     * actively-edited TextField stuck. Set in [setContent] inside a
+     * `SideEffect`, nulled in [dispose].
+     */
+    private var capturedFocusManager: FocusManager? = null
+
+    /**
+     * Tracks which mouse buttons Compose's overlay scene currently sees as
+     * pressed. Press/Release pairs can desynchronise across popup HWND
+     * boundaries:
+     *  - Right-click that opens a context menu: `WM_RBUTTONDOWN` reaches
+     *    the overlay (Press dispatched), but `WM_RBUTTONUP` arrives after
+     *    the popup HWND has captured the mouse and goes there instead —
+     *    Compose never sees the Release.
+     *  - Left-click that dismisses the menu: the popup eats `WM_LBUTTONDOWN`
+     *    (outside-click handler), then `ReleaseCapture()`; the trailing
+     *    `WM_LBUTTONUP` lands on the overlay → Compose sees a Release with
+     *    no matching Press.
+     * Both desyncs leave Compose's gesture pipeline in a state where a
+     * subsequent Press on a `BasicTextField` no longer triggers focus.
+     * We drop orphan Releases here and synthesize Releases for dangling
+     * Presses on `popupClosing`.
+     */
+    private val pressedButtons = mutableSetOf<PointerButton>()
+    private var lastPointerX: Float = 0f
+    private var lastPointerY: Float = 0f
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var overlayOffsetX: Int = 0
@@ -131,9 +166,26 @@ internal class NativeViewOverlayControllerWindows(
                 TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
                 else -> null
             }
+            lastPointerX = x
+            lastPointerY = y
             val eventType = when (type) {
-                TaoNativeWireFormat.PTR_DOWN -> PointerEventType.Press
-                TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
+                TaoNativeWireFormat.PTR_DOWN -> {
+                    if (pointerButton != null) pressedButtons += pointerButton
+                    PointerEventType.Press
+                }
+                TaoNativeWireFormat.PTR_UP -> {
+                    if (pointerButton != null && pointerButton !in pressedButtons) {
+                        // Orphan Release — typically the trailing
+                        // WM_LBUTTONUP after a popup-dismiss outside-click,
+                        // whose Press was eaten by the popup HWND. Letting
+                        // it through corrupts Compose's gesture detector
+                        // and breaks subsequent focus-on-tap on
+                        // BasicTextFields in the overlay scene.
+                        return
+                    }
+                    if (pointerButton != null) pressedButtons -= pointerButton
+                    PointerEventType.Release
+                }
                 else -> PointerEventType.Move
             }
             sc.sendPointerEvent(
@@ -221,15 +273,46 @@ internal class NativeViewOverlayControllerWindows(
         // When the host loses keyboard focus (e.g., user clicked the
         // WebView, which grabs Win32 focus), drop the overlay scene's
         // Compose focus so the URL TextField's highlight border / caret
-        // stop drawing. focusManager.releaseFocus() walks the tree and
-        // clears the active focused node.
-        // When the host loses keyboard focus (e.g., user clicked the
-        // WebView, which grabs Win32 focus), drop the overlay scene's
-        // Compose focus so the URL TextField's highlight border / caret
-        // stop drawing. focusManager.releaseFocus() walks the tree and
-        // clears the active focused node.
+        // stop drawing. We prefer `clearFocus(force = true)` over the
+        // scene-level `releaseFocus()` because a BasicTextField in
+        // active editing transitions to "Captured" focus state — only
+        // the standard FocusManager's `force = true` path clears that.
+        // Without it, a subsequent click on the same field doesn't
+        // re-focus it (the node is still Captured but visually stale).
         popupHost.registerOwnerFocusLostListener(focusLostListenerToken) {
-            scene?.focusManager?.releaseFocus()
+            capturedFocusManager?.clearFocus(force = true)
+                ?: scene?.focusManager?.releaseFocus()
+            popupHost.requestRedraw()
+        }
+        // Same problem at popup teardown: the right-click that opened
+        // the context menu put the underlying BasicTextField into
+        // Captured focus. `TaoPopupSceneLayerWindows.close()` calls
+        // `notifyPopupClosing()` BEFORE destroying the popup HWND
+        // precisely so we can break that Captured state while the
+        // popup is still alive. Without this listener, the TextField
+        // stays Captured after the menu dismisses and the next
+        // click-on-URL → click-WebView → click-URL sequence leaves
+        // the URL field unfocusable.
+        popupHost.registerPopupClosingListener(popupClosingToken) {
+            // Drain dangling Presses: when the right-click that opened the
+            // popup was dispatched to Compose, the matching WM_*BUTTONUP
+            // arrived after the popup HWND took capture and never reached
+            // us. Without a synthetic Release, Compose stays in a "button
+            // still down" state and the next click on a BasicTextField
+            // doesn't trigger focus.
+            val sc = scene
+            if (sc != null && pressedButtons.isNotEmpty()) {
+                for (btn in pressedButtons.toList()) {
+                    sc.sendPointerEvent(
+                        eventType = PointerEventType.Release,
+                        position = Offset(lastPointerX, lastPointerY),
+                        type = PointerType.Mouse,
+                        button = btn,
+                    )
+                }
+                pressedButtons.clear()
+            }
+            capturedFocusManager?.clearFocus(force = true)
             popupHost.requestRedraw()
         }
         pendingBounds?.let { setBoundsInternal(it[0], it[1], it[2], it[3]) }
@@ -313,8 +396,18 @@ internal class NativeViewOverlayControllerWindows(
     }
 
     fun setContent(content: @Composable () -> Unit) {
+        // Wrap so we can capture the standard FocusManager from the
+        // composition. `clearFocus(force = true)` against this manager
+        // is the only reliable way to break a `BasicTextField`'s
+        // Captured focus state — the scene-level `releaseFocus()` is
+        // not enough.
+        val wrapped: @Composable () -> Unit = {
+            val fm = LocalFocusManager.current
+            SideEffect { capturedFocusManager = fm }
+            content()
+        }
         val sc = scene
-        if (sc != null) sc.setContent(content) else pendingContent = content
+        if (sc != null) sc.setContent(wrapped) else pendingContent = wrapped
         popupHost.requestRedraw()
     }
 
@@ -380,8 +473,11 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.unregisterKeyHandler(keyHandlerToken)
         popupHost.unregisterOwnerMoveListener(moveListenerToken)
         popupHost.unregisterOwnerFocusLostListener(focusLostListenerToken)
+        popupHost.unregisterPopupClosingListener(popupClosingToken)
         scene?.close()
         scene = null
+        capturedFocusManager = null
+        pressedButtons.clear()
         manualCursorByKey.clear()
         // directContext is the host's — don't close.
         NativeTaoWindowsOverlayBridge.nativeReleaseOverlay(overlayHandle)
