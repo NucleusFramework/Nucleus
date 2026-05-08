@@ -73,8 +73,32 @@ internal interface TaoPopupHostWindows {
     fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit)
     fun unregisterOwnerFocusLostListener(token: Any)
 
+    /**
+     * Registers a callback invoked when the host window regains keyboard
+     * focus. Counterpart to [registerOwnerFocusLostListener]; overlay
+     * scenes use this to restore their `WindowInfo.isWindowFocused` so
+     * Compose resumes the caret blink on the previously-focused
+     * TextField (its focus modifier state was preserved).
+     */
+    fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit)
+    fun unregisterOwnerFocusGainedListener(token: Any)
+
     fun registerRenderer(token: Any, render: () -> Unit)
     fun unregisterRenderer(token: Any)
+
+    /**
+     * Notify the host that a popup [TaoPopupSceneLayerWindows] is about
+     * to close. Lets parent scenes (e.g., the [NativeView] overlay) clear
+     * any focus state that the popup left in a stuck "Captured" state in
+     * its parent BasicTextField. Without this, the parent field can't be
+     * re-focused by a subsequent click — Compose's `clearFocus(force)`
+     * called from a Tao focus-lost event later (e.g., user clicked
+     * WebView2) hits a different code path that fails to release the
+     * captured focus.
+     */
+    fun notifyPopupClosing()
+    fun registerPopupClosingListener(token: Any, onClosing: () -> Unit)
+    fun unregisterPopupClosingListener(token: Any)
 
     /**
      * Registers a key handler called from `TaoComposeSceneHostWindows.onKeyEvent`

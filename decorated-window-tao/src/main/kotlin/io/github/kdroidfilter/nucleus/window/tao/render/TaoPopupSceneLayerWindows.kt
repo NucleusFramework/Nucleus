@@ -230,6 +230,14 @@ internal class TaoPopupSceneLayerWindows(
         }
 
     override fun close() {
+        // Notify parent scenes (overlay) so they can flush focus state
+        // BEFORE the popup HWND is destroyed and Compose's PlatformLayer
+        // chain unwinds — at that later point the BasicTextField that
+        // captured focus on right-click is in a stuck state that
+        // `clearFocus(force=true)` from a focus-lost event can no longer
+        // release. Calling clearFocus here, while the popup is still
+        // alive, releases the capture cleanly.
+        host.notifyPopupClosing()
         host.unregisterRenderer(rendererToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)

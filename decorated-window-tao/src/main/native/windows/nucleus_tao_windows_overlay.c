@@ -340,6 +340,7 @@ static void repositionOverlaysFromOwnerLocked(OwnerNode *n) {
     if (defer) EndDeferWindowPos(defer);
 }
 
+
 static LRESULT CALLBACK ownerSubclassProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
     OwnerNode *n = (OwnerNode *)GetPropW(hwnd, kOwnerProp);
     WNDPROC orig = n ? n->originalProc : NULL;

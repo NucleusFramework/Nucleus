@@ -117,6 +117,16 @@ internal class TaoComposeSceneHostWindows(
     /** Callbacks invoked when the host window loses keyboard focus. */
     private val ownerFocusLostListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
 
+    /** Callbacks invoked when the host window regains keyboard focus. */
+    private val ownerFocusGainedListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Callbacks invoked just before a popup scene layer
+     * ([TaoPopupSceneLayerWindows]) destroys its HWND. Used by parent
+     * scenes (overlay) to flush stuck focus state.
+     */
+    private val popupClosingListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
     /**
      * Set whenever something on the same thread might have changed the
      * current WGL context behind Skia's back: a popup/overlay renderer
@@ -218,12 +228,19 @@ internal class TaoComposeSceneHostWindows(
         // which grabs Win32 focus and holds it. The overlay's
         // Compose-side TextField focus should release so its visual
         // indicator (highlight border, blinking caret) goes away.
-        window.onFocusChanged { focused -> if (!focused) onOwnerFocusLost() }
+        window.onFocusChanged { focused ->
+            if (focused) onOwnerFocusGained() else onOwnerFocusLost()
+        }
     }
 
     private fun onOwnerFocusLost() {
         if (ownerFocusLostListeners.isEmpty()) return
         for (cb in ownerFocusLostListeners.values.toList()) cb()
+    }
+
+    private fun onOwnerFocusGained() {
+        if (ownerFocusGainedListeners.isEmpty()) return
+        for (cb in ownerFocusGainedListeners.values.toList()) cb()
     }
 
     // ── Touch (Windows) ───────────────────────────────────────────────────
@@ -851,6 +868,22 @@ internal class TaoComposeSceneHostWindows(
             }
             override fun unregisterOwnerFocusLostListener(token: Any) {
                 outer.ownerFocusLostListeners.remove(token)
+            }
+            override fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit) {
+                outer.ownerFocusGainedListeners[token] = onGained
+            }
+            override fun unregisterOwnerFocusGainedListener(token: Any) {
+                outer.ownerFocusGainedListeners.remove(token)
+            }
+            override fun notifyPopupClosing() {
+                if (outer.popupClosingListeners.isEmpty()) return
+                for (cb in outer.popupClosingListeners.values.toList()) cb()
+            }
+            override fun registerPopupClosingListener(token: Any, onClosing: () -> Unit) {
+                outer.popupClosingListeners[token] = onClosing
+            }
+            override fun unregisterPopupClosingListener(token: Any) {
+                outer.popupClosingListeners.remove(token)
             }
         }
     }

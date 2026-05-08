@@ -97,7 +97,19 @@ internal class NativeViewOverlayControllerWindows(
             popupHost.registerOwnerFocusLostListener(token, onLost)
         override fun unregisterOwnerFocusLostListener(token: Any) =
             popupHost.unregisterOwnerFocusLostListener(token)
+        override fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit) =
+            popupHost.registerOwnerFocusGainedListener(token, onGained)
+        override fun unregisterOwnerFocusGainedListener(token: Any) =
+            popupHost.unregisterOwnerFocusGainedListener(token)
+        override fun notifyPopupClosing() = popupHost.notifyPopupClosing()
+        override fun registerPopupClosingListener(token: Any, onClosing: () -> Unit) =
+            popupHost.registerPopupClosingListener(token, onClosing)
+        override fun unregisterPopupClosingListener(token: Any) =
+            popupHost.unregisterPopupClosingListener(token)
     }
+    // (overlayPopupHost still exposes both register/unregister focus-gained
+    // for downstream popups that may want them; this controller no longer
+    // uses them — see the OverlayCallback Press path below.)
 
     private val overlayWindowInfo: WindowInfo = object : WindowInfo {
         override val isWindowFocused: Boolean = true
@@ -206,6 +218,11 @@ internal class NativeViewOverlayControllerWindows(
                 )
             }
         }
+        // When the host loses keyboard focus (e.g., user clicked the
+        // WebView, which grabs Win32 focus), drop the overlay scene's
+        // Compose focus so the URL TextField's highlight border / caret
+        // stop drawing. focusManager.releaseFocus() walks the tree and
+        // clears the active focused node.
         // When the host loses keyboard focus (e.g., user clicked the
         // WebView, which grabs Win32 focus), drop the overlay scene's
         // Compose focus so the URL TextField's highlight border / caret
