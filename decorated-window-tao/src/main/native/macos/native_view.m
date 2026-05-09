@@ -174,22 +174,16 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
  * `keyDown:` events route to us — the host stays the key window so the
  * window chrome doesn't go inactive. */
 - (void)mouseDown:(NSEvent *)event {
-    BOOL becameKey = [self.window makeFirstResponder:self];
-    NSLog(@"[NucleusOverlay] mouseDown @ %@ → makeFirstResponder=%d firstResponder=%@",
-          NSStringFromPoint(event.locationInWindow), becameKey, self.window.firstResponder);
+    [self.window makeFirstResponder:self];
     [self dispatchPointer:event type:EVT_PTR_DOWN button:1];
 }
 
 - (BOOL)becomeFirstResponder {
-    BOOL r = [super becomeFirstResponder];
-    NSLog(@"[NucleusOverlay] becomeFirstResponder → %d", r);
-    return r;
+    return [super becomeFirstResponder];
 }
 
 - (BOOL)resignFirstResponder {
     BOOL r = [super resignFirstResponder];
-    NSLog(@"[NucleusOverlay] resignFirstResponder → %d (replacing with %@)",
-          r, self.window.firstResponder);
     if (r) {
         jobject cb = [self takeCallbackOrNil];
         if (cb != NULL && sOnResignMethod != NULL) {
