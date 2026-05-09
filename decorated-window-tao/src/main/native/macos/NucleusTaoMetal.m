@@ -756,9 +756,24 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeMetalBridge_nativeAttachOve
         : [NSScreen mainScreen].backingScaleFactor;
 
     dispatch_block_t setup = ^{
-        view.layer = layer;
+        // Layer-hosted views (`view.layer = layer`) require the developer
+        // to manually keep `layer.position` in sync with the host view's
+        // `frame.origin` — AppKit only auto-syncs that for layer-BACKED
+        // views (where AppKit creates the backing layer itself). When the
+        // overlay is positioned at e.g. frame.origin (16, 16), the hosted
+        // CAMetalLayer keeps position (0, 0), so the rendered Compose
+        // surface ends up offset by exactly the host view's frame.origin
+        // from where the AppKit-managed sibling subview renders.
+        //
+        // Switch to layer-BACKED + sublayer: AppKit owns the host view's
+        // backing layer and keeps it correctly placed; our CAMetalLayer
+        // is a sublayer with `frame = view.bounds`, autoresizes via
+        // `layoutManager` so it follows live-resize without explicit
+        // re-positioning.
         view.wantsLayer = YES;
         layer.frame = view.bounds;
+        layer.autoresizingMask = kCALayerWidthSizable | kCALayerHeightSizable;
+        [view.layer addSublayer:layer];
     };
     if ([NSThread isMainThread]) setup();
     else                          dispatch_sync(dispatch_get_main_queue(), setup);
