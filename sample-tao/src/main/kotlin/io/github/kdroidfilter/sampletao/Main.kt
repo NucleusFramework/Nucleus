@@ -277,6 +277,7 @@ private fun runApp() = nucleusApplication(backend = NucleusBackend.Tao) {
                     Tab.Complex -> ComplexTab(modifier = Modifier.fillMaxSize())
                     Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                     Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
+                    Tab.SwiftUI -> SwiftUITab(modifier = Modifier.fillMaxSize())
                 }
             }
         }
