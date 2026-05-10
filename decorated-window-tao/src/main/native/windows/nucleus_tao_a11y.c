@@ -85,6 +85,7 @@ void *memcpy(void *dest, const void *src, size_t count) {
     return dest;
 }
 
+#pragma function(memcmp)
 int memcmp(const void *a, const void *b, size_t count) {
     const unsigned char *p = (const unsigned char *)a;
     const unsigned char *q = (const unsigned char *)b;
