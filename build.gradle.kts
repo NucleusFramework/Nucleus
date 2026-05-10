@@ -116,6 +116,22 @@ tasks.register("preMerge") {
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
 }
 
+tasks.register("cleanAllNative", Delete::class.java) {
+    description = "Deletes all generated native files"
+    group = "build"
+
+    subprojects {
+        delete(layout.projectDirectory.dir("src/main/resources/nucleus/native"))
+        delete(layout.projectDirectory.dir("src/main/native/target"))
+        delete(fileTree(layout.projectDirectory.dir("src/main/native")) {
+            include("**/*.obj", "**/*.exp", "**/*.lib", "**/*.pdb")
+        })
+    }
+    delete(rootProject.layout.projectDirectory.dir("sample-tao/src/main/native/windows/packages"))
+    delete(rootProject.layout.projectDirectory.file("sample-tao/src/main/native/windows/nuget.exe"))
+    delete(rootProject.layout.projectDirectory.file("sample-tao/src/main/native/windows/build_log.txt"))
+}
+
 tasks.wrapper {
     distributionType = Wrapper.DistributionType.ALL
 }
