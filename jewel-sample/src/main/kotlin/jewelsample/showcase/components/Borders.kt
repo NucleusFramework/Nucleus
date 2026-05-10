@@ -39,7 +39,7 @@ import org.jetbrains.jewel.ui.icons.AllIconsKeys
 import org.jetbrains.jewel.ui.outline
 import org.jetbrains.jewel.ui.theme.colorPalette
 import org.jetbrains.jewel.ui.typography
-import org.jetbrains.skiko.Cursor
+import java.awt.Cursor
 
 @Composable
 fun Borders(modifier: Modifier = Modifier) {
