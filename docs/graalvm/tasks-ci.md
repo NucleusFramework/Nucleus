@@ -163,12 +163,12 @@ Even though the automatic metadata covers the vast majority of cases, running `r
 
 ### Use the Jewel sample as reference
 
-The [`jewel-sample`](https://github.com/nucleusframework/Nucleus/tree/main/jewel-sample) in the Nucleus repository demonstrates a more complex native-image setup with the Jewel UI library. It is an excellent reference for advanced use cases.
+The [`jewel-sample`](https://github.com/kdroidFilter/Nucleus/tree/main/jewel-sample) in the Nucleus repository demonstrates a more complex native-image setup with the Jewel UI library. It is an excellent reference for advanced use cases.
 
 ## Further Reading
 
 - [GraalVM Native Image documentation](https://www.graalvm.org/latest/reference-manual/native-image/)
 - [BellSoft Liberica NIK](https://bell-sw.com/liberica-native-image-kit/)
 - [Oracle GraalVM Reachability Metadata Repository](https://github.com/oracle/graalvm-reachability-metadata)
-- [Nucleus example app](https://github.com/nucleusframework/Nucleus/tree/main/example) — minimal Compose Desktop + native-image setup
-- [Nucleus Jewel sample](https://github.com/nucleusframework/Nucleus/tree/main/jewel-sample) — advanced setup with reflection-heavy dependencies
+- [Nucleus example app](https://github.com/kdroidFilter/Nucleus/tree/main/example) — minimal Compose Desktop + native-image setup
+- [Nucleus Jewel sample](https://github.com/kdroidFilter/Nucleus/tree/main/jewel-sample) — advanced setup with reflection-heavy dependencies

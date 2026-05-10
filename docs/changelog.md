@@ -525,7 +525,7 @@ nativeDistributions {
 
 ### Bug Fixes
 
-- **Fix title bar drag on Windows (`decorated-window-jbr`)** — Window dragging via the title bar no longer occasionally fails on the first attempt when another window has focus. The new `WindowMouseEventEffect` approach uses AWT mouse listeners for reliable hit-test forwarding to JBR's `CustomTitleBar`, fixing the intermittent missed drag events. ([#53](https://github.com/nucleusframework/Nucleus/issues/53))
+- **Fix title bar drag on Windows (`decorated-window-jbr`)** — Window dragging via the title bar no longer occasionally fails on the first attempt when another window has focus. The new `WindowMouseEventEffect` approach uses AWT mouse listeners for reliable hit-test forwarding to JBR's `CustomTitleBar`, fixing the intermittent missed drag events. ([#53](https://github.com/kdroidFilter/Nucleus/issues/53))
 - Promote `core-runtime` to `api` scope in `updater-runtime` and `system-color` so consumers no longer need to declare it separately.
 - Include generic provider in publish mode detection.
 - Skip Flatpak packaging gracefully when `flatpak` CLI is missing.
@@ -664,15 +664,15 @@ nativeDistributions {
 
 - **Fix Windows fullscreen** — Compose for Desktop does not handle fullscreen correctly on Windows (window does not cover the taskbar). Now uses native Win32 APIs for true fullscreen, matching Edge and other native Windows applications.
 - **Eliminate white resize flash on Windows** — Adjust Skiko's clear color to transparent for dark themes and synchronize DWM caption/border colors for consistent Windows 11 window chrome styling.
-- **Skip Android configurations in `CleanNativeLibsTransform`** — Fixes build issues when Android targets are present. ([#79](https://github.com/nucleusframework/ComposeDeskKit/issues/79))
-- **Skip ZIP stapling to preserve blockmap** — Prevents breaking auto-update blockmap integrity during notarization. ([#70](https://github.com/nucleusframework/ComposeDeskKit/issues/70))
-- **Detect target arch from JDK release file for cross-building** — Fixes architecture detection when cross-compiling. ([#71](https://github.com/nucleusframework/ComposeDeskKit/issues/71))
+- **Skip Android configurations in `CleanNativeLibsTransform`** — Fixes build issues when Android targets are present. ([#79](https://github.com/kdroidFilter/ComposeDeskKit/issues/79))
+- **Skip ZIP stapling to preserve blockmap** — Prevents breaking auto-update blockmap integrity during notarization. ([#70](https://github.com/kdroidFilter/ComposeDeskKit/issues/70))
+- **Detect target arch from JDK release file for cross-building** — Fixes architecture detection when cross-compiling. ([#71](https://github.com/kdroidFilter/ComposeDeskKit/issues/71))
 - Move Windows dark mode monitoring to native thread for reliability.
 - Correct D-Bus `ReadOne` variant parsing for Linux accent color.
 
 ### Deprecations
 
-- **`appStore` property deprecated** — PKG distributions are now always treated as App Store builds. The `appStore` property is no longer needed. ([#65](https://github.com/nucleusframework/ComposeDeskKit/issues/65))
+- **`appStore` property deprecated** — PKG distributions are now always treated as App Store builds. The `appStore` property is no longer needed. ([#65](https://github.com/kdroidFilter/ComposeDeskKit/issues/65))
 
 ---
 

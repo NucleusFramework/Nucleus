@@ -103,7 +103,7 @@ mavenPublishing {
     pom {
         name.set("Nucleus System Color")
         description.set("Reactive system accent color and contrast mode detection for Compose Desktop")
-        url.set("https://github.com/nucleusframework/Nucleus")
+        url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {
             license {
@@ -116,14 +116,14 @@ mavenPublishing {
             developer {
                 id.set("nucleusframework")
                 name.set("nucleusframework")
-                url.set("https://github.com/nucleusframework")
+                url.set("https://github.com/kdroidFilter")
             }
         }
 
         scm {
-            url.set("https://github.com/nucleusframework/Nucleus")
-            connection.set("scm:git:git://github.com/nucleusframework/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/nucleusframework/Nucleus.git")
+            url.set("https://github.com/kdroidFilter/Nucleus")
+            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
         }
     }
 

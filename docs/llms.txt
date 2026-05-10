@@ -3,7 +3,7 @@
 > Nucleus is the all-in-one toolkit for shipping JVM desktop applications. It combines a Gradle plugin, runtime libraries, and GitHub Actions to handle performance (AOT), distribution (16 packaging formats), native look & feel (decorated windows, dark mode, system colors), and GraalVM Native Image support. Compatible with any JVM application, optimized for Compose Desktop.
 
 - Docs: https://nucleus.nucleusframework.com
-- GitHub: https://github.com/nucleusframework/Nucleus
+- GitHub: https://github.com/kdroidFilter/Nucleus
 - Gradle Plugin Portal: https://plugins.gradle.org/plugin/dev.nucleusframework.nucleus
 - Maven Central: https://central.sonatype.com/search?q=dev.nucleusframework.nucleus
 - License: MIT
@@ -83,7 +83,7 @@ nucleus.application {
 
 ## Try the demo
 
-A pre-built demo is available on the [GitHub Releases page](https://github.com/nucleusframework/Nucleus/releases).
+A pre-built demo is available on the [GitHub Releases page](https://github.com/kdroidFilter/Nucleus/releases).
 
 ### macOS
     ```bash
@@ -98,7 +98,7 @@ A pre-built demo is available on the [GitHub Releases page](https://github.com/n
     Detects your architecture and package manager, downloads and installs the appropriate `.deb` or `.rpm`.
 
 ### Windows
-    Download the installer from the [releases page](https://github.com/nucleusframework/Nucleus/releases).
+    Download the installer from the [releases page](https://github.com/kdroidFilter/Nucleus/releases).
 
 What you'll see:
 
@@ -108,7 +108,7 @@ What you'll see:
 - **Auto-Update** — Checks for updates on launch, downloads with progress tracking, installs & restarts in one click
 
 **Test auto-update:** Download an **older release**, install it, and launch. It will detect the newer version and offer to update — automatically.
-The demo source code is in the [`example/`](https://github.com/nucleusframework/Nucleus/tree/main/example) directory.
+The demo source code is in the [`example/`](https://github.com/kdroidFilter/Nucleus/tree/main/example) directory.
 
 ## Requirements
 
@@ -120,7 +120,7 @@ The demo source code is in the [`example/`](https://github.com/nucleusframework/
 
 ## License
 
-MIT — See [LICENSE](https://github.com/nucleusframework/Nucleus/blob/main/LICENSE).
+MIT — See [LICENSE](https://github.com/kdroidFilter/Nucleus/blob/main/LICENSE).
 
 ---
 

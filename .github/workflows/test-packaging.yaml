@@ -38,11 +38,11 @@ jobs:
           - name: macOS ARM64
             os: macos-latest
             arch: arm64
-            jbr-download-url: 'https://github.com/nucleusframework/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-aarch64.tar.gz'
+            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-aarch64.tar.gz'
           - name: macOS Intel
             os: macos-15-intel
             arch: amd64
-            jbr-download-url: 'https://github.com/nucleusframework/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-x64.tar.gz'
+            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-x64.tar.gz'
 
     steps:
       - name: Checkout Repo

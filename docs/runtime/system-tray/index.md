@@ -1,7 +1,7 @@
 # System Tray
 
 !!! note "Separate repository"
-    System Tray is maintained in its own repository with its own release cycle: [**nucleusframework/ComposeNativeTray**](https://github.com/nucleusframework/ComposeNativeTray). The artifact is `dev.nucleusframework:composenativetray`.
+    System Tray is maintained in its own repository with its own release cycle: [**kdroidFilter/ComposeNativeTray**](https://github.com/kdroidFilter/ComposeNativeTray). The artifact is `dev.nucleusframework:composenativetray`.
 
 **ComposeNativeTray** is not a library. It is a **complete framework for building system tray applications** with Compose Desktop — the most expressive and the most powerful way to own the system tray on macOS, Windows, and Linux.
 

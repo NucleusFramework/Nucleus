@@ -33,10 +33,10 @@ jobs:
             node-version: '22' # npm 11 (Node 24) has ECOMPROMISED bugs on Windows ARM64
           - os: macos-latest
             arch: arm64
-            jbr-download-url: 'https://github.com/nucleusframework/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-aarch64.tar.gz'
+            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-aarch64.tar.gz'
           - os: macos-15-intel
             arch: amd64
-            jbr-download-url: 'https://github.com/nucleusframework/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-x64.tar.gz'
+            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-x64.tar.gz'
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
