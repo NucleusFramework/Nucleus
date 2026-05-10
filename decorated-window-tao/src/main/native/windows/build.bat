@@ -194,7 +194,7 @@ cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DECO_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_deco.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain kernel32.lib user32.lib dwmapi.lib gdi32.lib shell32.lib
+    /link kernel32.lib user32.lib dwmapi.lib gdi32.lib shell32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 deco compilation failed >&2
     endlocal
@@ -205,7 +205,7 @@ cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_gl.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain opengl32.lib gdi32.lib user32.lib kernel32.lib
+    /link opengl32.lib gdi32.lib user32.lib kernel32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 GL compilation failed >&2
     endlocal
@@ -216,8 +216,8 @@ cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_a11y.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain ^
-    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib libvcruntime.lib
+    /link ^
+    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
 if errorlevel 1 (
     echo WARNING: ARM64 a11y compilation failed >&2
     endlocal
@@ -228,7 +228,7 @@ cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DND_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_dnd.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    /link ^
     kernel32.lib user32.lib ole32.lib oleaut32.lib uuid.lib shell32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 dnd compilation failed >&2
@@ -240,7 +240,7 @@ cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_native_view.dll" ^
-    /link /NODEFAULTLIB /ENTRY:DllMain ^
+    /link ^
     kernel32.lib user32.lib gdi32.lib dwmapi.lib opengl32.lib
 if errorlevel 1 (
     echo WARNING: ARM64 native_view compilation failed >&2

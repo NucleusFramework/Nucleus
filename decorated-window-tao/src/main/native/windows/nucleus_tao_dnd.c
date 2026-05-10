@@ -33,6 +33,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifndef _M_ARM64
 /* /NODEFAULTLIB support */
 int _fltused = 0;
 
@@ -60,6 +61,7 @@ int memcmp(const void *a, const void *b, size_t count) {
     }
     return 0;
 }
+#endif
 
 /* DllMain stub for /NODEFAULTLIB linking. */
 BOOL WINAPI DllMain(HINSTANCE h, DWORD r, LPVOID v) { (void)h; (void)r; (void)v; return TRUE; }

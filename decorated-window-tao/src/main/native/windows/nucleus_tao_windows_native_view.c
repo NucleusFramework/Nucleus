@@ -17,6 +17,7 @@
 #include <jni.h>
 #include <windows.h>
 
+#ifndef _M_ARM64
 /* /NODEFAULTLIB shim shared across all .c files linked into this DLL. */
 int _fltused = 0;
 
@@ -34,6 +35,7 @@ void *memcpy(void *dest, const void *src, size_t count) {
     while (count--) *d++ = *s++;
     return dest;
 }
+#endif
 
 BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved) {
     (void)hinst; (void)reason; (void)reserved;

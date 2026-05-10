@@ -51,11 +51,9 @@
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-/* On ARM64 with /NODEFAULTLIB, the compiler may fail to inline some interlocked
- * intrinsics, emitting calls to underscored symbols like _InterlockedIncrement.
- * Since we link kernel32.lib, we undefine these macros to force the compiler
- * to use the standard library exports (InterlockedIncrement, etc.) which
- * don't have the leading underscore on ARM64. */
+/* On ARM64 we use the standard CRT (no /NODEFAULTLIB), so we undefine 
+ * the intrinsic macros to use the kernel32.lib exports if the compiler 
+ * doesn't inline them. */
 #undef InterlockedCompareExchange
 #undef InterlockedCompareExchange64
 #undef InterlockedDecrement
@@ -73,7 +71,9 @@
 #include <stddef.h>
 #include <stdarg.h>
 
-/* /NODEFAULTLIB support — supplied by sibling DLL but we statically need them */
+#ifndef _M_ARM64
+/* /NODEFAULTLIB support — supplied by sibling DLL but we statically need them.
+ * Only needed for x64 where we avoid the CRT dependency. */
 int _fltused = 0;
 
 #pragma function(memset)
@@ -101,6 +101,7 @@ int memcmp(const void *a, const void *b, size_t count) {
     }
     return 0;
 }
+#endif
 
 /* The Windows SDK declares these as `const long` in C++-only blocks, which
  * makes them unusable in C `case` labels. Redefine the subset we need as
