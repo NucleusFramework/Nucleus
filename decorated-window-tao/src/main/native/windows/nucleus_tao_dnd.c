@@ -19,20 +19,16 @@
 
 #include <jni.h>
 #include <windows.h>
-#include <objbase.h>
-#include <ole2.h>
-#include <oleidl.h>
-#include <shlobj.h>
-#include <stdint.h>
-#include <stddef.h>
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#define InterlockedDecrement _InterlockedDecrement
-#define InterlockedIncrement _InterlockedIncrement
 #pragma intrinsic(_InterlockedDecrement)
 #pragma intrinsic(_InterlockedIncrement)
+#define InterlockedDecrement _InterlockedDecrement
+#define InterlockedIncrement _InterlockedIncrement
 #endif
+
+#include <objbase.h>
 
 /* /NODEFAULTLIB support */
 int _fltused = 0;

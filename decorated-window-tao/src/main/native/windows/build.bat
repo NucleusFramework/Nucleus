@@ -190,7 +190,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DECO_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_deco.dll" ^
@@ -201,7 +201,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%GL_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_gl.dll" ^
@@ -212,7 +212,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /Oi /GS- /nologo ^
+cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_a11y.dll" ^
@@ -224,7 +224,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%DND_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_dnd.dll" ^
@@ -236,7 +236,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O2 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%NV_SRC%" "%OVERLAY_SRC%" "%OVERLAY_GL_SRC%" "%POPUP_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_windows_native_view.dll" ^

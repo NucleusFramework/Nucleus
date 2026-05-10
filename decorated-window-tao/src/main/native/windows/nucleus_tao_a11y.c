@@ -48,30 +48,26 @@
 
 #include <jni.h>
 #include <windows.h>
-#include <commctrl.h>
-#include <objbase.h>
-#include <oleauto.h>
-#include <uiautomation.h>
-#include <uiautomationcoreapi.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <stdarg.h>
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#define InterlockedCompareExchange _InterlockedCompareExchange
-#define InterlockedCompareExchange64 _InterlockedCompareExchange64
-#define InterlockedDecrement _InterlockedDecrement
-#define InterlockedExchange _InterlockedExchange
-#define InterlockedExchange64 _InterlockedExchange64
-#define InterlockedIncrement _InterlockedIncrement
+/* Force inlining of interlocked intrinsics on ARM64 to avoid unresolved externals with /NODEFAULTLIB. */
 #pragma intrinsic(_InterlockedCompareExchange)
 #pragma intrinsic(_InterlockedCompareExchange64)
 #pragma intrinsic(_InterlockedDecrement)
 #pragma intrinsic(_InterlockedExchange)
 #pragma intrinsic(_InterlockedExchange64)
 #pragma intrinsic(_InterlockedIncrement)
+
+#define InterlockedCompareExchange _InterlockedCompareExchange
+#define InterlockedCompareExchange64 _InterlockedCompareExchange64
+#define InterlockedDecrement _InterlockedDecrement
+#define InterlockedExchange _InterlockedExchange
+#define InterlockedExchange64 _InterlockedExchange64
+#define InterlockedIncrement _InterlockedIncrement
 #endif
+
+#include <commctrl.h>
 
 /* /NODEFAULTLIB support — supplied by sibling DLL but we statically need them */
 int _fltused = 0;

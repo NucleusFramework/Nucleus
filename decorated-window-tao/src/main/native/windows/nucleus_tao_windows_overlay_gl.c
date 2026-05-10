@@ -36,15 +36,14 @@
 
 #include <jni.h>
 #include <windows.h>
-#include <dwmapi.h>
-#include <GL/gl.h>
-#include "nucleus_tao_windows_overlay_internal.h"
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#define InterlockedCompareExchange _InterlockedCompareExchange
 #pragma intrinsic(_InterlockedCompareExchange)
+#define InterlockedCompareExchange _InterlockedCompareExchange
 #endif
+
+#include <dwmapi.h>
 
 /* WGL ARB extension entry-points + bootstrap. */
 typedef HGLRC (WINAPI *PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int *);

@@ -31,16 +31,16 @@
 
 #include <jni.h>
 #include <windows.h>
-#include <dwmapi.h>
-#include "nucleus_tao_windows_overlay_internal.h"
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#define InterlockedCompareExchange _InterlockedCompareExchange
-#define InterlockedExchange _InterlockedExchange
 #pragma intrinsic(_InterlockedCompareExchange)
 #pragma intrinsic(_InterlockedExchange)
+#define InterlockedCompareExchange _InterlockedCompareExchange
+#define InterlockedExchange _InterlockedExchange
 #endif
+
+#include <dwmapi.h>
 
 /* ============================================================ */
 /*  Constants + globals                                         */
