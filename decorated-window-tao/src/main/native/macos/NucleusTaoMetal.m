@@ -531,11 +531,19 @@ static void removeMenuBarMonitor(NSWindow *window) {
     w.titlebarAppearsTransparent = NO;
     w.titleVisibility = NSWindowTitleVisible;
     w.movableByWindowBackground = NO;
-    // Drop the invisible toolbar to avoid AppKit's white-band glitch.
+    // Previously: dropped the invisible NSToolbar here to avoid an AppKit
+    // "white band" animation glitch during the entry transition. But
+    // removing it (and trying to reinstall on exit) caused the corner
+    // radius to disappear after fullscreen and reinstalling in didEnterFS
+    // re-introduced the white band in fullscreen. Keeping the toolbar
+    // attached the whole time is the only stable arrangement: the entry
+    // animation glitch (if any) is brief, while removing/reinstalling
+    // produces visible corner-pop and missing-corners glitches.
+    // The kTaoHadToolbarKey flag is still tracked so a future reinstall
+    // path can use it if needed.
     if (w.toolbar != nil) {
         objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        w.toolbar = nil;
     }
     // Anchor the drawable top-left so AppKit's snapshot-stretch animation
     // doesn't enlarge our 36 dp title bar visually. The unfilled area picks
@@ -596,29 +604,27 @@ static void removeMenuBarMonitor(NSWindow *window) {
     }
     NSWindow *w = _view.window;
     if (w == nil) return;
-    // Restore the transparent / hidden chrome state. willEnterFS flips
-    // `titlebarAppearsTransparent` to NO and `titleVisibility` to Visible
-    // so AppKit's fullscreen animation can run against its standard chrome,
-    // but those changes are never reverted automatically — leaving an
-    // opaque white toolbar/titlebar band visible in fullscreen as soon as
-    // the contentView's top region isn't fully covered by Compose drawing
-    // (e.g. when an embedded NSView like WKWebView sits below the bar).
-    w.titlebarAppearsTransparent = YES;
-    w.titleVisibility = NSWindowTitleHidden;
     // Install replacement traffic-light buttons inside the contentView so
     // they remain visible when AppKit auto-hides the native title bar (and
     // they don't disappear with our custom Compose title bar in fullscreen).
     NSNumber *h = objc_getAssociatedObject(w, &kTaoTitleBarHeightKey);
     float height = h ? [h floatValue] : kMinHeightForFullSize;
     installFullScreenButtons(w, height);
-    // Intentionally NOT calling reinstallToolbarIfNeeded(w) here. The
-    // invisible NSToolbar exists solely to opt the window into the macOS
-    // 26 large-corner-radius treatment, which is irrelevant in fullscreen
-    // (no visible window corners) and worse, AppKit allocates a tall
-    // opaque toolbar band at the top of the contentView that pushes our
-    // Compose content down with a white strip above it — the very glitch
-    // willEnterFS removes the toolbar to avoid. didExitFS reinstalls it
-    // when leaving fullscreen via the kTaoHadToolbarKey flag.
+    // Restore the transparent / hidden chrome flags AFTER AppKit's entry
+    // animation has finished.
+    w.titlebarAppearsTransparent = YES;
+    w.titleVisibility = NSWindowTitleHidden;
+    // Hide the toolbar's chrome zone in fullscreen WITHOUT detaching the
+    // toolbar from the window. The corner-radius opt-in only requires a
+    // toolbar to BE attached, not to be visible. Detaching/reattaching on
+    // every fullscreen toggle produces visible glitches (corners pop /
+    // disappear). Setting `isVisible = NO` collapses the band that AppKit
+    // would otherwise allocate at the top of the contentView (the "white
+    // band above the title bar" we kept hitting), while keeping the
+    // toolbar attached so the corners stay consistent across transitions.
+    if (w.toolbar != nil) {
+        w.toolbar.visible = NO;
+    }
     // Hide the AppKit titlebar container to prevent it from intercepting
     // clicks meant for our Compose content (the contentView spans the full
     // window in fullscreen due to FullSizeContentView).
@@ -656,6 +662,12 @@ static void removeMenuBarMonitor(NSWindow *window) {
     // Reinstall the invisible toolbar (corner radius) and reapply the
     // button-centering constraints for our custom title bar height.
     reinstallToolbarIfNeeded(w);
+    // Restore the toolbar's visibility so it can re-trigger the chrome
+    // pinning AppKit applies in windowed mode. Hidden in didEnterFS to
+    // suppress the fullscreen "white band" glitch.
+    if (w.toolbar != nil) {
+        w.toolbar.visible = YES;
+    }
     NSNumber *h = objc_getAssociatedObject(w, &kTaoTitleBarHeightKey);
     if (h != nil) applyButtonConstraints(w, [h floatValue]);
 }
