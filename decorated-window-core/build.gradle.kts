@@ -17,7 +17,7 @@ val publishVersion =
 
 dependencies {
     implementation(project(":core-runtime"))
-    api(libs.compose.desktop.common)
+    api(libs.compose.foundation)
 }
 
 // ---------- Native JNI builds ----------

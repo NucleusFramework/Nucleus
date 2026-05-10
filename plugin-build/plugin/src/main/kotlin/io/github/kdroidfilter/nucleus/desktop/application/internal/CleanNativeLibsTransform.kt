@@ -212,7 +212,12 @@ internal fun registerCleanNativeLibsTransform(project: Project) {
             // Android's dexing transforms produce directories, not JARs, so applying
             // our JAR-based transform to Android configurations causes failures.
             val isAndroid = configuration.attributes.keySet().any { it.name.startsWith("com.android") }
-            if (!isAndroid) {
+            // Skip Compose Hot Reload dev classpath: its custom usage type
+            // (compose-dev-java-runtime) consumes project variants that can't be
+            // disambiguated when an extra attribute is added. Hot Reload runs the
+            // app in-place and never packages, so native-lib cleanup is a no-op.
+            val isHotReload = name.contains("HotReload", ignoreCase = true)
+            if (!isAndroid && !isHotReload) {
                 configuration.attributes.attribute(NATIVE_LIBS_CLEANED, true)
             }
         }

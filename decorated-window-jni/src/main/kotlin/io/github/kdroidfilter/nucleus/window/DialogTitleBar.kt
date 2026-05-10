@@ -23,16 +23,17 @@ fun DecoratedDialogScope.DialogTitleBar(
     val titleBarInfo = remember { TitleBarInfo(dialogTitleBarInfo.title, dialogTitleBarInfo.icon) }
     LaunchedEffect(dialogTitleBarInfo.title) { titleBarInfo.title = dialogTitleBarInfo.title }
     LaunchedEffect(dialogTitleBarInfo.icon) { titleBarInfo.icon = dialogTitleBarInfo.icon }
+    val awtScope = this as AwtDecoratedDialogScope
     CompositionLocalProvider(
         LocalTitleBarInfo provides titleBarInfo,
     ) {
         when (Platform.Current) {
             Platform.Linux ->
-                LinuxDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.LinuxDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
             Platform.Windows ->
-                WindowsDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.WindowsDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
             Platform.MacOS ->
-                MacOSDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
+                awtScope.MacOSDialogTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, content)
             Platform.Unknown ->
                 error("DialogTitleBar is not supported on this platform(${System.getProperty("os.name")})")
         }

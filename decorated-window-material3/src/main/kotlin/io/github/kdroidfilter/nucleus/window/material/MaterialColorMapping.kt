@@ -22,7 +22,7 @@ private val isKde =
     Platform.Current == Platform.Linux && LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
 @Composable
-internal fun rememberMaterialWindowStyle(colorScheme: ColorScheme): DecoratedWindowStyle =
+fun rememberMaterialWindowStyle(colorScheme: ColorScheme): DecoratedWindowStyle =
     remember(colorScheme.outlineVariant) {
         DecoratedWindowStyle(
             colors =
@@ -35,7 +35,7 @@ internal fun rememberMaterialWindowStyle(colorScheme: ColorScheme): DecoratedWin
     }
 
 @Composable
-internal fun rememberMaterialTitleBarStyle(colorScheme: ColorScheme): TitleBarStyle =
+fun rememberMaterialTitleBarStyle(colorScheme: ColorScheme): TitleBarStyle =
     remember(
         colorScheme.surface,
         colorScheme.onSurface,

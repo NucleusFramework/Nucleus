@@ -1,5 +1,8 @@
 # Decorated Window
 
+!!! tip "Looking for a backend-agnostic entry point?"
+    See [Nucleus Application](nucleus-application.md). It wraps the three backends below behind a single `nucleusApplication { … }` call and exposes a portable `NucleusWindow` handle, so swapping between JBR / JNI / Tao becomes a runtime decision instead of a source-level rewrite.
+
 Compose for Desktop does not natively expose a way to draw custom content in the title bar while keeping native window controls and behavior (drag, resize, double-click maximize). On macOS, the underlying Swing layer does offer `JRootPane` client properties (such as `apple.awt.fullWindowContent` and `apple.awt.transparentTitleBar`) that let you extend Compose content into the title bar area while keeping native traffic lights — but this is a Swing-level mechanism, not a Compose API, and it does not give you a composable layout model for the title bar. On Windows and Linux there is no equivalent — your only option is a fully undecorated window where you reimplement everything from scratch.
 
 The decorated window modules bridge this gap. They are **completely design-system agnostic** — no dependency on Jewel, no dependency on Material 3. You wire in whatever color tokens your app uses (Material 3, Jewel, your own design system, or a plain `Color` literal).
@@ -22,6 +25,8 @@ The decorated window functionality is split into three modules:
 | `decorated-window-core` | `nucleus.decorated-window-core` | Shared types, layout, styling, resources. No platform-specific code. |
 | `decorated-window-jbr` | `nucleus.decorated-window-jbr` | JBR-based implementation. Uses JetBrains Runtime's `CustomTitleBar` API on macOS and Windows. |
 | `decorated-window-jni` | `nucleus.decorated-window-jni` | JBR-free implementation. Uses JNI native libraries on all platforms, with pure-Compose fallbacks when native libs are unavailable. |
+| `decorated-window-tao` | `nucleus.decorated-window-tao` | No-AWT implementation built on [Tao](https://github.com/tauri-apps/tao). GraalVM native-image friendly. |
+| `nucleus-application` | `nucleus.nucleus-application` | Backend-agnostic entry point — see [Nucleus Application](nucleus-application.md). |
 
 Both `decorated-window-jbr` and `decorated-window-jni` expose **the same public API**. Choose the one that fits your runtime:
 

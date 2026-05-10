@@ -25,7 +25,7 @@ fun DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable AwtDecoratedDialogScope.() -> Unit,
 ) {
     remember {
         check(JBR.isAvailable()) {

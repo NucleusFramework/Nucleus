@@ -27,7 +27,7 @@ import java.awt.Frame
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedWindowScope.WindowsTitleBar(
+internal fun AwtDecoratedWindowScope.WindowsTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -59,7 +59,7 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming", "LongMethod")
 @Composable
-private fun DecoratedWindowScope.NativeWindowsTitleBar(
+private fun AwtDecoratedWindowScope.NativeWindowsTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
@@ -199,7 +199,7 @@ private fun DecoratedWindowScope.NativeWindowsTitleBar(
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-private fun DecoratedWindowScope.FallbackWindowsTitleBar(
+private fun AwtDecoratedWindowScope.FallbackWindowsTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,

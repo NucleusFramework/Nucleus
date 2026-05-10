@@ -27,7 +27,7 @@ import io.github.kdroidfilter.nucleus.window.icons.windows.RestoreInactive
 import io.github.kdroidfilter.nucleus.window.icons.windows.RestoreInactiveDark
 import io.github.kdroidfilter.nucleus.window.icons.windows.WindowsControlButtonIcons
 
-internal data class WindowsTitleBarIconSet(
+data class WindowsTitleBarIconSet(
     val close: Painter,
     val closeHover: Painter,
     val closeInactive: Painter,
@@ -42,7 +42,7 @@ internal data class WindowsTitleBarIconSet(
 )
 
 @Composable
-internal fun windowsTitleBarIcons(isDark: Boolean = LocalIsDarkTheme.current): WindowsTitleBarIconSet =
+fun windowsTitleBarIcons(isDark: Boolean = LocalIsDarkTheme.current): WindowsTitleBarIconSet =
     if (isDark) {
         WindowsTitleBarIconSet(
             close = rememberVectorPainter(WindowsControlButtonIcons.CloseDark),

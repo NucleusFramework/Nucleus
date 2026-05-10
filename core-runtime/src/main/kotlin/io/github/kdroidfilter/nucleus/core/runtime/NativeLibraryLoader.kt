@@ -28,12 +28,18 @@ object NativeLibraryLoader {
      * @param libraryName the base library name (e.g. "nucleus_systemcolor")
      * @param callerClass a class from the module's JAR, used to locate the resource
      * @param resourcePrefix the JAR resource prefix (default: "/nucleus/native")
+     * @param sidecarFiles platform-bare filenames (without `lib`/`.dll`/`.so`/`.dylib`
+     *     mapping) extracted to the same cache directory as [libraryName] before
+     *     it is loaded, so the OS DLL search path can resolve them. Used for
+     *     vendor-supplied helper DLLs (e.g. `WebView2Loader.dll` next to the
+     *     WebView2-using sample DLL on Windows).
      * @return true if the library was loaded successfully
      */
     fun load(
         libraryName: String,
         callerClass: Class<*>,
         resourcePrefix: String = "/nucleus/native",
+        sidecarFiles: List<String> = emptyList(),
     ): Boolean {
         synchronized(lock) {
             if (libraryName in loadedLibraries) return true
@@ -42,7 +48,7 @@ object NativeLibraryLoader {
             if (trySystemLoad(libraryName)) return true
 
             // Fallback: extract from JAR with persistent cache
-            return tryJarExtraction(libraryName, callerClass, resourcePrefix)
+            return tryJarExtraction(libraryName, callerClass, resourcePrefix, sidecarFiles)
         }
     }
 
@@ -60,6 +66,7 @@ object NativeLibraryLoader {
         libraryName: String,
         callerClass: Class<*>,
         resourcePrefix: String,
+        sidecarFiles: List<String>,
     ): Boolean {
         try {
             val platform = resolvePlatform()
@@ -79,6 +86,12 @@ object NativeLibraryLoader {
             Files.createDirectories(cacheDir)
             val target = cacheDir.resolve(fileName)
             val fingerprintFile = cacheDir.resolve("$fileName.fingerprint")
+
+            // Extract sidecars regardless of cache state — they share the
+            // canonical cache directory so the dynamic linker can find
+            // them next to the main library (Windows: SetDllDirectory or
+            // implicit search; Linux: rpath/$ORIGIN; macOS: @loader_path).
+            extractSidecars(callerClass, resourcePrefix, platform, cacheDir, sidecarFiles)
 
             if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) {
                 System.load(target.toAbsolutePath().toString())
@@ -116,6 +129,51 @@ object NativeLibraryLoader {
         } catch (e: Exception) {
             logger.log(Level.WARNING, "Failed to load $libraryName native library", e)
             return false
+        }
+    }
+
+    /**
+     * Extracts auxiliary files from the JAR into [cacheDir]. Each entry in
+     * [sidecarFiles] is a bare filename (e.g. `WebView2Loader.dll`) located
+     * under the same per-platform resource subdirectory as the main library.
+     * Files are only re-extracted when their JAR fingerprint changes, so
+     * subsequent launches skip the I/O.
+     */
+    private fun extractSidecars(
+        callerClass: Class<*>,
+        resourcePrefix: String,
+        platform: NativePlatform,
+        cacheDir: Path,
+        sidecarFiles: List<String>,
+    ) {
+        for (sidecar in sidecarFiles) {
+            try {
+                val resourcePath = "$resourcePrefix/${platform.resourceDir}/$sidecar"
+                val resourceUrl = callerClass.getResource(resourcePath) ?: continue
+                val fingerprint = resolveFingerprint(resourceUrl)
+                val target = cacheDir.resolve(sidecar)
+                val fingerprintFile = cacheDir.resolve("$sidecar.fingerprint")
+                if (Files.exists(target) && isCacheValid(fingerprintFile, fingerprint)) continue
+
+                val tmp = Files.createTempFile(cacheDir, sidecar, ".tmp")
+                resourceUrl.openStream().use { input ->
+                    Files.copy(input, tmp, StandardCopyOption.REPLACE_EXISTING)
+                }
+                try {
+                    try {
+                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+                    } catch (_: Exception) {
+                        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                    writeFingerprint(fingerprintFile, fingerprint)
+                } catch (_: Exception) {
+                    // Sidecar locked by another process — leave the existing
+                    // file in place, the dynamic linker will find it.
+                    logger.fine("Sidecar $sidecar move failed, existing copy retained")
+                }
+            } catch (e: Exception) {
+                logger.log(Level.WARNING, "Failed to extract sidecar $sidecar", e)
+            }
         }
     }
 

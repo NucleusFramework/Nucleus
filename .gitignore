@@ -12,6 +12,8 @@
 build
 .kotlin
 site
+/tmp/
+/.tmp-compose-src/
 
 # Claude Code per-user settings
 .claude/settings.local.json
@@ -22,3 +24,31 @@ site
 # MSVC build artifacts
 *.obj
 *.exp
+*.lib
+*.pdb
+
+# Cargo / Rust build outputs (decorated-window-tao native crate)
+**/native/target/
+
+# Cargo registry metadata (vendored crates)
+decorated-window-tao/src/main/native/vendor/**/.cargo_vcs_info.json
+decorated-window-tao/src/main/native/vendor/**/.cargo-ok
+
+# .NET build outputs (scripts/uia-listener)
+**/bin/
+**/obj/
+
+# Scratch notes / problem briefs at repo root
+/uia-problem.txt
+
+# UIA debug log written by nucleus_tao_a11y.dll when NUCLEUS_TAO_A11Y_DEBUG=1
+/tmp/nucleus_a11y.log
+
+# IDE temporary lock files
+.*~
+
+# sample-tao Windows native build artifacts (NuGet-fetched WebView2 SDK,
+# generated MSVC outputs)
+sample-tao/src/main/native/windows/packages/
+sample-tao/src/main/native/windows/nuget.exe
+sample-tao/src/main/native/windows/build_log.txt

@@ -31,40 +31,68 @@ object DeepLinkHandler {
     /**
      * Registers deep link handling for the application.
      *
-     * Sets up the macOS Apple Events handler and parses command-line arguments
-     * for a URI. When a deep link is received (now or later via Apple Events),
-     * [onDeepLink] is invoked.
+     * **AWT-bound.** This call touches `java.awt.Desktop` to install the macOS
+     * Apple Events handler, which forces AWT initialisation. On the Tao backend
+     * (`decorated-window-tao`) AWT and Tao both create their own `NSApp`,
+     * deadlocking the event loop. Apps using `nucleusApplication { … }` should
+     * call its `onDeepLink { … }` API instead — it picks the right path for
+     * the active backend.
      *
      * @param args command-line arguments passed to `main()`
      * @param onDeepLink callback invoked each time a deep link URI is received
      */
+    @Deprecated(
+        "Use nucleusApplication { onDeepLink { … } } — safe across AWT and Tao backends. " +
+            "This entry point installs an AWT-only handler and is incompatible with the Tao backend on macOS.",
+    )
     fun register(
         args: Array<String>,
         onDeepLink: (URI) -> Unit,
     ) {
         this.onDeepLink = onDeepLink
+        installAwtAppleEventHandler()
+        parseUriFromArgs(args)
+    }
 
-        // Handle protocol URLs on macOS (delivered via Apple Events)
-        if (Desktop.isDesktopSupported()) {
-            try {
-                Desktop.getDesktop().setOpenURIHandler { event ->
-                    debugLog { "Received URI via Apple Events: ${event.uri}" }
-                    handleUri(event.uri)
-                }
-            } catch (e: UnsupportedOperationException) {
-                debugLog { "setOpenURIHandler not supported on this platform: ${e.message}" }
+    /**
+     * Sets the callback invoked whenever a deep link URI is received and
+     * parses any URI present in [args]. Does **not** touch `java.awt.Desktop`,
+     * so it is safe on every backend.
+     *
+     * Used internally by `nucleusApplication`'s `onDeepLink { … }` builder.
+     */
+    fun setHandler(
+        args: Array<String>,
+        onDeepLink: (URI) -> Unit,
+    ) {
+        this.onDeepLink = onDeepLink
+        parseUriFromArgs(args)
+    }
+
+    /**
+     * Installs the AWT-based macOS Apple Events handler. **Calling this
+     * initialises AWT** — only invoke from an AWT-driven application launch.
+     */
+    fun installAwtAppleEventHandler() {
+        if (!Desktop.isDesktopSupported()) return
+        try {
+            Desktop.getDesktop().setOpenURIHandler { event ->
+                debugLog { "Received URI via Apple Events: ${event.uri}" }
+                handleUri(event.uri)
             }
+        } catch (e: UnsupportedOperationException) {
+            debugLog { "setOpenURIHandler not supported on this platform: ${e.message}" }
         }
+    }
 
-        // Handle protocol URLs on Windows/Linux (passed as command-line args)
-        args.firstOrNull { it.contains("://") }?.let { raw ->
-            try {
-                val parsed = URI(raw)
-                debugLog { "Received URI via CLI args: $parsed" }
-                handleUri(parsed)
-            } catch (e: URISyntaxException) {
-                errorLog { "Failed to parse URI from args: $raw — $e" }
-            }
+    private fun parseUriFromArgs(args: Array<String>) {
+        val raw = args.firstOrNull { it.contains("://") } ?: return
+        try {
+            val parsed = URI(raw)
+            debugLog { "Received URI via CLI args: $parsed" }
+            handleUri(parsed)
+        } catch (e: URISyntaxException) {
+            errorLog { "Failed to parse URI from args: $raw — $e" }
         }
     }
 
@@ -99,6 +127,15 @@ object DeepLinkHandler {
         } catch (e: URISyntaxException) {
             errorLog { "Failed to read URI from $path: $e" }
         }
+    }
+
+    /**
+     * Updates [uri] and invokes the registered callback. Used by alternative
+     * delivery paths (e.g. the Tao backend's native Apple Events handler) so
+     * the [SingleInstanceManager] persistence still sees the latest URI.
+     */
+    fun deliver(newUri: URI) {
+        handleUri(newUri)
     }
 
     private fun handleUri(newUri: URI) {

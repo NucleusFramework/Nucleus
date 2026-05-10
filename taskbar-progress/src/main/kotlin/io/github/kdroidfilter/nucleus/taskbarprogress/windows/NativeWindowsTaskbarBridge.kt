@@ -28,4 +28,23 @@ internal object NativeWindowsTaskbarBridge {
         window: Window,
         type: Int,
     ): Int
+
+    @JvmStatic
+    external fun nativeSetProgressByHwnd(
+        hwnd: Long,
+        completed: Long,
+        total: Long,
+    ): Int
+
+    @JvmStatic
+    external fun nativeSetProgressStateByHwnd(
+        hwnd: Long,
+        flags: Int,
+    ): Int
+
+    @JvmStatic
+    external fun nativeRequestAttentionByHwnd(
+        hwnd: Long,
+        type: Int,
+    ): Int
 }

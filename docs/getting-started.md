@@ -77,19 +77,14 @@ nucleus.application {
 
 Nucleus is fully compatible with [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html). Since Nucleus extends the Compose plugin (not replaces it), Hot Reload works out of the box.
 
-The `hotRun` task reads `mainClass` from the `compose.desktop.application` block. If you only set it in `nucleus.application`, add a minimal Compose block:
-
-```kotlin
-compose.desktop.application {
-    mainClass = "com.example.MainKt"
-}
-```
-
-Or pass it via the command line:
+The `mainClass` set in `nucleus.application` is automatically propagated to `compose.desktop.application.mainClass`, so `hotRun` and `hotSnapshotMain` resolve the entry point with no extra configuration. You can still override it from the command line:
 
 ```bash
 ./gradlew hotRun -PmainClass=com.example.MainKt
 ```
+
+!!! note "Tao backend on macOS"
+    When the project depends on `decorated-window-tao`, the plugin automatically injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks on macOS. This is required because Tao runs the OS event loop on the process main thread — without the flag, `hotRun` launches but no window appears.
 
 ### Packaging
 

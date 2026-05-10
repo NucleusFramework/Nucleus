@@ -17,7 +17,7 @@ import io.github.kdroidfilter.nucleus.window.utils.WindowMouseEventEffect
 
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedWindowScope.WindowsTitleBar(
+internal fun AwtDecoratedWindowScope.WindowsTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

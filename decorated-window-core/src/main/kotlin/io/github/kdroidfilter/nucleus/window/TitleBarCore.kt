@@ -46,7 +46,6 @@ import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
-import java.awt.Window
 import kotlin.math.max
 
 private const val GRADIENT_MIDPOINT = 0.5f
@@ -64,7 +63,6 @@ val LocalControlButtonsDirection = staticCompositionLocalOf { LayoutDirection.Lt
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 fun GenericTitleBarImpl(
-    window: Window,
     state: DecoratedWindowState,
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
@@ -130,39 +128,12 @@ fun GenericTitleBarImpl(
             },
             modifier = Modifier.fillMaxSize(),
             measurePolicy =
-                rememberTitleBarMeasurePolicy(window, state, applyTitleBar, controlButtonsDirection, onPlace),
+                rememberTitleBarMeasurePolicy(state, applyTitleBar, controlButtonsDirection, onPlace),
         )
     }
 }
 
-@Suppress("FunctionNaming")
-@Composable
-fun DecoratedWindowScope.TitleBarImpl(
-    modifier: Modifier = Modifier,
-    gradientStartColor: Color = Color.Unspecified,
-    style: TitleBarStyle = LocalTitleBarStyle.current,
-    controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
-    applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
-    onPlace: (() -> Unit)? = null,
-    backgroundContent: @Composable () -> Unit = {},
-    content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
-) {
-    GenericTitleBarImpl(
-        window = window,
-        state = state,
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlButtonsDirection,
-        applyTitleBar = applyTitleBar,
-        onPlace = onPlace,
-        backgroundContent = backgroundContent,
-        content = content,
-    )
-}
-
 class TitleBarMeasurePolicy(
-    private val window: Window,
     private val state: DecoratedWindowState,
     private val applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     private val controlButtonsDirection: LayoutDirection,
@@ -286,14 +257,13 @@ class TitleBarMeasurePolicy(
 
 @Composable
 fun rememberTitleBarMeasurePolicy(
-    window: Window,
     state: DecoratedWindowState,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
     onPlace: (() -> Unit)? = null,
 ): MeasurePolicy =
-    remember(window, state, applyTitleBar, controlButtonsDirection, onPlace) {
-        TitleBarMeasurePolicy(window, state, applyTitleBar, controlButtonsDirection, onPlace)
+    remember(state, applyTitleBar, controlButtonsDirection, onPlace) {
+        TitleBarMeasurePolicy(state, applyTitleBar, controlButtonsDirection, onPlace)
     }
 
 @Stable
@@ -376,56 +346,3 @@ class TitleBarChildDataNode(
     ParentDataModifierNode {
     override fun Density.modifyParentData(parentData: Any?) = this@TitleBarChildDataNode
 }
-
-// Handles window dragging via Compose pointer events.
-// Drag starts only when the press is not consumed by a child composable (e.g. a button),
-// so interactive elements in the title bar keep working correctly.
-fun Modifier.windowDragHandler(window: Window): Modifier =
-    pointerInput(window) {
-        val ctx = currentCoroutineContext()
-        awaitPointerEventScope {
-            var dragging = false
-            var startScreenX = 0
-            var startScreenY = 0
-            var startWindowX = 0
-            var startWindowY = 0
-
-            @Suppress("LoopWithTooManyJumpStatements")
-            while (ctx.isActive) {
-                val event = awaitPointerEvent(PointerEventPass.Main)
-                val change = event.changes.firstOrNull() ?: continue
-
-                when (event.type) {
-                    PointerEventType.Press -> {
-                        if (!change.isConsumed) {
-                            val loc =
-                                java.awt.MouseInfo
-                                    .getPointerInfo()
-                                    ?.location
-                            startScreenX = loc?.x ?: 0
-                            startScreenY = loc?.y ?: 0
-                            startWindowX = window.x
-                            startWindowY = window.y
-                            dragging = true
-                        }
-                    }
-                    PointerEventType.Move -> {
-                        if (dragging) {
-                            val loc =
-                                java.awt.MouseInfo
-                                    .getPointerInfo()
-                                    ?.location ?: continue
-                            window.setLocation(
-                                startWindowX + (loc.x - startScreenX),
-                                startWindowY + (loc.y - startScreenY),
-                            )
-                        }
-                    }
-                    PointerEventType.Release -> {
-                        dragging = false
-                    }
-                    else -> Unit
-                }
-            }
-        }
-    }

@@ -5,11 +5,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,10 +39,10 @@ import java.awt.geom.Rectangle2D
 import java.awt.geom.RoundRectangle2D
 
 @Stable
-interface DecoratedDialogScope : DialogWindowScope {
+interface AwtDecoratedDialogScope :
+    DecoratedDialogScope,
+    DialogWindowScope {
     override val window: ComposeDialog
-
-    val state: DecoratedDialogState
 }
 
 object DecoratedDialogMeasurePolicy : MeasurePolicy {
@@ -90,47 +87,9 @@ object DecoratedDialogMeasurePolicy : MeasurePolicy {
     }
 }
 
-@Immutable
-@JvmInline
-value class DecoratedDialogState(
-    val state: ULong,
-) {
-    val isActive: Boolean
-        get() = state and Active != 0UL
-
-    fun copy(active: Boolean = isActive): DecoratedDialogState = of(active = active)
-
-    fun toDecoratedWindowState(): DecoratedWindowState =
-        DecoratedWindowState.of(
-            fullscreen = false,
-            minimized = false,
-            maximized = false,
-            active = isActive,
-        )
-
-    override fun toString(): String = "${javaClass.simpleName}(isActive=$isActive)"
-
-    companion object {
-        val Active: ULong = 1UL shl 0
-
-        fun of(active: Boolean = true): DecoratedDialogState =
-            DecoratedDialogState(
-                if (active) Active else 0UL,
-            )
-
-        fun of(window: ComposeDialog): DecoratedDialogState = of(active = window.isActive)
-    }
-}
-
-data class DialogTitleBarInfo(
-    val title: String,
-    val icon: Painter?,
-)
-
-val LocalDialogTitleBarInfo: ProvidableCompositionLocal<DialogTitleBarInfo> =
-    compositionLocalOf {
-        error("LocalDialogTitleBarInfo not provided, DialogTitleBar must be used in DecoratedDialog")
-    }
+/** AWT-bound factory for [DecoratedDialogState]. Defined as an extension so
+ *  the value class itself can stay in `decorated-window-core` (no AWT). */
+fun DecoratedDialogState.Companion.of(window: ComposeDialog): DecoratedDialogState = of(active = window.isActive)
 
 /**
  * Shared body for DecoratedDialog, used by both JBR and JNI variants.
@@ -142,7 +101,7 @@ fun DialogWindowScope.DecoratedDialogBody(
     title: String,
     icon: Painter?,
     undecorated: Boolean,
-    content: @Composable DecoratedDialogScope.() -> Unit,
+    content: @Composable AwtDecoratedDialogScope.() -> Unit,
 ) {
     var decoratedDialogState by remember { mutableStateOf(DecoratedDialogState.of(window)) }
 
@@ -281,7 +240,7 @@ fun DialogWindowScope.DecoratedDialogBody(
         Layout(
             content = {
                 val scope =
-                    object : DecoratedDialogScope {
+                    object : AwtDecoratedDialogScope {
                         override val state: DecoratedDialogState
                             get() = decoratedDialogState
 

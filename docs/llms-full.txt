@@ -201,20 +201,13 @@ nucleus.application {
 
 Nucleus is fully compatible with [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html). Since Nucleus extends the Compose plugin (not replaces it), Hot Reload works out of the box.
 
-The `hotRun` task reads `mainClass` from the `compose.desktop.application` block. If you only set it in `nucleus.application`, add a minimal Compose block:
-
-```kotlin
-compose.desktop.application {
-    mainClass = "com.example.MainKt"
-}
-```
-
-Or pass it via the command line:
+The `mainClass` set in `nucleus.application` is automatically propagated to `compose.desktop.application.mainClass`, so `hotRun` and `hotSnapshotMain` resolve the entry point with no extra configuration. You can still override it from the command line:
 
 ```bash
 ./gradlew hotRun -PmainClass=com.example.MainKt
 ```
 
+**Tao backend on macOS:** When the project depends on `decorated-window-tao`, the plugin automatically injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks on macOS. This is required because Tao runs the OS event loop on the process main thread — without the flag, `hotRun` launches but no window appears.
 ### Packaging
 
 | Task | Description |
@@ -1246,6 +1239,11 @@ windows {
         square150x150Logo.set(project.file("packaging/appx/Square150x150Logo.png"))
         wide310x150Logo.set(project.file("packaging/appx/Wide310x150Logo.png"))
 
+        // Windows version range written into AppxManifest.xml.
+        // Required by the Store: MinVersion must be > 10.0.17134.0 (Windows 10 1803).
+        minVersion = "10.0.17763.0"        // Windows 10 1809 (October 2018 Update)
+        maxVersionTested = "10.0.22621.0"  // Windows 11 22H2
+
         // Store build options
         addAutoLaunchExtension = false
         setBuildNumber = true
@@ -1265,6 +1263,46 @@ windows {
 ### MSIX Bundle (Multi-Architecture)
 
 Create an `.msixbundle` containing both amd64 and arm64 `.appx` files. See [CI/CD](../ci-cd.md#windows-msix-bundle) for the GitHub Actions workflow.
+
+### Submitting to the Microsoft Store
+
+Two requirements are enforced by Partner Center at upload time. Both apply to every `.appx`/`.msix` inside an `.msixbundle` (the bundle is just a container — each contained package carries its own `AppxManifest.xml`, and Partner Center validates each one).
+
+#### 1. Use the identity assigned by Partner Center
+
+`identityName`, `publisher`, and `publisherDisplayName` must match the values shown on your reservation page in Partner Center under **Product identity**. You cannot pick them freely — the Store rejects packages whose manifest identity does not match the reservation.
+
+```kotlin
+appx {
+    // Package/Identity/Name from Partner Center
+    identityName = "Contoso.MyApp-Suffix"
+    // Package/Identity/Publisher (CN=<GUID> assigned by the Store)
+    publisher = "CN=12345678-90AB-CDEF-1234-567890ABCDEF"
+    // Package/Properties/PublisherDisplayName from Partner Center
+    publisherDisplayName = "Contoso"
+}
+```
+
+**Sideload vs Store identity:** For sideloading you can use any `CN=...` that matches your code-signing certificate. For the Store you **must** use the `CN=<GUID>` assigned by Partner Center — the certificate is provided server-side, so the local signing certificate (if any) does not need to match the Store CN.
+#### 2. Set `minVersion` above the Store's floor
+
+By default no `MinVersion` is written and the underlying tooling falls back to a value (`10.0.14316.0`) that the Store rejects with:
+
+> *Package acceptance validation error: bundle is not valid. You can't upload msix/msixbundle/msixupload packages that target Windows with a MinVersion <= 10.0.17134.0.*
+
+Always set `minVersion` to at least `10.0.17763.0` (Windows 10 1809) for Store submissions:
+
+```kotlin
+appx {
+    minVersion = "10.0.17763.0"
+    maxVersionTested = "10.0.22621.0"
+}
+```
+
+| Property | Maps to | Notes |
+|----------|---------|-------|
+| `minVersion` | `<TargetDeviceFamily MinVersion="…"/>` | Must be `> 10.0.17134.0` for Store uploads. |
+| `maxVersionTested` | `<TargetDeviceFamily MaxVersionTested="…"/>` | Highest Windows build you've validated against. |
 
 ## Code Signing
 
@@ -5199,6 +5237,7 @@ fun main(args: Array<String>) {
 
 # Decorated Window
 
+**Looking for a backend-agnostic entry point?:** See [Nucleus Application](nucleus-application.md). It wraps the three backends below behind a single `nucleusApplication { … }` call and exposes a portable `NucleusWindow` handle, so swapping between JBR / JNI / Tao becomes a runtime decision instead of a source-level rewrite.
 Compose for Desktop does not natively expose a way to draw custom content in the title bar while keeping native window controls and behavior (drag, resize, double-click maximize). On macOS, the underlying Swing layer does offer `JRootPane` client properties (such as `apple.awt.fullWindowContent` and `apple.awt.transparentTitleBar`) that let you extend Compose content into the title bar area while keeping native traffic lights — but this is a Swing-level mechanism, not a Compose API, and it does not give you a composable layout model for the title bar. On Windows and Linux there is no equivalent — your only option is a fully undecorated window where you reimplement everything from scratch.
 
 The decorated window modules bridge this gap. They are **completely design-system agnostic** — no dependency on Jewel, no dependency on Material 3. You wire in whatever color tokens your app uses (Material 3, Jewel, your own design system, or a plain `Color` literal).
@@ -5221,6 +5260,8 @@ The decorated window functionality is split into three modules:
 | `decorated-window-core` | `nucleus.decorated-window-core` | Shared types, layout, styling, resources. No platform-specific code. |
 | `decorated-window-jbr` | `nucleus.decorated-window-jbr` | JBR-based implementation. Uses JetBrains Runtime's `CustomTitleBar` API on macOS and Windows. |
 | `decorated-window-jni` | `nucleus.decorated-window-jni` | JBR-free implementation. Uses JNI native libraries on all platforms, with pure-Compose fallbacks when native libs are unavailable. |
+| `decorated-window-tao` | `nucleus.decorated-window-tao` | No-AWT implementation built on [Tao](https://github.com/tauri-apps/tao). GraalVM native-image friendly. |
+| `nucleus-application` | `nucleus.nucleus-application` | Backend-agnostic entry point — see [Nucleus Application](nucleus-application.md). |
 
 Both `decorated-window-jbr` and `decorated-window-jni` expose **the same public API**. Choose the one that fits your runtime:
 
@@ -5882,6 +5923,670 @@ val layout = rememberLinuxButtonLayout()
 // layout.controlsOnRight — true if buttons are on the right side
 // layout.hasClose / layout.hasMinimize / layout.hasMaximize
 ```
+
+---
+
+# Nucleus Application
+
+The `nucleus-application` module provides a **unified entry point** that abstracts over the three decorated-window backends (`decorated-window-jbr`, `decorated-window-jni`, `decorated-window-tao`) and exposes a backend-agnostic window handle. With a single call site, the same code compiles and runs unchanged on the AWT-based JBR/JNI backends and on the no-AWT Tao backend.
+
+Switching backends becomes a runtime decision driven by which `decorated-window-*` artifact is on the classpath — no source-level rewrite required.
+
+**Why a separate module:** Each backend has its own constraints (JBR runtime, AWT widget tree, Tao's own `ComposeScene`). Picking one is normally a compile-time commitment that leaks into every `application { … }` / `taoApplication { … }` call. `nucleus-application` removes that commitment from your code: write to `nucleusApplication { … }`, ship one of the three backends as a runtime dependency, and let the application module wire them together.
+## Installation
+
+Add `nucleus-application` plus **exactly one** decorated-window backend:
+
+```kotlin
+dependencies {
+    implementation("io.github.kdroidfilter:nucleus.nucleus-application:<version>")
+
+    // Pick exactly one backend:
+    implementation("io.github.kdroidfilter:nucleus.decorated-window-jni:<version>")    // any JVM (recommended)
+    // implementation("io.github.kdroidfilter:nucleus.decorated-window-jbr:<version>") // JBR-only
+    // implementation("io.github.kdroidfilter:nucleus.decorated-window-tao:<version>") // no-AWT, GraalVM-friendly
+}
+```
+
+The three backends define overlapping symbols in the same package — by construction only one can be on the runtime classpath. `nucleus-application` detects which one is present and dispatches accordingly.
+
+## Quick Start
+
+```kotlin
+fun main() = nucleusApplication {
+    val state = rememberWindowState(size = DpSize(1024.dp, 720.dp))
+    DecoratedWindow(
+        onCloseRequest = ::exitApplication,
+        state = state,
+        title = "My App",
+    ) {
+        TitleBar { state ->
+            Text(title, modifier = Modifier.align(Alignment.CenterHorizontally))
+        }
+        // Your app content
+        MyContent()
+    }
+}
+```
+
+That is all. Inside the `content` lambda the receiver is `NucleusDecoratedWindowScope`. `TitleBar { … }`, `DecoratedWindowState`, and the rest of the [decorated-window](decorated-window.md) API behave exactly as on the underlying backend.
+
+## Public API
+
+### `nucleusApplication`
+
+```kotlin
+fun nucleusApplication(
+    backend: NucleusBackend = NucleusBackend.Auto,
+    content: @Composable NucleusApplicationScope.() -> Unit,
+)
+```
+
+| `backend`            | Behaviour                                                                 |
+|----------------------|---------------------------------------------------------------------------|
+| `NucleusBackend.Auto` | Pick whichever backend is on the classpath. Tao wins if both are present. |
+| `NucleusBackend.Awt`  | Force the AWT-bound path (jbr or jni — whichever is at runtime).          |
+| `NucleusBackend.Tao`  | Force the no-AWT path.                                                    |
+
+`Auto` is the right default for libraries; explicit values are useful when an app ships multiple backends (rare) or wants to enforce one in tests.
+
+### `NucleusApplicationScope`
+
+Sealed interface returned to the `content` lambda. Two concrete subtypes drive the dispatch:
+
+- `AwtNucleusApplicationScope` — wraps Compose Desktop's `application { … }` scope
+- `TaoNucleusApplicationScope` — wraps Tao's `taoApplication { … }` scope
+
+You normally don't pattern-match on it; it just provides `exitApplication()` and the active `backend`.
+
+### `DecoratedWindow` & `DecoratedDialog`
+
+```kotlin
+@Composable
+fun NucleusApplicationScope.DecoratedWindow(
+    onCloseRequest: () -> Unit,
+    state: WindowState = rememberWindowState(),
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    alwaysOnTop: Boolean = false,
+    minimumSize: DpSize? = null,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+)
+
+@Composable
+fun NucleusApplicationScope.DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: DialogState = rememberDialogState(),
+    /* … same shape, dialog defaults */
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+)
+```
+
+Both functions match the parameter set of the underlying backend's `DecoratedWindow` / `DecoratedDialog`, with the `macOSStyle` enum dropped — use `Modifier.macOSLargeCornerRadius()` on the `TitleBar` instead (works on every backend, see [Modifiers](#modifiers) below).
+
+### `NucleusWindow`
+
+The portable window handle exposed inside the content lambda as `nucleusWindow`:
+
+```kotlin
+@Stable
+interface NucleusWindow {
+    val isFocused: Boolean
+    val isMinimized: Boolean
+    val isMaximized: Boolean
+    val isFullscreen: Boolean
+
+    fun show()
+    fun hide()
+    fun toFront()
+    fun requestFocus()
+    fun setMinimized(minimized: Boolean)
+    fun setMaximized(maximized: Boolean)
+    fun setFullscreen(fullscreen: Boolean)
+    fun setAlwaysOnTop(alwaysOnTop: Boolean)
+    fun setMinimumSize(size: DpSize?)
+    fun setIcon(painter: Painter?)
+    fun close()
+
+    val focusFlow: StateFlow<Boolean>
+    val minimizedFlow: StateFlow<Boolean>
+    val maximizedFlow: StateFlow<Boolean>
+    val fullscreenFlow: StateFlow<Boolean>
+
+    val unsafe: NucleusWindowUnsafe
+}
+```
+
+Use the methods and `*Flow` values for portable code. The same handle is also reachable from any composable via `LocalNucleusWindow.current`.
+
+### `LocalNucleusBackend`
+
+```kotlin
+val LocalNucleusBackend: ProvidableCompositionLocal<NucleusBackend>
+```
+
+A child composable can branch on the active backend without reflective classpath checks:
+
+```kotlin
+@Composable
+fun MaybeUseTaoTrick() {
+    if (LocalNucleusBackend.current == NucleusBackend.Tao) {
+        // Tao-only behaviour
+    }
+}
+```
+
+### Backend-specific escape hatches
+
+```kotlin
+interface NucleusWindowUnsafe {
+    val awtWindow: ComposeWindow?    // populated on AWT (jbr/jni), null on Tao
+    val awtDialog: ComposeDialog?    // populated on AWT inside DecoratedDialog
+    val taoWindow: TaoWindow?        // populated on Tao, null on AWT
+    val taoHandle: Long?             // raw native handle, suitable for FFI
+}
+```
+
+These are namespaced behind `unsafe` deliberately: reaching for them is an explicit opt-out of the portable contract. Use them only when no portable equivalent exists (see [What can't be portable](#what-cant-be-portable)).
+
+## Modifiers
+
+The unified entry point keeps the existing `Modifier`-driven extensions:
+
+- `Modifier.newFullscreenControls()` — opt-in macOS fullscreen overlay (jbr/jni)
+- `Modifier.macOSLargeCornerRadius()` — opt-in macOS Sequoia / Tahoe large corner radius
+
+Both are now honoured **identically on Tao**: applying the modifier to a `TitleBar` re-runs the same `NSToolbar` install path that the AWT backends use. The `MacOSStyle` enum on `tao.openDecoratedWindow` still exists as the imperative equivalent, but its default has been changed to `Classic` so that the modifier is the one source of truth across backends.
+
+```kotlin
+TitleBar(modifier = Modifier.macOSLargeCornerRadius()) { state -> /* … */ }
+```
+
+## Theming wrappers
+
+The existing Material 2 / Material 3 / Jewel wrappers gained a `NucleusApplicationScope` overload:
+
+- `nucleus.decorated-window-material3` — `MaterialDecoratedWindow`, `MaterialDecoratedDialog`
+- `nucleus.decorated-window-material2` — `MaterialDecoratedWindow`
+- `nucleus.decorated-window-jewel` — `JewelDecoratedWindow`
+
+```kotlin
+fun main() = nucleusApplication {
+    MaterialTheme(colorScheme = darkColorScheme()) {
+        MaterialDecoratedWindow(
+            onCloseRequest = ::exitApplication,
+            title = "My App",
+        ) {
+            MaterialTitleBar { state -> /* … */ }
+            Surface(Modifier.fillMaxSize()) { /* content */ }
+        }
+    }
+}
+```
+
+The wrappers capture the outer `MaterialTheme` / Jewel theme tokens and re-provide them inside the window content, which matters on Tao (each window owns its own `ComposeScene` and `CompositionLocal`s don't propagate across scenes). The legacy `ApplicationScope.MaterialDecoratedWindow` AWT-only overload is kept for backwards compatibility.
+
+`nucleus-application` also auto-forwards `LocalIsDarkTheme`, `LocalDecoratedWindowStyle`, and `LocalTitleBarStyle` from the outer composition into the Tao scene — wrapping `NucleusDecoratedWindowTheme(…) { DecoratedWindow(…) { … } }` works the same on both backends.
+
+## Migration
+
+Migrating an existing AWT-only app (jbr or jni) is a two-line change for the entry point, plus one addition for any code that previously held a `ComposeWindow`.
+
+### Step 1 — entry point
+
+```diff
+- import androidx.compose.ui.window.application
++ import io.github.kdroidfilter.nucleus.application.nucleusApplication
+```
+
+```diff
+- fun main() = application {
++ fun main() = nucleusApplication {
+      DecoratedWindow(/* … */) { /* … */ }
+  }
+```
+
+Returning early stays the same:
+
+```diff
+-     return@application
++     return@nucleusApplication
+```
+
+### Step 2 — window handle
+
+Inside the content lambda the receiver is now `NucleusDecoratedWindowScope`. The portable handle is `nucleusWindow: NucleusWindow`. The previously-implicit `window: ComposeWindow` is still reachable via `nucleusWindow.unsafe.awtWindow`.
+
+For most call sites the portable `NucleusWindow` API is enough:
+
+```diff
+- LaunchedEffect(restoreRequestCount) {
+-     if (restoreRequestCount > 0) {
+-         window.toFront()
+-         window.requestFocus()
+-     }
+- }
++ LaunchedEffect(restoreRequestCount) {
++     if (restoreRequestCount > 0) {
++         nucleusWindow.toFront()
++         nucleusWindow.requestFocus()
++     }
++ }
+```
+
+```diff
+- var isWindowFocused by remember { mutableStateOf(window.isFocused) }
+- DisposableEffect(window) {
+-     val listener = object : WindowFocusListener {
+-         override fun windowGainedFocus(e: WindowEvent?) { isWindowFocused = true }
+-         override fun windowLostFocus(e: WindowEvent?) { isWindowFocused = false }
+-     }
+-     window.addWindowFocusListener(listener)
+-     onDispose { window.removeWindowFocusListener(listener) }
+- }
++ val isWindowFocused by nucleusWindow.focusFlow.collectAsState()
+```
+
+When you genuinely need the AWT widget (e.g. to call a Windows JNI bridge that takes a `java.awt.Window`), use the escape hatch:
+
+```diff
+- "Taskbar" -> TaskbarProgressScreen(window)
++ "Taskbar" -> TaskbarProgressScreen(nucleusWindow.unsafe.awtWindow!!)
+```
+
+### Step 3 — theming wrappers (optional)
+
+If you used `application { MaterialDecoratedWindow(…) { … } }`, the call site doesn't need to change — `MaterialDecoratedWindow` resolves to its `NucleusApplicationScope` overload automatically.
+
+### Cheat sheet
+
+| Before (AWT-only) | After (portable) |
+|---|---|
+| `application { … }` | `nucleusApplication { … }` |
+| `taoApplication { … }` | `nucleusApplication(NucleusBackend.Tao) { … }` |
+| `window: ComposeWindow` (lambda receiver) | `nucleusWindow: NucleusWindow` |
+| `window.toFront() / requestFocus() / isFocused` | `nucleusWindow.toFront() / requestFocus() / isFocused` |
+| `window.addWindowFocusListener(…)` + `DisposableEffect` | `nucleusWindow.focusFlow.collectAsState()` |
+| `window.extendedState = MAXIMIZED_BOTH` | `nucleusWindow.setMaximized(true)` |
+| `window.extendedState or ICONIFIED` | `nucleusWindow.setMinimized(true)` |
+| Native AWT bridge needing `java.awt.Window` | `nucleusWindow.unsafe.awtWindow!!` |
+| Tao native bridge | `nucleusWindow.unsafe.taoWindow` / `taoHandle` |
+
+## Auto resolution
+
+When `backend = NucleusBackend.Auto`:
+
+1. If `decorated-window-tao` is on the classpath → Tao.
+2. Otherwise → AWT (whichever of `-jbr` / `-jni` is at runtime).
+
+Detection uses `Class.forName` on a single marker class, run at most once per process. Tao-specific code is loaded lazily through a separate isolating object so an AWT-only classpath never tries to resolve Tao symbols at class-load time.
+
+## What can't be portable
+
+Most AWT-vs-Tao calls have a unified equivalent on `NucleusWindow`. The handful that don't, and that justify the `unsafe` accessors:
+
+- **Swing / AWT widget tree** — `contentPane`, `glassPane`, `JMenuBar`, attaching native `JComponent`s. Tao has no Swing tree at all.
+- **AWT-typed events** — `dispatchEvent(WindowEvent.WINDOW_CLOSING)` and other fully-typed AWT events.
+- **`window.shape = RoundRectangle2D`** — AWT-only; Tao has its own XShape path on Linux.
+- **`graphicsConfiguration` / `screenInsets`** — AWT screen-geometry queries.
+- **AWT DnD via `java.awt.dnd.DropTarget`**.
+- **`Desktop.setQuitHandler`** — process-level AWT.
+- **JNI bridges resolving HWND / NSWindow from `WindowPeer`**.
+- **Tao-only**: `dragWindow()` (manual native drag), `NSToolbar` tweaks, raw `CALayer` access, native handle for FFI.
+
+For these cases reach for `nucleusWindow.unsafe.{awtWindow, awtDialog, taoWindow, taoHandle}`.
+
+## Samples
+
+- `sample-jni` — minimal AWT (JNI backend) demo using `nucleusApplication(NucleusBackend.Awt)`.
+- `sample-tao` — minimal no-AWT (Tao backend) demo using `nucleusApplication(NucleusBackend.Tao)`.
+- `jewel-sample` — Jewel theming on Tao via `JewelDecoratedWindow`.
+- `example` — full-featured demo (deep links, single-instance, taskbar, launcher, notifications, …) on the AWT backend, illustrating the `nucleusWindow` portable API and the `unsafe.awtWindow` escape hatch where unavoidable.
+
+---
+
+# Decorated Window — Tao backend
+
+The `decorated-window-tao` module is the **no-AWT** implementation of the [Decorated Window](decorated-window.md) API. Instead of building on top of Compose Desktop's AWT-bound `Window` (which itself wraps Swing's `JFrame`), the Tao backend opens a native window directly via [Tao](https://github.com/tauri-apps/tao) (the same Rust window library that powers Tauri) and runs Compose inside its own `ComposeScene`.
+
+The result is a Compose Desktop application with **zero AWT dependency at runtime** — small startup, GraalVM native-image friendly, no Swing event-dispatch thread.
+
+**Experimental:** This backend is newer than [`decorated-window-jbr`](decorated-window.md#decorated-window-jbr-jetbrains-runtime-implementation) and [`decorated-window-jni`](decorated-window.md#decorated-window-jni-nucleus-native-implementation). The public API is stable and matches the AWT backends, but the rendering pipeline (Metal on macOS, WGL on Windows, EGL on Linux) is implemented from scratch in this module — expect rougher edges than the AWT path. Report issues as you find them.
+**Use it through `nucleus-application`:** For new code, prefer the unified entry point in [Nucleus Application](nucleus-application.md). It writes once against a backend-agnostic API and lets you swap between Tao and the AWT backends by changing only the runtime dependency. The Tao-specific symbols documented below remain available for advanced cases — primarily through `nucleusWindow.unsafe.taoWindow` / `nucleusWindow.unsafe.taoHandle`.
+## When to use Tao
+
+- **GraalVM native-image** — AWT is partially supported by GraalVM (via Liberica NIK with full AWT) but pulls in a large surface area. Tao avoids AWT entirely; the resulting native binary is significantly smaller and starts faster.
+- **No-Swing apps** — if your codebase has no Swing widgets, AWT is dead weight. Tao removes it.
+- **Single-thread native apps** — Tao runs on the macOS main thread without an AWT EDT in front. This is the natural threading model for native macOS apps and avoids the EDT ↔ Compose dispatcher hand-offs.
+
+If none of these apply, stick with `decorated-window-jni` — it is the more battle-tested path.
+
+## Installation
+
+```kotlin
+dependencies {
+    implementation("io.github.kdroidfilter:nucleus.decorated-window-tao:<version>")
+
+    // Optional but recommended — unified entry point that works with all three backends:
+    implementation("io.github.kdroidfilter:nucleus.nucleus-application:<version>")
+
+    // GraalVM bootstrap (required for native-image builds):
+    implementation("io.github.kdroidfilter:nucleus.graalvm-runtime:<version>")
+}
+```
+
+JVM target: **17+**. Tao requires Java 17 features.
+
+### Supported platforms
+
+| Platform | Architectures | Renderer |
+|----------|---------------|----------|
+| macOS    | arm64, x86_64 | Metal (`CAMetalLayer`) |
+| Windows  | x64, ARM64    | WGL (Win32 OpenGL) + custom WndProc decoration |
+| Linux    | x64, aarch64  | EGL on top of GTK-owned X11 / Wayland surface |
+
+The native libraries are bundled in the JAR under `nucleus/native//` and loaded on first use via `NativeLibraryLoader`.
+
+## Quick Start
+
+```kotlin
+fun main() {
+    GraalVmInitializer.initialize()
+    taoApplication {
+        val state = rememberWindowState(size = DpSize(1024.dp, 720.dp))
+        DecoratedWindow(
+            onCloseRequest = ::exitApplication,
+            state = state,
+            title = "Tao Demo",
+        ) {
+            TitleBar { state ->
+                Text(title, modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
+            // Your app content
+            MyContent()
+        }
+    }
+}
+```
+
+The same code through the unified entry point:
+
+```kotlin
+fun main() {
+    GraalVmInitializer.initialize()
+    nucleusApplication(backend = NucleusBackend.Tao) {
+        DecoratedWindow(/* … same params … */) {
+            TitleBar { state -> /* … */ }
+            MyContent()
+        }
+    }
+}
+```
+
+**macOS main thread:** Tao runs the OS event loop on the **process main thread** (thread 0). On a regular JVM you must launch with `-XstartOnFirstThread`; in a GraalVM native-image build this is automatic. The Nucleus Gradle plugin injects the flag for `./gradlew run`, packaged distributions, and Compose Hot Reload tasks (`hotRun`, `hotSnapshotMain`) when `decorated-window-tao` is on the classpath.
+## Architecture
+
+The Tao backend is a thin Kotlin layer on top of a Rust JNI bridge (`nucleus_tao` crate) that wraps the Tao window library plus per-platform native helpers.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Compose Desktop content (your @Composable code)                 │
+├──────────────────────────────────────────────────────────────────┤
+│  CanvasLayersComposeScene                                        │
+│  • single-threaded recomposer, BroadcastFrameClock               │
+│  • TaoMainDispatcher (posts onto Tao's event queue)              │
+├──────────────────────────────────────────────────────────────────┤
+│  TaoComposeSceneHost (per platform)                              │
+│  • macOS: CAMetalLayer attached to NSView                        │
+│  • Windows: WGL context bound to HWND, custom WndProc            │
+│  • Linux: EGL surface on GTK-owned X11/wl_surface                │
+├──────────────────────────────────────────────────────────────────┤
+│  TaoWindow (Kotlin handle)                                       │
+│  • thread-safe imperative API (show/hide/setMaximized/…)         │
+│  • multi-cast event listeners (focus, resize, key, pointer, …)   │
+├──────────────────────────────────────────────────────────────────┤
+│  nucleus_tao Rust crate (JNI bridge)                             │
+│  • Tao window + event loop                                       │
+│  • per-platform helpers: Metal, WGL/WndProc, GLX/EGL, GTK        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+Each window owns its own `ComposeScene` — no shared composition with the application scope. CompositionLocals declared *outside* `DecoratedWindow` do not propagate into the window content; the [theming wrappers](#theming) and [`nucleus-application`](nucleus-application.md) take care of forwarding the relevant ones.
+
+## Public API
+
+### `taoApplication`
+
+```kotlin
+fun taoApplication(
+    content: @Composable ApplicationScope.() -> Unit,
+)
+```
+
+Mirrors Compose Desktop's `application { … }` but drives the Compose recomposer through Tao's event loop. Blocks until `ApplicationScope.exitApplication()` is called. Must be called from the macOS main thread.
+
+### `ApplicationScope`
+
+Tao's counterpart of `androidx.compose.ui.window.ApplicationScope`:
+
+```kotlin
+interface ApplicationScope {
+    fun exitApplication()
+    val taoApplication: TaoApplication  // imperative escape hatch
+}
+```
+
+### `DecoratedWindow`
+
+```kotlin
+@Composable
+fun ApplicationScope.DecoratedWindow(
+    onCloseRequest: () -> Unit,
+    state: WindowState = rememberWindowState(),
+    title: String = "",
+    icon: Painter? = null,
+    minimumSize: DpSize? = null,
+    visible: Boolean = true,
+    resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    alwaysOnTop: Boolean = false,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    macOSStyle: MacOSStyle = MacOSStyle.Classic,
+    content: @Composable TaoDecoratedWindowScope.() -> Unit,
+)
+```
+
+The parameter set is a strict superset of `decorated-window-jni`'s `DecoratedWindow` — call sites swap with minimal change.
+
+`enabled = false` swallows pointer + keyboard events at the host level (the window appears unresponsive — matches the JNI backend's behaviour). `focusable = false` calls `tao::Window::set_focusable(false)`, preventing the window from ever becoming key (HUD / overlay windows).
+
+The `state: WindowState` is **bidirectional**: native drag / resize / fullscreen transitions push back into `state.size`, `state.position`, `state.placement`. Writes to `state` are pushed to the native window via `LaunchedEffect`. The `applied` snapshot guards against feedback loops.
+
+### `DecoratedDialog`
+
+Same shape as `DecoratedWindow` but for modal / secondary windows: defaults to non-resizable, no minimize / maximize affordance. Tao does not yet expose native parent-child modality, so the dialog is a regular top-level window with dialog-friendly defaults — drive logical modality by disabling the parent's interactions while it is up.
+
+### `MacOSStyle`
+
+```kotlin
+enum class MacOSStyle {
+    /** Modern (Tahoe) on macOS 26+, classic chrome on older releases. */
+    Auto,
+    /** Force classic chrome, even on macOS 26+. */
+    Classic,
+    /** Force the modern treatment (NSToolbar attached) regardless of OS. */
+    Modern,
+}
+```
+
+Imperative counterpart of `Modifier.macOSLargeCornerRadius()`. **Default is `Classic`** so the swap-in API behaves identically to the AWT backends — opt in to the large corner radius via the modifier on `TitleBar`, not via this enum.
+
+### `TitleBar`
+
+```kotlin
+@Composable
+fun DecoratedWindowScope.TitleBar(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    backgroundContent: @Composable () -> Unit = {},
+    content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
+)
+```
+
+Matches the JNI backend's `TitleBar` signature. The `modifier` parameter consumes `Modifier.macOSLargeCornerRadius()` and `Modifier.newFullscreenControls()` for parity with the AWT backends — see [Modifiers](nucleus-application.md#modifiers).
+
+### `TaoWindow`
+
+The native window handle:
+
+```kotlin
+class TaoWindow {
+    val handle: Long           // raw native handle, suitable for FFI
+    val isResizable: Boolean
+    val isMaximized: Boolean
+    val isFullscreen: Boolean
+
+    fun setTitle(title: String)
+    fun setMinimized(b: Boolean)
+    fun setMaximized(b: Boolean)
+    fun setFullscreen(b: Boolean)
+    fun setAlwaysOnTop(b: Boolean)
+    fun setFocusable(b: Boolean)
+    fun setMinimumSize(widthDp: Double?, heightDp: Double?)
+    fun setIcon(width: Int, height: Int, pixels: ByteArray)  // premult RGBA
+    fun setInnerSize(widthDp: Double, heightDp: Double)
+    fun setOuterPosition(xDp: Double, yDp: Double)
+
+    fun show()
+    fun hide()
+    fun requestRedraw()
+    fun requestClose()
+    fun requestUserClose()      // fires onCloseRequest as if the user clicked X
+    fun dragWindow()             // initiate native drag — call during a press
+
+    // Multi-cast event hooks: every call adds a listener
+    fun onWindowReady(block: (width: Int, height: Int) -> Unit)
+    fun onResized(block: (width: Int, height: Int) -> Unit)
+    fun onMoved(block: (xPx: Int, yPx: Int) -> Unit)
+    fun onFocusChanged(block: (focused: Boolean) -> Unit)
+    fun onCloseRequested(block: () -> Unit)
+    fun onDestroyed(block: () -> Unit)
+    fun onScaleFactorChanged(block: (scale: Float) -> Unit)
+    fun onKeyEvent(listener: KeyEventListener)
+    /* … pointer hooks … */
+}
+```
+
+You normally don't reach for `TaoWindow` directly — `TaoDecoratedWindowScope.window` exposes it inside the `DecoratedWindow` content lambda, and `nucleusWindow.unsafe.taoWindow` exposes it through the unified API.
+
+### `TaoApplication`
+
+The lower-level entry point underneath `taoApplication`. Exposes imperative `openWindow(...)` and `exit()`. Use it for advanced multi-window scenarios that don't map cleanly to the Composable shape; otherwise stay on `taoApplication`.
+
+## Theming
+
+Each window owns its own `ComposeScene`, so CompositionLocals declared *outside* `DecoratedWindow` do not propagate. You have two options:
+
+1. **Apply the theme inside the content lambda**:
+
+    ```kotlin
+    DecoratedWindow(/* … */) {
+        MaterialTheme(colorScheme = darkColorScheme()) {
+            NucleusDecoratedWindowTheme(isDark = true) {
+                TitleBar { /* … */ }
+                // content
+            }
+        }
+    }
+    ```
+
+2. **Use `nucleus-application`** ([recommended](nucleus-application.md)). It auto-forwards `LocalIsDarkTheme`, `LocalDecoratedWindowStyle`, and `LocalTitleBarStyle` from the outer composition into the Tao scene, so a single outer wrapper works on every backend:
+
+    ```kotlin
+    nucleusApplication {
+        NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = myStyle) {
+            DecoratedWindow(/* … */) {
+                TitleBar { /* … */ }
+                // content
+            }
+        }
+    }
+    ```
+
+The Material 2 / Material 3 / Jewel wrappers also have a `NucleusApplicationScope` overload that captures the outer `MaterialTheme` (or Jewel theme) tokens and re-provides them inside the new scene — see [Nucleus Application § Theming wrappers](nucleus-application.md#theming-wrappers).
+
+## GraalVM native-image
+
+Tao is the recommended backend for GraalVM builds. Bootstrap requirements:
+
+1. **`GraalVmInitializer.initialize()`** must be the first call in `main()` (registers Skiko, Tao native libs, font substitutions). Provided by [`nucleus.graalvm-runtime`](../graalvm/index.md).
+2. **JNI reachability metadata** is shipped in the module under `META-INF/native-image/.../reachability-metadata.json` — no user action needed.
+3. **No `-XstartOnFirstThread`** required: GraalVM native-image starts on the macOS main thread by default.
+
+See the [GraalVM guide](../graalvm/index.md) for the full toolchain (Liberica NIK, Gradle plugin, agent runs).
+
+## Platform notes
+
+### macOS
+
+- Native title bar is kept (transparent / full-size content), traffic lights stay native.
+- `MacOSStyle.Modern` / `Modifier.macOSLargeCornerRadius()` attaches a hidden `NSToolbar` so AppKit applies the macOS 26 (Tahoe) large corner radius. No-op on Sequoia and below.
+- Press-and-hold (long-press accent picker on `e`, `n`, …) is wired via an `NSTextView` overlay attached as the first responder during Compose `TextField` focus.
+- VoiceOver is implemented via a per-window `NSAccessibility` projection that mirrors Compose's `SemanticsOwner` tree. Per-view registry + window focus forwarder.
+
+### Windows
+
+- Window is fully undecorated; close / min / max are drawn in Compose by the user content (the `TitleBar` composable lays them out at `Modifier.align(Alignment.End)`).
+- Custom WndProc subclass returns `HTCLIENT` for the entire title-bar zone (not `HTMINBUTTON` / etc.) so DWM never paints native buttons over Compose UI.
+- `_NET_WM_STATE_FULLSCREEN` equivalent uses Win32 fullscreen — covers the taskbar (a known JBR / standard-Compose limitation).
+
+### Linux
+
+- EGL renderer is attached to a GTK-owned surface (X11 XID or `wl_surface`, picked at runtime).
+- Native GTK decorations are kept; the user's `TitleBar` composable is a sub-bar inside the content area. Window controls (min / max / close) are drawn in Compose with platform-accurate icons (GNOME Adwaita / KDE Breeze) and a reactive layout observer.
+- Rounded corners are applied via XShape (GNOME 12 dp, KDE 5 dp top only); `applyRoundedShape()` re-runs after every resize to handle borderline maximize/restore frames.
+- The default Skiko `URIManager` calls `Desktop.browse`, which initialises XAWT and deadlocks the GLX loop — Tao replaces it with a forked-process `xdg-open` (`TaoLinuxUriHandler`).
+
+## Limitations
+
+- **Press-and-hold accent picker** — implemented on macOS; not yet on Windows / Linux.
+- **Snap layouts (Windows 11)** — not yet implemented.
+- **Mica / DWM material backgrounds (Windows 11)** — not yet exposed.
+- **Multi-window `ComposeScene` sharing** — each window has its own scene; CompositionLocals don't cross. Use [`nucleus-application`](nucleus-application.md) or re-provide them manually.
+- **`DialogWindow` / `DialogState`** — `DecoratedDialog` accepts `DialogState` for shape parity but doesn't yet implement native parent-child modality. Disable the parent window's interactions while the dialog is up to emulate it.
+- **`DeepLinkHandler`** — currently AWT-only (uses `java.awt.Desktop`). On Tao macOS, calling it early initialises NSApp and breaks the event loop — a Tao-aware variant is on the backlog.
+
+## Module structure
+
+| File / folder | Role |
+|---------------|------|
+| `tao/TaoApplicationCompose.kt` | `taoApplication { … }` entry point |
+| `tao/ApplicationScope.kt` | Public `ApplicationScope` interface |
+| `tao/DecoratedWindow.kt` | Imperative + Composable `DecoratedWindow` |
+| `tao/DecoratedDialog.kt` | `DecoratedDialog` |
+| `tao/MacOSStyle.kt` | `MacOSStyle` enum |
+| `tao/TaoWindow.kt` | Native window handle |
+| `tao/TaoApplication.kt` | Lower-level imperative entry point |
+| `tao/render/TaoComposeSceneHost*.kt` | Per-platform Compose-scene host (Metal / WGL / EGL) |
+| `tao/Native*Bridge.kt` | JNI bridges to the Rust crate |
+| `src/main/native/` | Rust crate (`Cargo.toml`) + per-platform helpers (`macos/`, `windows/`, `linux/`) |
+| `tao/TaoAccessibility.kt`, `TaoSemanticsObserver.kt` | NSAccessibility projection (macOS) |
+
+## See also
+
+- [Nucleus Application](nucleus-application.md) — backend-agnostic entry point.
+- [Decorated Window](decorated-window.md) — overview, AWT backends comparison.
+- [GraalVM](../graalvm/index.md) — native-image bootstrap.
 
 ---
 
@@ -13889,18 +14594,12 @@ Replace the `compose.desktop.application` block with `nucleus.application` for p
  }
 ```
 
-**Using Compose Hot Reload?:** Some Compose plugin tasks (like `hotRun`) read `mainClass` from the original `compose.desktop.application` block, not from `nucleus.application`. If you use [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html), either keep a minimal Compose block alongside Nucleus:
-    ```kotlin
-    compose.desktop.application {
-        mainClass = "com.example.MainKt"
-    }
-    ```
-
-    Or pass the property explicitly when running:
-
+**Using Compose Hot Reload?:** Nucleus automatically propagates `nucleus.application.mainClass` to `compose.desktop.application.mainClass`, so [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) tasks (`hotRun`, `hotSnapshotMain`) resolve the entry point with no extra configuration. You can still override it from the command line if needed:
     ```bash
     ./gradlew hotRun -PmainClass=com.example.MainKt
     ```
+
+    On macOS with the `decorated-window-tao` backend, the plugin also auto-injects `-XstartOnFirstThread` into Hot Reload's `JavaExec` tasks so the Tao event loop has the main thread it requires.
 
 ## Step 4: Add Nucleus Features (Optional)
 
@@ -14032,7 +14731,7 @@ Everything from the official plugin works unchanged:
 - All existing Gradle tasks (`run`, `packageDmg`, `packageDeb`, etc.)
 - `compose.desktop.currentOs` dependency
 - Source set configuration
-- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works as usual since Nucleus extends the Compose plugin. Note: `hotRun` reads `mainClass` from `compose.desktop.application`, so set it there too or pass `-PmainClass=...` (see [Step 3](#step-3-use-the-nucleus-dsl))
+- [Compose Hot Reload](https://kotlinlang.org/docs/multiplatform/compose-hot-reload.html) — works out of the box since Nucleus extends the Compose plugin. `mainClass` set on `nucleus.application` is propagated automatically; `decorated-window-tao` projects also get `-XstartOnFirstThread` injected on macOS
 
 ---
 

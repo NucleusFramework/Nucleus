@@ -20,7 +20,7 @@ import java.awt.MouseInfo
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-internal fun DecoratedDialogScope.LinuxDialogTitleBar(
+internal fun AwtDecoratedDialogScope.LinuxDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle,
@@ -39,7 +39,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-private fun DecoratedDialogScope.NativeLinuxDialogTitleBar(
+private fun AwtDecoratedDialogScope.NativeLinuxDialogTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
@@ -95,7 +95,7 @@ private fun DecoratedDialogScope.NativeLinuxDialogTitleBar(
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
-private fun DecoratedDialogScope.FallbackLinuxDialogTitleBar(
+private fun AwtDecoratedDialogScope.FallbackLinuxDialogTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,

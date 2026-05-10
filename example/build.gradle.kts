@@ -26,9 +26,11 @@ dependencies {
     implementation(project(":darkmode-detector"))
     implementation(project(":system-color"))
     implementation(project(":decorated-window-material3"))
-    implementation(project(":decorated-window-jni"))
+    implementation(project(":decorated-window-tao"))
+    implementation(project(":nucleus-application"))
     implementation(project(":energy-manager"))
     implementation(project(":taskbar-progress"))
+    implementation(project(":taskbar-progress-tao"))
     implementation(project(":notification-common"))
     implementation(project(":notification-macos"))
     implementation(project(":notification-linux"))
@@ -47,6 +49,17 @@ dependencies {
     implementation(libs.reorderable)
     implementation("com.materialkolor:material-kolor:4.1.1")
     implementation(libs.compose.material.icons.extended)
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
 }
 
 val releaseVersion =
