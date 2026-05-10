@@ -36,6 +36,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -47,6 +48,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import io.github.kdroidfilter.nucleus.window.tao.LocalTaoWindow
 import io.github.kdroidfilter.nucleus.window.tao.NativeView
 import io.github.kdroidfilter.nucleus.window.tao.NucleusPlatformView
 import io.github.kdroidfilter.nucleus.window.tao.consumeOverlayPointerEvents
@@ -77,6 +79,10 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
         return
     }
 
+    val taoWindow = LocalTaoWindow.current
+    val parentHwnd = remember(taoWindow) {
+        if (Platform.Current == Platform.Windows) taoWindow?.nativeHandle ?: 0L else 0L
+    }
     var controller: SampleWebViewController? by remember { mutableStateOf(null) }
     var urlInput by remember { mutableStateOf(INITIAL_URL) }
     var urlFocused by remember { mutableStateOf(false) }
@@ -106,15 +112,14 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(12.dp)),
+                .clip(RoundedCornerShape(12.dp)),
         ) {
             // One-shot navigation tracker so `update` doesn't reload on
             // every recomposition.
             val loadedFlag = remember { booleanArrayOf(false) }
             NativeView(
                 factory = {
-                    val view = createSampleWebViewPlatformView { c -> controller = c }
+                    val view = createSampleWebViewPlatformView(parentHwnd) { c -> controller = c }
                     view
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -295,6 +300,7 @@ private fun UrlField(
                 if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
                 RoundedCornerShape(18.dp),
             )
+            .consumeOverlayPointerEvents(cursor = PointerIcon.Text)
             .padding(horizontal = 12.dp),
     ) {
         BasicTextField(
@@ -328,6 +334,7 @@ private fun UrlField(
  * drive navigation without knowing which backend is live.
  */
 private fun createSampleWebViewPlatformView(
+    parentHwnd: Long,
     onController: (SampleWebViewController?) -> Unit,
 ): NucleusPlatformView = when (Platform.Current) {
     Platform.MacOS -> {
@@ -349,6 +356,43 @@ private fun createSampleWebViewPlatformView(
             override fun dispose() {
                 SampleWebViewLinuxBridge.nativeRelease(ptr)
                 onController(null)
+            }
+        }
+    }
+    Platform.Windows -> {
+        // The Tao HWND may not be realised yet on the very first
+        // composition of this tab. Returning a HWnd with handle = 0L
+        // lets `HwndEmbedding`'s fallback render an empty `Box` until
+        // the next composition where `LocalTaoWindow.nativeHandle` is
+        // populated. Hard-failing here would crash the sample at startup.
+        if (parentHwnd == 0L) {
+            object : NucleusPlatformView.HWnd {
+                override val hwndHandle: Long = 0L
+                override fun dispose() {}
+            }
+        } else {
+            val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
+            require(ptr != 0L) { "WebView2 init failed (WebView2 Runtime missing?)" }
+            onController(WindowsSampleWebViewController(ptr))
+            object : NucleusPlatformView.HWnd {
+                // Opaque handle, NOT a real HWND. We don't expose a Win32
+                // child HWND to NativeView's reparenting path because the
+                // WebView lives in a DComp tree owned by the C++ side.
+                // Returning 0L causes `host.attach`/`detach` to no-op
+                // safely; positioning happens entirely via setBounds.
+                override val hwndHandle: Long = 0L
+                override fun setBounds(xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                    SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
+                }
+                override fun setCornerRadius(radiusPx: Float) {
+                    // Real DComp clip — `SetWindowRgn` on a fake HWND
+                    // wouldn't reach the WebView2 surface anyway.
+                    SampleWebViewWindowsBridge.nativeSetCornerRadius(ptr, radiusPx)
+                }
+                override fun dispose() {
+                    SampleWebViewWindowsBridge.nativeRelease(ptr)
+                    onController(null)
+                }
             }
         }
     }

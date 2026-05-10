@@ -49,8 +49,22 @@ internal class LinuxSampleWebViewController(override val handle: Long) :
     override fun release() = SampleWebViewLinuxBridge.nativeRelease(handle)
 }
 
+internal class WindowsSampleWebViewController(override val handle: Long) :
+    SampleWebViewController {
+    override fun loadUrl(url: String) = SampleWebViewWindowsBridge.nativeLoadUrl(handle, url)
+    override fun goBack() = SampleWebViewWindowsBridge.nativeGoBack(handle)
+    override fun goForward() = SampleWebViewWindowsBridge.nativeGoForward(handle)
+    override fun reload() = SampleWebViewWindowsBridge.nativeReload(handle)
+    override fun canGoBack(): Boolean = SampleWebViewWindowsBridge.nativeCanGoBack(handle)
+    override fun canGoForward(): Boolean = SampleWebViewWindowsBridge.nativeCanGoForward(handle)
+    override fun currentUrl(): String? = SampleWebViewWindowsBridge.nativeCurrentUrl(handle)
+    override fun isLoading(): Boolean = SampleWebViewWindowsBridge.nativeIsLoading(handle)
+    override fun release() = SampleWebViewWindowsBridge.nativeRelease(handle)
+}
+
 internal fun isSampleWebViewSupported(): Boolean = when (Platform.Current) {
     Platform.MacOS -> SampleWebViewBridge.isLoaded
     Platform.Linux -> SampleWebViewLinuxBridge.isLoaded
+    Platform.Windows -> SampleWebViewWindowsBridge.isLoaded
     else -> false
 }

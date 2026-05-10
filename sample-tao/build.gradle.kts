@@ -19,14 +19,26 @@ dependencies {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_17
-    targetCompatibility = JavaVersion.VERSION_17
+    // Bumped to 21 so the Foreign Function & Memory API (`java.lang.foreign`)
+    // — preview in JDK 21, stable in JDK 22 — is available for the SwiftUI
+    // sample tab's bridge. Lower modules stay on 17.
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
+        jvmTarget.set(JvmTarget.JVM_21)
     }
+}
+
+// FFM is a preview API on JDK 21 — every JVM that runs this sample (JVM
+// `run` task plus any test/exec the plugin spawns) needs `--enable-preview`.
+// We don't put it in `nucleus.application.jvmArgs` because that list is
+// forwarded to native-image too, where the flag is unknown and fails the
+// build. Adding it here only hits the JavaExec tasks.
+tasks.withType<JavaExec>().configureEach {
+    jvmArgs("--enable-preview")
 }
 
 nucleus.application {

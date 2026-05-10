@@ -1,5 +1,11 @@
 # Cargo build artifacts (ignored locally; CI rebuilds from sources)
 src/main/native/target/
 
+# C/MSVC build leftovers from build.bat
+src/main/native/windows/build_log.txt
+src/main/native/windows/*.obj
+src/main/native/windows/*.lib
+src/main/native/windows/*.exp
+
 # Cargo.lock — kept in VCS for reproducible cdylib builds across machines.
 # (Comment out next line and add `Cargo.lock` here if you'd rather not track it.)

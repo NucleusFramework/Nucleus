@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
+import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -87,6 +88,60 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    /**
+     * Renderers registered by overlay/popup scenes. Drained AFTER the
+     * main scene's render in [onRedrawRequested] so each tick paints
+     * into every live overlay/popup HWND in the same Tao event-loop wake.
+     *
+     * Cross-context sync (per NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context
+     * synchronization"): before draining, we call
+     * `directContext.flushAndSubmit()` so the GPU sees host commands
+     * before any share-group consumer reads from them; after draining,
+     * we re-make the host context current and call
+     * `directContext.resetGLAll()` so Skia re-syncs its per-context GL
+     * state cache (the overlay's own renderer will have switched contexts
+     * behind Skia's back).
+     */
+    private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Key handlers consulted before the main scene's key dispatch
+     * (Phase 8). Overlay scenes register here when they hold a focusable
+     * Compose node.
+     */
+    private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
+
+    /** Callbacks invoked when the owner window's screen position changes. */
+    private val ownerMoveListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /** Callbacks invoked when the host window loses keyboard focus. */
+    private val ownerFocusLostListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /** Callbacks invoked when the host window regains keyboard focus. */
+    private val ownerFocusGainedListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Callbacks invoked just before a popup scene layer
+     * ([TaoPopupSceneLayerWindows]) destroys its HWND. Used by parent
+     * scenes (overlay) to flush stuck focus state.
+     */
+    private val popupClosingListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Set whenever something on the same thread might have changed the
+     * current WGL context behind Skia's back: a popup/overlay renderer
+     * registered (its DirectContext.makeGL() does an internal
+     * wglMakeCurrent), a popupRenderers tick ran. Consumed at the start
+     * of [onRedrawRequested] — calls `directContext.resetGLAll()` on
+     * the host's DirectContext so Skia re-fetches GL state before
+     * `flushAndSubmit` issues commands.
+     *
+     * Without this, the host's DirectContext keeps a stale GL state
+     * cache after an overlay's first paint and `flushAndSubmit` reaches
+     * a NULL bind point inside the driver (reproduced on NVIDIA).
+     */
+    private var hostContextDirtied: Boolean = false
+
     // Frame pacing is delegated to VSync — `wglSwapIntervalEXT(1)` makes
     // SwapBuffers block until the next display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence.
@@ -120,26 +175,72 @@ internal class TaoComposeSceneHostWindows(
                 getRootNode = { scene!!.rootDragAndDropNode },
                 outboundLauncher = ::launchWindowsOutboundDrag,
             )
-        scene =
+        // PlatformLayersComposeScene + TaoComposeSceneContextWindows route
+        // every Compose Popup / DropdownMenu / Tooltip / context-menu in
+        // the main scene through TaoPopupSceneLayerWindows — i.e. real
+        // top-level HWNDs that can extend beyond the Tao window. Without
+        // this, CanvasLayersComposeScene clamped them inside the main GL
+        // canvas (a regression compared to macOS/Linux).
+        //
+        // Safe with Phase 4's share group: the popup HGLRCs are created
+        // via wglCreateContextAttribsARB(.., hostHGLRC, ..) so they share
+        // server-side GL objects with the host. Each popup keeps its own
+        // GrDirectContext and we resetGLAll() on every context switch
+        // (cross-context sync section in onRedrawRequested).
+        val platformContext = WindowsTaoPlatformContext(
+            windowHandle = window.handle,
+            topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
+            windowInfo = windowInfo,
+            semanticsOwnerListener = semanticsOwnerListener,
+            dragAndDropManager = dndManager,
+        )
+        val popupHostForMain = popupHost()
+        scene = if (popupHostForMain != null) {
+            PlatformLayersComposeScene(
+                density = Density(scale),
+                layoutDirection = LayoutDirection.Ltr,
+                coroutineContext = coroutineContext + frameClock + flushingDispatcher,
+                composeSceneContext = TaoComposeSceneContextWindows(
+                    platformContext = platformContext,
+                    popupHost = popupHostForMain,
+                ),
+                invalidate = { window.requestRedraw() },
+            )
+        } else {
             CanvasLayersComposeScene(
                 density = Density(scale),
                 layoutDirection = LayoutDirection.Ltr,
                 coroutineContext = coroutineContext + frameClock + flushingDispatcher,
-                platformContext =
-                    WindowsTaoPlatformContext(
-                        windowHandle = window.handle,
-                        topInsetPx = { (titleBarHeightDpState.value * scale).toInt() },
-                        windowInfo = windowInfo,
-                        semanticsOwnerListener = semanticsOwnerListener,
-                        dragAndDropManager = dndManager,
-                    ),
-                invalidate = {
-                    window.requestRedraw()
-                },
+                platformContext = platformContext,
+                invalidate = { window.requestRedraw() },
             )
+        }
 
         registerInboundDnD()
         registerTouchInput()
+
+        // Notify overlay/popup layers when the host window moves on screen
+        // — top-level WS_POPUP children of the owner don't auto-track.
+        window.onMoved { _, _ -> onOwnerMoved() }
+
+        // Notify overlay/popup layers when the host window loses keyboard
+        // focus — for instance, the user clicked the embedded WebView,
+        // which grabs Win32 focus and holds it. The overlay's
+        // Compose-side TextField focus should release so its visual
+        // indicator (highlight border, blinking caret) goes away.
+        window.onFocusChanged { focused ->
+            if (focused) onOwnerFocusGained() else onOwnerFocusLost()
+        }
+    }
+
+    private fun onOwnerFocusLost() {
+        if (ownerFocusLostListeners.isEmpty()) return
+        for (cb in ownerFocusLostListeners.values.toList()) cb()
+    }
+
+    private fun onOwnerFocusGained() {
+        if (ownerFocusGainedListeners.isEmpty()) return
+        for (cb in ownerFocusGainedListeners.values.toList()) cb()
     }
 
     // ── Touch (Windows) ───────────────────────────────────────────────────
@@ -531,6 +632,18 @@ internal class TaoComposeSceneHostWindows(
         // Make sure the WGL context is current on this thread (defensive — it
         // already was since `attach`, but other tools/tests can clear it).
         NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        // Consume the dirtied flag: an overlay/popup created since our last
+        // tick did its own DirectContext.makeGL() (internal wglMakeCurrent
+        // on a sibling HGLRC), or a popupRenderers loop swapped contexts.
+        // Tell Skia "external code touched GL state" so it re-fetches via
+        // glGet* before issuing flush/submit commands. resetGLAll is cheap
+        // (state-cache invalidation only); calling it on every frame
+        // unconditionally is too heavy for some drivers (nvoglv64 chokes),
+        // so we gate on the flag.
+        if (hostContextDirtied) {
+            ctx.resetGLAll()
+            hostContextDirtied = false
+        }
 
         // Wrap the default framebuffer (id 0). Skia's GL backend uses
         // BOTTOM_LEFT origin with the GL convention; SurfaceOrigin handles the
@@ -564,6 +677,27 @@ internal class TaoComposeSceneHostWindows(
         } finally {
             surface.close()
             rt.close()
+        }
+
+        // Drain overlay/popup renderers. Cross-context sync (per
+        // NATIVE_VIEW_WINDOWS_PLAN.md "Cross-context synchronization"):
+        //   1. Host already flushed/presented above (flushAndSubmit +
+        //      SwapBuffers via nativePresent did the equivalent of
+        //      glFlush — the Skia-skiko backend issues glFlush internally
+        //      when committing the surface).
+        //   2. Each renderer below switches to its own HGLRC, calls
+        //      resetGLAll on its own DirectContext, paints, swaps.
+        //   3. After the loop we re-make-current the host context and
+        //      resetGLAll on the host's DirectContext — Skia's GL state
+        //      cache no longer reflects truth after the external switches.
+        if (popupRenderers.isNotEmpty()) {
+            val snapshot = popupRenderers.values.toList()
+            for (render in snapshot) render()
+            // Restore host context for any code path that runs before the
+            // next onRedrawRequested. Skia state stays stale until next
+            // frame — flag for resetGLAll on entry.
+            NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+            hostContextDirtied = true
         }
     }
 
@@ -670,6 +804,11 @@ internal class TaoComposeSceneHostWindows(
                 else -> return false
             }
         if (previewKeyHandler?.invoke(composeEvent) == true) return true
+        // Overlay/popup scenes get a chance to consume the event before
+        // the main scene. Mirrors the macOS popupKeyHandlers chain.
+        for (handler in popupKeyHandlers.values) {
+            if (handler(composeEvent)) return true
+        }
         if (sc.sendKeyEvent(composeEvent)) return true
         return keyHandler?.invoke(composeEvent) == true
     }
@@ -688,6 +827,96 @@ internal class TaoComposeSceneHostWindows(
 
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
+
+    fun popupHost(): TaoPopupHostWindows? {
+        if (hwnd == 0L) return null
+        val ctx = directContext ?: return null
+        val outer = this
+        return object : TaoPopupHostWindows {
+            override val parentHwnd: Long get() = outer.hwnd
+            override val scale: Float get() = outer.scale
+            override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
+                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+            override val hostDirectContext: DirectContext get() = ctx
+            override fun requestRedraw() = outer.window.requestRedraw()
+            override fun registerRenderer(token: Any, render: () -> Unit) {
+                outer.popupRenderers[token] = render
+                // Registration site does DirectContext.makeGL() which
+                // switches the WGL context behind Skia's back — the
+                // host's GL state cache is now stale.
+                outer.hostContextDirtied = true
+            }
+            override fun unregisterRenderer(token: Any) {
+                outer.popupRenderers.remove(token)
+                outer.hostContextDirtied = true
+            }
+            override fun registerKeyHandler(token: Any, handler: (KeyEvent) -> Boolean) {
+                outer.popupKeyHandlers[token] = handler
+            }
+            override fun unregisterKeyHandler(token: Any) {
+                outer.popupKeyHandlers.remove(token)
+            }
+            override fun registerOwnerMoveListener(token: Any, onMoved: () -> Unit) {
+                outer.ownerMoveListeners[token] = onMoved
+            }
+            override fun unregisterOwnerMoveListener(token: Any) {
+                outer.ownerMoveListeners.remove(token)
+            }
+            override fun registerOwnerFocusLostListener(token: Any, onLost: () -> Unit) {
+                outer.ownerFocusLostListeners[token] = onLost
+            }
+            override fun unregisterOwnerFocusLostListener(token: Any) {
+                outer.ownerFocusLostListeners.remove(token)
+            }
+            override fun registerOwnerFocusGainedListener(token: Any, onGained: () -> Unit) {
+                outer.ownerFocusGainedListeners[token] = onGained
+            }
+            override fun unregisterOwnerFocusGainedListener(token: Any) {
+                outer.ownerFocusGainedListeners.remove(token)
+            }
+            override fun notifyPopupClosing() {
+                if (outer.popupClosingListeners.isEmpty()) return
+                for (cb in outer.popupClosingListeners.values.toList()) cb()
+            }
+            override fun registerPopupClosingListener(token: Any, onClosing: () -> Unit) {
+                outer.popupClosingListeners[token] = onClosing
+            }
+            override fun unregisterPopupClosingListener(token: Any) {
+                outer.popupClosingListeners.remove(token)
+            }
+        }
+    }
+
+    /** Fired by the [TaoWindow.onMoved] hook installed in [attach]. */
+    private fun onOwnerMoved() {
+        if (ownerMoveListeners.isEmpty()) return
+        for (cb in ownerMoveListeners.values.toList()) cb()
+    }
+
+    fun nativeViewHost(): io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost? {
+        if (hwnd == 0L) return null
+        if (!io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge.isLoaded) return null
+        val parent = hwnd
+        return object : io.github.kdroidfilter.nucleus.window.tao.TaoNativeViewHost {
+            override fun attach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeAttach(parent, childHandle)
+            }
+            override fun detach(childHandle: Long) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeDetach(childHandle)
+            }
+            override fun setFrame(handle: Long, xPx: Int, yPx: Int, widthPx: Int, heightPx: Int) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeSetFrame(parent, handle, xPx, yPx, widthPx, heightPx)
+            }
+            override fun setCornerRadius(handle: Long, radiusPx: Float) {
+                io.github.kdroidfilter.nucleus.window.tao.NativeTaoWindowsNativeViewBridge
+                    .nativeSetCornerRadius(parent, handle, radiusPx)
+            }
+        }
+    }
 
     // Debounce a11y syncs so a burst of `onSemanticsChange` callbacks during
     // recomposition collapses into a single push at the next render tick.

@@ -29,6 +29,7 @@ enum class Tab(
     Complex("Complex"),
     Events("Events"),
     WebView("WebView"),
+    SwiftUI("SwiftUI"),
 }
 
 @Composable

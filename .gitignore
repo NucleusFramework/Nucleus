@@ -43,3 +43,9 @@ decorated-window-tao/src/main/native/vendor/**/.cargo-ok
 
 # IDE temporary lock files
 .*~
+
+# sample-tao Windows native build artifacts (NuGet-fetched WebView2 SDK,
+# generated MSVC outputs)
+sample-tao/src/main/native/windows/packages/
+sample-tao/src/main/native/windows/nuget.exe
+sample-tao/src/main/native/windows/build_log.txt

@@ -48,6 +48,7 @@ static volatile BOOL extensionsLoaded = FALSE;
 #define WGL_PIXEL_TYPE_ARB                        0x2013
 #define WGL_TYPE_RGBA_ARB                         0x202B
 #define WGL_COLOR_BITS_ARB                        0x2014
+#define WGL_ALPHA_BITS_ARB                        0x201B
 #define WGL_DEPTH_BITS_ARB                        0x2022
 #define WGL_STENCIL_BITS_ARB                      0x2023
 
@@ -119,6 +120,34 @@ typedef struct {
     float scale;
 } WglAttachment;
 
+/* ================================================================== */
+/*  Host pixel-format / HGLRC sharing                                  */
+/*                                                                     */
+/*  Exported so the overlay+popup DLL (nucleus_tao_windows_native_view) */
+/*  can join the host's WGL share group via                            */
+/*  `wglCreateContextAttribsARB(.., hostHGLRC, ..)`. The overlay HDC's  */
+/*  pixel format MUST match the host's exactly (wglShareLists           */
+/*  invariant carried over to the ARB share path on every known         */
+/*  driver), so we expose the cached PFD + format index for             */
+/*  `SetPixelFormat(overlayDC, hostFormatIndex, &cachedPfd)`.           */
+/*                                                                     */
+/*  Resolved by overlay_gl.c via                                        */
+/*  `GetProcAddress(GetModuleHandleW(L"nucleus_tao_gl.dll"), ..)`.      */
+/* ================================================================== */
+
+static int                   sHostPixelFormatIndex = 0;
+static PIXELFORMATDESCRIPTOR sHostPfd;
+static HGLRC                 sHostHglrc = NULL;
+
+__declspec(dllexport) HGLRC nucleus_tao_host_hglrc(void) {
+    return sHostHglrc;
+}
+
+__declspec(dllexport) int nucleus_tao_host_pixel_format(PIXELFORMATDESCRIPTOR *outPfd) {
+    if (outPfd) *outPfd = sHostPfd;
+    return sHostPixelFormatIndex;
+}
+
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
     (void)hinstDLL; (void)fdwReason; (void)lpvReserved;
     return TRUE;
@@ -150,6 +179,13 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
     pfd.nVersion = 1;
 
     if (pwglChoosePixelFormatARB) {
+        /* WGL_ALPHA_BITS_ARB=8: required so the host shares its pixel
+         * format with transparent overlay/popup HWNDs. The host stays
+         * visually opaque (no DwmEnableBlurBehindWindow on it); the alpha
+         * channel just sits unused in the back buffer. Aligning the
+         * format also lets the overlay's HGLRC join the share group via
+         * wglCreateContextAttribsARB(.., hostHGLRC, ..) — wglShareLists
+         * requires identical pixel formats across share-group members. */
         const int attribs[] = {
             WGL_DRAW_TO_WINDOW_ARB, GL_TRUE,
             WGL_SUPPORT_OPENGL_ARB, GL_TRUE,
@@ -157,6 +193,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
             WGL_ACCELERATION_ARB,   WGL_FULL_ACCELERATION_ARB,
             WGL_PIXEL_TYPE_ARB,     WGL_TYPE_RGBA_ARB,
             WGL_COLOR_BITS_ARB,     32,
+            WGL_ALPHA_BITS_ARB,     8,
             WGL_DEPTH_BITS_ARB,     0,
             WGL_STENCIL_BITS_ARB,   8,
             0
@@ -169,6 +206,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
         pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
         pfd.iPixelType = PFD_TYPE_RGBA;
         pfd.cColorBits = 32;
+        pfd.cAlphaBits = 8;
         pfd.cStencilBits = 8;
         pixelFormat = ChoosePixelFormat(hdc, &pfd);
     }
@@ -178,6 +216,9 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
         ReleaseDC(hwnd, hdc);
         return 0;
     }
+    /* Cache for cross-DLL share-group reuse. */
+    sHostPixelFormatIndex = pixelFormat;
+    sHostPfd = pfd;
 
     HGLRC hglrc = NULL;
     if (pwglCreateContextAttribsARB) {
@@ -216,6 +257,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
     att->hdc = hdc;
     att->hglrc = hglrc;
     att->scale = 1.0f;
+    sHostHglrc = hglrc;
     return (jlong)(uintptr_t)att;
 }
 
@@ -227,6 +269,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeDetach(
     WglAttachment *att = (WglAttachment *)(uintptr_t)handle;
     if (!att) return;
     wglMakeCurrent(NULL, NULL);
+    if (sHostHglrc == att->hglrc) sHostHglrc = NULL;
     wglDeleteContext(att->hglrc);
     ReleaseDC(att->hwnd, att->hdc);
     HeapFree(GetProcessHeap(), 0, att);
