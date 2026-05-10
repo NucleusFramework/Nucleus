@@ -39,7 +39,7 @@ static int read_meminfo(meminfo_t *mi) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeTotalMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeTotalMemory(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -47,7 +47,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeFreeMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeFreeMemory(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -55,7 +55,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeAvailableMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeAvailableMemory(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -63,7 +63,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUsedMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUsedMemory(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -71,7 +71,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeTotalSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeTotalSwap(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -79,7 +79,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeFreeSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeFreeSwap(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;
@@ -87,7 +87,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUsedSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUsedSwap(
     JNIEnv *env, jclass clazz) {
     meminfo_t mi;
     if (read_meminfo(&mi) != 0) return 0;

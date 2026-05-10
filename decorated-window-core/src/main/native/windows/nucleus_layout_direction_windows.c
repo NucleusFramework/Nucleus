@@ -22,7 +22,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

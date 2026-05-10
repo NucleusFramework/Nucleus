@@ -6,7 +6,7 @@ The `system-color` module provides **reactive** detection of the OS accent color
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.system-color:<version>")
+    implementation("dev.nucleusframework:nucleus.system-color:<version>")
 }
 ```
 
@@ -67,7 +67,7 @@ Android's [Material You](https://m3.material.io/styles/color/dynamic/choosing-a-
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.system-color:<version>")
+    implementation("dev.nucleusframework:nucleus.system-color:<version>")
     implementation("com.materialkolor:material-kolor:4.1.1")
 }
 ```
@@ -143,7 +143,7 @@ When ProGuard is enabled, the native bridge classes must be preserved. The Nucle
 
 ```proguard
 # macOS
--keep class io.github.kdroidfilter.nucleus.systemcolor.mac.NativeMacSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.mac.NativeMacSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onAccentColorCleared();
@@ -151,20 +151,20 @@ When ProGuard is enabled, the native bridge classes must be preserved. The Nucle
 }
 
 # Windows
--keep class io.github.kdroidfilter.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(int, int, int);
     static void onHighContrastChanged(boolean);
 }
 
 # Linux
--keep class io.github.kdroidfilter.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onHighContrastChanged(boolean);
 }
 
--keep class io.github.kdroidfilter.nucleus.systemcolor.** { *; }
+-keep class dev.nucleusframework.nucleus.systemcolor.** { *; }
 ```
 
 ## Logging
@@ -172,7 +172,7 @@ When ProGuard is enabled, the native bridge classes must be preserved. The Nucle
 Debug messages are logged under the tags `MacSystemColorDetector`, `WindowsSystemColor`, and `LinuxSystemColorDetector`. Logging is off by default. To enable it:
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
+import dev.nucleusframework.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
 
 allowNucleusRuntimeLogging = true
 ```

@@ -17,9 +17,9 @@
 // ============================================================================
 
 #define JNI_FN(name) \
-    Java_io_github_kdroidfilter_nucleus_menu_macos_NativeNsMenuBridge_##name
+    Java_dev_nucleusframework_nucleus_menu_macos_NativeNsMenuBridge_##name
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/menu/macos/NativeNsMenuBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/menu/macos/NativeNsMenuBridge"
 
 // ============================================================================
 // Handle helpers

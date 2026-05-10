@@ -6,14 +6,14 @@ The `system-info` module provides cross-platform system information gathering fo
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.system-info:<version>")
+    implementation("dev.nucleusframework:nucleus.system-info:<version>")
 }
 ```
 
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.systeminfo.SystemInfo
+import dev.nucleusframework.nucleus.systeminfo.SystemInfo
 
 fun main() {
     val os = SystemInfo.osInfo()
@@ -414,5 +414,5 @@ On Linux, the library links only against `libdl` and `libm`. NVML (`libnvidia-ml
 When ProGuard is enabled, preserve the native bridge classes:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.systeminfo.** { *; }
+-keep class dev.nucleusframework.nucleus.systeminfo.** { *; }
 ```

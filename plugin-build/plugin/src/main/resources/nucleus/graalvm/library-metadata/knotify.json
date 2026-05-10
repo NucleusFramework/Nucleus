@@ -2,50 +2,50 @@
     "_meta": {
         "description": "KNotify Windows toast notification library",
         "matchPackages": [
-            "io.github.kdroidfilter.knotify"
+            "dev.nucleusframework.knotify"
         ]
     },
     "reflection": [
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.callbacks.ToastActivatedActionCallback",
+            "type": "dev.nucleusframework.knotify.platform.windows.callbacks.ToastActivatedActionCallback",
             "methods": [{"name": "invoke", "parameterTypes": ["com.sun.jna.Pointer", "int"]}]
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.callbacks.ToastActivatedCallback",
+            "type": "dev.nucleusframework.knotify.platform.windows.callbacks.ToastActivatedCallback",
             "methods": [{"name": "invoke", "parameterTypes": ["com.sun.jna.Pointer"]}]
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.callbacks.ToastDismissedCallback",
+            "type": "dev.nucleusframework.knotify.platform.windows.callbacks.ToastDismissedCallback",
             "methods": [{"name": "invoke", "parameterTypes": ["com.sun.jna.Pointer", "int"]}]
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.callbacks.ToastFailedCallback"
+            "type": "dev.nucleusframework.knotify.platform.windows.callbacks.ToastFailedCallback"
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$activatedActionCallback$1"
+            "type": "dev.nucleusframework.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$activatedActionCallback$1"
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$activatedCallback$1"
+            "type": "dev.nucleusframework.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$activatedCallback$1"
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$dismissedCallback$1"
+            "type": "dev.nucleusframework.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$dismissedCallback$1"
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$failedCallback$1"
+            "type": "dev.nucleusframework.knotify.platform.windows.provider.WindowsNotificationProvider$createCallbacks$failedCallback$1"
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.nativeintegration.WinToastLibC",
+            "type": "dev.nucleusframework.knotify.platform.windows.nativeintegration.WinToastLibC",
             "allDeclaredMethods": true
         },
         {
-            "type": "io.github.kdroidfilter.knotify.platform.windows.nativeintegration.ExtendedUser32",
+            "type": "dev.nucleusframework.knotify.platform.windows.nativeintegration.ExtendedUser32",
             "allDeclaredMethods": true
         },
         {
-            "type": {"proxy": ["io.github.kdroidfilter.knotify.platform.windows.nativeintegration.WinToastLibC"]}
+            "type": {"proxy": ["dev.nucleusframework.knotify.platform.windows.nativeintegration.WinToastLibC"]}
         },
         {
-            "type": {"proxy": ["io.github.kdroidfilter.knotify.platform.windows.nativeintegration.ExtendedUser32"]}
+            "type": {"proxy": ["dev.nucleusframework.knotify.platform.windows.nativeintegration.ExtendedUser32"]}
         }
     ]
 }

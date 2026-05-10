@@ -45,7 +45,7 @@ static HWND hwnd_from_jlong(jlong v) {
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeAttach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeAttach(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jlong childHwnd) {
     (void)env; (void)clazz;
     HWND parent = hwnd_from_jlong(parentHwnd);
@@ -89,7 +89,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeDetach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong childHwnd) {
     (void)env; (void)clazz;
     HWND child = hwnd_from_jlong(childHwnd);
@@ -103,7 +103,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeSetFrame(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeSetFrame(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jlong childHwnd,
     jint xPx, jint yPx, jint widthPx, jint heightPx) {
     (void)env; (void)clazz; (void)parentHwnd;
@@ -116,7 +116,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeIsFocusInTree(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeIsFocusInTree(
     JNIEnv *env, jclass clazz, jlong parentHwnd) {
     (void)env; (void)clazz;
     HWND parent = hwnd_from_jlong(parentHwnd);
@@ -128,7 +128,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeSetCornerRadius(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsNativeViewBridge_nativeSetCornerRadius(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jlong childHwnd, jfloat radiusPx) {
     (void)env; (void)clazz; (void)parentHwnd;
     HWND child = hwnd_from_jlong(childHwnd);

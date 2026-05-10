@@ -9,7 +9,7 @@ Complete Kotlin mapping of the [Unity Launcher API](https://wiki.ubuntu.com/Unit
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.launcher-linux:<version>")
+    implementation("dev.nucleusframework:nucleus.launcher-linux:<version>")
 }
 ```
 
@@ -20,7 +20,7 @@ Depends on `core-runtime` for `NativeLibraryLoader` and `freedesktop-icons` for 
 ### Launcher Entry (Badge, Progress, Urgency)
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.launcher.linux.*
+import dev.nucleusframework.nucleus.launcher.linux.*
 
 val appUri = LinuxLauncherEntry.appUri("myapp.desktop")
 
@@ -48,8 +48,8 @@ LinuxLauncherEntry.update(appUri, LauncherProperties(
 ### Dynamic Quicklist (Right-Click Menu)
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
-import io.github.kdroidfilter.nucleus.launcher.linux.*
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.launcher.linux.*
 
 val quicklist = LinuxQuicklist("/com/example/MyApp/Menu")
 
@@ -238,7 +238,7 @@ Ships pre-built Linux shared libraries (x86_64 + aarch64). `isAvailable` returns
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.launcher.linux.NativeLinuxLauncherBridge {
+-keep class dev.nucleusframework.nucleus.launcher.linux.NativeLinuxLauncherBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -251,7 +251,7 @@ JNI reflection metadata must include the bridge class:
 ```json
 [
   {
-    "type": "io.github.kdroidfilter.nucleus.launcher.linux.NativeLinuxLauncherBridge",
+    "type": "dev.nucleusframework.nucleus.launcher.linux.NativeLinuxLauncherBridge",
     "methods": [
       { "name": "onMenuItemEvent", "parameterTypes": ["java.lang.String", "int"] }
     ]

@@ -1,0 +1,43 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.media.control.linux.NativeLinuxBridge",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "nativeConfigure", "parameterTypes": ["java.lang.String", "java.lang.String"] },
+                { "name": "nativeSetMetadata", "parameterTypes": ["java.lang.String", "java.lang.String", "java.lang.String", "java.lang.String", "long"] },
+                { "name": "nativeSetPlaybackState", "parameterTypes": ["int", "long"] },
+                { "name": "nativeSetVolume", "parameterTypes": ["double"] },
+                { "name": "nativeStartListening", "parameterTypes": [] },
+                { "name": "nativeStopListening", "parameterTypes": [] },
+                { "name": "onMediaControlEvent", "parameterTypes": ["java.lang.String"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.media.control.macos.NativeMacOsBridge",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "nativeConfigure", "parameterTypes": ["java.lang.String", "java.lang.String"] },
+                { "name": "nativeSetMetadata", "parameterTypes": ["java.lang.String", "java.lang.String", "java.lang.String", "java.lang.String", "long"] },
+                { "name": "nativeSetPlaybackState", "parameterTypes": ["int", "long"] },
+                { "name": "nativeSetVolume", "parameterTypes": ["double"] },
+                { "name": "nativeStartListening", "parameterTypes": [] },
+                { "name": "nativeStopListening", "parameterTypes": [] },
+                { "name": "onMediaControlEvent", "parameterTypes": ["java.lang.String"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.media.control.windows.NativeWindowsBridge",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "nativeConfigure", "parameterTypes": ["java.lang.String", "java.lang.String"] },
+                { "name": "nativeSetMetadata", "parameterTypes": ["java.lang.String", "java.lang.String", "java.lang.String", "java.lang.String", "long"] },
+                { "name": "nativeSetPlaybackState", "parameterTypes": ["int", "long"] },
+                { "name": "nativeSetVolume", "parameterTypes": ["double"] },
+                { "name": "nativeStartListening", "parameterTypes": [] },
+                { "name": "nativeStopListening", "parameterTypes": [] },
+                { "name": "onMediaControlEvent", "parameterTypes": ["java.lang.String"] }
+            ]
+        }
+    ]
+}

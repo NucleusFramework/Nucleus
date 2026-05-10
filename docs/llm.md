@@ -11,7 +11,7 @@ Nucleus provides machine-readable documentation files designed for Large Languag
 
 ## How They Stay Up to Date
 
-Both files are **auto-generated** from the MkDocs documentation pages by the [`scripts/generate-llms-docs.py`](https://github.com/kdroidFilter/Nucleus/blob/main/scripts/generate-llms-docs.py) script. A GitHub Actions workflow runs this script on every push to `main` that touches `docs/`, so `llms.txt` and `llms-full.txt` are always in sync with the documentation.
+Both files are **auto-generated** from the MkDocs documentation pages by the [`scripts/generate-llms-docs.py`](https://github.com/nucleusframework/Nucleus/blob/main/scripts/generate-llms-docs.py) script. A GitHub Actions workflow runs this script on every push to `main` that touches `docs/`, so `llms.txt` and `llms-full.txt` are always in sync with the documentation.
 
 !!! tip "Contributing"
     Never edit `llms.txt` or `llms-full.txt` manually — edit the source `.md` files in `docs/` and the script regenerates them automatically.

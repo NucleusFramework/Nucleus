@@ -13,7 +13,7 @@ use crate::state::WINDOWS;
 /// Returns the underlying HWND so the JVM can attach a WGL context and apply
 /// custom decoration via the `nucleus_tao_windows_deco` helper.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeHwndHandle(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeHwndHandle(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

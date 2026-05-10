@@ -1,22 +1,22 @@
 @file:Suppress("ktlint:standard:filename")
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.FileAssociation
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.GraalvmSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.PackagingBackend
-import io.github.kdroidfilter.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
-import io.github.kdroidfilter.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
-import io.github.kdroidfilter.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
-import io.github.kdroidfilter.nucleus.desktop.application.tasks.AbstractElectronBuilderPackageTask
-import io.github.kdroidfilter.nucleus.desktop.application.tasks.AbstractNotarizationTask
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
-import io.github.kdroidfilter.nucleus.internal.utils.Arch
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentArch
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
-import io.github.kdroidfilter.nucleus.internal.utils.executableName
-import io.github.kdroidfilter.nucleus.internal.utils.uppercaseFirstChar
+import dev.nucleusframework.nucleus.desktop.application.dsl.FileAssociation
+import dev.nucleusframework.nucleus.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.PackagingBackend
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
+import dev.nucleusframework.nucleus.desktop.application.tasks.AbstractElectronBuilderPackageTask
+import dev.nucleusframework.nucleus.desktop.application.tasks.AbstractNotarizationTask
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
+import dev.nucleusframework.nucleus.internal.utils.Arch
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentArch
+import dev.nucleusframework.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.internal.utils.executableName
+import dev.nucleusframework.nucleus.internal.utils.uppercaseFirstChar
 import org.gradle.api.DefaultTask
 import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete

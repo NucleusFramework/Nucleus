@@ -63,7 +63,7 @@ static int32_t get_raw_or_standard_capacity(CFDictionaryRef dict, CFStringRef ra
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryPresent(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryPresent(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return JNI_FALSE;
@@ -73,7 +73,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryExternalConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryExternalConnected(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return JNI_FALSE;
@@ -83,7 +83,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryIsCharging(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryIsCharging(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return JNI_FALSE;
@@ -93,7 +93,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryFullyCharged(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryFullyCharged(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return JNI_FALSE;
@@ -103,7 +103,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryCurrentCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryCurrentCapacity(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -114,7 +114,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryMaxCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryMaxCapacity(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -125,7 +125,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryDesignCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryDesignCapacity(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -135,7 +135,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryCycleCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryCycleCount(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -145,7 +145,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryVoltage(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryVoltage(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -155,7 +155,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryAmperage(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryAmperage(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return 0;
@@ -165,7 +165,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryTemperature(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryTemperature(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return (jfloat)NAN;
@@ -176,7 +176,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryTimeRemaining(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryTimeRemaining(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return -1;
@@ -188,7 +188,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryManufacturer(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryManufacturer(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return NULL;
@@ -200,7 +200,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryModelName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatteryModelName(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return NULL;
@@ -212,7 +212,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatterySerialNumber(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBatterySerialNumber(
     JNIEnv *env, jclass clazz) {
     CFDictionaryRef props = copy_battery_properties();
     if (!props) return NULL;

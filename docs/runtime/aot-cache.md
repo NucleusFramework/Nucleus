@@ -43,14 +43,14 @@ To detect AOT mode at runtime (e.g. to self-terminate during training or skip he
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:<version>")
     // Transitive: nucleus.core-runtime is pulled in via `api`
 }
 ```
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.aot.runtime.AotRuntime
-import io.github.kdroidfilter.nucleus.aot.runtime.AotRuntimeMode
+import dev.nucleusframework.nucleus.aot.runtime.AotRuntime
+import dev.nucleusframework.nucleus.aot.runtime.AotRuntimeMode
 ```
 
 ## Modes
@@ -149,6 +149,6 @@ The `aot-runtime` module re-exports `ExecutableRuntime` and `ExecutableType` via
 
 ```kotlin
 // Both work:
-import io.github.kdroidfilter.nucleus.core.runtime.ExecutableRuntime
-import io.github.kdroidfilter.nucleus.aot.runtime.ExecutableRuntime
+import dev.nucleusframework.nucleus.core.runtime.ExecutableRuntime
+import dev.nucleusframework.nucleus.aot.runtime.ExecutableRuntime
 ```

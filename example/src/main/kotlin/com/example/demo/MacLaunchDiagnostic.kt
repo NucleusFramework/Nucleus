@@ -1,6 +1,6 @@
 package com.example.demo
 
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
+import dev.nucleusframework.nucleus.core.runtime.Platform
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date

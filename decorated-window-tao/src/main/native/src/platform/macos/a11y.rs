@@ -32,7 +32,7 @@ use crate::state::JAVA_VM;
 // ── JNI exports ───────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
     _env: JNIEnv,
     _class: JClass,
     ns_view: jlong,
@@ -42,7 +42,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
     _env: JNIEnv,
     _class: JClass,
     ns_view: jlong,
@@ -52,7 +52,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
     env: JNIEnv,
     _class: JClass,
     ns_view: jlong,
@@ -74,7 +74,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -83,7 +83,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -92,7 +92,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -101,7 +101,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -109,7 +109,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
     _env: JNIEnv,
     _class: JClass,
     ns_view: jlong,
@@ -121,7 +121,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// No-op on macOS — VoiceOver reads `CFBundleName` for the app name.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
     _env: JNIEnv,
     _class: JClass,
     _name: JString,
@@ -132,7 +132,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// is still at v4 and rejects anything else. Returning `JNI_FALSE` keeps the
 /// JVM-side controller from believing a partial succeeded.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
     _env: JNIEnv,
     _class: JClass,
     _ns_view: jlong,
@@ -158,7 +158,7 @@ pub extern "C" fn nucleus_tao_a11y_set_text(
     let slice = unsafe { std::slice::from_raw_parts(utf8, len as usize) };
     let Ok(text) = std::str::from_utf8(slice) else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/nucleus/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };
@@ -187,7 +187,7 @@ pub extern "C" fn nucleus_tao_a11y_invoke_custom_action(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/nucleus/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };
@@ -216,7 +216,7 @@ pub extern "C" fn nucleus_tao_a11y_scroll_by(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/nucleus/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };
@@ -246,7 +246,7 @@ pub extern "C" fn nucleus_tao_a11y_set_selection(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/nucleus/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };
@@ -277,7 +277,7 @@ pub extern "C" fn nucleus_tao_a11y_invoke_action(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
-        let class = match env.find_class("io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge") {
+        let class = match env.find_class("dev/nucleusframework/nucleus/window/tao/NativeTaoBridge") {
             Ok(c) => c,
             Err(_) => return,
         };

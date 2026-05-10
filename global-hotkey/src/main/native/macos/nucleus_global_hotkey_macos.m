@@ -224,7 +224,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeInit(
+Java_dev_nucleusframework_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeInit(
     JNIEnv *env, jclass clazz) {
     @autoreleasepool {
         if (g_eventMonitorLocal != nil || g_eventMonitorGlobal != nil) return NULL; // Already initialized
@@ -278,7 +278,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeRegister(
     JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode) {
     (void)clazz;
     @autoreleasepool {
@@ -318,7 +318,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeUnregister(
+Java_dev_nucleusframework_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeUnregister(
     JNIEnv *env, jclass clazz, jlong id) {
     (void)clazz;
     @autoreleasepool {
@@ -336,7 +336,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_n
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeShutdown(
+Java_dev_nucleusframework_nucleus_globalhotkey_macos_NativeMacOsHotKeyBridge_nativeShutdown(
     JNIEnv *env, jclass clazz) {
     (void)clazz;
     @autoreleasepool {

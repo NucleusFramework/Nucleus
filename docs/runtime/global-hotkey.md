@@ -6,15 +6,15 @@ System-wide keyboard shortcuts that fire even when the application does not have
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.global-hotkey:<version>")
+    implementation("dev.nucleusframework:nucleus.global-hotkey:<version>")
 }
 ```
 
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.globalhotkey.GlobalHotKeyManager
-import io.github.kdroidfilter.nucleus.globalhotkey.HotKeyModifier
+import dev.nucleusframework.nucleus.globalhotkey.GlobalHotKeyManager
+import dev.nucleusframework.nucleus.globalhotkey.HotKeyModifier
 import java.awt.event.KeyEvent
 
 GlobalHotKeyManager.initialize()
@@ -211,7 +211,7 @@ Uses the `org.freedesktop.portal.GlobalShortcuts` XDG Desktop Portal via GIO/GDB
 
 **Requirements:**
 
-- The application must have a valid `.desktop` file with a reverse-DNS name (e.g., `io.github.kdroidfilter.MyApp.desktop`)
+- The application must have a valid `.desktop` file with a reverse-DNS name (e.g., `dev.nucleusframework.MyApp.desktop`)
 - The application must be launched from that `.desktop` file (or have `GIO_LAUNCHED_DESKTOP_FILE` set)
 - GNOME validates the `app_id` against `g_application_id_is_valid` — a plain name like `MyApp` will be rejected
 
@@ -223,14 +223,14 @@ Uses the `org.freedesktop.portal.GlobalShortcuts` XDG Desktop Portal via GIO/GDB
 nucleus.application {
     nativeDistributions {
         appName    = "MyApp"                       // human-readable display name
-        packageName = "io.github.kdroidfilter.MyApp" // becomes io.github.kdroidfilter.MyApp.desktop
+        packageName = "dev.nucleusframework.MyApp" // becomes dev.nucleusframework.MyApp.desktop
     }
 }
 ```
 
 !!! warning "`appName` is required"
     Without `appName`, the application title shown in GNOME Shell and window decorations
-    will fall back to the full `packageName` (`io.github.kdroidfilter.MyApp`).
+    will fall back to the full `packageName` (`dev.nucleusframework.MyApp`).
     Always set both: `packageName` for the reverse-DNS identity, `appName` for the display name.
 
 **Step 2 — Launch from the `.desktop` file:**
@@ -240,7 +240,7 @@ The portal uses `GIO_LAUNCHED_DESKTOP_FILE` (set automatically by the desktop en
 For development, you can set it manually:
 
 ```bash
-GIO_LAUNCHED_DESKTOP_FILE=/usr/share/applications/io.github.kdroidfilter.MyApp.desktop \
+GIO_LAUNCHED_DESKTOP_FILE=/usr/share/applications/dev.nucleusframework.MyApp.desktop \
 GIO_LAUNCHED_DESKTOP_FILE_PID=$$ \
 ./my-app
 ```
@@ -265,7 +265,7 @@ The portal backend uses a dedicated GLib thread permanently attached to the JVM.
 If you use ProGuard/R8, keep the JNI bridge classes:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.globalhotkey.windows.NativeWindowsHotKeyBridge { *; }
--keep class io.github.kdroidfilter.nucleus.globalhotkey.macos.NativeMacOsHotKeyBridge { *; }
--keep class io.github.kdroidfilter.nucleus.globalhotkey.linux.NativeLinuxHotKeyBridge { *; }
+-keep class dev.nucleusframework.nucleus.globalhotkey.windows.NativeWindowsHotKeyBridge { *; }
+-keep class dev.nucleusframework.nucleus.globalhotkey.macos.NativeMacOsHotKeyBridge { *; }
+-keep class dev.nucleusframework.nucleus.globalhotkey.linux.NativeLinuxHotKeyBridge { *; }
 ```

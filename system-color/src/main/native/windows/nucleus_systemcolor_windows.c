@@ -111,7 +111,7 @@ static void notifyAccentColorChanged(int r, int g, int b) {
     }
 
     jclass bridgeClass = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/systemcolor/windows/NativeWindowsSystemColorBridge");
+        "dev/nucleusframework/nucleus/systemcolor/windows/NativeWindowsSystemColorBridge");
     if (bridgeClass != NULL) {
         jmethodID method = (*env)->GetStaticMethodID(env,
             bridgeClass, "onAccentColorChanged", "(III)V");
@@ -143,7 +143,7 @@ static void notifyHighContrastChanged(BOOL isHigh) {
     }
 
     jclass bridgeClass = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/systemcolor/windows/NativeWindowsSystemColorBridge");
+        "dev/nucleusframework/nucleus/systemcolor/windows/NativeWindowsSystemColorBridge");
     if (bridgeClass != NULL) {
         jmethodID method = (*env)->GetStaticMethodID(env,
             bridgeClass, "onHighContrastChanged", "(Z)V");
@@ -237,7 +237,7 @@ static DWORD WINAPI watchThreadProc(LPVOID param) {
 /* ------------------------------------------------------------------ */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeGetAccentColor(
+Java_dev_nucleusframework_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeGetAccentColor(
     JNIEnv *env, jclass clazz, jintArray out) {
     (void)clazz;
     int r = 0, g = 0, b = 0;
@@ -249,14 +249,14 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColor
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeIsHighContrast(
+Java_dev_nucleusframework_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeIsHighContrast(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return isHighContrast() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeIsAccentColorSupported(
+Java_dev_nucleusframework_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeIsAccentColorSupported(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     int r, g, b;
@@ -264,7 +264,7 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColor
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeStartObserving(
+Java_dev_nucleusframework_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeStartObserving(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     if (g_watchThread != NULL) return;
@@ -275,7 +275,7 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColor
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeStopObserving(
+Java_dev_nucleusframework_nucleus_systemcolor_windows_NativeWindowsSystemColorBridge_nativeStopObserving(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     if (g_watchThread == NULL) return;

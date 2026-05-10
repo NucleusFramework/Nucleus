@@ -3,17 +3,17 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.NativeApplication
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
-import io.github.kdroidfilter.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageAppDirTask
-import io.github.kdroidfilter.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageDmgTask
-import io.github.kdroidfilter.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageTask
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
-import io.github.kdroidfilter.nucleus.internal.utils.joinLowerCamelCase
+import dev.nucleusframework.nucleus.desktop.application.dsl.NativeApplication
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageAppDirTask
+import dev.nucleusframework.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageDmgTask
+import dev.nucleusframework.nucleus.desktop.application.tasks.AbstractNativeMacApplicationPackageTask
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.internal.utils.joinLowerCamelCase
 import org.gradle.api.Project
 import org.gradle.api.Task
 import org.gradle.api.tasks.TaskContainer

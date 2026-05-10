@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer
 
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull

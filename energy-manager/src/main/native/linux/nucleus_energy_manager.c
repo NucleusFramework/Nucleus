@@ -38,7 +38,7 @@
 /* ---- nativeIsSupported ------------------------------------------- */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeIsSupported(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeIsSupported(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -52,7 +52,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeEnableEfficiencyMode ---------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -83,7 +83,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeEnableThreadEfficiencyMode ---------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -114,7 +114,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeDisableThreadEfficiencyMode --------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -146,7 +146,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeEnableLightEfficiencyMode ----------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeEnableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -162,7 +162,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeDisableLightEfficiencyMode ---------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -180,7 +180,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeDisableEfficiencyMode --------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeDisableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -615,7 +615,7 @@ static int x11_uninhibit(void) {
 /* ---- nativeKeepScreenAwake ---------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeKeepScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeKeepScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -647,7 +647,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeReleaseScreenAwake ------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeReleaseScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeReleaseScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -666,7 +666,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_
 /* ---- nativeIsScreenAwakeActive ------------------------------------ */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeIsScreenAwakeActive(
+Java_dev_nucleusframework_nucleus_energymanager_linux_NativeLinuxEnergyBridge_nativeIsScreenAwakeActive(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

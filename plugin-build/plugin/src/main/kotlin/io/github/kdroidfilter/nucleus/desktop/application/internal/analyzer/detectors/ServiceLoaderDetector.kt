@@ -1,8 +1,8 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.MethodSignature
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ReflectionEntry
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ResourcePattern
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.MethodSignature
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ReflectionEntry
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ResourcePattern
 import java.io.InputStream
 import java.util.jar.JarFile
 

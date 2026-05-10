@@ -127,7 +127,7 @@ static void refresh_processes(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessCount(
     JNIEnv *env, jclass clazz) {
     refresh_processes();
     return (jint)g_proc_count;
@@ -135,7 +135,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 
 #define PROC_STRING_ARRAY(jni_name, field) \
 JNIEXPORT jobjectArray JNICALL \
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
     JNIEnv *env, jclass clazz) { \
     if (g_proc_count <= 0) return NULL; \
     const char **arr = (const char **)malloc(g_proc_count * sizeof(char *)); \
@@ -147,7 +147,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 
 #define PROC_LONG_ARRAY(jni_name, field) \
 JNIEXPORT jlongArray JNICALL \
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
     JNIEnv *env, jclass clazz) { \
     if (g_proc_count <= 0) return NULL; \
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong)); \
@@ -172,7 +172,7 @@ PROC_STRING_ARRAY(nativeProcessCwds, cwd)
 PROC_STRING_ARRAY(nativeProcessRoots, root)
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessCpuUsages(
     JNIEnv *env, jclass clazz) {
     if (g_proc_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_proc_count * sizeof(jfloat));
@@ -190,7 +190,7 @@ static int read_single_process(pid_t pid, proc_entry_t *pe) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidName(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
@@ -198,7 +198,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidExe(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidExe(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
@@ -206,7 +206,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return 0;
@@ -214,7 +214,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidVirtualMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidVirtualMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return 0;
@@ -222,7 +222,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCpuUsage(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return 0.0f;
@@ -230,7 +230,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStatus(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
@@ -238,7 +238,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStartTime(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidStartTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return 0;
@@ -246,7 +246,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRunTime(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRunTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return 0;
@@ -254,7 +254,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidParentPid(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidParentPid(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return -1;
@@ -262,7 +262,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCmd(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCmd(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
@@ -270,7 +270,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCwd(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidCwd(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;
@@ -278,7 +278,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRoot(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProcessByPidRoot(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((pid_t)pid, &pe) != 0) return NULL;

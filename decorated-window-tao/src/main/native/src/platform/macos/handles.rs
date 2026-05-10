@@ -11,7 +11,7 @@ use crate::state::WINDOWS;
 /// Returns the underlying NSView pointer so the JVM can attach a CAMetalLayer.
 /// Must be called on the macOS main thread (i.e. from a Tao event handler).
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeNsViewHandle(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeNsViewHandle(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

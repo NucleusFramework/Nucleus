@@ -3,11 +3,11 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal.files
+package dev.nucleusframework.nucleus.desktop.application.internal.files
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentOS
 import org.gradle.api.tasks.Internal
 import java.io.*
 import java.security.DigestInputStream

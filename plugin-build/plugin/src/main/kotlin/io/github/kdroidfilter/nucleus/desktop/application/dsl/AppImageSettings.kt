@@ -3,7 +3,7 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.dsl
+package dev.nucleusframework.nucleus.desktop.application.dsl
 
 @Suppress("AbstractClassCanBeConcreteClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class AppImageSettings {

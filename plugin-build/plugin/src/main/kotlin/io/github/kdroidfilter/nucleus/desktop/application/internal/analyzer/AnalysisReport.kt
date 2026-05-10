@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer
 
 /**
  * Classification of an Oracle repo entry relative to what the static analyzer found.

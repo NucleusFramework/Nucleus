@@ -164,7 +164,7 @@ static void refresh_processes(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessCount(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessCount(
     JNIEnv *env, jclass clazz) {
     refresh_processes();
     return (jint)g_proc_count;
@@ -172,7 +172,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 
 #define PROC_STRING_ARRAY(jni_name, field) \
 JNIEXPORT jobjectArray JNICALL \
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_##jni_name( \
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_##jni_name( \
     JNIEnv *env, jclass clazz) { \
     if (g_proc_count <= 0) return NULL; \
     const char **arr = (const char **)malloc(g_proc_count * sizeof(char *)); \
@@ -184,7 +184,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 
 #define PROC_LONG_ARRAY(jni_name, field) \
 JNIEXPORT jlongArray JNICALL \
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_##jni_name( \
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_##jni_name( \
     JNIEnv *env, jclass clazz) { \
     if (g_proc_count <= 0) return NULL; \
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong)); \
@@ -209,7 +209,7 @@ PROC_STRING_ARRAY(nativeProcessCwds, cwd)
 PROC_STRING_ARRAY(nativeProcessRoots, root)
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessCpuUsages(
     JNIEnv *env, jclass clazz) {
     if (g_proc_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_proc_count * sizeof(jfloat));
@@ -229,7 +229,7 @@ static int read_single_process(long pid, proc_entry_t *pe) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidName(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidName(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;
@@ -237,7 +237,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidExe(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidExe(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;
@@ -245,7 +245,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return 0;
@@ -253,7 +253,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidVirtualMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidVirtualMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return 0;
@@ -261,7 +261,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCpuUsage(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return 0.0f;
@@ -269,7 +269,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidStatus(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;
@@ -277,7 +277,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidStartTime(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidStartTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return 0;
@@ -285,7 +285,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidRunTime(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidRunTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return 0;
@@ -293,7 +293,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidParentPid(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidParentPid(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return -1;
@@ -301,7 +301,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCmd(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCmd(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;
@@ -309,7 +309,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCwd(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidCwd(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;
@@ -317,7 +317,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidRoot(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeProcessByPidRoot(
     JNIEnv *env, jclass clazz, jlong pid) {
     proc_entry_t pe;
     if (read_single_process((long)pid, &pe) != 0) return NULL;

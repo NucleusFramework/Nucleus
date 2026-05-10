@@ -2,7 +2,7 @@
 #include <jni.h>
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
     JNIEnv *env, jclass clazz) {
     @autoreleasepool {
         NSString *language = [[NSLocale preferredLanguages] firstObject];

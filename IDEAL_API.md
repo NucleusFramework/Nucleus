@@ -20,7 +20,7 @@ Everything else stays exactly as it is today. Each OS integration keeps its nati
 
 ```kotlin
 plugins {
-    id("io.github.kdroidfilter.nucleus") version "1.4.0"
+    id("dev.nucleusframework.nucleus") version "1.4.0"
 }
 
 nucleus {
@@ -33,7 +33,7 @@ nucleus {
 
 dependencies {
     implementation(compose.desktop.currentOs)
-    implementation("io.github.kdroidfilter:nucleus.application-runtime:1.4.0")
+    implementation("dev.nucleusframework:nucleus.application-runtime:1.4.0")
 }
 ```
 

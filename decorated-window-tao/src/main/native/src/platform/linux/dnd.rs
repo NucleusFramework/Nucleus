@@ -629,7 +629,7 @@ fn start_outbound(
 // ── JNI exports ────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeRegister(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeRegister(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -649,7 +649,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoL
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeRevoke(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeRevoke(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -663,7 +663,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoL
 
 #[no_mangle]
 #[allow(unused_mut)]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeStartDrag(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxDndBridge_nativeStartDrag(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,

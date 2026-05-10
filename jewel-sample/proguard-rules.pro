@@ -229,7 +229,7 @@
 # --- Fix: Community enum used with valueOf() for Kiddush Levana opinion selection ---
 # The Community enum is resolved at runtime via Enum.valueOf(code) where code is stored
 # in AppSettings. If R8/ProGuard optimizes or unboxes this enum, valueOf() will fail.
--keep enum io.github.kdroidfilter.seforimapp.features.onboarding.userprofile.Community { *; }
+-keep enum dev.nucleusframework.seforimapp.features.onboarding.userprofile.Community { *; }
 
 
 # =============================================================================
@@ -239,43 +239,43 @@
 # =============================================================================
 
 # Nucleus decorated-window JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.macos.NativeMacBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.window.** { *; }
+-keep class dev.nucleusframework.nucleus.window.** { *; }
 
 # Nucleus darkmode-detector JNI (macOS)
 # NativeDarkModeBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Linux)
 # NativeLinuxBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.linux.NativeLinuxBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.linux.NativeLinuxBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.windows.NativeWindowsBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.windows.NativeWindowsBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.** { *; }
+-keep class dev.nucleusframework.nucleus.darkmodedetector.** { *; }
 
 # Nucleus native-ssl JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.nativessl.mac.NativeSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.mac.NativeSslBridge {
     native <methods>;
 }
 
 # Nucleus native-ssl JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.nativessl.windows.WindowsSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.windows.WindowsSslBridge {
     native <methods>;
 }
 
 # Nucleus system-color JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.systemcolor.mac.NativeMacSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.mac.NativeMacSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onAccentColorCleared();
@@ -283,38 +283,38 @@
 }
 
 # Nucleus system-color JNI (Linux)
--keep class io.github.kdroidfilter.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(float, float, float);
     static void onHighContrastChanged(boolean);
 }
 
 # Nucleus system-color JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge {
+-keep class dev.nucleusframework.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge {
     native <methods>;
     static void onAccentColorChanged(int, int, int);
     static void onHighContrastChanged(boolean);
 }
--keep class io.github.kdroidfilter.nucleus.systemcolor.** { *; }
+-keep class dev.nucleusframework.nucleus.systemcolor.** { *; }
 
 # Nucleus energy-manager JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.energymanager.macos.NativeMacOsEnergyBridge {
+-keep class dev.nucleusframework.nucleus.energymanager.macos.NativeMacOsEnergyBridge {
     native <methods>;
 }
 
 # Nucleus energy-manager JNI (Linux)
--keep class io.github.kdroidfilter.nucleus.energymanager.linux.NativeLinuxEnergyBridge {
+-keep class dev.nucleusframework.nucleus.energymanager.linux.NativeLinuxEnergyBridge {
     native <methods>;
 }
 
 # Nucleus energy-manager JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.energymanager.windows.NativeWindowsEnergyBridge {
+-keep class dev.nucleusframework.nucleus.energymanager.windows.NativeWindowsEnergyBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.energymanager.** { *; }
+-keep class dev.nucleusframework.nucleus.energymanager.** { *; }
 
 # Nucleus linux-hidpi JNI
--keep class io.github.kdroidfilter.nucleus.hidpi.HiDpiLinuxBridge {
+-keep class dev.nucleusframework.nucleus.hidpi.HiDpiLinuxBridge {
     native <methods>;
 }
 

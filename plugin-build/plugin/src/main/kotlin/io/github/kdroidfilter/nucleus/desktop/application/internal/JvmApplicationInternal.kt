@@ -3,13 +3,13 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.GraalvmSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplication
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationBuildTypes
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationDistributions
-import io.github.kdroidfilter.nucleus.internal.utils.new
+import dev.nucleusframework.nucleus.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.JvmApplication
+import dev.nucleusframework.nucleus.desktop.application.dsl.JvmApplicationBuildTypes
+import dev.nucleusframework.nucleus.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.nucleus.internal.utils.new
 import org.gradle.api.Action
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFileProperty

@@ -147,7 +147,7 @@ static void read_cpu_ticks(float *global_usage, float *per_cpu_usages, int count
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGlobalCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGlobalCpuUsage(
     JNIEnv *env, jclass clazz) {
     float usage = 0.0f;
     read_cpu_ticks(&usage, NULL, 0);
@@ -155,7 +155,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativePhysicalCoreCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativePhysicalCoreCount(
     JNIEnv *env, jclass clazz) {
     int32_t count = 0;
     sysctl_int32("hw.physicalcpu", &count);
@@ -163,13 +163,13 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuCount(
     JNIEnv *env, jclass clazz) {
     return (jint)count_logical_cpus();
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuNames(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuNames(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -186,7 +186,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuVendorIds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuVendorIds(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -201,7 +201,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuBrands(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuBrands(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -219,7 +219,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuFrequencies(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuFrequencies(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -235,7 +235,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuUsages(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;

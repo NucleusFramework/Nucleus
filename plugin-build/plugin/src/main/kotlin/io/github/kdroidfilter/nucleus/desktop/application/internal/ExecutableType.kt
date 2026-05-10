@@ -5,9 +5,9 @@
 
 @file:Suppress("ktlint:standard:filename")
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 import org.gradle.api.logging.Logger
 import java.io.File
 

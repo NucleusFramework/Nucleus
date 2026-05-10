@@ -137,7 +137,7 @@ static int portalGetMetered(GioFuncs *f, GDBusConnection *conn) {
 // ---------------------------------------------------------------------------
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeIsNetworkConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeIsNetworkConnected(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 
@@ -165,7 +165,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 // ---------------------------------------------------------------------------
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeGetMeteredStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeGetMeteredStatus(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 

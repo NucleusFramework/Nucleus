@@ -502,7 +502,7 @@ fn revoke(handle: u64) {
 // ── JNI exports ────────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxTouchBridge_nativeRegister(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxTouchBridge_nativeRegister(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -522,7 +522,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoL
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxTouchBridge_nativeRevoke(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxTouchBridge_nativeRevoke(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

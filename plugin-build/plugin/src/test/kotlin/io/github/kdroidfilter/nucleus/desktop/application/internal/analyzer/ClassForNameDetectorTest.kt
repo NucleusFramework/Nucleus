@@ -1,7 +1,7 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ClassForNameDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.isValidClassName
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ClassForNameDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.isValidClassName
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue

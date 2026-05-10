@@ -8,14 +8,14 @@ Access application metadata injected by the Nucleus Gradle plugin at runtime.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.core-runtime:<version>")
 }
 ```
 
 ## Usage
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
+import dev.nucleusframework.nucleus.core.runtime.NucleusApp
 
 // Application identifier (matches packageName in the Nucleus DSL)
 val appId: String = NucleusApp.appId

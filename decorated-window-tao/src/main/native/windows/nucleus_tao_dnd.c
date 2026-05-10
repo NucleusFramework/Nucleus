@@ -363,7 +363,7 @@ static BOOL ensure_callback_methods(JNIEnv *env, jobject callback) {
  * RegisterDragDrop. Returns 0 on success, negative on failure.
  */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeRegister(
     JNIEnv *env, jclass cls, jlong hwnd, jobject callback)
 {
     (void)cls;
@@ -413,7 +413,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeR
  * nativeRegister calls.
  */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeRevoke(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeRevoke(
     JNIEnv *env, jclass cls, jlong hwnd)
 {
     (void)env; (void)cls;
@@ -711,7 +711,7 @@ static IDropSourceVtbl g_drop_source_vtbl = {
 /* ---- nativeStartDrag JNI export ------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeStartDrag(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDndBridge_nativeStartDrag(
     JNIEnv *env, jclass cls, jlong hwnd, jobjectArray files, jstring text, jint allowedEffects)
 {
     (void)cls; (void)hwnd;

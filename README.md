@@ -4,10 +4,10 @@
 
 # Nucleus
 
-[![Gradle Plugin Portal](https://img.shields.io/gradle-plugin-portal/v/io.github.kdroidfilter.nucleus?label=Gradle%20Plugin%20Portal)](https://plugins.gradle.org/plugin/io.github.kdroidfilter.nucleus)
-[![Maven Central](https://img.shields.io/maven-central/v/io.github.kdroidfilter/nucleus.core-runtime?label=Maven%20Central)](https://central.sonatype.com/search?q=io.github.kdroidfilter.nucleus)
-[![Pre Merge Checks](https://github.com/kdroidFilter/Nucleus/actions/workflows/pre-merge.yaml/badge.svg)](https://github.com/kdroidFilter/Nucleus/actions/workflows/pre-merge.yaml)
-[![License: MIT](https://img.shields.io/github/license/kdroidFilter/Nucleus)](https://github.com/kdroidFilter/Nucleus/blob/main/LICENSE)
+[![Gradle Plugin Portal](https://img.shields.io/gradle-plugin-portal/v/dev.nucleusframework.nucleus?label=Gradle%20Plugin%20Portal)](https://plugins.gradle.org/plugin/dev.nucleusframework.nucleus)
+[![Maven Central](https://img.shields.io/maven-central/v/dev.nucleusframework/nucleus.core-runtime?label=Maven%20Central)](https://central.sonatype.com/search?q=dev.nucleusframework.nucleus)
+[![Pre Merge Checks](https://github.com/nucleusframework/Nucleus/actions/workflows/pre-merge.yaml/badge.svg)](https://github.com/nucleusframework/Nucleus/actions/workflows/pre-merge.yaml)
+[![License: MIT](https://img.shields.io/github/license/nucleusframework/Nucleus)](https://github.com/nucleusframework/Nucleus/blob/main/LICENSE)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?logo=kotlin&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
@@ -65,7 +65,7 @@ Java evolved into Kotlin. JavaScript evolved into TypeScript. Desktop developmen
 
 ```kotlin
 plugins {
-    id("io.github.kdroidfilter.nucleus") version "<version>"
+    id("dev.nucleusframework.nucleus") version "<version>"
 }
 
 nucleus.application {

@@ -42,7 +42,7 @@ fn primary_monitor(window: &Window) -> Option<gtk::gdk::Monitor> {
 /// origin. Falls back to the full monitor geometry when GDK can't report
 /// a work area (e.g. some Wayland compositors).
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxPrimaryMonitorWorkArea(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxPrimaryMonitorWorkArea(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -85,7 +85,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// Used as a scale source for the centring math when the window's own
 /// scale factor is not yet resolvable.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxPrimaryMonitorScaleMilli(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxPrimaryMonitorScaleMilli(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

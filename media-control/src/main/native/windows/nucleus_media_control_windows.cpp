@@ -54,7 +54,7 @@ using namespace ABI::Windows::Media;
 using namespace ABI::Windows::Foundation;
 using namespace ABI::Windows::Storage::Streams;
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/media/control/windows/NativeWindowsBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/media/control/windows/NativeWindowsBridge"
 
 // ============================================================================
 // Globals
@@ -420,7 +420,7 @@ static void patchStartMenuShortcut(const std::wstring &appName, const std::wstri
 extern "C" {
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeConfigure(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeConfigure(
     JNIEnv *env, jclass, jstring jAumid, jstring jDisplayName
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -453,7 +453,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeSetMetadata(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeSetMetadata(
     JNIEnv *env, jclass,
     jstring jTitle, jstring jArtist, jstring jAlbum, jstring jCoverUrl, jlong durationMs
 ) {
@@ -529,7 +529,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeSetPlaybackState(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeSetPlaybackState(
     JNIEnv *, jclass, jint status, jlong positionMs
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -555,14 +555,14 @@ Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeSetVolume(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeSetVolume(
     JNIEnv *, jclass, jdouble /*volume*/
 ) {
     // SMTC has no per-app volume channel — no-op.
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeStartListening(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeStartListening(
     JNIEnv *, jclass
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -574,7 +574,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_windows_NativeWindowsBridge_nativeStopListening(
+Java_dev_nucleusframework_nucleus_media_control_windows_NativeWindowsBridge_nativeStopListening(
     JNIEnv *, jclass
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);

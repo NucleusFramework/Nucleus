@@ -151,7 +151,7 @@ static void release_env(int attached) {
 static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/media/control/linux/NativeLinuxBridge");
+        "dev/nucleusframework/nucleus/media/control/linux/NativeLinuxBridge");
     if (!cls) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); return 0; }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
@@ -294,7 +294,7 @@ static GVariant *build_metadata_locked(void) {
 
     char track_path[96];
     snprintf(track_path, sizeof(track_path),
-             "/io/github/kdroidfilter/nucleus/track/%" G_GUINT64_FORMAT,
+             "/dev/nucleusframework/nucleus/track/%" G_GUINT64_FORMAT,
              g_track_counter);
     g_variant_builder_add(&b, "{sv}", "mpris:trackid",
                           g_variant_new_object_path(track_path));
@@ -658,7 +658,7 @@ static void *service_thread_func(void *arg) {
 /* ===================================================================== */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeConfigure(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeConfigure(
     JNIEnv *env, jclass clazz, jstring j_bus_name, jstring j_display_name)
 {
     (void)clazz;
@@ -675,7 +675,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeSetMetadata(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeSetMetadata(
     JNIEnv *env, jclass clazz,
     jstring j_title, jstring j_artist, jstring j_album, jstring j_cover, jlong duration_ms)
 {
@@ -704,7 +704,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeSetPlaybackState(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeSetPlaybackState(
     JNIEnv *env, jclass clazz, jint status, jlong position_ms)
 {
     (void)env; (void)clazz;
@@ -733,7 +733,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeSetVolume(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeSetVolume(
     JNIEnv *env, jclass clazz, jdouble volume)
 {
     (void)env; (void)clazz;
@@ -750,7 +750,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_native
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeStartListening(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeStartListening(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -777,7 +777,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_linux_NativeLinuxBridge_nativeStopListening(
+Java_dev_nucleusframework_nucleus_media_control_linux_NativeLinuxBridge_nativeStopListening(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

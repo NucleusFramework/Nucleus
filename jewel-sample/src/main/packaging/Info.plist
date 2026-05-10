@@ -7,7 +7,7 @@
     <key>CFBundleDisplayName</key>
     <string>Jewel Sample</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.kdroidfilter.composedeskkit.jewelsample</string>
+    <string>dev.nucleusframework.composedeskkit.jewelsample</string>
     <key>CFBundleVersion</key>
     <string>1.0.0</string>
     <key>CFBundleShortVersionString</key>

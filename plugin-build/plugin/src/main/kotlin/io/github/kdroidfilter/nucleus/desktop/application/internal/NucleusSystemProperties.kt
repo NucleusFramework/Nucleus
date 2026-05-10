@@ -3,7 +3,7 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
 internal const val APP_RESOURCES_DIR = "compose.application.resources.dir"
 internal const val SKIKO_LIBRARY_PATH = "skiko.library.path"

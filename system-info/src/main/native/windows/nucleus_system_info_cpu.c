@@ -207,7 +207,7 @@ com_done:
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGlobalCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGlobalCpuUsage(
     JNIEnv *env, jclass clazz) {
     FILETIME idle_ft, kernel_ft, user_ft;
     if (!GetSystemTimes(&idle_ft, &kernel_ft, &user_ft)) return 0.0f;
@@ -240,7 +240,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativePhysicalCoreCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativePhysicalCoreCount(
     JNIEnv *env, jclass clazz) {
     DWORD len = 0;
     GetLogicalProcessorInformationEx(RelationProcessorCore, NULL, &len);
@@ -267,13 +267,13 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuCount(
     JNIEnv *env, jclass clazz) {
     return get_logical_cpu_count();
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuNames(
     JNIEnv *env, jclass clazz) {
     int count = get_logical_cpu_count();
     const char **names = (const char **)malloc(count * sizeof(char *));
@@ -290,7 +290,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuVendorIds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuVendorIds(
     JNIEnv *env, jclass clazz) {
     int count = get_logical_cpu_count();
     char vendor[16];
@@ -304,7 +304,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuBrands(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuBrands(
     JNIEnv *env, jclass clazz) {
     int count = get_logical_cpu_count();
     char brand[64];
@@ -328,7 +328,7 @@ typedef struct {
 } MY_PROCESSOR_POWER_INFORMATION;
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuFrequencies(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuFrequencies(
     JNIEnv *env, jclass clazz) {
     int count = get_logical_cpu_count();
     jlongArray arr = (*env)->NewLongArray(env, count);
@@ -372,7 +372,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuUsages(
     JNIEnv *env, jclass clazz) {
     int count = get_logical_cpu_count();
     jfloatArray arr = (*env)->NewFloatArray(env, count);

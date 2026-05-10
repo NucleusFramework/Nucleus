@@ -1,0 +1,34 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.globalhotkey.windows.NativeWindowsHotKeyBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onHotKey",
+                    "parameterTypes": ["long", "int", "int"]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.globalhotkey.macos.NativeMacOsHotKeyBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onHotKey",
+                    "parameterTypes": ["long", "int", "int"]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.globalhotkey.linux.NativeLinuxHotKeyBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onHotKey",
+                    "parameterTypes": ["long", "int", "int"]
+                }
+            ]
+        }
+    ]
+}

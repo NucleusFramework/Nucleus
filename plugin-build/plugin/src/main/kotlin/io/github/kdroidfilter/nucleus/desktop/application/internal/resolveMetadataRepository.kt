@@ -1,6 +1,6 @@
 @file:Suppress("ktlint:standard:filename")
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
 import groovy.json.JsonSlurper
 import org.gradle.api.logging.Logger

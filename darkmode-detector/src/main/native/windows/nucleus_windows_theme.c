@@ -58,7 +58,7 @@ static jboolean is_dark(void) {
 /*  nativeIsDark()                                                     */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeIsDark(
+Java_dev_nucleusframework_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeIsDark(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -84,7 +84,7 @@ static void notify_java(jboolean isDark) {
     }
 
     jclass bridgeClass = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/darkmodedetector/windows/NativeWindowsBridge");
+        "dev/nucleusframework/nucleus/darkmodedetector/windows/NativeWindowsBridge");
     if (bridgeClass != NULL) {
         jmethodID method = (*env)->GetStaticMethodID(env,
             bridgeClass, "onThemeChanged", "(Z)V");
@@ -156,7 +156,7 @@ static DWORD WINAPI monitor_thread(LPVOID arg) {
 /*  nativeStartObserving()                                             */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeStartObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeStartObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -183,7 +183,7 @@ Java_io_github_kdroidfilter_nucleus_darkmodedetector_windows_NativeWindowsBridge
 /*  nativeStopObserving()                                              */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeStopObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_windows_NativeWindowsBridge_nativeStopObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

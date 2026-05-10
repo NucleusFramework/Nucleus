@@ -15,7 +15,7 @@ use crate::platform::macos::ffi::nucleus_tao_apple_events_install;
 use crate::state::JAVA_VM;
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeAppleEventsInstall(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeAppleEventsInstall(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -33,7 +33,7 @@ pub extern "C" fn nucleus_tao_apple_events_dispatch(utf8: *const u8, len: i32) {
     let Ok(url) = std::str::from_utf8(slice) else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,

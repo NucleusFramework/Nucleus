@@ -6,7 +6,7 @@
 #include <netlistmgr.h>
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeIsNetworkConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeIsNetworkConnected(
     JNIEnv *env, jclass clazz) {
 
     HRESULT hrInit = CoInitializeEx(NULL, COINIT_MULTITHREADED);
@@ -36,7 +36,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGetMeteredStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGetMeteredStatus(
     JNIEnv *env, jclass clazz) {
 
     HRESULT hrInit = CoInitializeEx(NULL, COINIT_MULTITHREADED);

@@ -14,7 +14,7 @@
 // ============================================================================
 
 #define JNI_CLASS(name) \
-    Java_io_github_kdroidfilter_nucleus_scheduler_internal_MacOSLaunchdSchedulerJni_##name
+    Java_dev_nucleusframework_nucleus_scheduler_internal_MacOSLaunchdSchedulerJni_##name
 
 // ============================================================================
 // JNI helpers

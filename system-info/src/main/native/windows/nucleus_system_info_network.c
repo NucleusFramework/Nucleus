@@ -104,14 +104,14 @@ static void refresh_networks(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkCount(
     JNIEnv *env, jclass clazz) {
     refresh_networks();
     return g_net_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkNames(
     JNIEnv *env, jclass clazz) {
     const char *names[MAX_NETWORKS];
     for (int i = 0; i < g_net_count; i++) names[i] = g_nets[i].name;
@@ -119,7 +119,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkReceivedBytes(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkReceivedBytes(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -131,7 +131,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkTransmittedBytes(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkTransmittedBytes(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -143,7 +143,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkReceivedPackets(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkReceivedPackets(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -155,7 +155,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkTransmittedPackets(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkTransmittedPackets(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -167,7 +167,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkErrorsReceived(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkErrorsReceived(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -179,7 +179,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkErrorsTransmitted(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkErrorsTransmitted(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));
@@ -191,7 +191,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkMacAddresses(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkMacAddresses(
     JNIEnv *env, jclass clazz) {
     const char *macs[MAX_NETWORKS];
     for (int i = 0; i < g_net_count; i++) macs[i] = g_nets[i].mac_address;
@@ -199,7 +199,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkMtus(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeNetworkMtus(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_net_count);
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong));

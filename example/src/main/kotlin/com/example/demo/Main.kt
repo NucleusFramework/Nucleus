@@ -62,30 +62,30 @@ import com.example.demo.icons.TablerTextDirectionRtl
 import com.example.demo.icons.VscodeCodiconsColorMode
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
-import io.github.kdroidfilter.nucleus.aot.runtime.AotRuntime
-import io.github.kdroidfilter.nucleus.application.nucleusApplication
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunch
-import io.github.kdroidfilter.nucleus.core.runtime.DeepLinkHandler
-import io.github.kdroidfilter.nucleus.core.runtime.NucleusApp
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
-import io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceManager
-import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
-import io.github.kdroidfilter.nucleus.energymanager.EnergyManager
-import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsJumpListManager
-import io.github.kdroidfilter.nucleus.nativehttp.NativeHttpClient
-import io.github.kdroidfilter.nucleus.systemcolor.systemAccentColor
-import io.github.kdroidfilter.nucleus.updater.NucleusUpdater
-import io.github.kdroidfilter.nucleus.updater.UpdateEvent
-import io.github.kdroidfilter.nucleus.updater.UpdateLevel
-import io.github.kdroidfilter.nucleus.updater.UpdateResult
-import io.github.kdroidfilter.nucleus.updater.provider.GitHubProvider
-import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
-import io.github.kdroidfilter.nucleus.window.material.MaterialDecoratedDialog
-import io.github.kdroidfilter.nucleus.window.material.MaterialDecoratedWindow
-import io.github.kdroidfilter.nucleus.window.material.MaterialDialogTitleBar
-import io.github.kdroidfilter.nucleus.window.material.MaterialTitleBar
-import io.github.kdroidfilter.nucleus.window.newFullscreenControls
+import dev.nucleusframework.nucleus.aot.runtime.AotRuntime
+import dev.nucleusframework.nucleus.application.nucleusApplication
+import dev.nucleusframework.nucleus.autolaunch.AutoLaunch
+import dev.nucleusframework.nucleus.core.runtime.DeepLinkHandler
+import dev.nucleusframework.nucleus.core.runtime.NucleusApp
+import dev.nucleusframework.nucleus.core.runtime.Platform
+import dev.nucleusframework.nucleus.core.runtime.SingleInstanceManager
+import dev.nucleusframework.nucleus.darkmodedetector.isSystemInDarkMode
+import dev.nucleusframework.nucleus.energymanager.EnergyManager
+import dev.nucleusframework.nucleus.graalvm.GraalVmInitializer
+import dev.nucleusframework.nucleus.launcher.windows.WindowsJumpListManager
+import dev.nucleusframework.nucleus.nativehttp.NativeHttpClient
+import dev.nucleusframework.nucleus.systemcolor.systemAccentColor
+import dev.nucleusframework.nucleus.updater.NucleusUpdater
+import dev.nucleusframework.nucleus.updater.UpdateEvent
+import dev.nucleusframework.nucleus.updater.UpdateLevel
+import dev.nucleusframework.nucleus.updater.UpdateResult
+import dev.nucleusframework.nucleus.updater.provider.GitHubProvider
+import dev.nucleusframework.nucleus.window.macOSLargeCornerRadius
+import dev.nucleusframework.nucleus.window.material.MaterialDecoratedDialog
+import dev.nucleusframework.nucleus.window.material.MaterialDecoratedWindow
+import dev.nucleusframework.nucleus.window.material.MaterialDialogTitleBar
+import dev.nucleusframework.nucleus.window.material.MaterialTitleBar
+import dev.nucleusframework.nucleus.window.newFullscreenControls
 import java.io.File
 import java.net.URI
 import kotlin.system.exitProcess
@@ -395,7 +395,7 @@ fun NucleusContent() {
     val updater =
         remember {
             NucleusUpdater {
-                provider = GitHubProvider(owner = "kdroidfilter", repo = "Nucleus")
+                provider = GitHubProvider(owner = "nucleusframework", repo = "Nucleus")
                 httpClient = NativeHttpClient.create()
             }
         }
@@ -567,7 +567,7 @@ private enum class ThemeMode {
 @OptIn(ExperimentalMaterial3Api::class)
 @Suppress("FunctionNaming", "DEPRECATION")
 @Composable
-private fun io.github.kdroidfilter.nucleus.window.TitleBarScope.TitleBarIconButton(
+private fun dev.nucleusframework.nucleus.window.TitleBarScope.TitleBarIconButton(
     imageVector: ImageVector,
     contentDescription: String,
     modifier: Modifier = Modifier,

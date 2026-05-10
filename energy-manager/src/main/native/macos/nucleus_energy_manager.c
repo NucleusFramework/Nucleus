@@ -42,7 +42,7 @@
 /* ---- nativeIsSupported ------------------------------------------- */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeIsSupported(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeIsSupported(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -56,7 +56,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeEnableEfficiencyMode ---------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -91,7 +91,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeEnableLightEfficiencyMode ----------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -115,7 +115,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeDisableLightEfficiencyMode --------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -135,7 +135,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeEnableThreadEfficiencyMode ---------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeEnableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -156,7 +156,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeDisableThreadEfficiencyMode --------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -169,7 +169,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeDisableEfficiencyMode --------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeDisableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -206,7 +206,7 @@ static IOPMAssertionID g_assertionId = kIOPMNullAssertionID;
 /* ---- nativeKeepScreenAwake --------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeKeepScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeKeepScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -239,7 +239,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeReleaseScreenAwake ------------------------------------ */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeReleaseScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeReleaseScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -257,7 +257,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_
 /* ---- nativeIsScreenAwakeActive ----------------------------------- */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeIsScreenAwakeActive(
+Java_dev_nucleusframework_nucleus_energymanager_macos_NativeMacOsEnergyBridge_nativeIsScreenAwakeActive(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

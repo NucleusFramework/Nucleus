@@ -26,13 +26,13 @@ static const char *macos_codename(int major, int minor) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeOsName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeOsName(
     JNIEnv *env, jclass clazz) {
     return to_jstring(env, "macOS");
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeKernelVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeKernelVersion(
     JNIEnv *env, jclass clazz) {
     char *ver = sysctl_string("kern.osrelease");
     if (!ver) return NULL;
@@ -42,7 +42,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeOsVersion(
     JNIEnv *env, jclass clazz) {
     char *ver = sysctl_string("kern.osproductversion");
     if (!ver) return NULL;
@@ -52,7 +52,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeLongOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeLongOsVersion(
     JNIEnv *env, jclass clazz) {
     char *version = sysctl_string("kern.osproductversion");
     char *kernel = sysctl_string("kern.osrelease");
@@ -76,13 +76,13 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDistributionId(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDistributionId(
     JNIEnv *env, jclass clazz) {
     return to_jstring(env, "macos");
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeHostName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeHostName(
     JNIEnv *env, jclass clazz) {
     char buf[256];
     if (gethostname(buf, sizeof(buf)) != 0) return NULL;
@@ -90,7 +90,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuArch(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeCpuArch(
     JNIEnv *env, jclass clazz) {
     char *arch = sysctl_string("hw.machine");
     if (!arch) return NULL;
@@ -108,7 +108,7 @@ static int64_t get_boot_time_sec(void) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUptime(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUptime(
     JNIEnv *env, jclass clazz) {
     int64_t boot = get_boot_time_sec();
     if (boot == 0) return 0;
@@ -116,7 +116,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBootTime(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeBootTime(
     JNIEnv *env, jclass clazz) {
     return (jlong)get_boot_time_sec();
 }

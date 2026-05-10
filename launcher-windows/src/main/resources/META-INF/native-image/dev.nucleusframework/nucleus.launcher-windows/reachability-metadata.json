@@ -1,0 +1,28 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.launcher.windows.NativeWindowsBadgeBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.launcher.windows.NativeWindowsJumpListBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.launcher.windows.NativeWindowsTaskbarBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.launcher.windows.ThumbBarClickListener",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onThumbButtonClick",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                }
+            ]
+        }
+    ]
+}

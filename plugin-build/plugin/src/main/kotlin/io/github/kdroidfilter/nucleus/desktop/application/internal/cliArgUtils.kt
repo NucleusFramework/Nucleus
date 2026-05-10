@@ -3,9 +3,9 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.files.normalizedPath
+import dev.nucleusframework.nucleus.desktop.application.internal.files.normalizedPath
 import org.gradle.api.file.FileSystemLocation
 import org.gradle.api.provider.Provider
 import java.io.File

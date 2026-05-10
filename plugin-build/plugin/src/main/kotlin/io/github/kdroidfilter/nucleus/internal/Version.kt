@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.internal
+package dev.nucleusframework.nucleus.internal
 
 import kotlin.math.min
 

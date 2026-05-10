@@ -6,7 +6,7 @@ Type-safe Kotlin constants for the [freedesktop Icon Naming Specification](https
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.freedesktop-icons:<version>")
+    implementation("dev.nucleusframework:nucleus.freedesktop-icons:<version>")
 }
 ```
 
@@ -16,7 +16,7 @@ dependencies {
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
 
 // Standard icon from the spec (typesafe)
 val icon = FreedesktopIcon.Status.DIALOG_INFORMATION
@@ -68,8 +68,8 @@ Icon names are **cross-desktop** — they are resolved from the active icon them
 ## Usage in Notifications
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
-import io.github.kdroidfilter.nucleus.notification.linux.*
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.notification.linux.*
 
 LinuxNotificationCenter.notify(
     Notification(
@@ -85,8 +85,8 @@ LinuxNotificationCenter.notify(
 ## Usage in Launcher Quicklists
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
-import io.github.kdroidfilter.nucleus.launcher.linux.DbusmenuItem
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.launcher.linux.DbusmenuItem
 
 val items = listOf(
     DbusmenuItem(id = 1, label = "New Window", icon = FreedesktopIcon.Action.WINDOW_NEW),

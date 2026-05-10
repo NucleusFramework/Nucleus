@@ -2,19 +2,19 @@
     "_meta": {
         "description": "Compose MediaPlayer Windows (MediaFoundation via JNA)",
         "matchPackages": [
-            "io.github.kdroidfilter.composemediaplayer"
+            "dev.nucleusframework.composemediaplayer"
         ]
     },
     "reflection": [
         {
-            "type": "io.github.kdroidfilter.composemediaplayer.windows.MediaFoundationLib",
+            "type": "dev.nucleusframework.composemediaplayer.windows.MediaFoundationLib",
             "allDeclaredFields": true,
             "allDeclaredMethods": true,
             "allDeclaredConstructors": true,
             "jniAccessible": true
         },
         {
-            "type": "io.github.kdroidfilter.composemediaplayer.windows.MediaFoundationLib$NativeVideoMetadata",
+            "type": "dev.nucleusframework.composemediaplayer.windows.MediaFoundationLib$NativeVideoMetadata",
             "allDeclaredFields": true,
             "allDeclaredConstructors": true
         }

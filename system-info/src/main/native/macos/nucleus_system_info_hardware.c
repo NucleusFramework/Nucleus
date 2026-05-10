@@ -51,7 +51,7 @@ static char *read_platform_property(const char *property_name) {
 
 // Motherboard — on Mac, "board" maps to the logic board
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardName(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("board-id");
     if (!val) return NULL;
@@ -61,7 +61,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardVendor(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardVendor(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("manufacturer");
     if (!val) return to_jstring(env, "Apple Inc.");
@@ -71,7 +71,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardVersion(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("version");
     if (!val) return NULL;
@@ -81,7 +81,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardSerial(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardSerial(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("IOPlatformSerialNumber");
     if (!val) return NULL;
@@ -91,7 +91,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardAssetTag(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeMotherboardAssetTag(
     JNIEnv *env, jclass clazz) {
     // Macs don't have asset tags in IORegistry
     return NULL;
@@ -99,7 +99,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 
 // Product
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductName(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductName(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("product-name");
     if (!val) {
@@ -113,7 +113,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductFamily(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductFamily(
     JNIEnv *env, jclass clazz) {
     // Derive family from model identifier (e.g., "MacBookPro18,1" -> "MacBook Pro")
     char *model = sysctl_string("hw.model");
@@ -132,7 +132,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductSerial(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductSerial(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("IOPlatformSerialNumber");
     if (!val) return NULL;
@@ -142,7 +142,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductSku(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductSku(
     JNIEnv *env, jclass clazz) {
     // Macs don't have SKU in IORegistry; use hw.model as closest equivalent
     char *val = sysctl_string("hw.model");
@@ -153,7 +153,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductUuid(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductUuid(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("IOPlatformUUID");
     if (!val) return NULL;
@@ -163,7 +163,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductVersion(
     JNIEnv *env, jclass clazz) {
     char *val = sysctl_string("hw.model");
     if (!val) return NULL;
@@ -173,7 +173,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductVendor(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeProductVendor(
     JNIEnv *env, jclass clazz) {
     char *val = read_platform_property("manufacturer");
     if (!val) return to_jstring(env, "Apple Inc.");

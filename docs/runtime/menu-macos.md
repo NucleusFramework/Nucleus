@@ -6,17 +6,17 @@ Declarative, Compose-reactive macOS application menu bar via JNI. Build a fully 
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.menu-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.menu-macos:<version>")
 }
 ```
 
-Pulls in `core-runtime`, `compose.desktop.common`, and `sf-symbols` transitively. Consumers can use type-safe SF Symbol constants via `io.github.kdroidfilter.nucleus.sfsymbols.*` without declaring `sf-symbols` explicitly.
+Pulls in `core-runtime`, `compose.desktop.common`, and `sf-symbols` transitively. Consumers can use type-safe SF Symbol constants via `dev.nucleusframework.nucleus.sfsymbols.*` without declaring `sf-symbols` explicitly.
 
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.menu.macos.*
-import io.github.kdroidfilter.nucleus.sfsymbols.*
+import dev.nucleusframework.nucleus.menu.macos.*
+import dev.nucleusframework.nucleus.sfsymbols.*
 
 @Composable
 fun App() {
@@ -152,7 +152,7 @@ Available constants: `NativeKey.Escape`, `Return`, `Tab`, `Delete`, `Backspace`,
 With the `sf-symbols` module (type-safe):
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.sfsymbols.*
+import dev.nucleusframework.nucleus.sfsymbols.*
 
 Item("Cut", icon = NsMenuItemImage.SystemSymbol(SFSymbolObjectsAndTools.SCISSORS)) { }
 Item("Inbox", icon = NsMenuItemImage.SystemSymbol(SFSymbolGeneral.TRAY_FILL)) { }
@@ -323,7 +323,7 @@ Menu("App Services") { Item("Custom") { } }           // ✗ fully yours
 ## Full Example
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.sfsymbols.*
+import dev.nucleusframework.nucleus.sfsymbols.*
 
 @Composable
 fun App() {
@@ -470,7 +470,7 @@ Ships pre-built macOS dylibs (arm64 + x86_64). `NativeMenuBar` is a no-op on non
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.menu.macos.NativeNsMenuBridge {
+-keep class dev.nucleusframework.nucleus.menu.macos.NativeNsMenuBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -481,7 +481,7 @@ Ships pre-built macOS dylibs (arm64 + x86_64). `NativeMenuBar` is a no-op on non
 ```json
 [
   {
-    "type": "io.github.kdroidfilter.nucleus.menu.macos.NativeNsMenuBridge",
+    "type": "dev.nucleusframework.nucleus.menu.macos.NativeNsMenuBridge",
     "methods": [
       { "name": "onMenuItemAction", "parameterTypes": ["long"] },
       { "name": "onMenuWillOpen", "parameterTypes": ["long"] },

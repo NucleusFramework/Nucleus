@@ -117,7 +117,7 @@ static void runOnMain(void (^block)(void)) {
 /* ---- JNI: nativeSetDockProgress ----------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeSetDockProgress(
+Java_dev_nucleusframework_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeSetDockProgress(
     JNIEnv *env, jclass clazz, jlong completed, jlong total)
 {
     (void)env; (void)clazz;
@@ -149,7 +149,7 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBrid
 /* ---- JNI: nativeSetDockState -------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeSetDockState(
+Java_dev_nucleusframework_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeSetDockState(
     JNIEnv *env, jclass clazz, jint flags)
 {
     (void)env; (void)clazz;
@@ -183,7 +183,7 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBrid
 /* ---- JNI: nativeRequestAttention ---------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeRequestAttention(
+Java_dev_nucleusframework_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeRequestAttention(
     JNIEnv *env, jclass clazz, jint type)
 {
     (void)env; (void)clazz;
@@ -206,7 +206,7 @@ Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBrid
 /* ---- JNI: nativeCancelAttention ----------------------------------- */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeCancelAttention(
+Java_dev_nucleusframework_nucleus_taskbarprogress_macos_NativeMacOsTaskbarBridge_nativeCancelAttention(
     JNIEnv *env, jclass clazz, jint requestId)
 {
     (void)env; (void)clazz;

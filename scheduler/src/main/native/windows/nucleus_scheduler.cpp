@@ -402,13 +402,13 @@ static jstring createTaskInternal(
 }
 
 // ─── JNI prefix ─────────────────────────────────────────────────────────────
-// Package: io.github.kdroidfilter.nucleus.scheduler.internal
+// Package: dev.nucleusframework.nucleus.scheduler.internal
 // Class:   WindowsTaskSchedulerJni
 
 // Double indirection so JNI_CLASS is expanded before ## concatenation
 #define PASTE_(a, b) a##b
 #define PASTE(a, b)  PASTE_(a, b)
-#define JNI_CLASS Java_io_github_kdroidfilter_nucleus_scheduler_internal_WindowsTaskSchedulerJni_
+#define JNI_CLASS Java_dev_nucleusframework_nucleus_scheduler_internal_WindowsTaskSchedulerJni_
 #define JNI_FN(name) JNIEXPORT auto JNICALL PASTE(JNI_CLASS, name)
 
 // ─── Task creation ──────────────────────────────────────────────────────────

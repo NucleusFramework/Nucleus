@@ -1,6 +1,6 @@
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractNucleusTask
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input

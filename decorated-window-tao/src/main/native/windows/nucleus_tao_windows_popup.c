@@ -340,7 +340,7 @@ static void ensurePopupClassRegistered(void) {
 /* ============================================================ */
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
     JNIEnv *env, jclass clazz, jlong parentHwnd, jint xPx, jint yPx, jint widthPx, jint heightPx) {
     (void)clazz;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
@@ -395,7 +395,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeCr
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWindow(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetFrameInWindow(
     JNIEnv *env, jclass clazz, jlong panel, jint xPx, jint yPx, jint widthPx, jint heightPx) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -410,7 +410,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSe
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetFocusable(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetFocusable(
     JNIEnv *env, jclass clazz, jlong panel, jboolean focusable) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -419,7 +419,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSe
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeContentHwnd(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeContentHwnd(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -427,7 +427,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeCo
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -436,7 +436,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeMa
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeSwapBuffers(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)env; (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -446,7 +446,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSw
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetEventCallback(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeSetEventCallback(
     JNIEnv *env, jclass clazz, jlong panel, jobject callback) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -458,7 +458,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeSe
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeInstallOutsideClickMonitor(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel, jobject listener) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -477,7 +477,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeIn
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeUninstallOutsideClickMonitor(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeUninstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;
@@ -493,7 +493,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeUn
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridgeWindows_nativeRelease(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridgeWindows_nativeRelease(
     JNIEnv *env, jclass clazz, jlong panel) {
     (void)clazz;
     PopupState *p = (PopupState *)(uintptr_t)panel;

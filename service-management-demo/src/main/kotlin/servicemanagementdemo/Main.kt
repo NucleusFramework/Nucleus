@@ -25,14 +25,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import io.github.kdroidfilter.nucleus.notification.common.notification
-import io.github.kdroidfilter.nucleus.servicemanagement.AppService
-import io.github.kdroidfilter.nucleus.servicemanagement.AppServiceManager
+import dev.nucleusframework.nucleus.notification.common.notification
+import dev.nucleusframework.nucleus.servicemanagement.AppService
+import dev.nucleusframework.nucleus.servicemanagement.AppServiceManager
 import java.awt.EventQueue
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 
-private const val AGENT_LABEL = "io.github.kdroidfilter.nucleus.servicemanagement.demo.notifier"
+private const val AGENT_LABEL = "dev.nucleusframework.nucleus.servicemanagement.demo.notifier"
 
 fun main(args: Array<String>) {
     if ("--notify" in args) {

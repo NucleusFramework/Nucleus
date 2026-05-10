@@ -112,7 +112,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void*) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeInit(
+Java_dev_nucleusframework_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeInit(
     JNIEnv* env, jclass clazz
 ) {
     if (g_running) return nullptr; // Already initialized
@@ -155,7 +155,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBrid
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeRegister(
     JNIEnv* env, jclass, jlong id, jint modifiers, jint keyCode
 ) {
     if (!g_running || g_threadId == 0) {
@@ -187,7 +187,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBrid
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeUnregister(
+Java_dev_nucleusframework_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeUnregister(
     JNIEnv* env, jclass, jlong id
 ) {
     if (!g_running || g_threadId == 0) {
@@ -217,7 +217,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeShutdown(
+Java_dev_nucleusframework_nucleus_globalhotkey_windows_NativeWindowsHotKeyBridge_nativeShutdown(
     JNIEnv*, jclass
 ) {
     if (!g_running || g_threadId == 0) return;

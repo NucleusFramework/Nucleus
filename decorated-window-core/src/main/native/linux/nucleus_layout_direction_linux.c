@@ -107,7 +107,7 @@ static int detect_rtl_via_locale(void) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeIsRTL(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -177,7 +177,7 @@ static char *readGnomeButtonLayout(void) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeGetButtonLayout(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeGetButtonLayout(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -224,7 +224,7 @@ static void notify_button_layout(const char *layout) {
     }
 
     jclass bridgeClass = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/window/NativeLayoutDirectionBridge");
+        "dev/nucleusframework/nucleus/window/NativeLayoutDirectionBridge");
     if (bridgeClass != NULL) {
         jmethodID method = (*env)->GetStaticMethodID(env,
             bridgeClass, "onButtonLayoutChanged", "(Ljava/lang/String;)V");
@@ -358,7 +358,7 @@ cleanup:
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeStartButtonLayoutObserving(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeStartButtonLayoutObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -369,7 +369,7 @@ Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeSta
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_NativeLayoutDirectionBridge_nativeStopButtonLayoutObserving(
+Java_dev_nucleusframework_nucleus_window_NativeLayoutDirectionBridge_nativeStopButtonLayoutObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

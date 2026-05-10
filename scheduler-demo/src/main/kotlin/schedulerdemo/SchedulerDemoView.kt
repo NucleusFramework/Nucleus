@@ -23,10 +23,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.scheduler.CronExpression
-import io.github.kdroidfilter.nucleus.scheduler.DesktopTaskScheduler
-import io.github.kdroidfilter.nucleus.scheduler.TaskInfo
-import io.github.kdroidfilter.nucleus.scheduler.TaskRequest
+import dev.nucleusframework.nucleus.scheduler.CronExpression
+import dev.nucleusframework.nucleus.scheduler.DesktopTaskScheduler
+import dev.nucleusframework.nucleus.scheduler.TaskInfo
+import dev.nucleusframework.nucleus.scheduler.TaskRequest
 import org.jetbrains.jewel.ui.component.DefaultButton
 import org.jetbrains.jewel.ui.component.GroupHeader
 import org.jetbrains.jewel.ui.component.OutlinedButton

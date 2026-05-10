@@ -109,7 +109,7 @@ static volatile BOOL g_screenAwakeActive = FALSE;
 /* ---- nativeIsSupported ------------------------------------------- */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeIsSupported(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeIsSupported(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -119,7 +119,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeEnableEfficiencyMode ---------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -152,7 +152,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeDisableEfficiencyMode --------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -184,7 +184,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeEnableLightEfficiencyMode ----------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -212,7 +212,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeDisableLightEfficiencyMode ---------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableLightEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableLightEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -239,7 +239,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeEnableThreadEfficiencyMode --------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeEnableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -270,7 +270,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeDisableThreadEfficiencyMode -------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableThreadEfficiencyMode(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeDisableThreadEfficiencyMode(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -309,7 +309,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 #endif
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeKeepScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeKeepScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -326,7 +326,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeReleaseScreenAwake ----------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeReleaseScreenAwake(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeReleaseScreenAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -342,7 +342,7 @@ Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBri
 /* ---- nativeIsScreenAwakeActive ---------------------------------- */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeIsScreenAwakeActive(
+Java_dev_nucleusframework_nucleus_energymanager_windows_NativeWindowsEnergyBridge_nativeIsScreenAwakeActive(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

@@ -9,7 +9,7 @@
 static JavaVM *g_jvm = NULL;
 static BOOL g_hasKotlinDelegate = NO;
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/notification/macos/NativeMacNotificationBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/notification/macos/NativeMacNotificationBridge"
 
 // ============================================================================
 // JNI helpers
@@ -314,7 +314,7 @@ static UNNotificationSound * _Nullable makeSoundFromType(int soundType, NSString
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeRequestAuthorization(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeRequestAuthorization(
     JNIEnv *env, jclass clazz, jint optionsMask, jlong callbackId) {
     if (@available(macOS 10.14, *)) {
         ensureDelegateInstalled();
@@ -351,7 +351,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetNotificationSettings(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetNotificationSettings(
     JNIEnv *env, jclass clazz, jlong callbackId) {
     if (@available(macOS 10.14, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -413,7 +413,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeAddNotificationRequest(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeAddNotificationRequest(
     JNIEnv *env, jclass clazz,
     jstring jIdentifier,
     jstring jTitle, jstring jSubtitle, jstring jBody,
@@ -555,7 +555,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemovePendingNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemovePendingNotifications(
     JNIEnv *env, jclass clazz, jobjectArray jIdentifiers) {
     if (@available(macOS 10.14, *)) {
         @autoreleasepool {
@@ -573,7 +573,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveAllPendingNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveAllPendingNotifications(
     JNIEnv *env, jclass clazz) {
     if (@available(macOS 10.14, *)) {
         [[UNUserNotificationCenter currentNotificationCenter] removeAllPendingNotificationRequests];
@@ -581,7 +581,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetPendingNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetPendingNotifications(
     JNIEnv *env, jclass clazz, jlong callbackId) {
     if (@available(macOS 10.14, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -656,7 +656,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveDeliveredNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveDeliveredNotifications(
     JNIEnv *env, jclass clazz, jobjectArray jIdentifiers) {
     if (@available(macOS 10.14, *)) {
         @autoreleasepool {
@@ -674,7 +674,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveAllDeliveredNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeRemoveAllDeliveredNotifications(
     JNIEnv *env, jclass clazz) {
     if (@available(macOS 10.14, *)) {
         [[UNUserNotificationCenter currentNotificationCenter] removeAllDeliveredNotifications];
@@ -682,7 +682,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetDeliveredNotifications(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetDeliveredNotifications(
     JNIEnv *env, jclass clazz, jlong callbackId) {
     if (@available(macOS 10.14, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -741,7 +741,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetNotificationCategories(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetNotificationCategories(
     JNIEnv *env, jclass clazz,
     jobjectArray jCatIds, jintArray jCatOptions,
     jintArray jActionCatIndices,
@@ -831,7 +831,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetNotificationCategories(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetNotificationCategories(
     JNIEnv *env, jclass clazz, jlong callbackId) {
     if (@available(macOS 10.14, *)) {
         UNUserNotificationCenter *center = [UNUserNotificationCenter currentNotificationCenter];
@@ -943,7 +943,7 @@ static void fireBadgeResult(jlong callbackId, NSError * _Nullable error) {
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetBadgeCount(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetBadgeCount(
     JNIEnv *env, jclass clazz, jint count, jlong callbackId) {
     if (@available(macOS 13.0, *)) {
         // macOS 13+: use the proper UNUserNotificationCenter API
@@ -970,7 +970,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetBadgeCount(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeGetBadgeCount(
     JNIEnv *env, jclass clazz, jlong callbackId) {
     if (@available(macOS 13.0, *)) {
         // macOS 13+: no direct getter; read from NSDockTile as best effort
@@ -1007,7 +1007,7 @@ Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBrid
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetDelegate(
+Java_dev_nucleusframework_nucleus_notification_macos_NativeMacNotificationBridge_nativeSetDelegate(
     JNIEnv *env, jclass clazz, jboolean enabled) {
     if (@available(macOS 10.14, *)) {
         g_hasKotlinDelegate = enabled;

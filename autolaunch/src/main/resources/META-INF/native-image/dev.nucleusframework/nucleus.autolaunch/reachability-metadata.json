@@ -1,0 +1,12 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.autolaunch.windows.NativeAutoLaunchBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.autolaunch.linux.NativeAutoLaunchLinuxBridge",
+            "jniAccessible": true
+        }
+    ]
+}

@@ -9,33 +9,33 @@
         <error line="7" column="1" source="standard:indent" />
         <error line="7" column="11" source="standard:property-naming" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/CheckComposeCompilerPlugin.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/CheckComposeCompilerPlugin.kt">
         <error line="31" column="20" source="standard:property-naming" />
         <error line="32" column="20" source="standard:property-naming" />
         <error line="35" column="20" source="standard:property-naming" />
         <error line="36" column="20" source="standard:property-naming" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/NucleusExtension.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/NucleusExtension.kt">
         <error line="18" column="19" source="standard:property-naming" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/dsl/AbstractDistributions.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/dsl/AbstractDistributions.kt">
         <error line="12" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/dsl/NativeApplication.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/dsl/NativeApplication.kt">
         <error line="25" column="22" source="standard:backing-property-naming" />
         <error line="25" column="22" source="standard:backing-property-naming" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/dsl/NativeApplicationDistributions.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/dsl/NativeApplicationDistributions.kt">
         <error line="9" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/NucleusProjectProperties.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/NucleusProjectProperties.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/InfoPlistBuilder.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/InfoPlistBuilder.kt">
         <error line="8" column="1" source="standard:no-wildcard-imports" />
         <error line="12" column="19" source="standard:property-naming" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/LinuxPackagePostProcessor.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/LinuxPackagePostProcessor.kt">
         <error line="218" column="59" source="standard:string-template" />
         <error line="231" column="39" source="standard:function-literal" />
         <error line="231" column="105" source="standard:parameter-list-wrapping" />
@@ -45,19 +45,19 @@
         <error line="231" column="137" source="standard:binary-expression-wrapping" />
         <error line="231" column="141" source="standard:max-line-length" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/MacSigningHelper.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/MacSigningHelper.kt">
         <error line="10" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/NotarizationRequestInfo.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/NotarizationRequestInfo.kt">
         <error line="9" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/cliArgUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/cliArgUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/configureDesktop.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/configureDesktop.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/configureJvmApplication.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/configureJvmApplication.kt">
         <error line="1" column="1" source="standard:filename" />
         <error line="10" column="1" source="standard:no-wildcard-imports" />
         <error line="13" column="1" source="standard:no-wildcard-imports" />
@@ -66,34 +66,34 @@
         <error line="494" column="85" source="standard:chain-method-continuation" />
         <error line="494" column="91" source="standard:chain-method-continuation" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/configureNativeApplication.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/configureNativeApplication.kt">
         <error line="1" column="1" source="standard:filename" />
         <error line="24" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/dirLayoutUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/dirLayoutUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/files/fileUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/files/fileUtils.kt">
         <error line="1" column="1" source="standard:filename" />
         <error line="12" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/packageVersions.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/packageVersions.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/validation/validateBundleID.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/validation/validateBundleID.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/validation/validatePackageVersions.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/validation/validatePackageVersions.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/internal/wixToolset.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/internal/wixToolset.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractCheckNativeDistributionRuntime.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractCheckNativeDistributionRuntime.kt">
         <error line="22" column="1" source="standard:no-wildcard-imports" />
         <error line="25" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractGenerateAotCacheTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractGenerateAotCacheTask.kt">
         <error line="8" column="1" source="standard:import-ordering" />
         <error line="48" column="1" source="standard:no-empty-first-line-in-class-body" />
         <error line="53" column="38" source="standard:multiline-expression-wrapping" />
@@ -134,71 +134,71 @@
         <error line="268" column="27" source="standard:multiline-expression-wrapping" />
         <error line="307" column="30" source="standard:multiline-expression-wrapping" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractJPackageTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractJPackageTask.kt">
         <error line="8" column="1" source="standard:import-ordering" />
         <error line="81" column="1" source="standard:no-wildcard-imports" />
         <error line="474" column="44" source="standard:multiline-expression-wrapping" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractJvmToolOperationTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractJvmToolOperationTask.kt">
         <error line="10" column="1" source="standard:no-wildcard-imports" />
         <error line="16" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageAppDirTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageAppDirTask.kt">
         <error line="16" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageDmgTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageDmgTask.kt">
         <error line="13" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractNativeMacApplicationPackageTask.kt">
         <error line="9" column="1" source="standard:no-wildcard-imports" />
         <error line="14" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractNotarizationTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractNotarizationTask.kt">
         <error line="18" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractProguardTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractProguardTask.kt">
         <error line="8" column="1" source="standard:no-wildcard-imports" />
         <error line="12" column="1" source="standard:no-wildcard-imports" />
         <error line="13" column="1" source="standard:no-wildcard-imports" />
         <error line="16" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/desktop/application/tasks/AbstractSuggestModulesTask.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/desktop/application/tasks/AbstractSuggestModulesTask.kt">
         <error line="13" column="1" source="standard:no-wildcard-imports" />
         <error line="20" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/experimental/internal/checkExperimentalTargets.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/experimental/internal/checkExperimentalTargets.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/constants.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/constants.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/projectExtensions.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/projectExtensions.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/requiredDslProperty.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/requiredDslProperty.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/diagnosticUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/diagnosticUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/fileUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/fileUtils.kt">
         <error line="1" column="1" source="standard:filename" />
         <error line="15" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/gradleUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/gradleUtils.kt">
         <error line="1" column="1" source="standard:filename" />
         <error line="13" column="1" source="standard:no-wildcard-imports" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/osUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/osUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/providerUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/providerUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/stringUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/stringUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
-    <file name="src/main/kotlin/io/github/kdroidfilter/nucleus/internal/utils/taskUtils.kt">
+    <file name="src/main/kotlin/io/github/nucleusframework/nucleus/internal/utils/taskUtils.kt">
         <error line="1" column="1" source="standard:filename" />
     </file>
 </baseline>

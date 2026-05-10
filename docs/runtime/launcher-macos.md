@@ -9,7 +9,7 @@ macOS dock context menu integration via JNI. Add custom items, submenus, separat
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.launcher-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.launcher-macos:<version>")
 }
 ```
 
@@ -18,7 +18,7 @@ Depends on `core-runtime` for `NativeLibraryLoader` (pulled in transitively).
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.launcher.macos.*
+import dev.nucleusframework.nucleus.launcher.macos.*
 
 // Listen for clicks
 MacOsDockMenu.listener = DockMenuListener { itemId ->
@@ -111,7 +111,7 @@ DockMenuItem.separator(id = 3)
 ## Full Example
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.launcher.macos.*
+import dev.nucleusframework.nucleus.launcher.macos.*
 
 // Set up a dock menu with submenus and callbacks
 MacOsDockMenu.listener = DockMenuListener { itemId ->
@@ -167,7 +167,7 @@ Ships pre-built macOS dylibs (arm64 + x86_64). `isAvailable` returns `false` on 
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.launcher.macos.NativeMacOsDockMenuBridge {
+-keep class dev.nucleusframework.nucleus.launcher.macos.NativeMacOsDockMenuBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -180,7 +180,7 @@ JNI reflection metadata must include the bridge class:
 ```json
 [
   {
-    "type": "io.github.kdroidfilter.nucleus.launcher.macos.NativeMacOsDockMenuBridge",
+    "type": "dev.nucleusframework.nucleus.launcher.macos.NativeMacOsDockMenuBridge",
     "methods": [
       { "name": "onMenuItemClicked", "parameterTypes": ["int"] }
     ]

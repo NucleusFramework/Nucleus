@@ -6,7 +6,7 @@ Native taskbar/dock progress bar and attention requests on Windows, macOS, and L
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:<version>")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:<version>")
 }
 ```
 
@@ -15,7 +15,7 @@ dependencies {
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.taskbarprogress.TaskbarProgress
+import dev.nucleusframework.nucleus.taskbarprogress.TaskbarProgress
 import java.awt.Window
 
 // Show a progress bar at 75%

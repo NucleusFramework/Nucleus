@@ -6,7 +6,7 @@ The `decorated-window-material3` module provides Material 3 wrappers around the 
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material3:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-material3:<version>")
     // Transitive: nucleus.decorated-window is pulled in via `api`
 }
 ```

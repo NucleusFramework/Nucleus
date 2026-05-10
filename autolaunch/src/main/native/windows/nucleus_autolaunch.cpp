@@ -119,7 +119,7 @@ static bool isCurrentProcessPackaged() {
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsPackaged(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsPackaged(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     bool p = isCurrentProcessPackaged();
@@ -128,7 +128,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeGetDiagnostic(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeGetDiagnostic(
     JNIEnv *env, jclass clazz) {
     (void)clazz;
     std::lock_guard<std::mutex> lock(g_diagMutex);
@@ -146,7 +146,7 @@ static const wchar_t *SA_RUN_KEY =
 
 // Returns: 0 = not present, 1 = enabled, 2 = disabled-by-user, -1 = error
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegReadState(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegReadState(
     JNIEnv *env, jclass clazz, jstring jValueName) {
     (void)clazz;
     std::wstring name = toWString(env, jValueName);
@@ -184,7 +184,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegWriteRun(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegWriteRun(
     JNIEnv *env, jclass clazz, jstring jValueName, jstring jCommand) {
     (void)clazz;
     std::wstring name = toWString(env, jValueName);
@@ -204,7 +204,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegDeleteRun(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeRegDeleteRun(
     JNIEnv *env, jclass clazz, jstring jValueName, jboolean alsoSa) {
     (void)clazz;
     std::wstring name = toWString(env, jValueName);
@@ -287,7 +287,7 @@ static HRESULT findStartupTask(const std::wstring &taskId, ComPtr<IStartupTask> 
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixGetState(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixGetState(
     JNIEnv *env, jclass clazz, jstring jTaskId) {
     (void)clazz;
     std::wstring taskId = toWString(env, jTaskId);
@@ -303,7 +303,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixRequestEnable(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixRequestEnable(
     JNIEnv *env, jclass clazz, jstring jTaskId) {
     (void)clazz;
     std::wstring taskId = toWString(env, jTaskId);
@@ -336,7 +336,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 // frameworks (rarely) may interfere.
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsStartupActivation(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsStartupActivation(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 
@@ -463,7 +463,7 @@ static bool resolveExternalAncestorName(wchar_t *outName, size_t cchName) {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsLaunchedByTaskScheduler(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeIsLaunchedByTaskScheduler(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 
@@ -488,7 +488,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_na
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixDisable(
+Java_dev_nucleusframework_nucleus_autolaunch_windows_NativeAutoLaunchBridge_nativeMsixDisable(
     JNIEnv *env, jclass clazz, jstring jTaskId) {
     (void)clazz;
     std::wstring taskId = toWString(env, jTaskId);

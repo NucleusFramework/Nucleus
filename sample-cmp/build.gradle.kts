@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.androidApplication)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.kotlinComposePlugin)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 kotlin {

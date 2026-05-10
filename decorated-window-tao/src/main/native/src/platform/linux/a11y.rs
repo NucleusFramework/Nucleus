@@ -743,7 +743,7 @@ fn forward_action_to_jvm(
 ) {
     let Some(jvm) = JAVA_VM.get() else { return };
     let Ok(mut env) = jvm.attach_current_thread() else { return };
-    let class_name = "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge";
+    let class_name = "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge";
     let node_id = request.target.0 as i64;
 
     // Map back to the bitmask the Kotlin controller already understands.
@@ -899,7 +899,7 @@ fn forward_action_to_jvm(
 // don't have to lock back into the Tao `WINDOWS` map from the AT-SPI side.
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -942,7 +942,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -958,7 +958,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -1042,7 +1042,7 @@ fn apply_parsed(handle: i64, parsed: ParsedSnapshot, partial: bool) -> jboolean 
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -1073,7 +1073,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -1094,7 +1094,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -1106,7 +1106,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -1117,7 +1117,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -1133,7 +1133,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// of its actual product name. Must be called before the first Adapter is
 /// constructed; later calls are silently ignored.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
     mut env: JNIEnv,
     _class: JClass,
     name: jni::objects::JString,
@@ -1146,7 +1146,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -1188,7 +1188,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// values; AccessKit applies them as-is to its Component.GetExtents
 /// implementation.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetRootBounds(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11ySetRootBounds(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -1284,7 +1284,7 @@ fn scopeguard_restore(
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yResolveX11Bounds(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yResolveX11Bounds(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -1383,7 +1383,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// `onFocusChanged` so AT-SPI's `STATE_ACTIVE` flag on the toplevel matches
 /// the actual X focus.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetWindowFocus(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11ySetWindowFocus(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

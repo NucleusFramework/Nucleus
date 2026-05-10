@@ -97,7 +97,7 @@ internal class AwtNucleusApplicationScope(
 }
 
 internal class TaoNucleusApplicationScope(
-    val taoScope: io.github.kdroidfilter.nucleus.window.tao.ApplicationScope,
+    val taoScope: dev.nucleusframework.nucleus.window.tao.ApplicationScope,
 ) : NucleusApplicationScope {
     override fun exitApplication() = taoScope.exitApplication()
 }

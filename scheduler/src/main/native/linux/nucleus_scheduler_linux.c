@@ -25,7 +25,7 @@
 
 /* ---- JNI class name macro --------------------------------------------- */
 
-#define JNI_PREFIX Java_io_github_kdroidfilter_nucleus_scheduler_internal_LinuxSystemdSchedulerJni_
+#define JNI_PREFIX Java_dev_nucleusframework_nucleus_scheduler_internal_LinuxSystemdSchedulerJni_
 #define CONCAT2(a, b) a##b
 #define CONCAT(a, b) CONCAT2(a, b)
 #define JNI_FN(name) CONCAT(JNI_PREFIX, name)

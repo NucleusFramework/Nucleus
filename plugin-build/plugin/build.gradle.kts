@@ -224,7 +224,7 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
-        freeCompilerArgs.add("-opt-in=io.github.kdroidfilter.nucleus.ExperimentalNucleusLibrary")
+        freeCompilerArgs.add("-opt-in=dev.nucleusframework.nucleus.ExperimentalNucleusLibrary")
     }
 }
 
@@ -236,7 +236,7 @@ val composeMaterial3Version = project.findProperty("compose.material3.version")?
 val pluginVersion = project.version.toString()
 val buildConfig =
     tasks.register("buildConfig", GenerateBuildConfig::class.java) {
-        classFqName.set("io.github.kdroidfilter.nucleus.NucleusBuildConfig")
+        classFqName.set("dev.nucleusframework.nucleus.NucleusBuildConfig")
         generatedOutputDir.set(buildConfigDir)
         fieldsToGenerate.put("composeVersion", composeVersion)
         fieldsToGenerate.put("composeMaterial3Version", composeMaterial3Version)

@@ -40,16 +40,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
-import io.github.kdroidfilter.nucleus.notification.linux.CloseReason
-import io.github.kdroidfilter.nucleus.notification.linux.LinuxNotificationCenter
-import io.github.kdroidfilter.nucleus.notification.linux.LinuxNotificationListener
-import io.github.kdroidfilter.nucleus.notification.linux.Notification
-import io.github.kdroidfilter.nucleus.notification.linux.NotificationAction
-import io.github.kdroidfilter.nucleus.notification.linux.NotificationHints
-import io.github.kdroidfilter.nucleus.notification.linux.NotificationSound
-import io.github.kdroidfilter.nucleus.notification.linux.ServerInformation
-import io.github.kdroidfilter.nucleus.notification.linux.Urgency
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.notification.linux.CloseReason
+import dev.nucleusframework.nucleus.notification.linux.LinuxNotificationCenter
+import dev.nucleusframework.nucleus.notification.linux.LinuxNotificationListener
+import dev.nucleusframework.nucleus.notification.linux.Notification
+import dev.nucleusframework.nucleus.notification.linux.NotificationAction
+import dev.nucleusframework.nucleus.notification.linux.NotificationHints
+import dev.nucleusframework.nucleus.notification.linux.NotificationSound
+import dev.nucleusframework.nucleus.notification.linux.ServerInformation
+import dev.nucleusframework.nucleus.notification.linux.Urgency
 import java.awt.Color
 import java.awt.image.BufferedImage
 
@@ -605,7 +605,7 @@ private fun SoundDropdown(
 /**
  * Creates a small sample RGBA image for the image-data hint.
  */
-private fun createSampleImageData(): io.github.kdroidfilter.nucleus.notification.linux.ImageData {
+private fun createSampleImageData(): dev.nucleusframework.nucleus.notification.linux.ImageData {
     val size = SAMPLE_IMAGE_SIZE
     val channels = 4
     val rowstride = size * channels
@@ -634,7 +634,7 @@ private fun createSampleImageData(): io.github.kdroidfilter.nucleus.notification
         }
     }
 
-    return io.github.kdroidfilter.nucleus.notification.linux.ImageData(
+    return dev.nucleusframework.nucleus.notification.linux.ImageData(
         width = size,
         height = size,
         rowstride = rowstride,

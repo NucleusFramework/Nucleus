@@ -63,14 +63,14 @@ static void refresh_users(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserCount(
     JNIEnv *env, jclass clazz) {
     refresh_users();
     return (jint)g_user_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserNames(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserNames(
     JNIEnv *env, jclass clazz) {
     if (g_user_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_user_count * sizeof(char *));
@@ -81,7 +81,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserIds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserIds(
     JNIEnv *env, jclass clazz) {
     if (g_user_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_user_count * sizeof(char *));
@@ -92,7 +92,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserGroupIds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserGroupIds(
     JNIEnv *env, jclass clazz) {
     if (g_user_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_user_count * sizeof(char *));
@@ -103,7 +103,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserGroups(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUserGroups(
     JNIEnv *env, jclass clazz) {
     if (g_user_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_user_count * sizeof(char *));

@@ -14,7 +14,7 @@ indent_size = 2
 max_line_length = 120
 ktlint_standard_backing-property-naming = disabled
 ktlint_standard_function-naming = disabled
-ij_kotlin_packages_to_use_import_on_demand = io.github.kdroidfilter.nucleus.window.icons.**
+ij_kotlin_packages_to_use_import_on_demand = dev.nucleusframework.nucleus.window.icons.**
 
 [**/generated/**]
 ktlint = disabled

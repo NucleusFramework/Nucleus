@@ -29,8 +29,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.launcher.macos.DockMenuItem
-import io.github.kdroidfilter.nucleus.launcher.macos.MacOsDockMenu
+import dev.nucleusframework.nucleus.launcher.macos.DockMenuItem
+import dev.nucleusframework.nucleus.launcher.macos.MacOsDockMenu
 
 private const val EVENT_LOG_MAX = 20
 

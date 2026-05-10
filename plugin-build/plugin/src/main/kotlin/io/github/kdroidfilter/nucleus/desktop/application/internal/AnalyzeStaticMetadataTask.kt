@@ -1,11 +1,11 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
 import groovy.json.JsonOutput
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.BytecodeAnalyzer
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.JniEntry
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.MethodSignature
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ReflectionEntry
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ResourcePattern
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.BytecodeAnalyzer
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.JniEntry
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.MethodSignature
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ReflectionEntry
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ResourcePattern
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty

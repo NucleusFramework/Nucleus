@@ -36,27 +36,27 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.notification.windows.ActivationType
-import io.github.kdroidfilter.nucleus.notification.windows.AdaptiveProgressBar
-import io.github.kdroidfilter.nucleus.notification.windows.AdaptiveText
-import io.github.kdroidfilter.nucleus.notification.windows.DismissalReason
-import io.github.kdroidfilter.nucleus.notification.windows.ToastActions
-import io.github.kdroidfilter.nucleus.notification.windows.ToastAudio
-import io.github.kdroidfilter.nucleus.notification.windows.ToastAudioSource
-import io.github.kdroidfilter.nucleus.notification.windows.ToastBindingGeneric
-import io.github.kdroidfilter.nucleus.notification.windows.ToastButton
-import io.github.kdroidfilter.nucleus.notification.windows.ToastContent
-import io.github.kdroidfilter.nucleus.notification.windows.ToastGenericAttributionText
-import io.github.kdroidfilter.nucleus.notification.windows.ToastHeader
-import io.github.kdroidfilter.nucleus.notification.windows.ToastNotificationData
-import io.github.kdroidfilter.nucleus.notification.windows.ToastNotificationListener
-import io.github.kdroidfilter.nucleus.notification.windows.ToastScenario
-import io.github.kdroidfilter.nucleus.notification.windows.ToastSelectionBox
-import io.github.kdroidfilter.nucleus.notification.windows.ToastSelectionBoxItem
-import io.github.kdroidfilter.nucleus.notification.windows.ToastTextBox
-import io.github.kdroidfilter.nucleus.notification.windows.ToastVisual
-import io.github.kdroidfilter.nucleus.notification.windows.WindowsNotificationCenter
-import io.github.kdroidfilter.nucleus.notification.windows.toast
+import dev.nucleusframework.nucleus.notification.windows.ActivationType
+import dev.nucleusframework.nucleus.notification.windows.AdaptiveProgressBar
+import dev.nucleusframework.nucleus.notification.windows.AdaptiveText
+import dev.nucleusframework.nucleus.notification.windows.DismissalReason
+import dev.nucleusframework.nucleus.notification.windows.ToastActions
+import dev.nucleusframework.nucleus.notification.windows.ToastAudio
+import dev.nucleusframework.nucleus.notification.windows.ToastAudioSource
+import dev.nucleusframework.nucleus.notification.windows.ToastBindingGeneric
+import dev.nucleusframework.nucleus.notification.windows.ToastButton
+import dev.nucleusframework.nucleus.notification.windows.ToastContent
+import dev.nucleusframework.nucleus.notification.windows.ToastGenericAttributionText
+import dev.nucleusframework.nucleus.notification.windows.ToastHeader
+import dev.nucleusframework.nucleus.notification.windows.ToastNotificationData
+import dev.nucleusframework.nucleus.notification.windows.ToastNotificationListener
+import dev.nucleusframework.nucleus.notification.windows.ToastScenario
+import dev.nucleusframework.nucleus.notification.windows.ToastSelectionBox
+import dev.nucleusframework.nucleus.notification.windows.ToastSelectionBoxItem
+import dev.nucleusframework.nucleus.notification.windows.ToastTextBox
+import dev.nucleusframework.nucleus.notification.windows.ToastVisual
+import dev.nucleusframework.nucleus.notification.windows.WindowsNotificationCenter
+import dev.nucleusframework.nucleus.notification.windows.toast
 
 private const val EVENT_LOG_MAX = 20
 private const val MAX_PROGRESS_VALUE = 100f
@@ -373,7 +373,7 @@ private fun sendToast(
     silent: Boolean,
     events: MutableList<String>,
 ) {
-    val children = mutableListOf<io.github.kdroidfilter.nucleus.notification.windows.ToastVisualChild>()
+    val children = mutableListOf<dev.nucleusframework.nucleus.notification.windows.ToastVisualChild>()
     children.add(AdaptiveText(title))
     if (body.isNotEmpty()) children.add(AdaptiveText(body))
     if (body2.isNotEmpty()) children.add(AdaptiveText(body2))
@@ -388,7 +388,7 @@ private fun sendToast(
         )
     }
 
-    val inputs = mutableListOf<io.github.kdroidfilter.nucleus.notification.windows.ToastInput>()
+    val inputs = mutableListOf<dev.nucleusframework.nucleus.notification.windows.ToastInput>()
     if (useTextInput) {
         inputs.add(ToastTextBox(id = "reply", title = "Reply", placeholderContent = "Type here..."))
     }

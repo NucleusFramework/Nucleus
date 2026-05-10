@@ -33,16 +33,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.launcher.windows.BadgeGlyph
-import io.github.kdroidfilter.nucleus.launcher.windows.JumpListCategory
-import io.github.kdroidfilter.nucleus.launcher.windows.JumpListItem
-import io.github.kdroidfilter.nucleus.launcher.windows.StockIcon
-import io.github.kdroidfilter.nucleus.launcher.windows.TaskbarIconSource
-import io.github.kdroidfilter.nucleus.launcher.windows.ThumbnailToolbarButton
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsBadgeManager
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsJumpListManager
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsOverlayIcon
-import io.github.kdroidfilter.nucleus.launcher.windows.WindowsThumbnailToolbar
+import dev.nucleusframework.nucleus.launcher.windows.BadgeGlyph
+import dev.nucleusframework.nucleus.launcher.windows.JumpListCategory
+import dev.nucleusframework.nucleus.launcher.windows.JumpListItem
+import dev.nucleusframework.nucleus.launcher.windows.StockIcon
+import dev.nucleusframework.nucleus.launcher.windows.TaskbarIconSource
+import dev.nucleusframework.nucleus.launcher.windows.ThumbnailToolbarButton
+import dev.nucleusframework.nucleus.launcher.windows.WindowsBadgeManager
+import dev.nucleusframework.nucleus.launcher.windows.WindowsJumpListManager
+import dev.nucleusframework.nucleus.launcher.windows.WindowsOverlayIcon
+import dev.nucleusframework.nucleus.launcher.windows.WindowsThumbnailToolbar
 import java.awt.Window
 
 private const val EVENT_LOG_MAX = 30

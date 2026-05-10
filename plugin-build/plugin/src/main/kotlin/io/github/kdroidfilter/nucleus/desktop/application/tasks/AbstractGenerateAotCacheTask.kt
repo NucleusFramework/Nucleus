@@ -3,11 +3,11 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.JvmRuntimeProperties
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractNucleusTask
-import io.github.kdroidfilter.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty

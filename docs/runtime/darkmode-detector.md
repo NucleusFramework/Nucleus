@@ -8,7 +8,7 @@ The `darkmode-detector` module solves this by providing a **reactive** `isSystem
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.darkmode-detector:<version>")
+    implementation("dev.nucleusframework:nucleus.darkmode-detector:<version>")
 }
 ```
 
@@ -59,23 +59,23 @@ The `darkmode-detector` module uses JNI native libraries on all platforms. When 
 
 ```proguard
 # macOS — NativeDarkModeBridge is looked up by name from native code
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Linux — NativeLinuxBridge is looked up by name from native code
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.linux.NativeLinuxBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.linux.NativeLinuxBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Windows
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.windows.NativeWindowsBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.windows.NativeWindowsBridge {
     native <methods>;
 }
 
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.** { *; }
+-keep class dev.nucleusframework.nucleus.darkmodedetector.** { *; }
 ```
 
 ## Compose Preview
@@ -87,7 +87,7 @@ In Compose preview mode (`LocalInspectionMode`), the function falls back to the 
 Debug and error messages are logged under the tags `MacOSThemeDetector`, `WindowsThemeDetector`, and `LinuxPortalThemeDetector`. Logging is off by default. To enable it, set the global flag from `core-runtime`:
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
+import dev.nucleusframework.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
 
 allowNucleusRuntimeLogging = true
 ```

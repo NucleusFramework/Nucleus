@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection

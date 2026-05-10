@@ -160,7 +160,7 @@ static void on_response_signal(GDBusConnection *c,
 /* ==== nativeIsPortalAvailable ========================================== */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeIsPortalAvailable(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeIsPortalAvailable(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -196,7 +196,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge
  */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeRequestBackground(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeRequestBackground(
     JNIEnv *env, jclass clazz,
     jboolean enable,
     jobjectArray j_commandline,
@@ -391,7 +391,7 @@ static int systemd_reload(GDBusConnection *conn) {
 /* ==== nativeWriteUnitFile ============================================== */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeWriteUnitFile(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeWriteUnitFile(
     JNIEnv *env, jclass clazz,
     jstring j_unit_name, jstring j_content)
 {
@@ -431,7 +431,7 @@ out:
 /* ==== nativeDeleteUnitFile ============================================= */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeDeleteUnitFile(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeDeleteUnitFile(
     JNIEnv *env, jclass clazz, jstring j_unit_name)
 {
     (void)clazz;
@@ -452,7 +452,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge
 /* ==== nativeEnableUnit ================================================= */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeEnableUnit(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeEnableUnit(
     JNIEnv *env, jclass clazz, jstring j_unit_name)
 {
     (void)clazz;
@@ -494,7 +494,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge
 /* ==== nativeDisableUnit ================================================ */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeDisableUnit(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeDisableUnit(
     JNIEnv *env, jclass clazz, jstring j_unit_name)
 {
     (void)clazz;
@@ -537,7 +537,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge
 /* ==== nativeGetUnitFileState =========================================== */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeGetUnitFileState(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeGetUnitFileState(
     JNIEnv *env, jclass clazz, jstring j_unit_name)
 {
     (void)clazz;
@@ -589,7 +589,7 @@ Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge
 /* ==== nativeGetDiagnostic ============================================== */
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeGetDiagnostic(
+Java_dev_nucleusframework_nucleus_autolaunch_linux_NativeAutoLaunchLinuxBridge_nativeGetDiagnostic(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;

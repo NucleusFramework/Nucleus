@@ -1,0 +1,34 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.menu.macos.NativeNsMenuBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onMenuItemAction",
+                    "parameterTypes": ["long"]
+                },
+                {
+                    "name": "onMenuWillOpen",
+                    "parameterTypes": ["long"]
+                },
+                {
+                    "name": "onMenuDidClose",
+                    "parameterTypes": ["long"]
+                },
+                {
+                    "name": "onMenuNeedsUpdate",
+                    "parameterTypes": ["long"]
+                },
+                {
+                    "name": "onMenuWillHighlightItem",
+                    "parameterTypes": ["long", "long"]
+                },
+                {
+                    "name": "onNumberOfItemsInMenu",
+                    "parameterTypes": ["long"]
+                }
+            ]
+        }
+    ]
+}

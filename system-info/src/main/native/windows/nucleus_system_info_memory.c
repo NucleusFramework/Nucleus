@@ -10,7 +10,7 @@ static BOOL get_mem_status(MEMORYSTATUSEX *ms) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeTotalMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeTotalMemory(
     JNIEnv *env, jclass clazz) {
     MEMORYSTATUSEX ms;
     if (!get_mem_status(&ms)) return 0;
@@ -18,7 +18,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeFreeMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeFreeMemory(
     JNIEnv *env, jclass clazz) {
     MEMORYSTATUSEX ms;
     if (!get_mem_status(&ms)) return 0;
@@ -26,7 +26,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeAvailableMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeAvailableMemory(
     JNIEnv *env, jclass clazz) {
     MEMORYSTATUSEX ms;
     if (!get_mem_status(&ms)) return 0;
@@ -34,7 +34,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUsedMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUsedMemory(
     JNIEnv *env, jclass clazz) {
     MEMORYSTATUSEX ms;
     if (!get_mem_status(&ms)) return 0;
@@ -42,7 +42,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeTotalSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeTotalSwap(
     JNIEnv *env, jclass clazz) {
     PERFORMANCE_INFORMATION pi;
     pi.cb = sizeof(pi);
@@ -53,7 +53,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeFreeSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeFreeSwap(
     JNIEnv *env, jclass clazz) {
     PERFORMANCE_INFORMATION pi;
     pi.cb = sizeof(pi);
@@ -70,7 +70,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUsedSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUsedSwap(
     JNIEnv *env, jclass clazz) {
     PERFORMANCE_INFORMATION pi;
     pi.cb = sizeof(pi);

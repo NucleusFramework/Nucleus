@@ -37,7 +37,7 @@ fn cursor_from_code(code: jint) -> CursorIcon {
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetCursorIcon(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetCursorIcon(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

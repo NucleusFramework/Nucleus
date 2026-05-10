@@ -11,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.systeminfo.model.MeteredStatus
+import dev.nucleusframework.nucleus.systeminfo.model.MeteredStatus
 import systeminfodemo.ui.InfoRow
 import systeminfodemo.ui.LineChart
 import systeminfodemo.ui.ProgressBar

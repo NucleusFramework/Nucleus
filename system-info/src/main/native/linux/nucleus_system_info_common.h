@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 // JNI class path for the Linux bridge
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/systeminfo/linux/NativeLinuxSystemInfoBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/systeminfo/linux/NativeLinuxSystemInfoBridge"
 
 // Helper: create a Java String from a C string, handling NULL gracefully
 static inline jstring to_jstring(JNIEnv *env, const char *str) {

@@ -4,14 +4,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
-import io.github.kdroidfilter.nucleus.window.jewel.JewelDecoratedWindow
+import dev.nucleusframework.nucleus.window.jewel.JewelDecoratedWindow
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import systeminfodemo.ui.AppContent
 import systeminfodemo.ui.AppTitleBar
 import systeminfodemo.ui.buildIslandsTheme
 
 fun main() {
-    io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
+    dev.nucleusframework.nucleus.graalvm.GraalVmInitializer
         .initialize()
 
     application {

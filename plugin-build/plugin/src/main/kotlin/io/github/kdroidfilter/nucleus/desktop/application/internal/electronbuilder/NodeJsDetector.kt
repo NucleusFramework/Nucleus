@@ -3,10 +3,10 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal.electronbuilder
+package dev.nucleusframework.nucleus.desktop.application.internal.electronbuilder
 
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentOS
 import org.gradle.api.logging.Logger
 import java.io.File
 import java.io.IOException

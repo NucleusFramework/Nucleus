@@ -1,0 +1,40 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.darkmodedetector.windows.NativeWindowsBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onThemeChanged",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.darkmodedetector.mac.NativeDarkModeBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onThemeChanged",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.darkmodedetector.linux.NativeLinuxBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onThemeChanged",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
+                }
+            ]
+        }
+    ]
+}

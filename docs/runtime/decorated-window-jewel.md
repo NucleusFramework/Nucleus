@@ -6,7 +6,7 @@ The `decorated-window-jewel` module provides Jewel (IntelliJ theme) wrappers aro
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jewel:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-jewel:<version>")
     // Transitive: nucleus.decorated-window is pulled in via `api`
 }
 ```

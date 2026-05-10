@@ -21,7 +21,7 @@ The `scheduler` module registers background tasks with the OS so they run even w
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.scheduler:<version>")
+    implementation("dev.nucleusframework:nucleus.scheduler:<version>")
 }
 ```
 
@@ -608,7 +608,7 @@ Each task gets a single `<taskId>.properties` file. The serialized input payload
 
 #### macOS (launchd)
 
-Generates plist files in `~/Library/LaunchAgents/` with label `io.github.kdroidfilter.nucleus.<appId>.<taskId>`. Managed via a JNI bridge (`MacOSLaunchdSchedulerJni`) that uses Foundation and ServiceManagement APIs for plist writing, job status queries, and next-fire-time computation. Falls back to `launchctl` shell commands when the native library is unavailable.
+Generates plist files in `~/Library/LaunchAgents/` with label `dev.nucleusframework.nucleus.<appId>.<taskId>`. Managed via a JNI bridge (`MacOSLaunchdSchedulerJni`) that uses Foundation and ServiceManagement APIs for plist writing, job status queries, and next-fire-time computation. Falls back to `launchctl` shell commands when the native library is unavailable.
 
 #### Linux (systemd)
 
@@ -626,7 +626,7 @@ Users uninstall apps without thinking about background scheduled tasks. Without 
 - **macOS** — **no automatic cleanup.** Unlike the Linux/Windows wrapper trick, the agent's `ProgramArguments` points directly at the application binary so the entry stays visible under its real name in System Settings → "Allow in the Background". The cost: when the user trashes the .app bundle, the orphaned `.plist` in `~/Library/LaunchAgents/` is **never** reclaimed by macOS, and launchd keeps attempting to spawn the missing binary forever — throttled by `ThrottleInterval` (10 s by default), logging `cannot spawn` to `system.log` on every attempt. SMAppService (macOS 13+) does not eliminate this either, and Apple ships no guidance for "graceful uninstall of a LaunchAgent" — the macOS ecosystem treats orphaned LaunchAgents as a known limitation that an explicit cleanup step has to handle. The mitigation Nucleus offers is **in-app**: call `DesktopTaskScheduler.cancelAll()` from your app's settings ("Disable background tasks") or from any in-app sign-out / reset flow — this unloads the agents and removes the plists cleanly while the binary is still around. If the user does a plain drag-to-trash without that step, the orphan leaks; the leftover plist then has to be removed manually:
 
   ```bash
-  rm ~/Library/LaunchAgents/io.github.kdroidfilter.nucleus.<appId>.<taskId>.plist
+  rm ~/Library/LaunchAgents/dev.nucleusframework.nucleus.<appId>.<taskId>.plist
   ```
 
   The failure mode in the meantime is the well-known throttled-log-spam — not a crash and not a security or correctness issue.
@@ -639,7 +639,7 @@ The `scheduler-testing` module provides two levels of test support, inspired by 
 
 ```kotlin
 dependencies {
-    testImplementation("io.github.kdroidfilter:nucleus.scheduler-testing:<version>")
+    testImplementation("dev.nucleusframework:nucleus.scheduler-testing:<version>")
 }
 ```
 

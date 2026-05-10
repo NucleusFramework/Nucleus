@@ -6,7 +6,7 @@
 #define NT_CURRENT_VERSION L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion"
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeOsName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeOsName(
     JNIEnv *env, jclass clazz) {
     char *product = reg_read_string(HKEY_LOCAL_MACHINE, NT_CURRENT_VERSION, L"ProductName");
     if (!product) return to_jstring(env, "Windows");
@@ -42,7 +42,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeKernelVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeKernelVersion(
     JNIEnv *env, jclass clazz) {
     char *build = reg_read_string(HKEY_LOCAL_MACHINE, NT_CURRENT_VERSION, L"CurrentBuildNumber");
     if (!build) return NULL;
@@ -60,7 +60,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeOsVersion(
     JNIEnv *env, jclass clazz) {
     DWORD major = 0, minor = 0;
     if (!reg_read_dword(HKEY_LOCAL_MACHINE, NT_CURRENT_VERSION, L"CurrentMajorVersionNumber", &major))
@@ -78,7 +78,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeLongOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeLongOsVersion(
     JNIEnv *env, jclass clazz) {
     char *product = reg_read_string(HKEY_LOCAL_MACHINE, NT_CURRENT_VERSION, L"ProductName");
     char *display_ver = reg_read_string(HKEY_LOCAL_MACHINE, NT_CURRENT_VERSION, L"DisplayVersion");
@@ -124,13 +124,13 @@ done:
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDistributionId(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDistributionId(
     JNIEnv *env, jclass clazz) {
     return to_jstring(env, "windows");
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeHostName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeHostName(
     JNIEnv *env, jclass clazz) {
     wchar_t buf[256];
     DWORD size = sizeof(buf) / sizeof(buf[0]);
@@ -139,7 +139,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuArch(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeCpuArch(
     JNIEnv *env, jclass clazz) {
     SYSTEM_INFO si;
     GetNativeSystemInfo(&si);
@@ -154,13 +154,13 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUptime(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUptime(
     JNIEnv *env, jclass clazz) {
     return (jlong)(GetTickCount64() / 1000ULL);
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBootTime(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBootTime(
     JNIEnv *env, jclass clazz) {
     ULONGLONG uptime_ms = GetTickCount64();
     FILETIME ft;

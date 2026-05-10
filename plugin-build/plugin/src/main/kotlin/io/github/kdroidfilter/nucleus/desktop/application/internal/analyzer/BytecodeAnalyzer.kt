@@ -1,15 +1,15 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ClassForNameDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.JarResourceDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.KotlinSerializableDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.MethodHandleDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.NativeMethodDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ProxyDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ReflectionApiDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ResourceAccessDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ResourceBundleDetector
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors.ServiceLoaderDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ClassForNameDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.JarResourceDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.KotlinSerializableDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.MethodHandleDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.NativeMethodDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ProxyDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ReflectionApiDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ResourceAccessDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ResourceBundleDetector
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors.ServiceLoaderDetector
 import java.io.File
 import java.util.jar.JarFile
 

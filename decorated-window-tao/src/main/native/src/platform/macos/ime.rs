@@ -13,7 +13,7 @@ use crate::platform::macos::ffi::{
 use crate::state::WINDOWS;
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeActivateInputContext(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeActivateInputContext(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -38,7 +38,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// `firstRectForCharacterRange:` returning a rect with non-zero size — Tao's
 /// stock impl returns size 0×0, which short-circuits the picker.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetImeRect(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetImeRect(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

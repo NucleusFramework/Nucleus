@@ -245,7 +245,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
 /* ================================================================== */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeAddSubview(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeAddSubview(
     JNIEnv *env, jclass clazz, jlong parentPtr, jlong childPtr)
 {
     (void)env; (void)clazz;
@@ -257,7 +257,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeRemoveSubview(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeRemoveSubview(
     JNIEnv *env, jclass clazz, jlong childPtr)
 {
     (void)env; (void)clazz;
@@ -267,7 +267,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetSubviewFrame(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetSubviewFrame(
     JNIEnv *env, jclass clazz,
     jlong parentPtr, jlong childPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -310,7 +310,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
  * to mean "make it a circle".
  */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetSubviewCornerRadius(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetSubviewCornerRadius(
     JNIEnv *env, jclass clazz, jlong parentPtr, jlong childPtr, jfloat radiusPx)
 {
     (void)env; (void)clazz;
@@ -353,7 +353,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
  * `WKWebView`). Without an event callback installed via
  * [nativeSetOverlayCallback], the overlay is fully passthrough. */
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeCreateOverlay(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeCreateOverlay(
     JNIEnv *env, jclass clazz, jlong parentNsViewPtr)
 {
     (void)env; (void)clazz;
@@ -386,7 +386,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 /* Repositions the overlay inside its parent. Bounds in physical pixels,
  * top-left origin (matches Compose's `boundsInWindow`). */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayFrame(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayFrame(
     JNIEnv *env, jclass clazz, jlong overlayPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
 {
@@ -413,7 +413,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayCallback(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayCallback(
     JNIEnv *env, jclass clazz, jlong overlayPtr, jobject callback)
 {
     (void)clazz;
@@ -438,7 +438,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayRegions(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeSetOverlayRegions(
     JNIEnv *env, jclass clazz, jlong overlayPtr, jfloatArray rectsPx, jint count)
 {
     (void)clazz;
@@ -466,7 +466,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
  * whether to consume key events from the host's pre-existing Tao
  * key-forwarding pipeline. */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeIsFirstResponder(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeIsFirstResponder(
     JNIEnv *env, jclass clazz, jlong overlayPtr)
 {
     (void)env; (void)clazz;
@@ -478,7 +478,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeReleaseOverlay(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsNativeViewBridge_nativeReleaseOverlay(
     JNIEnv *env, jclass clazz, jlong overlayPtr)
 {
     (void)clazz;

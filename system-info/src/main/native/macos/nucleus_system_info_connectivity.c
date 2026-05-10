@@ -41,7 +41,7 @@ static bool query_network_path(path_snapshot_t *out) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeIsNetworkConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeIsNetworkConnected(
     JNIEnv *env, jclass clazz) {
 
     path_snapshot_t snap;
@@ -50,7 +50,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGetMeteredStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGetMeteredStatus(
     JNIEnv *env, jclass clazz) {
 
     path_snapshot_t snap;

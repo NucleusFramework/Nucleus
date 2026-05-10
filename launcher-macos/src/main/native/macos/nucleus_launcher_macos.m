@@ -21,7 +21,7 @@ static JavaVM *g_jvm = NULL;
 static NSMenu *g_dockMenu = nil;
 static BOOL g_swizzled = NO;
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/launcher/macos/NativeMacOsDockMenuBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/launcher/macos/NativeMacOsDockMenuBridge"
 
 // ============================================================================
 // JNI helpers
@@ -257,7 +257,7 @@ static NSMenu *buildMenuFromData(MenuItemData *data, jsize count) {
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_macos_NativeMacOsDockMenuBridge_nativeSetDockMenu(
+Java_dev_nucleusframework_nucleus_launcher_macos_NativeMacOsDockMenuBridge_nativeSetDockMenu(
     JNIEnv *env, jclass clazz,
     jintArray ids, jobjectArray titles, jbooleanArray enabled,
     jintArray parentIndices, jbooleanArray separators) {
@@ -277,7 +277,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_macos_NativeMacOsDockMenuBridge_nat
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_macos_NativeMacOsDockMenuBridge_nativeClearDockMenu(
+Java_dev_nucleusframework_nucleus_launcher_macos_NativeMacOsDockMenuBridge_nativeClearDockMenu(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 

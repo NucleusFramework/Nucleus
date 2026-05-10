@@ -13,12 +13,12 @@ Add `nucleus-application` plus **exactly one** decorated-window backend:
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.nucleus-application:<version>")
+    implementation("dev.nucleusframework:nucleus.nucleus-application:<version>")
 
     // Pick exactly one backend:
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jni:<version>")    // any JVM (recommended)
-    // implementation("io.github.kdroidfilter:nucleus.decorated-window-jbr:<version>") // JBR-only
-    // implementation("io.github.kdroidfilter:nucleus.decorated-window-tao:<version>") // no-AWT, GraalVM-friendly
+    implementation("dev.nucleusframework:nucleus.decorated-window-jni:<version>")    // any JVM (recommended)
+    // implementation("dev.nucleusframework:nucleus.decorated-window-jbr:<version>") // JBR-only
+    // implementation("dev.nucleusframework:nucleus.decorated-window-tao:<version>") // no-AWT, GraalVM-friendly
 }
 ```
 
@@ -216,7 +216,7 @@ Migrating an existing AWT-only app (jbr or jni) is a two-line change for the ent
 
 ```diff
 - import androidx.compose.ui.window.application
-+ import io.github.kdroidfilter.nucleus.application.nucleusApplication
++ import dev.nucleusframework.nucleus.application.nucleusApplication
 ```
 
 ```diff

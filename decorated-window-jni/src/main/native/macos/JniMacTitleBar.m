@@ -67,7 +67,7 @@ static void ensureJVMCached(JNIEnv *env) {
     dispatch_once(&onceToken, ^{
         (*env)->GetJavaVM(env, &sJVM);
         jclass local = (*env)->FindClass(env,
-            "io/github/kdroidfilter/nucleus/window/utils/macos/JniMacTitleBarBridge");
+            "dev/nucleusframework/nucleus/window/utils/macos/JniMacTitleBarBridge");
         if (local) {
             sBridgeClass = (*env)->NewGlobalRef(env, local);
             (*env)->DeleteLocalRef(env, local);
@@ -1021,13 +1021,13 @@ static jlong getNSWindowPtrFromAWTWindow(JNIEnv *env, jobject awtWindow) {
 // ─── JNI exports ────────────────────────────────────────────────────────────────
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeGetNSWindowPtr(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeGetNSWindowPtr(
     JNIEnv *env, jclass clazz, jobject awtWindow) {
     return getNSWindowPtrFromAWTWindow(env, awtWindow);
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeApplyTitleBar(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeApplyTitleBar(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr, jfloat heightPt) {
 
     if (nsWindowPtr == 0) return 0.0f;
@@ -1086,7 +1086,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeResetTitleBar(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeResetTitleBar(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1131,7 +1131,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // Called from Kotlin on each layout pass during fullscreen to keep
 // the replacement buttons positioned correctly.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeUpdateFullScreenButtons(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeUpdateFullScreenButtons(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1153,7 +1153,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // respecting the user's system preference (AppleActionOnDoubleClick).
 // Called from Compose when an unconsumed double-click is detected.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativePerformTitleBarDoubleClickAction(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativePerformTitleBarDoubleClickAction(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1181,7 +1181,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // Called from the EDT when Compose detects an unconsumed drag in the title bar.
 // This mirrors JBR's forceHitTest(false) path where Compose decides the drag.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeStartWindowDrag(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeStartWindowDrag(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1221,7 +1221,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // in fullscreen — mirroring Safari's fullscreen title bar behavior.
 // Also installs/removes the menu bar event monitor if already in fullscreen.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetNewFullscreenControls(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetNewFullscreenControls(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr, jboolean enabled) {
 
     if (nsWindowPtr == 0) return;
@@ -1253,7 +1253,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // Returns the last known menu bar offset in points.
 // Reads the value stored by the native event monitor (thread-safe).
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeGetMenuBarOffset(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeGetMenuBarOffset(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return 0.0f;
@@ -1266,7 +1266,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // can position the traffic-light buttons at the same Y offset,
 // keeping native buttons and Compose title bar perfectly in sync.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetMenuBarOffset(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetMenuBarOffset(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr, jfloat offsetPt) {
 
     if (nsWindowPtr == 0) return;
@@ -1293,7 +1293,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // changes on every mouse event and notifies Kotlin via JNI callback.
 // Event-driven: no timer, no polling.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeInstallMenuBarMonitor(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeInstallMenuBarMonitor(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1314,7 +1314,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 
 // Removes the native event monitor and clears the stored raw offset.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeRemoveMenuBarMonitor(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeRemoveMenuBarMonitor(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
 
     if (nsWindowPtr == 0) return;
@@ -1341,7 +1341,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // Also stores the preference so the fullscreen observer can manage the toolbar
 // around fullscreen transitions (remove before enter, reinstall after).
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetLargeCornerRadius(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetLargeCornerRadius(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr, jboolean enabled) {
 
     if (nsWindowPtr == 0) return;
@@ -1398,7 +1398,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // starts tearing down, to prevent notifyMenuBarOffsetChanged from calling
 // CallStaticVoidMethod on a half-destroyed JVM.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeShutdown(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeShutdown(
     JNIEnv *env, jclass clazz) {
 
     // Signal all pending dispatch_async blocks to bail out immediately.
@@ -1429,7 +1429,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nati
 // of the title bar, mirroring the layout for RTL locales (Hebrew, Arabic, etc.).
 // Re-applies constraints immediately so the change is visible without delay.
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetRTL(
+Java_dev_nucleusframework_nucleus_window_utils_macos_JniMacTitleBarBridge_nativeSetRTL(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr, jboolean rtl) {
 
     if (nsWindowPtr == 0) return;

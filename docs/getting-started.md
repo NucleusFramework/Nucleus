@@ -19,11 +19,11 @@ Add the Nucleus plugin to your `build.gradle.kts`:
 
 ```kotlin
 plugins {
-    id("io.github.kdroidfilter.nucleus") version "<version>"
+    id("dev.nucleusframework.nucleus") version "<version>"
 }
 ```
 
-The plugin is available on the [Gradle Plugin Portal](https://plugins.gradle.org/plugin/io.github.kdroidfilter.nucleus). No additional repository configuration is needed.
+The plugin is available on the [Gradle Plugin Portal](https://plugins.gradle.org/plugin/dev.nucleusframework.nucleus). No additional repository configuration is needed.
 
 ### Runtime Libraries (Optional)
 
@@ -34,19 +34,19 @@ dependencies {
     implementation(compose.desktop.currentOs)
 
     // Executable type detection + single instance + deep links
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.core-runtime:<version>")
 
     // AOT cache runtime detection (includes core-runtime)
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:<version>")
 
     // Auto-update library (includes core-runtime)
-    implementation("io.github.kdroidfilter:nucleus.updater-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.updater-runtime:<version>")
 
     // Native taskbar/dock progress bar
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:<version>")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:<version>")
 
     // Custom decorated window with native title bar
-    implementation("io.github.kdroidfilter:nucleus.decorated-window:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window:<version>")
 }
 ```
 

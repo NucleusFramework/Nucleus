@@ -126,7 +126,7 @@
     <ID>MaxLineLength:NucleusProjectProperties.kt$NucleusProperties$fun macSign(providers: ProviderFactory): Provider&lt;Boolean&gt;</ID>
     <ID>MaxLineLength:NucleusProjectProperties.kt$NucleusProperties$fun preserveWorkingDir(providers: ProviderFactory): Provider&lt;Boolean&gt;</ID>
     <ID>MaxLineLength:NucleusProjectProperties.kt$NucleusProperties$internal const val DISABLE_RESOURCE_CONTENT_HASH_GENERATION = "org.jetbrains.compose.resources.content.hash.generation.disable"</ID>
-    <ID>MaxLineLength:ExperimentalNucleusLibrary.kt$ExperimentalNucleusLibrary$"This library is experimental and can be unstable. Add @OptIn(io.github.kdroidfilter.nucleus.ExperimentalNucleusLibrary::class) annotation."</ID>
+    <ID>MaxLineLength:ExperimentalNucleusLibrary.kt$ExperimentalNucleusLibrary$"This library is experimental and can be unstable. Add @OptIn(dev.nucleusframework.nucleus.ExperimentalNucleusLibrary::class) annotation."</ID>
     <ID>MaxLineLength:InfoPlistBuilder.kt$InfoPlistBuilder$appendLine("&lt;!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"https://www.apple.com/DTDs/PropertyList-1.0.dtd\"&gt;")</ID>
     <ID>MaxLineLength:InfoPlistBuilder.kt$InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue$"${indentForLevel(nestingLevel + 1)}&lt;key&gt;${key.name}&lt;/key&gt;\n${value.asPlistEntry(nestingLevel + 1)}"</ID>
     <ID>MaxLineLength:JvmApplicationContext.kt$JvmApplicationContext$"Specify, which target to use by using `compose.desktop.application.from(kotlinMppTarget)`"</ID>
@@ -183,8 +183,8 @@
     <ID>TooManyFunctions:AbstractGenerateAotCacheTask.kt$AbstractGenerateAotCacheTask : AbstractNucleusTask</ID>
     <ID>TooManyFunctions:AbstractJPackageTask.kt$AbstractJPackageTask : AbstractJvmToolOperationTask</ID>
     <ID>TooManyFunctions:NucleusProjectProperties.kt$NucleusProperties</ID>
-    <ID>TooManyFunctions:configureJvmApplication.kt$io.github.kdroidfilter.nucleus.desktop.application.internal.configureJvmApplication.kt</ID>
-    <ID>TooManyFunctions:fileUtils.kt$io.github.kdroidfilter.nucleus.internal.utils.fileUtils.kt</ID>
+    <ID>TooManyFunctions:configureJvmApplication.kt$dev.nucleusframework.nucleus.desktop.application.internal.configureJvmApplication.kt</ID>
+    <ID>TooManyFunctions:fileUtils.kt$dev.nucleusframework.nucleus.internal.utils.fileUtils.kt</ID>
     <ID>TopLevelPropertyNaming:CheckComposeCompilerPlugin.kt$internal const val minimalSupportedKgpVersion = "2.2.0"</ID>
     <ID>TopLevelPropertyNaming:CheckComposeCompilerPlugin.kt$internal const val minimalSupportedKgpVersionError = "e: Configuration problem: " + "Minimal supported Kotlin Gradle Plugin version is $minimalSupportedKgpVersion"</ID>
     <ID>TopLevelPropertyNaming:CheckComposeCompilerPlugin.kt$internal const val newComposeCompilerError = "Starting with Compose Multiplatform 1.6.10, " + "you should apply \"$newComposeCompilerKotlinSupportPluginId\" plugin." + "\nSee the migration guide https://www.jetbrains.com/help/kotlin-multiplatform-dev/compose-compiler.html#migrating-a-compose-multiplatform-project"</ID>
@@ -194,23 +194,23 @@
     <ID>TopLevelPropertyNaming:configureJvmApplication.kt$internal const val nucleusTaskGroup = "compose desktop"</ID>
     <ID>VariableNaming:NativeApplication.kt$NativeApplication$internal val _targets = arrayListOf&lt;KotlinNativeTarget&gt;()</ID>
     <ID>WildcardImport:AbstractCheckNativeDistributionRuntime.kt$import org.gradle.api.tasks.*</ID>
-    <ID>WildcardImport:AbstractJvmToolOperationTask.kt$import io.github.kdroidfilter.nucleus.internal.utils.*</ID>
+    <ID>WildcardImport:AbstractJvmToolOperationTask.kt$import dev.nucleusframework.nucleus.internal.utils.*</ID>
     <ID>WildcardImport:AbstractJvmToolOperationTask.kt$import org.gradle.api.tasks.*</ID>
     <ID>WildcardImport:AbstractNativeMacApplicationPackageAppDirTask.kt$import org.gradle.api.tasks.*</ID>
     <ID>WildcardImport:AbstractNativeMacApplicationPackageDmgTask.kt$import org.gradle.api.tasks.*</ID>
-    <ID>WildcardImport:AbstractNativeMacApplicationPackageTask.kt$import io.github.kdroidfilter.nucleus.internal.utils.*</ID>
+    <ID>WildcardImport:AbstractNativeMacApplicationPackageTask.kt$import dev.nucleusframework.nucleus.internal.utils.*</ID>
     <ID>WildcardImport:AbstractNativeMacApplicationPackageTask.kt$import org.gradle.api.tasks.*</ID>
     <ID>WildcardImport:AbstractNotarizationTask.kt$import org.gradle.api.tasks.*</ID>
-    <ID>WildcardImport:AbstractProguardTask.kt$import io.github.kdroidfilter.nucleus.desktop.application.internal.*</ID>
-    <ID>WildcardImport:AbstractProguardTask.kt$import io.github.kdroidfilter.nucleus.internal.utils.*</ID>
+    <ID>WildcardImport:AbstractProguardTask.kt$import dev.nucleusframework.nucleus.desktop.application.internal.*</ID>
+    <ID>WildcardImport:AbstractProguardTask.kt$import dev.nucleusframework.nucleus.internal.utils.*</ID>
     <ID>WildcardImport:AbstractProguardTask.kt$import org.gradle.api.file.*</ID>
     <ID>WildcardImport:AbstractProguardTask.kt$import org.gradle.api.tasks.*</ID>
-    <ID>WildcardImport:AbstractSuggestModulesTask.kt$import io.github.kdroidfilter.nucleus.internal.utils.*</ID>
+    <ID>WildcardImport:AbstractSuggestModulesTask.kt$import dev.nucleusframework.nucleus.internal.utils.*</ID>
     <ID>WildcardImport:AbstractSuggestModulesTask.kt$import org.gradle.api.tasks.*</ID>
-    <ID>WildcardImport:InfoPlistBuilder.kt$import io.github.kdroidfilter.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.*</ID>
+    <ID>WildcardImport:InfoPlistBuilder.kt$import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.*</ID>
     <ID>WildcardImport:MacSigningHelper.kt$import java.nio.file.*</ID>
-    <ID>WildcardImport:configureJvmApplication.kt$import io.github.kdroidfilter.nucleus.desktop.application.tasks.*</ID>
-    <ID>WildcardImport:configureJvmApplication.kt$import io.github.kdroidfilter.nucleus.internal.utils.*</ID>
+    <ID>WildcardImport:configureJvmApplication.kt$import dev.nucleusframework.nucleus.desktop.application.tasks.*</ID>
+    <ID>WildcardImport:configureJvmApplication.kt$import dev.nucleusframework.nucleus.internal.utils.*</ID>
     <ID>WildcardImport:fileUtils.kt$import java.io.*</ID>
   </CurrentIssues>
 </SmellBaseline>

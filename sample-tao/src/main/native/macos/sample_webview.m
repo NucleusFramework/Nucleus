@@ -16,7 +16,7 @@
 #include <jni.h>
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCreate(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeCreate(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -28,7 +28,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCreate(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeLoadUrl(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeLoadUrl(
     JNIEnv *env, jclass clazz, jlong viewPtr, jstring urlStr)
 {
     (void)clazz;
@@ -46,7 +46,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeLoadUrl(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoBack(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeGoBack(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -56,7 +56,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoBack(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoForward(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeGoForward(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -66,7 +66,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeGoForward(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeReload(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeReload(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -76,7 +76,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeReload(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoBack(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeCanGoBack(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -86,7 +86,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoBack(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoForward(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeCanGoForward(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -96,7 +96,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCanGoForward(
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeIsLoading(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeIsLoading(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;
@@ -106,7 +106,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeIsLoading(
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCurrentUrl(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeCurrentUrl(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)clazz;
@@ -118,7 +118,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeCurrentUrl(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewBridge_nativeRelease(
+Java_dev_nucleusframework_sampletao_SampleWebViewBridge_nativeRelease(
     JNIEnv *env, jclass clazz, jlong viewPtr)
 {
     (void)env; (void)clazz;

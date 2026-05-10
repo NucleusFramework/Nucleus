@@ -202,7 +202,7 @@ static void notify_accent_color_changed(double r, double g, double b) {
     }
 
     jclass cls = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/systemcolor/linux/NativeLinuxSystemColorBridge");
+        "dev/nucleusframework/nucleus/systemcolor/linux/NativeLinuxSystemColorBridge");
     if (cls) {
         jmethodID mid = (*env)->GetStaticMethodID(env, cls, "onAccentColorChanged", "(FFF)V");
         if (mid) {
@@ -229,7 +229,7 @@ static void notify_high_contrast_changed(int isHigh) {
     }
 
     jclass cls = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/systemcolor/linux/NativeLinuxSystemColorBridge");
+        "dev/nucleusframework/nucleus/systemcolor/linux/NativeLinuxSystemColorBridge");
     if (cls) {
         jmethodID mid = (*env)->GetStaticMethodID(env, cls, "onHighContrastChanged", "(Z)V");
         if (mid) {
@@ -359,7 +359,7 @@ static void *watch_thread_proc(void *arg) {
 /* ------------------------------------------------------------------ */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeGetAccentColor(
+Java_dev_nucleusframework_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeGetAccentColor(
     JNIEnv *env, jclass clazz, jfloatArray out) {
     (void)clazz;
     double r = 0, g = 0, b = 0;
@@ -370,14 +370,14 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBrid
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeIsHighContrast(
+Java_dev_nucleusframework_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeIsHighContrast(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     return read_high_contrast() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeIsAccentColorSupported(
+Java_dev_nucleusframework_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeIsAccentColorSupported(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     double r, g, b;
@@ -385,7 +385,7 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeStartObserving(
+Java_dev_nucleusframework_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeStartObserving(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     if (g_watching) return;
@@ -395,7 +395,7 @@ Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBrid
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeStopObserving(
+Java_dev_nucleusframework_nucleus_systemcolor_linux_NativeLinuxSystemColorBridge_nativeStopObserving(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     if (!g_watching) return;

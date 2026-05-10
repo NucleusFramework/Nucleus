@@ -1,19 +1,19 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.AppImageCategory
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseChannel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.ReleaseType
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapCompression
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapConfinement
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapGrade
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapPlug
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.AppImageCategory
+import dev.nucleusframework.nucleus.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.nucleus.desktop.application.dsl.ReleaseChannel
+import dev.nucleusframework.nucleus.desktop.application.dsl.ReleaseType
+import dev.nucleusframework.nucleus.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.nucleus.desktop.application.dsl.SnapCompression
+import dev.nucleusframework.nucleus.desktop.application.dsl.SnapConfinement
+import dev.nucleusframework.nucleus.desktop.application.dsl.SnapGrade
+import dev.nucleusframework.nucleus.desktop.application.dsl.SnapPlug
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlin)
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 dependencies {
@@ -157,7 +157,7 @@ nucleus.application {
         publish {
             github {
                 enabled = true
-                owner = "kdroidfilter"
+                owner = "nucleusframework"
                 repo = "Nucleus"
                 channel = ReleaseChannel.Latest
                 releaseType = ReleaseType.Release
@@ -179,7 +179,7 @@ nucleus.application {
         // ========== LINUX ==========
         linux {
             // --- DEB package ---
-            debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
+            debMaintainer = "NucleusFramework <dev@nucleusframework.com>"
             debDepends = listOf("libfuse2", "libgtk-3-0")
             debPackageVersion = releaseVersion
 
@@ -227,7 +227,7 @@ nucleus.application {
             // --- Code signing (NEW) ---
             signing {
                 enabled = true
-                certificateFile.set(file("packaging/KDroidFilter.pfx"))
+                certificateFile.set(file("packaging/NucleusFramework.pfx"))
                 certificatePassword = "ChangeMe-Temp123!"
                 algorithm = SigningAlgorithm.Sha256
                 // Timestamp servers: "http://timestamp.digicert.com", "http://timestamp.sectigo.com", "http://timestamp.globalsign.com"
@@ -252,7 +252,7 @@ nucleus.application {
             // --- AppX/Windows Store (NEW) ---
             appx {
                 applicationId = "NucleusDemo"
-                publisherDisplayName = "KDroidFilter"
+                publisherDisplayName = "NucleusFramework"
                 displayName = "Nucleus Demo"
                 // Auto-inject <desktop4:Extension Category="windows.startupTask"> in Package.appxmanifest.
                 // TaskId is auto-resolved to "${applicationId}StartupId" and exposed via NucleusApp.startupTaskId,
@@ -260,7 +260,7 @@ nucleus.application {
                 addAutoLaunchExtension = true
                 // Publisher: "CN=..."
                 publisher = "CN=D541E802-6D30-446A-864E-2E8ABD2DAA5E"
-                identityName = "KDroidFilter.NucleusDemo"
+                identityName = "NucleusFramework.NucleusDemo"
                 // Languages: "en-US", "fr-FR", "de-DE", etc.
                 languages = listOf("en-US", "fr-FR")
                 backgroundColor = "#001F3F"
@@ -276,7 +276,7 @@ nucleus.application {
 
         // ========== MACOS ==========
         macOS {
-            bundleID = "io.github.kdroidfilter.nucleus.demo"
+            bundleID = "dev.nucleusframework.nucleus.demo"
             appCategory = "public.app-category.utilities"
             dockName = "NucleusDemo"
 

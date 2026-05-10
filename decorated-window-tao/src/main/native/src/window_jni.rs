@@ -2,7 +2,7 @@
 //
 // All of these are thin "post a UserEvent on the loop proxy" or "look up the
 // Window in WINDOWS and read state" wrappers. Symbol naming follows the
-// package `io.github.kdroidfilter.nucleus.window.tao.NativeTaoBridge`.
+// package `dev.nucleusframework.nucleus.window.tao.NativeTaoBridge`.
 
 use jni::objects::{JClass, JString};
 use jni::sys::{jboolean, jdouble, jint, jlong, JNI_FALSE, JNI_TRUE};
@@ -12,7 +12,7 @@ use crate::events::UserEvent;
 use crate::state::{clear_event_loop_proxy, send_user_event, JAVA_VM, WINDOWS};
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeRunBlocking(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeRunBlocking(
     env: JNIEnv,
     _class: JClass,
     callback: jni::objects::JObject,
@@ -56,7 +56,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeCreateWindow(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeCreateWindow(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -83,7 +83,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetVisible(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetVisible(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -96,7 +96,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetTitle(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetTitle(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -113,7 +113,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeRequestRedraw(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeRequestRedraw(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -124,7 +124,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeRequestClose(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeRequestClose(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -135,7 +135,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeExit(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeExit(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -145,7 +145,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// Wakes the Tao event loop so a queued `TaoMainDispatcher` block runs on the
 /// next tick. Cheap no-op when the loop is already busy.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeWake(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeWake(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -156,7 +156,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// this also de-minimizes the window so the foreground activation actually
 /// takes effect (a minimized HWND ignores `SetForegroundWindow`).
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeFocus(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeFocus(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -167,7 +167,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeIsAvailable(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeIsAvailable(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -192,7 +192,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// don't drive a modal AppKit-style loop and the Compose-side hit-testing is
 /// reliable enough.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeDragWindow(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeDragWindow(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -226,7 +226,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeIsMaximized(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeIsMaximized(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -250,7 +250,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetMaximized(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetMaximized(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -263,7 +263,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetMinimized(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetMinimized(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -276,7 +276,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetAlwaysOnTop(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetAlwaysOnTop(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -289,7 +289,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetFocusable(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetFocusable(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -302,7 +302,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetMinInnerSize(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetMinInnerSize(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -317,7 +317,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetWindowIcon(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetWindowIcon(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -342,7 +342,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetInnerSize(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetInnerSize(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -357,7 +357,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetOuterPosition(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetOuterPosition(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -372,7 +372,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeIsFullscreen(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeIsFullscreen(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -396,7 +396,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeSetFullscreen(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeSetFullscreen(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -411,7 +411,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// Returns the current scale factor of the window (Retina = 2.0, 3.0…).
 /// Encoded as `(scale * 1000) as i32` to keep a single JNI signature.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeScaleFactor(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeScaleFactor(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

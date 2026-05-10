@@ -112,7 +112,7 @@ static const BYTE *find_smbios_struct(BYTE type, BYTE *out_length) {
 // --- Motherboard (Type 2) ---
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardName(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(2, &len);
@@ -121,7 +121,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardVendor(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardVendor(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(2, &len);
@@ -130,7 +130,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardVersion(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(2, &len);
@@ -139,7 +139,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardSerial(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardSerial(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(2, &len);
@@ -148,7 +148,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardAssetTag(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeMotherboardAssetTag(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(2, &len);
@@ -159,7 +159,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 // --- Product (Type 1) ---
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductName(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -168,7 +168,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductFamily(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductFamily(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -177,7 +177,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductSerial(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductSerial(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -186,7 +186,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductSku(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductSku(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -195,7 +195,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductUuid(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductUuid(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -228,7 +228,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductVersion(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);
@@ -237,7 +237,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductVendor(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProductVendor(
     JNIEnv *env, jclass clazz) {
     BYTE len;
     const BYTE *s = find_smbios_struct(1, &len);

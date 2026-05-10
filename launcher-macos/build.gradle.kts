@@ -59,12 +59,12 @@ tasks.configureEach {
 }
 
 mavenPublishing {
-    coordinates("io.github.kdroidfilter", "nucleus.launcher-macos", publishVersion)
+    coordinates("dev.nucleusframework", "nucleus.launcher-macos", publishVersion)
 
     pom {
         name.set("Nucleus Launcher macOS")
         description.set("macOS dock context menu for JVM desktop applications via JNI")
-        url.set("https://github.com/kdroidFilter/Nucleus")
+        url.set("https://github.com/nucleusframework/Nucleus")
 
         licenses {
             license {
@@ -75,16 +75,16 @@ mavenPublishing {
 
         developers {
             developer {
-                id.set("kdroidfilter")
-                name.set("kdroidFilter")
-                url.set("https://github.com/kdroidFilter")
+                id.set("nucleusframework")
+                name.set("nucleusframework")
+                url.set("https://github.com/nucleusframework")
             }
         }
 
         scm {
-            url.set("https://github.com/kdroidFilter/Nucleus")
-            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
+            url.set("https://github.com/nucleusframework/Nucleus")
+            connection.set("scm:git:git://github.com/nucleusframework/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/nucleusframework/Nucleus.git")
         }
     }
 

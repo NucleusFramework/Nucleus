@@ -115,14 +115,14 @@ static void refresh_disks(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskCount(
     JNIEnv *env, jclass clazz) {
     refresh_disks();
     return g_disk_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskNames(
     JNIEnv *env, jclass clazz) {
     const char *names[MAX_DISKS];
     for (int i = 0; i < g_disk_count; i++) names[i] = g_disks[i].name;
@@ -130,7 +130,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskFileSystems(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskFileSystems(
     JNIEnv *env, jclass clazz) {
     const char *fs[MAX_DISKS];
     for (int i = 0; i < g_disk_count; i++) fs[i] = g_disks[i].file_system;
@@ -138,7 +138,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskMountPoints(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskMountPoints(
     JNIEnv *env, jclass clazz) {
     const char *mps[MAX_DISKS];
     for (int i = 0; i < g_disk_count; i++) mps[i] = g_disks[i].mount_point;
@@ -146,7 +146,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskTotalSpaces(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskTotalSpaces(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_disk_count);
     jlong *vals = (jlong *)malloc(g_disk_count * sizeof(jlong));
@@ -158,7 +158,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskAvailableSpaces(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskAvailableSpaces(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_disk_count);
     jlong *vals = (jlong *)malloc(g_disk_count * sizeof(jlong));
@@ -170,7 +170,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskKinds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskKinds(
     JNIEnv *env, jclass clazz) {
     const char *kinds[MAX_DISKS];
     for (int i = 0; i < g_disk_count; i++) kinds[i] = g_disks[i].kind;
@@ -178,7 +178,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jbooleanArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskRemovable(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskRemovable(
     JNIEnv *env, jclass clazz) {
     jbooleanArray arr = (*env)->NewBooleanArray(env, g_disk_count);
     jboolean *vals = (jboolean *)malloc(g_disk_count * sizeof(jboolean));
@@ -190,7 +190,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jbooleanArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskReadOnly(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeDiskReadOnly(
     JNIEnv *env, jclass clazz) {
     jbooleanArray arr = (*env)->NewBooleanArray(env, g_disk_count);
     jboolean *vals = (jboolean *)malloc(g_disk_count * sizeof(jboolean));

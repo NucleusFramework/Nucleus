@@ -4,8 +4,8 @@ package systeminfodemo.ui
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
-import io.github.kdroidfilter.nucleus.systemcolor.systemAccentColor
+import dev.nucleusframework.nucleus.darkmodedetector.isSystemInDarkMode
+import dev.nucleusframework.nucleus.systemcolor.systemAccentColor
 import org.jetbrains.jewel.foundation.BorderColors
 import org.jetbrains.jewel.foundation.GlobalColors
 import org.jetbrains.jewel.foundation.OutlineColors

@@ -29,7 +29,7 @@
 #define STATUS_PAUSED  1
 #define STATUS_PLAYING 2
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/media/control/macos/NativeMacOsBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/media/control/macos/NativeMacOsBridge"
 
 // ============================================================================
 // Globals
@@ -178,7 +178,7 @@ static void loadArtworkAsync(NSString *url, uint64_t counter) {
 // ============================================================================
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeConfigure(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeConfigure(
     JNIEnv *env, jclass clazz, jstring jBusName, jstring jDisplayName)
 {
     (void)env; (void)clazz; (void)jBusName; (void)jDisplayName;
@@ -186,7 +186,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeSetMetadata(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeSetMetadata(
     JNIEnv *env, jclass clazz,
     jstring jTitle, jstring jArtist, jstring jAlbum, jstring jCover, jlong durationMs)
 {
@@ -240,7 +240,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeSetPlaybackState(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeSetPlaybackState(
     JNIEnv *env, jclass clazz, jint status, jlong positionMs)
 {
     (void)env; (void)clazz;
@@ -265,7 +265,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeSetVolume(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeSetVolume(
     JNIEnv *env, jclass clazz, jdouble volume)
 {
     (void)env; (void)clazz; (void)volume;
@@ -277,7 +277,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_native
 // ============================================================================
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeStartListening(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeStartListening(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -356,7 +356,7 @@ Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_media_control_macos_NativeMacOsBridge_nativeStopListening(
+Java_dev_nucleusframework_nucleus_media_control_macos_NativeMacOsBridge_nativeStopListening(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

@@ -1,6 +1,6 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ResourcePattern
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ResourcePattern
 import java.util.jar.JarFile
 
 /**

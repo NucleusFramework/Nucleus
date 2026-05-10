@@ -16,7 +16,7 @@ This module was originally designed for running Compose Desktop applications com
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.linux-hidpi:<version>")
+    implementation("dev.nucleusframework:nucleus.linux-hidpi:<version>")
 }
 ```
 
@@ -25,7 +25,7 @@ dependencies {
 Call `getLinuxNativeScaleFactor()` **before** `application {}` (i.e. before AWT initialises):
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.hidpi.getLinuxNativeScaleFactor
+import dev.nucleusframework.nucleus.hidpi.getLinuxNativeScaleFactor
 
 fun main() {
     if (System.getProperty("sun.java2d.uiScale") == null) {
@@ -71,7 +71,7 @@ The native code uses `dlopen` to load optional dependencies (libgio for GSetting
 When ProGuard is enabled, preserve the JNI bridge class:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.hidpi.HiDpiLinuxBridge {
+-keep class dev.nucleusframework.nucleus.hidpi.HiDpiLinuxBridge {
     native <methods>;
 }
 ```

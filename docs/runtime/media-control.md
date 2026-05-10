@@ -16,7 +16,7 @@ OS-level media controls (play/pause, next/previous, seek, metadata) for your des
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.media-control:<version>")
+    implementation("dev.nucleusframework:nucleus.media-control:<version>")
 }
 ```
 
@@ -25,7 +25,7 @@ Depends on `core-runtime` (for `NativeLibraryLoader` and `NucleusApp`) and `kotl
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.media.control.*
+import dev.nucleusframework.nucleus.media.control.*
 
 if (MediaControlService.isAvailable()) {
     // 1. Configure once — typically at app startup
@@ -291,15 +291,15 @@ Each JVM hosts a single long-lived background worker: on Linux a dedicated threa
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.media.control.linux.NativeLinuxBridge {
+-keep class dev.nucleusframework.nucleus.media.control.linux.NativeLinuxBridge {
     native <methods>;
     static ** on*(...);
 }
--keep class io.github.kdroidfilter.nucleus.media.control.macos.NativeMacOsBridge {
+-keep class dev.nucleusframework.nucleus.media.control.macos.NativeMacOsBridge {
     native <methods>;
     static ** on*(...);
 }
--keep class io.github.kdroidfilter.nucleus.media.control.windows.NativeWindowsBridge {
+-keep class dev.nucleusframework.nucleus.media.control.windows.NativeWindowsBridge {
     native <methods>;
     static ** on*(...);
 }

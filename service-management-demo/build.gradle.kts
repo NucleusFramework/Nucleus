@@ -1,11 +1,11 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 dependencies {
@@ -45,12 +45,12 @@ nucleus.application {
         packageVersion = "1.0.0"
 
         macOS {
-            bundleID = "io.github.kdroidfilter.nucleus.servicemanagement.demo"
+            bundleID = "dev.nucleusframework.nucleus.servicemanagement.demo"
             appCategory = "public.app-category.utilities"
             dockName = "SMAppService Demo"
 
             launchAgents {
-                agent("io.github.kdroidfilter.nucleus.servicemanagement.demo.notifier") {
+                agent("dev.nucleusframework.nucleus.servicemanagement.demo.notifier") {
                     arguments("--notify")
                     startInterval(900)
                 }

@@ -376,12 +376,12 @@ static NSRect to_screen_frame(NSWindow *parent, jint xPx, jint yPx, jint wPx, ji
 
 /* ================================================================== */
 /*  JNI exports                                                        */
-/*  Package: io.github.kdroidfilter.nucleus.window.tao                 */
+/*  Package: dev.nucleusframework.nucleus.window.tao                 */
 /*  Class:   PopupNativeBridge                                         */
 /* ================================================================== */
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeCreatePanel(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeCreatePanel(
     JNIEnv *env, jclass clazz,
     jlong parentNsViewPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -429,7 +429,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeCreatePan
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetFrameInWindow(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetFrameInWindow(
     JNIEnv *env, jclass clazz,
     jlong panelPtr,
     jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -444,7 +444,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetFrameI
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeOrderFront(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeOrderFront(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;
@@ -454,7 +454,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeOrderFron
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeOrderOut(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeOrderOut(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;
@@ -464,7 +464,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeOrderOut(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetFocusable(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetFocusable(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean focusable)
 {
     (void)env; (void)clazz;
@@ -488,7 +488,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetFocusa
  * subviews (a WKWebView etc.). Used for "watermark"-style popups that
  * should be visible but not block interaction. */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetIgnoresMouseEvents(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetIgnoresMouseEvents(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean ignore)
 {
     (void)env; (void)clazz;
@@ -502,7 +502,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetIgnore
  * native subview (WKWebView etc.). When disabled (default) the panel
  * intercepts everything — what Compose `Popup` / `DropdownMenu` need. */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetRegionHitTestEnabled(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetRegionHitTestEnabled(
     JNIEnv *env, jclass clazz, jlong panelPtr, jboolean enable)
 {
     (void)env; (void)clazz;
@@ -520,7 +520,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetRegion
  * `hitTest:` returns hit only inside one of these rects. Pass count=0
  * to clear (full passthrough). */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetInteractiveRegions(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetInteractiveRegions(
     JNIEnv *env, jclass clazz, jlong panelPtr, jfloatArray rectsPx, jint count)
 {
     (void)clazz;
@@ -545,7 +545,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetIntera
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetEventCallback(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeSetEventCallback(
     JNIEnv *env, jclass clazz, jlong panelPtr, jobject callback)
 {
     (void)clazz;
@@ -582,7 +582,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeSetEventC
  * The monitor returns the event unchanged so AppKit dispatches it
  * normally (we observe; we don't consume). */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeInstallOutsideClickMonitor(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeInstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panelPtr, jobject listener)
 {
     (void)clazz;
@@ -630,7 +630,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeInstallOu
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeUninstallOutsideClickMonitor(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeUninstallOutsideClickMonitor(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)clazz;
@@ -648,7 +648,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeUninstall
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeRelease(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeRelease(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)clazz;
@@ -685,7 +685,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeRelease(
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_PopupNativeBridge_nativeContentNsView(
+Java_dev_nucleusframework_nucleus_window_tao_PopupNativeBridge_nativeContentNsView(
     JNIEnv *env, jclass clazz, jlong panelPtr)
 {
     (void)env; (void)clazz;

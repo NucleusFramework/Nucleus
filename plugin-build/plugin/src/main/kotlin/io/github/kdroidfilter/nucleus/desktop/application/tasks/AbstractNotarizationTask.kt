@@ -3,19 +3,19 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.MacOSNotarizationSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NOTARIZATION_REQUEST_INFO_FILE_NAME
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NotarizationRequestInfo
-import io.github.kdroidfilter.nucleus.desktop.application.internal.files.checkExistingFile
-import io.github.kdroidfilter.nucleus.desktop.application.internal.files.findOutputFileOrDir
-import io.github.kdroidfilter.nucleus.desktop.application.internal.validation.ValidatedMacOSNotarizationSettings
-import io.github.kdroidfilter.nucleus.desktop.application.internal.validation.validate
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractNucleusTask
-import io.github.kdroidfilter.nucleus.internal.utils.MacUtils
-import io.github.kdroidfilter.nucleus.internal.utils.ioFile
+import dev.nucleusframework.nucleus.desktop.application.dsl.MacOSNotarizationSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.internal.NOTARIZATION_REQUEST_INFO_FILE_NAME
+import dev.nucleusframework.nucleus.desktop.application.internal.NotarizationRequestInfo
+import dev.nucleusframework.nucleus.desktop.application.internal.files.checkExistingFile
+import dev.nucleusframework.nucleus.desktop.application.internal.files.findOutputFileOrDir
+import dev.nucleusframework.nucleus.desktop.application.internal.validation.ValidatedMacOSNotarizationSettings
+import dev.nucleusframework.nucleus.desktop.application.internal.validation.validate
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.nucleus.internal.utils.MacUtils
+import dev.nucleusframework.nucleus.internal.utils.ioFile
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory

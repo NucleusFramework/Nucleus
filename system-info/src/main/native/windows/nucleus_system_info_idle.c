@@ -3,7 +3,7 @@
 #include "nucleus_system_info_common.h"
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeIdleTimeSeconds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeIdleTimeSeconds(
     JNIEnv *env, jclass clazz) {
     LASTINPUTINFO lii;
     lii.cbSize = sizeof(LASTINPUTINFO);

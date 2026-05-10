@@ -219,7 +219,7 @@ static BatteryData *get_battery(void) {
 // The Kotlin side should call nativeBatteryPresent first, which triggers the query.
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryPresent(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryPresent(
     JNIEnv *env, jclass clazz) {
     // Re-query each time batteryPresent is called (it's always called first)
     g_battery_queried = FALSE;
@@ -228,7 +228,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryExternalConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryExternalConnected(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return JNI_FALSE;
@@ -236,7 +236,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryIsCharging(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryIsCharging(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return JNI_FALSE;
@@ -244,7 +244,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryFullyCharged(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryFullyCharged(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return JNI_FALSE;
@@ -258,7 +258,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryCurrentCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryCurrentCapacity(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -267,7 +267,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryMaxCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryMaxCapacity(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -275,7 +275,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryDesignCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryDesignCapacity(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -283,7 +283,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryCycleCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryCycleCount(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -291,7 +291,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryVoltage(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryVoltage(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -299,7 +299,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryAmperage(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryAmperage(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return 0;
@@ -309,7 +309,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryTemperature(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryTemperature(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid || !bat->temperature_valid) return (jfloat)NAN;
@@ -318,7 +318,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryTimeRemaining(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryTimeRemaining(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return -1;
@@ -348,7 +348,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryManufacturer(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryManufacturer(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return NULL;
@@ -356,7 +356,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryModelName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatteryModelName(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return NULL;
@@ -364,7 +364,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatterySerialNumber(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeBatterySerialNumber(
     JNIEnv *env, jclass clazz) {
     BatteryData *bat = get_battery();
     if (!bat->valid) return NULL;

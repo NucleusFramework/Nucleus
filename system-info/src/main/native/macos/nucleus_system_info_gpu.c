@@ -446,14 +446,14 @@ static void refresh_gpus(void) {
 // ---- JNI exports: static info ----
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuCount(
     JNIEnv *env, jclass clazz) {
     refresh_gpus();
     return (jint)g_gpu_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuNames(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuNames(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_gpu_count * sizeof(char *));
@@ -464,7 +464,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuVendorIds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuVendorIds(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -476,7 +476,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDeviceIds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDeviceIds(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -488,7 +488,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDedicatedVideoMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDedicatedVideoMemories(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -500,7 +500,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDedicatedSystemMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDedicatedSystemMemories(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -512,7 +512,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuSharedSystemMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuSharedSystemMemories(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -524,7 +524,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDriverVersions(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuDriverVersions(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_gpu_count * sizeof(char *));
@@ -537,7 +537,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 // ---- JNI exports: live metrics ----
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuTemperatures(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -549,7 +549,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuUsages(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -561,7 +561,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuMemoryUsed(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuMemoryUsed(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -573,7 +573,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jintArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuCoreClocks(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuCoreClocks(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jint *vals = (jint *)malloc(g_gpu_count * sizeof(jint));
@@ -585,7 +585,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jintArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuMemoryClocks(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuMemoryClocks(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jint *vals = (jint *)malloc(g_gpu_count * sizeof(jint));
@@ -597,7 +597,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuFanSpeeds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuFanSpeeds(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -609,7 +609,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuPowerDraws(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeGpuPowerDraws(
     JNIEnv *env, jclass clazz) {
     if (g_gpu_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));

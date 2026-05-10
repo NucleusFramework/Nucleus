@@ -8,7 +8,7 @@ The `native-ssl` module solves this by reading trusted certificates directly fro
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.native-ssl:<version>")
+    implementation("dev.nucleusframework:nucleus.native-ssl:<version>")
 }
 ```
 
@@ -17,7 +17,7 @@ dependencies {
 The entire API surface is the `NativeTrustManager` singleton. All properties are lazy and thread-safe.
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.nativessl.NativeTrustManager
+import dev.nucleusframework.nucleus.nativessl.NativeTrustManager
 
 // Ready-to-use X509TrustManager (JVM defaults + OS native certs)
 val trustManager: X509TrustManager = NativeTrustManager.trustManager
@@ -84,11 +84,11 @@ Certificates are deduplicated by DER content across all sources.
 The `native-ssl` module uses JNI native libraries on macOS and Windows. When ProGuard is enabled, the bridge classes must be preserved. The Nucleus Gradle plugin includes these rules automatically; if you need them manually:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.nativessl.mac.NativeSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.mac.NativeSslBridge {
     native <methods>;
 }
 
--keep class io.github.kdroidfilter.nucleus.nativessl.windows.WindowsSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.windows.WindowsSslBridge {
     native <methods>;
 }
 ```
@@ -98,7 +98,7 @@ The `native-ssl` module uses JNI native libraries on macOS and Windows. When Pro
 Debug messages are emitted under the tags `NativeCertificateProvider`, `NativeSslBridge`, `WindowsCertificateProvider`, `LinuxCertificateProvider`, etc. Logging is off by default. To enable it, set the global flag from `core-runtime`:
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
+import dev.nucleusframework.nucleus.core.runtime.tools.allowNucleusRuntimeLogging
 
 allowNucleusRuntimeLogging = true
 ```

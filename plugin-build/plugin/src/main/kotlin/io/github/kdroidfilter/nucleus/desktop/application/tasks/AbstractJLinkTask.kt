@@ -3,14 +3,14 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.JvmRuntimeProperties
-import io.github.kdroidfilter.nucleus.desktop.application.internal.RuntimeCompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.internal.cliArg
-import io.github.kdroidfilter.nucleus.internal.utils.ioFile
-import io.github.kdroidfilter.nucleus.internal.utils.notNullProperty
-import io.github.kdroidfilter.nucleus.internal.utils.nullableProperty
+import dev.nucleusframework.nucleus.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.nucleus.desktop.application.internal.RuntimeCompressionLevel
+import dev.nucleusframework.nucleus.desktop.application.internal.cliArg
+import dev.nucleusframework.nucleus.internal.utils.ioFile
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.internal.utils.nullableProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property

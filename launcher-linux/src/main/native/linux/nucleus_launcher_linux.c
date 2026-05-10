@@ -208,7 +208,7 @@ static GDBusConnection *get_connection(void) {
 static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
     jclass cls = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/launcher/linux/NativeLinuxLauncherBridge");
+        "dev/nucleusframework/nucleus/launcher/linux/NativeLinuxLauncherBridge");
     if (!cls) { if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env); return 0; }
     g_bridge_class = (jclass)(*env)->NewGlobalRef(env, cls);
     (*env)->DeleteLocalRef(env, cls);
@@ -254,7 +254,7 @@ static GVariant *build_properties_variant(
 /* ===================================================================== */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeUpdate(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeUpdate(
     JNIEnv *env, jclass clazz,
     jstring j_app_uri, jboolean has_count, jlong count, jint count_visible,
     jboolean has_progress, jdouble progress, jint progress_visible,
@@ -359,7 +359,7 @@ static void *query_thread_func(void *arg) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeRegisterQueryHandler(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeRegisterQueryHandler(
     JNIEnv *env, jclass clazz, jstring j_app_uri)
 {
     (void)clazz;
@@ -395,7 +395,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nat
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeSetState(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeSetState(
     JNIEnv *env, jclass clazz,
     jboolean has_count, jlong count, jint count_visible,
     jboolean has_progress, jdouble progress, jint progress_visible,
@@ -416,7 +416,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nat
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeUnregister(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeUnregister(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -753,7 +753,7 @@ static void free_menu_item(MenuItem *item) {
 /* ===================================================================== */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeSetMenu(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeSetMenu(
     JNIEnv *env, jclass clazz,
     jstring j_object_path,
     jintArray j_ids, jintArray j_parent_ids,
@@ -918,7 +918,7 @@ release:
 /* ===================================================================== */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeDestroyMenu(
+Java_dev_nucleusframework_nucleus_launcher_linux_NativeLinuxLauncherBridge_nativeDestroyMenu(
     JNIEnv *env, jclass clazz, jstring j_object_path)
 {
     (void)clazz;

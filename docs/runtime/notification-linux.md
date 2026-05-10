@@ -9,7 +9,7 @@ Complete Kotlin mapping of the [freedesktop Desktop Notifications Specification]
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.notification-linux:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-linux:<version>")
 }
 ```
 
@@ -18,7 +18,7 @@ Depends on `core-runtime` for `NativeLibraryLoader` and `freedesktop-icons` for 
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.notification.linux.*
+import dev.nucleusframework.nucleus.notification.linux.*
 
 // Send a simple notification with typesafe icon and sound
 val id = LinuxNotificationCenter.notify(
@@ -220,7 +220,7 @@ Received in `LinuxNotificationListener.onClosed`.
 Icons are typesafe via the `FreedesktopIcon` sealed interface from the shared [`freedesktop-icons`](freedesktop-icons.md) module. All 338 standard names from the [freedesktop Icon Naming Specification](https://specifications.freedesktop.org/icon-naming/latest/) are available as enum constants.
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
 
 FreedesktopIcon.Status.DIALOG_INFORMATION
 FreedesktopIcon.Device.PRINTER
@@ -455,7 +455,7 @@ Ships pre-built Linux shared libraries (x86_64 + aarch64). No macOS or Windows n
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.notification.linux.NativeLinuxNotificationBridge {
+-keep class dev.nucleusframework.nucleus.notification.linux.NativeLinuxNotificationBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -468,7 +468,7 @@ JNI reflection metadata must include the bridge class:
 ```json
 [
   {
-    "type": "io.github.kdroidfilter.nucleus.notification.linux.NativeLinuxNotificationBridge",
+    "type": "dev.nucleusframework.nucleus.notification.linux.NativeLinuxNotificationBridge",
     "methods": [
       { "name": "onNotificationClosed", "parameterTypes": ["int", "int"] },
       { "name": "onActionInvoked", "parameterTypes": ["int", "java.lang.String"] },

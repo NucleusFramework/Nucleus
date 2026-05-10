@@ -161,14 +161,14 @@ static void refresh_disks(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskCount(
     JNIEnv *env, jclass clazz) {
     refresh_disks();
     return (jint)g_disk_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskNames(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskNames(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_disk_count * sizeof(char *));
@@ -179,7 +179,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskFileSystems(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskFileSystems(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_disk_count * sizeof(char *));
@@ -190,7 +190,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskMountPoints(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskMountPoints(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_disk_count * sizeof(char *));
@@ -201,7 +201,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskTotalSpaces(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskTotalSpaces(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_disk_count * sizeof(jlong));
@@ -213,7 +213,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskAvailableSpaces(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskAvailableSpaces(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     jlong *vals = (jlong *)malloc(g_disk_count * sizeof(jlong));
@@ -225,7 +225,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskKinds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskKinds(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_disk_count * sizeof(char *));
@@ -236,7 +236,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jbooleanArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskRemovable(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskRemovable(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     jboolean *vals = (jboolean *)malloc(g_disk_count * sizeof(jboolean));
@@ -248,7 +248,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jbooleanArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskReadOnly(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeDiskReadOnly(
     JNIEnv *env, jclass clazz) {
     if (g_disk_count <= 0) return NULL;
     jboolean *vals = (jboolean *)malloc(g_disk_count * sizeof(jboolean));

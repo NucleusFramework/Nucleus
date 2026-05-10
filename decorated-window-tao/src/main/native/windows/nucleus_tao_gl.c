@@ -155,12 +155,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 
 /* ================================================================== */
 /*  JNI exports                                                        */
-/*  Package: io.github.kdroidfilter.nucleus.window.tao                 */
+/*  Package: dev.nucleusframework.nucleus.window.tao                 */
 /*  Class:   NativeTaoGlBridge                                         */
 /* ================================================================== */
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -262,7 +262,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeAttach(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeDetach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -276,7 +276,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeDetach(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeMakeCurrent(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeMakeCurrent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -286,7 +286,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeMakeCurre
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeResize(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeResize(
     JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale)
 {
     (void)env; (void)clazz;
@@ -301,7 +301,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeResize(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativePresent(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativePresent(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -311,7 +311,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativePresent(
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeWidth(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeWidth(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;
@@ -320,7 +320,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeWidth(
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoGlBridge_nativeHeight(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoGlBridge_nativeHeight(
     JNIEnv *env, jclass clazz, jlong handle)
 {
     (void)env; (void)clazz;

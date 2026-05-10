@@ -2,20 +2,20 @@
 
 package systeminfodemo.viewmodel
 
-import io.github.kdroidfilter.nucleus.systeminfo.SystemInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.BatteryInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ComponentInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ConnectivityInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.CpuGlobalInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.DiskInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.GpuInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.MemoryInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.MotherboardInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.NetworkInterfaceInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.OsInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ProcessInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.ProductInfo
-import io.github.kdroidfilter.nucleus.systeminfo.model.UserInfo
+import dev.nucleusframework.nucleus.systeminfo.SystemInfo
+import dev.nucleusframework.nucleus.systeminfo.model.BatteryInfo
+import dev.nucleusframework.nucleus.systeminfo.model.ComponentInfo
+import dev.nucleusframework.nucleus.systeminfo.model.ConnectivityInfo
+import dev.nucleusframework.nucleus.systeminfo.model.CpuGlobalInfo
+import dev.nucleusframework.nucleus.systeminfo.model.DiskInfo
+import dev.nucleusframework.nucleus.systeminfo.model.GpuInfo
+import dev.nucleusframework.nucleus.systeminfo.model.MemoryInfo
+import dev.nucleusframework.nucleus.systeminfo.model.MotherboardInfo
+import dev.nucleusframework.nucleus.systeminfo.model.NetworkInterfaceInfo
+import dev.nucleusframework.nucleus.systeminfo.model.OsInfo
+import dev.nucleusframework.nucleus.systeminfo.model.ProcessInfo
+import dev.nucleusframework.nucleus.systeminfo.model.ProductInfo
+import dev.nucleusframework.nucleus.systeminfo.model.UserInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

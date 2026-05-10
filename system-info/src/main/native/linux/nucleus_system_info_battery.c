@@ -183,19 +183,19 @@ static long get_energy_full_uwh(const char *bat) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryPresent(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryPresent(
     JNIEnv *env, jclass clazz) {
     return find_battery_path() != NULL ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryExternalConnected(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryExternalConnected(
     JNIEnv *env, jclass clazz) {
     return is_ac_online() ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryIsCharging(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryIsCharging(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return JNI_FALSE;
@@ -207,7 +207,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryFullyCharged(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryFullyCharged(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return JNI_FALSE;
@@ -219,7 +219,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryCurrentCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryCurrentCapacity(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -227,7 +227,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryMaxCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryMaxCapacity(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -235,7 +235,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryDesignCapacity(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryDesignCapacity(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -243,7 +243,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryCycleCount(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryCycleCount(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -253,7 +253,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryVoltage(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryVoltage(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -263,7 +263,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryAmperage(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryAmperage(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return 0;
@@ -287,7 +287,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryTemperature(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryTemperature(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return (jfloat)NAN;
@@ -298,7 +298,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryTimeRemaining(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryTimeRemaining(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return -1;
@@ -337,7 +337,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryManufacturer(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryManufacturer(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return NULL;
@@ -348,7 +348,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryModelName(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatteryModelName(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return NULL;
@@ -359,7 +359,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatterySerialNumber(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBatterySerialNumber(
     JNIEnv *env, jclass clazz) {
     const char *bat = find_battery_path();
     if (!bat) return NULL;

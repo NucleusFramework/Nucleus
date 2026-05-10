@@ -18,7 +18,7 @@ The `energy-manager` module provides two capabilities for Compose Desktop applic
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.energy-manager:<version>")
+    implementation("dev.nucleusframework:nucleus.energy-manager:<version>")
 }
 ```
 
@@ -41,7 +41,7 @@ The module provides two levels of process-level efficiency:
 ### Recommended: light mode on focus loss, full mode on minimize
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.energymanager.EnergyManager
+import dev.nucleusframework.nucleus.energymanager.EnergyManager
 import java.awt.event.WindowEvent
 import java.awt.event.WindowFocusListener
 
@@ -277,5 +277,5 @@ The module ships pre-built native binaries for:
 When ProGuard is enabled, preserve the native bridge classes:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.energymanager.** { *; }
+-keep class dev.nucleusframework.nucleus.energymanager.** { *; }
 ```

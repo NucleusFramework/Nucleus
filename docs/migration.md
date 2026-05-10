@@ -9,7 +9,7 @@ Nucleus is a drop-in extension of the official JetBrains Compose Desktop plugin.
      id("org.jetbrains.kotlin.jvm") version "2.3.10"
      id("org.jetbrains.kotlin.plugin.compose") version "2.3.10"
      id("org.jetbrains.compose") version "1.10.1"
-+    id("io.github.kdroidfilter.nucleus") version "1.0.0"
++    id("dev.nucleusframework.nucleus") version "1.0.0"
  }
 ```
 
@@ -21,7 +21,7 @@ Replace the JetBrains Compose DSL imports with the Nucleus equivalents:
 
 ```diff
 -import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-+import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
++import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 ```
 
 This applies to all DSL types used in your `build.gradle.kts` (e.g. `TargetFormat`, `CompressionLevel`, `SigningAlgorithm`, etc.).
@@ -129,16 +129,16 @@ dependencies {
     implementation(compose.desktop.currentOs)
 
     // Executable type detection
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.core-runtime:1.0.0")
 
     // AOT cache runtime (if using enableAotCache)
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:1.0.0")
 
     // Auto-update (if using publish)
-    implementation("io.github.kdroidfilter:nucleus.updater-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.updater-runtime:1.0.0")
 
     // Native taskbar/dock progress bar
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:1.0.0")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:1.0.0")
 }
 ```
 
@@ -147,7 +147,7 @@ dependencies {
 | Feature | Before (compose) | After (nucleus) |
 |---------|-------------------|-----------------|
 | DSL entry point | `compose.desktop.application` | `nucleus.application` |
-| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `io.github.kdroidfilter.nucleus.desktop.application.dsl.*` |
+| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*` |
 | Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives |
 | Native lib cleanup | Manual | `cleanupNativeLibs = true` |
 | AOT cache | Not available | `enableAotCache = true` |

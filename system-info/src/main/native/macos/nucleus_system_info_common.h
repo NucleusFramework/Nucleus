@@ -11,7 +11,7 @@
 #include <sys/sysctl.h>
 
 // JNI class path for the macOS bridge
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/systeminfo/macos/NativeMacOsSystemInfoBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/systeminfo/macos/NativeMacOsSystemInfoBridge"
 
 // Helper: create a Java String from a C string, handling NULL gracefully
 static inline jstring to_jstring(JNIEnv *env, const char *str) {

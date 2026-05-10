@@ -1,12 +1,12 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 dependencies {
@@ -42,7 +42,7 @@ tasks.withType<JavaExec>().configureEach {
 }
 
 nucleus.application {
-    mainClass = "io.github.kdroidfilter.sampletao.MainKt"
+    mainClass = "dev.nucleusframework.sampletao.MainKt"
 
     // NOTE: -XstartOnFirstThread is intentionally NOT in `jvmArgs` here. The
     // Nucleus plugin forwards `jvmArgs` to native-image too, where the flag
@@ -72,7 +72,7 @@ nucleus.application {
         packageVersion = "1.0.0"
 
         macOS {
-            bundleID = "io.github.kdroidfilter.sampletao"
+            bundleID = "dev.nucleusframework.sampletao"
             // macOsSdkVersion defaults to "26.0" in the Nucleus plugin — vtool
             // patches the binary's loader command so macOS 26 enables the
             // Liquid-Glass / large-corner-radius treatment automatically.

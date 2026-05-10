@@ -3,10 +3,10 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.dsl
+package dev.nucleusframework.nucleus.desktop.application.dsl
 
-import io.github.kdroidfilter.nucleus.internal.utils.notNullProperty
-import io.github.kdroidfilter.nucleus.internal.utils.nullableProperty
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.internal.utils.nullableProperty
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.model.ObjectFactory
 import org.gradle.api.provider.Property

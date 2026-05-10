@@ -1,8 +1,8 @@
-package io.github.kdroidfilter.nucleus.desktop.application.dsl
+package dev.nucleusframework.nucleus.desktop.application.dsl
 
-import io.github.kdroidfilter.nucleus.internal.utils.new
-import io.github.kdroidfilter.nucleus.internal.utils.notNullProperty
-import io.github.kdroidfilter.nucleus.internal.utils.nullableProperty
+import dev.nucleusframework.nucleus.internal.utils.new
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.internal.utils.nullableProperty
 import org.gradle.api.Action
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty

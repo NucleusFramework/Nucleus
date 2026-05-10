@@ -31,10 +31,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.notification.common.NotificationHandle
-import io.github.kdroidfilter.nucleus.notification.common.NotificationManager
-import io.github.kdroidfilter.nucleus.notification.common.NotificationResult
-import io.github.kdroidfilter.nucleus.notification.common.notification
+import dev.nucleusframework.nucleus.notification.common.NotificationHandle
+import dev.nucleusframework.nucleus.notification.common.NotificationManager
+import dev.nucleusframework.nucleus.notification.common.NotificationResult
+import dev.nucleusframework.nucleus.notification.common.notification
 
 private const val EVENT_LOG_MAX = 20
 

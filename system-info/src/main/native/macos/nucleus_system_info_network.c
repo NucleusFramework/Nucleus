@@ -83,14 +83,14 @@ static void refresh_networks(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkCount(
     JNIEnv *env, jclass clazz) {
     refresh_networks();
     return (jint)g_net_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkNames(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkNames(
     JNIEnv *env, jclass clazz) {
     if (g_net_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_net_count * sizeof(char *));
@@ -102,7 +102,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 
 #define LONG_ARRAY_GETTER(jni_name, field) \
 JNIEXPORT jlongArray JNICALL \
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_##jni_name( \
     JNIEnv *env, jclass clazz) { \
     if (g_net_count <= 0) return NULL; \
     jlong *vals = (jlong *)malloc(g_net_count * sizeof(jlong)); \
@@ -122,7 +122,7 @@ LONG_ARRAY_GETTER(nativeNetworkErrorsTransmitted, tx_errors)
 LONG_ARRAY_GETTER(nativeNetworkMtus, mtu)
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkMacAddresses(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeNetworkMacAddresses(
     JNIEnv *env, jclass clazz) {
     if (g_net_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_net_count * sizeof(char *));

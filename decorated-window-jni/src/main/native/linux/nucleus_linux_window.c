@@ -178,7 +178,7 @@ static void awtUnlock(JNIEnv *env) {
 /*  move. This gives us snap/tile support and native drag feel.        */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeStartWindowMove(
+Java_dev_nucleusframework_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeStartWindowMove(
     JNIEnv *env, jclass clazz, jobject awtWindow, jint rootX, jint rootY, jint button)
 {
     Display *display = getAwtDisplay(env);
@@ -251,7 +251,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nati
 /*  _NET_WM_STATE ClientMessage to the root window.                    */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeSetFullscreen(
+Java_dev_nucleusframework_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeSetFullscreen(
     JNIEnv *env, jclass clazz, jobject awtWindow, jboolean fullscreen)
 {
     Display *display = getAwtDisplay(env);
@@ -294,7 +294,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nati
 /*  Checks if _NET_WM_STATE_FULLSCREEN is set on the window.          */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeIsFullscreen(
+Java_dev_nucleusframework_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeIsFullscreen(
     JNIEnv *env, jclass clazz, jobject awtWindow)
 {
     Display *display = getAwtDisplay(env);
@@ -342,7 +342,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nati
 /*  Checks if the WM advertises _NET_WM_MOVERESIZE in _NET_SUPPORTED. */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeIsWmMoveResizeSupported(
+Java_dev_nucleusframework_nucleus_window_utils_linux_JniLinuxWindowBridge_nativeIsWmMoveResizeSupported(
     JNIEnv *env, jclass clazz, jobject awtWindow)
 {
     Display *display = getAwtDisplay(env);

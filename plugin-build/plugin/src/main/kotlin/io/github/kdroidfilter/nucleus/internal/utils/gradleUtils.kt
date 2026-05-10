@@ -3,9 +3,9 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.internal.utils
+package dev.nucleusframework.nucleus.internal.utils
 
-import io.github.kdroidfilter.nucleus.NucleusBuildConfig
+import dev.nucleusframework.nucleus.NucleusBuildConfig
 import org.gradle.api.DomainObjectCollection
 import org.gradle.api.Project
 import org.gradle.api.artifacts.Configuration

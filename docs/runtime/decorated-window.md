@@ -90,10 +90,10 @@ Choose one implementation:
 ```kotlin
 dependencies {
     // Option 1: JBR-based (requires JetBrains Runtime)
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jbr:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-jbr:<version>")
 
     // Option 2: JNI-based (works on any JVM)
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jni:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-jni:<version>")
 }
 ```
 
@@ -102,9 +102,9 @@ dependencies {
 ```kotlin
 dependencies {
     // Optional — pick one depending on your design system
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jewel:<version>")    // Jewel (IntelliJ)
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material2:<version>") // Material 2
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material3:<version>") // Material 3
+    implementation("dev.nucleusframework:nucleus.decorated-window-jewel:<version>")    // Jewel (IntelliJ)
+    implementation("dev.nucleusframework:nucleus.decorated-window-material2:<version>") // Material 2
+    implementation("dev.nucleusframework:nucleus.decorated-window-material3:<version>") // Material 3
 }
 ```
 
@@ -634,22 +634,22 @@ Both modules use JNI on macOS. When ProGuard is enabled, the native bridge class
 
 ```proguard
 # Nucleus decorated-window-jbr JNI
--keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.macos.NativeMacBridge {
     native <methods>;
 }
 
 # Nucleus decorated-window-jni JNI (all platforms)
--keep class io.github.kdroidfilter.nucleus.window.utils.macos.JniMacTitleBarBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.macos.JniMacTitleBarBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.window.utils.windows.JniWindowsDecorationBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.windows.JniWindowsDecorationBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.window.utils.linux.JniLinuxWindowBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.linux.JniLinuxWindowBridge {
     native <methods>;
 }
 
--keep class io.github.kdroidfilter.nucleus.window.** { *; }
+-keep class dev.nucleusframework.nucleus.window.** { *; }
 ```
 
 ## RTL (Right-to-Left) Layout Support

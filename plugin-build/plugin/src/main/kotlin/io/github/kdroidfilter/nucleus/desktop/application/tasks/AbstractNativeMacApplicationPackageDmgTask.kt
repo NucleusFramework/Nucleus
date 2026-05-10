@@ -3,14 +3,14 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.DmgContentEntry
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.DmgFormat
-import io.github.kdroidfilter.nucleus.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
-import io.github.kdroidfilter.nucleus.desktop.application.internal.readImageDimensions
-import io.github.kdroidfilter.nucleus.internal.utils.ioFile
-import io.github.kdroidfilter.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.desktop.application.dsl.DmgContentEntry
+import dev.nucleusframework.nucleus.desktop.application.dsl.DmgFormat
+import dev.nucleusframework.nucleus.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
+import dev.nucleusframework.nucleus.desktop.application.internal.readImageDimensions
+import dev.nucleusframework.nucleus.internal.utils.ioFile
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.ListProperty

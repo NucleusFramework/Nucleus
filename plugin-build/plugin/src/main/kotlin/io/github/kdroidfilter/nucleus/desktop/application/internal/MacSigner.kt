@@ -3,12 +3,12 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.validation.ValidatedMacOSSigningSettings
-import io.github.kdroidfilter.nucleus.internal.utils.Arch
-import io.github.kdroidfilter.nucleus.internal.utils.MacUtils
-import io.github.kdroidfilter.nucleus.internal.utils.currentArch
+import dev.nucleusframework.nucleus.desktop.application.internal.validation.ValidatedMacOSSigningSettings
+import dev.nucleusframework.nucleus.internal.utils.Arch
+import dev.nucleusframework.nucleus.internal.utils.MacUtils
+import dev.nucleusframework.nucleus.internal.utils.currentArch
 import java.io.File
 import java.util.regex.Pattern
 import kotlin.io.path.isExecutable

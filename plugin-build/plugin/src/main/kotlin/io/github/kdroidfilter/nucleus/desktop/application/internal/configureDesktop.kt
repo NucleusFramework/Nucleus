@@ -3,13 +3,13 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.NucleusExtension
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
-import io.github.kdroidfilter.nucleus.internal.utils.registerTask
+import dev.nucleusframework.nucleus.NucleusExtension
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractUnpackDefaultApplicationResourcesTask
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.internal.utils.registerTask
 import org.gradle.api.Project
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.tasks.JavaExec
@@ -46,7 +46,7 @@ internal fun configureDesktop(
 }
 
 /**
- * Forwards [io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplication.mainClass] to
+ * Forwards [dev.nucleusframework.nucleus.desktop.application.dsl.JvmApplication.mainClass] to
  * `compose.desktop.application.mainClass` so that Compose Hot Reload tasks (e.g. `hotRun`,
  * `hotSnapshotMain`) can resolve the entry point without the user duplicating it via
  * `-PmainClass=...` or a manual `compose.desktop.application { ... }` block.

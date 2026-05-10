@@ -52,7 +52,7 @@ using namespace Microsoft::WRL;
 using namespace ABI::Windows::UI::Notifications;
 using namespace ABI::Windows::Data::Xml::Dom;
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/notification/windows/NativeWindowsNotificationBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/notification/windows/NativeWindowsNotificationBridge"
 
 // ============================================================================
 // Globals
@@ -393,7 +393,7 @@ static void fireFailed(const std::wstring &tag, const std::wstring &group, int e
 extern "C" {
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeInitialize(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeInitialize(
     JNIEnv *env, jclass clazz, jstring jAumid, jboolean jIsAppx,
     jstring jAppName, jint jShortcutPolicy
 ) {
@@ -444,7 +444,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeShowToast(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeShowToast(
     JNIEnv *env, jclass clazz,
     jstring jXml, jstring jTag, jstring jGroup,
     jboolean expiresOnReboot, jlong expirationTimeMs,
@@ -681,7 +681,7 @@ fail:
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeUpdateToast(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeUpdateToast(
     JNIEnv *env, jclass clazz,
     jstring jTag, jstring jGroup, jint sequenceNumber,
     jobjectArray jKeys, jobjectArray jValues, jlong callbackId
@@ -748,7 +748,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeRemoveToast(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeRemoveToast(
     JNIEnv *env, jclass clazz, jstring jTag, jstring jGroup
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -773,7 +773,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeRemoveGroupToasts(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeRemoveGroupToasts(
     JNIEnv *env, jclass clazz, jstring jGroup
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -789,7 +789,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeClearAllToasts(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeClearAllToasts(
     JNIEnv *env, jclass clazz
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -809,7 +809,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeGetHistory(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeGetHistory(
     JNIEnv *env, jclass clazz, jlong callbackId
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -838,7 +838,7 @@ Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificati
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeUninitialize(
+Java_dev_nucleusframework_nucleus_notification_windows_NativeWindowsNotificationBridge_nativeUninitialize(
     JNIEnv *env, jclass clazz
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);

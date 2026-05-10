@@ -102,7 +102,7 @@ static int ensure_callback_ids(JNIEnv *env) {
     if (g_bridge_class != NULL) return 1;
 
     jclass cls = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/notification/linux/NativeLinuxNotificationBridge");
+        "dev/nucleusframework/nucleus/notification/linux/NativeLinuxNotificationBridge");
     if (cls == NULL) {
         if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         return 0;
@@ -129,7 +129,7 @@ static int ensure_callback_ids(JNIEnv *env) {
 /* ==== Notify =========================================================== */
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeNotify(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeNotify(
     JNIEnv *env, jclass clazz,
     jstring j_app_name,
     jint    replaces_id,
@@ -356,7 +356,7 @@ release_strings:
 /* ==== CloseNotification ================================================ */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeCloseNotification(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeCloseNotification(
     JNIEnv *env, jclass clazz, jint id)
 {
     (void)env; (void)clazz;
@@ -383,7 +383,7 @@ Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBr
 /* ==== GetCapabilities ================================================== */
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeGetCapabilities(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeGetCapabilities(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -427,7 +427,7 @@ Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBr
 /* ==== GetServerInformation ============================================= */
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeGetServerInformation(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeGetServerInformation(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -619,7 +619,7 @@ static void *signal_thread_func(void *arg) {
 /* ==== StartListening / StopListening =================================== */
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeStartListening(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeStartListening(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -648,7 +648,7 @@ Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBr
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeStopListening(
+Java_dev_nucleusframework_nucleus_notification_linux_NativeLinuxNotificationBridge_nativeStopListening(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

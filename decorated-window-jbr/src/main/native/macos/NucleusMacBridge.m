@@ -2,7 +2,7 @@
 #include <jni.h>
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_NativeMacBridge_nativeUpdateColors(
+Java_dev_nucleusframework_nucleus_window_utils_macos_NativeMacBridge_nativeUpdateColors(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
     if (nsWindowPtr == 0) return;
     NSWindow *window = (__bridge NSWindow *)(void *)nsWindowPtr;
@@ -17,7 +17,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_macos_NativeMacBridge_nativeUpd
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_macos_NativeMacBridge_nativeUpdateFullScreenButtons(
+Java_dev_nucleusframework_nucleus_window_utils_macos_NativeMacBridge_nativeUpdateFullScreenButtons(
     JNIEnv *env, jclass clazz, jlong nsWindowPtr) {
     if (nsWindowPtr == 0) return;
     NSWindow *window = (__bridge NSWindow *)(void *)nsWindowPtr;

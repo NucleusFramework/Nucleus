@@ -31,7 +31,7 @@ static char *parse_os_release(const char *key) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeOsName(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeOsName(
     JNIEnv *env, jclass clazz) {
     char *name = parse_os_release("NAME");
     if (!name) return NULL;
@@ -41,7 +41,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeKernelVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeKernelVersion(
     JNIEnv *env, jclass clazz) {
     struct utsname info;
     if (uname(&info) != 0) return NULL;
@@ -49,7 +49,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeOsVersion(
     JNIEnv *env, jclass clazz) {
     char *version = parse_os_release("VERSION_ID");
     if (!version) return NULL;
@@ -59,7 +59,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeLongOsVersion(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeLongOsVersion(
     JNIEnv *env, jclass clazz) {
     char *name = parse_os_release("PRETTY_NAME");
     if (!name) {
@@ -83,7 +83,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeDistributionId(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeDistributionId(
     JNIEnv *env, jclass clazz) {
     char *id = parse_os_release("ID");
     if (!id) return to_jstring(env, "linux");
@@ -93,7 +93,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeHostName(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeHostName(
     JNIEnv *env, jclass clazz) {
     char buf[256];
     if (gethostname(buf, sizeof(buf)) != 0) return NULL;
@@ -101,7 +101,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuArch(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuArch(
     JNIEnv *env, jclass clazz) {
     struct utsname info;
     if (uname(&info) != 0) return NULL;
@@ -109,7 +109,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUptime(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeUptime(
     JNIEnv *env, jclass clazz) {
     struct sysinfo si;
     if (sysinfo(&si) != 0) return 0;
@@ -117,7 +117,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBootTime(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeBootTime(
     JNIEnv *env, jclass clazz) {
     struct sysinfo si;
     if (sysinfo(&si) != 0) return 0;

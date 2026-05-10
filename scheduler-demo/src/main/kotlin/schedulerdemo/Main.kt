@@ -3,11 +3,11 @@ package schedulerdemo
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.application
-import io.github.kdroidfilter.nucleus.darkmodedetector.isSystemInDarkMode
-import io.github.kdroidfilter.nucleus.scheduler.DesktopBootReceiver
-import io.github.kdroidfilter.nucleus.scheduler.TaskRegistry
-import io.github.kdroidfilter.nucleus.window.jewel.JewelDecoratedWindow
-import io.github.kdroidfilter.nucleus.window.jewel.JewelTitleBar
+import dev.nucleusframework.nucleus.darkmodedetector.isSystemInDarkMode
+import dev.nucleusframework.nucleus.scheduler.DesktopBootReceiver
+import dev.nucleusframework.nucleus.scheduler.TaskRegistry
+import dev.nucleusframework.nucleus.window.jewel.JewelDecoratedWindow
+import dev.nucleusframework.nucleus.window.jewel.JewelTitleBar
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.intui.standalone.theme.createDefaultTextStyle

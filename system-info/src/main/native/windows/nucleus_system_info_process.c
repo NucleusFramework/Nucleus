@@ -168,14 +168,14 @@ static int fill_single_process(DWORD pid, process_entry_t *p) {
 // --- JNI bulk process functions ---
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCount(
     JNIEnv *env, jclass clazz) {
     refresh_processes();
     return g_proc_count;
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessPids(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessPids(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -187,7 +187,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessNames(
     JNIEnv *env, jclass clazz) {
     const char *names[MAX_PROCS];
     for (int i = 0; i < g_proc_count; i++) names[i] = g_procs[i].name;
@@ -195,7 +195,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessExes(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessExes(
     JNIEnv *env, jclass clazz) {
     const char *exes[MAX_PROCS];
     for (int i = 0; i < g_proc_count; i++) exes[i] = g_procs[i].exe;
@@ -203,7 +203,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessMemories(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -215,7 +215,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessVirtualMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessVirtualMemories(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -227,7 +227,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCpuUsages(
     JNIEnv *env, jclass clazz) {
     jfloatArray arr = (*env)->NewFloatArray(env, g_proc_count);
     jfloat *vals = (jfloat *)malloc(g_proc_count * sizeof(jfloat));
@@ -239,7 +239,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessStatuses(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessStatuses(
     JNIEnv *env, jclass clazz) {
     const char *statuses[MAX_PROCS];
     for (int i = 0; i < g_proc_count; i++) statuses[i] = g_procs[i].status;
@@ -247,7 +247,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessStartTimes(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessStartTimes(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -259,7 +259,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessRunTimes(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessRunTimes(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -271,7 +271,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessParentPids(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessParentPids(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_proc_count);
     jlong *vals = (jlong *)malloc(g_proc_count * sizeof(jlong));
@@ -283,7 +283,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCmds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCmds(
     JNIEnv *env, jclass clazz) {
     const char *cmds[MAX_PROCS];
     for (int i = 0; i < g_proc_count; i++) cmds[i] = g_procs[i].cmd;
@@ -291,7 +291,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCwds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessCwds(
     JNIEnv *env, jclass clazz) {
     const char *cwds[MAX_PROCS];
     for (int i = 0; i < g_proc_count; i++) cwds[i] = g_procs[i].cwd;
@@ -299,7 +299,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessRoots(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessRoots(
     JNIEnv *env, jclass clazz) {
     // Windows doesn't have a per-process root concept; use exe drive root
     const char *roots[MAX_PROCS];
@@ -321,7 +321,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 // --- Single process by PID ---
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidName(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidName(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;
@@ -329,7 +329,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidExe(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidExe(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;
@@ -337,7 +337,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return 0;
@@ -345,7 +345,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidVirtualMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidVirtualMemory(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return 0;
@@ -353,7 +353,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCpuUsage(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return 0.0f;
@@ -361,7 +361,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStatus(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStatus(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;
@@ -369,7 +369,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStartTime(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidStartTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return 0;
@@ -377,7 +377,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRunTime(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRunTime(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return 0;
@@ -385,7 +385,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidParentPid(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidParentPid(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return -1;
@@ -393,7 +393,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCmd(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCmd(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;
@@ -401,7 +401,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCwd(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidCwd(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;
@@ -409,7 +409,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRoot(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeProcessByPidRoot(
     JNIEnv *env, jclass clazz, jlong pid) {
     process_entry_t p;
     if (!fill_single_process((DWORD)pid, &p)) return NULL;

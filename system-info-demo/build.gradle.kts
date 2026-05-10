@@ -1,13 +1,13 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CompressionLevel
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.nucleus.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 dependencies {
@@ -82,16 +82,16 @@ nucleus.application {
 
         packageName = "SystemInfo"
         packageVersion = "1.0.0"
-        homepage = "https://github.com/kdroidFilter/Nucleus"
+        homepage = "https://github.com/nucleusframework/Nucleus"
 
         linux {
-            debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
+            debMaintainer = "NucleusFramework <dev@nucleusframework.com>"
         }
 
         windows {
             signing {
                 enabled = true
-                certificateFile.set(rootProject.file("example/packaging/KDroidFilter.pfx"))
+                certificateFile.set(rootProject.file("example/packaging/NucleusFramework.pfx"))
                 certificatePassword = "ChangeMe-Temp123!"
                 algorithm = SigningAlgorithm.Sha256
                 timestampServer = "http://timestamp.digicert.com"
@@ -99,7 +99,7 @@ nucleus.application {
         }
 
         macOS {
-            bundleID = "io.github.kdroidfilter.systeminfo"
+            bundleID = "dev.nucleusframework.systeminfo"
             dockName = "SystemInfo"
         }
     }

@@ -3,14 +3,14 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.tasks
+package dev.nucleusframework.nucleus.desktop.application.tasks
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.DEFAULT_RUNTIME_MODULES
-import io.github.kdroidfilter.nucleus.desktop.application.internal.ExternalToolRunner
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NucleusProperties
-import io.github.kdroidfilter.nucleus.desktop.application.internal.files.normalizedPath
-import io.github.kdroidfilter.nucleus.desktop.tasks.AbstractNucleusTask
-import io.github.kdroidfilter.nucleus.internal.utils.*
+import dev.nucleusframework.nucleus.desktop.application.dsl.DEFAULT_RUNTIME_MODULES
+import dev.nucleusframework.nucleus.desktop.application.internal.ExternalToolRunner
+import dev.nucleusframework.nucleus.desktop.application.internal.NucleusProperties
+import dev.nucleusframework.nucleus.desktop.application.internal.files.normalizedPath
+import dev.nucleusframework.nucleus.desktop.tasks.AbstractNucleusTask
+import dev.nucleusframework.nucleus.internal.utils.*
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.Directory
 import org.gradle.api.file.RegularFileProperty

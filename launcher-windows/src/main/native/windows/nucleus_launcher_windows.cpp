@@ -313,7 +313,7 @@ static HRESULT setBadgeXml(const std::wstring &value) {
 extern "C" {
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeInitialize(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeInitialize(
     JNIEnv *env, jclass clazz, jstring jAumid, jboolean jIsAppx
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -357,7 +357,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_na
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeSetBadgeNumber(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeSetBadgeNumber(
     JNIEnv *env, jclass clazz, jint value
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -370,7 +370,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_na
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeSetBadgeGlyph(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeSetBadgeGlyph(
     JNIEnv *env, jclass clazz, jstring jGlyph
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -383,7 +383,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_na
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeClearBadge(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeClearBadge(
     JNIEnv *env, jclass clazz
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -394,7 +394,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeUninitialize(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsBadgeBridge_nativeUninitialize(
     JNIEnv *env, jclass clazz
 ) {
     std::lock_guard<std::mutex> lock(g_mutex);
@@ -408,7 +408,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsBadgeBridge_na
 // ============================================================================
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeSetProcessAppId(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeSetProcessAppId(
     JNIEnv *env, jclass clazz, jstring jAumid
 ) {
     std::wstring aumid = toWString(env, jAumid);
@@ -426,7 +426,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeBeginList(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeBeginList(
     JNIEnv *env, jclass clazz, jstring jAumid, jboolean jIsAppx
 ) {
     std::lock_guard<std::mutex> lock(g_jl_mutex);
@@ -468,7 +468,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAppendCategory(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAppendCategory(
     JNIEnv *env, jclass clazz, jstring jName,
     jobjectArray jTitles, jobjectArray jArguments, jobjectArray jDescriptions,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices
@@ -517,7 +517,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAppendKnownCategory(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAppendKnownCategory(
     JNIEnv *env, jclass clazz, jint categoryId
 ) {
     std::lock_guard<std::mutex> lock(g_jl_mutex);
@@ -530,7 +530,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAddUserTasks(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeAddUserTasks(
     JNIEnv *env, jclass clazz,
     jobjectArray jTitles, jobjectArray jArguments, jobjectArray jDescriptions,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices,
@@ -584,7 +584,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeCommitList(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeCommitList(
     JNIEnv *env, jclass clazz
 ) {
     std::lock_guard<std::mutex> lock(g_jl_mutex);
@@ -598,7 +598,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeDeleteList(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsJumpListBridge_nativeDeleteList(
     JNIEnv *env, jclass clazz, jstring jAumid, jboolean jIsAppx
 ) {
     std::lock_guard<std::mutex> lock(g_jl_mutex);
@@ -777,7 +777,7 @@ static void CleanupThumbBarState(JNIEnv *env, HWND hwnd) {
 // ============================================================================
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeGetHwnd(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeGetHwnd(
     JNIEnv *env, jclass, jobject awtWindow)
 {
     HWND hwnd = GetHwndFromAwtWindow(env, awtWindow);
@@ -789,7 +789,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 // ============================================================================
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeSetOverlayIcon(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeSetOverlayIcon(
     JNIEnv *env, jclass, jobject awtWindow,
     jint iconType, jstring jIconPath, jint iconIndex, jstring jDescription)
 {
@@ -812,7 +812,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeClearOverlayIcon(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeClearOverlayIcon(
     JNIEnv *env, jclass, jobject awtWindow)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);
@@ -831,7 +831,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 // ============================================================================
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarSetButtons(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarSetButtons(
     JNIEnv *env, jclass, jobject awtWindow,
     jintArray jIds, jobjectArray jTooltips, jintArray jFlags,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices,
@@ -885,7 +885,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
             // Resolve the method via the interface class, not GetObjectClass(jCallback).
             // Kotlin's `fun interface` lambdas produce synthetic classes that are not
             // registered as JNI-accessible under GraalVM native-image.
-            jclass cbClass = env->FindClass("io/github/kdroidfilter/nucleus/launcher/windows/ThumbBarClickListener");
+            jclass cbClass = env->FindClass("dev/nucleusframework/nucleus/launcher/windows/ThumbBarClickListener");
             jmethodID method = cbClass ? env->GetMethodID(cbClass, "onThumbButtonClick", "(I)V") : nullptr;
             if (cbClass) env->DeleteLocalRef(cbClass);
             if (method) {
@@ -933,7 +933,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
     state->buttonsAdded = true;
 
     if (jCallback) {
-        jclass cbClass = env->FindClass("io/github/kdroidfilter/nucleus/launcher/windows/ThumbBarClickListener");
+        jclass cbClass = env->FindClass("dev/nucleusframework/nucleus/launcher/windows/ThumbBarClickListener");
         jmethodID method = cbClass ? env->GetMethodID(cbClass, "onThumbButtonClick", "(I)V") : nullptr;
         if (cbClass) env->DeleteLocalRef(cbClass);
         if (method) {
@@ -948,7 +948,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUpdateButtons(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUpdateButtons(
     JNIEnv *env, jclass, jobject awtWindow,
     jintArray jIds, jobjectArray jTooltips, jintArray jFlags,
     jintArray jIconTypes, jobjectArray jIconPaths, jintArray jIconIndices)
@@ -993,7 +993,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregister(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregister(
     JNIEnv *env, jclass, jobject awtWindow)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);
@@ -1004,7 +1004,7 @@ Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregisterByHwnd(
+Java_dev_nucleusframework_nucleus_launcher_windows_NativeWindowsTaskbarBridge_nativeThumbBarUnregisterByHwnd(
     JNIEnv *env, jclass, jlong jHwnd)
 {
     std::lock_guard<std::mutex> lock(g_tb_mutex);

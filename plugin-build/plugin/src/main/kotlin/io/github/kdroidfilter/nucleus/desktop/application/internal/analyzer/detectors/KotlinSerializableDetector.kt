@@ -1,7 +1,7 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.detectors
+package dev.nucleusframework.nucleus.desktop.application.internal.analyzer.detectors
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.MethodSignature
-import io.github.kdroidfilter.nucleus.desktop.application.internal.analyzer.ReflectionEntry
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.MethodSignature
+import dev.nucleusframework.nucleus.desktop.application.internal.analyzer.ReflectionEntry
 import org.objectweb.asm.AnnotationVisitor
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor

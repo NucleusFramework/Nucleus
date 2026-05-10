@@ -1,0 +1,50 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nucleus.systemcolor.windows.NativeWindowsSystemColorBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onAccentColorChanged",
+                    "parameterTypes": [
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.systemcolor.mac.NativeMacSystemColorBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onAccentColorChanged",
+                    "parameterTypes": [
+                        "float",
+                        "float",
+                        "float"
+                    ]
+                },
+                {
+                    "name": "onAccentColorCleared",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.nucleus.systemcolor.linux.NativeLinuxSystemColorBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onAccentColorChanged",
+                    "parameterTypes": [
+                        "float",
+                        "float",
+                        "float"
+                    ]
+                }
+            ]
+        }
+    ]
+}

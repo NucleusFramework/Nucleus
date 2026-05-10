@@ -6,9 +6,9 @@ Three integration modules are available — pick the one that matches your HTTP 
 
 | Module | Artifact | Client |
 |--------|----------|--------|
-| `native-http` | `io.github.kdroidfilter:nucleus.native-http` | `java.net.http.HttpClient` (JDK 11+) |
-| `native-http-okhttp` | `io.github.kdroidfilter:nucleus.native-http-okhttp` | OkHttp 4 |
-| `native-http-ktor` | `io.github.kdroidfilter:nucleus.native-http-ktor` | Ktor Client (engine-agnostic) |
+| `native-http` | `dev.nucleusframework:nucleus.native-http` | `java.net.http.HttpClient` (JDK 11+) |
+| `native-http-okhttp` | `dev.nucleusframework:nucleus.native-http-okhttp` | OkHttp 4 |
+| `native-http-ktor` | `dev.nucleusframework:nucleus.native-http-ktor` | Ktor Client (engine-agnostic) |
 
 All three pull in `native-ssl` transitively — no need to declare it separately.
 
@@ -20,14 +20,14 @@ All three pull in `native-ssl` transitively — no need to declare it separately
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.native-http:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http:<version>")
 }
 ```
 
 ### Usage
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.nativehttp.NativeHttpClient
+import dev.nucleusframework.nucleus.nativehttp.NativeHttpClient
 
 // Option 1 — pre-built client
 val client = NativeHttpClient.create()
@@ -51,7 +51,7 @@ val client = HttpClient.newBuilder()
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.native-http-okhttp:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http-okhttp:<version>")
 }
 ```
 
@@ -60,7 +60,7 @@ OkHttp 4.x is pulled in transitively.
 ### Usage
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.nativehttp.okhttp.NativeOkHttpClient
+import dev.nucleusframework.nucleus.nativehttp.okhttp.NativeOkHttpClient
 
 // Option 1 — pre-built client
 val client = NativeOkHttpClient.create()
@@ -82,7 +82,7 @@ val client = OkHttpClient.Builder()
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.native-http-ktor:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http-ktor:<version>")
     // Add exactly one Ktor engine:
     implementation("io.ktor:ktor-client-cio:<ktor-version>")       // CIO (coroutine-based)
     // or: ktor-client-java, ktor-client-okhttp, ktor-client-apache5
@@ -94,7 +94,7 @@ dependencies {
 ### Usage
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.nativehttp.ktor.installNativeSsl
+import dev.nucleusframework.nucleus.nativehttp.ktor.installNativeSsl
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 

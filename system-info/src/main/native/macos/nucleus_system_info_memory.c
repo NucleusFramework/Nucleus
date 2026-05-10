@@ -20,7 +20,7 @@ static int get_vm_stats(vm_statistics64_data_t *stats) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeTotalMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeTotalMemory(
     JNIEnv *env, jclass clazz) {
     int64_t total = 0;
     sysctl_int64("hw.memsize", &total);
@@ -28,7 +28,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeFreeMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeFreeMemory(
     JNIEnv *env, jclass clazz) {
     vm_statistics64_data_t stats;
     if (get_vm_stats(&stats) != 0) return 0;
@@ -36,7 +36,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeAvailableMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeAvailableMemory(
     JNIEnv *env, jclass clazz) {
     int64_t total = 0;
     sysctl_int64("hw.memsize", &total);
@@ -50,7 +50,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUsedMemory(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUsedMemory(
     JNIEnv *env, jclass clazz) {
     vm_statistics64_data_t stats;
     if (get_vm_stats(&stats) != 0) return 0;
@@ -77,7 +77,7 @@ static int get_swap_info(swap_info_t *si) {
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeTotalSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeTotalSwap(
     JNIEnv *env, jclass clazz) {
     swap_info_t si;
     if (get_swap_info(&si) != 0) return 0;
@@ -85,7 +85,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeFreeSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeFreeSwap(
     JNIEnv *env, jclass clazz) {
     swap_info_t si;
     if (get_swap_info(&si) != 0) return 0;
@@ -93,7 +93,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUsedSwap(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeUsedSwap(
     JNIEnv *env, jclass clazz) {
     swap_info_t si;
     if (get_swap_info(&si) != 0) return 0;

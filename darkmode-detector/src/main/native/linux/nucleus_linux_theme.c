@@ -120,7 +120,7 @@ static jboolean read_color_scheme(void) {
 /*  nativeIsDark()                                                     */
 /* ------------------------------------------------------------------ */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeIsDark(
+Java_dev_nucleusframework_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeIsDark(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -146,7 +146,7 @@ static void notify_java(jboolean isDark) {
     }
 
     jclass bridgeClass = (*env)->FindClass(env,
-        "io/github/kdroidfilter/nucleus/darkmodedetector/linux/NativeLinuxBridge");
+        "dev/nucleusframework/nucleus/darkmodedetector/linux/NativeLinuxBridge");
     if (bridgeClass != NULL) {
         jmethodID method = (*env)->GetStaticMethodID(env,
             bridgeClass, "onThemeChanged", "(Z)V");
@@ -261,7 +261,7 @@ static void *monitor_thread(void *arg) {
 /*  nativeStartObserving()                                             */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeStartObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeStartObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -275,7 +275,7 @@ Java_io_github_kdroidfilter_nucleus_darkmodedetector_linux_NativeLinuxBridge_nat
 /*  nativeStopObserving()                                              */
 /* ------------------------------------------------------------------ */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeStopObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_linux_NativeLinuxBridge_nativeStopObserving(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;

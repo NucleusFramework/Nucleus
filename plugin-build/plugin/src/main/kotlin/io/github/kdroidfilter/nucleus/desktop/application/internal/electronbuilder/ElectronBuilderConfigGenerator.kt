@@ -3,21 +3,21 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal.electronbuilder
+package dev.nucleusframework.nucleus.desktop.application.internal.electronbuilder
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.AppXSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.DmgSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.FileAssociation
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.FlatpakSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationDistributions
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmMacOSPlatformSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.NsisSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.PublishSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SnapSettings
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
-import io.github.kdroidfilter.nucleus.internal.utils.Arch
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.desktop.application.dsl.AppXSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.DmgSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.FileAssociation
+import dev.nucleusframework.nucleus.desktop.application.dsl.FlatpakSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.nucleus.desktop.application.dsl.JvmMacOSPlatformSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.NsisSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.PublishSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.SnapSettings
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.internal.utils.Arch
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentOS
 import java.io.File
 
 /**

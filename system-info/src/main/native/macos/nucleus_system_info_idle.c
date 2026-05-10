@@ -5,7 +5,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeIdleTimeSeconds(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeIdleTimeSeconds(
     JNIEnv *env, jclass clazz) {
     io_iterator_t iter = 0;
     if (IOServiceGetMatchingServices(kIOMainPortDefault,

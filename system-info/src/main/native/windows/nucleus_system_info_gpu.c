@@ -686,14 +686,14 @@ static void refresh_gpus(void) {
 // ============================================================================
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuCount(
     JNIEnv *env, jclass clazz) {
     refresh_gpus();
     return g_gpu_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuNames(
     JNIEnv *env, jclass clazz) {
     const char *names[MAX_GPUS];
     for (int i = 0; i < g_gpu_count; i++) names[i] = g_gpus[i].name;
@@ -701,7 +701,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuVendorIds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuVendorIds(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -712,7 +712,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDeviceIds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDeviceIds(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -723,7 +723,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDedicatedVideoMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDedicatedVideoMemories(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -734,7 +734,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDedicatedSystemMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDedicatedSystemMemories(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -745,7 +745,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuSharedSystemMemories(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuSharedSystemMemories(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -756,7 +756,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDriverVersions(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuDriverVersions(
     JNIEnv *env, jclass clazz) {
     const char *versions[MAX_GPUS];
     for (int i = 0; i < g_gpu_count; i++) versions[i] = g_gpus[i].driver_version;
@@ -766,7 +766,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 // Live metrics
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuTemperatures(
     JNIEnv *env, jclass clazz) {
     jfloatArray arr = (*env)->NewFloatArray(env, g_gpu_count);
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -777,7 +777,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuUsages(
     JNIEnv *env, jclass clazz) {
     jfloatArray arr = (*env)->NewFloatArray(env, g_gpu_count);
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -788,7 +788,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuMemoryUsed(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuMemoryUsed(
     JNIEnv *env, jclass clazz) {
     jlongArray arr = (*env)->NewLongArray(env, g_gpu_count);
     jlong *vals = (jlong *)malloc(g_gpu_count * sizeof(jlong));
@@ -799,7 +799,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jintArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuCoreClocks(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuCoreClocks(
     JNIEnv *env, jclass clazz) {
     jintArray arr = (*env)->NewIntArray(env, g_gpu_count);
     jint *vals = (jint *)malloc(g_gpu_count * sizeof(jint));
@@ -810,7 +810,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jintArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuMemoryClocks(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuMemoryClocks(
     JNIEnv *env, jclass clazz) {
     jintArray arr = (*env)->NewIntArray(env, g_gpu_count);
     jint *vals = (jint *)malloc(g_gpu_count * sizeof(jint));
@@ -821,7 +821,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuFanSpeeds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuFanSpeeds(
     JNIEnv *env, jclass clazz) {
     jfloatArray arr = (*env)->NewFloatArray(env, g_gpu_count);
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));
@@ -832,7 +832,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuPowerDraws(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeGpuPowerDraws(
     JNIEnv *env, jclass clazz) {
     jfloatArray arr = (*env)->NewFloatArray(env, g_gpu_count);
     jfloat *vals = (jfloat *)malloc(g_gpu_count * sizeof(jfloat));

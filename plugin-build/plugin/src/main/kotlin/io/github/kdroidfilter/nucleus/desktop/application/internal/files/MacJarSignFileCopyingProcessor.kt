@@ -3,9 +3,9 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal.files
+package dev.nucleusframework.nucleus.desktop.application.internal.files
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.MacSigner
+import dev.nucleusframework.nucleus.desktop.application.internal.MacSigner
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream

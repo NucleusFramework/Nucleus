@@ -107,14 +107,14 @@ static void refresh_users(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserCount(
     JNIEnv *env, jclass clazz) {
     refresh_users();
     return g_user_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserNames(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserNames(
     JNIEnv *env, jclass clazz) {
     const char *names[MAX_USERS];
     for (int i = 0; i < g_user_count; i++) names[i] = g_users[i].name;
@@ -122,7 +122,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserIds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserIds(
     JNIEnv *env, jclass clazz) {
     const char *ids[MAX_USERS];
     for (int i = 0; i < g_user_count; i++) ids[i] = g_users[i].sid_str;
@@ -130,7 +130,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserGroupIds(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserGroupIds(
     JNIEnv *env, jclass clazz) {
     const char *gids[MAX_USERS];
     for (int i = 0; i < g_user_count; i++) gids[i] = g_users[i].primary_gid;
@@ -138,7 +138,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBr
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserGroups(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeUserGroups(
     JNIEnv *env, jclass clazz) {
     const char *groups[MAX_USERS];
     for (int i = 0; i < g_user_count; i++) groups[i] = g_users[i].groups;

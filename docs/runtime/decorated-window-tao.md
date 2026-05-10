@@ -22,13 +22,13 @@ If none of these apply, stick with `decorated-window-jni` — it is the more bat
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-tao:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-tao:<version>")
 
     // Optional but recommended — unified entry point that works with all three backends:
-    implementation("io.github.kdroidfilter:nucleus.nucleus-application:<version>")
+    implementation("dev.nucleusframework:nucleus.nucleus-application:<version>")
 
     // GraalVM bootstrap (required for native-image builds):
-    implementation("io.github.kdroidfilter:nucleus.graalvm-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.graalvm-runtime:<version>")
 }
 ```
 

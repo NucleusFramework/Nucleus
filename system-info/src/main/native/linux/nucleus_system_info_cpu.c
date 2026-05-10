@@ -128,13 +128,13 @@ static void compute_per_cpu_usage(float *usages, int count) {
 }
 
 JNIEXPORT jfloat JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeGlobalCpuUsage(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeGlobalCpuUsage(
     JNIEnv *env, jclass clazz) {
     return (jfloat)compute_global_cpu_usage();
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativePhysicalCoreCount(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativePhysicalCoreCount(
     JNIEnv *env, jclass clazz) {
     // Count unique "core id" entries per "physical id" in /proc/cpuinfo
     FILE *f = fopen("/proc/cpuinfo", "r");
@@ -170,13 +170,13 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuCount(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuCount(
     JNIEnv *env, jclass clazz) {
     return (jint)count_logical_cpus();
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuNames(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuNames(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -193,7 +193,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuVendorIds(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuVendorIds(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -210,7 +210,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuBrands(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuBrands(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -227,7 +227,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuFrequencies(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuFrequencies(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;
@@ -245,7 +245,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuUsages(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeCpuUsages(
     JNIEnv *env, jclass clazz) {
     int count = count_logical_cpus();
     if (count <= 0 || count > MAX_CPUS) return NULL;

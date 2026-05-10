@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
 import org.gradle.api.logging.Logger
 import java.io.File

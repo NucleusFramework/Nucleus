@@ -13,7 +13,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeIsDark(
+Java_dev_nucleusframework_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeIsDark(
     JNIEnv *env, jclass clazz) {
     @autoreleasepool {
         NSString *style = [[NSUserDefaults standardUserDefaults]
@@ -27,7 +27,7 @@ Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeStartObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeStartObserving(
     JNIEnv *env, jclass clazz) {
     if (g_observer != nil) return; // already observing
 
@@ -58,7 +58,7 @@ Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_na
                             ? JNI_TRUE : JNI_FALSE;
 
                         jclass bridgeClass = (*cbEnv)->FindClass(cbEnv,
-                            "io/github/kdroidfilter/nucleus/darkmodedetector/mac/NativeDarkModeBridge");
+                            "dev/nucleusframework/nucleus/darkmodedetector/mac/NativeDarkModeBridge");
                         if (bridgeClass != NULL) {
                             jmethodID method = (*cbEnv)->GetStaticMethodID(cbEnv,
                                 bridgeClass, "onThemeChanged", "(Z)V");
@@ -79,7 +79,7 @@ Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_na
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeStopObserving(
+Java_dev_nucleusframework_nucleus_darkmodedetector_mac_NativeDarkModeBridge_nativeStopObserving(
     JNIEnv *env, jclass clazz) {
     if (g_observer != nil) {
         [[NSDistributedNotificationCenter defaultCenter] removeObserver:g_observer];

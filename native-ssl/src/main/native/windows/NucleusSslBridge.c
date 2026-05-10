@@ -141,7 +141,7 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_nativessl_windows_WindowsSslBridge_nativeGetSystemCertificates(
+Java_dev_nucleusframework_nucleus_nativessl_windows_WindowsSslBridge_nativeGetSystemCertificates(
     JNIEnv *env, jclass clazz) {
 
     (void)clazz;

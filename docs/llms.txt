@@ -2,10 +2,10 @@
 
 > Nucleus is the all-in-one toolkit for shipping JVM desktop applications. It combines a Gradle plugin, runtime libraries, and GitHub Actions to handle performance (AOT), distribution (16 packaging formats), native look & feel (decorated windows, dark mode, system colors), and GraalVM Native Image support. Compatible with any JVM application, optimized for Compose Desktop.
 
-- Docs: https://nucleus.kdroidfilter.com
-- GitHub: https://github.com/kdroidFilter/Nucleus
-- Gradle Plugin Portal: https://plugins.gradle.org/plugin/io.github.kdroidfilter.nucleus
-- Maven Central: https://central.sonatype.com/search?q=io.github.kdroidfilter.nucleus
+- Docs: https://nucleus.nucleusframework.com
+- GitHub: https://github.com/nucleusframework/Nucleus
+- Gradle Plugin Portal: https://plugins.gradle.org/plugin/dev.nucleusframework.nucleus
+- Maven Central: https://central.sonatype.com/search?q=dev.nucleusframework.nucleus
 - License: MIT
 
 **Nucleus is the Kotlin framework for native desktop apps.** Combined with Compose Multiplatform, it forms the most complete, most performant, and most deeply integrated desktop application stack ever built — on any language, any runtime, any platform.
@@ -62,7 +62,7 @@ Nucleus meets you where you are:
 
 ```kotlin
 plugins {
-    id("io.github.kdroidfilter.nucleus") version "<version>"
+    id("dev.nucleusframework.nucleus") version "<version>"
 }
 
 nucleus.application {
@@ -83,7 +83,7 @@ nucleus.application {
 
 ## Try the demo
 
-A pre-built demo is available on the [GitHub Releases page](https://github.com/kdroidFilter/Nucleus/releases).
+A pre-built demo is available on the [GitHub Releases page](https://github.com/nucleusframework/Nucleus/releases).
 
 ### macOS
     ```bash
@@ -98,7 +98,7 @@ A pre-built demo is available on the [GitHub Releases page](https://github.com/k
     Detects your architecture and package manager, downloads and installs the appropriate `.deb` or `.rpm`.
 
 ### Windows
-    Download the installer from the [releases page](https://github.com/kdroidFilter/Nucleus/releases).
+    Download the installer from the [releases page](https://github.com/nucleusframework/Nucleus/releases).
 
 What you'll see:
 
@@ -108,7 +108,7 @@ What you'll see:
 - **Auto-Update** — Checks for updates on launch, downloads with progress tracking, installs & restarts in one click
 
 **Test auto-update:** Download an **older release**, install it, and launch. It will detect the newer version and offer to update — automatically.
-The demo source code is in the [`example/`](https://github.com/kdroidFilter/Nucleus/tree/main/example) directory.
+The demo source code is in the [`example/`](https://github.com/nucleusframework/Nucleus/tree/main/example) directory.
 
 ## Requirements
 
@@ -120,7 +120,7 @@ The demo source code is in the [`example/`](https://github.com/kdroidFilter/Nucl
 
 ## License
 
-MIT — See [LICENSE](https://github.com/kdroidFilter/Nucleus/blob/main/LICENSE).
+MIT — See [LICENSE](https://github.com/nucleusframework/Nucleus/blob/main/LICENSE).
 
 ---
 
@@ -143,11 +143,11 @@ Add the Nucleus plugin to your `build.gradle.kts`:
 
 ```kotlin
 plugins {
-    id("io.github.kdroidfilter.nucleus") version "<version>"
+    id("dev.nucleusframework.nucleus") version "<version>"
 }
 ```
 
-The plugin is available on the [Gradle Plugin Portal](https://plugins.gradle.org/plugin/io.github.kdroidfilter.nucleus). No additional repository configuration is needed.
+The plugin is available on the [Gradle Plugin Portal](https://plugins.gradle.org/plugin/dev.nucleusframework.nucleus). No additional repository configuration is needed.
 
 ### Runtime Libraries (Optional)
 
@@ -158,19 +158,19 @@ dependencies {
     implementation(compose.desktop.currentOs)
 
     // Executable type detection + single instance + deep links
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.core-runtime:<version>")
 
     // AOT cache runtime detection (includes core-runtime)
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:<version>")
 
     // Auto-update library (includes core-runtime)
-    implementation("io.github.kdroidfilter:nucleus.updater-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.updater-runtime:<version>")
 
     // Native taskbar/dock progress bar
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:<version>")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:<version>")
 
     // Custom decorated window with native title bar
-    implementation("io.github.kdroidfilter:nucleus.decorated-window:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window:<version>")
 }
 ```
 
@@ -353,70 +353,70 @@ Nucleus provides runtime libraries for use in your application code. All are pub
 
 | Library | Artifact | Description |
 |---------|----------|-------------|
-| Core Runtime | `io.github.kdroidfilter:nucleus.core-runtime` | Executable type detection, single instance, deep links, app metadata (`NucleusApp`) |
-| AOT Runtime | `io.github.kdroidfilter:nucleus.aot-runtime` | AOT cache detection (includes core-runtime via `api`) |
-| Updater Runtime | `io.github.kdroidfilter:nucleus.updater-runtime` | Auto-update library with update level detection and post-update events (includes core-runtime) |
-| Taskbar Progress | `io.github.kdroidfilter:nucleus.taskbar-progress` | Native taskbar/dock progress bar and attention requests (Windows, macOS, Linux) |
-| Notification (macOS) | `io.github.kdroidfilter:nucleus.notification-macos` | macOS UserNotifications API — local notifications, actions, badges via JNI |
-| Notification (Windows) | `io.github.kdroidfilter:nucleus.notification-windows` | Windows Toast Notifications API — rich toasts, buttons, progress bars via JNI (WinRT) |
-| Launcher (Windows) | `io.github.kdroidfilter:nucleus.launcher-windows` | Windows Launcher API — badge notifications, jump lists, overlay icons, and thumbnail toolbar (ITaskbarList3) via JNI |
-| Notification (Linux) | `io.github.kdroidfilter:nucleus.notification-linux` | Freedesktop Desktop Notifications API via JNI (D-Bus) |
-| Launcher (Linux) | `io.github.kdroidfilter:nucleus.launcher-linux` | Unity Launcher API — badge, progress, urgency, quicklist via JNI (D-Bus) |
-| Launcher (macOS) | `io.github.kdroidfilter:nucleus.launcher-macos` | macOS dock context menu — custom items, submenus, click callbacks via JNI |
-| Media Control | `io.github.kdroidfilter:nucleus.media-control` | OS media controls (play/pause, metadata, seek) — MPRIS D-Bus on Linux, MPNowPlayingInfoCenter on macOS, SystemMediaTransportControls on Windows via JNI |
-| Menu (macOS) | `io.github.kdroidfilter:nucleus.menu-macos` | Complete NSMenu mapping — application menu bar, items, badges, delegates, SF Symbols via JNI |
-| SF Symbols | `io.github.kdroidfilter:nucleus.sf-symbols` | Type-safe Apple SF Symbols constants (6 195 symbols, 21 categories) |
-| Freedesktop Icons | `io.github.kdroidfilter:nucleus.freedesktop-icons` | Type-safe freedesktop Icon Naming Specification constants |
-| Decorated Window | `io.github.kdroidfilter:nucleus.decorated-window` | Custom window decorations with native title bar |
-| Decorated Window — Jewel | `io.github.kdroidfilter:nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) color mapping for decorated windows |
-| Decorated Window — Material 2 | `io.github.kdroidfilter:nucleus.decorated-window-material2` | Material 2 color mapping for decorated windows |
-| Decorated Window — Material 3 | `io.github.kdroidfilter:nucleus.decorated-window-material3` | Material 3 color mapping for decorated windows |
-| Dark Mode Detector | `io.github.kdroidfilter:nucleus.darkmode-detector` | Reactive OS dark mode detection via JNI |
-| System Color | `io.github.kdroidfilter:nucleus.system-color` | Reactive system accent color and high contrast detection via JNI |
-| Energy Manager | `io.github.kdroidfilter:nucleus.energy-manager` | Process-level and thread-level energy efficiency mode and screen-awake (caffeine) API for Windows, macOS, and Linux |
-| Native SSL | `io.github.kdroidfilter:nucleus.native-ssl` | OS trust store integration — merges native certs with JVM defaults |
-| Native HTTP | `io.github.kdroidfilter:nucleus.native-http` | `java.net.http.HttpClient` pre-configured with native OS trust |
-| Native HTTP — OkHttp | `io.github.kdroidfilter:nucleus.native-http-okhttp` | OkHttp client pre-configured with native OS trust |
-| Native HTTP — Ktor | `io.github.kdroidfilter:nucleus.native-http-ktor` | Ktor `HttpClient` extension for native OS trust (all engines) |
-| Linux HiDPI | `io.github.kdroidfilter:nucleus.linux-hidpi` | Native HiDPI scale factor detection on Linux |
-| Scheduler | `io.github.kdroidfilter:nucleus.scheduler` | Background task scheduling — periodic, calendar, and on-boot tasks via OS-native schedulers (launchd, systemd, Task Scheduler) |
-| Service Management (macOS) | `io.github.kdroidfilter:nucleus.service-management-macos` | macOS SMAppService binding — login items, launch agents, launch daemons (macOS 13+) |
-| Auto-Launch | `io.github.kdroidfilter:nucleus.autolaunch` | Cross-platform start-at-login — MSIX `StartupTask`, Win32 `HKCU\...\Run`, `SMAppService`, systemd user units, Flatpak portal |
-| GraalVM Runtime | `io.github.kdroidfilter:nucleus.graalvm-runtime` | GraalVM native-image bootstrap + font substitutions (includes linux-hidpi) |
+| Core Runtime | `dev.nucleusframework:nucleus.core-runtime` | Executable type detection, single instance, deep links, app metadata (`NucleusApp`) |
+| AOT Runtime | `dev.nucleusframework:nucleus.aot-runtime` | AOT cache detection (includes core-runtime via `api`) |
+| Updater Runtime | `dev.nucleusframework:nucleus.updater-runtime` | Auto-update library with update level detection and post-update events (includes core-runtime) |
+| Taskbar Progress | `dev.nucleusframework:nucleus.taskbar-progress` | Native taskbar/dock progress bar and attention requests (Windows, macOS, Linux) |
+| Notification (macOS) | `dev.nucleusframework:nucleus.notification-macos` | macOS UserNotifications API — local notifications, actions, badges via JNI |
+| Notification (Windows) | `dev.nucleusframework:nucleus.notification-windows` | Windows Toast Notifications API — rich toasts, buttons, progress bars via JNI (WinRT) |
+| Launcher (Windows) | `dev.nucleusframework:nucleus.launcher-windows` | Windows Launcher API — badge notifications, jump lists, overlay icons, and thumbnail toolbar (ITaskbarList3) via JNI |
+| Notification (Linux) | `dev.nucleusframework:nucleus.notification-linux` | Freedesktop Desktop Notifications API via JNI (D-Bus) |
+| Launcher (Linux) | `dev.nucleusframework:nucleus.launcher-linux` | Unity Launcher API — badge, progress, urgency, quicklist via JNI (D-Bus) |
+| Launcher (macOS) | `dev.nucleusframework:nucleus.launcher-macos` | macOS dock context menu — custom items, submenus, click callbacks via JNI |
+| Media Control | `dev.nucleusframework:nucleus.media-control` | OS media controls (play/pause, metadata, seek) — MPRIS D-Bus on Linux, MPNowPlayingInfoCenter on macOS, SystemMediaTransportControls on Windows via JNI |
+| Menu (macOS) | `dev.nucleusframework:nucleus.menu-macos` | Complete NSMenu mapping — application menu bar, items, badges, delegates, SF Symbols via JNI |
+| SF Symbols | `dev.nucleusframework:nucleus.sf-symbols` | Type-safe Apple SF Symbols constants (6 195 symbols, 21 categories) |
+| Freedesktop Icons | `dev.nucleusframework:nucleus.freedesktop-icons` | Type-safe freedesktop Icon Naming Specification constants |
+| Decorated Window | `dev.nucleusframework:nucleus.decorated-window` | Custom window decorations with native title bar |
+| Decorated Window — Jewel | `dev.nucleusframework:nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) color mapping for decorated windows |
+| Decorated Window — Material 2 | `dev.nucleusframework:nucleus.decorated-window-material2` | Material 2 color mapping for decorated windows |
+| Decorated Window — Material 3 | `dev.nucleusframework:nucleus.decorated-window-material3` | Material 3 color mapping for decorated windows |
+| Dark Mode Detector | `dev.nucleusframework:nucleus.darkmode-detector` | Reactive OS dark mode detection via JNI |
+| System Color | `dev.nucleusframework:nucleus.system-color` | Reactive system accent color and high contrast detection via JNI |
+| Energy Manager | `dev.nucleusframework:nucleus.energy-manager` | Process-level and thread-level energy efficiency mode and screen-awake (caffeine) API for Windows, macOS, and Linux |
+| Native SSL | `dev.nucleusframework:nucleus.native-ssl` | OS trust store integration — merges native certs with JVM defaults |
+| Native HTTP | `dev.nucleusframework:nucleus.native-http` | `java.net.http.HttpClient` pre-configured with native OS trust |
+| Native HTTP — OkHttp | `dev.nucleusframework:nucleus.native-http-okhttp` | OkHttp client pre-configured with native OS trust |
+| Native HTTP — Ktor | `dev.nucleusframework:nucleus.native-http-ktor` | Ktor `HttpClient` extension for native OS trust (all engines) |
+| Linux HiDPI | `dev.nucleusframework:nucleus.linux-hidpi` | Native HiDPI scale factor detection on Linux |
+| Scheduler | `dev.nucleusframework:nucleus.scheduler` | Background task scheduling — periodic, calendar, and on-boot tasks via OS-native schedulers (launchd, systemd, Task Scheduler) |
+| Service Management (macOS) | `dev.nucleusframework:nucleus.service-management-macos` | macOS SMAppService binding — login items, launch agents, launch daemons (macOS 13+) |
+| Auto-Launch | `dev.nucleusframework:nucleus.autolaunch` | Cross-platform start-at-login — MSIX `StartupTask`, Win32 `HKCU\...\Run`, `SMAppService`, systemd user units, Flatpak portal |
+| GraalVM Runtime | `dev.nucleusframework:nucleus.graalvm-runtime` | GraalVM native-image bootstrap + font substitutions (includes linux-hidpi) |
 
 ```kotlin
 dependencies {
     // Pick what you need:
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:<version>")
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:<version>")
-    implementation("io.github.kdroidfilter:nucleus.updater-runtime:<version>")
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:<version>")
-    implementation("io.github.kdroidfilter:nucleus.notification-macos:<version>")
-    implementation("io.github.kdroidfilter:nucleus.notification-windows:<version>")
-    implementation("io.github.kdroidfilter:nucleus.launcher-windows:<version>")
-    implementation("io.github.kdroidfilter:nucleus.notification-linux:<version>")
-    implementation("io.github.kdroidfilter:nucleus.launcher-linux:<version>")
-    implementation("io.github.kdroidfilter:nucleus.launcher-macos:<version>")
-    implementation("io.github.kdroidfilter:nucleus.media-control:<version>")
-    implementation("io.github.kdroidfilter:nucleus.menu-macos:<version>")
-    implementation("io.github.kdroidfilter:nucleus.sf-symbols:<version>")
-    implementation("io.github.kdroidfilter:nucleus.freedesktop-icons:<version>")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window:<version>")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-jewel:<version>")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material2:<version>")
-    implementation("io.github.kdroidfilter:nucleus.decorated-window-material3:<version>")
-    implementation("io.github.kdroidfilter:nucleus.darkmode-detector:<version>")
-    implementation("io.github.kdroidfilter:nucleus.system-color:<version>")
-    implementation("io.github.kdroidfilter:nucleus.energy-manager:<version>")
-    implementation("io.github.kdroidfilter:nucleus.native-ssl:<version>")
-    implementation("io.github.kdroidfilter:nucleus.native-http:<version>")
-    implementation("io.github.kdroidfilter:nucleus.native-http-okhttp:<version>")
-    implementation("io.github.kdroidfilter:nucleus.native-http-ktor:<version>")
-    implementation("io.github.kdroidfilter:nucleus.linux-hidpi:<version>")
-    implementation("io.github.kdroidfilter:nucleus.scheduler:<version>")
-    implementation("io.github.kdroidfilter:nucleus.service-management-macos:<version>")
-    implementation("io.github.kdroidfilter:nucleus.autolaunch:<version>")
-    implementation("io.github.kdroidfilter:nucleus.graalvm-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.core-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.updater-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-windows:<version>")
+    implementation("dev.nucleusframework:nucleus.launcher-windows:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-linux:<version>")
+    implementation("dev.nucleusframework:nucleus.launcher-linux:<version>")
+    implementation("dev.nucleusframework:nucleus.launcher-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.media-control:<version>")
+    implementation("dev.nucleusframework:nucleus.menu-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.sf-symbols:<version>")
+    implementation("dev.nucleusframework:nucleus.freedesktop-icons:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-jewel:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-material2:<version>")
+    implementation("dev.nucleusframework:nucleus.decorated-window-material3:<version>")
+    implementation("dev.nucleusframework:nucleus.darkmode-detector:<version>")
+    implementation("dev.nucleusframework:nucleus.system-color:<version>")
+    implementation("dev.nucleusframework:nucleus.energy-manager:<version>")
+    implementation("dev.nucleusframework:nucleus.native-ssl:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http-okhttp:<version>")
+    implementation("dev.nucleusframework:nucleus.native-http-ktor:<version>")
+    implementation("dev.nucleusframework:nucleus.linux-hidpi:<version>")
+    implementation("dev.nucleusframework:nucleus.scheduler:<version>")
+    implementation("dev.nucleusframework:nucleus.service-management-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.autolaunch:<version>")
+    implementation("dev.nucleusframework:nucleus.graalvm-runtime:<version>")
 }
 ```
 
@@ -448,36 +448,36 @@ When using a custom `configurationFiles`, add the following rules to your file t
 
 ```proguard
 # Nucleus decorated-window JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.window.utils.macos.NativeMacBridge {
+-keep class dev.nucleusframework.nucleus.window.utils.macos.NativeMacBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.window.** { *; }
+-keep class dev.nucleusframework.nucleus.window.** { *; }
 
 # Nucleus darkmode-detector JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.mac.NativeDarkModeBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Linux)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.linux.NativeLinuxBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.linux.NativeLinuxBridge {
     native <methods>;
     static void onThemeChanged(boolean);
 }
 
 # Nucleus darkmode-detector JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.windows.NativeWindowsBridge {
+-keep class dev.nucleusframework.nucleus.darkmodedetector.windows.NativeWindowsBridge {
     native <methods>;
 }
--keep class io.github.kdroidfilter.nucleus.darkmodedetector.** { *; }
+-keep class dev.nucleusframework.nucleus.darkmodedetector.** { *; }
 
 # Nucleus native-ssl JNI (macOS)
--keep class io.github.kdroidfilter.nucleus.nativessl.mac.NativeSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.mac.NativeSslBridge {
     native <methods>;
 }
 
 # Nucleus native-ssl JNI (Windows)
--keep class io.github.kdroidfilter.nucleus.nativessl.windows.WindowsSslBridge {
+-keep class dev.nucleusframework.nucleus.nativessl.windows.WindowsSslBridge {
     native <methods>;
 }
 ```
@@ -497,7 +497,7 @@ Nucleus is a drop-in extension of the official JetBrains Compose Desktop plugin.
      id("org.jetbrains.kotlin.jvm") version "2.3.10"
      id("org.jetbrains.kotlin.plugin.compose") version "2.3.10"
      id("org.jetbrains.compose") version "1.10.1"
-+    id("io.github.kdroidfilter.nucleus") version "1.0.0"
++    id("dev.nucleusframework.nucleus") version "1.0.0"
  }
 ```
 
@@ -509,7 +509,7 @@ Replace the JetBrains Compose DSL imports with the Nucleus equivalents:
 
 ```diff
 -import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-+import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
++import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 ```
 
 This applies to all DSL types used in your `build.gradle.kts` (e.g. `TargetFormat`, `CompressionLevel`, `SigningAlgorithm`, etc.).
@@ -615,16 +615,16 @@ dependencies {
     implementation(compose.desktop.currentOs)
 
     // Executable type detection
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.core-runtime:1.0.0")
 
     // AOT cache runtime (if using enableAotCache)
-    implementation("io.github.kdroidfilter:nucleus.aot-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.aot-runtime:1.0.0")
 
     // Auto-update (if using publish)
-    implementation("io.github.kdroidfilter:nucleus.updater-runtime:1.0.0")
+    implementation("dev.nucleusframework:nucleus.updater-runtime:1.0.0")
 
     // Native taskbar/dock progress bar
-    implementation("io.github.kdroidfilter:nucleus.taskbar-progress:1.0.0")
+    implementation("dev.nucleusframework:nucleus.taskbar-progress:1.0.0")
 }
 ```
 
@@ -633,7 +633,7 @@ dependencies {
 | Feature | Before (compose) | After (nucleus) |
 |---------|-------------------|-----------------|
 | DSL entry point | `compose.desktop.application` | `nucleus.application` |
-| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `io.github.kdroidfilter.nucleus.desktop.application.dsl.*` |
+| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*` |
 | Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives |
 | Native lib cleanup | Manual | `cleanupNativeLibs = true` |
 | AOT cache | Not available | `enableAotCache = true` |
@@ -687,71 +687,71 @@ Everything from the official plugin works unchanged:
 
 ## Documentation
 
-- [Getting Started](https://nucleus.kdroidfilter.com/getting-started/)
-- [Configuration](https://nucleus.kdroidfilter.com/configuration/)
-- [macOS Targets](https://nucleus.kdroidfilter.com/targets/macos/)
-- [Windows Targets](https://nucleus.kdroidfilter.com/targets/windows/)
-- [Linux Targets](https://nucleus.kdroidfilter.com/targets/linux/)
-- [Sandboxing](https://nucleus.kdroidfilter.com/sandboxing/)
-- [Code Signing](https://nucleus.kdroidfilter.com/code-signing/)
-- [Auto Update](https://nucleus.kdroidfilter.com/auto-update/)
-- [Publishing](https://nucleus.kdroidfilter.com/publishing/)
-- [Trusted CA Certificates](https://nucleus.kdroidfilter.com/trusted-certificates/)
-- [AOT Cache](https://nucleus.kdroidfilter.com/runtime/aot-cache/)
-- [GraalVM Native Image](https://nucleus.kdroidfilter.com/graalvm/index/)
-- [Configuration](https://nucleus.kdroidfilter.com/graalvm/configuration/)
-- [Automatic Metadata Resolution](https://nucleus.kdroidfilter.com/graalvm/automatic-metadata/)
-- [Runtime Bootstrap](https://nucleus.kdroidfilter.com/graalvm/runtime-bootstrap/)
-- [Tasks & CI/CD](https://nucleus.kdroidfilter.com/graalvm/tasks-ci/)
-- [Nucleus Native Access](https://nucleus.kdroidfilter.com/native-access/index/)
-- [Supported Types](https://nucleus.kdroidfilter.com/native-access/types/)
-- [Usage & Patterns](https://nucleus.kdroidfilter.com/native-access/usage/)
-- [CI/CD](https://nucleus.kdroidfilter.com/ci-cd/)
-- [Runtime APIs](https://nucleus.kdroidfilter.com/runtime/index/)
-- [App Metadata (`NucleusApp`)](https://nucleus.kdroidfilter.com/runtime/app-metadata/)
-- [Executable Type Detection](https://nucleus.kdroidfilter.com/runtime/executable-type/)
-- [Single Instance](https://nucleus.kdroidfilter.com/runtime/single-instance/)
-- [Deep Links](https://nucleus.kdroidfilter.com/runtime/deep-links/)
-- [Decorated Window](https://nucleus.kdroidfilter.com/runtime/decorated-window/)
-- [Nucleus Application](https://nucleus.kdroidfilter.com/runtime/nucleus-application/)
-- [Decorated Window — Tao backend](https://nucleus.kdroidfilter.com/runtime/decorated-window-tao/)
-- [Decorated Window — Jewel](https://nucleus.kdroidfilter.com/runtime/decorated-window-jewel/)
-- [Decorated Window — Material 2](https://nucleus.kdroidfilter.com/runtime/decorated-window-material2/)
-- [Decorated Window — Material 3](https://nucleus.kdroidfilter.com/runtime/decorated-window-material3/)
-- [System Tray](https://nucleus.kdroidfilter.com/runtime/system-tray/index/)
-- [Tray API](https://nucleus.kdroidfilter.com/runtime/system-tray/tray-api/)
-- [Menu DSL](https://nucleus.kdroidfilter.com/runtime/system-tray/menu-dsl/)
-- [TrayApp](https://nucleus.kdroidfilter.com/runtime/system-tray/tray-app/)
-- [Utilities](https://nucleus.kdroidfilter.com/runtime/system-tray/utilities/)
-- [Notification (Common)](https://nucleus.kdroidfilter.com/runtime/notification-common/)
-- [Notification (macOS)](https://nucleus.kdroidfilter.com/runtime/notification-macos/)
-- [Notification (Windows)](https://nucleus.kdroidfilter.com/runtime/notification-windows/)
-- [Notification (Linux)](https://nucleus.kdroidfilter.com/runtime/notification-linux/)
-- [Launcher (macOS)](https://nucleus.kdroidfilter.com/runtime/launcher-macos/)
-- [Launcher (Windows)](https://nucleus.kdroidfilter.com/runtime/launcher-windows/)
-- [Launcher (Linux)](https://nucleus.kdroidfilter.com/runtime/launcher-linux/)
-- [Media Control](https://nucleus.kdroidfilter.com/runtime/media-control/)
-- [Dark Mode Detector](https://nucleus.kdroidfilter.com/runtime/darkmode-detector/)
-- [System Color](https://nucleus.kdroidfilter.com/runtime/system-color/)
-- [System Info](https://nucleus.kdroidfilter.com/runtime/system-info/)
-- [Energy Manager](https://nucleus.kdroidfilter.com/runtime/energy-manager/)
-- [Linux HiDPI](https://nucleus.kdroidfilter.com/runtime/linux-hidpi/)
-- [Taskbar Progress](https://nucleus.kdroidfilter.com/runtime/taskbar-progress/)
-- [Global Hotkey](https://nucleus.kdroidfilter.com/runtime/global-hotkey/)
-- [Menu (macOS)](https://nucleus.kdroidfilter.com/runtime/menu-macos/)
-- [Freedesktop Icons](https://nucleus.kdroidfilter.com/runtime/freedesktop-icons/)
-- [Scheduler](https://nucleus.kdroidfilter.com/runtime/scheduler/)
-- [Service Management (macOS)](https://nucleus.kdroidfilter.com/runtime/service-management-macos/)
-- [Auto-Launch](https://nucleus.kdroidfilter.com/runtime/autolaunch/)
-- [Native SSL](https://nucleus.kdroidfilter.com/runtime/native-ssl/)
-- [Native HTTP](https://nucleus.kdroidfilter.com/runtime/native-http/)
-- [Packaging](https://nucleus.kdroidfilter.com/comparison/packaging/)
-- [File Dialog](https://nucleus.kdroidfilter.com/ecosystem/file-dialog/)
-- [Spell Check](https://nucleus.kdroidfilter.com/ecosystem/spell-check/)
-- [Migration from org.jetbrains.compose](https://nucleus.kdroidfilter.com/migration/)
-- [Roadmap](https://nucleus.kdroidfilter.com/roadmap/)
+- [Getting Started](https://nucleus.nucleusframework.com/getting-started/)
+- [Configuration](https://nucleus.nucleusframework.com/configuration/)
+- [macOS Targets](https://nucleus.nucleusframework.com/targets/macos/)
+- [Windows Targets](https://nucleus.nucleusframework.com/targets/windows/)
+- [Linux Targets](https://nucleus.nucleusframework.com/targets/linux/)
+- [Sandboxing](https://nucleus.nucleusframework.com/sandboxing/)
+- [Code Signing](https://nucleus.nucleusframework.com/code-signing/)
+- [Auto Update](https://nucleus.nucleusframework.com/auto-update/)
+- [Publishing](https://nucleus.nucleusframework.com/publishing/)
+- [Trusted CA Certificates](https://nucleus.nucleusframework.com/trusted-certificates/)
+- [AOT Cache](https://nucleus.nucleusframework.com/runtime/aot-cache/)
+- [GraalVM Native Image](https://nucleus.nucleusframework.com/graalvm/index/)
+- [Configuration](https://nucleus.nucleusframework.com/graalvm/configuration/)
+- [Automatic Metadata Resolution](https://nucleus.nucleusframework.com/graalvm/automatic-metadata/)
+- [Runtime Bootstrap](https://nucleus.nucleusframework.com/graalvm/runtime-bootstrap/)
+- [Tasks & CI/CD](https://nucleus.nucleusframework.com/graalvm/tasks-ci/)
+- [Nucleus Native Access](https://nucleus.nucleusframework.com/native-access/index/)
+- [Supported Types](https://nucleus.nucleusframework.com/native-access/types/)
+- [Usage & Patterns](https://nucleus.nucleusframework.com/native-access/usage/)
+- [CI/CD](https://nucleus.nucleusframework.com/ci-cd/)
+- [Runtime APIs](https://nucleus.nucleusframework.com/runtime/index/)
+- [App Metadata (`NucleusApp`)](https://nucleus.nucleusframework.com/runtime/app-metadata/)
+- [Executable Type Detection](https://nucleus.nucleusframework.com/runtime/executable-type/)
+- [Single Instance](https://nucleus.nucleusframework.com/runtime/single-instance/)
+- [Deep Links](https://nucleus.nucleusframework.com/runtime/deep-links/)
+- [Decorated Window](https://nucleus.nucleusframework.com/runtime/decorated-window/)
+- [Nucleus Application](https://nucleus.nucleusframework.com/runtime/nucleus-application/)
+- [Decorated Window — Tao backend](https://nucleus.nucleusframework.com/runtime/decorated-window-tao/)
+- [Decorated Window — Jewel](https://nucleus.nucleusframework.com/runtime/decorated-window-jewel/)
+- [Decorated Window — Material 2](https://nucleus.nucleusframework.com/runtime/decorated-window-material2/)
+- [Decorated Window — Material 3](https://nucleus.nucleusframework.com/runtime/decorated-window-material3/)
+- [System Tray](https://nucleus.nucleusframework.com/runtime/system-tray/index/)
+- [Tray API](https://nucleus.nucleusframework.com/runtime/system-tray/tray-api/)
+- [Menu DSL](https://nucleus.nucleusframework.com/runtime/system-tray/menu-dsl/)
+- [TrayApp](https://nucleus.nucleusframework.com/runtime/system-tray/tray-app/)
+- [Utilities](https://nucleus.nucleusframework.com/runtime/system-tray/utilities/)
+- [Notification (Common)](https://nucleus.nucleusframework.com/runtime/notification-common/)
+- [Notification (macOS)](https://nucleus.nucleusframework.com/runtime/notification-macos/)
+- [Notification (Windows)](https://nucleus.nucleusframework.com/runtime/notification-windows/)
+- [Notification (Linux)](https://nucleus.nucleusframework.com/runtime/notification-linux/)
+- [Launcher (macOS)](https://nucleus.nucleusframework.com/runtime/launcher-macos/)
+- [Launcher (Windows)](https://nucleus.nucleusframework.com/runtime/launcher-windows/)
+- [Launcher (Linux)](https://nucleus.nucleusframework.com/runtime/launcher-linux/)
+- [Media Control](https://nucleus.nucleusframework.com/runtime/media-control/)
+- [Dark Mode Detector](https://nucleus.nucleusframework.com/runtime/darkmode-detector/)
+- [System Color](https://nucleus.nucleusframework.com/runtime/system-color/)
+- [System Info](https://nucleus.nucleusframework.com/runtime/system-info/)
+- [Energy Manager](https://nucleus.nucleusframework.com/runtime/energy-manager/)
+- [Linux HiDPI](https://nucleus.nucleusframework.com/runtime/linux-hidpi/)
+- [Taskbar Progress](https://nucleus.nucleusframework.com/runtime/taskbar-progress/)
+- [Global Hotkey](https://nucleus.nucleusframework.com/runtime/global-hotkey/)
+- [Menu (macOS)](https://nucleus.nucleusframework.com/runtime/menu-macos/)
+- [Freedesktop Icons](https://nucleus.nucleusframework.com/runtime/freedesktop-icons/)
+- [Scheduler](https://nucleus.nucleusframework.com/runtime/scheduler/)
+- [Service Management (macOS)](https://nucleus.nucleusframework.com/runtime/service-management-macos/)
+- [Auto-Launch](https://nucleus.nucleusframework.com/runtime/autolaunch/)
+- [Native SSL](https://nucleus.nucleusframework.com/runtime/native-ssl/)
+- [Native HTTP](https://nucleus.nucleusframework.com/runtime/native-http/)
+- [Packaging](https://nucleus.nucleusframework.com/comparison/packaging/)
+- [File Dialog](https://nucleus.nucleusframework.com/ecosystem/file-dialog/)
+- [Spell Check](https://nucleus.nucleusframework.com/ecosystem/spell-check/)
+- [Migration from org.jetbrains.compose](https://nucleus.nucleusframework.com/migration/)
+- [Roadmap](https://nucleus.nucleusframework.com/roadmap/)
 
 ## Full LLM Documentation
 
-- [llms-full.txt](https://nucleus.kdroidfilter.com/llms-full.txt): Complete documentation in a single file
+- [llms-full.txt](https://nucleus.nucleusframework.com/llms-full.txt): Complete documentation in a single file
 

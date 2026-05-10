@@ -608,7 +608,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeInit(
+Java_dev_nucleusframework_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeInit(
     JNIEnv *env, jclass clazz) {
 
     if (g_running) return NULL;
@@ -656,7 +656,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_n
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegister(
     JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode) {
     (void)clazz;
     if (!g_running) return (*env)->NewStringUTF(env, "Not initialized");
@@ -703,7 +703,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_n
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeUnregister(
+Java_dev_nucleusframework_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeUnregister(
     JNIEnv *env, jclass clazz, jlong id) {
     (void)clazz;
     if (!g_running) return (*env)->NewStringUTF(env, "Not initialized");
@@ -728,7 +728,7 @@ Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_n
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeShutdown(
+Java_dev_nucleusframework_nucleus_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeShutdown(
     JNIEnv *env, jclass clazz) {
     (void)clazz;
     if (!g_running) return;

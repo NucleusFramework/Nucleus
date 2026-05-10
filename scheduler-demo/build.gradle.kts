@@ -1,5 +1,5 @@
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.SigningAlgorithm
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.nucleus.desktop.application.dsl.SigningAlgorithm
+import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -7,7 +7,7 @@ plugins {
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.kotlinxSerialization)
-    id("io.github.kdroidfilter.nucleus")
+    id("dev.nucleusframework.nucleus")
 }
 
 dependencies {
@@ -59,7 +59,7 @@ nucleus.application {
         windows {
             signing {
                 enabled = true
-                certificateFile.set(rootProject.file("example/packaging/KDroidFilter.pfx"))
+                certificateFile.set(rootProject.file("example/packaging/NucleusFramework.pfx"))
                 certificatePassword = "ChangeMe-Temp123!"
                 algorithm = SigningAlgorithm.Sha256
                 timestampServer = "http://timestamp.digicert.com"
@@ -74,10 +74,10 @@ nucleus.application {
 
             appx {
                 applicationId = "SchedulerDemo"
-                publisherDisplayName = "KDroidFilter"
+                publisherDisplayName = "NucleusFramework"
                 displayName = "Scheduler Demo"
                 publisher = "CN=D541E802-6D30-446A-864E-2E8ABD2DAA5E"
-                identityName = "KDroidFilter.SchedulerDemo"
+                identityName = "NucleusFramework.SchedulerDemo"
                 languages = listOf("en-US", "fr-FR")
             }
         }

@@ -149,7 +149,7 @@ extern "system" fn invoke_action_trampoline(hwnd: i64, node_id: u64, action: u16
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,
@@ -176,7 +176,7 @@ extern "system" fn set_text_trampoline(
     let Ok(text) = std::str::from_utf8(slice) else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,
@@ -201,7 +201,7 @@ extern "system" fn set_selection_trampoline(
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,
@@ -226,7 +226,7 @@ extern "system" fn scroll_by_trampoline(
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,
@@ -251,7 +251,7 @@ extern "system" fn custom_action_trampoline(
     let Some(jvm) = JAVA_VM.get() else { return };
     if let Ok(mut env) = jvm.attach_current_thread() {
         let class = match env.find_class(
-            "io/github/kdroidfilter/nucleus/window/tao/NativeTaoBridge",
+            "dev/nucleusframework/nucleus/window/tao/NativeTaoBridge",
         ) {
             Ok(c) => c,
             Err(_) => return,
@@ -272,7 +272,7 @@ extern "system" fn custom_action_trampoline(
 // ── JNI exports ───────────────────────────────────────────────────────────
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yAttach(
     _env: JNIEnv,
     _class: JClass,
     hwnd: jlong,
@@ -284,7 +284,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yDetach(
     _env: JNIEnv,
     _class: JClass,
     hwnd: jlong,
@@ -296,7 +296,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplySnapshot(
     env: JNIEnv,
     _class: JClass,
     hwnd: jlong,
@@ -323,7 +323,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// we default to true to keep snapshots flowing while a UIA client is
 /// attached. The native side still fast-paths when no listener is bound.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsActive(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -331,7 +331,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yConsumeResync(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -340,7 +340,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// No-op on Windows; per-HWND tracking lives in the C DLL.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yNotePushed(
     _env: JNIEnv,
     _class: JClass,
 ) {
@@ -348,7 +348,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// No screen-reader-detect API exposed yet on Windows; report false.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yIsVoiceOverRunning(
     _env: JNIEnv,
     _class: JClass,
 ) -> jboolean {
@@ -357,7 +357,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// TODO: emit `UIA_AutomationFocusChangedEventId` via `UiaRaiseAutomationEvent`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yPostFocusChanged(
     _env: JNIEnv,
     _class: JClass,
     _hwnd: jlong,
@@ -367,7 +367,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 
 /// No-op on Windows — UIA reads the HWND title for the app name.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11ySetAppName(
     _env: JNIEnv,
     _class: JClass,
     _name: jni::objects::JString,
@@ -378,7 +378,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// parser is still at v4 and rejects anything else. Returning `JNI_FALSE`
 /// keeps the JVM-side controller from believing a partial succeeded.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeA11yApplyPartialSnapshot(
     _env: JNIEnv,
     _class: JClass,
     _ns_view: jlong,

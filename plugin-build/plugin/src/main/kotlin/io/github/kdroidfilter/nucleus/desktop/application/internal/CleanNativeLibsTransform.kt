@@ -3,15 +3,15 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NativeLibArchDetector.NativeArch
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NativeLibArchDetector.NativeInfo
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NativeLibArchDetector.NativeOs
-import io.github.kdroidfilter.nucleus.internal.utils.Arch
-import io.github.kdroidfilter.nucleus.internal.utils.OS
-import io.github.kdroidfilter.nucleus.internal.utils.currentArch
-import io.github.kdroidfilter.nucleus.internal.utils.currentOS
+import dev.nucleusframework.nucleus.desktop.application.internal.NativeLibArchDetector.NativeArch
+import dev.nucleusframework.nucleus.desktop.application.internal.NativeLibArchDetector.NativeInfo
+import dev.nucleusframework.nucleus.desktop.application.internal.NativeLibArchDetector.NativeOs
+import dev.nucleusframework.nucleus.internal.utils.Arch
+import dev.nucleusframework.nucleus.internal.utils.OS
+import dev.nucleusframework.nucleus.internal.utils.currentArch
+import dev.nucleusframework.nucleus.internal.utils.currentOS
 import org.gradle.api.Project
 import org.gradle.api.artifacts.transform.InputArtifact
 import org.gradle.api.artifacts.transform.TransformAction

@@ -548,7 +548,7 @@ static WebViewState *lookup(jlong handle) {
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCreate(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeCreate(
     JNIEnv *env, jclass, jlong parentHwnd, jstring initialUrl) {
     if (parentHwnd == 0) return 0;
     HWND parent = reinterpret_cast<HWND>(static_cast<uintptr_t>(parentHwnd));
@@ -567,7 +567,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCreate(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeRelease(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeRelease(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = nullptr;
     {
@@ -581,7 +581,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeRelease(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeLoadUrl(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeLoadUrl(
     JNIEnv *env, jclass, jlong handle, jstring url) {
     WebViewState *s = lookup(handle);
     if (!s || !s->webview) return;
@@ -590,42 +590,42 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeLoadUrl(
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeGoBack(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeGoBack(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     if (s && s->webview) s->webview->GoBack();
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeGoForward(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeGoForward(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     if (s && s->webview) s->webview->GoForward();
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeReload(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeReload(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     if (s && s->webview) s->webview->Reload();
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCanGoBack(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeCanGoBack(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     return (s && s->canGoBack.load(std::memory_order_acquire)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCanGoForward(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeCanGoForward(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     return (s && s->canGoForward.load(std::memory_order_acquire)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCurrentUrl(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeCurrentUrl(
     JNIEnv *env, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     if (!s) return nullptr;
@@ -638,14 +638,14 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeCurrentUr
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeIsLoading(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeIsLoading(
     JNIEnv *, jclass, jlong handle) {
     WebViewState *s = lookup(handle);
     return (s && s->isLoading.load(std::memory_order_acquire)) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeSetBounds(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeSetBounds(
     JNIEnv *, jclass, jlong handle, jint xPx, jint yPx, jint widthPx, jint heightPx) {
     WebViewState *s = lookup(handle);
     if (!s) return;
@@ -663,7 +663,7 @@ Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeSetBounds
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_sampletao_SampleWebViewWindowsBridge_nativeSetCornerRadius(
+Java_dev_nucleusframework_sampletao_SampleWebViewWindowsBridge_nativeSetCornerRadius(
     JNIEnv *, jclass, jlong handle, jfloat radiusPx) {
     WebViewState *s = lookup(handle);
     if (!s) return;

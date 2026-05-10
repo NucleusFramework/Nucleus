@@ -9,7 +9,7 @@ Cross-platform notification abstraction that unifies Linux, Windows, and macOS n
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.notification-common:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-common:<version>")
 }
 ```
 
@@ -18,7 +18,7 @@ This single dependency pulls in all three platform modules (Linux, Windows, macO
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.notification.common.*
+import dev.nucleusframework.nucleus.notification.common.*
 
 // Build a notification
 val n = notification(
@@ -36,7 +36,7 @@ n.send()
 ## Full Example
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.notification.common.*
+import dev.nucleusframework.nucleus.notification.common.*
 
 val myNotification = notification(
     title = "New Message from Alice",

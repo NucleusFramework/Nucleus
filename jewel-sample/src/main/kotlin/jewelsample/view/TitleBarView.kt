@@ -12,10 +12,10 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.window.DecoratedWindowScope
-import io.github.kdroidfilter.nucleus.window.TitleBar
-import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
-import io.github.kdroidfilter.nucleus.window.newFullscreenControls
+import dev.nucleusframework.nucleus.window.DecoratedWindowScope
+import dev.nucleusframework.nucleus.window.TitleBar
+import dev.nucleusframework.nucleus.window.macOSLargeCornerRadius
+import dev.nucleusframework.nucleus.window.newFullscreenControls
 import jewelsample.IntUiThemes
 import jewelsample.showcase.ShowcaseIcons
 import jewelsample.showcase.views.forCurrentOs

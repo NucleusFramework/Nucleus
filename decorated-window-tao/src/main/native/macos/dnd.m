@@ -407,7 +407,7 @@ JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
  * pasteboard types we accept. Returns 0 on success, negative on failure.
  */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeRegister(
     JNIEnv *env, jclass cls, jlong nsView, jobject callback)
 {
     (void)cls;
@@ -441,7 +441,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeReg
  * fast-path on a missing state and become inert.
  */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeRevoke(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeRevoke(
     JNIEnv *env, jclass cls, jlong nsView)
 {
     (void)env; (void)cls;
@@ -462,7 +462,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeRev
  * Kotlin's perspective — matches the Win32 `DoDragDrop` contract.
  */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeStartDrag(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoMacOsDndBridge_nativeStartDrag(
     JNIEnv *env, jclass cls, jlong nsView, jobjectArray files, jstring text, jint allowedEffects)
 {
     (void)cls;

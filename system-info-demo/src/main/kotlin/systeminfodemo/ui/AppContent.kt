@@ -34,10 +34,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import io.github.kdroidfilter.nucleus.window.AwtDecoratedWindowScope
-import io.github.kdroidfilter.nucleus.window.jewel.JewelTitleBar
-import io.github.kdroidfilter.nucleus.window.macOSLargeCornerRadius
-import io.github.kdroidfilter.nucleus.window.newFullscreenControls
+import dev.nucleusframework.nucleus.window.AwtDecoratedWindowScope
+import dev.nucleusframework.nucleus.window.jewel.JewelTitleBar
+import dev.nucleusframework.nucleus.window.macOSLargeCornerRadius
+import dev.nucleusframework.nucleus.window.newFullscreenControls
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Orientation
 import org.jetbrains.jewel.ui.component.Divider

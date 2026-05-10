@@ -1,8 +1,8 @@
-package io.github.kdroidfilter.nucleus
+package dev.nucleusframework.nucleus
 
 // We write explicitly about OptIn, because IDEA doesn't suggest it.
 @RequiresOptIn(
     "This library is experimental and can be unstable. " +
-        "Add @OptIn(io.github.kdroidfilter.nucleus.ExperimentalNucleusLibrary::class) annotation.",
+        "Add @OptIn(dev.nucleusframework.nucleus.ExperimentalNucleusLibrary::class) annotation.",
 )
 annotation class ExperimentalNucleusLibrary

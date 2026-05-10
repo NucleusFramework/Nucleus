@@ -15,7 +15,7 @@ The workflow is: **declare agents in Gradle** → **plugin embeds plists in the 
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.service-management-macos:<version>")
+    implementation("dev.nucleusframework:nucleus.service-management-macos:<version>")
 }
 ```
 
@@ -293,5 +293,5 @@ MyApp.app/
 When ProGuard is enabled, preserve the native bridge classes:
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.servicemanagement.** { *; }
+-keep class dev.nucleusframework.nucleus.servicemanagement.** { *; }
 ```

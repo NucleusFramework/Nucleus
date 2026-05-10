@@ -15,7 +15,7 @@ use crate::platform::macos::ffi::{
 use crate::state::WINDOWS;
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeAttachTextOverlay(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeAttachTextOverlay(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -32,7 +32,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 }
 
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeFocusTextOverlay(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeFocusTextOverlay(
     _env: JNIEnv,
     _class: JClass,
     focused: jboolean,

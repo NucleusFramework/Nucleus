@@ -1,7 +1,7 @@
-package io.github.kdroidfilter.nucleus.desktop.application.internal
+package dev.nucleusframework.nucleus.desktop.application.internal
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.CalendarInterval
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.LaunchAgentDefinition
+import dev.nucleusframework.nucleus.desktop.application.dsl.CalendarInterval
+import dev.nucleusframework.nucleus.desktop.application.dsl.LaunchAgentDefinition
 import java.io.File
 
 /**

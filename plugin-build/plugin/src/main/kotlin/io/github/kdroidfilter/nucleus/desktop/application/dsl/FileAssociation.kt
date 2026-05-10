@@ -1,4 +1,4 @@
-package io.github.kdroidfilter.nucleus.desktop.application.dsl
+package dev.nucleusframework.nucleus.desktop.application.dsl
 
 import java.io.File
 import java.io.Serializable

@@ -40,7 +40,7 @@ fn with_window<R>(handle: jlong, f: impl FnOnce(&Window) -> Option<R>) -> Option
 /// `WINDOWS` map, so the references obtained from `gtk_window()` are valid
 /// for the duration of this call.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxSetDialogOwner(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxSetDialogOwner(
     _env: JNIEnv,
     _class: JClass,
     child_handle: jlong,
@@ -77,7 +77,7 @@ pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoB
 /// `DecoratedDialog.kt` stays portable. Returns `null` when the geometry
 /// isn't yet resolvable (window not realised / hidden on Wayland).
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxGetWindowRect(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxGetWindowRect(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,

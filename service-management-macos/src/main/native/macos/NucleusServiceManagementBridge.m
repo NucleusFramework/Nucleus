@@ -8,7 +8,7 @@
 
 static JavaVM *g_jvm = NULL;
 
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/servicemanagement/macos/NativeMacServiceManagementBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/servicemanagement/macos/NativeMacServiceManagementBridge"
 
 // Service types (must match AppService.kt companion constants)
 #define TYPE_LOGIN_ITEM 0
@@ -99,7 +99,7 @@ static SMAppService *createService(int type, NSString *identifier) {
 // ============================================================================
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeIsAvailable(
+Java_dev_nucleusframework_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeIsAvailable(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
     if (@available(macOS 13.0, *)) {
@@ -109,7 +109,7 @@ Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceMana
 }
 
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeRegister(
+Java_dev_nucleusframework_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeRegister(
     JNIEnv *env, jclass clazz, jint type, jstring jidentifier) {
     (void)clazz;
 
@@ -140,7 +140,7 @@ Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceMana
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeUnregister(
+Java_dev_nucleusframework_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeUnregister(
     JNIEnv *env, jclass clazz, jint type, jstring jidentifier, jlong callbackId) {
     (void)clazz;
 
@@ -225,7 +225,7 @@ Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceMana
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeGetStatus(
+Java_dev_nucleusframework_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeGetStatus(
     JNIEnv *env, jclass clazz, jint type, jstring jidentifier) {
     (void)clazz;
 
@@ -245,7 +245,7 @@ Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceMana
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeOpenSystemSettingsLoginItems(
+Java_dev_nucleusframework_nucleus_servicemanagement_macos_NativeMacServiceManagementBridge_nativeOpenSystemSettingsLoginItems(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 

@@ -248,7 +248,7 @@ static jlong getIdleTimeFreedesktopDBus(GioFuncs *f) {
 // ---------------------------------------------------------------------------
 
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeIdleTimeSeconds(
+Java_dev_nucleusframework_nucleus_systeminfo_linux_NativeLinuxSystemInfoBridge_nativeIdleTimeSeconds(
     JNIEnv *env, jclass clazz) {
     (void)env; (void)clazz;
 

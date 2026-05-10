@@ -6,12 +6,12 @@ Enforce that only one instance of your application runs at a time.
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.core-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.core-runtime:<version>")
 }
 ```
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.core.runtime.SingleInstanceManager
+import dev.nucleusframework.nucleus.core.runtime.SingleInstanceManager
 ```
 
 `SingleInstanceManager` is a Kotlin `object` (singleton). It uses file-based locking to ensure single-instance behavior across platforms.

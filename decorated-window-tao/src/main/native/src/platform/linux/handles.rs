@@ -26,7 +26,7 @@ use crate::state::WINDOWS;
 /// `raw_window_handle_rwh_06`/`raw_display_handle_rwh_06` impls and expose the
 /// underlying pointers directly.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxHandles(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxHandles(
     env: JNIEnv,
     _class: JClass,
     handle: jlong,
@@ -79,7 +79,7 @@ fn fill_linux_handles(window: &Window, out: &mut [jlong; 3]) {
 /// passing to the C-side widget embedding helpers in
 /// `nucleus_tao_linux_widget.c`.
 #[no_mangle]
-pub extern "system" fn Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoBridge_nativeLinuxGtkWindow(
+pub extern "system" fn Java_dev_nucleusframework_nucleus_window_tao_NativeTaoBridge_nativeLinuxGtkWindow(
     _env: JNIEnv,
     _class: JClass,
     handle: jlong,

@@ -20,7 +20,7 @@
 #include <string.h>
 
 // JNI class path for the Windows bridge
-#define BRIDGE_CLASS "io/github/kdroidfilter/nucleus/systeminfo/windows/NativeWindowsSystemInfoBridge"
+#define BRIDGE_CLASS "dev/nucleusframework/nucleus/systeminfo/windows/NativeWindowsSystemInfoBridge"
 
 // Helper: convert a wide string to a UTF-8 malloc'd string. Caller must free.
 static inline char *wchar_to_utf8(const wchar_t *wstr) {

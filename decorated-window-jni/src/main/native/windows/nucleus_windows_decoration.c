@@ -528,14 +528,14 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 /*  JNI exports                                                        */
 /* ================================================================== */
 
-/* Package: io.github.kdroidfilter.nucleus.window.utils.windows */
+/* Package: dev.nucleusframework.nucleus.window.utils.windows */
 /* Class:   JniWindowsDecorationBridge */
 
 /* -------------------------------------------------------------- */
 /*  nativeInstallDecoration(long hwnd, int titleBarHeightPx)       */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeInstallDecoration(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -605,7 +605,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  nativeUninstallDecoration(long hwnd)                           */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeUninstallDecoration(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeUninstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -645,7 +645,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  nativeSetForceHitTestClient(long hwnd, boolean force)          */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetForceHitTestClient(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetForceHitTestClient(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean force)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -661,7 +661,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  nativeSetTitleBarHeight(long hwnd, int heightPx)               */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetTitleBarHeight(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetTitleBarHeight(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint heightPx)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -680,7 +680,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  title bar background.                                          */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeStartDrag(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeStartDrag(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -702,7 +702,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  classes are accessible without --add-opens.                    */
 /* -------------------------------------------------------------- */
 JNIEXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeGetHwnd(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeGetHwnd(
     JNIEnv *env, jclass clazz, jobject awtWindow)
 {
     if (!awtWindow) return 0;
@@ -830,7 +830,7 @@ static LRESULT CALLBACK dialogDecoWndProc(
 /*  Windows 11 22000+ only; silently ignored on older Windows.     */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeApplyDialogStyle(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeApplyDialogStyle(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -869,7 +869,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Exit:  restores saved style/exstyle/placement.                  */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetFullscreen(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -982,7 +982,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Returns true if the window is in native fullscreen mode.       */
 /* -------------------------------------------------------------- */
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeIsFullscreen(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeIsFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -1002,7 +1002,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Windows 10 build 17763+. Silently ignored on older versions.   */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetBackgroundColor(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetBackgroundColor(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint argb)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -1040,7 +1040,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Returns debug counters as a string for diagnostics.            */
 /* -------------------------------------------------------------- */
 JNIEXPORT jstring JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeGetDebugInfo(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeGetDebugInfo(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -1068,7 +1068,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Pass (0, 0) to disable the override and fall back to AWT.      */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetMinimumSize(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetMinimumSize(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint widthPx, jint heightPx)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -1088,7 +1088,7 @@ Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBri
 /*  Pass (0, 0) to disable the override and fall back to AWT.      */
 /* -------------------------------------------------------------- */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetMaximumSize(
+Java_dev_nucleusframework_nucleus_window_utils_windows_JniWindowsDecorationBridge_nativeSetMaximumSize(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint widthPx, jint heightPx)
 {
     HWND hwnd = (HWND)(uintptr_t)hwndLong;

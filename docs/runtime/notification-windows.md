@@ -9,7 +9,7 @@ Complete Kotlin mapping of the [Windows Toast Notifications API](https://learn.m
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.notification-windows:<version>")
+    implementation("dev.nucleusframework:nucleus.notification-windows:<version>")
 }
 ```
 
@@ -18,7 +18,7 @@ Depends on `core-runtime` for `NativeLibraryLoader`, `ExecutableRuntime`, and `N
 ## Quick Start
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.notification.windows.*
+import dev.nucleusframework.nucleus.notification.windows.*
 
 // 1. Initialize (auto-detects APPX vs unpackaged)
 WindowsNotificationCenter.initialize()
@@ -362,7 +362,7 @@ Ships pre-built Windows DLLs (x64 + ARM64). No macOS or Linux native — `isAvai
 ## ProGuard
 
 ```proguard
--keep class io.github.kdroidfilter.nucleus.notification.windows.NativeWindowsNotificationBridge {
+-keep class dev.nucleusframework.nucleus.notification.windows.NativeWindowsNotificationBridge {
     native <methods>;
     static ** on*(...);
 }
@@ -370,4 +370,4 @@ Ships pre-built Windows DLLs (x64 + ARM64). No macOS or Linux native — `isAvai
 
 ## GraalVM
 
-Reachability metadata is included in the JAR at `META-INF/native-image/io.github.kdroidfilter/nucleus.notification-windows/reachability-metadata.json`. No additional configuration needed.
+Reachability metadata is included in the JAR at `META-INF/native-image/dev.nucleusframework/nucleus.notification-windows/reachability-metadata.json`. No additional configuration needed.

@@ -337,7 +337,7 @@ static GtkWidget *resolve_overlay_for_window(GtkWidget *gtk_window) {
 #define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeAttach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeAttach(
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr, jlong widget_ptr)
 {
     (void) env; (void) clazz;
@@ -382,7 +382,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
 }
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeDetach(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeDetach(
     JNIEnv *env, jclass clazz, jlong widget_ptr)
 {
     (void) env; (void) clazz;
@@ -397,7 +397,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
 }
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeSetFrame(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeSetFrame(
     JNIEnv *env, jclass clazz,
     jlong gtk_window_ptr, jlong widget_ptr,
     jint x_logical, jint y_logical, jint w_logical, jint h_logical)
@@ -456,7 +456,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
  * TextField. Equivalent in spirit to macOS's
  * `[window makeFirstResponder:overlay]` on click. */
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRequestKeyboardFocus(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRequestKeyboardFocus(
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
 {
     (void) env; (void) clazz;
@@ -610,7 +610,7 @@ static gboolean on_input_box_motion_notify(GtkWidget *widget, void *event_ptr,
 }
 
 EXPORT jlong JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeAddInputBox(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeAddInputBox(
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
 {
     (void) env; (void) clazz;
@@ -672,7 +672,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
 }
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeMoveInputBox(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeMoveInputBox(
     JNIEnv *env, jclass clazz, jlong box_ptr,
     jint x_logical, jint y_logical, jint w_logical, jint h_logical)
 {
@@ -700,7 +700,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
 }
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeSetInputBoxCallback(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeSetInputBoxCallback(
     JNIEnv *env, jclass clazz, jlong box_ptr, jobject callback)
 {
     (void) clazz;
@@ -720,7 +720,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_native
 }
 
 EXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRemoveInputBox(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoLinuxWidgetBridge_nativeRemoveInputBox(
     JNIEnv *env, jclass clazz, jlong box_ptr)
 {
     (void) env; (void) clazz;

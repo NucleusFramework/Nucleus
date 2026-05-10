@@ -7,31 +7,31 @@
 #include "nucleus_system_info_common.h"
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentCount(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentCount(
     JNIEnv *env, jclass clazz) {
     return 0;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentLabels(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentLabels(
     JNIEnv *env, jclass clazz) {
     return to_string_array(env, NULL, 0);
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentTemperatures(
     JNIEnv *env, jclass clazz) {
     return (*env)->NewFloatArray(env, 0);
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentMaxTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentMaxTemperatures(
     JNIEnv *env, jclass clazz) {
     return (*env)->NewFloatArray(env, 0);
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentCriticalTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_windows_NativeWindowsSystemInfoBridge_nativeComponentCriticalTemperatures(
     JNIEnv *env, jclass clazz) {
     return (*env)->NewFloatArray(env, 0);
 }

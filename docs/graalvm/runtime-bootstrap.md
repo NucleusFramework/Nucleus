@@ -6,14 +6,14 @@ The `graalvm-runtime` module provides everything needed to bootstrap a Compose D
 
 ```kotlin
 dependencies {
-    implementation("io.github.kdroidfilter:nucleus.graalvm-runtime:<version>")
+    implementation("dev.nucleusframework:nucleus.graalvm-runtime:<version>")
 }
 ```
 
 Then call `GraalVmInitializer.initialize()` as the **first line** of your `main()` function, before any AWT or Compose usage:
 
 ```kotlin
-import io.github.kdroidfilter.nucleus.graalvm.GraalVmInitializer
+import dev.nucleusframework.nucleus.graalvm.GraalVmInitializer
 
 fun main() {
     GraalVmInitializer.initialize()

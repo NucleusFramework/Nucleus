@@ -3,10 +3,10 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-package io.github.kdroidfilter.nucleus.desktop.application.internal.validation
+package dev.nucleusframework.nucleus.desktop.application.internal.validation
 
-import io.github.kdroidfilter.nucleus.desktop.application.dsl.MacOSNotarizationSettings
-import io.github.kdroidfilter.nucleus.desktop.application.internal.NucleusProperties
+import dev.nucleusframework.nucleus.desktop.application.dsl.MacOSNotarizationSettings
+import dev.nucleusframework.nucleus.desktop.application.internal.NucleusProperties
 
 internal data class ValidatedMacOSNotarizationSettings(
     val appleID: String,

@@ -383,14 +383,14 @@ static void refresh_components(void) {
 }
 
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentCount(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentCount(
     JNIEnv *env, jclass clazz) {
     refresh_components();
     return (jint)g_component_count;
 }
 
 JNIEXPORT jobjectArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentLabels(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentLabels(
     JNIEnv *env, jclass clazz) {
     if (g_component_count <= 0) return NULL;
     const char **arr = (const char **)malloc(g_component_count * sizeof(char *));
@@ -401,7 +401,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentTemperatures(
     JNIEnv *env, jclass clazz) {
     if (g_component_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_component_count * sizeof(jfloat));
@@ -413,7 +413,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentMaxTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentMaxTemperatures(
     JNIEnv *env, jclass clazz) {
     if (g_component_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_component_count * sizeof(jfloat));
@@ -425,7 +425,7 @@ Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge
 }
 
 JNIEXPORT jfloatArray JNICALL
-Java_io_github_kdroidfilter_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentCriticalTemperatures(
+Java_dev_nucleusframework_nucleus_systeminfo_macos_NativeMacOsSystemInfoBridge_nativeComponentCriticalTemperatures(
     JNIEnv *env, jclass clazz) {
     if (g_component_count <= 0) return NULL;
     jfloat *vals = (jfloat *)malloc(g_component_count * sizeof(jfloat));

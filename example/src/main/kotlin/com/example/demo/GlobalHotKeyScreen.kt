@@ -30,11 +30,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
-import io.github.kdroidfilter.nucleus.globalhotkey.GlobalHotKeyManager
-import io.github.kdroidfilter.nucleus.globalhotkey.HotKeyModifier
-import io.github.kdroidfilter.nucleus.globalhotkey.MediaKey
-import io.github.kdroidfilter.nucleus.globalhotkey.plus
+import dev.nucleusframework.nucleus.core.runtime.Platform
+import dev.nucleusframework.nucleus.globalhotkey.GlobalHotKeyManager
+import dev.nucleusframework.nucleus.globalhotkey.HotKeyModifier
+import dev.nucleusframework.nucleus.globalhotkey.MediaKey
+import dev.nucleusframework.nucleus.globalhotkey.plus
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext

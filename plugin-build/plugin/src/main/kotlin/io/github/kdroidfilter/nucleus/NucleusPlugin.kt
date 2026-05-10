@@ -5,14 +5,14 @@
 
 @file:Suppress("unused")
 
-package io.github.kdroidfilter.nucleus
+package dev.nucleusframework.nucleus
 
 import groovy.lang.Closure
-import io.github.kdroidfilter.nucleus.desktop.application.internal.configureDesktop
-import io.github.kdroidfilter.nucleus.experimental.internal.configureExperimentalTargetsFlagsCheck
-import io.github.kdroidfilter.nucleus.internal.KOTLIN_MPP_PLUGIN_ID
-import io.github.kdroidfilter.nucleus.internal.mppExt
-import io.github.kdroidfilter.nucleus.internal.utils.currentTarget
+import dev.nucleusframework.nucleus.desktop.application.internal.configureDesktop
+import dev.nucleusframework.nucleus.experimental.internal.configureExperimentalTargetsFlagsCheck
+import dev.nucleusframework.nucleus.internal.KOTLIN_MPP_PLUGIN_ID
+import dev.nucleusframework.nucleus.internal.mppExt
+import dev.nucleusframework.nucleus.internal.utils.currentTarget
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.artifacts.dsl.DependencyHandler

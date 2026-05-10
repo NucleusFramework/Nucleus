@@ -30,11 +30,11 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunch
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunchResult
-import io.github.kdroidfilter.nucleus.autolaunch.AutoLaunchState
-import io.github.kdroidfilter.nucleus.core.runtime.Platform
-import io.github.kdroidfilter.nucleus.core.runtime.Platform.MacOS
+import dev.nucleusframework.nucleus.autolaunch.AutoLaunch
+import dev.nucleusframework.nucleus.autolaunch.AutoLaunchResult
+import dev.nucleusframework.nucleus.autolaunch.AutoLaunchState
+import dev.nucleusframework.nucleus.core.runtime.Platform
+import dev.nucleusframework.nucleus.core.runtime.Platform.MacOS
 
 @Composable
 fun AutoLaunchScreen() {

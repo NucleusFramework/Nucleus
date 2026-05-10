@@ -260,12 +260,12 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved) {
 
 /* ================================================================== */
 /*  JNI exports                                                        */
-/*  Package: io.github.kdroidfilter.nucleus.window.tao                 */
+/*  Package: dev.nucleusframework.nucleus.window.tao                 */
 /*  Class:   NativeTaoWindowsDecoBridge                                */
 /* ================================================================== */
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
     (void)env; (void)clazz;
@@ -303,7 +303,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeUninstallDecoration(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeUninstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -326,7 +326,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetTitleBarHeight(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetTitleBarHeight(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint heightPx)
 {
     (void)env; (void)clazz;
@@ -339,7 +339,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 /* Background color (ARGB) — synced to DWM caption/border color and dark-mode
  * flag so the "sheet of glass" composited during resize matches the theme. */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetBackgroundColor(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetBackgroundColor(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint argb)
 {
     (void)env; (void)clazz;
@@ -366,7 +366,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 }
 
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetFullscreen(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
 {
     (void)env; (void)clazz;
@@ -437,7 +437,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
 }
 
 JNIEXPORT jboolean JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeIsFullscreen(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeIsFullscreen(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)env; (void)clazz;
@@ -455,7 +455,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
  * Used by DecoratedDialog to make the dialog behave like a real JDialog.
  * Pass ownerHwndLong == 0 to clear the owner. */
 JNIEXPORT void JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetOwner(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeSetOwner(
     JNIEnv *env, jclass clazz, jlong childHwndLong, jlong ownerHwndLong)
 {
     (void)env; (void)clazz;
@@ -474,7 +474,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
  * (pre-Windows 10 1607). Used by DecoratedWindow when the window's own
  * scale factor isn't yet resolvable (pre-onWindowReady). */
 JNIEXPORT jint JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorScaleMilli(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -502,7 +502,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
  * screen minus the taskbar) in physical pixels. Used by DecoratedWindow to
  * resolve [WindowPosition.Aligned] for the initial outer position. */
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorWorkArea(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetPrimaryMonitorWorkArea(
     JNIEnv *env, jclass clazz)
 {
     (void)clazz;
@@ -523,7 +523,7 @@ Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_native
  * coordinates (physical pixels). Used by DecoratedDialog to centre itself on
  * its parent. Returns NULL if hwnd is invalid. */
 JNIEXPORT jlongArray JNICALL
-Java_io_github_kdroidfilter_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowRect(
+Java_dev_nucleusframework_nucleus_window_tao_NativeTaoWindowsDecoBridge_nativeGetWindowRect(
     JNIEnv *env, jclass clazz, jlong hwndLong)
 {
     (void)clazz;

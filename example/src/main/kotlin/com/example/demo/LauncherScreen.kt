@@ -37,11 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import io.github.kdroidfilter.nucleus.freedesktop.icons.FreedesktopIcon
-import io.github.kdroidfilter.nucleus.launcher.linux.DbusmenuItem
-import io.github.kdroidfilter.nucleus.launcher.linux.LauncherProperties
-import io.github.kdroidfilter.nucleus.launcher.linux.LinuxLauncherEntry
-import io.github.kdroidfilter.nucleus.launcher.linux.LinuxQuicklist
+import dev.nucleusframework.nucleus.freedesktop.icons.FreedesktopIcon
+import dev.nucleusframework.nucleus.launcher.linux.DbusmenuItem
+import dev.nucleusframework.nucleus.launcher.linux.LauncherProperties
+import dev.nucleusframework.nucleus.launcher.linux.LinuxLauncherEntry
+import dev.nucleusframework.nucleus.launcher.linux.LinuxQuicklist
 
 private const val EVENT_LOG_MAX = 20
 
