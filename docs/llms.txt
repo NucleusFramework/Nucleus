@@ -630,25 +630,25 @@ dependencies {
 
 ## What Changes
 
-| Feature | Before (compose) | After (nucleus) |
-|---------|-------------------|-----------------|
-| DSL entry point | `compose.desktop.application` | `nucleus.application` |
-| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*` |
-| Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives |
-| Native lib cleanup | Manual | `cleanupNativeLibs = true` |
-| AOT cache | Not available | `enableAotCache = true` |
-| Splash screen | Manual | `splashImage = "splash.png"` |
-| Deep links | Manual (macOS only via Info.plist) | Cross-platform `protocol("name", "scheme")` |
-| File associations | Limited | Cross-platform `fileAssociation()` |
-| NSIS config | Not available | Full `nsis { }` DSL |
-| AppX config | Not available | Full `appx { }` DSL |
-| Snap config | Not available | Full `snap { }` DSL |
-| Flatpak config | Not available | Full `flatpak { }` DSL |
-| Store pipeline | Not available | Automatic dual pipeline for store formats (PKG, AppX, Flatpak) with sandboxing for PKG and Flatpak |
-| Auto-update | Not available | Built-in with YML metadata |
-| Code signing | macOS only | + Windows PFX / Azure Trusted Signing |
+| Feature | Before (compose) | After (nucleus)                                                                                                                       |
+|---------|-------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| DSL entry point | `compose.desktop.application` | `nucleus.application`                                                                                                                 |
+| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*`                                                                            |
+| Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives                                                                             |
+| Native lib cleanup | Manual | `cleanupNativeLibs = true`                                                                                                            |
+| AOT cache | Not available | `enableAotCache = true`                                                                                                               |
+| Splash screen | Manual | `splashImage = "splash.png"`                                                                                                          |
+| Deep links | Manual (macOS only via Info.plist) | Cross-platform `protocol("name", "scheme")`                                                                                           |
+| File associations | Limited | Cross-platform `fileAssociation()`                                                                                                    |
+| NSIS config | Not available | Full `nsis { }` DSL                                                                                                                   |
+| AppX config | Not available | Full `appx { }` DSL                                                                                                                   |
+| Snap config | Not available | Full `snap { }` DSL                                                                                                                   |
+| Flatpak config | Not available | Full `flatpak { }` DSL                                                                                                                |
+| Store pipeline | Not available | Automatic dual pipeline for store formats (PKG, AppX, Flatpak) with sandboxing for PKG and Flatpak                                    |
+| Auto-update | Not available | Built-in with YML metadata                                                                                                            |
+| Code signing | macOS only | + Windows PFX / Azure Trusted Signing                                                                                                 |
 | DMG appearance | Not customizable (jpackage defaults) | Full `dmg { }` DSL: background, icon size, window layout, content positioning, format ([details](targets/macos.md#dmg-customization)) |
-| Artifact naming | Fixed | Template with `artifactName` |
+| Artifact naming | Fixed | Template with `artifactName`                                                                                                          |
 
 ## Important Differences from Compose Desktop
 

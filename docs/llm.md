@@ -61,7 +61,7 @@ curl -s https://nucleusframework.dev/llms-full.txt   # complete
 - Platform-specific configuration (macOS, Windows, Linux)
 - macOS 26 Liquid Glass and SDK version patching
 - Sandboxing pipeline details
-- Code signing and notarization (Windows PFX, Azure Trusted Signing, macOS Developer ID)
+- Code signing and notarization (Windows PFX, Azure Artifact Signing, macOS Developer ID)
 - Auto-update runtime API with Compose integration example
 - Publishing to GitHub Releases and S3
 - CI/CD workflows and all composite actions

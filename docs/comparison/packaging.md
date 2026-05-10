@@ -146,15 +146,15 @@ Conveyor's delta update system is a genuine differentiator: a single-line change
 
 ### 4. Code Signing & Notarization
 
-| Tool | macOS Signing | macOS Notarization | Windows PFX | Azure Trusted Signing | Other Cloud HSMs | Score |
-|------|:------------:|:------------------:|:-----------:|:---------------------:|:----------------:|:-----:|
-| **Nucleus** | ✅ | ✅ | ✅ | ✅ | ❌ | **10** |
-| Conveyor | ✅ | ✅ | ✅ (+ self-sign + SSL certs) | ✅ | ✅ (6 providers) | **10** |
-| install4j | ✅ | ✅ | ✅ | ❌ | ❌ | **8** |
-| jDeploy | ✅¹ | ✅¹ | ✅¹ | ❌ | ❌ | **7** |
-| jpackage | ✅ (`--mac-sign`) | ✅ (`--mac-app-store`) | ❌ | ❌ | ❌ | **3** |
-| Compose MP | ✅ | ✅ | ❌ | ❌ | ❌ | **5** |
-| JavaPackager | ✅ | ❌ | ✅ (Jsign) | ❌ | ❌ | **3** |
+| Tool | macOS Signing | macOS Notarization | Windows PFX | Azure Artifact Signing | Other Cloud HSMs | Score |
+|------|:------------:|:------------------:|:-----------:|:----------------------:|:----------------:|:-----:|
+| **Nucleus** | ✅ | ✅ | ✅ |           ✅            | ❌ | **10** |
+| Conveyor | ✅ | ✅ | ✅ (+ self-sign + SSL certs) |           ✅            | ✅ (6 providers) | **10** |
+| install4j | ✅ | ✅ | ✅ |           ❌            | ❌ | **8** |
+| jDeploy | ✅¹ | ✅¹ | ✅¹ |           ❌            | ❌ | **7** |
+| jpackage | ✅ (`--mac-sign`) | ✅ (`--mac-app-store`) | ❌ |           ❌            | ❌ | **3** |
+| Compose MP | ✅ | ✅ | ❌ |           ❌            | ❌ | **5** |
+| JavaPackager | ✅ | ❌ | ✅ (Jsign) |           ❌            | ❌ | **3** |
 
 ¹ jDeploy pre-signs and notarizes installers using its own certificate; optional custom signing via GitHub Action ([FAQ](https://www.jdeploy.com/docs/faq/)).
 
@@ -166,7 +166,7 @@ Conveyor's delta update system is a genuine differentiator: a single-line change
     - **Compose MP**: [Native distributions](https://kotlinlang.org/docs/multiplatform/compose-native-distribution.html) — macOS signing and notarization DSL
     - **JavaPackager**: [v1.7.4 release](https://github.com/fvarrui/JavaPackager/releases/tag/v1.7.4) — Jsign 5.0 for Windows signing
 
-Conveyor has the broadest signing provider support (6 cloud HSM services). Nucleus focuses on the two most common paths (PFX + Azure Trusted Signing) with CI-ready composite actions for secret management.
+Conveyor has the broadest signing provider support (6 cloud HSM services). Nucleus focuses on the two most common paths (PFX + Azure Artifact Signing) with CI-ready composite actions for secret management.
 
 ---
 
@@ -423,7 +423,7 @@ A modern CLI tool that uniquely supports **cross-compilation** — build for Win
 
 **Updates**: Sparkle 2 on macOS with delta patches (configurable, default 5 versions), MSIX native 64 KB-chunk delta on Windows, apt repositories on Linux ([update modes](https://conveyor.hydraulic.dev/21.1/configs/update-modes/)).
 
-**Signing**: Self-signing for free distribution, purchased Authenticode/SSL certificates (.p12/.pfx), macOS notarization via App Store Connect API keys, plus 6 cloud signing providers: Azure Trusted Signing, Azure Key Vault, AWS KMS, SSL.com eSigner, DigiCert ONE, Google Cloud KMS, and HSM support (SafeNet, YubiKey) ([keys and certificates](https://conveyor.hydraulic.dev/21.1/configs/keys-and-certificates/)).
+**Signing**: Self-signing for free distribution, purchased Authenticode/SSL certificates (.p12/.pfx), macOS notarization via App Store Connect API keys, plus 6 cloud signing providers: Azure Artifact Signing, Azure Key Vault, AWS KMS, SSL.com eSigner, DigiCert ONE, Google Cloud KMS, and HSM support (SafeNet, YubiKey) ([keys and certificates](https://conveyor.hydraulic.dev/21.1/configs/keys-and-certificates/)).
 
 **OS integration**: Registers URL schemes (`app.url-schemes`) and file associations (`app.file-associations`) at OS level, but does **not** provide a runtime library — apps must implement receiving logic themselves ([OS integration](https://conveyor.hydraulic.dev/21.1/configs/os-integration/)).
 
@@ -495,7 +495,7 @@ Bundles JRE with application into a directory structure. Game-focused (libGDX/LW
 4. **First JVM tool with AOT cache** — Project Leyden (JDK 25+), no GraalVM required
 5. **First JVM tool with integrated GraalVM Native Image support** — compile Compose Desktop apps to standalone native binaries (~0.5s cold boot, ~100–150 MB RAM, no bundled JRE). Three startup tiers: standard JVM → AOT cache (Leyden) → native image
 6. **Broadest store distribution** — 4 stores (MAS, MS Store, Flathub, Snap Store), unique JVM sandbox pipeline
-7. **Full signing matrix** — macOS + notarization, Windows PFX + Azure Trusted Signing
+7. **Full signing matrix** — macOS + notarization, Windows PFX + Azure Artifact Signing
 8. **Free and open source** (MIT)
 9. **Native SSL runtime** — unique JNI module using the OS trust store (macOS Security.framework, Windows Crypt32, Linux PEM bundles); pre-wired OkHttp and Ktor adapters; no cacerts manipulation needed at runtime
 10. **Build-time CA cert patching** — import custom PEM/DER certificates into the bundled JVM's `cacerts` at packaging time (Conveyor also offers this via `app.jvm.additional-ca-certs`)

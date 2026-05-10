@@ -15,6 +15,9 @@ site
 /tmp/
 /.tmp-compose-src/
 
+# Claude Code per-user settings
+.claude/settings.local.json
+
 # Native libraries (built on CI via build-natives.yaml)
 **/src/main/resources/nucleus/native/
 

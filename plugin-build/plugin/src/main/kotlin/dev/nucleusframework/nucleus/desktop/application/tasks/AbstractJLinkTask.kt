@@ -1,0 +1,76 @@
+﻿/*
+ * Copyright 2020-2021 JetBrains s.r.o. and respective authors and developers.
+ * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
+ */
+
+package dev.nucleusframework.nucleus.desktop.application.tasks
+
+import dev.nucleusframework.nucleus.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.nucleus.desktop.application.internal.RuntimeCompressionLevel
+import dev.nucleusframework.nucleus.desktop.application.internal.cliArg
+import dev.nucleusframework.nucleus.internal.utils.ioFile
+import dev.nucleusframework.nucleus.internal.utils.notNullProperty
+import dev.nucleusframework.nucleus.internal.utils.nullableProperty
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.Input
+import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.Optional
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.work.DisableCachingByDefault
+import java.io.File
+
+// todo: public DSL
+// todo: deduplicate if multiple runtimes are created
+@DisableCachingByDefault(because = "Depends on external jlink tool")
+@Suppress("UnnecessaryAbstractClass")
+abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
+    @get:Input
+    val modules: ListProperty<String> = objects.listProperty(String::class.java)
+
+    @get:Input
+    val includeAllModules: Property<Boolean> = objects.notNullProperty()
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    val javaRuntimePropertiesFile: RegularFileProperty = objects.fileProperty()
+
+    @get:Input
+    internal val stripDebug: Property<Boolean> = objects.notNullProperty(true)
+
+    @get:Input
+    internal val noHeaderFiles: Property<Boolean> = objects.notNullProperty(true)
+
+    @get:Input
+    internal val noManPages: Property<Boolean> = objects.notNullProperty(true)
+
+    @get:Input
+    internal val stripNativeCommands: Property<Boolean> = objects.notNullProperty(true)
+
+    @get:Input
+    @get:Optional
+    internal val compressionLevel: Property<RuntimeCompressionLevel> = objects.nullableProperty()
+
+    override fun makeArgs(tmpDir: File): MutableList<String> =
+        super.makeArgs(tmpDir).apply {
+            val modulesToInclude =
+                if (includeAllModules.get()) {
+                    JvmRuntimeProperties.readFromFile(javaRuntimePropertiesFile.ioFile).availableModules
+                } else {
+                    modules.get()
+                }
+            modulesToInclude.forEach { m ->
+                cliArg("--add-modules", m)
+            }
+
+            cliArg("--strip-debug", stripDebug)
+            cliArg("--no-header-files", noHeaderFiles)
+            cliArg("--no-man-pages", noManPages)
+            cliArg("--strip-native-commands", stripNativeCommands)
+            cliArg("--compress", compressionLevel.orNull?.id)
+
+            cliArg("--output", destinationDir)
+        }
+}

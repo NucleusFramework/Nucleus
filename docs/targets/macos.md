@@ -264,7 +264,7 @@ macOS {
 
     notarization {
         appleID.set("dev@example.com")
-        password.set("@keychain:AC_PASSWORD")
+        password.set(System.getenv("MAC_NOTARIZATION_PASSWORD"))
         teamID.set("TEAMID")
     }
 }

@@ -919,7 +919,7 @@ macOS {
 
     notarization {
         appleID.set("dev@example.com")
-        password.set("@keychain:AC_PASSWORD")
+        password.set(System.getenv("MAC_NOTARIZATION_PASSWORD"))
         teamID.set("TEAMID")
     }
 }
@@ -1306,7 +1306,7 @@ appx {
 
 ## Code Signing
 
-See [Code Signing](../code-signing.md#windows) for full details on PFX certificates and Azure Trusted Signing.
+See [Code Signing](../code-signing.md#windows) for full details on PFX certificates and Azure Artifact Signing.
 
 ```kotlin
 windows {
@@ -1951,14 +1951,15 @@ windows {
 | Sectigo | `http://timestamp.sectigo.com` |
 | GlobalSign | `http://timestamp.globalsign.com` |
 
-### Azure Trusted Signing
+### Azure Artifact Signing
 
-For cloud-based signing with [Azure Trusted Signing](https://learn.microsoft.com/en-us/azure/trusted-signing/):
+For cloud-based signing with [Azure Artifact Signing](https://learn.microsoft.com/en-us/azure/artifact-signing/):
 
 ```kotlin
 windows {
     signing {
         enabled = true
+        publisherName = "Your Publisher Name"
         azureTenantId = "your-tenant-id"
         azureEndpoint = "https://your-region.codesigning.azure.net"
         azureCertificateProfileName = "your-profile"
@@ -2025,25 +2026,81 @@ macOS {
 
 ### Notarization
 
-Apple notarization is required for distributing outside the Mac App Store on macOS 10.15+:
+Apple notarization is required for distributing outside the Mac App Store on macOS 10.15+. Three authentication modes are supported (mutually exclusive):
+
+#### Mode 1 — Apple ID + app-specific password
 
 ```kotlin
 macOS {
     notarization {
         appleID.set("dev@example.com")
-        password.set("@keychain:AC_PASSWORD")
+        password.set(System.getenv("MAC_NOTARIZATION_PASSWORD"))
         teamID.set("TEAMID")
     }
 }
 ```
 
-> **Tip:** Use `xcrun notarytool store-credentials` to save credentials in the keychain:
-> ```bash
-> xcrun notarytool store-credentials "AC_PASSWORD" \
->   --apple-id "dev@example.com" \
->   --team-id "TEAMID" \
->   --password "app-specific-password"
-> ```
+Equivalent Gradle properties:
+
+| Gradle property | Description |
+|-----------------|-------------|
+| `compose.desktop.mac.notarization.appleID` | Apple ID email |
+| `compose.desktop.mac.notarization.password` | App-specific password |
+| `compose.desktop.mac.notarization.teamID` | Apple Team ID |
+
+#### Mode 2 — `notarytool` keychain profile
+
+Store credentials once with `xcrun notarytool store-credentials`, then reference the profile by name:
+
+```bash
+xcrun notarytool store-credentials "AC_PASSWORD" \
+  --apple-id "dev@example.com" \
+  --team-id "TEAMID" \
+  --password "app-specific-password"
+```
+
+```kotlin
+macOS {
+    notarization {
+        keychainProfile.set("AC_PASSWORD")
+        // Optional — defaults to the user's login keychain:
+        // keychainPath.set("/Users/me/Library/Keychains/login.keychain-db")
+    }
+}
+```
+
+Equivalent Gradle properties:
+
+| Gradle property | Description |
+|-----------------|-------------|
+| `compose.desktop.mac.notarization.keychainProfile` | Profile name created via `store-credentials` |
+| `compose.desktop.mac.notarization.keychainPath` | Optional path to the keychain holding the profile |
+
+#### Mode 3 — App Store Connect API key
+
+Generate a key in [App Store Connect → Users and Access → Integrations → Team Keys](https://appstoreconnect.apple.com/access/integrations/api), download the `.p8` file once, then reference it:
+
+```kotlin
+macOS {
+    notarization {
+        apiKey.set("/path/to/AuthKey_ABC123.p8")
+        apiKeyId.set("ABC123")          // 10-char Key ID
+        apiIssuer.set("12345678-90ab-cdef-1234-567890abcdef") // Issuer UUID
+    }
+}
+```
+
+Equivalent Gradle properties:
+
+| Gradle property | Description |
+|-----------------|-------------|
+| `compose.desktop.mac.notarization.apiKey` | Path to the `.p8` API key file |
+| `compose.desktop.mac.notarization.apiKeyId` | Key ID (the 10-character identifier) |
+| `compose.desktop.mac.notarization.apiIssuer` | Issuer UUID for the team |
+
+This mode is recommended for CI/CD: API keys can be revoked independently of the Apple ID, support role-based scoping, and are not affected by 2FA.
+
+> Configuring more than one mode in the same build is rejected at validation time. Pick one.
 
 ### CI/CD: macOS Signing
 
@@ -14008,15 +14065,15 @@ Conveyor's delta update system is a genuine differentiator: a single-line change
 
 ### 4. Code Signing & Notarization
 
-| Tool | macOS Signing | macOS Notarization | Windows PFX | Azure Trusted Signing | Other Cloud HSMs | Score |
-|------|:------------:|:------------------:|:-----------:|:---------------------:|:----------------:|:-----:|
-| **Nucleus** | ✅ | ✅ | ✅ | ✅ | ❌ | **10** |
-| Conveyor | ✅ | ✅ | ✅ (+ self-sign + SSL certs) | ✅ | ✅ (6 providers) | **10** |
-| install4j | ✅ | ✅ | ✅ | ❌ | ❌ | **8** |
-| jDeploy | ✅¹ | ✅¹ | ✅¹ | ❌ | ❌ | **7** |
-| jpackage | ✅ (`--mac-sign`) | ✅ (`--mac-app-store`) | ❌ | ❌ | ❌ | **3** |
-| Compose MP | ✅ | ✅ | ❌ | ❌ | ❌ | **5** |
-| JavaPackager | ✅ | ❌ | ✅ (Jsign) | ❌ | ❌ | **3** |
+| Tool | macOS Signing | macOS Notarization | Windows PFX | Azure Artifact Signing | Other Cloud HSMs | Score |
+|------|:------------:|:------------------:|:-----------:|:----------------------:|:----------------:|:-----:|
+| **Nucleus** | ✅ | ✅ | ✅ |           ✅            | ❌ | **10** |
+| Conveyor | ✅ | ✅ | ✅ (+ self-sign + SSL certs) |           ✅            | ✅ (6 providers) | **10** |
+| install4j | ✅ | ✅ | ✅ |           ❌            | ❌ | **8** |
+| jDeploy | ✅¹ | ✅¹ | ✅¹ |           ❌            | ❌ | **7** |
+| jpackage | ✅ (`--mac-sign`) | ✅ (`--mac-app-store`) | ❌ |           ❌            | ❌ | **3** |
+| Compose MP | ✅ | ✅ | ❌ |           ❌            | ❌ | **5** |
+| JavaPackager | ✅ | ❌ | ✅ (Jsign) |           ❌            | ❌ | **3** |
 
 ¹ jDeploy pre-signs and notarizes installers using its own certificate; optional custom signing via GitHub Action ([FAQ](https://www.jdeploy.com/docs/faq/)).
 
@@ -14028,7 +14085,7 @@ Conveyor's delta update system is a genuine differentiator: a single-line change
     - **Compose MP**: [Native distributions](https://kotlinlang.org/docs/multiplatform/compose-native-distribution.html) — macOS signing and notarization DSL
     - **JavaPackager**: [v1.7.4 release](https://github.com/fvarrui/JavaPackager/releases/tag/v1.7.4) — Jsign 5.0 for Windows signing
 
-Conveyor has the broadest signing provider support (6 cloud HSM services). Nucleus focuses on the two most common paths (PFX + Azure Trusted Signing) with CI-ready composite actions for secret management.
+Conveyor has the broadest signing provider support (6 cloud HSM services). Nucleus focuses on the two most common paths (PFX + Azure Artifact Signing) with CI-ready composite actions for secret management.
 
 ---
 
@@ -14281,7 +14338,7 @@ A modern CLI tool that uniquely supports **cross-compilation** — build for Win
 
 **Updates**: Sparkle 2 on macOS with delta patches (configurable, default 5 versions), MSIX native 64 KB-chunk delta on Windows, apt repositories on Linux ([update modes](https://conveyor.hydraulic.dev/21.1/configs/update-modes/)).
 
-**Signing**: Self-signing for free distribution, purchased Authenticode/SSL certificates (.p12/.pfx), macOS notarization via App Store Connect API keys, plus 6 cloud signing providers: Azure Trusted Signing, Azure Key Vault, AWS KMS, SSL.com eSigner, DigiCert ONE, Google Cloud KMS, and HSM support (SafeNet, YubiKey) ([keys and certificates](https://conveyor.hydraulic.dev/21.1/configs/keys-and-certificates/)).
+**Signing**: Self-signing for free distribution, purchased Authenticode/SSL certificates (.p12/.pfx), macOS notarization via App Store Connect API keys, plus 6 cloud signing providers: Azure Artifact Signing, Azure Key Vault, AWS KMS, SSL.com eSigner, DigiCert ONE, Google Cloud KMS, and HSM support (SafeNet, YubiKey) ([keys and certificates](https://conveyor.hydraulic.dev/21.1/configs/keys-and-certificates/)).
 
 **OS integration**: Registers URL schemes (`app.url-schemes`) and file associations (`app.file-associations`) at OS level, but does **not** provide a runtime library — apps must implement receiving logic themselves ([OS integration](https://conveyor.hydraulic.dev/21.1/configs/os-integration/)).
 
@@ -14353,7 +14410,7 @@ Bundles JRE with application into a directory structure. Game-focused (libGDX/LW
 4. **First JVM tool with AOT cache** — Project Leyden (JDK 25+), no GraalVM required
 5. **First JVM tool with integrated GraalVM Native Image support** — compile Compose Desktop apps to standalone native binaries (~0.5s cold boot, ~100–150 MB RAM, no bundled JRE). Three startup tiers: standard JVM → AOT cache (Leyden) → native image
 6. **Broadest store distribution** — 4 stores (MAS, MS Store, Flathub, Snap Store), unique JVM sandbox pipeline
-7. **Full signing matrix** — macOS + notarization, Windows PFX + Azure Trusted Signing
+7. **Full signing matrix** — macOS + notarization, Windows PFX + Azure Artifact Signing
 8. **Free and open source** (MIT)
 9. **Native SSL runtime** — unique JNI module using the OS trust store (macOS Security.framework, Windows Crypt32, Linux PEM bundles); pre-wired OkHttp and Ktor adapters; no cacerts manipulation needed at runtime
 10. **Build-time CA cert patching** — import custom PEM/DER certificates into the bundled JVM's `cacerts` at packaging time (Conveyor also offers this via `app.jvm.additional-ca-certs`)
@@ -14623,25 +14680,25 @@ dependencies {
 
 ## What Changes
 
-| Feature | Before (compose) | After (nucleus) |
-|---------|-------------------|-----------------|
-| DSL entry point | `compose.desktop.application` | `nucleus.application` |
-| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*` |
-| Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives |
-| Native lib cleanup | Manual | `cleanupNativeLibs = true` |
-| AOT cache | Not available | `enableAotCache = true` |
-| Splash screen | Manual | `splashImage = "splash.png"` |
-| Deep links | Manual (macOS only via Info.plist) | Cross-platform `protocol("name", "scheme")` |
-| File associations | Limited | Cross-platform `fileAssociation()` |
-| NSIS config | Not available | Full `nsis { }` DSL |
-| AppX config | Not available | Full `appx { }` DSL |
-| Snap config | Not available | Full `snap { }` DSL |
-| Flatpak config | Not available | Full `flatpak { }` DSL |
-| Store pipeline | Not available | Automatic dual pipeline for store formats (PKG, AppX, Flatpak) with sandboxing for PKG and Flatpak |
-| Auto-update | Not available | Built-in with YML metadata |
-| Code signing | macOS only | + Windows PFX / Azure Trusted Signing |
+| Feature | Before (compose) | After (nucleus)                                                                                                                       |
+|---------|-------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| DSL entry point | `compose.desktop.application` | `nucleus.application`                                                                                                                 |
+| DSL imports | `org.jetbrains.compose.desktop.application.dsl.*` | `dev.nucleusframework.nucleus.desktop.application.dsl.*`                                                                            |
+| Target formats | DMG, PKG, MSI, EXE, DEB, RPM | + NSIS, AppX, Portable, AppImage, Snap, Flatpak, archives                                                                             |
+| Native lib cleanup | Manual | `cleanupNativeLibs = true`                                                                                                            |
+| AOT cache | Not available | `enableAotCache = true`                                                                                                               |
+| Splash screen | Manual | `splashImage = "splash.png"`                                                                                                          |
+| Deep links | Manual (macOS only via Info.plist) | Cross-platform `protocol("name", "scheme")`                                                                                           |
+| File associations | Limited | Cross-platform `fileAssociation()`                                                                                                    |
+| NSIS config | Not available | Full `nsis { }` DSL                                                                                                                   |
+| AppX config | Not available | Full `appx { }` DSL                                                                                                                   |
+| Snap config | Not available | Full `snap { }` DSL                                                                                                                   |
+| Flatpak config | Not available | Full `flatpak { }` DSL                                                                                                                |
+| Store pipeline | Not available | Automatic dual pipeline for store formats (PKG, AppX, Flatpak) with sandboxing for PKG and Flatpak                                    |
+| Auto-update | Not available | Built-in with YML metadata                                                                                                            |
+| Code signing | macOS only | + Windows PFX / Azure Trusted Signing                                                                                                 |
 | DMG appearance | Not customizable (jpackage defaults) | Full `dmg { }` DSL: background, icon size, window layout, content positioning, format ([details](targets/macos.md#dmg-customization)) |
-| Artifact naming | Fixed | Template with `artifactName` |
+| Artifact naming | Fixed | Template with `artifactName`                                                                                                          |
 
 ## Important Differences from Compose Desktop
 

@@ -201,20 +201,20 @@ sign_app_bundle() {
   echo "  [1/7] Signing .dylib files..."
   find "$app_path" -name '*.dylib' -type f | while IFS= read -r lib; do
     codesign --force --sign "$identity" --options runtime --timestamp \
-      "${runtime_ent_args[@]}" "${kc_args[@]}" "$lib"
+      ${runtime_ent_args[@]+"${runtime_ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$lib"
   done
 
   echo "  [2/7] Signing .jnilib files..."
   find "$app_path" -name '*.jnilib' -type f | while IFS= read -r lib; do
     codesign --force --sign "$identity" --options runtime --timestamp \
-      "${runtime_ent_args[@]}" "${kc_args[@]}" "$lib"
+      ${runtime_ent_args[@]+"${runtime_ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$lib"
   done
 
   echo "  [3/7] Signing main executables..."
   if [[ -d "$app_path/Contents/MacOS" ]]; then
     find "$app_path/Contents/MacOS" -type f -perm +111 | while IFS= read -r exe; do
       codesign --force --sign "$identity" --options runtime --timestamp \
-        "${ent_args[@]}" "${kc_args[@]}" "$exe"
+        ${ent_args[@]+"${ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$exe"
     done
   fi
 
@@ -222,25 +222,25 @@ sign_app_bundle() {
   if [[ -d "$app_path/Contents/runtime/Contents/Home/bin" ]]; then
     find "$app_path/Contents/runtime/Contents/Home/bin" -type f -perm +111 | while IFS= read -r exe; do
       codesign --force --sign "$identity" --options runtime --timestamp \
-        "${runtime_ent_args[@]}" "${kc_args[@]}" "$exe"
+        ${runtime_ent_args[@]+"${runtime_ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$exe"
     done
   fi
 
   echo "  [5/7] Signing frameworks..."
   find "$app_path" -name '*.framework' -type d | while IFS= read -r fw; do
     codesign --force --sign "$identity" --options runtime --timestamp \
-      "${kc_args[@]}" "$fw"
+      ${kc_args[@]+"${kc_args[@]}"} "$fw"
   done
 
   echo "  [6/7] Signing runtime bundle..."
   if [[ -d "$app_path/Contents/runtime" ]]; then
     codesign --force --sign "$identity" --options runtime --timestamp \
-      "${runtime_ent_args[@]}" "${kc_args[@]}" "$app_path/Contents/runtime"
+      ${runtime_ent_args[@]+"${runtime_ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$app_path/Contents/runtime"
   fi
 
   echo "  [7/7] Signing .app bundle..."
   codesign --force --sign "$identity" --options runtime --timestamp \
-    "${ent_args[@]}" "${kc_args[@]}" "$app_path"
+    ${ent_args[@]+"${ent_args[@]}"} ${kc_args[@]+"${kc_args[@]}"} "$app_path"
 
   echo "  Verifying signature..."
   codesign --verify --deep --strict --verbose=2 "$app_path"
@@ -571,7 +571,7 @@ if [[ -n "$INSTALLER_IDENTITY" && -n "$UNIVERSAL_SANDBOXED_APP" ]]; then
   productbuild \
     --component "$PKG_APP_COPY" "${INSTALL_LOCATION:-/Applications}" \
     --sign "$INSTALLER_IDENTITY" \
-    "${PB_KC_ARGS[@]}" \
+    ${PB_KC_ARGS[@]+"${PB_KC_ARGS[@]}"} \
     "$OUTPUT_DIR/$PKG_NAME"
 
   echo "==> Verifying PKG signature..."

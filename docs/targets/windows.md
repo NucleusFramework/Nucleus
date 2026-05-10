@@ -264,7 +264,7 @@ appx {
 
 ## Code Signing
 
-See [Code Signing](../code-signing.md#windows) for full details on PFX certificates and Azure Trusted Signing.
+See [Code Signing](../code-signing.md#windows) for full details on PFX certificates and Azure Artifact Signing.
 
 ```kotlin
 windows {
