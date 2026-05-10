@@ -503,13 +503,24 @@ abstract class AbstractJPackageTask
             fun File.isMainUberJar() = packageFromUberJar.get() && name == launcherMainJar.ioFile.name
 
             val outdatedLibs = invalidateMappedLibs(inputChanges)
+            val destResourcesDir = packagedResourcesDir.ioFile
+
             for (sourceFile in outdatedLibs) {
                 assert(sourceFile.exists()) { "Lib file does not exist: $sourceFile" }
 
                 libsMapping[sourceFile] =
                     if (isSkikoForCurrentOS(sourceFile) || sourceFile.isMainUberJar()) {
                         val unpackedFiles = unpackSkikoForCurrentOS(sourceFile, skikoDir.ioFile, fileOperations)
-                        unpackedFiles.map { copyFileToLibsDir(it) }
+                        unpackedFiles.map { file ->
+                            if (sandboxingEnabled.get() && currentOS != OS.MacOS && (file.extension == "dll" || file.extension == "so" || file.name == "icudtl.dat")) {
+                                val target = destResourcesDir.resolve(file.name)
+                                fileOperations.mkdirs(destResourcesDir)
+                                file.copyTo(target, overwrite = true)
+                                target
+                            } else {
+                                copyFileToLibsDir(file)
+                            }
+                        }
                     } else {
                         listOf(copyFileToLibsDir(sourceFile))
                     }
@@ -528,16 +539,6 @@ abstract class AbstractJPackageTask
                     } else {
                         file.copyTo(destFile)
                     }
-                }
-            }
-
-            // When sandboxing is enabled, Skiko's native DLL is in resources/ but its companion
-            // data file (icudtl.dat) is extracted by unpackSkikoForCurrentOS to libsDir.
-            // Copy it next to the DLL so SkLoadICU can find it.
-            if (sandboxingEnabled.get()) {
-                val icudtl = libsDir.resolve("icudtl.dat")
-                if (icudtl.exists()) {
-                    icudtl.copyTo(destResourcesDir.resolve("icudtl.dat"), overwrite = true)
                 }
             }
 
