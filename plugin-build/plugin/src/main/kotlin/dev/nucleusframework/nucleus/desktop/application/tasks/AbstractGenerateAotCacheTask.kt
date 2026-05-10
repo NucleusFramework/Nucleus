@@ -349,6 +349,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         val args = mutableListOf(javaExe)
         args += "-XX:AOTCacheOutput=${aotCacheFile.absolutePath}"
         args += "-Dnucleus.aot.mode=training"
+        args += "--enable-native-access=ALL-UNNAMED"
         args += "-cp"
         args += classpath
         args += javaOptions
