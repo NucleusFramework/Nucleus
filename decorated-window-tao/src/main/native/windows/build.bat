@@ -139,7 +139,7 @@ if errorlevel 1 (
 REM nucleus_tao_a11y.dll — UI Automation provider. Needs the C runtime
 REM (HeapAlloc-friendly libcmt) because uiautomationcore.lib pulls in C++
 REM statics that require __security_check_cookie / floating-point support.
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O1 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_a11y.dll" ^
@@ -212,7 +212,7 @@ if errorlevel 1 (
     goto :clear_cache
 )
 
-cl /LD /O1 /GS- /nologo ^
+cl /LD /O1 /Oi /GS- /nologo ^
     /I"%JNI_INCLUDE%" /I"%JNI_INCLUDE_WIN32%" ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_a11y.dll" ^
