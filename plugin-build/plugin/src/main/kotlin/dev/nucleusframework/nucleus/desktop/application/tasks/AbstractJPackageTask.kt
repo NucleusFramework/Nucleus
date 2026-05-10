@@ -528,7 +528,6 @@ abstract class AbstractJPackageTask
 
             // todo: incremental copy
             fileOperations.clearDirs(packagedResourcesDir)
-            val destResourcesDir = packagedResourcesDir.ioFile
             val appResourcesDir = appResourcesDir.ioFileOrNull
             if (appResourcesDir != null) {
                 for (file in appResourcesDir.walk()) {
