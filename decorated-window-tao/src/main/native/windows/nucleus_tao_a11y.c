@@ -59,6 +59,12 @@
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
+#define InterlockedCompareExchange _InterlockedCompareExchange
+#define InterlockedCompareExchange64 _InterlockedCompareExchange64
+#define InterlockedDecrement _InterlockedDecrement
+#define InterlockedExchange _InterlockedExchange
+#define InterlockedExchange64 _InterlockedExchange64
+#define InterlockedIncrement _InterlockedIncrement
 #pragma intrinsic(_InterlockedCompareExchange)
 #pragma intrinsic(_InterlockedCompareExchange64)
 #pragma intrinsic(_InterlockedDecrement)

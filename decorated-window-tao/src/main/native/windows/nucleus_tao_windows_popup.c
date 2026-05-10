@@ -28,6 +28,14 @@
 #include <dwmapi.h>
 #include "nucleus_tao_windows_overlay_internal.h"
 
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+#include <intrin.h>
+#define InterlockedCompareExchange _InterlockedCompareExchange
+#define InterlockedOr _InterlockedOr
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedOr)
+#endif
+
 #define EVT_PTR_DOWN  1
 #define EVT_PTR_UP    2
 #define EVT_PTR_MOVE  3

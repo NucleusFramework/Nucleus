@@ -26,6 +26,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+#include <intrin.h>
+#define InterlockedDecrement _InterlockedDecrement
+#define InterlockedIncrement _InterlockedIncrement
+#pragma intrinsic(_InterlockedDecrement)
+#pragma intrinsic(_InterlockedIncrement)
+#endif
+
 /* /NODEFAULTLIB support */
 int _fltused = 0;
 
