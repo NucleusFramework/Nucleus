@@ -41,6 +41,7 @@
 #endif
 
 #include <dwmapi.h>
+#include "nucleus_tao_windows_overlay_internal.h"
 
 /* ============================================================ */
 /*  Constants + globals                                         */

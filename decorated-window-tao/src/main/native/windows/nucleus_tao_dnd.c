@@ -29,6 +29,11 @@
 #endif
 
 #include <objbase.h>
+#include <ole2.h>
+#include <oleidl.h>
+#include <shlobj.h>
+#include <stdint.h>
+#include <stddef.h>
 
 /* /NODEFAULTLIB support */
 int _fltused = 0;

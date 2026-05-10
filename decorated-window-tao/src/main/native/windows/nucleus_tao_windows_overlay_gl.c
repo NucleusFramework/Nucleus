@@ -44,6 +44,8 @@
 #endif
 
 #include <dwmapi.h>
+#include <GL/gl.h>
+#include "nucleus_tao_windows_overlay_internal.h"
 
 /* WGL ARB extension entry-points + bootstrap. */
 typedef HGLRC (WINAPI *PFN_wglCreateContextAttribsARB)(HDC, HGLRC, const int *);

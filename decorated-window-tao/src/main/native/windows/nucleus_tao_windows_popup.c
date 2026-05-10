@@ -35,6 +35,7 @@
 #endif
 
 #include <dwmapi.h>
+#include "nucleus_tao_windows_overlay_internal.h"
 
 #define EVT_PTR_DOWN  1
 #define EVT_PTR_UP    2

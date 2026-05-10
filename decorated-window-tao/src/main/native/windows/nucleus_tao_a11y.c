@@ -68,6 +68,13 @@
 #endif
 
 #include <commctrl.h>
+#include <objbase.h>
+#include <oleauto.h>
+#include <uiautomation.h>
+#include <uiautomationcoreapi.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdarg.h>
 
 /* /NODEFAULTLIB support — supplied by sibling DLL but we statically need them */
 int _fltused = 0;
