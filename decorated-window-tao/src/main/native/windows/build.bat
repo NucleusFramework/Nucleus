@@ -144,7 +144,7 @@ cl /LD /O1 /GS- /nologo ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_X64%\nucleus_tao_a11y.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain ^
-    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
+    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib libvcruntime.lib
 if errorlevel 1 (
     echo ERROR: x64 a11y compilation failed >&2
     exit /b 1
@@ -217,7 +217,7 @@ cl /LD /O1 /GS- /nologo ^
     "%A11Y_SRC%" ^
     /Fe:"%OUT_DIR_ARM64%\nucleus_tao_a11y.dll" ^
     /link /NODEFAULTLIB /ENTRY:DllMain ^
-    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib
+    kernel32.lib user32.lib comctl32.lib ole32.lib oleaut32.lib uuid.lib uiautomationcore.lib libvcruntime.lib
 if errorlevel 1 (
     echo WARNING: ARM64 a11y compilation failed >&2
     endlocal
