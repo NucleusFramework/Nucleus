@@ -88,7 +88,7 @@ mavenPublishing {
     pom {
         name.set("Nucleus Decorated Window JNI")
         description.set("JBR-free custom decorated window with native title bar for Compose Desktop (via JNI)")
-        url.set("https://github.com/nucleusframework/Nucleus")
+        url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {
             license {
@@ -106,9 +106,9 @@ mavenPublishing {
         }
 
         scm {
-            url.set("https://github.com/nucleusframework/Nucleus")
-            connection.set("scm:git:git://github.com/nucleusframework/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/nucleusframework/Nucleus.git")
+            url.set("https://github.com/kdroidFilter/Nucleus")
+            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
         }
     }
 

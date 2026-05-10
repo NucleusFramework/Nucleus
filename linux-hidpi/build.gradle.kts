@@ -66,7 +66,7 @@ mavenPublishing {
         description.set(
             "Native HiDPI scale factor detection for Compose Desktop on Linux (GSettings, GDK_SCALE, Xft.dpi)",
         )
-        url.set("https://github.com/nucleusframework/Nucleus")
+        url.set("https://github.com/kdroidFilter/Nucleus")
 
         licenses {
             license {
@@ -84,9 +84,9 @@ mavenPublishing {
         }
 
         scm {
-            url.set("https://github.com/nucleusframework/Nucleus")
-            connection.set("scm:git:git://github.com/nucleusframework/Nucleus.git")
-            developerConnection.set("scm:git:ssh://git@github.com/nucleusframework/Nucleus.git")
+            url.set("https://github.com/kdroidFilter/Nucleus")
+            connection.set("scm:git:git://github.com/kdroidFilter/Nucleus.git")
+            developerConnection.set("scm:git:ssh://git@github.com/kdroidFilter/Nucleus.git")
         }
     }
 
