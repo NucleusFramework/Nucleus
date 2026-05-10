@@ -3,7 +3,7 @@
 set -e
 
 # ─── Config ───────────────────────────────────────────────────────────
-repo="nucleusframework/Nucleus"
+repo="kdroidFilter/Nucleus"
 app_name="nucleusdemo"
 
 # ─── Colors & Symbols ────────────────────────────────────────────────

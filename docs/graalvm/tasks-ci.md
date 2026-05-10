@@ -103,7 +103,7 @@ jobs:
       # Download pre-built JNI native libraries here...
 
       - name: Setup Nucleus (GraalVM)
-        uses: nucleusframework/Nucleus/.github/actions/setup-nucleus@main
+        uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
         with:
           graalvm: 'true'
           setup-gradle: 'true'

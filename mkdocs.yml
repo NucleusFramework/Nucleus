@@ -2,7 +2,7 @@ site_name: Nucleus
 site_description: The Kotlin framework for native desktop apps — deep OS integration (notifications, tray, launcher, decorated windows, scheduler, media control) plus packaging on macOS, Windows, and Linux
 site_url: https://nucleusframework.dev
 repo_url: https://github.com/kdroidFilter/Nucleus
-repo_name: nucleusframework/Nucleus
+repo_name: kdroidFilter/Nucleus
 edit_uri: edit/main/docs/
 
 theme:

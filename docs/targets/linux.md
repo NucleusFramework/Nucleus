@@ -229,7 +229,7 @@ Flatpak requires `flatpak` and `flatpak-builder` with the target runtime and SDK
 **Using the `setup-nucleus` GitHub Action** (recommended):
 
 ```yaml
-- uses: nucleusframework/Nucleus/.github/actions/setup-nucleus@main
+- uses: kdroidFilter/Nucleus/.github/actions/setup-nucleus@main
   with:
     flatpak: 'true'
 ```
