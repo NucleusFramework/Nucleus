@@ -31,13 +31,6 @@
 
 #include <jni.h>
 #include <windows.h>
-
-#if defined(_M_ARM64) || defined(_M_ARM64EC)
-#include <intrin.h>
-#undef InterlockedCompareExchange
-#undef InterlockedExchange
-#endif
-
 #include <dwmapi.h>
 #include "nucleus_tao_windows_overlay_internal.h"
 

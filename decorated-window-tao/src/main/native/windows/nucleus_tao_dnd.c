@@ -19,13 +19,6 @@
 
 #include <jni.h>
 #include <windows.h>
-
-#if defined(_M_ARM64) || defined(_M_ARM64EC)
-#include <intrin.h>
-#undef InterlockedDecrement
-#undef InterlockedIncrement
-#endif
-
 #include <objbase.h>
 #include <ole2.h>
 #include <oleidl.h>

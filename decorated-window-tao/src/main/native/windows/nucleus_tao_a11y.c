@@ -48,20 +48,6 @@
 
 #include <jni.h>
 #include <windows.h>
-
-#if defined(_M_ARM64) || defined(_M_ARM64EC)
-#include <intrin.h>
-/* On ARM64 we use the standard CRT (no /NODEFAULTLIB), so we undefine 
- * the intrinsic macros to use the kernel32.lib exports if the compiler 
- * doesn't inline them. */
-#undef InterlockedCompareExchange
-#undef InterlockedCompareExchange64
-#undef InterlockedDecrement
-#undef InterlockedExchange
-#undef InterlockedExchange64
-#undef InterlockedIncrement
-#endif
-
 #include <commctrl.h>
 #include <objbase.h>
 #include <oleauto.h>
