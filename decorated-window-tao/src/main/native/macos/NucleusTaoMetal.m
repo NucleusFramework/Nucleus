@@ -544,6 +544,13 @@ static void removeMenuBarMonitor(NSWindow *window) {
     if (w.toolbar != nil) {
         objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        // Hide the toolbar's chrome BEFORE AppKit kicks off the entry
+        // animation. didEnterFS used to do this after the fact, but
+        // AppKit allocates the toolbar band as soon as the transition
+        // starts, leaving a flash of white above the title bar
+        // throughout the animation. Hiding here makes AppKit run the
+        // animation without ever allocating that band.
+        w.toolbar.visible = NO;
     }
     // Anchor the drawable top-left so AppKit's snapshot-stretch animation
     // doesn't enlarge our 36 dp title bar visually. The unfilled area picks
@@ -586,6 +593,14 @@ static void removeMenuBarMonitor(NSWindow *window) {
     [[w standardWindowButton:NSWindowZoomButton] setHidden:YES];
     w.titlebarAppearsTransparent = YES;
     w.titleVisibility = NSWindowTitleHidden;
+    // Restore the toolbar's chrome BEFORE the exit animation so the
+    // windowed-mode chrome (incl. the macOS 26 large corner radius)
+    // is in its final state throughout the transition. Done here
+    // rather than in didExitFS so the user never sees the corners
+    // pop from sharp to round at the end of the animation.
+    if (w.toolbar != nil) {
+        w.toolbar.visible = YES;
+    }
 }
 
 - (void)didEnterFS:(NSNotification *)n {
