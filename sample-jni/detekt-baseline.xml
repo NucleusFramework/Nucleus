@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:Main.kt:fun main</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFF7A8088</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFFFF7777</ID>
+    <ID>MagicNumber:ActionsTab.kt:2_000</ID>
+    <ID>MagicNumber:Main.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:Main.kt:0xFF15181D</ID>
+    <ID>MagicNumber:Main.kt:0xFF1A1D24</ID>
+    <ID>MagicNumber:Main.kt:0xFF34D399</ID>
+    <ID>MagicNumber:Main.kt:0xFF6B7280</ID>
+    <ID>MagicNumber:Main.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:Main.kt:0xFFA0A4B0</ID>
+    <ID>MagicNumber:Main.kt:0xFFE6E6E6</ID>
+  </CurrentIssues>
+</SmellBaseline>

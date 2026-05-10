@@ -1,0 +1,66 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LongMethod:A11yTab.kt:@Composable fun A11yTab</ID>
+    <ID>LongMethod:ComplexTab.kt:@Composable private fun TodoListSection</ID>
+    <ID>MagicNumber:A11yTab.kt:0.5f</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF11151B</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF12141A</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF1F2937</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF34D399</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF374151</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF6B7280</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFF9CA3AF</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFFCBD5E1</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFFEF4444</ID>
+    <ID>MagicNumber:A11yTab.kt:0xFFF59E0B</ID>
+    <ID>MagicNumber:A11yTab.kt:100</ID>
+    <ID>MagicNumber:A11yTab.kt:1000</ID>
+    <ID>MagicNumber:Common.kt:0xFF15181D</ID>
+    <ID>MagicNumber:Common.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:Common.kt:0xFFA0A4B0</ID>
+    <ID>MagicNumber:Common.kt:200</ID>
+    <ID>MagicNumber:ComplexTab.kt:0.03f</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF11151B</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF12141A</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF1A1F2A</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF1F2937</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF34D399</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF374151</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF6B7280</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFF9CA3AF</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFFCBD5E1</ID>
+    <ID>MagicNumber:ComplexTab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:ComplexTab.kt:100</ID>
+    <ID>MagicNumber:ComplexTab.kt:3L</ID>
+    <ID>MagicNumber:ComplexTab.kt:4L</ID>
+    <ID>MagicNumber:EventsTab.kt:0xFF7A8088</ID>
+    <ID>MagicNumber:EventsTab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:FancyDemo.kt:0.27f</ID>
+    <ID>MagicNumber:FancyDemo.kt:0.42f</ID>
+    <ID>MagicNumber:FancyDemo.kt:0.5f</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFF06B6D4</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFF07080B</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFF6366F1</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFFB7B9C4</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFFEC4899</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFFF59E0B</ID>
+    <ID>MagicNumber:FancyDemo.kt:0xFFF5F5FA</ID>
+    <ID>MagicNumber:FancyDemo.kt:1.3f</ID>
+    <ID>MagicNumber:ScrollTab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:ScrollTab.kt:200</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFF15181D</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFF34D399</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFF8B5CF6</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFFA0A4B0</ID>
+    <ID>MagicNumber:ZoomTab.kt:0xFFE6E6E6</ID>
+    <ID>MatchingDeclarationName:Common.kt:Tab</ID>
+  </CurrentIssues>
+</SmellBaseline>

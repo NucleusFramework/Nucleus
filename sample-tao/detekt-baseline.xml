@@ -1,0 +1,50 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:Main.kt:private fun runApp</ID>
+    <ID>EmptyFunctionBlock:WebViewTab.kt:&lt;no name provided&gt;${}</ID>
+    <ID>LongMethod:ActionsTab.kt:@Composable fun ActionsTab</ID>
+    <ID>LongMethod:Main.kt:private fun runApp</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFF7A8088</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFFB0B5BD</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFFB7B9C4</ID>
+    <ID>MagicNumber:ActionsTab.kt:0xFFFF7777</ID>
+    <ID>MagicNumber:ActionsTab.kt:2_000</ID>
+    <ID>MagicNumber:Main.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:Main.kt:0xFF15171C</ID>
+    <ID>MagicNumber:Main.kt:0xFF15181D</ID>
+    <ID>MagicNumber:Main.kt:0xFF1A1D24</ID>
+    <ID>MagicNumber:Main.kt:0xFF1F2630</ID>
+    <ID>MagicNumber:Main.kt:0xFF334155</ID>
+    <ID>MagicNumber:Main.kt:0xFF34D399</ID>
+    <ID>MagicNumber:Main.kt:0xFF3B82F6</ID>
+    <ID>MagicNumber:Main.kt:0xFF6B7280</ID>
+    <ID>MagicNumber:Main.kt:0xFF8AB4FF</ID>
+    <ID>MagicNumber:Main.kt:0xFF8B5CF6</ID>
+    <ID>MagicNumber:Main.kt:0xFFA0A4B0</ID>
+    <ID>MagicNumber:Main.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:SwiftUITab.kt:0.55f</ID>
+    <ID>MagicNumber:SwiftUITab.kt:0xCC0F172A</ID>
+    <ID>MagicNumber:SwiftUITab.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:SwiftUITab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:WebViewTab.kt:0.3f</ID>
+    <ID>MagicNumber:WebViewTab.kt:0.4f</ID>
+    <ID>MagicNumber:WebViewTab.kt:0x4080D8FF</ID>
+    <ID>MagicNumber:WebViewTab.kt:0xCC0F172A</ID>
+    <ID>MagicNumber:WebViewTab.kt:0xFF0F1115</ID>
+    <ID>MagicNumber:WebViewTab.kt:0xFF60A5FA</ID>
+    <ID>MagicNumber:WebViewTab.kt:0xFFE6E6E6</ID>
+    <ID>MagicNumber:WebViewTab.kt:120L</ID>
+    <ID>MaxLineLength:Main.kt:.</ID>
+    <ID>MaxLineLength:Main.kt:&lt;no name provided&gt;$private val flavors = arrayOf(java.awt.datatransfer.DataFlavor.javaFileListFlavor)</ID>
+    <ID>TooGenericExceptionCaught:SampleSwiftUIBridge.kt:SampleSwiftUIBridge$t: Throwable</ID>
+    <ID>TooManyFunctions:SampleWebViewWindowsBridge.kt:SampleWebViewWindowsBridge</ID>
+    <ID>WildcardImport:Main.kt:import androidx.compose.foundation.layout.*</ID>
+    <ID>WildcardImport:Main.kt:import androidx.compose.runtime.*</ID>
+    <ID>WildcardImport:Main.kt:import androidx.compose.ui.input.key.*</ID>
+    <ID>WildcardImport:Main.kt:import dev.nucleusframework.sampleshared.*</ID>
+  </CurrentIssues>
+</SmellBaseline>

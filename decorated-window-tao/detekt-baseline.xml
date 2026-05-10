@@ -1,0 +1,84 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>ComplexCondition:NativeViewOverlayController.kt:NativeViewOverlayController$previous != null &amp;&amp; previous[0] == xPx &amp;&amp; previous[1] == yPx &amp;&amp; previous[2] == widthPx &amp;&amp; previous[3] == heightPx</ID>
+    <ID>ComplexCondition:NativeViewOverlayController.windows.kt:NativeViewOverlayControllerWindows$previous != null &amp;&amp; previous[0] == xPx &amp;&amp; previous[1] == yPx &amp;&amp; previous[2] == widthPx &amp;&amp; previous[3] == heightPx</ID>
+    <ID>CyclomaticComplexMethod:DecoratedWindow.kt:@Suppress("LongParameterList", "FunctionNaming") internal fun ApplicationScope.openDecoratedWindow: TaoWindow</ID>
+    <ID>CyclomaticComplexMethod:DecoratedWindowComposable.kt:@Suppress("LongParameterList", "FunctionNaming", "LongMethod") @Composable fun ApplicationScope.DecoratedWindow</ID>
+    <ID>CyclomaticComplexMethod:TaoSemanticsObserver.kt:TaoSemanticsObserver$private fun describe: Triple&lt;TaoA11yRole, Int, Int&gt;</ID>
+    <ID>CyclomaticComplexMethod:TaoSemanticsObserver.kt:TaoSemanticsObserver$private fun walk</ID>
+    <ID>ForbiddenComment:TaoComposeSceneHost.kt:TaoComposeSceneHost$// TODO: hover effects on macOS don't render until the user clicks once</ID>
+    <ID>ForbiddenComment:TaoPopupSceneLayerWindows.kt:TaoPopupSceneLayerWindows$/* TODO: full-window scrim surface */</ID>
+    <ID>LargeClass:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux</ID>
+    <ID>LongMethod:DecoratedWindow.kt:@Suppress("FunctionNaming", "LongParameterList") private fun ApplicationScope.openDecoratedWindowLinux: TaoWindow</ID>
+    <ID>LongMethod:DecoratedWindow.kt:@Suppress("LongParameterList", "FunctionNaming") internal fun ApplicationScope.openDecoratedWindow: TaoWindow</ID>
+    <ID>LongMethod:TaoSemanticsObserver.kt:TaoSemanticsObserver$private fun describe: Triple&lt;TaoA11yRole, Int, Int&gt;</ID>
+    <ID>LongMethod:TaoSemanticsObserver.kt:TaoSemanticsObserver$private fun walk</ID>
+    <ID>LoopWithTooManyJumpStatements:WindowControlsLinux.kt:for</ID>
+    <ID>MagicNumber:DecoratedDialog.kt:1000.0</ID>
+    <ID>MagicNumber:DecoratedDialog.kt:3</ID>
+    <ID>MagicNumber:DecoratedWindow.kt:28f</ID>
+    <ID>MagicNumber:DecoratedWindow.kt:32f</ID>
+    <ID>MagicNumber:DecoratedWindowComposable.kt:1000</ID>
+    <ID>MagicNumber:DecoratedWindowComposable.kt:1000.0</ID>
+    <ID>MagicNumber:DecoratedWindowComposable.kt:1000f</ID>
+    <ID>MagicNumber:DecoratedWindowComposable.kt:3</ID>
+    <ID>MagicNumber:NativeView.kt:3</ID>
+    <ID>MagicNumber:NativeViewOverlayController.kt:NativeViewOverlayController$3</ID>
+    <ID>MagicNumber:NativeViewOverlayController.kt:NativeViewOverlayController$4</ID>
+    <ID>MagicNumber:NativeViewOverlayController.windows.kt:NativeViewOverlayControllerWindows$3</ID>
+    <ID>MagicNumber:NativeViewOverlayController.windows.kt:NativeViewOverlayControllerWindows$4</ID>
+    <ID>MagicNumber:PainterToRgba.kt:255</ID>
+    <ID>MagicNumber:PainterToRgba.kt:255f</ID>
+    <ID>MagicNumber:PainterToRgba.kt:4</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$0x80</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$0xC0</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$24</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$4</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$76</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoA11ySnapshotSerializer$8</ID>
+    <ID>MagicNumber:TaoAccessibility.kt:TaoAccessibilityController$8</ID>
+    <ID>MagicNumber:TaoComposeSceneHost.kt:TaoComposeSceneHost$1000f</ID>
+    <ID>MagicNumber:TaoComposeSceneHost.kt:TaoComposeSceneHost$1024f</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$1000f</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$1024</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$1024f</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$12</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$3</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux$5</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux.SwapThread$1_000_000</ID>
+    <ID>MagicNumber:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux.SwapThread$50</ID>
+    <ID>MagicNumber:TaoComposeSceneHostWindows.kt:TaoComposeSceneHostWindows$1000f</ID>
+    <ID>MagicNumber:TaoComposeSceneHostWindows.kt:TaoComposeSceneHostWindows$1024f</ID>
+    <ID>MagicNumber:TaoComposeSceneHostWindows.kt:TaoComposeSceneHostWindows$28</ID>
+    <ID>MagicNumber:TaoLinuxOverlayController.kt:TaoLinuxOverlayControllerImpl.InputCallback$3</ID>
+    <ID>MagicNumber:TaoMainDispatcher.kt:TaoMainDispatcher$1_000_000_000L</ID>
+    <ID>MagicNumber:TaoMainDispatcher.kt:TaoMainDispatcher$60</ID>
+    <ID>MagicNumber:TaoSemanticsObserver.kt:TaoSemanticsObserver$0.1f</ID>
+    <ID>MagicNumber:TaoSemanticsObserver.kt:TaoSemanticsObserver$0.9f</ID>
+    <ID>MagicNumber:TaoSemanticsObserver.kt:TaoSemanticsObserver$0xFFFFFFFFL</ID>
+    <ID>MagicNumber:TaoSemanticsObserver.kt:TaoSemanticsObserver$4</ID>
+    <ID>MagicNumber:TaoSemanticsObserver.kt:TaoSemanticsObserver$64</ID>
+    <ID>MagicNumber:TaoSyntheticKey.kt:0x20</ID>
+    <ID>MagicNumber:TaoSyntheticKey.kt:0x7F</ID>
+    <ID>MagicNumber:TaoWindow.kt:TaoWindow$1000f</ID>
+    <ID>MatchingDeclarationName:NativeViewOverlayController.windows.kt:NativeViewOverlayControllerWindows</ID>
+    <ID>MatchingDeclarationName:PopupNativeBridge.windows.kt:PopupNativeBridgeWindows</ID>
+    <ID>MayBeConstant:TaoMainDispatcher.kt:TaoMainDispatcher$/** * Re-arm throttle. When a pumped block re-dispatches itself synchronously * (very common with Compose's state-observer / snapshot-apply machinery — * `LazyColumn` + scrollbar can cycle through ~150 k pumps/sec at idle), * the pump→drain→re-arm→nativeWake→pump loop pegs the Tao main thread * at 100 % CPU. AWT-based backends don't see this because the EDT only * processes pending work at ~60 Hz; we mimic that here by deferring the * re-arm `nativeWake` through a small delay rather than calling it * synchronously inside [pump]. New external dispatches still wake the * loop immediately — the delay only applies when the queue is non-empty * *after* a drain (i.e. blocks added by the just-run blocks). */ private val pumpReArmIntervalNs = 1_000_000_000L / 60</ID>
+    <ID>NestedBlockDepth:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux.SwapThread$override fun run</ID>
+    <ID>PrintStackTrace:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux.SwapThread$t</ID>
+    <ID>PrintStackTrace:TaoMainDispatcher.kt:TaoMainDispatcher$t</ID>
+    <ID>ReturnCount:DecoratedWindowComposable.kt:private fun applyAlignedPosition: Boolean</ID>
+    <ID>TooGenericExceptionCaught:TaoComposeSceneHostLinux.kt:TaoComposeSceneHostLinux.SwapThread$t: Throwable</ID>
+    <ID>TooGenericExceptionCaught:TaoMainDispatcher.kt:TaoMainDispatcher$t: Throwable</ID>
+    <ID>TooManyFunctions:NativeTaoBridge.kt:NativeTaoBridge</ID>
+    <ID>TooManyFunctions:NativeViewOverlayController.windows.kt:NativeViewOverlayControllerWindows$&lt;no name provided&gt; : TaoPopupHostWindows</ID>
+    <ID>TooManyFunctions:PopupNativeBridge.kt:PopupNativeBridge</ID>
+    <ID>TooManyFunctions:TaoPopupHostWindows.kt:TaoPopupHostWindows</ID>
+    <ID>TooManyFunctions:TaoWindow.kt:TaoWindow</ID>
+    <ID>UnusedParameter:DecoratedWindow.kt:windowHandle: Long</ID>
+    <ID>UnusedParameter:TaoLinuxOverlayController.kt:TaoLinuxOverlayControllerImpl$button: Int</ID>
+    <ID>UnusedParameter:WindowControlsLinux.kt:isCloseButton: Boolean = false</ID>
+  </CurrentIssues>
+</SmellBaseline>
