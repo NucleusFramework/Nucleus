@@ -214,6 +214,13 @@ jobs:
           pattern: 'media-control-*'
           merge-multiple: true
 
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
       - name: Build packages
         shell: bash
         run: ./gradlew :example:packageReleaseDistributionForCurrentOS --stacktrace --no-daemon

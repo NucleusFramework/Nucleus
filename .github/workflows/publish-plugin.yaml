@@ -177,6 +177,13 @@ jobs:
           pattern: 'media-control-*'
           merge-multiple: true
 
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
       - name: Cache Gradle Caches
         uses: gradle/actions/setup-gradle@v5
 

@@ -171,6 +171,13 @@ jobs:
           pattern: 'media-control-*'
           merge-multiple: true
 
+      - name: Download decorated-window-tao artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: decorated-window-tao/src/main/resources/nucleus/native/
+          pattern: 'decorated-window-tao-*'
+          merge-multiple: true
+
       - name: Verify all natives present
         run: |
           EXPECTED=(
@@ -260,6 +267,36 @@ jobs:
             "media-control/src/main/resources/nucleus/native/darwin-x64/libnucleus_media_control_macos.dylib"
             "media-control/src/main/resources/nucleus/native/win32-x64/nucleus_media_control_windows.dll"
             "media-control/src/main/resources/nucleus/native/win32-aarch64/nucleus_media_control_windows.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_deco.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_a11y.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_a11y.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_metal.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_dnd.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_dnd.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_deco.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_deco.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_popup.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_popup.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_native_view.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_native_view.dylib"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_egl.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_egl.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_widget.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_widget.so"
           )
           MISSING=0
           for f in "${EXPECTED[@]}"; do
