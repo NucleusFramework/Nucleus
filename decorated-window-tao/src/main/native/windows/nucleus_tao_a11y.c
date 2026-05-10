@@ -57,6 +57,16 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#if defined(_M_ARM64) || defined(_M_ARM64EC)
+#include <intrin.h>
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedCompareExchange64)
+#pragma intrinsic(_InterlockedDecrement)
+#pragma intrinsic(_InterlockedExchange)
+#pragma intrinsic(_InterlockedExchange64)
+#pragma intrinsic(_InterlockedIncrement)
+#endif
+
 /* /NODEFAULTLIB support — supplied by sibling DLL but we statically need them */
 int _fltused = 0;
 
