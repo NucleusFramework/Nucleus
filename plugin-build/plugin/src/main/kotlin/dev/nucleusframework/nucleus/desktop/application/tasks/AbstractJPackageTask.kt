@@ -874,9 +874,7 @@ private class FilesMapping : Serializable {
 
     @Suppress("UNCHECKED_CAST")
     private fun readObject(stream: ObjectInputStream) {
-        val readMapping = stream.readObject() as HashMap<File, List<File>>
-        mapping.clear()
-        mapping.putAll(readMapping)
+        mapping = stream.readObject() as HashMap<File, List<File>>
     }
 }
 
