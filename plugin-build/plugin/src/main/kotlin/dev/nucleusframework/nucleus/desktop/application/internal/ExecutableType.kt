@@ -82,15 +82,20 @@ private fun writeExecutableTypeMarker(
             if (appVersion != null) appendLine(appVersion)
         }
     marker.writeText(content)
-    logger.info("Wrote executable type '${targetFormat.executableTypeValue}' (version=$appVersion) to ${marker.absolutePath}")
+    logger.info(
+        "Wrote executable type '${targetFormat.executableTypeValue}' " +
+            "(version=$appVersion) to ${marker.absolutePath}",
+    )
 }
+
+private const val MAC_OS_DIR_MAX_DEPTH = 3
 
 private fun findNativeBinaryDir(appImageDir: File): File? {
     // macOS: AppName.app/Contents/MacOS/
     val macOsDir =
         appImageDir
             .walkTopDown()
-            .maxDepth(3)
+            .maxDepth(MAC_OS_DIR_MAX_DEPTH)
             .firstOrNull { it.isDirectory && it.name == "MacOS" && it.parentFile?.name == "Contents" }
     if (macOsDir != null) return macOsDir
 

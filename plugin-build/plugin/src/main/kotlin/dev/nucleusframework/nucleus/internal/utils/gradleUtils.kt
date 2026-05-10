@@ -42,7 +42,12 @@ fun Project.getLocalProperty(key: String): String? {
 internal fun Project.detachedComposeGradleDependency(
     artifactId: String,
     groupId: String = "org.jetbrains.compose",
-): Configuration = detachedDependency(groupId = groupId, artifactId = artifactId, version = NucleusBuildConfig.composeGradlePluginVersion)
+): Configuration =
+    detachedDependency(
+        groupId = groupId,
+        artifactId = artifactId,
+        version = NucleusBuildConfig.composeGradlePluginVersion,
+    )
 
 internal fun Project.detachedComposeDependency(
     artifactId: String,

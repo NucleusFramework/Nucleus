@@ -12,6 +12,7 @@ import org.gradle.api.Project
 import org.gradle.api.provider.Provider
 import org.gradle.api.provider.ProviderFactory
 
+@Suppress("TooManyFunctions", "MaxLineLength")
 internal object NucleusProperties {
     internal const val VERBOSE = "compose.desktop.verbose"
     internal const val PRESERVE_WD = "compose.preserve.working.dir"

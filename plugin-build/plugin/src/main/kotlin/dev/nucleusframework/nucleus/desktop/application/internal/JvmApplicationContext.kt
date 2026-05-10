@@ -94,7 +94,8 @@ internal data class JvmApplicationContext(
                         project.logger.error(
                             "w: Default configuration for Compose Desktop Application is disabled: " +
                                 "multiple Kotlin JVM targets definitions are detected. " +
-                                "Specify, which target to use by using `compose.desktop.application.from(kotlinMppTarget)`",
+                                "Specify, which target to use by using " +
+                                "`compose.desktop.application.from(kotlinMppTarget)`",
                         )
                         appInternal.disableDefaultConfiguration()
                     }

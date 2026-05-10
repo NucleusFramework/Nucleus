@@ -24,7 +24,7 @@ internal abstract class IdeaImportTask : DefaultTask() {
     fun run() {
         try {
             safeAction()
-        } catch (e: Exception) {
+        } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             // message must contain two ':' symbols to be parsed by IDE UI!
             logger.error("e: $name task was failed:", e)
             if (!ideaIsInSync.get()) throw e

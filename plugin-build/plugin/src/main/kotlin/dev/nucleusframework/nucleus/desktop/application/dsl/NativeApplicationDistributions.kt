@@ -23,7 +23,8 @@ abstract class NativeApplicationDistributions : AbstractDistributions() {
         super.targetFormats(*formats)
     }
 
-    val macOS: NativeApplicationMacOSPlatformSettings = objects.newInstance(NativeApplicationMacOSPlatformSettings::class.java)
+    val macOS: NativeApplicationMacOSPlatformSettings =
+        objects.newInstance(NativeApplicationMacOSPlatformSettings::class.java)
 
     open fun macOS(fn: Action<NativeApplicationMacOSPlatformSettings>) {
         fn.execute(macOS)

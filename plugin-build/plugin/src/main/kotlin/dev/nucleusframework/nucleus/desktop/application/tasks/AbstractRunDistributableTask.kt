@@ -49,7 +49,10 @@ abstract class AbstractRunDistributableTask
                     if (files == null || files.isEmpty()) {
                         error("Could not find application image: $appImageRoot is empty!")
                     } else if (files.size > 1) {
-                        error("Could not find application image: $appImageRoot contains multiple children [${files.joinToString(", ")}]")
+                        error(
+                            "Could not find application image: $appImageRoot " +
+                                "contains multiple children [${files.joinToString(", ")}]",
+                        )
                     } else {
                         files.single()
                     }

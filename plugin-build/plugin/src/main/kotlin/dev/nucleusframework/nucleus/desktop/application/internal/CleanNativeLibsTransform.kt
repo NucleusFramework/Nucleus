@@ -26,10 +26,13 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.work.DisableCachingByDefault
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
+import java.io.File
 import java.io.FileOutputStream
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+
+private const val HEADER_BUFFER_SIZE = 64
 
 @DisableCachingByDefault(because = "Stripping native libs from JARs is fast and not worth caching")
 internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLibsTransform.Parameters> {
@@ -54,82 +57,108 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
 
         val targetOs = parameters.targetOs.get()
         val targetArch = parameters.targetArch.get()
-        val expectedOs =
-            mapOs(targetOs) ?: run {
-                outputs.file(inputFile)
-                return
-            }
-        val expectedArch =
-            mapArch(targetArch) ?: run {
-                outputs.file(inputFile)
-                return
-            }
+        val expectedOs = mapOs(targetOs)
+        val expectedArch = mapArch(targetArch)
 
-        // First pass: determine which entries to remove
-        val entriesToRemove = mutableSetOf<String>()
-        ZipInputStream(BufferedInputStream(inputFile.inputStream())).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
-                    // Only process files with native extensions (.dll, .so, .dylib, .jnilib)
-                    // Never touch .class or other Java files
-                    val pathInfo = NativeLibArchDetector.detectFromPath(entry.name)
-
-                    if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
-                        // Path has both OS and arch indicators
-                        if (shouldRemoveByInfo(pathInfo, expectedOs, expectedArch)) {
-                            entriesToRemove.add(entry.name)
-                        }
-                    } else {
-                        // Fall back to binary header detection
-                        val header = ByteArray(64)
-                        val bytesRead = readFully(zis, header)
-                        if (bytesRead > 0) {
-                            val headerInfo = NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
-                            if (shouldRemoveByInfo(headerInfo, expectedOs, expectedArch)) {
-                                entriesToRemove.add(entry.name)
-                            }
-                        }
-                    }
-                }
-                entry = zis.nextEntry
-            }
+        if (expectedOs == null || expectedArch == null) {
+            outputs.file(inputFile)
+            return
         }
+
+        val entriesToRemove = findEntriesToRemove(inputFile, expectedOs, expectedArch)
 
         if (entriesToRemove.isEmpty()) {
             outputs.file(inputFile)
             return
         }
 
-        // Second pass: copy JAR without removed entries
         val outputFile = outputs.file(inputFile.name)
+        copyJarWithoutEntries(inputFile, outputFile, entriesToRemove)
+    }
+
+    private fun findEntriesToRemove(
+        inputFile: File,
+        expectedOs: NativeOs,
+        expectedArch: NativeArch,
+    ): Set<String> {
+        val entriesToRemove = mutableSetOf<String>()
+        ZipInputStream(BufferedInputStream(inputFile.inputStream())).use { zis ->
+            var entry = zis.nextEntry
+            while (entry != null) {
+                if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
+                    if (shouldRemoveEntry(zis, entry, expectedOs, expectedArch)) {
+                        entriesToRemove.add(entry.name)
+                    }
+                }
+                entry = zis.nextEntry
+            }
+        }
+        return entriesToRemove
+    }
+
+    private fun shouldRemoveEntry(
+        zis: ZipInputStream,
+        entry: ZipEntry,
+        expectedOs: NativeOs,
+        expectedArch: NativeArch,
+    ): Boolean {
+        // Only process files with native extensions (.dll, .so, .dylib, .jnilib)
+        // Never touch .class or other Java files
+        val pathInfo = NativeLibArchDetector.detectFromPath(entry.name)
+
+        if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
+            // Path has both OS and arch indicators
+            return shouldRemoveByInfo(pathInfo, expectedOs, expectedArch)
+        } else {
+            // Fall back to binary header detection
+            val header = ByteArray(HEADER_BUFFER_SIZE)
+            val bytesRead = readFully(zis, header)
+            if (bytesRead > 0) {
+                val headerInfo = NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
+                return shouldRemoveByInfo(headerInfo, expectedOs, expectedArch)
+            }
+        }
+        return false
+    }
+
+    private fun copyJarWithoutEntries(
+        inputFile: File,
+        outputFile: File,
+        entriesToRemove: Set<String>,
+    ) {
         ZipInputStream(BufferedInputStream(inputFile.inputStream())).use { zis ->
             ZipOutputStream(BufferedOutputStream(FileOutputStream(outputFile))).use { zos ->
                 var entry = zis.nextEntry
                 while (entry != null) {
-                    val shouldSkip = !entry.isDirectory && entry.name in entriesToRemove
-
-                    if (!shouldSkip) {
-                        zos.putNextEntry(
-                            ZipEntry(entry.name).apply {
-                                time = entry.time
-                                if (entry.method == ZipEntry.STORED) {
-                                    method = ZipEntry.STORED
-                                    size = entry.size
-                                    compressedSize = entry.compressedSize
-                                    crc = entry.crc
-                                }
-                            },
-                        )
-                        if (!entry.isDirectory) {
-                            zis.copyTo(zos)
-                        }
-                        zos.closeEntry()
+                    if (entry.isDirectory || entry.name !in entriesToRemove) {
+                        copyZipEntry(entry, zis, zos)
                     }
                     entry = zis.nextEntry
                 }
             }
         }
+    }
+
+    private fun copyZipEntry(
+        entry: ZipEntry,
+        zis: ZipInputStream,
+        zos: ZipOutputStream,
+    ) {
+        zos.putNextEntry(
+            ZipEntry(entry.name).apply {
+                time = entry.time
+                if (entry.method == ZipEntry.STORED) {
+                    method = ZipEntry.STORED
+                    size = entry.size
+                    compressedSize = entry.compressedSize
+                    crc = entry.crc
+                }
+            },
+        )
+        if (!entry.isDirectory) {
+            zis.copyTo(zos)
+        }
+        zos.closeEntry()
     }
 
     private fun shouldRemoveByInfo(

@@ -238,7 +238,8 @@ abstract class AbstractNotarizationTask
                 return lines.joinToString("\n")
             }
 
-            private fun isUrlEntry(trimmed: String): Boolean = trimmed.startsWith("- url:") || trimmed.startsWith("-url:")
+            private fun isUrlEntry(trimmed: String): Boolean =
+                trimmed.startsWith("- url:") || trimmed.startsWith("-url:")
 
             private fun extractUrl(trimmed: String): String =
                 trimmed

@@ -102,6 +102,7 @@ internal class MacSignerImpl(
         )
     }
 
+    @Suppress("MagicNumber")
     private fun matchCertificates(certificates: String): String {
         // When the developer id contains non-ascii characters, the output of `security find-certificate` is
         // slightly different. The `alis` line first has the hex-encoded developer id, then some spaces,

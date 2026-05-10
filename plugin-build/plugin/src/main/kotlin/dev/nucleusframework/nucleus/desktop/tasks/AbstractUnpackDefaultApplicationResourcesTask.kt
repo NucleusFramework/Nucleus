@@ -30,8 +30,10 @@ abstract class AbstractUnpackDefaultApplicationResourcesTask : AbstractNucleusTa
         val macIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-mac.icns") }
         val windowsIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-windows.ico") }
         val linuxIcon: Provider<RegularFile> = resourcesRootDir.map { it.file("default-icon-linux.png") }
-        val defaultComposeProguardRules: Provider<RegularFile> = resourcesRootDir.map { it.file(DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME) }
-        val defaultEntitlements: Provider<RegularFile> = resourcesRootDir.map { it.file(DEFAULT_ENTITLEMENTS_FILE_NAME) }
+        val defaultComposeProguardRules: Provider<RegularFile> =
+            resourcesRootDir.map { it.file(DEFAULT_COMPOSE_PROGUARD_RULES_FILE_NAME) }
+        val defaultEntitlements: Provider<RegularFile> =
+            resourcesRootDir.map { it.file(DEFAULT_ENTITLEMENTS_FILE_NAME) }
         val defaultSandboxEntitlements: Provider<RegularFile> =
             resourcesRootDir.map { it.file(DEFAULT_SANDBOX_ENTITLEMENTS_FILE_NAME) }
         val defaultSandboxRuntimeEntitlements: Provider<RegularFile> =

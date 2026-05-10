@@ -8,6 +8,7 @@ package dev.nucleusframework.nucleus.desktop.application.internal
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
+@Suppress("MagicNumber")
 internal object NativeLibArchDetector {
     enum class NativeArch { X86, X64, ARM64, UNIVERSAL, OTHER, UNKNOWN }
 
@@ -89,7 +90,8 @@ internal object NativeLibArchDetector {
      */
     fun detectFromPath(entryPath: String): NativeInfo {
         // Split into path segments and the compound tokens within segments
-        // e.g. "com/sun/jna/linux-x86-64/libjnidispatch.so" → segments: [com, sun, jna, linux-x86-64, libjnidispatch.so]
+        // e.g. "com/sun/jna/linux-x86-64/libjnidispatch.so"
+        // → segments: [com, sun, jna, linux-x86-64, libjnidispatch.so]
         val segments = entryPath.split('/')
 
         var detectedOs = NativeOs.UNKNOWN

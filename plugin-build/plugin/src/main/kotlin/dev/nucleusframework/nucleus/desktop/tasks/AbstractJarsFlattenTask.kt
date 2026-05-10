@@ -108,7 +108,9 @@ abstract class AbstractJarsFlattenTask : AbstractNucleusTask() {
     }
 
     private fun isServiceFile(name: String): Boolean =
-        name.startsWith(SERVICES_PREFIX) && name.length > SERVICES_PREFIX.length && '/' !in name.substring(SERVICES_PREFIX.length)
+        name.startsWith(SERVICES_PREFIX) &&
+            name.length > SERVICES_PREFIX.length &&
+            '/' !in name.substring(SERVICES_PREFIX.length)
 
     private fun mergeServiceFile(
         name: String,

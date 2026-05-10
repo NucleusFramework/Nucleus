@@ -5,13 +5,16 @@
 
 package dev.nucleusframework.nucleus.desktop.application.internal
 
-import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.*
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistBooleanValue
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
+import dev.nucleusframework.nucleus.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistStringValue
 import java.io.File
 import kotlin.reflect.KProperty
 
-private const val indent = "  "
+private const val INDENT = "  "
 
-private fun indentForLevel(level: Int) = indent.repeat(level)
+private fun indentForLevel(level: Int) = INDENT.repeat(level)
 
 internal class InfoPlistBuilder(
     private val extraPlistKeysRawXml: String? = null,
@@ -102,7 +105,7 @@ internal class InfoPlistBuilder(
     operator fun set(
         key: InfoPlistKey,
         value: Boolean?,
-    ) = set(key, value?.let(InfoPlistValue::InfoPlistBooleanValue))
+    ) = set(key, value?.let(::InfoPlistBooleanValue))
 
     operator fun set(
         key: InfoPlistKey,
@@ -119,7 +122,8 @@ internal class InfoPlistBuilder(
         file.writer().buffered().use { writer ->
             writer.run {
                 appendLine("<?xml version=\"1.0\" ?>")
-                appendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"https://www.apple.com/DTDs/PropertyList-1.0.dtd\">")
+                appendLine("<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" " +
+                    "\"https://www.apple.com/DTDs/PropertyList-1.0.dtd\">")
                 appendLine("<plist version=\"1.0\">")
                 appendLine("${indentForLevel(1)}<dict>")
                 for ((k, v) in values) {

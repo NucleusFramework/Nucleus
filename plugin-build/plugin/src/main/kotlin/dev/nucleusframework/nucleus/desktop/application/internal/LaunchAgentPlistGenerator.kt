@@ -19,7 +19,10 @@ internal object LaunchAgentPlistGenerator {
     @Suppress("NestedBlockDepth")
     private fun buildPlistXml(agent: LaunchAgentDefinition, resolvedBundleProgram: String): String = buildString {
         appendLine("""<?xml version="1.0" encoding="UTF-8"?>""")
-        appendLine("""<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">""")
+        appendLine(
+            "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" " +
+                "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">",
+        )
         appendLine("""<plist version="1.0">""")
         appendLine("<dict>")
 

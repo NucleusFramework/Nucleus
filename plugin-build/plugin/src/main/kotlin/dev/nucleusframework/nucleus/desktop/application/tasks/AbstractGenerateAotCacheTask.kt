@@ -26,6 +26,9 @@ import java.io.File
 private const val AOT_CACHE_FILENAME = "app.aot"
 private const val MIN_AOT_JDK_VERSION = 25
 private const val DEFAULT_SAFETY_TIMEOUT_SECONDS = 300L
+private const val XVFB_START_UP_DELAY_MS = 1000L
+private const val PROCESS_POLL_INTERVAL_MS = 500L
+private const val MS_PER_SECOND = 1000L
 
 /**
  * Generates a JDK 25+ AOT cache for a Compose Desktop distributable.
@@ -368,16 +371,16 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                 ProcessBuilder("Xvfb", display, "-screen", "0", "1280x1024x24")
                     .redirectErrorStream(true)
                     .start()
-            Thread.sleep(1000)
+            Thread.sleep(XVFB_START_UP_DELAY_MS)
             processBuilder.environment()["DISPLAY"] = display
             logger.lifecycle("[aotCache] Started Xvfb on $display")
         }
 
         val process = processBuilder.start()
 
-        val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * 1000
+        val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * MS_PER_SECOND
         while (process.isAlive && System.currentTimeMillis() < deadline) {
-            Thread.sleep(500)
+            Thread.sleep(PROCESS_POLL_INTERVAL_MS)
         }
         if (process.isAlive) {
             logger.warn("[aotCache] App did not self-terminate within safety timeout, forcing kill")

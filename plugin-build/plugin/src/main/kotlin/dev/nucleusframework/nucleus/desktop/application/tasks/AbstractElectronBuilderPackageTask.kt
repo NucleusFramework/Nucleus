@@ -1453,12 +1453,12 @@ private fun killProcessesIn(
                 try {
                     val rt = Runtime.getRuntime()
                     rt.exec(arrayOf("taskkill", "/F", "/IM", exe.name)).waitFor()
-                } catch (_: Exception) {
+                } catch (@Suppress("TooGenericExceptionCaught") _: Exception) {
                     // ignore — process may not be running
                 }
             }
         Thread.sleep(DELETE_RETRY_DELAY_MS)
-    } catch (e: Exception) {
+    } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
         logger.warn("Failed to kill locked processes: ${e.message}")
     }
 }

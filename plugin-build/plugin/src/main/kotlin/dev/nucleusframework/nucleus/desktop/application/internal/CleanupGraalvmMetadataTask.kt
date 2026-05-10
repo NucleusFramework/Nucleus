@@ -14,6 +14,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
+import java.util.jar.JarFile
 
 /**
  * Cleans up the project's manual `reachability-metadata.json` by removing entries
@@ -28,6 +29,7 @@ import java.io.File
  * Run with: `./gradlew cleanupGraalvmMetadata`
  */
 @DisableCachingByDefault(because = "Modifies user source files in-place")
+@Suppress("MaxLineLength", "NestedBlockDepth", "LoopWithTooManyJumpStatements")
 abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     /** Runtime classpath JARs (for L1 library metadata + native-image.properties). */
     @get:InputFiles
@@ -59,6 +61,8 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     @get:Input
     abstract val configDir: Property<File>
 
+    private val slurper = JsonSlurper()
+
     @TaskAction
     fun cleanup() {
         val targetDir = configDir.get()
@@ -68,8 +72,6 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
             return
         }
 
-        val slurper = JsonSlurper()
-
         // Collect baseline entries from all managed sources
         val libraryEntries = mutableMapOf<String, MutableMap<String, MutableMap<String, Any?>>>()
         val libraryProxies = mutableSetOf<String>()
@@ -77,20 +79,56 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
         val libraryResourceGlobs = mutableListOf<Pair<String?, String>>()
         val includeResourcePatterns = mutableListOf<Regex>()
 
-        // Source 1: L1 — library JARs on classpath (META-INF/native-image/**/reachability-metadata.json)
-        // + native-image.properties IncludeResources patterns
+        val l1Count = collectL1Metadata(libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs, includeResourcePatterns)
+        val l2Count = collectL2Metadata(libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+        val l3Count = collectL3Metadata(libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+        val staticCount = collectStaticAnalysisMetadata(libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+
+        addMainClassToBaseline(libraryEntries)
+
+        logger.lifecycle(
+            "Metadata baseline: L1=$l1Count types, L2=$l2Count types, " +
+                "L3=$l3Count types, static=$staticCount types, " +
+                "${includeResourcePatterns.size} resource patterns",
+        )
+
+        // Parse the project's manual config
+        @Suppress("UNCHECKED_CAST")
+        val targetRoot = slurper.parseText(targetFile.readText()) as MutableMap<String, Any?>
+        val removedEntries = mutableListOf<String>()
+
+        val totalRemoved =
+            cleanReflectionAndJni(targetRoot, libraryEntries, libraryProxies, removedEntries) +
+                cleanResources(targetRoot, libraryResourceJsons, libraryResourceGlobs, includeResourcePatterns, removedEntries)
+
+        if (totalRemoved > 0) {
+            finalizeAndWrite(targetRoot, targetFile, totalRemoved, removedEntries)
+        } else {
+            logger.lifecycle("No redundant entries found — manual config is already clean")
+        }
+
+        reportRemaining(targetRoot)
+    }
+
+    private fun collectL1Metadata(
+        libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
+        libraryProxies: MutableSet<String>,
+        libraryResourceJsons: MutableSet<String>,
+        libraryResourceGlobs: MutableList<Pair<String?, String>>,
+        includeResourcePatterns: MutableList<Regex>,
+    ): Int {
         var l1Count = 0
         for (file in runtimeClasspath.files) {
             if (!file.exists() || !file.name.endsWith(".jar")) continue
             try {
-                java.util.jar.JarFile(file).use { jar ->
+                JarFile(file).use { jar ->
                     for (entry in jar.entries()) {
                         if (entry.name.contains("META-INF/native-image/") &&
                             entry.name.endsWith("reachability-metadata.json")
                         ) {
                             val text = jar.getInputStream(entry).bufferedReader().readText()
                             val before = countBaselineTypes(libraryEntries)
-                            collectBaseline(slurper, text, libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+                            collectBaseline(text, libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
                             l1Count += countBaselineTypes(libraryEntries) - before
                         }
 
@@ -115,8 +153,15 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                 // Skip unreadable JARs
             }
         }
+        return l1Count
+    }
 
-        // Source 2: L2 — Oracle repo metadata directories
+    private fun collectL2Metadata(
+        libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
+        libraryProxies: MutableSet<String>,
+        libraryResourceJsons: MutableSet<String>,
+        libraryResourceGlobs: MutableList<Pair<String?, String>>,
+    ): Int {
         var l2Count = 0
         val repoDirsFile = metadataRepoDirsFile.orNull?.asFile
         if (repoDirsFile != null && repoDirsFile.exists()) {
@@ -125,93 +170,119 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                 if (dirPath.isBlank()) continue
                 val dir = File(dirPath)
                 if (!dir.isDirectory) continue
-                // New format
-                val newFormatFile = File(dir, "reachability-metadata.json")
-                if (newFormatFile.exists()) {
-                    val before = countBaselineTypes(libraryEntries)
-                    collectBaseline(
-                        slurper,
-                        newFormatFile.readText(),
-                        libraryEntries,
-                        libraryProxies,
-                        libraryResourceJsons,
-                        libraryResourceGlobs,
-                    )
-                    l2Count += countBaselineTypes(libraryEntries) - before
-                }
-                // Old format
-                for (oldFile in listOf("reflect-config.json", "jni-config.json")) {
-                    val f = File(dir, oldFile)
-                    if (!f.exists()) continue
-                    val section = if (oldFile.startsWith("reflect")) "reflection" else "jni"
 
-                    @Suppress("UNCHECKED_CAST")
-                    val entries = slurper.parseText(f.readText()) as? List<Map<String, Any?>> ?: continue
-                    val sectionMap = libraryEntries.getOrPut(section) { mutableMapOf() }
-                    for (e in entries) {
-                        val typeName = e["type"] as? String ?: continue
-                        val existing = sectionMap[typeName]
-                        if (existing == null) {
-                            sectionMap[typeName] = e.toMutableMap()
-                            l2Count++
-                        } else {
-                            mergeTypeEntryInto(e, existing)
-                        }
-                    }
-                }
-                // Old-format resource-config.json
-                val resFile = File(dir, "resource-config.json")
-                if (resFile.exists()) {
-                    @Suppress("UNCHECKED_CAST")
-                    val resRoot = slurper.parseText(resFile.readText()) as? Map<String, Any?>
+                l2Count += collectL2FromDir(dir, libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+            }
+        }
+        return l2Count
+    }
 
-                    @Suppress("UNCHECKED_CAST")
-                    val resources = resRoot?.get("resources") as? Map<String, Any?>
+    private fun collectL2FromDir(
+        dir: File,
+        libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
+        libraryProxies: MutableSet<String>,
+        libraryResourceJsons: MutableSet<String>,
+        libraryResourceGlobs: MutableList<Pair<String?, String>>,
+    ): Int {
+        var count = 0
+        // New format
+        val newFormatFile = File(dir, "reachability-metadata.json")
+        if (newFormatFile.exists()) {
+            val before = countBaselineTypes(libraryEntries)
+            collectBaseline(
+                newFormatFile.readText(),
+                libraryEntries,
+                libraryProxies,
+                libraryResourceJsons,
+                libraryResourceGlobs,
+            )
+            count += countBaselineTypes(libraryEntries) - before
+        }
+        // Old format
+        for (oldFile in listOf("reflect-config.json", "jni-config.json")) {
+            val f = File(dir, oldFile)
+            if (!f.exists()) continue
+            val section = if (oldFile.startsWith("reflect")) "reflection" else "jni"
 
-                    @Suppress("UNCHECKED_CAST")
-                    val includes = resources?.get("includes") as? List<Map<String, Any?>>
-                    includes?.forEach { inc ->
-                        val pattern = inc["pattern"] as? String
-                        if (pattern != null) {
-                            libraryResourceGlobs.add(Pair(null, pattern))
-                            libraryResourceJsons.add(JsonOutput.toJson(mapOf("glob" to pattern)))
-                        }
-                    }
+            @Suppress("UNCHECKED_CAST")
+            val entries = slurper.parseText(f.readText()) as? List<Map<String, Any?>> ?: continue
+            val sectionMap = libraryEntries.getOrPut(section) { mutableMapOf() }
+            for (e in entries) {
+                val typeName = e["type"] as? String ?: continue
+                val existing = sectionMap[typeName]
+                if (existing == null) {
+                    sectionMap[typeName] = e.toMutableMap()
+                    count++
+                } else {
+                    mergeTypeEntryInto(e, existing)
                 }
             }
         }
+        // Old-format resource-config.json
+        val resFile = File(dir, "resource-config.json")
+        if (resFile.exists()) {
+            @Suppress("UNCHECKED_CAST")
+            val resRoot = slurper.parseText(resFile.readText()) as? Map<String, Any?>
 
-        // Source 3: L3 — platform-specific metadata from plugin JAR
-        var l3Count = 0
+            @Suppress("UNCHECKED_CAST")
+            val resources = resRoot?.get("resources") as? Map<String, Any?>
+
+            @Suppress("UNCHECKED_CAST")
+            val includes = resources?.get("includes") as? List<Map<String, Any?>>
+            includes?.forEach { inc ->
+                val pattern = inc["pattern"] as? String
+                if (pattern != null) {
+                    libraryResourceGlobs.add(Pair(null, pattern))
+                    libraryResourceJsons.add(JsonOutput.toJson(mapOf("glob" to pattern)))
+                }
+            }
+        }
+        return count
+    }
+
+    private fun collectL3Metadata(
+        libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
+        libraryProxies: MutableSet<String>,
+        libraryResourceJsons: MutableSet<String>,
+        libraryResourceGlobs: MutableList<Pair<String?, String>>,
+    ): Int {
         val platform = platformName.get()
         val resourcePath = "nucleus/graalvm/platform-metadata/$platform-reachability-metadata.json"
         val stream = javaClass.classLoader.getResourceAsStream(resourcePath)
         if (stream != null) {
             val text = stream.bufferedReader().use { it.readText() }
             val before = countBaselineTypes(libraryEntries)
-            collectBaseline(slurper, text, libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
-            l3Count = countBaselineTypes(libraryEntries) - before
+            collectBaseline(text, libraryEntries, libraryProxies, libraryResourceJsons, libraryResourceGlobs)
+            return countBaselineTypes(libraryEntries) - before
         }
+        return 0
+    }
 
-        // Source 4: Static analysis output
+    private fun collectStaticAnalysisMetadata(
+        libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
+        libraryProxies: MutableSet<String>,
+        libraryResourceJsons: MutableSet<String>,
+        libraryResourceGlobs: MutableList<Pair<String?, String>>,
+    ): Int {
         var staticCount = 0
         for (dir in staticAnalysisDir.files) {
             val staticFile = if (dir.isDirectory) File(dir, "reachability-metadata.json") else dir
             if (staticFile.exists() && staticFile.name.endsWith(".json")) {
                 val before = countBaselineTypes(libraryEntries)
                 collectBaseline(
-                    slurper,
                     staticFile.readText(),
                     libraryEntries,
                     libraryProxies,
                     libraryResourceJsons,
                     libraryResourceGlobs,
                 )
-                staticCount = countBaselineTypes(libraryEntries) - before
+                staticCount += countBaselineTypes(libraryEntries) - before
             }
         }
+        return staticCount
+    }
 
-        // Add main class to baseline
+    private fun addMainClassToBaseline(libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>) {
         val mc = mainClass.orNull
         if (!mc.isNullOrBlank()) {
             val reflectionMap = libraryEntries.getOrPut("reflection") { mutableMapOf() }
@@ -231,75 +302,87 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                 mergeTypeEntryInto(mainClassEntry, existing)
             }
         }
+    }
 
-        logger.lifecycle(
-            "Metadata baseline: L1=$l1Count types, L2=$l2Count types, " +
-                "L3=$l3Count types, static=$staticCount types, " +
-                "${includeResourcePatterns.size} resource patterns",
-        )
-
-        // Parse the project's manual config
-        @Suppress("UNCHECKED_CAST")
-        val targetRoot = slurper.parseText(targetFile.readText()) as MutableMap<String, Any?>
+    private fun cleanReflectionAndJni(
+        targetRoot: MutableMap<String, Any?>,
+        libraryEntries: Map<String, Map<String, MutableMap<String, Any?>>>,
+        libraryProxies: Set<String>,
+        removedEntries: MutableList<String>,
+    ): Int {
         var totalRemoved = 0
-        val removedEntries = mutableListOf<String>()
-
-        // Clean reflection/jni sections against same-section AND cross-section baselines
-        // (static analyzer puts SQLite in "jni", manual config may have it in "reflection")
         for (projectSection in listOf("reflection", "jni")) {
             @Suppress("UNCHECKED_CAST")
             val targetArray = targetRoot[projectSection] as? MutableList<Map<String, Any?>> ?: continue
             val before = targetArray.size
 
             targetArray.removeAll { projectEntry ->
-                // Handle proxy entries: {"type": {"proxy": [...]}}
-                val proxyKey = proxyKey(projectEntry)
-                if (proxyKey != null) {
-                    if (proxyKey in libraryProxies) {
-                        removedEntries.add("  [$projectSection proxy] $proxyKey")
-                        return@removeAll true
-                    }
-                    return@removeAll false
+                if (isEntryCovered(projectSection, projectEntry, libraryEntries, libraryProxies, removedEntries)) {
+                    return@removeAll true
                 }
-
-                val typeName = projectEntry["type"] as? String ?: return@removeAll false
-
-                // Check same section first, then cross-section
-                for (baselineSection in listOf("reflection", "jni")) {
-                    val sectionMap = libraryEntries[baselineSection] ?: continue
-                    val libEntry = sectionMap[typeName] ?: continue
-                    if (libraryCoversProjectEntry(libEntry, projectEntry)) {
-                        val source = if (baselineSection == projectSection) baselineSection else "$projectSection via $baselineSection"
-                        removedEntries.add("  [$source] $typeName")
-                        return@removeAll true
-                    }
-                }
-
-                // For Kotlin data objects: tracing agent emits Foo$Companion with serializer(),
-                // but the actual class is Foo (no Companion class exists). If the parent class
-                // is in the baseline with serializer(), consider the Companion entry covered.
-                if (typeName.endsWith("\$Companion")) {
-                    val parentType = typeName.removeSuffix("\$Companion")
-                    for (baselineSection in listOf("reflection", "jni")) {
-                        val sectionMap = libraryEntries[baselineSection] ?: continue
-                        val parentEntry = sectionMap[parentType] ?: continue
-
-                        @Suppress("UNCHECKED_CAST")
-                        val parentMethods = parentEntry["methods"] as? List<Map<String, Any?>>
-                        val hasSerializer = parentMethods?.any { it["name"] == "serializer" } == true
-                        if (hasSerializer) {
-                            removedEntries.add("  [$projectSection via parent] $typeName")
-                            return@removeAll true
-                        }
-                    }
-                }
-
                 false
             }
             totalRemoved += before - targetArray.size
         }
+        return totalRemoved
+    }
 
-        // Clean resources section
+    private fun isEntryCovered(
+        projectSection: String,
+        projectEntry: Map<String, Any?>,
+        libraryEntries: Map<String, Map<String, MutableMap<String, Any?>>>,
+        libraryProxies: Set<String>,
+        removedEntries: MutableList<String>,
+    ): Boolean {
+        // Handle proxy entries: {"type": {"proxy": [...]}}
+        val proxyKey = proxyKey(projectEntry)
+        if (proxyKey != null) {
+            if (proxyKey in libraryProxies) {
+                removedEntries.add("  [$projectSection proxy] $proxyKey")
+                return true
+            }
+            return false
+        }
+
+        val typeName = projectEntry["type"] as? String ?: return false
+
+        // Check same section first, then cross-section
+        for (baselineSection in listOf("reflection", "jni")) {
+            val sectionMap = libraryEntries[baselineSection] ?: continue
+            val libEntry = sectionMap[typeName] ?: continue
+            if (libraryCoversProjectEntry(libEntry, projectEntry)) {
+                val source = if (baselineSection == projectSection) baselineSection else "$projectSection via $baselineSection"
+                removedEntries.add("  [$source] $typeName")
+                return true
+            }
+        }
+
+        // For Kotlin data objects
+        if (typeName.endsWith("\$Companion")) {
+            val parentType = typeName.removeSuffix("\$Companion")
+            for (baselineSection in listOf("reflection", "jni")) {
+                val sectionMap = libraryEntries[baselineSection] ?: continue
+                val parentEntry = sectionMap[parentType] ?: continue
+
+                @Suppress("UNCHECKED_CAST")
+                val parentMethods = parentEntry["methods"] as? List<Map<String, Any?>>
+                val hasSerializer = parentMethods?.any { it["name"] == "serializer" } == true
+                if (hasSerializer) {
+                    removedEntries.add("  [$projectSection via parent] $typeName")
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    private fun cleanResources(
+        targetRoot: MutableMap<String, Any?>,
+        libraryResourceJsons: Set<String>,
+        libraryResourceGlobs: List<Pair<String?, String>>,
+        includeResourcePatterns: List<Regex>,
+        removedEntries: MutableList<String>,
+    ): Int {
         @Suppress("UNCHECKED_CAST")
         val targetResources = targetRoot["resources"] as? MutableList<Map<String, Any?>>
         if (targetResources != null) {
@@ -318,26 +401,31 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                 }
                 covered
             }
-            totalRemoved += before - targetResources.size
+            return before - targetResources.size
         }
+        return 0
+    }
 
-        if (totalRemoved > 0) {
-            // Remove empty sections
-            for (section in listOf("reflection", "jni", "resources", "bundles", "serialization")) {
-                @Suppress("UNCHECKED_CAST")
-                val arr = targetRoot[section] as? List<*>
-                if (arr != null && arr.isEmpty()) {
-                    targetRoot.remove(section)
-                }
+    private fun finalizeAndWrite(
+        targetRoot: MutableMap<String, Any?>,
+        targetFile: File,
+        totalRemoved: Int,
+        removedEntries: List<String>,
+    ) {
+        // Remove empty sections
+        for (section in listOf("reflection", "jni", "resources", "bundles", "serialization")) {
+            @Suppress("UNCHECKED_CAST")
+            val arr = targetRoot[section] as? List<*>
+            if (arr != null && arr.isEmpty()) {
+                targetRoot.remove(section)
             }
-            targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
-            logger.lifecycle("Removed $totalRemoved entries from $targetFile:")
-            removedEntries.forEach { logger.lifecycle(it) }
-        } else {
-            logger.lifecycle("No redundant entries found — manual config is already clean")
         }
+        targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
+        logger.lifecycle("Removed $totalRemoved entries from $targetFile:")
+        removedEntries.forEach { logger.lifecycle(it) }
+    }
 
-        // Report remaining entries
+    private fun reportRemaining(targetRoot: Map<String, Any?>) {
         var remaining = 0
         for (section in listOf("reflection", "jni")) {
             @Suppress("UNCHECKED_CAST")
@@ -361,7 +449,6 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     }
 
     private fun collectBaseline(
-        slurper: JsonSlurper,
         jsonText: String,
         libraryEntries: MutableMap<String, MutableMap<String, MutableMap<String, Any?>>>,
         libraryProxies: MutableSet<String>,

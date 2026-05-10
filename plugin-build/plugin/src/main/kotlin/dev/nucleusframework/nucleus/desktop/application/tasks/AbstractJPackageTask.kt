@@ -97,7 +97,7 @@ import kotlin.io.path.isRegularFile
  * by electron-builder via [AbstractElectronBuilderPackageTask].
  */
 @DisableCachingByDefault(because = "Depends on external jpackage tool")
-@Suppress("UnnecessaryAbstractClass")
+@Suppress("UnnecessaryAbstractClass", "TooGenericExceptionCaught", "CyclomaticComplexMethod", "NestedBlockDepth", "LoopWithTooManyJumpStatements", "MaxLineLength")
 abstract class AbstractJPackageTask
     @Inject
     constructor(
@@ -827,6 +827,10 @@ abstract class AbstractJPackageTask
 // Serializable is only needed to avoid breaking configuration cache:
 // https://docs.gradle.org/current/userguide/configuration_cache.html#config_cache:requirements
 private class FilesMapping : Serializable {
+    companion object {
+        private const val serialVersionUID: Long = 0L
+    }
+
     private var mapping = HashMap<File, List<File>>()
 
     operator fun get(key: File): List<File>? = mapping[key]

@@ -35,6 +35,7 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
         private const val CSS_SHORT_HEX_LENGTH = 3
         private const val CSS_FULL_HEX_LENGTH = 6
         private const val APPLE_SCRIPT_RGB_SCALE = 257
+        private const val HDIUTIL_ATTACH_DELAY_MS = 3000L
     }
 
     @get:InputFile
@@ -160,7 +161,7 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
                 "-noautoopen",
                 imageFile.absolutePath,
             )
-        Thread.sleep(3000)
+        Thread.sleep(HDIUTIL_ATTACH_DELAY_MS)
         var device: String? = null
         var volume: String? = null
 

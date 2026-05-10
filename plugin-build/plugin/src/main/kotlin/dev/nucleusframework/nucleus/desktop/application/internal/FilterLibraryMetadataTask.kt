@@ -24,6 +24,7 @@ import java.util.jar.JarFile
  * Files without `matchPackages` are always included.
  */
 @CacheableTask
+@Suppress("NestedBlockDepth", "LoopWithTooManyJumpStatements")
 abstract class FilterLibraryMetadataTask : DefaultTask() {
     /** The runtime classpath JARs/dirs to check for conditional library presence. */
     @get:InputFiles

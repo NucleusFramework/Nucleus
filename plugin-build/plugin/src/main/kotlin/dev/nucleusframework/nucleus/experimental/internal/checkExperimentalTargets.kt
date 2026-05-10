@@ -64,6 +64,7 @@ private fun checkExperimentalTargetsWithSkikoIsEnabled(
     }
 }
 
+@Suppress("NestedBlockDepth")
 private fun checkTarget(
     project: Project,
     target: KotlinTarget,
