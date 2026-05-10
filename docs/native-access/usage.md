@@ -98,7 +98,7 @@ fun ScreenshotViewer() {
 **No C. No JNI headers. No build scripts. No `System.loadLibrary` call.** The `.dylib` is compiled by the plugin, bundled in the JAR, and extracted automatically at runtime. The `suspend` on the native side maps transparently to a coroutine on the JVM — the UI stays responsive while CoreGraphics does the work.
 
 !!! tip "Full working example"
-    The [systeminfo example](https://github.com/kdroidFilter/NucleusNativeAccess/tree/main/examples/systeminfo) in the NucleusNativeAccess repo implements this pattern for all three platforms (CoreGraphics on macOS, XDG ScreenCast + PipeWire on Linux, GDI on Windows), plus native notifications, a system tray menu, and real-time memory updates via `Flow`.
+    The [systeminfo example](https://github.com/nucleusframework/NucleusNativeAccess/tree/main/examples/systeminfo) in the NucleusNativeAccess repo implements this pattern for all three platforms (CoreGraphics on macOS, XDG ScreenCast + PipeWire on Linux, GDI on Windows), plus native notifications, a system tray menu, and real-time memory updates via `Flow`.
 
 The same pattern works for any other platform API:
 

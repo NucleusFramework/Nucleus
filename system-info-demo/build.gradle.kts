@@ -82,7 +82,7 @@ nucleus.application {
 
         packageName = "SystemInfo"
         packageVersion = "1.0.0"
-        homepage = "https://github.com/kdroidFilter/Nucleus"
+        homepage = "https://github.com/nucleusframework/Nucleus"
 
         linux {
             debMaintainer = "NucleusFramework <dev@nucleusframework.com>"

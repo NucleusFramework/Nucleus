@@ -23,7 +23,7 @@ flowchart LR
 ```
 
 !!! tip "Try it yourself"
-    Download an **older version** of the Nucleus demo app from the [GitHub Releases page](https://github.com/kdroidFilter/Nucleus/releases), install it, and launch it. The app will automatically detect that a newer version is available, download the update with a progress bar, and offer an "Install & Restart" button. This is the exact same flow your users will experience.
+    Download an **older version** of the Nucleus demo app from the [GitHub Releases page](https://github.com/nucleusframework/Nucleus/releases), install it, and launch it. The app will automatically detect that a newer version is available, download the update with a progress bar, and offer an "Install & Restart" button. This is the exact same flow your users will experience.
 
 ## Updatable Formats
 
@@ -62,7 +62,7 @@ In the release workflow, each platform builds its installers in parallel and upl
 2. Runs the `generate-update-yml` action, which scans every installer file, computes SHA-512 checksums, and produces `latest-mac.yml`, `latest.yml` (Windows), and `latest-linux.yml`
 3. Uploads everything (installers + YML files) to the release
 
-See the [example release workflow](https://github.com/kdroidFilter/Nucleus/blob/main/.github/workflows/release-desktop.yaml) for the full setup.
+See the [example release workflow](https://github.com/nucleusframework/Nucleus/blob/main/.github/workflows/release-desktop.yaml) for the full setup.
 
 ### Building locally
 
@@ -96,7 +96,7 @@ releaseDate: '2026-03-01T12:00:00.000Z'
 ```
 
 !!! tip
-    In practice, always use CI for multi-platform releases. The [release workflow](https://github.com/kdroidFilter/Nucleus/blob/main/.github/workflows/release-desktop.yaml) handles all of this automatically: build in parallel, merge YML files, and publish to GitHub Releases in a single pipeline.
+    In practice, always use CI for multi-platform releases. The [release workflow](https://github.com/nucleusframework/Nucleus/blob/main/.github/workflows/release-desktop.yaml) handles all of this automatically: build in parallel, merge YML files, and publish to GitHub Releases in a single pipeline.
 
 ### YML file examples
 
@@ -174,7 +174,7 @@ You are responsible for uploading the installers and YML files to your chosen ho
 
 ### Option 1: GitHub Releases (recommended)
 
-The simplest approach. Use the [ready-made release CI workflow](https://github.com/kdroidFilter/Nucleus/blob/main/.github/workflows/release-desktop.yaml) which handles everything automatically:
+The simplest approach. Use the [ready-made release CI workflow](https://github.com/nucleusframework/Nucleus/blob/main/.github/workflows/release-desktop.yaml) which handles everything automatically:
 
 1. Builds on all platforms in parallel
 2. Generates the `latest-*.yml` files from all platform artifacts

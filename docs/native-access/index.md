@@ -30,7 +30,7 @@ The generated JVM proxies have **the exact same API** as your native classes —
 ## Setup
 
 !!! note "Separate versioning"
-    Nucleus Native Access is versioned independently from Nucleus. Check the latest version on the [NucleusNativeAccess repository](https://github.com/kdroidFilter/NucleusNativeAccess).
+    Nucleus Native Access is versioned independently from Nucleus. Check the latest version on the [NucleusNativeAccess repository](https://github.com/nucleusframework/NucleusNativeAccess).
 
 Add the plugin to your Kotlin Multiplatform module:
 
@@ -38,7 +38,7 @@ Add the plugin to your Kotlin Multiplatform module:
 // build.gradle.kts
 plugins {
     kotlin("multiplatform")
-    id("io.github.kdroidfilter.nucleusnativeaccess") version "<version>" // see github.com/kdroidFilter/NucleusNativeAccess
+    id("io.github.kdroidfilter.nucleusnativeaccess") version "<version>" // see github.com/nucleusframework/NucleusNativeAccess
 }
 
 kotlin {
@@ -136,7 +136,7 @@ No manual configuration needed — the generated metadata is picked up automatic
 
 Nucleus Native Access is maintained in a separate repository with its own release cycle:
 
-[**kdroidFilter/NucleusNativeAccess**](https://github.com/kdroidFilter/NucleusNativeAccess) — plugin source, examples, full documentation, and latest releases.
+[**nucleusframework/NucleusNativeAccess**](https://github.com/nucleusframework/NucleusNativeAccess) — plugin source, examples, full documentation, and latest releases.
 
 The plugin ID is `io.github.kdroidfilter.nucleusnativeaccess`.
 

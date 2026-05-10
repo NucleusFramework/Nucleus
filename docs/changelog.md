@@ -525,7 +525,7 @@ nativeDistributions {
 
 ### Bug Fixes
 
-- **Fix title bar drag on Windows (`decorated-window-jbr`)** — Window dragging via the title bar no longer occasionally fails on the first attempt when another window has focus. The new `WindowMouseEventEffect` approach uses AWT mouse listeners for reliable hit-test forwarding to JBR's `CustomTitleBar`, fixing the intermittent missed drag events. ([#53](https://github.com/kdroidFilter/Nucleus/issues/53))
+- **Fix title bar drag on Windows (`decorated-window-jbr`)** — Window dragging via the title bar no longer occasionally fails on the first attempt when another window has focus. The new `WindowMouseEventEffect` approach uses AWT mouse listeners for reliable hit-test forwarding to JBR's `CustomTitleBar`, fixing the intermittent missed drag events. ([#53](https://github.com/nucleusframework/Nucleus/issues/53))
 - Promote `core-runtime` to `api` scope in `updater-runtime` and `system-color` so consumers no longer need to declare it separately.
 - Include generic provider in publish mode detection.
 - Skip Flatpak packaging gracefully when `flatpak` CLI is missing.
