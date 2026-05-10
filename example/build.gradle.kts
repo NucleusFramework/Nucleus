@@ -157,7 +157,7 @@ nucleus.application {
         publish {
             github {
                 enabled = true
-                owner = "nucleusframework"
+                owner = "kdroidFilter"
                 repo = "Nucleus"
                 channel = ReleaseChannel.Latest
                 releaseType = ReleaseType.Release

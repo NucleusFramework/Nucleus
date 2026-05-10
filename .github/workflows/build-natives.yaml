@@ -313,6 +313,42 @@ jobs:
           path: media-control/src/main/resources/nucleus/native/win32-*/
           retention-days: 1
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+
+      - name: Build decorated-window-tao Windows DLLs
+        shell: cmd
+        run: call decorated-window-tao\src\main\native\windows\build.bat
+
+      - name: Verify decorated-window-tao Windows natives
+        shell: bash
+        run: |
+          for f in \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_deco.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_a11y.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_a11y.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll \
+            decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_native_view.dll; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload decorated-window-tao Windows DLLs
+        uses: actions/upload-artifact@v4
+        with:
+          name: decorated-window-tao-windows
+          path: decorated-window-tao/src/main/resources/nucleus/native/win32-*/
+          retention-days: 1
+
   macos:
     runs-on: macos-latest
     steps:
@@ -629,6 +665,40 @@ jobs:
           path: media-control/src/main/resources/nucleus/native/darwin-*/
           retention-days: 1
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
+
+      - name: Build decorated-window-tao macOS dylibs
+        run: bash decorated-window-tao/src/main/native/macos/build.sh
+
+      - name: Verify decorated-window-tao macOS natives
+        run: |
+          for f in \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_metal.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_dnd.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_deco.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_popup.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_tao_macos_native_view.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_metal.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_dnd.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_deco.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_popup.dylib \
+            decorated-window-tao/src/main/resources/nucleus/native/darwin-x64/libnucleus_tao_macos_native_view.dylib; do
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload decorated-window-tao macOS dylibs
+        uses: actions/upload-artifact@v4
+        with:
+          name: decorated-window-tao-macos
+          path: decorated-window-tao/src/main/resources/nucleus/native/darwin-*/
+          retention-days: 1
+
   linux:
     runs-on: ${{ matrix.os }}
     strategy:
@@ -858,4 +928,27 @@ jobs:
         with:
           name: media-control-linux-${{ matrix.arch }}
           path: media-control/src/main/resources/nucleus/native/linux-*/
+          retention-days: 1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'x64' && 'x86_64-unknown-linux-gnu' || 'aarch64-unknown-linux-gnu' }}
+
+      - name: Build decorated-window-tao Linux shared library
+        run: bash decorated-window-tao/src/main/native/linux/build.sh
+
+      - name: Verify decorated-window-tao Linux native
+        run: |
+          for lib in libnucleus_tao.so libnucleus_tao_egl.so libnucleus_tao_linux_widget.so; do
+            f="decorated-window-tao/src/main/resources/nucleus/native/linux-${{ matrix.arch }}/$lib"
+            if [ ! -f "$f" ]; then echo "MISSING: $f" >&2; exit 1; fi
+            echo "OK: $f ($(wc -c < "$f") bytes)"
+          done
+
+      - name: Upload decorated-window-tao Linux shared library
+        uses: actions/upload-artifact@v4
+        with:
+          name: decorated-window-tao-linux-${{ matrix.arch }}
+          path: decorated-window-tao/src/main/resources/nucleus/native/linux-*/
           retention-days: 1

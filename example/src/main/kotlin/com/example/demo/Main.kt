@@ -395,7 +395,7 @@ fun NucleusContent() {
     val updater =
         remember {
             NucleusUpdater {
-                provider = GitHubProvider(owner = "nucleusframework", repo = "Nucleus")
+                provider = GitHubProvider(owner = "kdroidFilter", repo = "Nucleus")
                 httpClient = NativeHttpClient.create()
             }
         }
