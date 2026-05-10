@@ -596,15 +596,29 @@ static void removeMenuBarMonitor(NSWindow *window) {
     }
     NSWindow *w = _view.window;
     if (w == nil) return;
+    // Restore the transparent / hidden chrome state. willEnterFS flips
+    // `titlebarAppearsTransparent` to NO and `titleVisibility` to Visible
+    // so AppKit's fullscreen animation can run against its standard chrome,
+    // but those changes are never reverted automatically — leaving an
+    // opaque white toolbar/titlebar band visible in fullscreen as soon as
+    // the contentView's top region isn't fully covered by Compose drawing
+    // (e.g. when an embedded NSView like WKWebView sits below the bar).
+    w.titlebarAppearsTransparent = YES;
+    w.titleVisibility = NSWindowTitleHidden;
     // Install replacement traffic-light buttons inside the contentView so
     // they remain visible when AppKit auto-hides the native title bar (and
     // they don't disappear with our custom Compose title bar in fullscreen).
     NSNumber *h = objc_getAssociatedObject(w, &kTaoTitleBarHeightKey);
     float height = h ? [h floatValue] : kMinHeightForFullSize;
     installFullScreenButtons(w, height);
-    // Reinstall the invisible toolbar so the macOS 26 large-corner-radius
-    // treatment carries over into fullscreen.
-    reinstallToolbarIfNeeded(w);
+    // Intentionally NOT calling reinstallToolbarIfNeeded(w) here. The
+    // invisible NSToolbar exists solely to opt the window into the macOS
+    // 26 large-corner-radius treatment, which is irrelevant in fullscreen
+    // (no visible window corners) and worse, AppKit allocates a tall
+    // opaque toolbar band at the top of the contentView that pushes our
+    // Compose content down with a white strip above it — the very glitch
+    // willEnterFS removes the toolbar to avoid. didExitFS reinstalls it
+    // when leaving fullscreen via the kTaoHadToolbarKey flag.
     // Hide the AppKit titlebar container to prevent it from intercepting
     // clicks meant for our Compose content (the contentView spans the full
     // window in fullscreen due to FullSizeContentView).
