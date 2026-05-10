@@ -78,6 +78,7 @@ nucleus.application {
                 version = "7.8.1"
                 isEnabled = true
                 optimize = false
+                configurationFiles.from(project.file("proguard-rules.pro"))
             }
         }
     }

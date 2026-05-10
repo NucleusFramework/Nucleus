@@ -140,6 +140,10 @@
 -dontwarn com.sun.jna.**
 -dontnote com.sun.jna.**
 
+# Nucleus - Silence warnings and notes for all modules (many are optional at runtime)
+-dontwarn dev.nucleusframework.nucleus.**
+-dontnote dev.nucleusframework.nucleus.**
+
 # Nucleus decorated-window JNI
 -keep class dev.nucleusframework.nucleus.window.utils.macos.NativeMacBridge {
     native <methods>;
@@ -165,6 +169,7 @@
     native <methods>;
 }
 -keep class dev.nucleusframework.nucleus.darkmodedetector.** { *; }
+-dontwarn dev.nucleusframework.nucleus.darkmodedetector.**
 
 # Nucleus native-ssl JNI (macOS)
 -keep class dev.nucleusframework.nucleus.nativessl.mac.NativeSslBridge {
@@ -175,6 +180,7 @@
 -keep class dev.nucleusframework.nucleus.nativessl.windows.WindowsSslBridge {
     native <methods>;
 }
+-dontwarn dev.nucleusframework.nucleus.nativessl.**
 
 # Nucleus system-color JNI (macOS)
 # NativeMacSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
@@ -201,6 +207,7 @@
     static void onHighContrastChanged(boolean);
 }
 -keep class dev.nucleusframework.nucleus.systemcolor.** { *; }
+-dontwarn dev.nucleusframework.nucleus.systemcolor.**
 
 # Nucleus energy-manager JNI (macOS)
 -keep class dev.nucleusframework.nucleus.energymanager.macos.NativeMacOsEnergyBridge {
@@ -217,11 +224,13 @@
     native <methods>;
 }
 -keep class dev.nucleusframework.nucleus.energymanager.** { *; }
+-dontwarn dev.nucleusframework.nucleus.energymanager.**
 
 # Nucleus linux-hidpi JNI
 -keep class dev.nucleusframework.nucleus.hidpi.HiDpiLinuxBridge {
     native <methods>;
 }
+-dontwarn dev.nucleusframework.nucleus.hidpi.**
 
 # Nucleus notification-windows JNI — static callbacks invoked from native via FindClass/GetStaticMethodID
 -keep class dev.nucleusframework.nucleus.notification.windows.NativeWindowsNotificationBridge {
@@ -235,12 +244,15 @@
 }
 -keep class dev.nucleusframework.nucleus.notification.windows.** { *; }
 -keep class dev.nucleusframework.nucleus.notification.common.** { *; }
+-dontwarn dev.nucleusframework.nucleus.notification.**
 
 # Nucleus media-control JNI — native code uses FindClass(BRIDGE_CLASS) + static callbacks
 -keep class dev.nucleusframework.nucleus.mediacontrol.** { *; }
+-dontwarn dev.nucleusframework.nucleus.mediacontrol.**
 
 # Nucleus scheduler JNI
 -keep class dev.nucleusframework.nucleus.scheduler.** { *; }
+-dontwarn dev.nucleusframework.nucleus.scheduler.**
 
 # Nucleus global-hotkey JNI — onHotKey is invoked from native code via JNI
 -keep class dev.nucleusframework.nucleus.globalhotkey.windows.NativeWindowsHotKeyBridge {
@@ -255,6 +267,7 @@
     native <methods>;
     static void onHotKey(long, int, int);
 }
+-dontwarn dev.nucleusframework.nucleus.globalhotkey.**
 
 # Nucleus launcher-windows JNI — ThumbBarClickListener.onThumbButtonClick is invoked from native
 -keep class dev.nucleusframework.nucleus.launcher.windows.NativeWindowsBadgeBridge { native <methods>; }
@@ -266,6 +279,9 @@
 -keep class * implements dev.nucleusframework.nucleus.launcher.windows.ThumbBarClickListener {
     void onThumbButtonClick(int);
 }
+-dontwarn dev.nucleusframework.nucleus.launcher.**
+
+-dontwarn dev.nucleusframework.nucleus.core.runtime.**
 
 -dontwarn sun.misc.Unsafe
 -dontwarn sun.awt.**
