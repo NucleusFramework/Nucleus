@@ -16,6 +16,7 @@ import org.objectweb.asm.Type
  *
  * Tracks both string constants and class constants through local variable stores/loads.
  */
+@Suppress("CyclomaticComplexMethod")
 internal object ReflectionApiDetector {
     private val METHOD_LOOKUPS = setOf("getMethod", "getDeclaredMethod")
     private val FIELD_LOOKUPS = setOf("getField", "getDeclaredField")

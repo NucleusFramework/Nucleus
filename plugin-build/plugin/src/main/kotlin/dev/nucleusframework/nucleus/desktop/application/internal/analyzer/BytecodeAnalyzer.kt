@@ -16,6 +16,7 @@ import java.util.jar.JarFile
 /**
  * Main entry point: scans one or more JARs and produces an [AnalysisResult].
  */
+@Suppress("LoopWithTooManyJumpStatements")
 internal object BytecodeAnalyzer {
     /**
      * Analyzes a single JAR file.
@@ -190,12 +191,11 @@ internal object BytecodeAnalyzer {
     fun analyzeClasspath(files: Iterable<File>): AnalysisResult {
         var merged = AnalysisResult()
         for (file in files) {
-            merged = merged +
-                when {
-                    file.isDirectory -> analyzeClassDir(file)
-                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
-                    else -> continue
-                }
+            merged += when {
+                                file.isDirectory -> analyzeClassDir(file)
+                                file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
+                                else -> continue
+                            }
         }
         return merged
     }

@@ -46,7 +46,7 @@ abstract class AbstractRunDistributableTask
                             .listFiles()
                             // Sometimes ".DS_Store" files are created on macOS, so ignore them.
                             ?.filterNot { it.name == ".DS_Store" }
-                    if (files == null || files.isEmpty()) {
+                    if (files.isNullOrEmpty()) {
                         error("Could not find application image: $appImageRoot is empty!")
                     } else if (files.size > 1) {
                         error(

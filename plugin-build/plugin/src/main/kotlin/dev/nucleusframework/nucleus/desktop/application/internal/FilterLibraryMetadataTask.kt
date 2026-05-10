@@ -46,7 +46,7 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
                 ?.bufferedReader()
                 ?.readLines()
                 ?.filter { it.isNotBlank() }
-                ?: emptyList()
+                .orEmpty()
 
         val slurper = JsonSlurper()
         val mergedReflection = mutableListOf<Any?>()

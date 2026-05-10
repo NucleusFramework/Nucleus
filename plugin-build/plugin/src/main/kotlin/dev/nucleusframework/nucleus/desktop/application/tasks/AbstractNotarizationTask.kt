@@ -90,9 +90,9 @@ abstract class AbstractNotarizationTask
                     },
                 )
 
-            if (submissionId != null) {
-                logger.lifecycle("Notarization submission ID: $submissionId (file: ${packageFile.name})")
-                saveNotarizationRequestInfo(submissionId!!)
+            submissionId?.let { id ->
+                logger.lifecycle("Notarization submission ID: $id (file: ${packageFile.name})")
+                saveNotarizationRequestInfo(id)
             }
 
             if (result.exitValue != 0 || stdout.contains("status: Invalid")) {

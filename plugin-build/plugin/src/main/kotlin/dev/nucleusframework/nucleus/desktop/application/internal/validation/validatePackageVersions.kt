@@ -3,6 +3,8 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
+@file:Suppress("NestedBlockDepth", "MagicNumber")
+
 package dev.nucleusframework.nucleus.desktop.application.internal.validation
 
 import dev.nucleusframework.nucleus.desktop.application.dsl.TargetFormat

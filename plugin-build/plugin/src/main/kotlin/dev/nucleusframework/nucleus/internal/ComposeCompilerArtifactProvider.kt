@@ -8,6 +8,7 @@ package dev.nucleusframework.nucleus.internal
 import dev.nucleusframework.nucleus.internal.ComposeCompilerArtifactProvider.DefaultCompiler.pluginArtifact
 import org.jetbrains.kotlin.gradle.plugin.SubpluginArtifact
 
+@Suppress("MagicNumber")
 internal class ComposeCompilerArtifactProvider(
     private val customPluginString: () -> String,
 ) {

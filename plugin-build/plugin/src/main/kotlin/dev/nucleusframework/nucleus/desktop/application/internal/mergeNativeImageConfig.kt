@@ -1,4 +1,12 @@
-@file:Suppress("ktlint:standard:filename", "TooManyFunctions")
+@file:Suppress(
+    "ktlint:standard:filename",
+    "TooManyFunctions",
+    "CyclomaticComplexMethod",
+    "LongMethod",
+    "NestedBlockDepth",
+    "LoopWithTooManyJumpStatements",
+    "MaxLineLength",
+)
 
 package dev.nucleusframework.nucleus.desktop.application.internal
 

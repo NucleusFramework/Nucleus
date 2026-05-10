@@ -1,4 +1,4 @@
-@file:Suppress("ktlint:standard:filename")
+@file:Suppress("ktlint:standard:filename", "NestedBlockDepth", "TooGenericExceptionCaught")
 
 package dev.nucleusframework.nucleus.desktop.application.internal
 

@@ -10,6 +10,7 @@ import java.io.File
  * The Oracle repo uses individual config files per type (reflect-config.json, jni-config.json)
  * which are JSON arrays, unlike the newer reachability-metadata.json format.
  */
+@Suppress("MaxLineLength")
 internal object OracleRepoParser {
     // Instantiate locally per call — JsonSlurper is not thread-safe
     private fun slurper() = JsonSlurper()
@@ -60,7 +61,7 @@ internal object OracleRepoParser {
         when (resources) {
             is Map<*, *> -> {
                 @Suppress("UNCHECKED_CAST")
-                val includes = resources["includes"] as? List<Map<String, Any?>> ?: emptyList()
+                val includes = (resources["includes"] as? List<Map<String, Any?>>).orEmpty()
                 for (entry in includes) {
                     val pattern = entry["pattern"] as? String
                     if (pattern != null) {
@@ -102,10 +103,10 @@ internal object OracleRepoParser {
         val root = slurper().parseText(file.readText()) as? Map<String, Any?> ?: return AnalysisResult()
 
         @Suppress("UNCHECKED_CAST")
-        val reflectionArray = root["reflection"] as? List<Map<String, Any?>> ?: emptyList()
+        val reflectionArray = (root["reflection"] as? List<Map<String, Any?>>).orEmpty()
 
         @Suppress("UNCHECKED_CAST")
-        val jniArray = root["jni"] as? List<Map<String, Any?>> ?: emptyList()
+        val jniArray = (root["jni"] as? List<Map<String, Any?>>).orEmpty()
 
         val reflectionEntries = reflectionArray.map { parseTypeMap(it).toReflectionEntry() }.toSet()
         val jniEntries = jniArray.map { parseTypeMap(it).toJniEntry() }.toSet()
@@ -169,20 +170,20 @@ internal object OracleRepoParser {
 
     @Suppress("UNCHECKED_CAST")
     private fun parseTypeArray(file: File): List<ParsedType> {
-        val array = slurper().parseText(file.readText()) as? List<Map<String, Any?>> ?: return emptyList()
+        val array = (slurper().parseText(file.readText()) as? List<Map<String, Any?>>).orEmpty()
         return array.mapNotNull { map -> parseTypeMap(map).takeIf { it.name.isNotEmpty() } }
     }
 
     @Suppress("UNCHECKED_CAST")
     private fun parseTypeMap(map: Map<String, Any?>): ParsedType {
-        val name = (map["name"] as? String) ?: (map["type"] as? String) ?: ""
+        val name = (map["name"] as? String) ?: (map["type"] as? String).orEmpty()
 
         val methods = mutableSetOf<MethodSignature>()
         val methodsList = map["methods"] as? List<Map<String, Any?>>
         if (methodsList != null) {
             for (m in methodsList) {
                 val mName = m["name"] as? String ?: continue
-                val params = (m["parameterTypes"] as? List<String>) ?: emptyList()
+                val params = (m["parameterTypes"] as? List<String>).orEmpty()
                 methods.add(MethodSignature(mName, params))
             }
         }

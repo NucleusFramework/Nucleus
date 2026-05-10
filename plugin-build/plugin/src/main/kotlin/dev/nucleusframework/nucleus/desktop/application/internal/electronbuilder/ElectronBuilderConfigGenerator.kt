@@ -24,11 +24,11 @@ import java.io.File
  * Generates an electron-builder YAML configuration from the Gradle DSL settings.
  *
  * Maps Nucleus DSL properties to the electron-builder configuration schema,
- * producing a `electron-builder.yml` file consumed by `electron-builder --prepackaged`.
+ * Producing a `electron-builder.yml` file consumed by `electron-builder --prepackaged`.
  *
  */
-@Suppress("TooManyFunctions", "LargeClass")
-internal class ElectronBuilderConfigGenerator {
+ @Suppress("TooManyFunctions", "LargeClass", "CyclomaticComplexMethod", "MaxLineLength")
+ internal class ElectronBuilderConfigGenerator {
     /**
      * Generates the electron-builder config YAML content.
      *

@@ -101,7 +101,7 @@ internal fun buildReachabilityMetadataJson(
     if (resourcePatterns.isNotEmpty()) {
         root["resources"] =
             resourcePatterns
-                .sortedBy { it.glob ?: it.bundle ?: "" }
+                .sortedBy { it.glob ?: it.bundle.orEmpty() }
                 .map { it.toJsonMap() }
     }
 

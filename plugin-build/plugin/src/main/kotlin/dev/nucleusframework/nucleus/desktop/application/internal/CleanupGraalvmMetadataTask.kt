@@ -532,10 +532,10 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     }
 
     private fun sig(obj: Map<String, Any?>): String {
-        val name = obj["name"] as? String ?: ""
+        val name = (obj["name"] as? String).orEmpty()
 
         @Suppress("UNCHECKED_CAST")
-        val params = (obj["parameterTypes"] as? List<String>)?.joinToString(",") ?: ""
+        val params = (obj["parameterTypes"] as? List<String>)?.joinToString(",").orEmpty()
         return "$name($params)"
     }
 

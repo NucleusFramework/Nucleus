@@ -48,11 +48,11 @@ class LaunchAgentDefinition(
     val label: String,
 ) : Serializable {
     internal var bundleProgram: String? = null
-    internal var programArguments: MutableList<String> = mutableListOf()
+    internal val programArguments: MutableList<String> = mutableListOf()
     internal var startInterval: Int? = null
     internal var runAtLoad: Boolean = false
     internal var keepAlive: Boolean = false
-    internal var calendarIntervals: MutableList<CalendarInterval> = mutableListOf()
+    internal val calendarIntervals: MutableList<CalendarInterval> = mutableListOf()
     internal var processType: String = "Background"
 
     /**

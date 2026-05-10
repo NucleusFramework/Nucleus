@@ -25,6 +25,7 @@ import org.gradle.work.DisableCachingByDefault
 import java.io.File
 
 @DisableCachingByDefault(because = "Depends on external macOS native tools")
+@Suppress("LoopWithTooManyJumpStatements", "MagicNumber")
 abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApplicationPackageTask() {
     companion object {
         private const val DEFAULT_ICON_SIZE = 72

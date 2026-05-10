@@ -88,11 +88,11 @@ internal object ClassForNameDetector {
                         override fun visitMethodInsn(
                             opcode: Int,
                             owner: String,
-                            name: String,
-                            descriptor: String,
+                            methodName: String,
+                            methodDescriptor: String,
                             isInterface: Boolean,
                         ) {
-                            if (isClassLoadingCall(opcode, owner, name, descriptor)) {
+                            if (isClassLoadingCall(opcode, owner, methodName, methodDescriptor)) {
                                 hasClassLoadingCall = true
                                 val className = stackString
                                 if (className != null && isValidClassName(className)) {
@@ -145,9 +145,9 @@ internal object ClassForNameDetector {
                             // directly matched. Apply stricter validation to reduce false positives
                             // from log messages or SQL queries that resemble FQCNs.
                             if (hasClassLoadingCall) {
-                                for (name in candidateClassNames) {
-                                    if (isStrictClassName(name)) {
-                                        entries.add(ReflectionEntry(type = name))
+                                for (className in candidateClassNames) {
+                                    if (isStrictClassName(className)) {
+                                        entries.add(ReflectionEntry(type = className))
                                     }
                                 }
                             }

@@ -13,6 +13,7 @@ import java.util.jar.JarFile
  * - Reflection entries for each implementation class (with no-arg constructor)
  * - A resource pattern for the service file itself
  */
+@Suppress("LoopWithTooManyJumpStatements")
 internal object ServiceLoaderDetector {
     data class ServiceResult(
         val reflectionEntries: Set<ReflectionEntry>,

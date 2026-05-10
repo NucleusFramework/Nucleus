@@ -41,7 +41,7 @@ internal object UpdateYmlGenerator {
             f.isFile &&
                 !f.name.startsWith(".") &&
                 f.extension.lowercase() !in SKIP_EXTENSIONS
-        }?.sortedBy { it.name } ?: emptyList()
+        }?.sortedBy { it.name }.orEmpty()
 
         if (installerFiles.isEmpty()) {
             logger.warn("No installer files found in ${outputDir.absolutePath}, skipping update YML generation")

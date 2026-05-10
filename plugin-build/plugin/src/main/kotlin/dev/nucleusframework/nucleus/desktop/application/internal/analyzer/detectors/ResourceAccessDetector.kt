@@ -73,12 +73,13 @@ internal object ResourceAccessDetector {
                         ) {
                             if (opcode == Opcodes.INVOKEVIRTUAL &&
                                 owner in RESOURCE_OWNERS &&
-                                name in RESOURCE_METHODS &&
-                                stackString != null
+                                name in RESOURCE_METHODS
                             ) {
-                                val path = normalizeResourcePath(stackString!!)
-                                if (path.isNotEmpty()) {
-                                    patterns.add(ResourcePattern(glob = path))
+                                stackString?.let { s ->
+                                    val path = normalizeResourcePath(s)
+                                    if (path.isNotEmpty()) {
+                                        patterns.add(ResourcePattern(glob = path))
+                                    }
                                 }
                             }
                             stackString = null

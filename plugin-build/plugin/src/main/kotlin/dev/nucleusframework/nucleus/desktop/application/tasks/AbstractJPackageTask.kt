@@ -615,6 +615,7 @@ abstract class AbstractJPackageTask
             val appEntitlementsFile = macEntitlementsFile.ioFileOrNull
             val runtimeEntitlementsFile = macRuntimeEntitlementsFile.ioFileOrNull
 
+            @Suppress("UnsafeCallOnNullableType")
             val macSigner = macSigner!!
             // Resign the runtime completely (and also the app dir only)
             // Sign all libs and executables in runtime
@@ -873,7 +874,9 @@ private class FilesMapping : Serializable {
 
     @Suppress("UNCHECKED_CAST")
     private fun readObject(stream: ObjectInputStream) {
-        mapping = stream.readObject() as HashMap<File, List<File>>
+        val readMapping = stream.readObject() as HashMap<File, List<File>>
+        mapping.clear()
+        mapping.putAll(readMapping)
     }
 }
 

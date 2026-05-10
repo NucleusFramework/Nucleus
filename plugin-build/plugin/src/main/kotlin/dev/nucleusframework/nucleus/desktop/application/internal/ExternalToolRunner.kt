@@ -60,14 +60,13 @@ internal class ExternalToolRunner(
                             spec.standardInput = ByteArrayInputStream(stdinStr.toByteArray())
                         }
 
-                        @Suppress("NAME_SHADOWING")
-                        val logToConsole =
+                        val shouldLogToConsole =
                             when (logToConsole) {
                                 LogToConsole.Always -> true
                                 LogToConsole.Never -> false
                                 LogToConsole.OnlyWhenVerbose -> verbose.get()
                             }
-                        if (logToConsole) {
+                        if (shouldLogToConsole) {
                             spec.standardOutput = spec.standardOutput.alsoOutputTo(outFileStream)
                             spec.errorOutput = spec.errorOutput.alsoOutputTo(errFileStream)
                         } else {

@@ -9,6 +9,7 @@ import java.util.jar.JarFile
  * - Properties files at root or known paths (excluding META-INF)
  * - Text resources in known framework resource directories (Lucene, ICU4J, etc.)
  */
+@Suppress("CyclomaticComplexMethod", "LoopWithTooManyJumpStatements")
 internal object JarResourceDetector {
     private val NATIVE_LIB_EXTENSIONS = setOf("so", "dll", "dylib", "jnilib", "a")
 

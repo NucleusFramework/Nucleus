@@ -3,7 +3,7 @@
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
-@file:Suppress("TooManyFunctions")
+@file:Suppress("TooManyFunctions", "CyclomaticComplexMethod")
 
 package dev.nucleusframework.nucleus.desktop.application.internal
 
@@ -603,16 +603,18 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     // Register the patch task eagerly so it's available for the run task's
     // lazy configuration (Gradle forbids task registration from within
     // another task's configuration action).
-    val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? =
-        if (currentOS == OS.MacOS && app.nativeDistributions.macOS.macOsSdkVersion != null) {
+    val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? = run {
+        val sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion
+        if (currentOS == OS.MacOS && sdkVersion != null) {
             registerPatchMacJvmTask(
                 javaHome = app.javaHome,
                 minVersion = app.nativeDistributions.macOS.minimumSystemVersion ?: "10.13",
-                sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion!!,
+                sdkVersion = sdkVersion,
             )
         } else {
             null
         }
+    }
 
     val run =
         tasks.register<JavaExec>(taskNameAction = "run") {

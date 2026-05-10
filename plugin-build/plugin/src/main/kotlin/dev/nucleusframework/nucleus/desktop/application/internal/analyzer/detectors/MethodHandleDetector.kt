@@ -23,6 +23,7 @@ import org.objectweb.asm.Type
  * The detector tracks both the most recent class type (from `LDC Type`) and string
  * constant to resolve the target class and member name.
  */
+@Suppress("LongMethod")
 internal object MethodHandleDetector {
     private val FIND_METHOD_NAMES =
         setOf(
@@ -90,12 +91,8 @@ internal object MethodHandleDetector {
                         ) {
                             when (opcode) {
                                 Opcodes.ASTORE -> {
-                                    if (lastClassType != null) {
-                                        localClassTypes[varIndex] = lastClassType!!
-                                    }
-                                    if (lastStringConstant != null) {
-                                        localStrings[varIndex] = lastStringConstant!!
-                                    }
+                                    lastClassType?.let { localClassTypes[varIndex] = it }
+                                    lastStringConstant?.let { localStrings[varIndex] = it }
                                     lastClassType = null
                                     lastStringConstant = null
                                 }

@@ -90,6 +90,7 @@ internal class MacSignerImpl(
                         ),
                     processStdout = { signKeyValue = matchCertificates(it) },
                 )
+                @Suppress("UnsafeCallOnNullableType")
                 signKeyValue!!
             }
         runTool.unsign(file)

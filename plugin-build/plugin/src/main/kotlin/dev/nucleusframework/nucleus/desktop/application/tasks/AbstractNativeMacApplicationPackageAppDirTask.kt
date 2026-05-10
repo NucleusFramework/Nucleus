@@ -82,6 +82,7 @@ abstract class AbstractNativeMacApplicationPackageAppDirTask : AbstractNativeMac
         appExecutableFile.setExecutable(true)
 
         macLayeredIcons.orNull?.let {
+            @Suppress("TooGenericExceptionCaught")
             try {
                 macAssetsTool.compileAssets(
                     iconDir = it.asFile,

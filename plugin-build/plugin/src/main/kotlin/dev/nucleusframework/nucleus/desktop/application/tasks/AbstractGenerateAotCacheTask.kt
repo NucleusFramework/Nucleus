@@ -116,7 +116,7 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             baseDir
                 .listFiles()
                 ?.filter { it.isDirectory && it.name != ".DS_Store" }
-                ?: emptyList()
+                .orEmpty()
         return when {
             children.isEmpty() -> throw GradleException("Distributable app directory not found under $baseDir")
             children.size == 1 -> children.single()

@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber", "LoopWithTooManyJumpStatements")
+
 package dev.nucleusframework.nucleus.desktop.application.internal
 
 import org.gradle.api.DefaultTask

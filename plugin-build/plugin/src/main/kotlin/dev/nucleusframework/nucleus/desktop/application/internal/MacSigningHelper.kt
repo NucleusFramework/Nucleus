@@ -13,7 +13,6 @@ import kotlin.io.path.isRegularFile
 
 internal class MacSigningHelper(
     private val macSigner: MacSigner,
-    private val runtimeProvisioningProfile: File?,
     private val entitlementsFile: File?,
     private val runtimeEntitlementsFile: File?,
     destinationDir: File,
