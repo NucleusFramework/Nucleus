@@ -98,6 +98,7 @@ tasks.register("preMerge") {
     dependsOn(":decorated-window-core:check")
     dependsOn(":decorated-window-jbr:check")
     dependsOn(":decorated-window-jni:check")
+    dependsOn(":decorated-window-tao:check")
     dependsOn(":decorated-window-jewel:check")
     dependsOn(":decorated-window-material2:check")
     dependsOn(":decorated-window-material3:check")
