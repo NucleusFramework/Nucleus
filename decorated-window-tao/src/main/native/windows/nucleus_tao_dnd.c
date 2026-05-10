@@ -22,10 +22,8 @@
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#pragma intrinsic(_InterlockedDecrement)
-#pragma intrinsic(_InterlockedIncrement)
-#define InterlockedDecrement _InterlockedDecrement
-#define InterlockedIncrement _InterlockedIncrement
+#undef InterlockedDecrement
+#undef InterlockedIncrement
 #endif
 
 #include <objbase.h>

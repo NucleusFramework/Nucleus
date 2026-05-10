@@ -51,20 +51,17 @@
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-/* Force inlining of interlocked intrinsics on ARM64 to avoid unresolved externals with /NODEFAULTLIB. */
-#pragma intrinsic(_InterlockedCompareExchange)
-#pragma intrinsic(_InterlockedCompareExchange64)
-#pragma intrinsic(_InterlockedDecrement)
-#pragma intrinsic(_InterlockedExchange)
-#pragma intrinsic(_InterlockedExchange64)
-#pragma intrinsic(_InterlockedIncrement)
-
-#define InterlockedCompareExchange _InterlockedCompareExchange
-#define InterlockedCompareExchange64 _InterlockedCompareExchange64
-#define InterlockedDecrement _InterlockedDecrement
-#define InterlockedExchange _InterlockedExchange
-#define InterlockedExchange64 _InterlockedExchange64
-#define InterlockedIncrement _InterlockedIncrement
+/* On ARM64 with /NODEFAULTLIB, the compiler may fail to inline some interlocked
+ * intrinsics, emitting calls to underscored symbols like _InterlockedIncrement.
+ * Since we link kernel32.lib, we undefine these macros to force the compiler
+ * to use the standard library exports (InterlockedIncrement, etc.) which
+ * don't have the leading underscore on ARM64. */
+#undef InterlockedCompareExchange
+#undef InterlockedCompareExchange64
+#undef InterlockedDecrement
+#undef InterlockedExchange
+#undef InterlockedExchange64
+#undef InterlockedIncrement
 #endif
 
 #include <commctrl.h>

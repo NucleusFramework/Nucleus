@@ -28,10 +28,8 @@
 
 #if defined(_M_ARM64) || defined(_M_ARM64EC)
 #include <intrin.h>
-#pragma intrinsic(_InterlockedCompareExchange)
-#pragma intrinsic(_InterlockedOr)
-#define InterlockedCompareExchange _InterlockedCompareExchange
-#define InterlockedOr _InterlockedOr
+#undef InterlockedCompareExchange
+#undef InterlockedOr
 #endif
 
 #include <dwmapi.h>
