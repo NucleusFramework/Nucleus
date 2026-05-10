@@ -119,8 +119,8 @@ mavenPublishing {
 
         developers {
             developer {
-                id.set("nucleusframework")
-                name.set("nucleusframework")
+                id.set("kdroidFilter")
+                name.set("kdroidFilter")
                 url.set("https://github.com/kdroidFilter")
             }
         }
