@@ -20,12 +20,6 @@ val resolvedVersion =
 group = property("GROUP").toString()
 version = resolvedVersion
 
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
-    }
-}
-
 dependencyLocking {
     lockAllConfigurations()
 }
