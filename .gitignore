@@ -1,6 +1,7 @@
 *.iml
 .DS_Store
 .gradle
+.lighthouse/
 /local.properties
 /.idea
 /.idea/caches
