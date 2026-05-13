@@ -22,10 +22,112 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 import java.io.File
+import java.io.IOException
 
 private const val AOT_CACHE_FILENAME = "app.aot"
 private const val MIN_AOT_JDK_VERSION = 25
 private const val DEFAULT_SAFETY_TIMEOUT_SECONDS = 300L
+
+/**
+ * Builds the Java launcher argument list for AOT training (excluding the java executable path).
+ */
+internal fun buildAotJavaArgs(
+    classpath: String,
+    javaOptions: List<String>,
+    mainClass: String,
+    aotCacheFile: File,
+): List<String> =
+    buildList {
+        add("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}")
+        add("-Dnucleus.aot.mode=training")
+        add("-cp")
+        add(classpath)
+        addAll(javaOptions)
+        add(mainClass)
+    }
+
+/**
+ * Writes Java launcher arguments as a UTF-8 argument file (`@argfile`), one argument per line.
+ */
+internal fun writeJavaArgFile(
+    file: File,
+    args: List<String>,
+) {
+    val content =
+        args
+            .joinToString(separator = System.lineSeparator()) { arg -> escapeArgForArgFile(arg) } +
+            System.lineSeparator()
+    file.writeText(content, Charsets.UTF_8)
+}
+
+/**
+ * Escapes a single Java launcher argument for `@argfile`.
+ *
+ * The argument is quoted when it contains whitespace, quotes, backslashes, or is empty.
+ * Newline characters are rejected because each argfile line encodes one argument.
+ */
+internal fun escapeArgForArgFile(arg: String): String {
+    require('\n' !in arg && '\r' !in arg) {
+        "Java @argfile argument must not contain newline characters"
+    }
+    val requiresQuotes = arg.isEmpty() || arg.any { it.isWhitespace() || it == '"' || it == '\\' }
+    if (!requiresQuotes) return arg
+    val escaped =
+        arg
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+    return "\"$escaped\""
+}
+
+/**
+ * Builds candidate directories for AOT argument/log temp files.
+ *
+ * Preference order:
+ * 1. `java.io.tmpdir`
+ * 2. app directory
+ * 3. AOT cache output directory
+ */
+internal fun buildAotTempFileCandidateDirs(
+    appDir: File,
+    aotCacheFile: File,
+    tmpDirPath: String? = System.getProperty("java.io.tmpdir"),
+): List<File> =
+    listOfNotNull(
+        tmpDirPath?.takeIf { it.isNotBlank() }?.let(::File),
+        appDir,
+        aotCacheFile.parentFile,
+    ).map { it.absoluteFile }.distinctBy { it.path }
+
+/**
+ * Creates a temp file under candidate directories in order.
+ *
+ * This avoids hard dependency on `java.io.tmpdir` writability.
+ */
+internal fun createAotTempFileWithFallback(
+    prefix: String,
+    suffix: String,
+    candidateDirs: List<File>,
+): File {
+    var firstFailure: IOException? = null
+    val attemptedDirs = mutableListOf<String>()
+    for (dir in candidateDirs) {
+        attemptedDirs += dir.absolutePath
+        try {
+            return File.createTempFile(prefix, suffix, dir).also { it.deleteOnExit() }
+        } catch (e: IOException) {
+            if (firstFailure == null) {
+                firstFailure = e
+            } else {
+                firstFailure.addSuppressed(e)
+            }
+        }
+    }
+
+    throw GradleException(
+        "Failed to create temporary file '$prefix*$suffix' in candidate directories: ${attemptedDirs.joinToString(", ")}",
+        firstFailure,
+    )
+}
 
 /**
  * Generates a JDK 25+ AOT cache for a Compose Desktop distributable.
@@ -343,65 +445,89 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         mainClass: String,
         aotCacheFile: File,
     ) {
-        val args = mutableListOf(javaExe)
-        args += "-XX:AOTCacheOutput=${aotCacheFile.absolutePath}"
-        args += "-Dnucleus.aot.mode=training"
-        args += "-cp"
-        args += classpath
-        args += javaOptions
-        args += mainClass
+        val javaArgs =
+            buildAotJavaArgs(
+                classpath = classpath,
+                javaOptions = javaOptions,
+                mainClass = mainClass,
+                aotCacheFile = aotCacheFile,
+            )
+        val candidateDirs = buildAotTempFileCandidateDirs(appDir, aotCacheFile)
+        var argFile: File? = null
+        try {
+            val javaLauncherArgs =
+                try {
+                    argFile = createAotTempFileWithFallback("nucleus-aot-", ".args", candidateDirs)
+                    writeJavaArgFile(requireNotNull(argFile), javaArgs)
+                    listOf(javaExe, "@${requireNotNull(argFile).absolutePath}")
+                } catch (e: GradleException) {
+                    if (isWindows()) {
+                        throw GradleException(
+                            "Failed to create AOT @argfile on Windows. " +
+                                "Cannot safely fall back to command-line arguments due to CreateProcess length limits.",
+                            e,
+                        )
+                    }
+                    logger.warn("[aotCache] Failed to create @argfile, falling back to direct Java args: ${e.message}")
+                    listOf(javaExe) + javaArgs
+                }
 
-        val logFile = File.createTempFile("nucleus-aot-", ".log")
-        val processBuilder =
-            ProcessBuilder(args)
-                .directory(appDir)
-                .redirectErrorStream(true)
-                .redirectOutput(logFile)
+            val logFile = createAotTempFileWithFallback("nucleus-aot-", ".log", candidateDirs)
+            var xvfbProcess: Process? = null
+            try {
+                val processBuilder =
+                    ProcessBuilder(javaLauncherArgs)
+                        .directory(appDir)
+                        .redirectErrorStream(true)
+                        .redirectOutput(logFile)
 
-        val isLinux = System.getProperty("os.name").lowercase().contains("linux")
-        val needsXvfb = isLinux && System.getenv("DISPLAY").isNullOrEmpty()
+                val isLinux = System.getProperty("os.name").lowercase().contains("linux")
+                val needsXvfb = isLinux && System.getenv("DISPLAY").isNullOrEmpty()
+                if (needsXvfb) {
+                    val display = ":99"
+                    xvfbProcess =
+                        ProcessBuilder("Xvfb", display, "-screen", "0", "1280x1024x24")
+                            .redirectErrorStream(true)
+                            .start()
+                    Thread.sleep(1000)
+                    processBuilder.environment()["DISPLAY"] = display
+                    logger.lifecycle("[aotCache] Started Xvfb on $display")
+                }
 
-        var xvfbProcess: Process? = null
-        if (needsXvfb) {
-            val display = ":99"
-            xvfbProcess =
-                ProcessBuilder("Xvfb", display, "-screen", "0", "1280x1024x24")
-                    .redirectErrorStream(true)
-                    .start()
-            Thread.sleep(1000)
-            processBuilder.environment()["DISPLAY"] = display
-            logger.lifecycle("[aotCache] Started Xvfb on $display")
-        }
+                val process = processBuilder.start()
 
-        val process = processBuilder.start()
+                val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * 1000
+                while (process.isAlive && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(500)
+                }
+                if (process.isAlive) {
+                    logger.warn("[aotCache] App did not self-terminate within safety timeout, forcing kill")
+                    process.destroyForcibly()
+                }
 
-        val deadline = System.currentTimeMillis() + safetyTimeoutSeconds.get() * 1000
-        while (process.isAlive && System.currentTimeMillis() < deadline) {
-            Thread.sleep(500)
-        }
-        if (process.isAlive) {
-            logger.warn("[aotCache] App did not self-terminate within safety timeout, forcing kill")
-            process.destroyForcibly()
-        }
+                val exitCode = process.waitFor()
 
-        val exitCode = process.waitFor()
-        xvfbProcess?.destroyForcibly()
+                val output = logFile.readText().takeLast(3000)
+                if (output.isNotBlank()) {
+                    logger.lifecycle("[aotCache] Output (exit $exitCode):\n$output")
+                }
 
-        val output = logFile.readText().takeLast(3000)
-        if (output.isNotBlank()) {
-            logger.lifecycle("[aotCache] Output (exit $exitCode):\n$output")
-        }
-        logFile.delete()
-
-        // Clean up JVM crash dumps
-        appDir.listFiles()?.filter { it.name.startsWith("hs_err_pid") }?.forEach { hsErr ->
-            logger.lifecycle("[aotCache] JVM crash dump: ${hsErr.name}")
-            // Only read text-based .log files; .mdmp files are binary minidumps
-            // that can be hundreds of MB and would cause OOM with readText()
-            if (hsErr.extension == "log") {
-                logger.lifecycle(hsErr.readText().take(2000))
+                // Clean up JVM crash dumps
+                appDir.listFiles()?.filter { it.name.startsWith("hs_err_pid") }?.forEach { hsErr ->
+                    logger.lifecycle("[aotCache] JVM crash dump: ${hsErr.name}")
+                    // Only read text-based .log files; .mdmp files are binary minidumps
+                    // that can be hundreds of MB and would cause OOM with readText()
+                    if (hsErr.extension == "log") {
+                        logger.lifecycle(hsErr.readText().take(2000))
+                    }
+                    hsErr.delete()
+                }
+            } finally {
+                xvfbProcess?.destroyForcibly()
+                logFile.delete()
             }
-            hsErr.delete()
+        } finally {
+            argFile?.delete()
         }
     }
 
