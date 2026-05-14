@@ -27,6 +27,7 @@ interface TitleBarLayoutPolicy {
 
     companion object {
         val Default: TitleBarLayoutPolicy = DefaultTitleBarLayoutPolicy
+        val FillCenter: TitleBarLayoutPolicy = FillCenterTitleBarLayoutPolicy
     }
 }
 
@@ -307,4 +308,151 @@ private data class DefaultTitleBarMeasureResult(
     val measuredPlaceables: List<MeasuredLayoutChild>,
     val endOccupied: Int,
     val otherOccupied: Int,
+) : TitleBarMeasureResult
+
+private object FillCenterTitleBarLayoutPolicy : TitleBarLayoutPolicy {
+    override fun MeasureScope.prepareMeasure(scope: TitleBarMeasureScope): TitleBarMeasureResult {
+        var maxSpaceVertically = scope.constraints.minHeight
+        val contentConstraints = scope.constraints.copy(minWidth = 0, minHeight = 0)
+
+        val endMeasurables = mutableListOf<MeasuredLayoutChild>()
+        val startMeasurables = mutableListOf<MeasuredLayoutChild>()
+        var endOccupied = 0
+        var startOccupied = 0
+        var centerCount = 0
+        var centerMeasurable: Measurable? = null
+
+        for (child in scope.children) {
+            when (child.alignment) {
+                Alignment.End -> {
+                    val placeable = child.measurable.measure(contentConstraints.offset(horizontal = -endOccupied))
+                    endOccupied += placeable.width
+                    maxSpaceVertically = max(maxSpaceVertically, placeable.height)
+                    endMeasurables += MeasuredLayoutChild(child, placeable)
+                }
+
+                Alignment.Start -> {
+                    val placeable = child.measurable.measure(contentConstraints.offset(horizontal = -startOccupied))
+                    startOccupied += placeable.width
+                    maxSpaceVertically = max(maxSpaceVertically, placeable.height)
+                    startMeasurables += MeasuredLayoutChild(child, placeable)
+                }
+
+                Alignment.CenterHorizontally -> {
+                    centerCount += 1
+                    centerMeasurable = child.measurable
+                }
+            }
+        }
+
+        require(centerCount <= 1) {
+            "TitleBarLayoutPolicy.FillCenter supports at most one " +
+                "Alignment.CenterHorizontally child, but found $centerCount."
+        }
+
+        if (centerMeasurable != null && scope.constraints.minHeight != scope.constraints.maxHeight) {
+            // Compose only allows a Measurable to be measured once in a layout pass.
+            // Use intrinsic height here and defer the actual measurement to measureTitleBar.
+            val centerHeightCandidate = centerMeasurable.maxIntrinsicHeight(scope.constraints.maxWidth)
+            maxSpaceVertically = max(maxSpaceVertically, centerHeightCandidate)
+        }
+
+        return FillCenterTitleBarMeasureResult(
+            heightPx = maxSpaceVertically,
+            startMeasuredPlaceables = startMeasurables,
+            endMeasuredPlaceables = endMeasurables,
+            startOccupied = startOccupied,
+            endOccupied = endOccupied,
+            centerMeasurable = centerMeasurable,
+        )
+    }
+
+    override fun MeasureScope.measureTitleBar(scope: TitleBarPlacementScope): MeasureResult {
+        val result =
+            scope.measureResult as? FillCenterTitleBarMeasureResult
+                ?: error("TitleBarLayoutPolicy.FillCenter requires FillCenterTitleBarMeasureResult")
+
+        val leftInset = scope.contentPadding.calculateLeftPadding(LayoutDirection.Ltr).roundToPx()
+        val rightInset = scope.contentPadding.calculateRightPadding(LayoutDirection.Ltr).roundToPx()
+        val occupiedSpaceHorizontally = result.startOccupied + result.endOccupied + leftInset + rightInset
+        val boxWidth = maxOf(scope.constraints.minWidth, occupiedSpaceHorizontally)
+
+        val contentIsRtl = scope.layoutDirection == LayoutDirection.Rtl
+        val controlsOnRight = scope.controlButtonsDirection == LayoutDirection.Ltr
+
+        var leftUsed = leftInset
+        var rightUsed = rightInset
+
+        result.endMeasuredPlaceables.forEach { measured ->
+            if (controlsOnRight) {
+                rightUsed += measured.placeable.width
+            } else {
+                leftUsed += measured.placeable.width
+            }
+        }
+
+        result.startMeasuredPlaceables.forEach { measured ->
+            if (contentIsRtl) {
+                rightUsed += measured.placeable.width
+            } else {
+                leftUsed += measured.placeable.width
+            }
+        }
+
+        val centerLaneX = leftUsed
+        val centerLaneWidth = maxOf(0, boxWidth - leftUsed - rightUsed)
+        val centerPlaceable =
+            result.centerMeasurable?.measure(
+                Constraints(
+                    minWidth = centerLaneWidth,
+                    maxWidth = centerLaneWidth,
+                    minHeight = 0,
+                    maxHeight = scope.constraints.maxHeight,
+                ),
+            )
+        val boxHeight = max(result.heightPx, centerPlaceable?.height ?: 0)
+
+        return layout(boxWidth, boxHeight) {
+            var leftPlaced = leftInset
+            var rightPlaced = rightInset
+
+            result.endMeasuredPlaceables.forEach { measured ->
+                val placeable = measured.placeable
+                val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
+                if (controlsOnRight) {
+                    placeable.place(boxWidth - rightPlaced - placeable.width, y)
+                    rightPlaced += placeable.width
+                } else {
+                    placeable.place(leftPlaced, y)
+                    leftPlaced += placeable.width
+                }
+            }
+
+            result.startMeasuredPlaceables.forEach { measured ->
+                val placeable = measured.placeable
+                val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
+                if (contentIsRtl) {
+                    placeable.place(boxWidth - rightPlaced - placeable.width, y)
+                    rightPlaced += placeable.width
+                } else {
+                    placeable.place(leftPlaced, y)
+                    leftPlaced += placeable.width
+                }
+            }
+
+            centerPlaceable?.let { placeable ->
+                val y = Alignment.CenterVertically.align(placeable.height, boxHeight)
+                placeable.place(centerLaneX, y)
+            }
+        }
+    }
+}
+
+private data class FillCenterTitleBarMeasureResult(
+    override val heightPx: Int,
+    val startMeasuredPlaceables: List<MeasuredLayoutChild>,
+    val endMeasuredPlaceables: List<MeasuredLayoutChild>,
+    val startOccupied: Int,
+    val endOccupied: Int,
+    val centerMeasurable: Measurable?,
 ) : TitleBarMeasureResult
