@@ -136,6 +136,7 @@ fun main(args: Array<String>) {
 
     application {
         var isWindowVisible by remember { mutableStateOf(true) }
+        var isFillCenterWindowVisible by remember { mutableStateOf(false) }
         var restoreRequestCount by remember { mutableStateOf(0) }
         var themeMode by remember { mutableStateOf(ThemeMode.System) }
         var showInfoDialog by remember { mutableStateOf(false) }
@@ -191,7 +192,7 @@ fun main(args: Array<String>) {
                     ) {
                         val tabs =
                             buildList {
-                                addAll(listOf("Nucleus", "Gallery", "Taskbar"))
+                                addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar"))
                                 add("Notifications (Common)")
                                 if (Platform.Current == Platform.MacOS ||
                                     Platform.Current == Platform.Linux ||
@@ -207,7 +208,6 @@ fun main(args: Array<String>) {
                                 }
                                 add("Media Control")
                                 add("Auto-Launch")
-
                                 add("Hotkeys")
                                 if (Platform.Current == Platform.MacOS) {
                                     add("Menu")
@@ -324,6 +324,10 @@ fun main(args: Array<String>) {
 
                         when (selectedTab) {
                             "Nucleus" -> NucleusContent()
+                            "Fill Title" ->
+                                FillCenterDemoEntryTab(
+                                    onOpenDemo = { isFillCenterWindowVisible = true },
+                                )
                             "Notifications (Common)" -> CommonNotificationsScreen()
                             "Gallery" -> {
                                 val currentDensity = LocalDensity.current
@@ -395,13 +399,19 @@ fun main(args: Array<String>) {
                         }
                     }
                 }
+
+                FillCenterDemoWindow(
+                    visible = isFillCenterWindowVisible,
+                    onCloseRequest = { isFillCenterWindowVisible = false },
+                    seedColor = seedColor,
+                )
             }
         }
     }
 }
 
 @Composable
-fun NucleusContent() {
+internal fun NucleusContent() {
     val currentDeepLink by deepLinkUri
     // macOS: the kAEOpenApplication AppleEvent is delivered after NSApp.run()
     // starts processing — which is exactly when this composable first runs.
@@ -498,11 +508,11 @@ fun NucleusContent() {
                 )
             }
 
-            if (updater.isUpdateSupported()) {
-                Column(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
+            Column(
+                modifier = Modifier.align(Alignment.BottomCenter),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                if (updater.isUpdateSupported()) {
                     Text(
                         text = "Auto-Update",
                         style = MaterialTheme.typography.titleMedium,
@@ -526,6 +536,17 @@ fun NucleusContent() {
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FillCenterDemoEntryTab(onOpenDemo: () -> Unit) {
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Button(onClick = onOpenDemo) {
+                Text("Open Fill Title Window")
             }
         }
     }
