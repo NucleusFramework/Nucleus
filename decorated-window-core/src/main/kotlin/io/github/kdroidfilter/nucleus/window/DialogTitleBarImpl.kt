@@ -17,6 +17,7 @@ fun DecoratedDialogScope.DialogTitleBarImpl(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     onPlace: (() -> Unit)? = null,
     backgroundContent: @Composable () -> Unit = {},
@@ -30,10 +31,36 @@ fun DecoratedDialogScope.DialogTitleBarImpl(
         gradientStartColor = gradientStartColor,
         style = style,
         controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = layoutPolicy,
         applyTitleBar = applyTitleBar,
         onPlace = onPlace,
         backgroundContent = backgroundContent,
     ) { _ ->
         content(dialogState)
     }
+}
+
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+fun DecoratedDialogScope.DialogTitleBarImpl(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
+    applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
+    onPlace: (() -> Unit)? = null,
+    backgroundContent: @Composable () -> Unit = {},
+    content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit,
+) {
+    DialogTitleBarImpl(
+        modifier = modifier,
+        gradientStartColor = gradientStartColor,
+        style = style,
+        controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = TitleBarLayoutPolicy.Default,
+        applyTitleBar = applyTitleBar,
+        onPlace = onPlace,
+        backgroundContent = backgroundContent,
+        content = content,
+    )
 }
