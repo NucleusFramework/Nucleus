@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -95,6 +96,7 @@ internal fun DecoratedWindowScope.MacOSTitleBar(
     // correct side. Uses the control buttons direction (decoupled from content).
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
+    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
     LaunchedEffect(window, controlIsRtl) {
         val ptr = JniMacWindowUtil.getWindowPtr(window)
         if (ptr != 0L && JniMacTitleBarBridge.isLoaded) {
@@ -150,77 +152,83 @@ internal fun DecoratedWindowScope.MacOSTitleBar(
     val viewConfig = LocalViewConfiguration.current
     var lastPress = 0L
 
-    TitleBarImpl(
-        modifier =
-            Modifier
-                .offset(y = menuBarOffset)
-                .zIndex(if (menuBarOffset > 0.dp) 1f else 0f)
-                .then(modifier)
-                .titleBarHitTestHandler(window)
-                .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
-                    if (
-                        this.currentEvent.button == PointerButton.Primary &&
-                        this.currentEvent.changes.any { !it.isConsumed }
-                    ) {
-                        val now = System.currentTimeMillis()
-                        if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
-                            val p = JniMacWindowUtil.getWindowPtr(window)
-                            if (p != 0L && JniMacTitleBarBridge.isLoaded) {
-                                JniMacTitleBarBridge.nativePerformTitleBarDoubleClickAction(p)
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier =
+                Modifier
+                    .offset(y = menuBarOffset)
+                    .zIndex(if (menuBarOffset > 0.dp) 1f else 0f)
+                    .then(modifier)
+                    .titleBarHitTestHandler(window)
+                    .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
+                        if (
+                            this.currentEvent.button == PointerButton.Primary &&
+                            this.currentEvent.changes.any { !it.isConsumed }
+                        ) {
+                            val now = System.currentTimeMillis()
+                            if (
+                                now - lastPress in
+                                viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                            ) {
+                                val p = JniMacWindowUtil.getWindowPtr(window)
+                                if (p != 0L && JniMacTitleBarBridge.isLoaded) {
+                                    JniMacTitleBarBridge.nativePerformTitleBarDoubleClickAction(p)
+                                }
                             }
+                            lastPress = now
                         }
-                        lastPress = now
-                    }
-                },
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlDir,
-        applyTitleBar = { height, titleBarState ->
-            JniMacWindowUtil.applyWindowProperties(window)
+                    },
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            applyTitleBar = { height, titleBarState ->
+                JniMacWindowUtil.applyWindowProperties(window)
 
-            val p = JniMacWindowUtil.getWindowPtr(window)
-
-            if (titleBarState.isFullscreen) {
-                if (controlIsRtl) {
-                    PaddingValues(end = 80.dp)
-                } else {
-                    PaddingValues(start = 80.dp)
-                }
-            } else {
-                val buttonInset =
-                    if (p != 0L && JniMacTitleBarBridge.isLoaded) {
-                        JniMacTitleBarBridge.nativeApplyTitleBar(p, height.value)
-                    } else {
-                        @Suppress("MagicNumber")
-                        val shrink = minOf(height.value / 28f, 1f)
-
-                        @Suppress("MagicNumber")
-                        val leftMargin = minOf(height.value / 2f, 20f)
-
-                        @Suppress("MagicNumber")
-                        2f * leftMargin + 2f * shrink * 20f
-                    }
-                if (controlIsRtl) {
-                    PaddingValues(end = buttonInset.dp)
-                } else {
-                    PaddingValues(start = buttonInset.dp)
-                }
-            }
-        },
-        onPlace = {
-            if (state.isFullscreen) {
                 val p = JniMacWindowUtil.getWindowPtr(window)
-                if (p != 0L && JniMacTitleBarBridge.isLoaded) {
-                    JniMacTitleBarBridge.nativeUpdateFullScreenButtons(p)
+                val padding =
+                    if (titleBarState.isFullscreen) {
+                        if (controlIsRtl) {
+                            PaddingValues(end = 80.dp)
+                        } else {
+                            PaddingValues(start = 80.dp)
+                        }
+                    } else {
+                        val buttonInset =
+                            if (p != 0L && JniMacTitleBarBridge.isLoaded) {
+                                JniMacTitleBarBridge.nativeApplyTitleBar(p, height.value)
+                            } else {
+                                @Suppress("MagicNumber")
+                                val shrink = minOf(height.value / 28f, 1f)
+
+                                @Suppress("MagicNumber")
+                                val leftMargin = minOf(height.value / 2f, 20f)
+
+                                @Suppress("MagicNumber")
+                                2f * leftMargin + 2f * shrink * 20f
+                            }
+                        if (controlIsRtl) {
+                            PaddingValues(end = buttonInset.dp)
+                        } else {
+                            PaddingValues(start = buttonInset.dp)
+                        }
+                    }
+                padding
+            },
+            onPlace = {
+                if (state.isFullscreen) {
+                    val p = JniMacWindowUtil.getWindowPtr(window)
+                    if (p != 0L && JniMacTitleBarBridge.isLoaded) {
+                        JniMacTitleBarBridge.nativeUpdateFullScreenButtons(p)
+                    }
                 }
-            }
-        },
-        backgroundContent = {
-            Spacer(modifier = Modifier.fillMaxSize())
-            backgroundContent()
-        },
-        content = content,
-    )
+            },
+            backgroundContent = {
+                Spacer(modifier = Modifier.fillMaxSize())
+                backgroundContent()
+            },
+            content = content,
+        )
+    }
 }
 
 /**

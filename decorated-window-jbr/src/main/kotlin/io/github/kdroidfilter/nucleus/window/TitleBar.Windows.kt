@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -31,23 +32,27 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
 
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
-    TitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlDir,
-        applyTitleBar = { height, _ ->
-            titleBar.putProperty("controls.rtl", controlIsRtl)
-            titleBar.height = height.value
-            titleBar.putProperty("controls.dark", style.colors.background.isDark())
-            JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
-            PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
-        },
-        backgroundContent = {
-            Spacer(modifier = Modifier.fillMaxSize())
-            backgroundContent()
-        },
-    ) { state ->
-        content(state)
+    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
+
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            applyTitleBar = { height, _ ->
+                titleBar.putProperty("controls.rtl", controlIsRtl)
+                titleBar.height = height.value
+                titleBar.putProperty("controls.dark", style.colors.background.isDark())
+                JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
+                PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
+            },
+            backgroundContent = {
+                Spacer(modifier = Modifier.fillMaxSize())
+                backgroundContent()
+            },
+        ) { state ->
+            content(state)
+        }
     }
 }

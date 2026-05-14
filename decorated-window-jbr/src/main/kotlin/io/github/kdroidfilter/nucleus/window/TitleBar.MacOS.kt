@@ -2,6 +2,7 @@ package io.github.kdroidfilter.nucleus.window
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -91,33 +92,38 @@ internal fun DecoratedWindowScope.MacOSTitleBar(
 
     val controlDir = controlButtonsDirection.resolve()
     val controlIsRtl = controlDir == LayoutDirection.Rtl
+    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
 
-    TitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlDir,
-        applyTitleBar = { height, titleBarState ->
-            titleBar.putProperty("controls.rtl", controlIsRtl)
-            titleBar.height = height.value
-            JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            applyTitleBar = { height, titleBarState ->
+                titleBar.putProperty("controls.rtl", controlIsRtl)
+                titleBar.height = height.value
+                JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
 
-            if (titleBarState.isFullscreen && newFullscreenControls) {
-                if (controlIsRtl) {
-                    PaddingValues(end = 80.dp)
-                } else {
-                    PaddingValues(start = 80.dp)
+                val padding =
+                    if (titleBarState.isFullscreen && newFullscreenControls) {
+                        if (controlIsRtl) {
+                            PaddingValues(end = 80.dp)
+                        } else {
+                            PaddingValues(start = 80.dp)
+                        }
+                    } else {
+                        PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
+                    }
+                padding
+            },
+            onPlace = {
+                if (state.isFullscreen) {
+                    MacUtil.updateFullScreenButtons(window)
                 }
-            } else {
-                PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
-            }
-        },
-        onPlace = {
-            if (state.isFullscreen) {
-                MacUtil.updateFullScreenButtons(window)
-            }
-        },
-        backgroundContent = backgroundContent,
-        content = content,
-    )
+            },
+            backgroundContent = backgroundContent,
+            content = content,
+        )
+    }
 }

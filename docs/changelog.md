@@ -11,6 +11,7 @@
 ### New Features
 
 - **Reactive GNOME titlebar button layout** — Decorated windows on Linux now read `org.gnome.desktop.wm.preferences` → `button-layout` via GSettings (`libgio` dlopen) to determine which buttons to show and on which side. The layout updates reactively when the user changes it in GNOME Tweaks or via `gsettings set`. Falls back to the default layout on KDE and other desktop environments. New `rememberLinuxButtonLayout()` composable for direct access.
+- **Title bar controls-side plumbing (core/JBR/JNI)** — Add non-breaking `WindowControlsSide` + `LocalWindowControlsSide` infrastructure to share platform-resolved window controls side with core layout. This stage is infrastructure only and does not change current title bar layout behavior.
 - **GraalVM reachability metadata for FileKit and dbus-java** — Apps using FileKit on Linux no longer need manual reachability entries for xdg-desktop-portal file dialogs. Includes new dbus-java conditional library metadata and Linux JDK internals (`UnixSystem`, `NativePRNG$NonBlocking`, `CollationData`).
 - **Windows notification shortcut policies** — New `ShortcutPolicy` enum on `WindowsNotificationCenter` for finer control over Start Menu shortcut creation behavior.
 - **`NucleusApp.appName` and `NucleusApp.aumid` properties** — Expose application name and AUMID for better configuration handling.

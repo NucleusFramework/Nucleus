@@ -2,6 +2,7 @@ package io.github.kdroidfilter.nucleus.window
 
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,18 +28,21 @@ internal fun DecoratedDialogScope.MacOSDialogTitleBar(
 
     val controlDir = controlButtonsDirection.resolve()
     val isRtl = controlDir == LayoutDirection.Rtl
+    val controlsSide = if (isRtl) WindowControlsSide.Start else WindowControlsSide.End
 
-    DialogTitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlDir,
-        applyTitleBar = { height, _ ->
-            titleBar.putProperty("controls.rtl", isRtl)
-            titleBar.height = height.value
-            JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
-            PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
-        },
-        content = content,
-    )
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        DialogTitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlDir,
+            applyTitleBar = { height, _ ->
+                titleBar.putProperty("controls.rtl", isRtl)
+                titleBar.height = height.value
+                JBR.getWindowDecorations().setCustomTitleBar(window, titleBar)
+                PaddingValues(start = titleBar.leftInset.dp, end = titleBar.rightInset.dp)
+            },
+            content = content,
+        )
+    }
 }

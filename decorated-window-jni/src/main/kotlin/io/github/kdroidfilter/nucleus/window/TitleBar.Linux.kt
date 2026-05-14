@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -13,9 +14,11 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
 import io.github.kdroidfilter.nucleus.window.utils.linux.JniLinuxWindowBridge
+import io.github.kdroidfilter.nucleus.window.utils.linux.rememberLinuxButtonLayout
 import java.awt.Frame
 import java.awt.MouseInfo
 
@@ -30,10 +33,30 @@ internal fun DecoratedWindowScope.LinuxTitleBar(
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
+    val controlDir = controlButtonsDirection.resolve()
+    val controlsOnRight = rememberLinuxButtonLayout().controlsOnRight
+    val controlsSide = if (controlsOnRight) WindowControlsSide.End else WindowControlsSide.Start
+
     if (JniLinuxWindowBridge.isLoaded) {
-        NativeLinuxTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+        NativeLinuxTitleBar(
+            modifier,
+            gradientStartColor,
+            style,
+            controlDir,
+            controlsSide,
+            backgroundContent,
+            content,
+        )
     } else {
-        FallbackLinuxTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+        FallbackLinuxTitleBar(
+            modifier,
+            gradientStartColor,
+            style,
+            controlDir,
+            controlsSide,
+            backgroundContent,
+            content,
+        )
     }
 }
 
@@ -47,7 +70,8 @@ private fun DecoratedWindowScope.NativeLinuxTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
-    controlButtonsDirection: ControlButtonsDirection,
+    controlButtonsDirection: LayoutDirection,
+    controlsSide: WindowControlsSide,
     backgroundContent: @Composable () -> Unit,
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
 ) {
@@ -66,21 +90,23 @@ private fun DecoratedWindowScope.NativeLinuxTitleBar(
             holder.compositionLocalContext = currentCompositionLocalContext
             holder.titleBarHeight = linuxStyle.metrics.height
             holder.content = {
-                TitleBarImpl(
-                    modifier = modifier,
-                    gradientStartColor = gradientStartColor,
-                    style = linuxStyle,
-                    controlButtonsDirection = controlButtonsDirection.resolve(),
-                    applyTitleBar = { _, _ -> PaddingValues(0.dp) },
-                ) { currentState ->
-                    WindowControlArea(
-                        window = window,
-                        state = currentState,
+                CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+                    TitleBarImpl(
+                        modifier = modifier,
+                        gradientStartColor = gradientStartColor,
                         style = linuxStyle,
-                        isFullscreen = true,
-                        onExitFullscreen = onExitFullscreen,
-                    )
-                    content(currentState)
+                        controlButtonsDirection = controlButtonsDirection,
+                        applyTitleBar = { _, _ -> PaddingValues(0.dp) },
+                    ) { currentState ->
+                        WindowControlArea(
+                            window = window,
+                            state = currentState,
+                            style = linuxStyle,
+                            isFullscreen = true,
+                            onExitFullscreen = onExitFullscreen,
+                        )
+                        content(currentState)
+                    }
                 }
             }
         }
@@ -88,60 +114,65 @@ private fun DecoratedWindowScope.NativeLinuxTitleBar(
     }
 
     // ── Normal title bar (or fullscreen without newFullscreenControls) ──
-    TitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = linuxStyle,
-        controlButtonsDirection = controlButtonsDirection.resolve(),
-        applyTitleBar = { _, _ ->
-            kdePaddingForButtonLayout()
-        },
-        backgroundContent = {
-            backgroundContent()
-            Spacer(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
-                            if (
-                                this.currentEvent.button == PointerButton.Primary &&
-                                this.currentEvent.changes.any { !it.isConsumed }
-                            ) {
-                                val now = System.currentTimeMillis()
-                                val elapsed = now - lastPressTime
-                                if (elapsed in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
-                                    // Double-click: toggle maximize
-                                    if (state.isMaximized) {
-                                        window.extendedState = Frame.NORMAL
-                                    } else {
-                                        window.extendedState = Frame.MAXIMIZED_BOTH
-                                    }
-                                } else {
-                                    // Single press: initiate native WM move
-                                    val mouseLocation = MouseInfo.getPointerInfo()?.location
-                                    if (mouseLocation != null) {
-                                        JniLinuxWindowBridge.nativeStartWindowMove(
-                                            window,
-                                            mouseLocation.x,
-                                            mouseLocation.y,
-                                            1,
-                                        )
-                                    }
-                                }
-                                lastPressTime = now
-                            }
-                        },
-            )
-        },
-    ) { currentState ->
-        WindowControlArea(
-            window = window,
-            state = currentState,
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
             style = linuxStyle,
-            isFullscreen = isNativeFullscreen,
-            onExitFullscreen = onExitFullscreen,
-        )
-        content(currentState)
+            controlButtonsDirection = controlButtonsDirection,
+            applyTitleBar = { _, _ ->
+                kdePaddingForButtonLayout()
+            },
+            backgroundContent = {
+                backgroundContent()
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
+                                if (
+                                    this.currentEvent.button == PointerButton.Primary &&
+                                    this.currentEvent.changes.any { !it.isConsumed }
+                                ) {
+                                    val now = System.currentTimeMillis()
+                                    val elapsed = now - lastPressTime
+                                    if (
+                                        elapsed in
+                                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                                    ) {
+                                        // Double-click: toggle maximize
+                                        if (state.isMaximized) {
+                                            window.extendedState = Frame.NORMAL
+                                        } else {
+                                            window.extendedState = Frame.MAXIMIZED_BOTH
+                                        }
+                                    } else {
+                                        // Single press: initiate native WM move
+                                        val mouseLocation = MouseInfo.getPointerInfo()?.location
+                                        if (mouseLocation != null) {
+                                            JniLinuxWindowBridge.nativeStartWindowMove(
+                                                window,
+                                                mouseLocation.x,
+                                                mouseLocation.y,
+                                                1,
+                                            )
+                                        }
+                                    }
+                                    lastPressTime = now
+                                }
+                            },
+                )
+            },
+        ) { currentState ->
+            WindowControlArea(
+                window = window,
+                state = currentState,
+                style = linuxStyle,
+                isFullscreen = isNativeFullscreen,
+                onExitFullscreen = onExitFullscreen,
+            )
+            content(currentState)
+        }
     }
 }
 
@@ -153,7 +184,8 @@ private fun DecoratedWindowScope.FallbackLinuxTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
-    controlButtonsDirection: ControlButtonsDirection,
+    controlButtonsDirection: LayoutDirection,
+    controlsSide: WindowControlsSide,
     backgroundContent: @Composable () -> Unit,
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
 ) {
@@ -162,37 +194,39 @@ private fun DecoratedWindowScope.FallbackLinuxTitleBar(
 
     var lastPress = 0L
 
-    TitleBarImpl(
-        // Detect double-click to maximize/restore on the title bar area
-        modifier =
-            modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
-                if (
-                    this.currentEvent.button == PointerButton.Primary &&
-                    this.currentEvent.changes.any { !it.isConsumed }
-                ) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
-                        if (state.isMaximized) {
-                            window.extendedState = Frame.NORMAL
-                        } else {
-                            window.extendedState = Frame.MAXIMIZED_BOTH
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            // Detect double-click to maximize/restore on the title bar area
+            modifier =
+                modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
+                    if (
+                        this.currentEvent.button == PointerButton.Primary &&
+                        this.currentEvent.changes.any { !it.isConsumed }
+                    ) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
+                            if (state.isMaximized) {
+                                window.extendedState = Frame.NORMAL
+                            } else {
+                                window.extendedState = Frame.MAXIMIZED_BOTH
+                            }
                         }
+                        lastPress = now
                     }
-                    lastPress = now
-                }
+                },
+            gradientStartColor = gradientStartColor,
+            style = linuxStyle,
+            controlButtonsDirection = controlButtonsDirection,
+            applyTitleBar = { _, _ ->
+                kdePaddingForButtonLayout()
             },
-        gradientStartColor = gradientStartColor,
-        style = linuxStyle,
-        controlButtonsDirection = controlButtonsDirection.resolve(),
-        applyTitleBar = { _, _ ->
-            kdePaddingForButtonLayout()
-        },
-        backgroundContent = {
-            backgroundContent()
-            Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
-        },
-    ) { currentState ->
-        WindowControlArea(window, currentState, linuxStyle)
-        content(currentState)
+            backgroundContent = {
+                backgroundContent()
+                Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
+            },
+        ) { currentState ->
+            WindowControlArea(window, currentState, linuxStyle)
+            content(currentState)
+        }
     }
 }

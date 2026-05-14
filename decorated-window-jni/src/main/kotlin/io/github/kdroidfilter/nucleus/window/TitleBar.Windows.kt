@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.currentCompositionLocalContext
@@ -17,6 +18,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import io.github.kdroidfilter.nucleus.window.styling.LocalTitleBarStyle
 import io.github.kdroidfilter.nucleus.window.styling.TitleBarStyle
@@ -35,12 +37,17 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
+    val controlDir = controlButtonsDirection.resolve()
+    val controlIsRtl = controlDir == LayoutDirection.Rtl
+    val controlsSide = if (controlIsRtl) WindowControlsSide.Start else WindowControlsSide.End
+
     if (JniWindowsDecorationBridge.isLoaded) {
         NativeWindowsTitleBar(
             modifier,
             gradientStartColor,
             style,
-            controlButtonsDirection,
+            controlDir,
+            controlsSide,
             backgroundContent,
             content,
         )
@@ -49,7 +56,8 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
             modifier,
             gradientStartColor,
             style,
-            controlButtonsDirection,
+            controlDir,
+            controlsSide,
             backgroundContent,
             content,
         )
@@ -63,7 +71,8 @@ private fun DecoratedWindowScope.NativeWindowsTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
-    controlButtonsDirection: ControlButtonsDirection,
+    controlButtonsDirection: LayoutDirection,
+    controlsSide: WindowControlsSide,
     backgroundContent: @Composable () -> Unit,
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
 ) {
@@ -118,21 +127,23 @@ private fun DecoratedWindowScope.NativeWindowsTitleBar(
             holder.compositionLocalContext = currentCompositionLocalContext
             holder.titleBarHeight = style.metrics.height
             holder.content = {
-                TitleBarImpl(
-                    modifier = modifier,
-                    gradientStartColor = gradientStartColor,
-                    style = style,
-                    controlButtonsDirection = controlButtonsDirection.resolve(),
-                    applyTitleBar = { _, _ -> PaddingValues(0.dp) },
-                ) { currentState ->
-                    WindowsWindowControlArea(
-                        window = window,
-                        state = currentState,
+                CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+                    TitleBarImpl(
+                        modifier = modifier,
+                        gradientStartColor = gradientStartColor,
                         style = style,
-                        isFullscreen = true,
-                        onExitFullscreen = onExitFullscreen,
-                    )
-                    content(currentState)
+                        controlButtonsDirection = controlButtonsDirection,
+                        applyTitleBar = { _, _ -> PaddingValues(0.dp) },
+                    ) { currentState ->
+                        WindowsWindowControlArea(
+                            window = window,
+                            state = currentState,
+                            style = style,
+                            isFullscreen = true,
+                            onExitFullscreen = onExitFullscreen,
+                        )
+                        content(currentState)
+                    }
                 }
             }
         }
@@ -140,58 +151,63 @@ private fun DecoratedWindowScope.NativeWindowsTitleBar(
     }
 
     // ── Normal title bar (or fullscreen without newFullscreenControls) ──
-    TitleBarImpl(
-        modifier = modifier,
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlButtonsDirection.resolve(),
-        applyTitleBar = { height, _ ->
-            val hwnd = JniWindowsWindowUtil.getHwnd(window)
-            if (hwnd != 0L) {
-                val heightPx = with(density) { height.roundToPx() }
-                JniWindowsDecorationBridge.nativeSetTitleBarHeight(hwnd, heightPx)
-            }
-            PaddingValues(0.dp)
-        },
-        backgroundContent = {
-            backgroundContent()
-            Spacer(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
-                            if (
-                                this.currentEvent.button == PointerButton.Primary &&
-                                this.currentEvent.changes.any { !it.isConsumed }
-                            ) {
-                                val now = System.currentTimeMillis()
-                                val elapsed = now - lastPressTime
-                                if (elapsed in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
-                                    if (state.isMaximized) {
-                                        window.extendedState = Frame.NORMAL
-                                    } else {
-                                        window.extendedState = Frame.MAXIMIZED_BOTH
-                                    }
-                                } else {
-                                    val hwnd = JniWindowsWindowUtil.getHwnd(window)
-                                    if (hwnd != 0L) {
-                                        JniWindowsDecorationBridge.nativeStartDrag(hwnd)
-                                    }
-                                }
-                                lastPressTime = now
-                            }
-                        },
-            )
-        },
-    ) { currentState ->
-        WindowsWindowControlArea(
-            window = window,
-            state = currentState,
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier = modifier,
+            gradientStartColor = gradientStartColor,
             style = style,
-            isFullscreen = isNativeFullscreen,
-            onExitFullscreen = onExitFullscreen,
-        )
-        content(currentState)
+            controlButtonsDirection = controlButtonsDirection,
+            applyTitleBar = { height, currentState ->
+                val hwnd = JniWindowsWindowUtil.getHwnd(window)
+                if (hwnd != 0L) {
+                    val heightPx = with(density) { height.roundToPx() }
+                    JniWindowsDecorationBridge.nativeSetTitleBarHeight(hwnd, heightPx)
+                }
+                PaddingValues(0.dp)
+            },
+            backgroundContent = {
+                backgroundContent()
+                Spacer(
+                    modifier =
+                        Modifier
+                            .fillMaxSize()
+                            .onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
+                                if (
+                                    this.currentEvent.button == PointerButton.Primary &&
+                                    this.currentEvent.changes.any { !it.isConsumed }
+                                ) {
+                                    val now = System.currentTimeMillis()
+                                    val elapsed = now - lastPressTime
+                                    if (
+                                        elapsed in
+                                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis
+                                    ) {
+                                        if (state.isMaximized) {
+                                            window.extendedState = Frame.NORMAL
+                                        } else {
+                                            window.extendedState = Frame.MAXIMIZED_BOTH
+                                        }
+                                    } else {
+                                        val hwnd = JniWindowsWindowUtil.getHwnd(window)
+                                        if (hwnd != 0L) {
+                                            JniWindowsDecorationBridge.nativeStartDrag(hwnd)
+                                        }
+                                    }
+                                    lastPressTime = now
+                                }
+                            },
+                )
+            },
+        ) { currentState ->
+            WindowsWindowControlArea(
+                window = window,
+                state = currentState,
+                style = style,
+                isFullscreen = isNativeFullscreen,
+                onExitFullscreen = onExitFullscreen,
+            )
+            content(currentState)
+        }
     }
 }
 
@@ -203,42 +219,45 @@ private fun DecoratedWindowScope.FallbackWindowsTitleBar(
     modifier: Modifier,
     gradientStartColor: Color,
     style: TitleBarStyle,
-    controlButtonsDirection: ControlButtonsDirection,
+    controlButtonsDirection: LayoutDirection,
+    controlsSide: WindowControlsSide,
     backgroundContent: @Composable () -> Unit,
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit,
 ) {
     val viewConfig = LocalViewConfiguration.current
     var lastPress = 0L
 
-    TitleBarImpl(
-        modifier =
-            modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
-                if (
-                    this.currentEvent.button == PointerButton.Primary &&
-                    this.currentEvent.changes.any { !it.isConsumed }
-                ) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
-                        if (state.isMaximized) {
-                            window.extendedState = Frame.NORMAL
-                        } else {
-                            window.extendedState = Frame.MAXIMIZED_BOTH
+    CompositionLocalProvider(LocalWindowControlsSide provides controlsSide) {
+        TitleBarImpl(
+            modifier =
+                modifier.onPointerEvent(PointerEventType.Press, PointerEventPass.Main) {
+                    if (
+                        this.currentEvent.button == PointerButton.Primary &&
+                        this.currentEvent.changes.any { !it.isConsumed }
+                    ) {
+                        val now = System.currentTimeMillis()
+                        if (now - lastPress in viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis) {
+                            if (state.isMaximized) {
+                                window.extendedState = Frame.NORMAL
+                            } else {
+                                window.extendedState = Frame.MAXIMIZED_BOTH
+                            }
                         }
+                        lastPress = now
                     }
-                    lastPress = now
-                }
+                },
+            gradientStartColor = gradientStartColor,
+            style = style,
+            controlButtonsDirection = controlButtonsDirection,
+            applyTitleBar = { _, _ -> PaddingValues(0.dp) },
+            backgroundContent = {
+                backgroundContent()
+                Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
             },
-        gradientStartColor = gradientStartColor,
-        style = style,
-        controlButtonsDirection = controlButtonsDirection.resolve(),
-        applyTitleBar = { _, _ -> PaddingValues(0.dp) },
-        backgroundContent = {
-            backgroundContent()
-            Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))
-        },
-    ) { currentState ->
-        WindowsWindowControlArea(window, currentState, style)
-        content(currentState)
+        ) { currentState ->
+            WindowsWindowControlArea(window, currentState, style)
+            content(currentState)
+        }
     }
 }
 

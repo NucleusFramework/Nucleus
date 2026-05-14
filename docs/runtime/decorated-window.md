@@ -301,6 +301,11 @@ Platform-dispatched title bar composable. Provides a `TitleBarScope` with:
 - `icon: Painter?` — the window icon
 - `Modifier.align(alignment: Alignment.Horizontal)` — positions content within the title bar
 
+!!! note "Advanced: internal controls-side channel"
+    `TitleBar` now exposes an internal cross-module channel through `LocalWindowControlsSide`.
+    It carries the platform-resolved side (`Start` / `End` / `Unspecified`) where window controls are located.
+    Most applications should keep using `TitleBar` normally and do not need to read or provide this local.
+
 ```kotlin
 TitleBar { state ->
     // Left-aligned icon
