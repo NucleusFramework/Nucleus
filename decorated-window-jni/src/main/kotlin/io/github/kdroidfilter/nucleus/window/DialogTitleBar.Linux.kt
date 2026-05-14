@@ -27,6 +27,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val controlDir = controlButtonsDirection.resolve()
@@ -38,6 +39,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
             gradientStartColor,
             style,
             controlDir,
+            layoutPolicy,
             controlsSide,
             content,
         )
@@ -47,6 +49,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
             gradientStartColor,
             style,
             controlDir,
+            layoutPolicy,
             controlsSide,
             content,
         )
@@ -63,6 +66,7 @@ private fun DecoratedDialogScope.NativeLinuxDialogTitleBar(
     gradientStartColor: Color,
     style: TitleBarStyle,
     controlButtonsDirection: LayoutDirection,
+    layoutPolicy: TitleBarLayoutPolicy,
     controlsSide: WindowControlsSide,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit,
 ) {
@@ -75,6 +79,7 @@ private fun DecoratedDialogScope.NativeLinuxDialogTitleBar(
             gradientStartColor = gradientStartColor,
             style = linuxStyle,
             controlButtonsDirection = controlButtonsDirection,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { _, _ ->
                 val padding =
                     if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
@@ -124,6 +129,7 @@ private fun DecoratedDialogScope.FallbackLinuxDialogTitleBar(
     gradientStartColor: Color,
     style: TitleBarStyle,
     controlButtonsDirection: LayoutDirection,
+    layoutPolicy: TitleBarLayoutPolicy,
     controlsSide: WindowControlsSide,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit,
 ) {
@@ -145,6 +151,7 @@ private fun DecoratedDialogScope.FallbackLinuxDialogTitleBar(
             gradientStartColor = gradientStartColor,
             style = linuxStyle,
             controlButtonsDirection = controlButtonsDirection,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { _, _ ->
                 val padding =
                     if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {

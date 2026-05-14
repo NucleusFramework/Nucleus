@@ -42,6 +42,7 @@ internal fun DecoratedWindowScope.MacOSTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -181,6 +182,7 @@ internal fun DecoratedWindowScope.MacOSTitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { height, titleBarState ->
                 JniMacWindowUtil.applyWindowProperties(window)
 

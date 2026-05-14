@@ -22,6 +22,7 @@ internal fun DecoratedDialogScope.MacOSDialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val controlDir = controlButtonsDirection.resolve()
@@ -41,6 +42,7 @@ internal fun DecoratedDialogScope.MacOSDialogTitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { height, _ ->
                 JniMacWindowUtil.applyWindowProperties(window)
 

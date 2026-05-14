@@ -24,6 +24,7 @@ internal fun DecoratedDialogScope.WindowsDialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val controlDir = controlButtonsDirection.resolve()
@@ -54,6 +55,7 @@ internal fun DecoratedDialogScope.WindowsDialogTitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { _, _ -> PaddingValues(0.dp) },
             backgroundContent = {
                 Spacer(modifier = Modifier.fillMaxSize().windowDragHandler(window))

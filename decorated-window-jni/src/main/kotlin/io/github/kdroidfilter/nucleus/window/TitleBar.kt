@@ -28,13 +28,59 @@ fun DecoratedWindowScope.TitleBar(
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
+    BasicTitleBar(
+        modifier = modifier,
+        gradientStartColor = gradientStartColor,
+        style = style,
+        controlButtonsDirection = controlButtonsDirection,
+        layoutPolicy = TitleBarLayoutPolicy.Default,
+        backgroundContent = backgroundContent,
+        content = content,
+    )
+}
+
+@Suppress("FunctionNaming")
+@Composable
+fun DecoratedWindowScope.BasicTitleBar(
+    modifier: Modifier = Modifier,
+    gradientStartColor: Color = Color.Unspecified,
+    style: TitleBarStyle = LocalTitleBarStyle.current,
+    controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    backgroundContent: @Composable () -> Unit = {},
+    content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
+) {
     when (Platform.Current) {
         Platform.Linux ->
-            LinuxTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            LinuxTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                layoutPolicy,
+                backgroundContent,
+                content,
+            )
         Platform.Windows ->
-            WindowsTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            WindowsTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                layoutPolicy,
+                backgroundContent,
+                content,
+            )
         Platform.MacOS ->
-            MacOSTitleBar(modifier, gradientStartColor, style, controlButtonsDirection, backgroundContent, content)
+            MacOSTitleBar(
+                modifier,
+                gradientStartColor,
+                style,
+                controlButtonsDirection,
+                layoutPolicy,
+                backgroundContent,
+                content,
+            )
         Platform.Unknown ->
             error("TitleBar is not supported on this platform(${System.getProperty("os.name")})")
     }

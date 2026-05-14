@@ -23,6 +23,7 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -40,6 +41,7 @@ internal fun DecoratedWindowScope.WindowsTitleBar(
             gradientStartColor = gradientStartColor,
             style = style,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { height, _ ->
                 titleBar.putProperty("controls.rtl", controlIsRtl)
                 titleBar.height = height.value

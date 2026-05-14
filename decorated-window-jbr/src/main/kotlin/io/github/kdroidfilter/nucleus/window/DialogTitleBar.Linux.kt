@@ -25,6 +25,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     content: @Composable TitleBarScope.(DecoratedDialogState) -> Unit = {},
 ) {
     val linuxStyle = createLinuxTitleBarStyle(style)
@@ -46,6 +47,7 @@ internal fun DecoratedDialogScope.LinuxDialogTitleBar(
             gradientStartColor = gradientStartColor,
             style = linuxStyle,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { _, _ ->
                 val padding =
                     if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {

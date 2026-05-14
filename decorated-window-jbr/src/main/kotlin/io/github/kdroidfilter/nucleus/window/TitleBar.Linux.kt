@@ -24,6 +24,7 @@ internal fun DecoratedWindowScope.LinuxTitleBar(
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
+    layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -58,6 +59,7 @@ internal fun DecoratedWindowScope.LinuxTitleBar(
             gradientStartColor,
             linuxStyle,
             controlButtonsDirection = controlDir,
+            layoutPolicy = layoutPolicy,
             applyTitleBar = { _, _ ->
                 kdePaddingForButtonLayout()
             },
