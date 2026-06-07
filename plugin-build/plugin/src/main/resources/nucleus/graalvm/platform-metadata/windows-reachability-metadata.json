@@ -2598,6 +2598,94 @@
                     "parameterTypes": []
                 }
             ]
+        },
+        {
+            "type": "sun.awt.windows.WInputMethod",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "inquireCandidatePosition",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "sendInputMethodEvent",
+                    "parameterTypes": [
+                        "int",
+                        "long",
+                        "java.lang.String",
+                        "int[]",
+                        "java.lang.String[]",
+                        "int[]",
+                        "byte[]",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "sun.awt.windows.WInputMethodDescriptor",
+            "jniAccessible": true
+        },
+        {
+            "type": "sun.java2d.d3d.D3DGraphicsDevice$1",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "run",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "sun.java2d.d3d.D3DRenderQueue$1",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "run",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "sun.java2d.d3d.D3DSurfaceData",
+            "jniAccessible": true,
+            "fields": [
+                {
+                    "name": "nativeHeight"
+                },
+                {
+                    "name": "nativeWidth"
+                }
+            ],
+            "methods": [
+                {
+                    "name": "dispose",
+                    "parameterTypes": [
+                        "long"
+                    ]
+                },
+                {
+                    "name": "setSurfaceLost",
+                    "parameterTypes": [
+                        "boolean"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "sun.java2d.d3d.D3DSurfaceData$1",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "run",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "sun.java2d.d3d.D3DSurfaceData$D3DWindowSurfaceData"
         }
     ],
     "resources": [
@@ -2606,6 +2694,9 @@
         },
         {
             "bundle": "com.sun.java.swing.plaf.windows.resources.windows"
+        },
+        {
+            "glob": "META-INF/services/java.awt.im.spi.InputMethodDescriptor"
         }
     ]
 }
