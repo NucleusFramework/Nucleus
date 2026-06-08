@@ -17,6 +17,21 @@ internal fun JvmApplicationContext.packageVersionFor(targetFormat: TargetFormat)
             ?: "1.0.0"
     }
 
+/**
+ * Version used when jpackage builds the app-image (`--app-version`).
+ *
+ * jpackage is the only [io.github.kdroidfilter.nucleus.desktop.application.dsl.PackagingBackend.JPACKAGE]
+ * step ([TargetFormat.RawAppImage]) and enforces strict platform version rules — notably Windows
+ * rejects SemVer pre-release/build metadata such as `2.3.5-beta.7`. All real installer formats run
+ * through electron-builder and keep the full SemVer via [packageVersionFor].
+ */
+internal fun JvmApplicationContext.jpackageVersionFor(targetFormat: TargetFormat): Provider<String> =
+    packageVersionFor(targetFormat).map { it.toJpackageVersion() }
+
+// jpackage rejects SemVer pre-release/build metadata; keep only the MAJOR.MINOR.PATCH core.
+private fun String.toJpackageVersion(): String =
+    substringBefore('-').substringBefore('+')
+
 @Suppress("CyclomaticComplexMethod") // Exhaustive when on TargetFormat enum
 private fun JvmApplicationDistributions.packageVersionFor(targetFormat: TargetFormat): String? {
     val formatSpecificVersion: String? =
