@@ -96,12 +96,16 @@ object GlobalHotKeyManager {
      * @param keyCode AWT virtual key code (e.g., [java.awt.event.KeyEvent.VK_F12]).
      * @param modifiers bitmask of [HotKeyModifier] values (e.g., `HotKeyModifier.CONTROL + HotKeyModifier.ALT`).
      *                  Use 0 for no modifiers.
+     * @param description user-readable description of what the shortcut does (e.g. "Play/Pause").
+     *                    Shown in the system shortcut dialog on Linux/Wayland (portal backend); ignored
+     *                    on other platforms. When null, the key combination is used as a fallback.
      * @param listener callback invoked when the hotkey is pressed.
      * @return a registration handle for [unregister], or -1 on failure.
      */
     fun register(
         keyCode: Int,
         modifiers: Int = 0,
+        description: String? = null,
         listener: HotKeyListener,
     ): Long {
         if (!ensureReady()) return -1
@@ -109,7 +113,7 @@ object GlobalHotKeyManager {
         return when (Platform.Current) {
             Platform.Windows -> registerWindows(keyCode, modifiers, listener)
             Platform.MacOS -> registerMacOs(keyCode, modifiers, listener)
-            Platform.Linux -> registerLinux(keyCode, modifiers, listener)
+            Platform.Linux -> registerLinux(keyCode, modifiers, description, listener)
             else -> -1
         }
     }
@@ -134,7 +138,7 @@ object GlobalHotKeyManager {
                 logger.warning(lastError)
                 -1
             }
-            Platform.Linux -> registerLinux(mediaKey.nativeCode, 0, listener)
+            Platform.Linux -> registerLinux(mediaKey.nativeCode, 0, mediaKey.name, listener)
             else -> -1
         }
     }
@@ -252,10 +256,11 @@ object GlobalHotKeyManager {
     private fun registerLinux(
         keyCode: Int,
         modifiers: Int,
+        description: String?,
         listener: HotKeyListener,
     ): Long {
         val id = NativeLinuxHotKeyBridge.registerListener(listener)
-        val error = NativeLinuxHotKeyBridge.nativeRegister(id, modifiers, keyCode)
+        val error = NativeLinuxHotKeyBridge.nativeRegister(id, modifiers, keyCode, description)
         if (error != null) {
             NativeLinuxHotKeyBridge.removeListener(id)
             lastError = error

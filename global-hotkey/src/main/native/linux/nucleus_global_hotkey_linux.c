@@ -25,16 +25,13 @@
 
 #include <gio/gio.h>
 
+#include "nucleus_hotkey_keys.h"
+
 /* ------------------------------------------------------------------ */
 /* Constants                                                           */
 /* ------------------------------------------------------------------ */
 
 #define MAX_HOTKEYS 256
-
-#define MOD_ALT     0x0001
-#define MOD_CONTROL 0x0002
-#define MOD_SHIFT   0x0004
-#define MOD_META    0x0008
 
 typedef enum { BACKEND_NONE = 0, BACKEND_X11, BACKEND_PORTAL } BackendType;
 
@@ -51,6 +48,7 @@ typedef struct {
     unsigned int x11_modifiers;
     /* Portal */
     char shortcut_id[32];
+    char description[256];   /* user-readable action label for the portal dialog */
 } HotKeyEntry;
 
 /* ------------------------------------------------------------------ */
@@ -133,82 +131,8 @@ static void fireHotKeyPortal(jlong id, jint keyCode, jint modifiers) {
         (*g_portal_env)->ExceptionClear(g_portal_env);
 }
 
-/* ================================================================== */
-/* AWT VK_* → X11 KeySym                                              */
-/* ================================================================== */
-
-static KeySym awtToKeySym(int vk) {
-    if (vk >= 0x41 && vk <= 0x5A) return XK_a + (vk - 0x41);
-    if (vk >= 0x30 && vk <= 0x39) return XK_0 + (vk - 0x30);
-    if (vk >= 0x70 && vk <= 0x7B) return XK_F1 + (vk - 0x70);
-    if (vk >= 0x60 && vk <= 0x69) return XK_KP_0 + (vk - 0x60);
-    switch (vk) {
-        case 0x0A: return XK_Return;      case 0x1B: return XK_Escape;
-        case 0x08: return XK_BackSpace;    case 0x09: return XK_Tab;
-        case 0x20: return XK_space;        case 0x7F: return XK_Delete;
-        case 0x14: return XK_Caps_Lock;
-        case 0x26: return XK_Up;           case 0x28: return XK_Down;
-        case 0x25: return XK_Left;         case 0x27: return XK_Right;
-        case 0x24: return XK_Home;         case 0x23: return XK_End;
-        case 0x21: return XK_Page_Up;      case 0x22: return XK_Page_Down;
-        case 0x9B: return XK_Insert;
-        case 0xC0: return XK_grave;        case 0x2D: return XK_minus;
-        case 0x3D: return XK_equal;        case 0x5B: return XK_bracketleft;
-        case 0x5D: return XK_bracketright; case 0x5C: return XK_backslash;
-        case 0x3B: return XK_semicolon;    case 0xDE: return XK_apostrophe;
-        case 0x2C: return XK_comma;        case 0x2E: return XK_period;
-        case 0x2F: return XK_slash;
-        case 0x6A: return XK_KP_Multiply;  case 0x6B: return XK_KP_Add;
-        case 0x6D: return XK_KP_Subtract;  case 0x6E: return XK_KP_Decimal;
-        case 0x6F: return XK_KP_Divide;
-        case 0xB3: return 0x1008FF14;      case 0xB2: return 0x1008FF15;
-        case 0xB0: return 0x1008FF17;      case 0xB1: return 0x1008FF16;
-        default:   return NoSymbol;
-    }
-}
-
-/* ================================================================== */
-/* AWT VK_* → GTK accelerator key name (for preferred_trigger)        */
-/* ================================================================== */
-
-static const char *awtToKeyName(int vk) {
-    if (vk >= 0x41 && vk <= 0x5A) {
-        static const char *L[] = {"a","b","c","d","e","f","g","h","i","j","k","l","m",
-                                   "n","o","p","q","r","s","t","u","v","w","x","y","z"};
-        return L[vk - 0x41];
-    }
-    if (vk >= 0x30 && vk <= 0x39) {
-        static const char *D[] = {"0","1","2","3","4","5","6","7","8","9"};
-        return D[vk - 0x30];
-    }
-    if (vk >= 0x70 && vk <= 0x7B) {
-        static const char *F[] = {"F1","F2","F3","F4","F5","F6","F7","F8","F9","F10","F11","F12"};
-        return F[vk - 0x70];
-    }
-    switch (vk) {
-        case 0x0A: return "Return";    case 0x1B: return "Escape";
-        case 0x08: return "BackSpace";  case 0x09: return "Tab";
-        case 0x20: return "space";      case 0x7F: return "Delete";
-        case 0x26: return "Up";         case 0x28: return "Down";
-        case 0x25: return "Left";       case 0x27: return "Right";
-        case 0x24: return "Home";       case 0x23: return "End";
-        case 0x21: return "Page_Up";    case 0x22: return "Page_Down";
-        case 0x9B: return "Insert";
-        case 0xB3: return "XF86AudioPlay";  case 0xB2: return "XF86AudioStop";
-        case 0xB0: return "XF86AudioNext";  case 0xB1: return "XF86AudioPrev";
-        default:   return NULL;
-    }
-}
-
-static void buildTrigger(char *buf, int sz, int mods, int vk) {
-    buf[0] = '\0';
-    if (mods & MOD_CONTROL) strncat(buf, "<Control>", sz - strlen(buf) - 1);
-    if (mods & MOD_ALT)     strncat(buf, "<Alt>", sz - strlen(buf) - 1);
-    if (mods & MOD_SHIFT)   strncat(buf, "<Shift>", sz - strlen(buf) - 1);
-    if (mods & MOD_META)    strncat(buf, "<Super>", sz - strlen(buf) - 1);
-    const char *n = awtToKeyName(vk);
-    if (n) strncat(buf, n, sz - strlen(buf) - 1);
-}
+/* awtToKeySym() and buildTrigger() live in nucleus_hotkey_keys.h so the
+ * native unit test can exercise the trigger format directly. */
 
 /* ================================================================== */
 /* X11 backend                                                         */
@@ -442,9 +366,16 @@ static int portal_bind(char *err_buf, int err_sz) {
     for (int i = 0; i < g_hotkeyCount; i++) {
         GVariantBuilder props;
         g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
+
         char trigger[128];
         buildTrigger(trigger, sizeof(trigger), g_hotkeys[i].modifiers, g_hotkeys[i].keyCode);
-        g_variant_builder_add(&props, "{sv}", "description", g_variant_new_string(trigger));
+
+        /* description is a user-readable action label, NOT the key combination
+         * (Freedesktop Shortcuts spec). Fall back to the trigger only when the
+         * caller did not supply one, so the portal still has a non-empty label. */
+        const char *desc = g_hotkeys[i].description[0] ? g_hotkeys[i].description
+                                                       : (trigger[0] ? trigger : "Shortcut");
+        g_variant_builder_add(&props, "{sv}", "description", g_variant_new_string(desc));
         if (trigger[0])
             g_variant_builder_add(&props, "{sv}", "preferred_trigger", g_variant_new_string(trigger));
         g_variant_builder_add(&shortcuts, "(sa{sv})", g_hotkeys[i].shortcut_id, &props);
@@ -657,7 +588,7 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeInit(
 
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegister(
-    JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode) {
+    JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode, jstring description) {
     (void)clazz;
     if (!g_running) return (*env)->NewStringUTF(env, "Not initialized");
 
@@ -671,6 +602,15 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegis
     e->id = id; e->keyCode = keyCode; e->modifiers = modifiers;
     e->x11_keycode = 0; e->x11_modifiers = 0;
     snprintf(e->shortcut_id, sizeof(e->shortcut_id), "nucleus_%ld", (long)id);
+
+    e->description[0] = '\0';
+    if (description) {
+        const char *d = (*env)->GetStringUTFChars(env, description, NULL);
+        if (d) {
+            snprintf(e->description, sizeof(e->description), "%s", d);
+            (*env)->ReleaseStringUTFChars(env, description, d);
+        }
+    }
 
     if (g_backend == BACKEND_X11) {
         KeySym ks = awtToKeySym(keyCode);

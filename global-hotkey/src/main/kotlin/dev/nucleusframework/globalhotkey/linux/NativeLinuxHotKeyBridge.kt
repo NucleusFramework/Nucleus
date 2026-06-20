@@ -22,6 +22,7 @@ internal object NativeLinuxHotKeyBridge {
         id: Long,
         modifiers: Int,
         keyCode: Int,
+        description: String?,
     ): String?
 
     @JvmStatic
