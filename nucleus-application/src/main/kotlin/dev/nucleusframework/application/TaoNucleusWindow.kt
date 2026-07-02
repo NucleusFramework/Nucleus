@@ -46,6 +46,18 @@ internal class TaoNucleusWindow(
     override val isMaximized: Boolean get() = taoWindow.isMaximized
     override val isFullscreen: Boolean get() = taoWindow.isFullscreen
 
+    override fun boundsOnScreen(): NucleusWindowBounds? {
+        val rect = taoWindow.outerBoundsPx() ?: return null
+        if (rect.size != RECT_ARRAY_SIZE) return null
+        val scale = taoWindow.scaleFactor.takeIf { it > 0f } ?: 1f
+        return NucleusWindowBounds(
+            x = rect[0] / scale,
+            y = rect[1] / scale,
+            width = rect[2] / scale,
+            height = rect[3] / scale,
+        )
+    }
+
     override fun show() = taoWindow.show()
 
     override fun hide() = taoWindow.hide()
@@ -103,4 +115,9 @@ internal class TaoNucleusWindow(
             override val taoWindow: TaoWindow = this@TaoNucleusWindow.taoWindow
             override val taoHandle: Long = this@TaoNucleusWindow.taoWindow.handle
         }
+
+    private companion object {
+        /** Native window rects arrive as `[x, y, width, height]`. */
+        const val RECT_ARRAY_SIZE = 4
+    }
 }

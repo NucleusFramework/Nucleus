@@ -60,6 +60,8 @@ fun ApplicationScope.DecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     isDialog: Boolean = false,
+    /** Fully borderless window (no traffic lights on macOS) — for overlays/ghosts. */
+    undecorated: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -128,6 +130,7 @@ fun ApplicationScope.DecoratedWindow(
                     // monitor handle which we don't have yet).
                     maximized = state.placement == WindowPlacement.Maximized,
                     isDialog = isDialog,
+                    undecorated = undecorated,
                     onPreviewKeyEvent = { latestPreview(it) },
                     onKeyEvent = { latestKey(it) },
                     macOSStyle = macOSStyle,

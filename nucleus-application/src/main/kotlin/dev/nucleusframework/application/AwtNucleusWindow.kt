@@ -65,6 +65,18 @@ internal class AwtNucleusWindow(
     override val isMaximized: Boolean get() = state.placement == WindowPlacement.Maximized
     override val isFullscreen: Boolean get() = state.placement == WindowPlacement.Fullscreen
 
+    override fun boundsOnScreen(): NucleusWindowBounds? =
+        runCatching {
+            if (!composeWindow.isShowing) return null
+            val location = composeWindow.locationOnScreen
+            NucleusWindowBounds(
+                x = location.x.toFloat(),
+                y = location.y.toFloat(),
+                width = composeWindow.width.toFloat(),
+                height = composeWindow.height.toFloat(),
+            )
+        }.getOrNull()
+
     override fun show() = onEdt { composeWindow.isVisible = true }
 
     override fun hide() = onEdt { composeWindow.isVisible = false }

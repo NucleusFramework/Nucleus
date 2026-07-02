@@ -329,6 +329,41 @@ class TaoWindow internal constructor(
         get() = NativeTaoBridge.nativeIsMaximized(handle)
 
     /**
+     * Outer (decoration-inclusive) window bounds as `[x, y, width, height]` in
+     * physical screen pixels with a top-left origin, or `null` while the native
+     * window isn't realized / the platform bridge is unavailable. All three
+     * platform bridges share the Win32 `GetWindowRect` convention.
+     */
+    fun outerBoundsPx(): LongArray? =
+        when (Platform.Current) {
+            Platform.Windows -> {
+                if (!NativeTaoWindowsDecoBridge.isLoaded) {
+                    null
+                } else {
+                    NativeTaoBridge
+                        .nativeHwndHandle(handle)
+                        .takeIf { it != 0L }
+                        ?.let { NativeTaoWindowsDecoBridge.nativeGetWindowRect(it) }
+                }
+            }
+            Platform.MacOS -> {
+                if (!NativeTaoMacOsDecoBridge.isLoaded) {
+                    null
+                } else {
+                    nativeHandle
+                        .takeIf { it != 0L }
+                        ?.let { NativeTaoMacOsDecoBridge.nativeGetWindowRect(it) }
+                }
+            }
+            Platform.Linux -> NativeTaoBridge.nativeLinuxGetWindowRect(handle)
+            else -> null
+        }
+
+    /** The window's current monitor scale factor (1.0 on non-HiDPI displays). */
+    val scaleFactor: Float
+        get() = NativeTaoBridge.nativeScaleFactor(handle).coerceAtLeast(1) / 1000f
+
+    /**
      * Linux/GTK only: true when the compositor has tiled/snapped the window to a
      * screen edge (Aero Snap). Always `false` on Windows/macOS (the native lib
      * returns `false` outside the GTK backend). Used to drop the Compose-drawn

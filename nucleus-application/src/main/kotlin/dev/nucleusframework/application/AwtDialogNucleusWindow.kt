@@ -41,6 +41,18 @@ internal class AwtDialogNucleusWindow(
     override val isMaximized: Boolean get() = false
     override val isFullscreen: Boolean get() = false
 
+    override fun boundsOnScreen(): NucleusWindowBounds? =
+        runCatching {
+            if (!composeDialog.isShowing) return null
+            val location = composeDialog.locationOnScreen
+            NucleusWindowBounds(
+                x = location.x.toFloat(),
+                y = location.y.toFloat(),
+                width = composeDialog.width.toFloat(),
+                height = composeDialog.height.toFloat(),
+            )
+        }.getOrNull()
+
     override fun show() = onEdt { composeDialog.isVisible = true }
 
     override fun hide() = onEdt { composeDialog.isVisible = false }

@@ -101,6 +101,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     alwaysOnTop: Boolean = false,
     maximized: Boolean = false,
     isDialog: Boolean = false,
+    // Fully borderless window: no native chrome at all — on macOS this drops the
+    // traffic-light buttons too. For overlay/ghost windows (drag previews, HUDs).
+    undecorated: Boolean = false,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     macOSStyle: MacOSStyle = MacOSStyle.Classic,
@@ -121,7 +124,8 @@ internal fun ApplicationScope.openDecoratedWindow(
             // On Windows + Linux we drop them — we draw the close/min/max buttons
             // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
             // the user's [TitleBar] composable, mirroring decorated-window-jni.
-            decorations = Platform.Current == Platform.MacOS,
+            // `undecorated` opts out entirely (borderless, no traffic lights).
+            decorations = !undecorated && Platform.Current == Platform.MacOS,
             resizable = resizable,
             visible = false, // we show after first paint
             // Pass `maximized` to the builder so Tao sets it BEFORE the window

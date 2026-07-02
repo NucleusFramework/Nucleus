@@ -30,6 +30,9 @@ fun NucleusApplicationScope.DecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    // Fully borderless window (no macOS traffic lights) — for overlay/ghost windows.
+    // Honoured by the Tao backend; the AWT backend currently ignores it.
+    undecorated: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -81,6 +84,7 @@ fun NucleusApplicationScope.DecoratedWindow(
                 enabled = enabled,
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
+                undecorated = undecorated,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,

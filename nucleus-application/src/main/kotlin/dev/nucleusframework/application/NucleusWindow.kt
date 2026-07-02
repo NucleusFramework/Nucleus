@@ -10,18 +10,39 @@ import dev.nucleusframework.window.DecoratedWindowScope
 import kotlinx.coroutines.flow.StateFlow
 
 /**
+ * Outer window bounds in logical (dp) screen coordinates, top-left origin.
+ * The unit matches Compose's `WindowState` values on both backends.
+ */
+data class NucleusWindowBounds(
+    val x: Float,
+    val y: Float,
+    val width: Float,
+    val height: Float,
+)
+
+/**
  * Backend-agnostic handle to a window opened by [DecoratedWindow]. Mirrors the
  * intersection of `ComposeWindow` and `TaoWindow`.
  *
  * Backend-specific bridges live behind [unsafe] — using them is an explicit
  * opt-out of the portable contract.
  */
+@Suppress("TooManyFunctions")
 @Stable
 interface NucleusWindow {
     val isFocused: Boolean
     val isMinimized: Boolean
     val isMaximized: Boolean
     val isFullscreen: Boolean
+
+    /**
+     * Outer (decoration-inclusive) window bounds in logical screen coordinates,
+     * or `null` while the native window isn't realized yet. Backend-agnostic:
+     * AWT reads user-space coordinates directly; Tao converts the physical
+     * window rect through the window's scale factor. Intended for cross-window
+     * features (drag & drop hit-testing, window placement).
+     */
+    fun boundsOnScreen(): NucleusWindowBounds? = null
 
     fun show()
 

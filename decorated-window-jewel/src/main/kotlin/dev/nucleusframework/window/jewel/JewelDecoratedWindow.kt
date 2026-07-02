@@ -85,6 +85,8 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    // Fully borderless window (no macOS traffic lights) — for overlay/ghost windows.
+    undecorated: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -111,6 +113,7 @@ fun NucleusApplicationScope.JewelDecoratedWindow(
             enabled = enabled,
             focusable = focusable,
             alwaysOnTop = alwaysOnTop,
+            undecorated = undecorated,
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
