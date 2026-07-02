@@ -462,6 +462,137 @@ No ordered init list. No `SingleInstanceManager` plumbing. No restore counter an
 
 ---
 
+## Field Notes — Multi-Window & Cross-Window Drag on the Tao Backend
+
+Everything below was learned migrating a real app (Zayit) to Chrome-style multi-window with
+cross-window tab drag & drop on the Tao backend. If your 1.x code leaned on AWT for anything
+window- or pointer-related, read this section before porting.
+
+### AWT is absent on Tao — and it fails *silently*
+
+The Tao backend never creates AWT windows. Every AWT API still compiles, still runs, and does
+**nothing**: no events, no windows, `null` handles. There is no exception to catch — features
+just go dead. Grep your app for these and replace them:
+
+| 1.x / AWT pattern | Symptom on Tao | 2.0 replacement |
+|---|---|---|
+| `Toolkit.addAWTEventListener(…)` (global mouse/key tracking) | Listener never fires | Observe the Compose pointer stream in `PointerEventPass.Initial` (see drag recipe below) |
+| `KeyboardFocusManager.addKeyEventDispatcher(…)` | Dispatcher never fires | `onPreviewKeyEvent` / `onKeyEvent` on the window |
+| `nucleusWindow.unsafe.awtWindow` | Always `null` | `nucleusWindow.boundsOnScreen()`, `toFront()`, `requestFocus()`, … |
+| `window.locationOnScreen`, `MouseInfo.getPointerInfo()` | N/A (no AWT window) | `NucleusWindow.boundsOnScreen()` + pointer positions from Compose |
+| `JWindow` / `JDialog` overlays (drag ghosts, HUDs) | Window never shows (or AWT headless) | `JewelDecoratedWindow(undecorated = true, focusable = false, alwaysOnTop = true)` |
+| `GraphicsEnvironment.getScreenDevices()` (multi-monitor math) | May throw `HeadlessException` | Guard with `runCatching`; work-area natives exist per-platform if needed |
+
+Rule of thumb: portable code goes through `NucleusWindow`; anything reached via `unsafe.*` is a
+deliberate opt-out that must handle the other backend returning `null`.
+
+### New portable APIs (added 2026-07)
+
+```kotlin
+// Backend-agnostic outer window bounds, logical (dp) screen coordinates, top-left origin.
+// AWT reads user-space coords directly; Tao converts the physical rect through the window's
+// scale factor. Null while the native window isn't realized yet.
+val bounds: NucleusWindowBounds? = nucleusWindow.boundsOnScreen()
+
+// Tao-level primitives behind it (unsafe tier):
+val rectPx: LongArray? = taoWindow.outerBoundsPx() // [x, y, w, h] physical px, Win32 GetWindowRect convention on all 3 OSes
+val scale: Float = taoWindow.scaleFactor
+
+// Fully borderless windows — on macOS this is the only way to get rid of the traffic lights,
+// which are NATIVE and present on every decorated Tao window:
+JewelDecoratedWindow(
+    onCloseRequest = {},
+    undecorated = true,     // ← new; honoured by Tao, ignored by AWT
+    focusable = false,      // never becomes key — no focus flicker while it follows the pointer
+    alwaysOnTop = true,
+    resizable = false,
+    state = ghostWindowState,
+) { /* chip content */ }
+```
+
+### Coordinate systems cheat sheet
+
+Mixing these up produces hit-tests that are off by exactly one scale factor — on a Retina
+display everything lands at half the expected distance.
+
+| Value | Unit | Origin | Notes |
+|---|---|---|---|
+| Compose scene coords (`boundsInWindow`, pointer positions) | **physical px** | window top-left | divide by `LocalDensity.current.density` to get dp |
+| `WindowState.position` / `.size` | logical dp | screen top-left | bidirectionally synced with the native window |
+| `TaoWindow.outerBoundsPx()`, work-area natives | **physical px** | primary-screen top-left | macOS Y is already flipped from AppKit's bottom-left |
+| `NucleusWindow.boundsOnScreen()` | logical dp | screen top-left | the one to use in app code |
+
+Conversion used for cross-window hit-testing:
+`screenDp = window.boundsOnScreen() + positionInWindowPx / density`.
+
+### `WindowState` sync semantics — two traps
+
+1. **`state.position` is only `Absolute` after a native move event.** A window created with
+   `WindowPosition.Aligned(Center)` keeps `Aligned` in its state — the realized coordinates are
+   never written back. Don't derive screen positions from `WindowState`; use
+   `boundsOnScreen()`.
+2. **Placement is applied at builder time.** A window created `Maximized` and mutated to
+   `Floating` a moment later visibly flashes maximized first. If you restore window geometry
+   from disk, read it *before* creating the window and construct the `WindowState` with the
+   final placement/size/position — don't create-then-mutate.
+
+### Multiple windows
+
+`JewelDecoratedWindow` is a plain composable on the application scope — call it N times for N
+windows, keyed by a stable id:
+
+```kotlin
+nucleusApplication(args) {
+    val windows by windowManager.windows.collectAsState()
+    windows.forEach { w ->
+        key(w.id) {
+            JewelDecoratedWindow(state = w.windowState, …) { … }
+        }
+    }
+}
+```
+
+Focus tracking comes from `nucleusWindow.focusFlow`; bring-to-front is
+`toFront()` + `requestFocus()` (works on Tao via `nativeFocus`).
+
+### Cross-window drag & drop recipe (no OS DnD involved)
+
+The platform captures the pointer during a button-held drag: the **source window keeps
+receiving move events even when the cursor is outside its bounds** (macOS `mouseDragged`,
+Win32 `SetCapture`, X11 implicit grab). That capture is the whole trick — it replaces the
+global AWT listener an AWT implementation would use (IntelliJ's `DockManagerImpl` pattern):
+
+1. Observe the drag in the source window with a non-consuming `pointerInput` in
+   `PointerEventPass.Initial` — the gesture owner (e.g. a reorderable row) is unaffected.
+2. Convert to logical screen coords with `boundsOnScreen()` + `position / density`.
+3. Hit-test the other windows' registered drop areas in screen space. Make drop targets
+   generous (a whole title-bar strip, not just the tabs row — with one tab the row is a
+   ~180 dp target users will miss).
+4. Show a ghost: a small `undecorated + focusable=false + alwaysOnTop` window following the
+   pointer via `WindowState.position` mutations. Create it once per drag session and hide it
+   with `visible=false` instead of disposing — recreating a native window mid-drag stutters.
+5. On release: mutate your model (move the tab / spawn a window). A window spawned "under the
+   cursor" should be `Floating` at a **reduced** size — deriving it from a maximized source
+   window otherwise reproduces a maximized footprint.
+
+Two things that do **not** work for the ghost:
+
+- **Compose `Popup`**: on Tao, popups are real native panels (`NSPanel` / child HWND), but they
+  are positioned and clamped **within the parent window** — a popup cannot float outside the
+  window bounds.
+- **A decorated window**: on macOS every decorated Tao window carries native traffic lights.
+  A ghost following the cursor puts them right under the pointer, hover-glowing. That is what
+  `undecorated = true` is for.
+
+### Wayland caveat
+
+Native Wayland (xdg-shell) forbids clients from positioning toplevels: `setOuterPosition` is a
+no-op, so ghost placement, cascading, and "spawn under the cursor" degrade to
+compositor-decided placement. Nucleus logs a one-shot warning; `NUCLEUS_TAO_LINUX_RENDERER=x11`
+falls back to XWayland when precise positioning matters.
+
+---
+
 ## Troubleshooting
 
 **My imports won't resolve after the rename.**
@@ -507,3 +638,38 @@ The IntelliJ snapshots repo is missing. Add `maven("https://www.jetbrains.com/in
 
 **`Dependency resolution is looking for a library compatible with JVM runtime version 11`.**
 Bump the toolchain — Nucleus 2.0 requires JDK 25 for the Jewel stack and JDK 17 for `nucleus-application`. See [Prerequisites](#prerequisites).
+
+**My global `AWTEventListener` / `KeyEventDispatcher` never fires on Tao.**
+Expected — the Tao backend creates no AWT windows, so no AWT events exist. There is no error;
+the listener is simply never called. Replace with Compose-level observation (a non-consuming
+`pointerInput` in `PointerEventPass.Initial`, or the window's `onPreviewKeyEvent`). See
+[Field Notes → AWT is absent on Tao](#awt-is-absent-on-tao--and-it-fails-silently).
+
+**My floating overlay window shows macOS traffic lights (and they highlight under the cursor).**
+Every decorated Tao window keeps the native buttons on macOS. Pass `undecorated = true` (plus
+`focusable = false`, `alwaysOnTop = true` for overlays) — see
+[Field Notes → New portable APIs](#new-portable-apis-added-2026-07).
+
+**A Compose `Popup` won't render outside the window.**
+By design: Tao popups are native panels, but positioned and clamped within the parent window's
+bounds. Anything that must float beyond the window (drag ghost, tear-off preview) needs a real
+window with `undecorated = true`.
+
+**Cross-window hit-testing is off by ~2× on Retina / HiDPI displays.**
+You mixed physical px and logical dp. Compose scene coordinates (`boundsInWindow`, pointer
+positions) are physical px on Tao — divide by `LocalDensity`; `boundsOnScreen()` and
+`WindowState` are logical. See [Field Notes → Coordinate systems](#coordinate-systems-cheat-sheet).
+
+**A restored window flashes maximized before jumping to its saved floating frame.**
+Placement is applied at window-builder time. Read the persisted geometry *before* composing the
+window and build the initial `WindowState` from it, instead of creating the window with a
+default state and mutating it once your restore logic runs.
+
+**`WindowState.position` says `Aligned` even though the window is clearly somewhere on screen.**
+Also by design: the realized coordinates of an `Aligned` position are not written back into the
+state (only native move events produce `Absolute`). Use `NucleusWindow.boundsOnScreen()` for
+real screen coordinates.
+
+**Windows opened programmatically stack exactly on top of each other on Wayland.**
+Native Wayland forbids client-side toplevel positioning; cascading/`setOuterPosition` are
+no-ops. Set `NUCLEUS_TAO_LINUX_RENDERER=x11` to fall back to XWayland if placement matters.
