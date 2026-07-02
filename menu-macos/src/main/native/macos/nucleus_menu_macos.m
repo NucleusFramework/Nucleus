@@ -389,6 +389,128 @@ JNIEXPORT jlong JNICALL JNI_FN(nativeCreateSectionHeader)(JNIEnv *env, jclass cl
     }
 }
 
+// ============================================================================
+// SECTION: Search-field menu item (native in-menu filtering)
+// ============================================================================
+
+// Filters the sibling items of its enclosing menu as the user types: an item
+// stays visible while its title contains the query (case/diacritic-insensitive).
+// Separators are hidden while a query is active. Everything resets when the
+// menu closes. Filtering is fully native — no JNI round-trip per keystroke.
+@interface NucleusMenuSearchFilter : NSObject <NSSearchFieldDelegate>
+@property (nonatomic, weak) NSSearchField *field;
+@end
+
+@implementation NucleusMenuSearchFilter
+
+- (instancetype)init {
+    if ((self = [super init])) {
+        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+        [nc addObserver:self selector:@selector(menuDidEndTracking:)
+                   name:NSMenuDidEndTrackingNotification object:nil];
+        [nc addObserver:self selector:@selector(menuDidBeginTracking:)
+                   name:NSMenuDidBeginTrackingNotification object:nil];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (NSMenu *)hostMenu {
+    return self.field.enclosingMenuItem.menu;
+}
+
+- (void)searchChanged:(id)sender {
+    (void)sender;
+    [self applyFilter];
+}
+
+// Fires on every keystroke — `continuous`/target-action alone only fires on
+// Enter or the clear button, which is what made filtering feel non-live.
+- (void)controlTextDidChange:(NSNotification *)notification {
+    (void)notification;
+    [self applyFilter];
+}
+
+- (void)applyFilter {
+    NSSearchField *field = self.field;
+    if (!field) return;
+    NSMenuItem *host = field.enclosingMenuItem;
+    NSMenu *menu = host.menu;
+    if (!menu) return;
+    NSString *query = [field.stringValue stringByTrimmingCharactersInSet:
+                       [NSCharacterSet whitespaceCharacterSet]];
+    BOOL filtering = query.length > 0;
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item == host) continue;
+        if (!filtering) {
+            item.hidden = NO;
+        } else if (item.separatorItem) {
+            item.hidden = YES;
+        } else {
+            NSRange r = [item.title rangeOfString:query
+                                          options:(NSCaseInsensitiveSearch |
+                                                   NSDiacriticInsensitiveSearch |
+                                                   NSWidthInsensitiveSearch)];
+            item.hidden = (r.location == NSNotFound);
+        }
+    }
+}
+
+- (void)menuDidBeginTracking:(NSNotification *)note {
+    if (note.object != [self hostMenu]) return;
+    NSSearchField *field = self.field;
+    // The item view's window only exists once the menu is on screen.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (field.window) [field.window makeFirstResponder:field];
+    });
+}
+
+- (void)menuDidEndTracking:(NSNotification *)note {
+    if (note.object != [self hostMenu]) return;
+    self.field.stringValue = @"";
+    [self applyFilter];
+}
+
+@end
+
+static char kNucleusSearchFilterKey;
+
+JNIEXPORT jlong JNICALL JNI_FN(nativeCreateSearchFieldItem)(JNIEnv *env, jclass clazz,
+                                                            jstring jPlaceholder, jdouble width) {
+    (void)clazz;
+    @autoreleasepool {
+        NSString *placeholder = toNSString(env, jPlaceholder) ?: @"";
+        __block jlong result = 0;
+        runOnMain(^{
+            CGFloat w = width > 0 ? (CGFloat)width : 230.0;
+            NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"" action:nil keyEquivalent:@""];
+            NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, w, 28)];
+            NSSearchField *field =
+                [[NSSearchField alloc] initWithFrame:NSMakeRect(10, 3, w - 20, 22)];
+            field.placeholderString = placeholder;
+            field.autoresizingMask = NSViewWidthSizable;
+
+            NucleusMenuSearchFilter *filter = [NucleusMenuSearchFilter new];
+            filter.field = field;
+            field.delegate = filter; // controlTextDidChange: → per-keystroke filtering
+            field.target = filter;
+            field.action = @selector(searchChanged:);
+            // Tie the filter's lifetime to the menu item
+            objc_setAssociatedObject(item, &kNucleusSearchFilterKey, filter,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+            [container addSubview:field];
+            container.autoresizingMask = NSViewWidthSizable;
+            item.view = container;
+            result = retainToHandle(item);
+        });
+        return result;
+    }
+}
+
 JNIEXPORT void JNICALL JNI_FN(nativeRelease)(JNIEnv *env, jclass clazz, jlong handle) {
     (void)env; (void)clazz;
     releaseHandle(handle);

@@ -293,6 +293,24 @@ class NativeMenuScope internal constructor() {
         )
     }
 
+    // ── SearchField ──────────────────────────────────────────────────────
+
+    /**
+     * Adds a search field to the menu (Chrome-History-style): typing filters the menu's other
+     * items natively by title (case/diacritic-insensitive), separators are hidden while a query
+     * is active, and everything resets when the menu closes. The field grabs keyboard focus
+     * when the menu opens.
+     *
+     * @param placeholder Placeholder text shown in the empty field.
+     * @param width Field width in points.
+     */
+    fun SearchField(
+        placeholder: String = "",
+        width: Double = 230.0,
+    ) {
+        entries += MenuItemEntry.SearchFieldEntry(placeholder, width)
+    }
+
     // ── Separator ────────────────────────────────────────────────────────
 
     /** Adds a horizontal separator line. */
@@ -374,6 +392,11 @@ internal sealed class MenuItemEntry {
 
     object SeparatorEntry : MenuItemEntry()
 
+    data class SearchFieldEntry(
+        val placeholder: String,
+        val width: Double,
+    ) : MenuItemEntry()
+
     data class SectionHeaderEntry(
         val title: String,
     ) : MenuItemEntry()
@@ -419,6 +442,11 @@ private fun materializeItems(
                 val header = NsMenuItem.sectionHeader(entry.title)
                 menu.addItem(header)
                 header.close()
+            }
+            is MenuItemEntry.SearchFieldEntry -> {
+                val field = NsMenuItem.searchField(entry.placeholder, entry.width)
+                menu.addItem(field)
+                field.close()
             }
             is MenuItemEntry.SubmenuEntry -> {
                 val menuItem = NsMenuItem(entry.text)

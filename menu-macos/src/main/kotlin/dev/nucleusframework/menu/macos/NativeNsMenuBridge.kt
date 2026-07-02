@@ -117,6 +117,12 @@ internal object NativeNsMenuBridge {
 
     @JvmStatic external fun nativeCreateSeparatorItem(): Long
 
+    @JvmStatic
+    external fun nativeCreateSearchFieldItem(
+        placeholder: String,
+        width: Double,
+    ): Long
+
     @JvmStatic external fun nativeCreateSectionHeader(title: String): Long
 
     @JvmStatic external fun nativeRelease(handle: Long)

@@ -32,6 +32,16 @@ internal class NsMenuItem internal constructor(
         /** Creates a section header item (macOS 14+). */
         fun sectionHeader(title: String): NsMenuItem = NsMenuItem(NativeNsMenuBridge.nativeCreateSectionHeader(title))
 
+        /**
+         * Creates a search-field item: an NSSearchField hosted in the item's view that filters
+         * the sibling items of its menu natively as the user types (title contains query,
+         * case/diacritic-insensitive). The filter resets when the menu closes.
+         */
+        fun searchField(
+            placeholder: String,
+            width: Double = 230.0,
+        ): NsMenuItem = NsMenuItem(NativeNsMenuBridge.nativeCreateSearchFieldItem(placeholder, width))
+
         /** Creates a non-owning wrapper for use in callbacks. */
         internal fun borrowed(handle: Long): NsMenuItem = NsMenuItem(handle, owned = false)
     }
