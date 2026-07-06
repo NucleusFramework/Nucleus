@@ -5,10 +5,12 @@
 
 package io.github.kdroidfilter.nucleus.desktop.application.internal
 
+import io.github.kdroidfilter.nucleus.desktop.application.dsl.AdditionalLauncher
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.GraalvmSettings
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationBuildTypes
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationDistributions
 import io.github.kdroidfilter.nucleus.internal.utils.new
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -42,4 +44,6 @@ internal open class JvmApplicationData
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()
+        val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher> = 
+            objects.domainObjectContainer(AdditionalLauncher::class.java)
     }

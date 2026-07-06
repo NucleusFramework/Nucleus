@@ -5,6 +5,7 @@
 
 package io.github.kdroidfilter.nucleus.desktop.application.dsl
 
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Action
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFileProperty
@@ -46,4 +47,8 @@ abstract class JvmApplication {
     abstract val graalvm: GraalvmSettings
 
     abstract fun graalvm(fn: Action<GraalvmSettings>)
+
+    abstract val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher>
+
+    abstract fun additionalLaunchers(action: Action<NamedDomainObjectContainer<AdditionalLauncher>>)
 }

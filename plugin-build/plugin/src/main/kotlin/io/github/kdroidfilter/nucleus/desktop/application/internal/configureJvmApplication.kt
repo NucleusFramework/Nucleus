@@ -67,7 +67,6 @@ private val defaultJvmArgs: List<String> =
     }
 internal const val NUCLEUS_TASK_GROUP = "nucleus"
 
-// todo: multiple launchers
 // todo: file associations
 // todo: use workers
 internal fun JvmApplicationContext.configureJvmApplication() {
@@ -781,6 +780,7 @@ private fun JvmApplicationContext.configurePackageTask(
         },
     )
     packageTask.launcherArgs.set(provider { app.args })
+    packageTask.additionalLaunchers.set(app.additionalLaunchers)
 }
 
 private fun JvmApplicationContext.configureElectronBuilderPackageTask(

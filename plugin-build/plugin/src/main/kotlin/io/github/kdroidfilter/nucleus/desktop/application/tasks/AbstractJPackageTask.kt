@@ -1,10 +1,11 @@
-﻿/*
+/*
  * Copyright 2020-2021 JetBrains s.r.o. and respective authors and developers.
  * Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE.txt file.
  */
 
 package io.github.kdroidfilter.nucleus.desktop.application.tasks
 
+import io.github.kdroidfilter.nucleus.desktop.application.dsl.AdditionalLauncher
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.FileAssociation
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.LaunchAgentDefinition
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.MacOSSigningSettings
@@ -271,6 +272,9 @@ abstract class AbstractJPackageTask
         @get:Input
         val sandboxingEnabled: Property<Boolean> = objects.notNullProperty(false)
 
+        @get:Nested
+        internal val additionalLaunchers: ListProperty<AdditionalLauncher> = objects.listProperty(AdditionalLauncher::class.java)
+
         private val iconMapping by lazy {
             val icons = fileAssociations.get().mapNotNull { it.iconFile }.distinct()
             if (icons.isEmpty()) return@lazy emptyMap()
@@ -436,6 +440,12 @@ abstract class AbstractJPackageTask
                         cliArg("--mac-package-signing-prefix", signingSettings.prefix)
                     }
                 }
+
+                additionalLaunchers.get().forEach { launcher ->
+                    val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
+                    val escapedPath = if (currentTarget.os == OS.Windows) propertiesFile.absolutePath.replace("\\", "\\\\") else propertiesFile.absolutePath
+                    cliArg("--add-launcher", "${launcher.name}=${escapedPath}")
+                }
             }
 
         private fun invalidateMappedLibs(inputChanges: InputChanges): Set<File> {
@@ -574,6 +584,29 @@ abstract class AbstractJPackageTask
                     InfoPlistBuilder(productDefPlistXml)
                         .writeToFile(jpackageResources.ioFile.resolve("product-def.plist"))
                 }
+            }
+
+            additionalLaunchers.get().forEach { launcher ->
+                val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
+                val propertiesFileContent = buildString {
+                    launcher.appVersion?.let { append("app-version=$it\n") }
+                    launcher.module?.let { append("module=$it\n") }
+                    launcher.mainClass?.let { append("main-class=$it\n") }
+                    launcher.mainJar?.let { append("main-jar=$it\n") }
+                    launcher.jvmArgs?.takeIf { it.isNotEmpty() }?.let { options ->
+                        append("java-options=${options.joinToString(" ")}\n")
+                    }
+                    launcher.args?.takeIf { it.isNotEmpty() }?.let { args ->
+                        append("arguments=${args.joinToString(" ")}\n")
+                    }
+                    launcher.icon.orNull?.asFile?.absolutePath?.let { append("icon=$it\n") }
+                    if (currentOS == OS.Windows) {
+                        launcher.winConsole?.let { append("win-console=$it\n") }
+                    }
+                }
+                logger.debug("Writing launcher properties file to: ${propertiesFile.absolutePath}")
+                propertiesFile.writeText(propertiesFileContent)
+                logger.debug("Launcher properties content for ${launcher.name}:\n${propertiesFileContent}")
             }
         }
 

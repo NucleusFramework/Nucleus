@@ -5,12 +5,14 @@
 
 package io.github.kdroidfilter.nucleus.desktop.application.internal
 
+import io.github.kdroidfilter.nucleus.desktop.application.dsl.AdditionalLauncher
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.GraalvmSettings
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplication
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationBuildTypes
 import io.github.kdroidfilter.nucleus.desktop.application.dsl.JvmApplicationDistributions
 import io.github.kdroidfilter.nucleus.internal.utils.new
 import org.gradle.api.Action
+import org.gradle.api.NamedDomainObjectContainer
 import org.gradle.api.Task
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.model.ObjectFactory
@@ -87,5 +89,11 @@ internal open class JvmApplicationInternal
 
         final override fun graalvm(fn: Action<GraalvmSettings>) {
             fn.execute(data.graalvm)
+        }
+
+        final override val additionalLaunchers: NamedDomainObjectContainer<AdditionalLauncher> by data::additionalLaunchers
+
+        final override fun additionalLaunchers(action: Action<NamedDomainObjectContainer<AdditionalLauncher>>) {
+            action.execute(data.additionalLaunchers)
         }
     }

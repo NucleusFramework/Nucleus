@@ -253,6 +253,38 @@ fileAssociation(
 
 Multiple associations are supported by calling `fileAssociation()` multiple times.
 
+### Additional Launchers
+
+You can define multiple entry points or distinct configurations (e.g., with different arguments, main classes, or icons) for the same application using the `additionalLaunchers` block.
+This will generate additional launcher executables alongside your main application.
+
+```kotlin
+nucleus.application {
+    // ...
+    additionalLaunchers {
+        create("myOtherLauncher") {
+            mainClass = "com.example.OtherMainKt"
+            jvmArgs("-Dmy.property=true")
+            args("--cli-mode")
+            icon.set(project.file("other-icon.ico")) // Optional, per-launcher icon
+            winConsole = true
+        }
+    }
+}
+```
+
+| Property | Type | Default | Description |
+|----------|------|---------|-------------|
+| `name` | `String` | (Required) | The name of the additional launcher executable (passed via `create()`). |
+| `appVersion` | `String?` | `null` | The version for this specific launcher. |
+| `module` | `String?` | `null` | The Java module name if the application uses JPMS. |
+| `mainClass` | `String?` | `null` | The main class to be executed by this launcher. |
+| `mainJar` | `String?` | `null` | The main JAR file to be executed. |
+| `jvmArgs` | `List<String>?` | `null` | JVM arguments to pass when launching. |
+| `args` | `List<String>?` | `null` | Application arguments to pass to the main class. |
+| `icon` | `RegularFileProperty`| — | Icon file for this specific launcher. |
+| `winConsole` | `Boolean?` | `null` | Creates a Windows console when launching (Windows only). |
+
 ## ProGuard (Release Builds)
 
 ```kotlin
@@ -288,6 +320,9 @@ nucleus.application {
         release {
             proguard { isEnabled, version, optimize, obfuscate, joinOutputJars, configurationFiles }
         }
+    }
+    additionalLaunchers {
+        create(name) { appVersion, module, mainClass, mainJar, jvmArgs, args, icon, winConsole }
     }
     nativeDistributions {
         targetFormats(...)
