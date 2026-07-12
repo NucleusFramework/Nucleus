@@ -88,11 +88,14 @@ typedef void *(*PFN_host_egl_display)(void);
 typedef void *(*PFN_host_egl_context)(void);
 typedef void *(*PFN_host_egl_config)(void);
 typedef void *(*PFN_host_egl_proc)(const char *name);
+/* Per-HWND host trio lookup (nucleus_tao_gl.c). Returns 1 on hit. */
+typedef int  (*PFN_host_egl_for_hwnd)(void *hwnd, void **dpy, void **ctx, void **cfg);
 
 static PFN_host_egl_display pHostEglDisplay = NULL;
 static PFN_host_egl_context pHostEglContext = NULL;
 static PFN_host_egl_config  pHostEglConfig  = NULL;
 static PFN_host_egl_proc    pHostEglProc    = NULL;
+static PFN_host_egl_for_hwnd pHostEglForHwnd = NULL;
 static BOOL sHostResolved = FALSE;
 
 /* EGL entry points, resolved through the host bridge. */
@@ -119,6 +122,7 @@ static void resolveHost(void) {
     pHostEglContext = (PFN_host_egl_context)GetProcAddress(m, "nucleus_tao_host_egl_context");
     pHostEglConfig  = (PFN_host_egl_config) GetProcAddress(m, "nucleus_tao_host_egl_config");
     pHostEglProc    = (PFN_host_egl_proc)   GetProcAddress(m, "nucleus_tao_host_egl_proc");
+    pHostEglForHwnd = (PFN_host_egl_for_hwnd)GetProcAddress(m, "nucleus_tao_host_egl_for_hwnd");
     if (!pHostEglProc) return;
 
     pEglQueryDisplayAttribEXT = (PFNEGLQUERYDISPLAYATTRIBEXTPROC)
@@ -289,7 +293,7 @@ static void destroySurface(DcompSurface *s) {
     HeapFree(GetProcessHeap(), 0, s);
 }
 
-static DcompSurface *createSurface(HWND hwnd) {
+static DcompSurface *createSurface(GlSurface *gl) {
     resolveHost();
     if (!pHostEglDisplay || !pHostEglContext || !pHostEglConfig ||
         !pEglCreatePbufferFromClientBuffer || !pEglMakeCurrent ||
@@ -298,9 +302,25 @@ static DcompSurface *createSurface(HWND hwnd) {
         return NULL;
     }
 
-    EGLDisplay dpy = (EGLDisplay)pHostEglDisplay();
-    EGLContext ctx = (EGLContext)pHostEglContext();
-    EGLConfig  cfg = (EGLConfig)pHostEglConfig();
+    HWND hwnd = gl->hwnd;
+    /* Resolve the EGL trio belonging to THIS surface's parent host window
+     * — not the single global, which a sibling host (DecoratedDialog) may
+     * have overwritten and then cleared on detach. Falls back to the
+     * global for ownerless (tray) panels whose hostHwnd is 0. */
+    EGLDisplay dpy = EGL_NO_DISPLAY;
+    EGLContext ctx = EGL_NO_CONTEXT;
+    EGLConfig  cfg = NULL;
+    void *pdpy = NULL, *pctx = NULL, *pcfg = NULL;
+    if (pHostEglForHwnd && gl->hostHwnd &&
+        pHostEglForHwnd((void *)gl->hostHwnd, &pdpy, &pctx, &pcfg)) {
+        dpy = (EGLDisplay)pdpy;
+        ctx = (EGLContext)pctx;
+        cfg = (EGLConfig)pcfg;
+    } else {
+        dpy = (EGLDisplay)pHostEglDisplay();
+        ctx = (EGLContext)pHostEglContext();
+        cfg = (EGLConfig)pHostEglConfig();
+    }
     if (dpy == EGL_NO_DISPLAY || ctx == EGL_NO_CONTEXT || !cfg) return NULL;
 
     /* ANGLE's own D3D11 device — textures the pbuffer extension accepts
@@ -390,7 +410,7 @@ static DcompSurface *createSurface(HWND hwnd) {
 
 extern "C" BOOL nucleus_tao_overlay_gl_init(GlSurface *gl, BOOL nativeWindowPolish) {
     if (!gl || !gl->hwnd) return FALSE;
-    gl->dcomp = createSurface(gl->hwnd);
+    gl->dcomp = createSurface(gl);
     if (!gl->dcomp) return FALSE;
     if (nativeWindowPolish) {
         applyDwmPolish(gl->hwnd);

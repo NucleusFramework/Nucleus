@@ -229,9 +229,91 @@ static HWND createRenderSurface(HWND parent) {
 /*  GetProcAddress on this DLL.                                        */
 /* ================================================================== */
 
-static EGLDisplay sHostEglDisplay = EGL_NO_DISPLAY;
-static EGLContext sHostEglContext = EGL_NO_CONTEXT;
-static EGLConfig  sHostEglConfig  = NULL;
+/* Multi-host registry. Each TaoComposeSceneHostWindows attaches its own
+ * EGLContext; the overlay/popup bridge (overlay_dcomp.cpp) borrows a host
+ * context to bind its d3d-texture pbuffers. A single global trio is not
+ * enough when more than one host coexists (a DecoratedDialog over a
+ * DecoratedWindow): the dialog overwrites the global on attach and clears
+ * it on detach, leaving the still-alive main window's popups with
+ * EGL_NO_CONTEXT. Registered by HWND on nativeAttach, looked up by the
+ * popup/overlay's parent host HWND (nucleus_tao_host_egl_for_hwnd).
+ * Unbounded linked list (same pattern as overlay.c's sOwnerList) — a
+ * fixed slot array would silently drop hosts past the cap.
+ *
+ * The headless bootstrap context (nativeEnsureHeadlessContext) lives in
+ * its own statics, NOT the registry: it has no HWND, is never destroyed,
+ * and must survive any window host's attach/detach cycle. Ownerless
+ * (tray) panels resolve headless-first via the global accessors so they
+ * never borrow a window context that a later nativeDetach destroys.
+ *
+ * All access runs on the single Tao event-loop thread; no lock needed. */
+typedef struct HostEglEntry HostEglEntry;
+struct HostEglEntry {
+    HWND hwnd;
+    EGLDisplay dpy;
+    EGLContext ctx;
+    EGLConfig  cfg;
+    HostEglEntry *next;
+};
+static HostEglEntry *sHostEglList = NULL;
+
+static EGLDisplay sHeadlessEglDisplay = EGL_NO_DISPLAY;
+static EGLContext sHeadlessEglContext = EGL_NO_CONTEXT;
+static EGLConfig  sHeadlessEglConfig  = NULL;
+
+static void registerHostEgl(HWND hwnd, EGLDisplay dpy, EGLContext ctx, EGLConfig cfg) {
+    if (!hwnd) {
+        sHeadlessEglDisplay = dpy;
+        sHeadlessEglContext = ctx;
+        sHeadlessEglConfig = cfg;
+        return;
+    }
+    for (HostEglEntry *e = sHostEglList; e; e = e->next) {
+        if (e->hwnd == hwnd) {
+            e->dpy = dpy; e->ctx = ctx; e->cfg = cfg;
+            return;
+        }
+    }
+    HostEglEntry *e = (HostEglEntry *)HeapAlloc(
+        GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(HostEglEntry));
+    if (!e) return;
+    e->hwnd = hwnd;
+    e->dpy = dpy; e->ctx = ctx; e->cfg = cfg;
+    e->next = sHostEglList;
+    sHostEglList = e;
+}
+
+static void unregisterHostEgl(HWND hwnd) {
+    if (!hwnd) return;
+    HostEglEntry **pp = &sHostEglList;
+    while (*pp && (*pp)->hwnd != hwnd) pp = &(*pp)->next;
+    if (*pp) {
+        HostEglEntry *e = *pp;
+        *pp = e->next;
+        HeapFree(GetProcessHeap(), 0, e);
+    }
+}
+
+/* Global fallback for ownerless (tray) panels: prefer the headless trio
+ * — it is never destroyed, so a panel that binds it can't be orphaned by
+ * a window host's nativeDetach. Fall back to any live window host. */
+static void resolveFallbackEgl(EGLDisplay *dpy, EGLContext *ctx, EGLConfig *cfg) {
+    if (sHeadlessEglContext != EGL_NO_CONTEXT) {
+        *dpy = sHeadlessEglDisplay;
+        *ctx = sHeadlessEglContext;
+        *cfg = sHeadlessEglConfig;
+        return;
+    }
+    if (sHostEglList) {
+        *dpy = sHostEglList->dpy;
+        *ctx = sHostEglList->ctx;
+        *cfg = sHostEglList->cfg;
+        return;
+    }
+    *dpy = EGL_NO_DISPLAY;
+    *ctx = EGL_NO_CONTEXT;
+    *cfg = NULL;
+}
 
 /* Historical values: 0 = WGL (removed), 1 = EGL/ANGLE. Kept exported so
  * the overlay DLL's backend probe stays a stable cross-DLL contract. */
@@ -240,15 +322,40 @@ __declspec(dllexport) int nucleus_tao_host_backend(void) {
 }
 
 __declspec(dllexport) void *nucleus_tao_host_egl_display(void) {
-    return (void *)sHostEglDisplay;
+    EGLDisplay dpy; EGLContext ctx; EGLConfig cfg;
+    resolveFallbackEgl(&dpy, &ctx, &cfg);
+    return (void *)dpy;
 }
 
 __declspec(dllexport) void *nucleus_tao_host_egl_context(void) {
-    return (void *)sHostEglContext;
+    EGLDisplay dpy; EGLContext ctx; EGLConfig cfg;
+    resolveFallbackEgl(&dpy, &ctx, &cfg);
+    return (void *)ctx;
 }
 
 __declspec(dllexport) void *nucleus_tao_host_egl_config(void) {
-    return (void *)sHostEglConfig;
+    EGLDisplay dpy; EGLContext ctx; EGLConfig cfg;
+    resolveFallbackEgl(&dpy, &ctx, &cfg);
+    return (void *)cfg;
+}
+
+/* Resolves the EGL trio registered for [hwnd] (the popup/overlay's parent
+ * host window). Out-params are only written on a hit (return 1). Returns 0
+ * when [hwnd] is NULL or not registered — callers fall back to the global
+ * accessors (ownerless panel / headless context). */
+__declspec(dllexport) int nucleus_tao_host_egl_for_hwnd(
+    void *hwndVoid, void **dpyOut, void **ctxOut, void **cfgOut) {
+    HWND hwnd = (HWND)hwndVoid;
+    if (!hwnd) return 0;
+    for (HostEglEntry *e = sHostEglList; e; e = e->next) {
+        if (e->hwnd == hwnd) {
+            if (dpyOut) *dpyOut = (void *)e->dpy;
+            if (ctxOut) *ctxOut = (void *)e->ctx;
+            if (cfgOut) *cfgOut = (void *)e->cfg;
+            return 1;
+        }
+    }
+    return 0;
 }
 
 /* Resolves an EGL entry point through the already-loaded libEGL.dll.
@@ -378,9 +485,7 @@ static GlAttachment *attachEgl(HWND hwnd) {
     att->eglConfig = config;
     att->scale = 1.0f;
 
-    sHostEglDisplay = dpy;
-    sHostEglContext = ctx;
-    sHostEglConfig = config;
+    registerHostEgl(hwnd, dpy, ctx, config);
     return att;
 }
 
@@ -418,14 +523,19 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeDetach(
     GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
     if (!att) return;
 
+    HWND hostHwnd = att->hwnd;
     /* The EGLDisplay is process-wide (shared with overlays); never
      * eglTerminate it here — just drop this window's context + surface. */
     pEglMakeCurrent(att->eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    if (sHostEglContext == att->eglContext) sHostEglContext = EGL_NO_CONTEXT;
     pEglDestroyContext(att->eglDisplay, att->eglContext);
     pEglDestroySurface(att->eglDisplay, att->eglSurface);
     if (IsWindow(att->surfaceHwnd)) DestroyWindow(att->surfaceHwnd);
     HeapFree(GetProcessHeap(), 0, att);
+    /* Unregister after freeing att: recompute the global trio to a
+     * still-alive host so sibling hosts' popups/overlays keep a live
+     * context (a DecoratedDialog detaching must not wipe the main
+     * window's). */
+    unregisterHostEgl(hostHwnd);
 }
 
 JNIEXPORT void JNICALL
@@ -524,7 +634,12 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEnsureHeadlessConte
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
-    if (sHostEglContext != EGL_NO_CONTEXT) return JNI_TRUE;
+    /* Only the HEADLESS context short-circuits. A live window host is not
+     * enough: its context dies with its nativeDetach, and an ownerless
+     * panel that borrowed it would be left bound to a destroyed context.
+     * The headless context is never destroyed, so ownerless panels always
+     * get a stable trio (resolveFallbackEgl prefers it). */
+    if (sHeadlessEglContext != EGL_NO_CONTEXT) return JNI_TRUE;
     loadEgl();
     if (!eglAvailable || !pEglGetPlatformDisplayEXT) return JNI_FALSE;
 
@@ -583,8 +698,8 @@ Java_dev_nucleusframework_window_tao_NativeTaoGlBridge_nativeEnsureHeadlessConte
         pEglDestroySurface(dpy, surface);
         return JNI_FALSE;
     }
-    sHostEglDisplay = dpy;
-    sHostEglContext = ctx;
-    sHostEglConfig  = config;
+    /* No HWND (headless) — primes the global fallback only, not the
+     * per-HWND registry. registerHostEgl(NULL,...) handles that branch. */
+    registerHostEgl(NULL, dpy, ctx, config);
     return JNI_TRUE;
 }

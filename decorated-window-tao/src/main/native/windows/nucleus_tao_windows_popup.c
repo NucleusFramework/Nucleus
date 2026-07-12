@@ -640,6 +640,10 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridgeWindows_nativeCreatePanel(
     if (!p) { DestroyWindow(hwnd); return 0; }
     p->parent = parent;
     p->gl.hwnd = hwnd;
+    /* Borrow the EGL trio of THIS popup's parent host window (resolved
+     * per-HWND in createSurface), not the global — survives a sibling
+     * DecoratedDialog's attach/detach which would otherwise wipe it. */
+    p->gl.hostHwnd = parent;
     p->focusable = FALSE;
     p->contentX = 0;
     p->contentY = 0;

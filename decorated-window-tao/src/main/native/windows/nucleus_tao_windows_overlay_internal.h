@@ -27,6 +27,11 @@ extern "C" {
 
 typedef struct {
     HWND  hwnd;
+    /* The parent host window HWND this surface borrows its EGLContext
+     * from (the Tao main window that called nativeAttach). 0 for
+     * ownerless (tray) panels → createSurface falls back to the global
+     * host trio. Set by the caller before nucleus_tao_overlay_gl_init. */
+    HWND  hostHwnd;
     /* Opaque DcompSurface* owned by overlay_dcomp.cpp. */
     void *dcomp;
 } GlSurface;

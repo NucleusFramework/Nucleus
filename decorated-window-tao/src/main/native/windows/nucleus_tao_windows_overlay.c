@@ -492,6 +492,10 @@ Java_dev_nucleusframework_window_tao_NativeTaoWindowsOverlayBridge_nativeCreateO
      * polish (rounded corners, dark mode, extended frame for shadow) is
      * in effect on the very first paint. */
     s->gl.hwnd = hwnd;
+    /* Borrow the EGL trio of this overlay's owner host window, resolved
+     * per-HWND (see createSurface) so a sibling DecoratedDialog's
+     * attach/detach can't wipe it. */
+    s->gl.hostHwnd = owner;
     if (!nucleus_tao_overlay_gl_init(&s->gl, TRUE)) {
         /* Init failed — tear down everything we created and return 0. */
         unregisterOverlayFromOwner(s);
