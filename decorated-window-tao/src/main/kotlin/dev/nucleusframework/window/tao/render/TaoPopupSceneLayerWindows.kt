@@ -78,18 +78,58 @@ internal class TaoPopupSceneLayerWindows(
      * Created as a tiny offscreen HWND. The inner scene has real layout
      * constraints already, so the native surface doesn't need to start at
      * parent-window size.
+     *
+     * **Deferred out of the render pass**: Compose instantiates this layer
+     * inside [TaoComposeSceneHostWindows.onRedrawRequested]'s `sc.render()`
+     * call — i.e. mid GL-frame, while the host EGLContext is bound to the
+     * host window surface and Skia is mid-record. Allocating the popup's
+     * D3D11 texture + `eglCreatePbufferFromClientBuffer` +
+     * `CreateTargetForHwnd` + composition swapchain there touches ANGLE's
+     * D3D11 immediate context mid-frame, which intermittently fails
+     * (observed when a tooltip popup is torn down and re-created by the
+     * same recomposition — e.g. a theme switch on the hovered toggle).
+     * Instead the native HWND is created lazily from [renderFrame], which
+     * the host runs in its `popupRenderers` loop *after* `flushAndSubmit`
+     * — outside the GL record pass. Setters invoked during composition
+     * store their state and defer the matching native call until the panel
+     * exists. A creation failure degrades to a skipped frame (logged)
+     * rather than a fatal `require`.
      */
-    private val panelHandle: Long =
-        PopupNativeBridgeWindows
-            .nativeCreatePanel(
-                parentHwnd = host.parentHwnd,
-                xPx = -OFFSCREEN_OFFSET_PX,
-                yPx = -OFFSCREEN_OFFSET_PX,
-                widthPx = widthPx,
-                heightPx = heightPx,
-            ).also {
-                require(it != 0L) { "Failed to allocate popup HWND" }
-            }
+    private var panelHandle: Long = 0L
+
+    /** Set once [ensurePanel] fails, so we don't retry every frame. */
+    private var panelCreateFailed: Boolean = false
+
+    private fun ensurePanel(): Boolean {
+        if (panelHandle != 0L) return true
+        if (panelCreateFailed) return false
+        val handle =
+            PopupNativeBridgeWindows
+                .nativeCreatePanel(
+                    parentHwnd = host.parentHwnd,
+                    xPx = -OFFSCREEN_OFFSET_PX,
+                    yPx = -OFFSCREEN_OFFSET_PX,
+                    widthPx = widthPx,
+                    heightPx = heightPx,
+                )
+        if (handle == 0L) {
+            panelCreateFailed = true
+            System.err.println(
+                "Nucleus: nativeCreatePanel returned 0 (parentHwnd=${host.parentHwnd}); popup layer disabled",
+            )
+            return false
+        }
+        panelHandle = handle
+        // Replay the deferred state set during composition (init block below
+        // no longer touches the native panel — it didn't exist yet).
+        PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, PopupEventCallback())
+        PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, _focusable)
+        if (onOutsidePointerEvent != null) {
+            PopupNativeBridgeWindows.nativeInstallOutsideClickMonitor(panelHandle, PopupOutsideListener())
+        }
+        if (_bounds != IntRect.Zero) updateNativeFrame()
+        return true
+    }
 
     private val directContext: DirectContext = host.hostDirectContext
 
@@ -192,8 +232,10 @@ internal class TaoPopupSceneLayerWindows(
     }
 
     init {
-        PopupNativeBridgeWindows.nativeSetEventCallback(panelHandle, PopupEventCallback())
-        PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, _focusable)
+        // The native panel is created lazily in renderFrame (see ensurePanel),
+        // not here — the constructor runs inside sc.render() (mid GL-frame).
+        // Register the per-frame renderer + owner-move listener now; both
+        // defer / no-op until the panel exists.
         host.registerRenderer(rendererToken) { renderFrame() }
         host.registerOwnerMoveListener(moveListenerToken) {
             if (panelHandle != 0L && _bounds != IntRect.Zero) {
@@ -240,7 +282,7 @@ internal class TaoPopupSceneLayerWindows(
         get() = _focusable
         set(value) {
             _focusable = value
-            PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, value)
+            if (panelHandle != 0L) PopupNativeBridgeWindows.nativeSetFocusable(panelHandle, value)
         }
 
     override fun close() {
@@ -278,6 +320,7 @@ internal class TaoPopupSceneLayerWindows(
         onOutsidePointerEvent: ((eventType: PointerEventType, button: PointerButton?) -> Unit)?,
     ) {
         this.onOutsidePointerEvent = onOutsidePointerEvent
+        if (panelHandle == 0L) return // deferred to ensurePanel
         if (onOutsidePointerEvent != null) {
             PopupNativeBridgeWindows.nativeInstallOutsideClickMonitor(panelHandle, PopupOutsideListener())
         } else {
@@ -291,6 +334,7 @@ internal class TaoPopupSceneLayerWindows(
         if (released) return
         if (drawBounds == IntRect.Zero) return
         if (widthPx <= 0 || heightPx <= 0) return
+        if (!ensurePanel()) return
         if (!PopupNativeBridgeWindows.nativeMakeCurrent(panelHandle)) return
         directContext.resetGLAll()
 
@@ -335,6 +379,7 @@ internal class TaoPopupSceneLayerWindows(
     }
 
     private fun updateNativeFrame() {
+        if (panelHandle == 0L) return
         if (drawBounds == IntRect.Zero || _bounds == IntRect.Zero) return
         val offset = host.coordinateOffset
         PopupNativeBridgeWindows.nativeSetFrameInWindow(
