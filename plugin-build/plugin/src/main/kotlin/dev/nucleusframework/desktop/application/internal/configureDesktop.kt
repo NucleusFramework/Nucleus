@@ -21,6 +21,7 @@ internal fun configureDesktop(
     nucleusExtension: NucleusExtension,
 ) {
     if (nucleusExtension.isJvmApplicationInitialized) {
+        checkNoComposeDesktopApplication(project)
         val appInternal = nucleusExtension.application as JvmApplicationInternal
         val defaultBuildType = appInternal.data.buildTypes.default
         val appData = JvmApplicationContext(project, appInternal, defaultBuildType)
@@ -65,11 +66,15 @@ private fun propagateMainClassToComposeApplication(
     appInternal: JvmApplicationInternal,
 ) {
     val mainClass = appInternal.data.mainClass ?: return
-    val compose = project.extensions.findByName("compose") as? ExtensionAware ?: return
-    val desktop = compose.extensions.findByName("desktop") as? ExtensionAware ?: return
+    val desktop = composeDesktopExtension(project) ?: return
+    // Only forward when the Compose Desktop application has ALREADY been initialized
+    // (by an explicit `compose.desktop.application { }` block or the Hot Reload plugin).
+    // `desktop.application` is a lazy getter that initializes the extension as a side effect;
+    // triggering it here would make the Compose plugin register its own packaging tasks, which
+    // collide with Nucleus's identically-named ones. See [isComposeJvmApplicationInitialized].
+    if (!isComposeJvmApplicationInitialized(desktop)) return
     runCatching {
-        // `desktop.application` is lazy (org.jetbrains.compose.desktop.DesktopExtension).
-        // Accessing it via reflection avoids a compile-time dependency on the Compose plugin.
+        // Accessing via reflection avoids a compile-time dependency on the Compose plugin.
         val applicationGetter = desktop.javaClass.getMethod("getApplication")
         val composeApplication = applicationGetter.invoke(desktop) ?: return
         val mainClassSetter = composeApplication.javaClass.methods
@@ -78,6 +83,46 @@ private fun propagateMainClassToComposeApplication(
         mainClassSetter.invoke(composeApplication, mainClass)
     }
 }
+
+/**
+ * Fails with an actionable message when both `nucleus.application { }` and
+ * `compose.desktop.application { }` are configured in the same project. Nucleus ships its own
+ * (forked) Compose Desktop packaging and registers the same task names, so letting both DSLs
+ * drive packaging throws a cryptic `Cannot add task '…' as a task with that name already exists`.
+ * The Compose plugin itself can stay applied (for Hot Reload, IDE integration, `compose.desktop
+ * .currentOs`, …) — only its `application { }` packaging block must be removed.
+ */
+private fun checkNoComposeDesktopApplication(project: Project) {
+    val desktop = composeDesktopExtension(project) ?: return
+    if (!isComposeJvmApplicationInitialized(desktop)) return
+    error(
+        "Both `nucleus.application { }` and `compose.desktop.application { }` are configured in " +
+            "project '${project.path}'. Nucleus replaces Compose Desktop's packaging and registers " +
+            "the same Gradle tasks, so the two blocks conflict. Remove the " +
+            "`compose.desktop.application { }` block and configure packaging via " +
+            "`nucleus.application { }` instead — the Compose plugin can stay applied for Hot Reload " +
+            "and IDE integration, and `mainClass` is forwarded automatically.",
+    )
+}
+
+/** Returns the `compose.desktop` extension via reflection, or null when the Compose plugin is absent. */
+private fun composeDesktopExtension(project: Project): ExtensionAware? {
+    val compose = project.extensions.findByName("compose") as? ExtensionAware ?: return null
+    return compose.extensions.findByName("desktop") as? ExtensionAware
+}
+
+/**
+ * Reads Compose's internal `_isJvmApplicationInitialized` flag without initializing the lazy
+ * `application` extension (unlike calling `getApplication`, which would trigger the Compose plugin
+ * to register its packaging tasks). Returns false if the flag cannot be read.
+ */
+private fun isComposeJvmApplicationInitialized(desktop: ExtensionAware): Boolean =
+    runCatching {
+        desktop.javaClass
+            .getMethod("get_isJvmApplicationInitialized\$compose")
+            .invoke(desktop) as? Boolean
+            ?: false
+    }.getOrDefault(false)
 
 /**
  * Adds `-XstartOnFirstThread` to Compose Hot Reload's `JavaExec` tasks on macOS when the

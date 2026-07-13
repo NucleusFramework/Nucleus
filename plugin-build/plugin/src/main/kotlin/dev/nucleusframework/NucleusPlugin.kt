@@ -33,7 +33,11 @@ abstract class NucleusPlugin : Plugin<Project> {
             project.dependencies.extensions.add("nucleus", Dependencies(project))
         }
 
-        if (!project.buildFile.endsWith(".gradle.kts")) {
+        // `File.endsWith(String)` matches by path components, not by string suffix, so
+        // `buildFile.endsWith(".gradle.kts")` is always false and the Groovy DSL setup used to
+        // run for Kotlin DSL projects too — registering a `jetbrainsCompose` repositories
+        // extension that clashes with the Compose plugin when it is applied afterwards.
+        if (!project.buildFile.name.endsWith(".gradle.kts")) {
             setUpGroovyDslExtensions(project)
         }
 
