@@ -343,6 +343,17 @@ fun ApplicationScope.DecoratedWindow(
             window.hide()
         }
     }
+    // Dock-icon reference counting (macOS): a window that isn't hiddenFromDock
+    // contributes to the app's Dock icon while it is visible, so a menu-bar /
+    // agent app (nucleusApplication(dockIconFollowsWindows = true)) surfaces in
+    // the Dock only while a real window is on screen. Idle unless that opt-in is
+    // active; [TaoStandalonePopup] tray popups never route through here.
+    if (Platform.Current == Platform.MacOS && !hiddenFromDock) {
+        DisposableEffect(visible) {
+            if (visible) TaoDockPolicy.onWindowShown()
+            onDispose { if (visible) TaoDockPolicy.onWindowHidden() }
+        }
+    }
     LaunchedEffect(window, minimumSize) {
         if (minimumSize != null) {
             window.setMinimumSize(

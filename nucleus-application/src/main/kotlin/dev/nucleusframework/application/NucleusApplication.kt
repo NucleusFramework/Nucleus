@@ -41,6 +41,13 @@ fun nucleusApplication(
     backend: NucleusBackend = NucleusBackend.Auto,
     enableSingleInstance: Boolean = true,
     defaultLocale: Locale? = null,
+    // macOS + Tao backend only: run as a menu-bar / agent app whose Dock icon
+    // tracks window visibility. The app starts without a Dock icon (accessory
+    // policy) and shows one only while at least one [DecoratedWindow] with
+    // `hiddenFromDock = false` is visible; closing the last such window drops it
+    // back out of the Dock. Standalone tray popups never count. Ignored on the
+    // AWT backend and off macOS.
+    dockIconFollowsWindows: Boolean = false,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     GraalVmInitializer.initialize()
@@ -78,7 +85,7 @@ fun nucleusApplication(
     )
 
     when (resolved) {
-        NucleusBackend.Tao -> TaoLauncher.run(args, content)
+        NucleusBackend.Tao -> TaoLauncher.run(args, dockIconFollowsWindows, content)
         NucleusBackend.Awt, NucleusBackend.Auto ->
             application {
                 val nucleusScope = AwtNucleusApplicationScope(this, args)
