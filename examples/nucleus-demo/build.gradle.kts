@@ -210,6 +210,8 @@ nucleus.application {
 
             // --- Snap (NEW) ---
             snap {
+                // Override the Snap Store name when it differs from packageName (defaults to packageName).
+                // name = "nucleus-demo"
                 confinement = SnapConfinement.Strict
                 grade = SnapGrade.Stable
                 summary = "Nucleus demo"

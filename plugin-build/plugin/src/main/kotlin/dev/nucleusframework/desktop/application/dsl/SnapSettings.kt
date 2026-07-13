@@ -7,6 +7,18 @@ package dev.nucleusframework.desktop.application.dsl
 
 @Suppress("UnnecessaryAbstractClass") // Required abstract for Gradle ObjectFactory.newInstance()
 abstract class SnapSettings {
+    /**
+     * Snap name used in `meta/snap.yaml` and the Snap Store namespace.
+     *
+     * Defaults to the app's `packageName` when null. Set this when the Snap Store
+     * registration uses a name distinct from `packageName`.
+     *
+     * Note: electron-builder 26.x derives the snap name from the Linux `executableName`,
+     * so overriding this also renames the snap's launcher command and desktop entry.
+     * Must be a valid snap name (lowercase letters, digits and hyphens).
+     */
+    var name: String? = null
+
     /** Confinement level. Default: [SnapConfinement.Strict] */
     var confinement: SnapConfinement = SnapConfinement.Strict
 

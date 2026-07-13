@@ -413,7 +413,7 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
-                    executableName = executableName.orNull,
+                    executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
                     nsisProtocolInclude = nsisProtocolInclude,
@@ -1302,6 +1302,13 @@ abstract class AbstractElectronBuilderPackageTask
                 .imageType(BufferedImage.TYPE_INT_ARGB)
                 .asBufferedImage()
 
+        private fun resolveExecutableName(): String? =
+            resolveLinuxExecutableName(
+                targetFormat = targetFormat,
+                snapName = distributions?.linux?.snap?.name,
+                executableName = executableName.orNull,
+            )
+
         private fun ensureLinuxExecutableAlias(appDir: File) {
             if (currentOS != OS.Linux) return
 
@@ -1331,7 +1338,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             val relativePath = launcher.relativeTo(appDir).path
 
-            val aliasName = executableName.orNull ?: launcherName.toNpmPackageName()
+            val aliasName = resolveExecutableName() ?: launcherName.toNpmPackageName()
             val aliasFile = appDir.resolve(aliasName)
             if (aliasFile.exists()) return
 
@@ -1509,6 +1516,20 @@ abstract class AbstractElectronBuilderPackageTask
             return listOf(platformFlag, targetFormat.electronBuilderTarget)
         }
     }
+
+/**
+ * Resolves the Linux `executableName` handed to electron-builder.
+ *
+ * For the Snap target, a non-blank [snapName] takes precedence: electron-builder 26.x derives the
+ * snap name (`meta/snap.yaml` `name:` and the Snap Store namespace) from the executable name, so it
+ * is the only lever that renames the snap independently of `packageName`. See issue #244.
+ */
+internal fun resolveLinuxExecutableName(
+    targetFormat: TargetFormat,
+    snapName: String?,
+    executableName: String?,
+): String? =
+    if (targetFormat == TargetFormat.Snap && !snapName.isNullOrBlank()) snapName else executableName
 
 /**
  * Creates a task-private copy of the app image directory so that parallel
