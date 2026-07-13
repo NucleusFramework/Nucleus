@@ -1,3 +1,5 @@
+import org.gradle.kotlin.dsl.implementation
+import org.gradle.kotlin.dsl.project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -35,6 +37,10 @@ kotlin {
             dependencies {
                 implementation(compose.desktop.currentOs)
                 implementation(project(":nucleus-application"))
+                implementation(project(":decorated-window-core"))
+
+                implementation(project(":decorated-window-tao"))
+
             }
         }
     }
@@ -63,5 +69,35 @@ nucleus.application {
         cleanupNativeLibs = true
         packageName = "SampleCmp"
         packageVersion = "1.0.0"
+    }
+
+    graalvm {
+        isEnabled = true
+        javaLanguageVersion = 25
+        jvmVendor = JvmVendorSpec.BELLSOFT
+        imageName = "cmp-sample"
+        march = providers.gradleProperty("nativeMarch").getOrElse("compatibility")
+        buildArgs.addAll(
+            "-H:+AddAllCharsets",
+            "-Djava.awt.headless=false",
+            "-Os",
+            "-H:-IncludeMethodData",
+        )
+        nativeImageConfigBaseDir.set(
+            layout.projectDirectory.dir(
+                when {
+                    org.gradle.internal.os.OperatingSystem
+                        .current()
+                        .isMacOsX -> "src/main/resources-macos/META-INF/native-image"
+                    org.gradle.internal.os.OperatingSystem
+                        .current()
+                        .isWindows -> "src/main/resources-windows/META-INF/native-image"
+                    org.gradle.internal.os.OperatingSystem
+                        .current()
+                        .isLinux -> "src/main/resources-linux/META-INF/native-image"
+                    else -> throw GradleException("Unsupported OS")
+                },
+            ),
+        )
     }
 }

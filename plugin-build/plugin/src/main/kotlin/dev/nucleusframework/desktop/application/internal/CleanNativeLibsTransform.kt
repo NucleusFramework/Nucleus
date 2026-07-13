@@ -18,6 +18,7 @@ import org.gradle.api.artifacts.transform.TransformAction
 import org.gradle.api.artifacts.transform.TransformOutputs
 import org.gradle.api.artifacts.transform.TransformParameters
 import org.gradle.api.attributes.Attribute
+import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.file.FileSystemLocation
 import org.gradle.api.provider.Property
 import org.gradle.api.provider.Provider
@@ -205,6 +206,17 @@ internal fun registerCleanNativeLibsTransform(project: Project) {
         spec.parameters.targetArch.set(archName)
     }
 
+    // Kotlin Multiplatform desktop runtime classpaths resolve project dependencies to
+    // their `classes` + `resources` directory sub-variants (unlike plain JVM, which
+    // resolves to the jar variant). Those directories carry no `native-libs-cleaned`
+    // attribute, so requiring it makes artifact selection ambiguous, and the JAR-based
+    // transform can't clean directories anyway. Requesting the `jar` LibraryElements
+    // forces KMP project deps to resolve to their jar variant, restoring the same
+    // resolution as plain JVM so the cleanup transform applies uniformly.
+    val isMultiplatform = project.plugins.hasPlugin("org.jetbrains.kotlin.multiplatform")
+    val jarLibraryElements =
+        project.objects.named(LibraryElements::class.java, LibraryElements.JAR)
+
     project.configurations.configureEach { configuration ->
         val name = configuration.name
         if (name.endsWith("RuntimeClasspath", ignoreCase = true) && !name.contains("Test", ignoreCase = true)) {
@@ -219,6 +231,12 @@ internal fun registerCleanNativeLibsTransform(project: Project) {
             val isHotReload = name.contains("HotReload", ignoreCase = true)
             if (!isAndroid && !isHotReload) {
                 configuration.attributes.attribute(NATIVE_LIBS_CLEANED, true)
+                if (isMultiplatform) {
+                    configuration.attributes.attribute(
+                        LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE,
+                        jarLibraryElements,
+                    )
+                }
             }
         }
     }
