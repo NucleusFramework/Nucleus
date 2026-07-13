@@ -404,18 +404,18 @@ static void computeButtonMetrics(float titleBarHeight,
                                  float *outBtnWidth, float *outBtnHeight,
                                  float *outOffset) {
     float shrinkFactor = fminf(titleBarHeight / kMinHeightForFullSize, 1.0f);
-    // Traffic-lights are a fixed native size on macOS — they never scale with
-    // the title-bar height. Pinning the width to the native 14 pt (instead of
-    // titleBarHeight * 0.5) keeps them identical to windowed mode. Scaling the
-    // width down for a shorter fullscreen title bar combined with the -2 pt
-    // constant below flipped the aspect and stretched the pills horizontally
-    // (issue #310 follow-up: windowed was round via Auto Layout's intrinsic
-    // width, fullscreen forced a too-small frame).
-    *outBtnWidth  = kMinHeightForFullSize * 0.5f;
-    // JBR's correction: AppKit adds a constant 2 pt to the resulting frame
-    // height, so width * 14/12 - 2 keeps the circle perfectly round. Only
-    // valid at the native width, which is why the width is pinned above.
-    *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
+    // Traffic-lights size adapts to the title-bar height, capped at the
+    // native 14 pt width. Mirrors decorated-window-jni's implementation.
+    *outBtnWidth  = fminf(titleBarHeight * 0.5f, kMinHeightForFullSize * 0.5f);
+    if (isTahoeOrLater()) {
+        // JBR's correction: AppKit adds a constant 2 pt to the resulting frame
+        // height, so width * 14/12 - 2 keeps the circle perfectly round.
+        *outBtnHeight = (*outBtnWidth) * (14.0f / 12.0f) - 2.0f;
+    } else {
+        // Keep the pre-Tahoe native 14x16 pt aspect so the glyphs aren't
+        // squashed on older macOS.
+        *outBtnHeight = (*outBtnWidth) * (16.0f / 14.0f);
+    }
     *outOffset    = shrinkFactor * defaultButtonOffset();
 }
 
