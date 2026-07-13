@@ -1,0 +1,14 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.launcher.macos.NativeMacOsDockMenuBridge",
+            "jniAccessible": true,
+            "methods": [
+                {
+                    "name": "onMenuItemClicked",
+                    "parameterTypes": ["int"]
+                }
+            ]
+        }
+    ]
+}

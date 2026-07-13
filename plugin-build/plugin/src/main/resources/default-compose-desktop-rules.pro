@@ -252,7 +252,7 @@
 -keep class dev.nucleusframework.notification.common.** { *; }
 
 # Nucleus media-control JNI — native code uses FindClass(BRIDGE_CLASS) + static callbacks
--keep class dev.nucleusframework.mediacontrol.** { *; }
+-keep class dev.nucleusframework.media.control.** { *; }
 
 # Nucleus scheduler JNI
 -keep class dev.nucleusframework.scheduler.** { *; }
@@ -280,6 +280,28 @@
 }
 -keep class * implements dev.nucleusframework.launcher.windows.ThumbBarClickListener {
     void onThumbButtonClick(int);
+}
+
+# Nucleus menu-macos JNI — NativeNsMenuBridge is looked up by name from native
+# code (FindClass + GetStaticMethodID). The menu action/delegate callbacks fire
+# from AppKit into these @JvmStatic methods, so both the class name and the
+# method names must survive shrinking/obfuscation.
+-keep class dev.nucleusframework.menu.macos.NativeNsMenuBridge {
+    native <methods>;
+    static void onMenuItemAction(long);
+    static void onMenuWillOpen(long);
+    static void onMenuDidClose(long);
+    static void onMenuNeedsUpdate(long);
+    static void onMenuWillHighlightItem(long, long);
+    static int onNumberOfItemsInMenu(long);
+}
+
+# Nucleus launcher-macos JNI — NativeMacOsDockMenuBridge is looked up by name
+# from native code (FindClass + GetStaticMethodID); onMenuItemClicked is the
+# dock-menu action callback invoked from AppKit.
+-keep class dev.nucleusframework.launcher.macos.NativeMacOsDockMenuBridge {
+    native <methods>;
+    static void onMenuItemClicked(int);
 }
 
 -dontwarn sun.misc.Unsafe
