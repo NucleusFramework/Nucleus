@@ -1101,10 +1101,11 @@ abstract class AbstractElectronBuilderPackageTask
 
             return when (targetFormat) {
                 TargetFormat.Snap -> {
-                    if (!isCommandAvailable("snapcraft")) {
-                        logger.lifecycle("Skipping Snap packaging: 'snapcraft' is not available on this runner.")
-                        true
-                    } else if (currentArch == Arch.Arm64) {
+                    // electron-builder builds snaps with its bundled `app-builder` tool (downloading
+                    // its own snap template), and never invokes the `snapcraft` binary — so snapcraft
+                    // is not a prerequisite. arm64 stays unsupported because that template
+                    // (gnome-3-28-1804 build-snaps) is unavailable for the arch.
+                    if (currentArch == Arch.Arm64) {
                         logger.lifecycle(
                             "Skipping Snap packaging on arm64: electron-builder uses " +
                                 "build-snaps (gnome-3-28-1804) unavailable for arm64.",
