@@ -25,7 +25,10 @@ abstract class GraalvmSettings
         val javaLanguageVersion: Property<Int> = objects.notNullProperty(25)
         val jvmVendor: Property<JvmVendorSpec> = objects.nullableProperty()
         val imageName: Property<String> = objects.nullableProperty()
-        val march: Property<String> = objects.notNullProperty("native")
+        // Portable ISA baseline by default: the produced binary is meant to be distributed, so it
+        // must run on any x86-64 CPU. "native" optimizes for the build machine only and crashes on
+        // older CPUs ("does not support all of the following CPU features"). Override for local perf.
+        val march: Property<String> = objects.notNullProperty("compatibility")
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()
