@@ -94,7 +94,7 @@ object WindowsNotificationCenter {
         }
 
         initialized =
-            NativeWindowsNotificationBridge.nativeInitialize(
+            NativeWindowsNotificationBridge.initialize(
                 resolvedAumid,
                 isAppx,
                 resolvedAppName,
@@ -141,7 +141,7 @@ object WindowsNotificationCenter {
         val xml = ToastXmlBuilder.buildXml(content)
         val noOpCallback: (String?) -> Unit = {}
         val id = NativeWindowsNotificationBridge.registerCallback(callback ?: noOpCallback)
-        NativeWindowsNotificationBridge.nativeShowToast(
+        NativeWindowsNotificationBridge.showToast(
             xml = xml,
             tag = tag,
             group = group,
@@ -174,7 +174,7 @@ object WindowsNotificationCenter {
 
         val noOpCallback: (String?) -> Unit = {}
         val id = NativeWindowsNotificationBridge.registerCallback(callback ?: noOpCallback)
-        NativeWindowsNotificationBridge.nativeShowToast(
+        NativeWindowsNotificationBridge.showToast(
             xml = xml,
             tag = tag,
             group = group,
@@ -243,7 +243,7 @@ object WindowsNotificationCenter {
 
         val noOpCallback: (String?) -> Unit = {}
         val id = NativeWindowsNotificationBridge.registerCallback(callback ?: noOpCallback)
-        NativeWindowsNotificationBridge.nativeUpdateToast(
+        NativeWindowsNotificationBridge.updateToast(
             tag = tag,
             group = group,
             sequenceNumber = data.sequenceNumber,
@@ -261,19 +261,19 @@ object WindowsNotificationCenter {
         group: String = "",
     ) {
         if (!ensureReady(null)) return
-        NativeWindowsNotificationBridge.nativeRemoveToast(tag, group)
+        NativeWindowsNotificationBridge.removeToast(tag, group)
     }
 
     /** Remove all toasts in a group from Action Center. */
     fun removeGroup(group: String) {
         if (!ensureReady(null)) return
-        NativeWindowsNotificationBridge.nativeRemoveGroupToasts(group)
+        NativeWindowsNotificationBridge.removeGroupToasts(group)
     }
 
     /** Remove all toasts from Action Center for this app. */
     fun clearAll() {
         if (!ensureReady(null)) return
-        NativeWindowsNotificationBridge.nativeClearAllToasts()
+        NativeWindowsNotificationBridge.clearAllToasts()
     }
 
     // -- History --
@@ -289,7 +289,7 @@ object WindowsNotificationCenter {
             return
         }
         val id = NativeWindowsNotificationBridge.registerCallback(callback)
-        NativeWindowsNotificationBridge.nativeGetHistory(id)
+        NativeWindowsNotificationBridge.getHistory(id)
     }
 
     // -- Listeners --
@@ -312,7 +312,7 @@ object WindowsNotificationCenter {
      */
     fun uninitialize() {
         if (!isAvailable || !initialized) return
-        NativeWindowsNotificationBridge.nativeUninitialize()
+        NativeWindowsNotificationBridge.uninitialize()
         initialized = false
     }
 

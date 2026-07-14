@@ -4,6 +4,7 @@ package dev.nucleusframework.notification.windows
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 
@@ -16,6 +17,93 @@ internal object NativeWindowsNotificationBridge {
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeWindowsNotificationBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
+
+    /**
+     * All WinRT calls run on this single dedicated thread so that COM is initialized as MTA
+     * (a fresh thread with no prior apartment). This is essential under the Tao backend, where
+     * Compose event handlers run on the event-loop thread that winit has already initialized as
+     * STA via `OleInitialize`. Showing a toast on that STA thread binds the `ClassicCom` event
+     * handlers to it, so delivering the activation/dismissal events requires the thread to pump
+     * messages — which it cannot while blocked inside the click handler, freezing the whole UI
+     * until the user interacts with the toast. On a dedicated MTA thread the handlers are invoked
+     * on COM RPC pool threads, so no message pump is needed and the UI thread is never blocked.
+     */
+    private val comExecutor =
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "nucleus-winrt-notification").apply { isDaemon = true }
+        }
+
+    // -- Public API routed onto the COM (MTA) thread --
+
+    fun initialize(
+        aumid: String,
+        isAppx: Boolean,
+        appName: String,
+        shortcutPolicy: Int,
+    ): Boolean = comExecutor.submit<Boolean> { nativeInitialize(aumid, isAppx, appName, shortcutPolicy) }.get()
+
+    @Suppress("LongParameterList")
+    fun showToast(
+        xml: String,
+        tag: String,
+        group: String,
+        expiresOnReboot: Boolean,
+        expirationTimeMs: Long,
+        suppressPopup: Boolean,
+        dataKeys: Array<String>,
+        dataValues: Array<String>,
+        dataSequenceNumber: Int,
+        callbackId: Long,
+    ) {
+        comExecutor.execute {
+            nativeShowToast(
+                xml,
+                tag,
+                group,
+                expiresOnReboot,
+                expirationTimeMs,
+                suppressPopup,
+                dataKeys,
+                dataValues,
+                dataSequenceNumber,
+                callbackId,
+            )
+        }
+    }
+
+    fun updateToast(
+        tag: String,
+        group: String,
+        sequenceNumber: Int,
+        keys: Array<String>,
+        values: Array<String>,
+        callbackId: Long,
+    ) {
+        comExecutor.execute { nativeUpdateToast(tag, group, sequenceNumber, keys, values, callbackId) }
+    }
+
+    fun removeToast(
+        tag: String,
+        group: String,
+    ) {
+        comExecutor.execute { nativeRemoveToast(tag, group) }
+    }
+
+    fun removeGroupToasts(group: String) {
+        comExecutor.execute { nativeRemoveGroupToasts(group) }
+    }
+
+    fun clearAllToasts() {
+        comExecutor.execute { nativeClearAllToasts() }
+    }
+
+    fun getHistory(callbackId: Long) {
+        comExecutor.execute { nativeGetHistory(callbackId) }
+    }
+
+    fun uninitialize() {
+        comExecutor.submit { nativeUninitialize() }.get()
+    }
 
     // Listeners for toast events
     private val listeners = ConcurrentHashMap.newKeySet<ToastNotificationListener>()
@@ -49,7 +137,7 @@ internal object NativeWindowsNotificationBridge {
      * For packaged apps (MSIX), pass an empty string and isAppx=true.
      */
     @JvmStatic
-    external fun nativeInitialize(
+    private external fun nativeInitialize(
         aumid: String,
         isAppx: Boolean,
         appName: String,
@@ -69,7 +157,7 @@ internal object NativeWindowsNotificationBridge {
      */
     @JvmStatic
     @Suppress("LongParameterList")
-    external fun nativeShowToast(
+    private external fun nativeShowToast(
         xml: String,
         tag: String,
         group: String,
@@ -93,7 +181,7 @@ internal object NativeWindowsNotificationBridge {
      * @param callbackId Callback ID for result notification.
      */
     @JvmStatic
-    external fun nativeUpdateToast(
+    private external fun nativeUpdateToast(
         tag: String,
         group: String,
         sequenceNumber: Int,
@@ -109,7 +197,7 @@ internal object NativeWindowsNotificationBridge {
      * @param group Notification group.
      */
     @JvmStatic
-    external fun nativeRemoveToast(
+    private external fun nativeRemoveToast(
         tag: String,
         group: String,
     )
@@ -118,26 +206,26 @@ internal object NativeWindowsNotificationBridge {
      * Remove all toasts in a specific group from Action Center.
      */
     @JvmStatic
-    external fun nativeRemoveGroupToasts(group: String)
+    private external fun nativeRemoveGroupToasts(group: String)
 
     /**
      * Remove all toasts from Action Center for this app.
      */
     @JvmStatic
-    external fun nativeClearAllToasts()
+    private external fun nativeClearAllToasts()
 
     /**
      * Get the history of notifications in Action Center.
      * Results are delivered via [onHistoryResult] callback.
      */
     @JvmStatic
-    external fun nativeGetHistory(callbackId: Long)
+    private external fun nativeGetHistory(callbackId: Long)
 
     /**
      * Clean up native resources. Call on app shutdown.
      */
     @JvmStatic
-    external fun nativeUninitialize()
+    private external fun nativeUninitialize()
 
     // =========================================================================
     // Callbacks from native code
