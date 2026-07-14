@@ -29,6 +29,14 @@ abstract class GraalvmSettings
         // must run on any x86-64 CPU. "native" optimizes for the build machine only and crashes on
         // older CPUs ("does not support all of the following CPU features"). Override for local perf.
         val march: Property<String> = objects.notNullProperty("compatibility")
+
+        // Optimize the native image for binary size (`-Os`) instead of the default speed-oriented
+        // `-O2`. On Compose images this typically trims 20–30% off the executable. The runtime cost
+        // is negligible for desktop apps, where most work happens in Skiko's native code (unaffected
+        // by this flag). Opt-in: leave off to keep the speed-optimized default. Any `-O*` passed
+        // explicitly via [buildArgs] takes precedence.
+        val optimizeForSize: Property<Boolean> = objects.notNullProperty(false)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()

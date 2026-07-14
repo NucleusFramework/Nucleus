@@ -649,6 +649,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
             val resolvedMarch = graalvm.march.get()
+            val resolvedOptimizeForSize = graalvm.optimizeForSize.get()
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
@@ -684,6 +685,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         add("-o")
                         add(File(outputDir, resolvedImageName).absolutePath)
                         add("-march=$resolvedMarch")
+
+                        // Optimize for binary size. Placed before user buildArgs so an explicit
+                        // -O* in buildArgs overrides it (native-image honors the last -O* flag).
+                        if (resolvedOptimizeForSize) {
+                            add("-Os")
+                        }
 
                         // macOS: force the link-time deployment target. native-image does NOT
                         // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
@@ -1032,6 +1039,21 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             isIgnoreExitValue = true
         }
 
+    // Strip local symbols from the main Mach-O binary (-x keeps external/global symbols needed by
+    // the flat-namespace AWT dylibs and the cursor stub). native-image emits no separate debug
+    // info without -g, so the local symbol table is dead weight. Must run after the vtool/rpath
+    // edits and before the ad-hoc codesign, which re-signs the whole bundle afterwards.
+    val stripBinary =
+        tasks.register<Exec>(
+            taskNameAction = "strip",
+            taskNameObject = "graalvmBinary",
+        ) {
+            description = "Strip local symbols from the native image binary"
+            dependsOn(patchBuildVersion, fixRpath)
+            val binary = appBundleDir.map { it.file("MacOS/${imageName.get()}") }
+            commandLine("strip", "-x", binary.get().asFile.absolutePath)
+        }
+
     // Generate Info.plist — all DSL values are captured at configuration time
     // to avoid serializing Project/SourceSet references into the configuration cache.
     val plistBundleName: String = app.nativeDistributions.appName ?: app.nativeDistributions.packageName ?: project.name
@@ -1244,7 +1266,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             taskNameObject = "graalvmBundle",
         ) {
             description = "Ad-hoc sign the entire .app bundle"
-            dependsOn(codesignDylibs, copyBinary, fixRpath, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
+            dependsOn(codesignDylibs, copyBinary, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
             copyFileAssociationIcons?.let { dependsOn(it) }
             val bundleDir = appTmpDir.map { it.dir("graalvm/output/${appBundleName.get()}") }
             commandLine("codesign", "--force", "--deep", "--sign", "-", bundleDir.get().asFile.absolutePath)
@@ -1261,6 +1283,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             copyJawtToLib,
             copySkikoLib,
             stripDylibs,
+            stripBinary,
             patchBuildVersion,
             codesignDylibs,
             codesignBundle,
@@ -1545,12 +1568,27 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             commandLine("bash", "-c", "strip --strip-debug '${outputDir.get().asFile.absolutePath}'/*.so")
         }
 
+    // Strip the main native-image executable. Unlike the companion .so libs, the ELF binary
+    // carries a full .symtab (native-image emits no separate debug info without -g), so a plain
+    // strip removes the symbol table and reclaims tens of MB. Runs after patchelf so the RPATH
+    // edit is preserved.
+    val stripBinary =
+        tasks.register<Exec>(
+            taskNameAction = "strip",
+            taskNameObject = "graalvmBinary",
+        ) {
+            description = "Strip symbols from the native image executable"
+            dependsOn(copyBinary, fixRpath)
+            val binary = outputDir.map { it.file(imageName.get()) }
+            commandLine("strip", binary.get().asFile.absolutePath)
+        }
+
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with .so libs"
-        dependsOn(copyBinary, copyAwtSoLibs, copyJvmSo, copyJawtToLib, copySkikoLib, fixRpath, fixSoRpath, stripSoLibs)
+        dependsOn(copyBinary, copyAwtSoLibs, copyJvmSo, copyJawtToLib, copySkikoLib, fixRpath, fixSoRpath, stripSoLibs, stripBinary)
     }
 }
 
