@@ -41,6 +41,12 @@ object TaoApplication {
         // pump would race the very first `NavHost.setGraph` → `addObserver`
         // call on real apps.
         TaoMainDispatcher.taoMainThread = Thread.currentThread()
+        // Hand queue draining over to the native loop: from here `dispatch`
+        // wakes Tao and `pump()` drains `pending`, instead of the pre-loop
+        // fallback thread (see TaoMainDispatcher, issue #337). Done *before*
+        // Lifecycle priming so the fallback is fully quiesced and cannot
+        // re-poison `MainDispatcherChecker` after we prime it below.
+        TaoMainDispatcher.onNativeLoopStarting()
         // Pre-seed Lifecycle's MainDispatcherChecker so its lazy
         // `runBlocking(Dispatchers.Main.immediate)` probe never fires from
         // inside the pump — on Lifecycle 2.10.x that probe deadlocks the

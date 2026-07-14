@@ -3,10 +3,15 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
+
+private const val FALLBACK_QUIESCE_TIMEOUT_SECONDS = 2L
+private const val FALLBACK_THREAD_NAME = "Nucleus-Tao-Main-Fallback"
 
 /**
  * Coroutine dispatcher that posts blocks onto the Tao main thread.
@@ -25,7 +30,10 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
     /**
      * Thread reference for the Tao main thread. Captured eagerly from
      * [TaoApplication.run] before [NativeTaoBridge.nativeRunBlocking] takes the
-     * thread over, so it is non-null as soon as user composition runs.
+     * thread over, so it is non-null as soon as user composition runs. When
+     * `Dispatchers.Main` is used before any loop starts, the pre-loop fallback
+     * thread captures itself here instead; [TaoApplication.run] later overwrites
+     * it with the real main thread.
      *
      * Consumed by [TaoMainCoroutineDispatcher.isDispatchNeeded] and by
      * downstream `Dispatchers.Main` resolvers (most notably AndroidX
@@ -35,6 +43,89 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
     @Volatile
     @JvmField
     internal var taoMainThread: Thread? = null
+
+    /**
+     * `true` once [TaoApplication.run] is about to hand the main thread to the
+     * native Tao event loop (which drains [pending] via [pump] on every
+     * `MAIN_EVENTS_CLEARED` tick). Until then the loop is not running, so a
+     * fallback thread drains the queue instead — see [dispatch].
+     *
+     * Without this, adding `nucleus.decorated-window-tao` to the classpath makes
+     * [TaoMainDispatcherFactory] win the `Dispatchers.Main` ServiceLoader pick,
+     * but any `Dispatchers.Main` use *before* (or entirely without) a running
+     * loop would enqueue forever with nothing to drain it — e.g. a bare
+     * `runBlocking(Dispatchers.Main) { … }` hangs indefinitely (issue #337).
+     */
+    @Volatile
+    private var loopRunning = false
+
+    /**
+     * Coalesces fallback-drain submissions. Reset at the very start of the
+     * drain task (before draining) so any dispatch racing the drain re-arms a
+     * fresh task instead of being lost.
+     */
+    private val fallbackDrainPending = AtomicBoolean(false)
+
+    /**
+     * Single daemon thread that drains [pending] while the native Tao loop is
+     * not running. It becomes the [taoMainThread] for the loop-less case so
+     * that `Dispatchers.Main.immediate` re-entrancy (e.g. AndroidX Lifecycle's
+     * `runBlocking(Dispatchers.Main.immediate)` probe) runs inline instead of
+     * deadlocking on the single executor thread.
+     *
+     * Lazily created on first pre-loop dispatch and torn down again by
+     * [onNativeLoopStarting] once the native loop takes over, so it is not left
+     * parked for the whole app lifetime. Lifecycle transitions are guarded by
+     * [fallbackLock].
+     */
+    private val fallbackLock = Any()
+    private var fallbackExecutor: ExecutorService? = null
+
+    /**
+     * Marks the native Tao loop as the active drainer. Called by
+     * [TaoApplication.run] right before `nativeRunBlocking`, after the real main
+     * thread has been captured into [taoMainThread].
+     *
+     * From this point [dispatch] wakes the native loop and the fallback drain is
+     * retired. The fallback executor is shut down and **awaited** so no block
+     * runs on the fallback thread once the native loop owns the main thread —
+     * this both preserves main-thread affinity and, since it runs before
+     * `LifecycleMainDispatcherPriming`, prevents a late fallback block from
+     * re-poisoning AndroidX Lifecycle's `MainDispatcherChecker`. Any blocks the
+     * fallback left behind are handed to [pump] via [wakeNativeForLeftovers].
+     */
+    internal fun onNativeLoopStarting() {
+        loopRunning = true
+        val executor = synchronized(fallbackLock) { fallbackExecutor.also { fallbackExecutor = null } }
+        if (executor != null) {
+            executor.shutdown()
+            try {
+                if (!executor.awaitTermination(FALLBACK_QUIESCE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+                    executor.shutdownNow()
+                }
+            } catch (_: InterruptedException) {
+                executor.shutdownNow()
+                Thread.currentThread().interrupt()
+            }
+        }
+        wakeNativeForLeftovers()
+    }
+
+    /**
+     * Wakes the native loop when it is the active drainer and [pending] still
+     * holds blocks the fallback did not drain (or that arrived during the
+     * hand-off). Without this the leftover blocks would sit undrained until an
+     * unrelated OS event happened to fire `MAIN_EVENTS_CLEARED`.
+     */
+    private fun wakeNativeForLeftovers() {
+        if (loopRunning &&
+            !pending.isEmpty() &&
+            NativeTaoBridge.isLoaded &&
+            wakePending.compareAndSet(false, true)
+        ) {
+            NativeTaoBridge.nativeWake()
+        }
+    }
 
     /**
      * Coalesces native wake calls within a single pump cycle. Set on the
@@ -88,13 +179,85 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         block: Runnable,
     ) {
         pending.offer(block)
-        // Wake the Tao event loop. Tao runs with `ControlFlow::Wait` and
-        // would otherwise sleep until an OS event arrives, leaving this
-        // block undrained whenever no window is currently driving the loop
-        // (e.g. before the first frame, or after the last window closes).
-        if (NativeTaoBridge.isLoaded && wakePending.compareAndSet(false, true)) {
-            NativeTaoBridge.nativeWake()
+        if (loopRunning) {
+            // Wake the Tao event loop. Tao runs with `ControlFlow::Wait` and
+            // would otherwise sleep until an OS event arrives, leaving this
+            // block undrained whenever no window is currently driving the loop
+            // (e.g. before the first frame, or after the last window closes).
+            if (NativeTaoBridge.isLoaded && wakePending.compareAndSet(false, true)) {
+                NativeTaoBridge.nativeWake()
+            }
+        } else {
+            // The native loop is not running yet (or never will — e.g. a bare
+            // `runBlocking(Dispatchers.Main) { … }` with no `nucleusApplication`).
+            // Drive the queue on a dedicated fallback thread so Dispatchers.Main
+            // works regardless. Handed off to `pump()` once the loop starts.
+            scheduleFallbackDrain()
         }
+    }
+
+    private fun scheduleFallbackDrain() {
+        if (!fallbackDrainPending.compareAndSet(false, true)) return
+        // Resolve (creating on demand) the executor under the lock so we never
+        // race onNativeLoopStarting's shutdown. If the loop has since taken
+        // over, there is nothing to schedule — hand the block to pump() instead.
+        val executor =
+            synchronized(fallbackLock) {
+                if (loopRunning) null else fallbackExecutor ?: newFallbackExecutor().also { fallbackExecutor = it }
+            }
+        if (executor == null) {
+            fallbackDrainPending.set(false)
+            wakeNativeForLeftovers()
+            return
+        }
+        try {
+            executor.execute {
+                // Reset before draining so a dispatch racing this task re-arms
+                // a fresh drain rather than being dropped.
+                fallbackDrainPending.set(false)
+                if (taoMainThread == null) {
+                    taoMainThread = Thread.currentThread()
+                }
+                drainFallback()
+            }
+        } catch (_: RejectedExecutionException) {
+            // onNativeLoopStarting shut the executor down between the lock and
+            // here; the loop now owns draining.
+            fallbackDrainPending.set(false)
+            wakeNativeForLeftovers()
+        }
+    }
+
+    private fun newFallbackExecutor(): ExecutorService =
+        Executors.newSingleThreadExecutor { r ->
+            Thread(r, FALLBACK_THREAD_NAME).apply { isDaemon = true }
+        }
+
+    /**
+     * Drains [pending] on the fallback thread until the queue empties or the
+     * native loop takes over ([loopRunning]). If the loop took over mid-drain,
+     * any blocks left behind are handed to the first [pump] via
+     * [wakeNativeForLeftovers] rather than relying on an incidental
+     * `MAIN_EVENTS_CLEARED` tick.
+     */
+    private fun drainFallback() {
+        var ranAnything = false
+        while (!loopRunning) {
+            val block = pending.poll() ?: break
+            ranAnything = true
+            @Suppress("TooGenericExceptionCaught", "PrintStackTrace")
+            try {
+                block.run()
+            } catch (t: Throwable) {
+                // Match pump(): dispatchers swallow synchronous throwables so a
+                // single failing block never kills the drain.
+                t.printStackTrace()
+            }
+        }
+        if (ranAnything) {
+            Snapshot.sendApplyNotifications()
+        }
+        wakeNativeForLeftovers()
     }
 
     /** Drains everything currently pending. New blocks dispatched while
