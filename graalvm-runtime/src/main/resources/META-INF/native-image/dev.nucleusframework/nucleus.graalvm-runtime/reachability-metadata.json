@@ -1,4 +1,17 @@
 {
+    "reflection": [
+        {
+            "type": "com.sun.media.sound.DirectAudioDeviceProvider",
+            "methods": [ { "name": "<init>", "parameterTypes": [] } ]
+        },
+        {
+            "type": "com.sun.media.sound.PortMixerProvider",
+            "methods": [ { "name": "<init>", "parameterTypes": [] } ]
+        }
+    ],
+    "resources": [
+        { "glob": "META-INF/services/javax.sound.sampled.spi.MixerProvider" }
+    ],
     "serialization": [
         { "type": "java.lang.String" },
         { "type": "java.lang.Object" },
