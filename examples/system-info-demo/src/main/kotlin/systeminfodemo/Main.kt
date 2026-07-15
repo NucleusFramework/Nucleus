@@ -15,7 +15,7 @@ import systeminfodemo.ui.buildIslandsTheme
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 fun main() =
-    nucleusApplication(backend = NucleusBackend.Awt) {
+    nucleusApplication(backend = NucleusBackend.Tao) {
         val (theme, styling) = buildIslandsTheme()
 
         @Suppress("DEPRECATION")

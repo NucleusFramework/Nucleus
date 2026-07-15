@@ -17,7 +17,7 @@ dependencies {
     implementation(project(":system-color"))
     implementation(project(":system-info"))
     implementation(project(":decorated-window-jewel"))
-    implementation(project(":decorated-window-jni"))
+    implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
 
     val jewelExclusions =
