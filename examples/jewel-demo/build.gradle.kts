@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.SigningAlgorithm
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -107,7 +108,7 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "jewel-sample"
-        optimizeForSize = true
+        optimization = NativeImageOptimization.SIZE
 
     }
 

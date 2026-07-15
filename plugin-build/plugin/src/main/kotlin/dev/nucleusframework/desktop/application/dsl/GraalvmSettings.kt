@@ -30,12 +30,12 @@ abstract class GraalvmSettings
         // older CPUs ("does not support all of the following CPU features"). Override for local perf.
         val march: Property<String> = objects.notNullProperty("compatibility")
 
-        // Optimize the native image for binary size (`-Os`) instead of the default speed-oriented
-        // `-O2`. On Compose images this typically trims 20–30% off the executable. The runtime cost
-        // is negligible for desktop apps, where most work happens in Skiko's native code (unaffected
-        // by this flag). Opt-in: leave off to keep the speed-optimized default. Any `-O*` passed
-        // explicitly via [buildArgs] takes precedence.
-        val optimizeForSize: Property<Boolean> = objects.notNullProperty(false)
+        // Optimization level for native-image (the `-O*` flag). Leave unset to keep native-image's
+        // own default (`-O2`). Use [NativeImageOptimization.SIZE] to shrink Compose images (~20–30%),
+        // [NativeImageOptimization.LEVEL_3] for peak runtime performance (Oracle GraalVM only), or
+        // [NativeImageOptimization.QUICK_BUILD] for fast local iteration. Any `-O*` passed explicitly
+        // via [buildArgs] still takes precedence (native-image honors the last `-O*` flag).
+        val optimization: Property<NativeImageOptimization> = objects.nullableProperty()
 
         // Embed every JDK charset in the image (`-H:+AddAllCharsets`). native-image otherwise ships
         // only a minimal set (US-ASCII, ISO-8859-1, UTF-8, UTF-16 + platform default); any other

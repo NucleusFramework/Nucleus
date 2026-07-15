@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 
 plugins {
@@ -85,7 +86,7 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "compose-demo"
-        optimizeForSize = true
+        optimization = NativeImageOptimization.SIZE
     }
 
     nativeDistributions {

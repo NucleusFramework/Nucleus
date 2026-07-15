@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.gradle.kotlin.dsl.implementation
 import org.gradle.kotlin.dsl.project
@@ -68,7 +69,7 @@ nucleus.application {
     mainClass = "com.example.samplecmp.MainKt"
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb, TargetFormat.Rpm)
         cleanupNativeLibs = true
         packageName = "SampleCmp"
         packageVersion = "1.0.0"
@@ -86,6 +87,6 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "cmp-sample"
-        optimizeForSize = true
+        optimization = NativeImageOptimization.SIZE
     }
 }

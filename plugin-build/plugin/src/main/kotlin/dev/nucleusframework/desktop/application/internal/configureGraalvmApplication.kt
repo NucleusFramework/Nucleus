@@ -669,7 +669,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
             val resolvedMarch = graalvm.march.get()
-            val resolvedOptimizeForSize = graalvm.optimizeForSize.get()
+            val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedImageName = imageName.get()
@@ -708,10 +708,10 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         add(File(outputDir, resolvedImageName).absolutePath)
                         add("-march=$resolvedMarch")
 
-                        // Optimize for binary size. Placed before user buildArgs so an explicit
-                        // -O* in buildArgs overrides it (native-image honors the last -O* flag).
-                        if (resolvedOptimizeForSize) {
-                            add("-Os")
+                        // Optimization level. Placed before user buildArgs so an explicit -O* in
+                        // buildArgs overrides it (native-image honors the last -O* flag).
+                        if (resolvedOptimizationFlag != null) {
+                            add(resolvedOptimizationFlag)
                         }
 
                         // Embed all JDK charsets when the app needs legacy encodings.
