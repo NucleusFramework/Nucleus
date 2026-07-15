@@ -45,6 +45,15 @@ abstract class GraalvmSettings
         // Costs a few MB (mostly CJK tables). Off by default to match GraalVM's default.
         val allCharsets: Property<Boolean> = objects.notNullProperty(false)
 
+        // Oracle GraalVM applies a Machine-Learning-inferred PGO profile by default at `-O2` when no
+        // real profile (`--pgo`) is supplied — the build log then reports `PGO: ML-inferred`. It is a
+        // static, pre-trained branch-frequency guess (no instrumentation, no profiling run) and is
+        // generally a small win, but it is Oracle-specific and non-deterministic across GraalVM
+        // versions. Set to `false` to opt out (`-H:-MLProfileInference`), yielding `PGO: off`. Only
+        // effective at optimization levels that run the ML pass (i.e. `-O2`); ignored under `-Os`.
+        // Defaults to `true` to match Oracle GraalVM's out-of-the-box behavior.
+        val mlProfileInference: Property<Boolean> = objects.notNullProperty(true)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()

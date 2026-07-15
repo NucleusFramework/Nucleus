@@ -671,6 +671,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMarch = graalvm.march.get()
             val resolvedOptimizeForSize = graalvm.optimizeForSize.get()
             val resolvedAllCharsets = graalvm.allCharsets.get()
+            val resolvedMlProfileInference = graalvm.mlProfileInference.get()
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
@@ -716,6 +717,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // Embed all JDK charsets when the app needs legacy encodings.
                         if (resolvedAllCharsets) {
                             add("-H:+AddAllCharsets")
+                        }
+
+                        // Opt out of Oracle GraalVM's default ML-inferred PGO profile. Placed before
+                        // user buildArgs so an explicit override there still wins.
+                        if (!resolvedMlProfileInference) {
+                            add("-H:-MLProfileInference")
                         }
 
                         // macOS: force the link-time deployment target. native-image does NOT
