@@ -127,6 +127,15 @@ internal class TaoComposeSceneHostWindows(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
+    /** True while the OS modal resize/move loop is active. */
+    private var resizeLoopActive: Boolean = false
+
+    /** Monotonic ns of the last applied resize frame; gates the WM_SIZE flood. */
+    private var lastResizeApplyNs: Long = 0L
+
+    /** A size change awaits push into the GL surface + ComposeScene at the next paint. */
+    private var pendingResizeApply: Boolean = false
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -184,7 +193,10 @@ internal class TaoComposeSceneHostWindows(
     // eglSwapBuffers pace off the display refresh, which keeps Compose
     // animations (smooth scroll, etc.) aligned on the display cadence at the
     // monitor's native refresh rate (60/120/144/240 Hz — one frame per VBlank).
-    // The present runs INLINE on the event-loop thread: a cross-thread present
+    // VSync stays on during the OS modal resize/move loop too: pacing the
+    // per-WM_SIZE present at the display rate is what keeps the resize from
+    // leaking native memory under native-image (see onResizeLoopChanged). The
+    // present runs INLINE on the event-loop thread: a cross-thread present
     // on ANGLE's shared per-display D3D11 device deadlocks the global display
     // lock (seen when a sibling host such as a DecoratedDialog detaches).
     // ANGLE's eglSwapBuffers paces fine inline — the input starvation that
@@ -220,7 +232,17 @@ internal class TaoComposeSceneHostWindows(
                 null
             }
         attachmentHandle = handle
-        directContext = ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")
+        directContext = (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
+            // Bound the GPU resource cache. Each frame wraps the default
+            // framebuffer in a fresh BackendRenderTarget + Surface, and Skia
+            // allocates a stencil/scratch attachment sized to the current
+            // window for it. During a border drag every new window size mints
+            // new scratch resources; even with VSync pacing the present (see
+            // onResizeLoopChanged) an explicit budget forces purgeAsNeeded on
+            // each flush so the cache stays bounded, and onResizeLoopChanged
+            // additionally purges the scratch accumulated across the drag.
+            it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+        }
         attachedHostCount.incrementAndGet()
 
         @OptIn(ExperimentalComposeUiApi::class)
@@ -788,46 +810,69 @@ internal class TaoComposeSceneHostWindows(
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
-        scene?.size = IntSize(widthPx, heightPx)
-        updateWindowInfoSize()
+        // The GL surface child + ComposeScene size are pushed in
+        // onRedrawRequested (see the pendingResizeApply block there), so a
+        // throttled or async paint always renders the freshest size and keeps
+        // the surface resize + present atomic (no black edge).
+        pendingResizeApply = true
 
-        NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        // Paint synchronously instead of deferring via requestRedraw().
-        //
-        // WM_SIZE dispatches Resized -> onResized synchronously on the GL
-        // thread (the Tao runner only buffers events when re-entered from its
-        // own handler, which the OS modal size loop is not). `nativeResize`
-        // just grew the render-surface child HWND; ANGLE, however, only resizes
-        // and re-presents its D3D11 swap chain on the next eglSwapBuffers. If we
-        // returned to DefWindowProc now and left the present to a later
-        // WM_PAINT-driven RedrawRequested, DWM would composite the freshly
-        // exposed strip of the enlarged surface before the swap chain caught up
-        // — the black edge seen while dragging a border. Rendering here closes
-        // that gap: the swap chain is resized and a full-size frame presented
-        // before the WndProc returns. It also removes the async request-redraw
-        // round trip (and its `redrawPending` coalescing), which starved paints
-        // during a fast-resize message flood.
+        // Cap the resize render/remeasure rate during the OS modal resize/move
+        // loop. VSync paces the present at the display refresh (see
+        // onResizeLoopChanged), but a fast border drag still floods WM_SIZE, so
+        // coalesce: only let a resize frame through every RESIZE_APPLY_INTERVAL_NS.
+        // Every scene remeasure rebuilds size-dependent content whose Skia-backed
+        // native objects are reclaimed lazily by the skiko Cleaner after a GC;
+        // the coalesced trailing size is flushed by the async redraw below and,
+        // on drag end, by onResizeLoopChanged.
+        if (resizeLoopActive) {
+            val now = System.nanoTime()
+            if (now - lastResizeApplyNs < RESIZE_APPLY_INTERVAL_NS) {
+                window.requestRedraw()
+                return
+            }
+            lastResizeApplyNs = now
+        }
         onRedrawRequested()
     }
 
     /**
      * Enter/leave the OS modal resize/move loop (WM_ENTERSIZEMOVE /
-     * WM_EXITSIZEMOVE). VSync is dropped while the loop is active so the
-     * synchronous per-WM_SIZE present in [onResized] doesn't block on the
-     * display refresh — the window edge tracks the cursor with no added
-     * latency. Every WM_SIZE is resized and painted atomically; allowing the
-     * scene size to advance while the ANGLE child surface remains at an older
-     * size makes DWM stretch the old frame and visibly shifts the title bar.
-     * On exit VSync is restored and the final size is presented once more.
+     * WM_EXITSIZEMOVE). VSync stays **enabled** throughout — the per-WM_SIZE
+     * present paces off the display refresh, exactly like macOS (CVDisplayLink)
+     * and the Linux EGL swap thread. Dropping VSync here let the modal loop
+     * render at ~1 kHz: every new window size minted a fresh
+     * BackendRenderTarget + Surface whose Skia GPU scratch and Compose layer
+     * backings are reclaimed only lazily, and under native-image's Serial GC
+     * that reclamation never caught up for lean apps — the process climbed
+     * past 1 GB and stayed there. Pacing the resize at the display rate keeps
+     * allocation within what the GC/Cleaner can reclaim, matching the
+     * non-leaking platforms. Every WM_SIZE is still resized and painted
+     * atomically; allowing the scene size to advance while the ANGLE child
+     * surface remains at an older size makes DWM stretch the old frame and
+     * visibly shifts the title bar.
      */
     fun onResizeLoopChanged(active: Boolean) {
         if (attachmentHandle == 0L) return
+        resizeLoopActive = active
         if (active) {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            // VSync stays on — see the doc above. The throttle in [onResized]
+            // coalesces the WM_SIZE flood so only display-rate-paced frames
+            // actually render.
         } else {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
-            NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+            // Flush the settled size once: the last WM_SIZE of the drag may have
+            // been coalesced by the throttle in onResized, so force the final
+            // dimensions into the surface + scene and paint them.
+            pendingResizeApply = true
             onRedrawRequested()
+            // Reclaim the per-size scratch (stencil/render-target attachments)
+            // accumulated across the drag. Toggling the limit to 0 runs
+            // purgeAsNeeded synchronously, freeing every unlocked resource; the
+            // next frame re-mints only what the final size needs. Without this
+            // the drag's peak footprint is released only by a later GC.
+            directContext?.let {
+                it.resourceCacheLimit = 0
+                it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+            }
         }
     }
 
@@ -864,6 +909,22 @@ internal class TaoComposeSceneHostWindows(
         val sc = scene ?: return
 
         if (widthPx <= 0 || heightPx <= 0) return
+
+        // Push a pending size into the ComposeScene + GL surface before the
+        // frame-clock drain, so the size-change-driven recomposition (and any
+        // coroutine keyed on the new size) is scheduled and drained this frame.
+        // `nativeResize` grows the render-surface child HWND; doing it here,
+        // in the same paint that presents, keeps the surface resize and the
+        // present atomic — no exposed-strip black edge (the reason the old
+        // onResized painted synchronously). resetGLAll after nativeResize is
+        // unnecessary: the ES context/surface stay bound on this thread.
+        if (pendingResizeApply) {
+            sc.size = IntSize(widthPx, heightPx)
+            updateWindowInfoSize()
+            NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+            pendingResizeApply = false
+        }
+
         val now = System.nanoTime()
 
         // ── Frame clock ordering ──────────────────────────────────────────
@@ -1366,6 +1427,25 @@ internal class TaoComposeSceneHostWindows(
 
         /** Half-distance of the synthetic two-finger pair at scale 1.0. */
         private const val PINCH_BASE_RADIUS_PX: Float = 120f
+
+        /**
+         * GPU resource cache budget for the host DirectContext. Bounds the
+         * per-frame scratch (wrapped-framebuffer stencil/attachments) so an
+         * uncapped resize flood — VSync is dropped during the OS modal
+         * resize/move loop — can't grow the process unbounded. Sized to cover
+         * a HiDPI window's render target plus Compose's layer/glyph caches
+         * with headroom, while still far below the >1 GB the leak reached.
+         */
+        private const val RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
+
+        /**
+         * Minimum gap between applied resize frames during the OS modal
+         * resize/move loop (~120 Hz). Caps the render/remeasure rate so a
+         * high-poll-mouse WM_SIZE flood can't rebuild size-dependent content
+         * (e.g. a lets-plot chart) uncapped and pile up Cleaner-freed native
+         * memory. Well above the display refresh, so the drag stays smooth.
+         */
+        private const val RESIZE_APPLY_INTERVAL_NS: Long = 8_333_333L
 
         // Stable ids well clear of real touch ids (raw WM_POINTER finger ids).
         private const val PINCH_POINTER_ID_A: Long = 0xA001L
