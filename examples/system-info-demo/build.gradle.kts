@@ -32,11 +32,13 @@ dependencies {
     implementation(libs.coroutines.core)
 
     // Lets-Plot charting
-    implementation("org.jetbrains.lets-plot:lets-plot-kotlin-kernel:4.13.0")
-    implementation("org.jetbrains.lets-plot:lets-plot-common:4.9.0")
-    implementation("org.jetbrains.lets-plot:canvas:4.9.0")
-    implementation("org.jetbrains.lets-plot:plot-raster:4.9.0")
-    implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.1.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-kotlin-kernel:4.15.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-common:4.11.0")
+    implementation("org.jetbrains.lets-plot:canvas:4.11.0")
+    implementation("org.jetbrains.lets-plot:plot-raster:4.11.0")
+    implementation("org.jetbrains.lets-plot:lets-plot-compose-desktop:3.2.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-datetime:0.8.0")
+    implementation("org.slf4j:slf4j-simple:2.0.18")
 }
 
 java {
@@ -67,7 +69,7 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "system-info-demo"
-        optimization = NativeImageOptimization.LEVEL_3
+        optimization = NativeImageOptimization.SIZE
     }
 
     nativeDistributions {
