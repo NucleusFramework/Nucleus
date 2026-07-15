@@ -1417,6 +1417,23 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
             into(outputDir.map { it.dir("bin") })
         }
 
+    // fontconfig.bfc: SunFontManager/FontConfiguration reads it from <java.home>/lib at startup;
+    // java.home is the executable dir under native image, so without it FontConfiguration.getVersion()
+    // throws "Fontconfig head is null" the first time AWT font code runs (e.g. Font.createFont).
+    // macOS does the same in copyJawtToLib.
+    val copyFontConfig =
+        tasks.register<Copy>(
+            taskNameAction = "copy",
+            taskNameObject = "graalvmFontConfig",
+        ) {
+            description = "Copy fontconfig.bfc to lib/ subdir for AWT font init"
+            dependsOn(nativeImageCompile)
+            from("${graalvmHome.get()}/lib") {
+                include("fontconfig.bfc")
+            }
+            into(outputDir.map { it.dir("lib") })
+        }
+
     // Bundle the MSVC C/C++ runtime DLLs next to the executable so the app runs on machines
     // without the Visual C++ Redistributable (otherwise: "VCRUNTIME140.dll not found").
     val copyCRuntime =
@@ -1460,7 +1477,7 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
-        dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib)
+        dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
         copyCRuntime?.let { dependsOn(it) }
     }
 }
