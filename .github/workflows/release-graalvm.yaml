@@ -47,6 +47,7 @@ jobs:
           - name: macOS ARM64
             os: macos-latest
             arch: arm64
+          # macOS Intel falls back to GA 25.0.x: GraalVM 25.1 has no macos-x64 feature build.
           - name: macOS Intel
             os: macos-15-intel
             arch: amd64
