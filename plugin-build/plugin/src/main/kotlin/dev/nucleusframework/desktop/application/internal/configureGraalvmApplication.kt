@@ -670,6 +670,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedBuildArgs = graalvm.buildArgs.get()
             val resolvedMarch = graalvm.march.get()
             val resolvedOptimizeForSize = graalvm.optimizeForSize.get()
+            val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
@@ -710,6 +711,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // -O* in buildArgs overrides it (native-image honors the last -O* flag).
                         if (resolvedOptimizeForSize) {
                             add("-Os")
+                        }
+
+                        // Embed all JDK charsets when the app needs legacy encodings.
+                        if (resolvedAllCharsets) {
+                            add("-H:+AddAllCharsets")
                         }
 
                         // macOS: force the link-time deployment target. native-image does NOT
