@@ -105,4 +105,4 @@ Version format: `1.3.0-beta-XX` (hyphen before number, e.g. `1.3.0-beta-07`).
 - Sample apps have near-empty `reachability-metadata.json` — only app-specific entries remain
 - `GraalVmInitializer.initialize()` must be the first call in `main()` for native-image builds
 - Font substitutions (`@TargetClass`) in `graalvm-runtime` fix `InternalError: platform encoding not initialized` on Windows/Linux
-- Only BellSoft Liberica NIK 25 (full) is supported — standard GraalVM CE lacks AWT support
+- Oracle GraalVM 25 is required (`jvmVendor = ORACLE`) — it ships `native-image` and supports AWT; standard GraalVM CE lacks AWT support. CI installs it via `graalvm/setup-graalvm` with `distribution: graalvm`.

@@ -31,13 +31,13 @@ inputs:
     required: false
     default: 'true'
   graalvm:
-    description: 'Use GraalVM (Liberica NIK) instead of JBR'
+    description: 'Use GraalVM (Oracle GraalVM) instead of JBR'
     required: false
     default: 'false'
   graalvm-java-version:
-    description: 'GraalVM Java version'
+    description: 'Oracle GraalVM version (Java-aligned, e.g. 25.1 → latest 25.1.x)'
     required: false
-    default: '25'
+    default: '25.1'
   setup-node:
     description: 'Setup Node.js'
     required: false
@@ -55,17 +55,20 @@ outputs:
 runs:
   using: composite
   steps:
-    # ── GraalVM (Liberica NIK) ───────────────────────────────────────────
+    # ── GraalVM (Oracle GraalVM) ─────────────────────────────────────────
     - name: Select Xcode 26
       if: runner.os == 'macOS' && inputs.graalvm == 'true'
       shell: bash
       run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
 
-    - name: Set up BellSoft Liberica NIK
+    # Oracle GraalVM (not CE) ships native-image AND supports AWT. The builds request
+    # jvmVendor = ORACLE, so the installed JDK must report the Oracle vendor — otherwise
+    # Gradle's toolchain resolver auto-provisions a plain Oracle JDK without native-image.
+    - name: Set up Oracle GraalVM
       if: inputs.graalvm == 'true'
       uses: graalvm/setup-graalvm@v1
       with:
-        distribution: 'liberica'
+        distribution: 'graalvm'
         java-version: ${{ inputs.graalvm-java-version }}
 
     - name: Setup MSVC
