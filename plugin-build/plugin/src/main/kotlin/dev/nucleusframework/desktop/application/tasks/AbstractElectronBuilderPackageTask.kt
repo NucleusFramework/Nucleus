@@ -10,10 +10,12 @@ import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
+import dev.nucleusframework.desktop.application.internal.MacDmgLzma
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
@@ -298,6 +300,10 @@ abstract class AbstractElectronBuilderPackageTask
                 signPkgInstaller(outputDir)
             }
             signLinuxPackage(outputDir, dist)
+
+            // Must run before cleanupBuildTemporaries(), which removes the isolated npm cache
+            // where the app-builder binary used to regenerate the blockmap lives.
+            recompressDmgWithLzma(outputDir, dist)
 
             cleanupParasiticFiles(outputDir)
             cleanupBuildTemporaries(outputDir)
@@ -866,6 +872,218 @@ abstract class AbstractElectronBuilderPackageTask
             pkgFile.delete()
             signedPkg.renameTo(pkgFile)
             logger.lifecycle("Signed PKG installer: ${pkgFile.name}")
+        }
+
+        /**
+         * Post-processes the DMG electron-builder just produced by recompressing it with LZMA (ULMO).
+         *
+         * electron-builder's bundled dmgbuild caps DMG compression at bzip2 (UDBZ), so we reconvert
+         * with `hdiutil convert -format ULMO` — LZMA, ~20% smaller — then re-sign (reconversion drops
+         * the signature) and refresh the auto-update blockmap/manifest checksums.
+         *
+         * Runs only when the user opted into maximum compression, left the DMG format unpinned, and
+         * targets macOS 10.15+ (ULMO images do not mount on older systems). It is also skipped when
+         * electron-builder is publishing inline, since the pre-recompression artifact would already
+         * have been uploaded.
+         */
+        private fun recompressDmgWithLzma(
+            outputDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.MacOS) return
+            if (targetFormat != TargetFormat.Dmg) return
+            if (dist.compressionLevel != CompressionLevel.Maximum) return
+
+            dist.macOS.dmg.format?.let {
+                logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
+                return
+            }
+            if (!MacDmgLzma.isUlmoCompatible(dist.macOS.minimumSystemVersion)) {
+                logger.lifecycle(
+                    "Skipping LZMA (ULMO) DMG recompression: minimumSystemVersion " +
+                        "'${dist.macOS.minimumSystemVersion}' predates macOS 10.15. Keeping bzip2 (UDBZ).",
+                )
+                return
+            }
+            if (resolvePublishFlag() != "never") {
+                logger.warn(
+                    "Skipping LZMA (ULMO) DMG recompression: electron-builder is publishing inline " +
+                        "(publish != never), so the DMG has already been uploaded. Use a separate upload " +
+                        "step (publish = never) to benefit from LZMA recompression.",
+                )
+                return
+            }
+
+            val dmgFiles =
+                outputDir
+                    .listFiles { f -> f.isFile && f.extension.equals("dmg", ignoreCase = true) }
+                    ?.toList()
+                    .orEmpty()
+            if (dmgFiles.isEmpty()) {
+                logger.info("No .dmg artifact found to recompress in ${outputDir.absolutePath}")
+                return
+            }
+
+            val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
+            val appBuilder = MacDmgLzma.locateAppBuilder(outputDir, resolvedArch)
+            if (appBuilder == null) {
+                logger.info("app-builder not found in npm cache; blockmaps will be dropped after recompression")
+            }
+            for (dmg in dmgFiles) {
+                recompressSingleDmg(dmg, appBuilder)
+            }
+        }
+
+        private fun recompressSingleDmg(
+            dmg: File,
+            appBuilder: File?,
+        ) {
+            val sizeBefore = dmg.length()
+            val wasSigned = isDmgSigned(dmg)
+
+            val recompressed = File(dmg.parentFile, "${dmg.nameWithoutExtension}.ulmo.dmg")
+            if (recompressed.exists()) recompressed.delete()
+
+            logger.lifecycle("Recompressing ${dmg.name} with LZMA (ULMO)…")
+            execOperations.exec { spec ->
+                spec.executable = "hdiutil"
+                spec.args =
+                    listOf("convert", dmg.absolutePath, "-format", "ULMO", "-o", recompressed.absolutePath, "-quiet")
+                spec.isIgnoreExitValue = false
+            }
+            if (!recompressed.isFile) {
+                throw GradleException("LZMA recompression produced no output: ${recompressed.absolutePath}")
+            }
+
+            if (!dmg.delete()) throw GradleException("Could not replace original DMG: ${dmg.absolutePath}")
+            if (!recompressed.renameTo(dmg)) {
+                recompressed.copyTo(dmg, overwrite = true)
+                recompressed.delete()
+            }
+
+            // Reconversion drops the code signature, so re-sign when the source image was signed.
+            if (wasSigned) signDmg(dmg)
+
+            refreshDmgMetadata(dmg, appBuilder)
+            verifyDmg(dmg)
+
+            val sizeAfter = dmg.length()
+            val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+            logger.lifecycle(
+                String.format(
+                    Locale.ROOT,
+                    "LZMA recompression: %s  %,d → %,d bytes (−%.1f%%)",
+                    dmg.name,
+                    sizeBefore,
+                    sizeAfter,
+                    savedPct,
+                ),
+            )
+        }
+
+        /** Whether [dmg] currently carries a code signature (electron-builder signs it when dmg.sign = true). */
+        private fun isDmgSigned(dmg: File): Boolean {
+            val stdout = ByteArrayOutputStream()
+            val stderr = ByteArrayOutputStream()
+            return try {
+                val result =
+                    execOperations.exec { spec ->
+                        spec.executable = "codesign"
+                        spec.args = listOf("-v", "--verify", dmg.absolutePath)
+                        spec.isIgnoreExitValue = true
+                        spec.standardOutput = stdout
+                        spec.errorOutput = stderr
+                    }
+                result.exitValue == 0
+            } catch (_: Exception) {
+                false
+            }
+        }
+
+        /**
+         * Signs [dmg] with the configured Developer ID Application identity. Uses `--force` directly
+         * (no prior `--remove-signature`, which fails on the freshly-converted, unsigned image).
+         */
+        private fun signDmg(dmg: File) {
+            val settings = macSigner?.settings
+            if (settings == null) {
+                logger.warn(
+                    "${dmg.name} was signed before recompression but no Developer ID identity " +
+                        "is available to re-sign it.",
+                )
+                return
+            }
+            logger.info("Re-signing ${dmg.name} with '${settings.fullDeveloperID}' after recompression")
+            execOperations.exec { spec ->
+                spec.executable = "codesign"
+                spec.args =
+                    buildList {
+                        add("--force")
+                        add("--timestamp")
+                        add("--sign")
+                        add(settings.fullDeveloperID)
+                        settings.keychain?.let {
+                            add("--keychain")
+                            add(it.absolutePath)
+                        }
+                        add(dmg.absolutePath)
+                    }
+                spec.isIgnoreExitValue = false
+            }
+        }
+
+        /**
+         * Regenerates the differential-update blockmap for the recompressed [dmg] (via electron-builder's
+         * app-builder) and rewrites the sha512/size/blockMapSize any local manifest records for it.
+         * When app-builder is unavailable, the stale blockmap is dropped and updaters fall back to a
+         * full download.
+         */
+        private fun refreshDmgMetadata(
+            dmg: File,
+            appBuilder: File?,
+        ) {
+            val blockmap = File(dmg.parentFile, "${dmg.name}.blockmap")
+            var newBlockMapSize: Long? = null
+            if (appBuilder != null) {
+                try {
+                    execOperations.exec { spec ->
+                        spec.executable = appBuilder.absolutePath
+                        spec.args = listOf("blockmap", "--input", dmg.absolutePath, "--output", blockmap.absolutePath)
+                        spec.isIgnoreExitValue = false
+                    }
+                    if (blockmap.isFile) newBlockMapSize = blockmap.length()
+                } catch (e: Exception) {
+                    logger.warn("Failed to regenerate blockmap for ${dmg.name}: ${e.message}. Dropping stale blockmap.")
+                    blockmap.delete()
+                }
+            } else if (blockmap.exists()) {
+                blockmap.delete()
+            }
+
+            val newHash = UpdateYmlChecksums.sha512Base64(dmg)
+            val newSize = dmg.length()
+            val ymls =
+                dmg.parentFile.listFiles { f ->
+                    f.isFile && (f.extension == "yml" || f.extension == "yaml")
+                } ?: return
+            for (yml in ymls) {
+                val content = yml.readText()
+                if (!content.contains(dmg.name)) continue
+                val updated = UpdateYmlChecksums.updateYamlEntry(content, dmg.name, newHash, newSize, newBlockMapSize)
+                if (updated != content) {
+                    yml.writeText(updated)
+                    logger.lifecycle("Updated auto-update manifest ${yml.name} for ${dmg.name}")
+                }
+            }
+        }
+
+        /** Verifies the recompressed image mounts and its checksums are intact. */
+        private fun verifyDmg(dmg: File) {
+            execOperations.exec { spec ->
+                spec.executable = "hdiutil"
+                spec.args = listOf("verify", dmg.absolutePath)
+                spec.isIgnoreExitValue = false
+            }
         }
 
         /**
