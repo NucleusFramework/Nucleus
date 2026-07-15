@@ -1,8 +1,6 @@
 package dev.nucleusframework.graalvm.encoding;
 
-import org.graalvm.nativeimage.CurrentIsolate;
-import org.graalvm.nativeimage.c.function.CFunction;
-import org.graalvm.word.PointerBase;
+import org.graalvm.nativeimage.Platform;
 
 /**
  * Initializes the JDK's C-level platform ("JNU") encoding inside a native image, on macOS.
@@ -33,15 +31,16 @@ public final class PlatformEncodingInitializer {
     private PlatformEncodingInitializer() {
     }
 
-    /**
-     * C shim linked into the image (see the macOS stub in {@code configureGraalvmApplication.kt}).
-     * Initializes the bundled {@code libjava.dylib}'s platform encoding using the given JNIEnv.
-     */
-    @CFunction("nucleus_init_platform_encoding")
-    private static native void nucleusInitPlatformEncoding(PointerBase env);
-
     /** Initialize the platform encoding of the bundled libjava.dylib. */
     public static void initialize() {
-        nucleusInitPlatformEncoding(CurrentIsolate.getCurrentThread());
+        // Build-time platform fold. `Platform.includedIn` is a native-image build-time constant, so
+        // on Windows/Linux SVM eliminates this branch as dead code and never references
+        // DarwinPlatformEncoding — which is itself @Platforms(DARWIN) and therefore absent from those
+        // images. Both halves are needed: the fold removes the call (no "type unavailable" error),
+        // and @Platforms keeps the @CFunction symbol out of the non-macOS link. A runtime check would
+        // do neither — reachability analysis would keep the stub and emit the undefined symbol.
+        if (Platform.includedIn(Platform.DARWIN.class)) {
+            DarwinPlatformEncoding.initialize();
+        }
     }
 }
