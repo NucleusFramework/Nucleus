@@ -85,6 +85,7 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.ORACLE
         imageName = "compose-demo"
+        optimizeForSize = true
     }
 
     nativeDistributions {

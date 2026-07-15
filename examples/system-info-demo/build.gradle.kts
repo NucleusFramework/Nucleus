@@ -64,15 +64,9 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        jvmVendor = JvmVendorSpec.BELLSOFT
+        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "system-info-demo"
-        march = "compatibility"
-        buildArgs.addAll(
-            "-H:+AddAllCharsets",
-            "-Djava.awt.headless=false",
-            "-Os",
-            "-H:-IncludeMethodData",
-        )
+        optimizeForSize = true
     }
 
     nativeDistributions {
