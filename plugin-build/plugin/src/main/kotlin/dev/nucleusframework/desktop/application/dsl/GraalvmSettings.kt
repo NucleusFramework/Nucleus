@@ -37,6 +37,14 @@ abstract class GraalvmSettings
         // explicitly via [buildArgs] takes precedence.
         val optimizeForSize: Property<Boolean> = objects.notNullProperty(false)
 
+        // Embed every JDK charset in the image (`-H:+AddAllCharsets`). native-image otherwise ships
+        // only a minimal set (US-ASCII, ISO-8859-1, UTF-8, UTF-16 + platform default); any other
+        // charset requested via `Charset.forName(...)` throws UnsupportedCharsetException at runtime.
+        // Enable only if the app decodes bytes in a legacy encoding (e.g. windows-1255, ISO-8859-8,
+        // Shift_JIS) — it is NOT needed to display or type non-Latin text, which is Unicode-internal.
+        // Costs a few MB (mostly CJK tables). Off by default to match GraalVM's default.
+        val allCharsets: Property<Boolean> = objects.notNullProperty(false)
+
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val macOS: GraalvmMacOSSettings = objects.new()
