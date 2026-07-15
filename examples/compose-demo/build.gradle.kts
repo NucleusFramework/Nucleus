@@ -83,43 +83,12 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        jvmVendor = JvmVendorSpec.BELLSOFT
+        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "compose-demo"
-        march = providers.gradleProperty("nativeMarch").getOrElse("compatibility")
-        buildArgs.addAll(
-            "-H:+AddAllCharsets",
-            "-Djava.awt.headless=false",
-            "-Os",
-            "-H:-IncludeMethodData",
-        )
-        // Optional per-OS reachability metadata; only wired in if the app
-        // ships its own native-image config dir (none yet — the plugin's L1
-        // graalvm-runtime metadata covers the runtime classpath by default).
-        val nativeImageBase =
-            layout.projectDirectory.dir(
-                when {
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isMacOsX ->
-                        "src/main/resources-macos/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isWindows ->
-                        "src/main/resources-windows/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isLinux ->
-                        "src/main/resources-linux/META-INF/native-image"
-                    else -> throw GradleException("Unsupported OS")
-                },
-            )
-        if (nativeImageBase.asFile.exists()) {
-            nativeImageConfigBaseDir.set(nativeImageBase)
-        }
     }
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
         appName = "Compose Desktop Demo"
         packageName = "ComposeDesktopDemo"
         packageVersion = nativePackageVersion

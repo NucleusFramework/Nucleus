@@ -1,3 +1,5 @@
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.gradle.kotlin.dsl.implementation
 import org.gradle.kotlin.dsl.project
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -66,38 +68,24 @@ nucleus.application {
     mainClass = "com.example.samplecmp.MainKt"
 
     nativeDistributions {
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Deb)
         cleanupNativeLibs = true
         packageName = "SampleCmp"
         packageVersion = "1.0.0"
+        compressionLevel = CompressionLevel.Maximum
+        homepage = "https://github.com/KdroidFilter/NucleusDemo"
+
+        linux {
+            debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
+        }
+
     }
 
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        jvmVendor = JvmVendorSpec.BELLSOFT
+        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "cmp-sample"
-        march = providers.gradleProperty("nativeMarch").getOrElse("compatibility")
-        buildArgs.addAll(
-            "-H:+AddAllCharsets",
-            "-Djava.awt.headless=false",
-            "-Os",
-            "-H:-IncludeMethodData",
-        )
-        nativeImageConfigBaseDir.set(
-            layout.projectDirectory.dir(
-                when {
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isMacOsX -> "src/main/resources-macos/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isWindows -> "src/main/resources-windows/META-INF/native-image"
-                    org.gradle.internal.os.OperatingSystem
-                        .current()
-                        .isLinux -> "src/main/resources-linux/META-INF/native-image"
-                    else -> throw GradleException("Unsupported OS")
-                },
-            ),
-        )
+        optimizeForSize = true
     }
 }
