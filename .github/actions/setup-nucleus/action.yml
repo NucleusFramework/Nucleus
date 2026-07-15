@@ -35,9 +35,9 @@ inputs:
     required: false
     default: 'false'
   graalvm-java-version:
-    description: 'Oracle GraalVM version (Java-aligned, e.g. 25.1 → latest 25.1.x)'
+    description: 'Oracle GraalVM version (Java-aligned full version, e.g. 25.1.3)'
     required: false
-    default: '25.1'
+    default: '25.1.3'
   setup-node:
     description: 'Setup Node.js'
     required: false
