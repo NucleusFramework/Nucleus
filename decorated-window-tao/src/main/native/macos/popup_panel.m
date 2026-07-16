@@ -447,7 +447,12 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
         panel.canKey = NO; // toggled via nativeSetFocusable
         panel.opaque = NO;
         panel.backgroundColor = [NSColor clearColor];
-        panel.hasShadow = YES;
+        // No native shadow: AppKit derives it from the opaque pixels and never
+        // recomputes it for CAMetalLayer content (would need invalidateShadow
+        // after every present), so it lags the fade-in and doubles whatever
+        // shadow the Compose content draws. Parity with the Windows panel,
+        // which has none either — content owns its shadow.
+        panel.hasShadow = NO;
         panel.level = NSPopUpMenuWindowLevel;
         panel.hidesOnDeactivate = NO;
         panel.animationBehavior = NSWindowAnimationBehaviorNone;
@@ -484,7 +489,8 @@ Java_dev_nucleusframework_window_tao_PopupNativeBridge_nativeCreatePanel(
     panel.canKey = NO; // toggled via nativeSetFocusable
     panel.opaque = NO;
     panel.backgroundColor = [NSColor clearColor];
-    panel.hasShadow = YES;
+    // Same rationale as the standalone branch: no stale Metal-content shadow.
+    panel.hasShadow = NO;
     panel.level = NSPopUpMenuWindowLevel;
     panel.hidesOnDeactivate = NO;
     panel.animationBehavior = NSWindowAnimationBehaviorNone;
