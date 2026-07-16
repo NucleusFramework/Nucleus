@@ -404,7 +404,8 @@ abstract class AbstractElectronBuilderPackageTask
                 null to null
             }
 
-            if (targetFormat == TargetFormat.AppImage && distributions.compressionLevel == CompressionLevel.Maximum) {
+            // Both Maximum and Ultra map to electron-builder's "maximum"; warn for either.
+            if (targetFormat == TargetFormat.AppImage && distributions.compressionLevel?.id == "maximum") {
                 logger.warn(
                     "AppImage with 'maximum' compression can cause extremely slow startup times (60s+) " +
                         "due to squashfs/FUSE decompression overhead. Consider 'normal' or 'store' instead. " +
@@ -886,10 +887,10 @@ abstract class AbstractElectronBuilderPackageTask
          * with `hdiutil convert -format ULMO` — LZMA, ~20% smaller — then re-sign (reconversion drops
          * the signature) and refresh the auto-update blockmap/manifest checksums.
          *
-         * Runs only when the user opted into maximum compression, left the DMG format unpinned, and
-         * targets macOS 10.15+ (ULMO images do not mount on older systems). It is also skipped when
-         * electron-builder is publishing inline, since the pre-recompression artifact would already
-         * have been uploaded.
+         * Runs only when the user opted into [CompressionLevel.Ultra], left the DMG format unpinned,
+         * and targets macOS 10.15+ (ULMO images do not mount on older systems). It is also skipped
+         * when electron-builder is publishing inline, since the pre-recompression artifact would
+         * already have been uploaded.
          */
         private fun recompressDmgWithLzma(
             outputDir: File,
@@ -897,7 +898,7 @@ abstract class AbstractElectronBuilderPackageTask
         ) {
             if (currentOS != OS.MacOS) return
             if (targetFormat != TargetFormat.Dmg) return
-            if (dist.compressionLevel != CompressionLevel.Maximum) return
+            if (dist.compressionLevel != CompressionLevel.Ultra) return
 
             dist.macOS.dmg.format?.let {
                 logger.info("Skipping LZMA DMG recompression: an explicit dmg.format=$it is set")
@@ -1099,7 +1100,7 @@ abstract class AbstractElectronBuilderPackageTask
          * internal xz level — the payload stays at fpm's default preset. Re-building the deb with
          * `dpkg-deb` at the highest xz effort typically shrinks it ~25%. Mirrors [recompressDmgWithLzma].
          *
-         * Runs only when the user opted into maximum compression and electron-builder is not
+         * Runs only when the user opted into [CompressionLevel.Ultra] and electron-builder is not
          * publishing inline (mirroring the DMG path). RPM payload recompression would require
          * rebuilding via rpmbuild/rpmrebuild and is out of scope.
          */
@@ -1109,7 +1110,7 @@ abstract class AbstractElectronBuilderPackageTask
         ) {
             if (currentOS != OS.Linux) return
             if (targetFormat != TargetFormat.Deb) return
-            if (dist.compressionLevel != CompressionLevel.Maximum) return
+            if (dist.compressionLevel != CompressionLevel.Ultra) return
             if (resolvePublishFlag() != "never") {
                 logger.warn(
                     "Skipping xz deb recompression: electron-builder is publishing inline " +

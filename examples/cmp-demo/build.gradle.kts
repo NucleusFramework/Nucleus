@@ -73,7 +73,7 @@ nucleus.application {
         cleanupNativeLibs = true
         packageName = "SampleCmp"
         packageVersion = "1.0.0"
-        compressionLevel = CompressionLevel.Maximum
+        compressionLevel = CompressionLevel.Ultra
         homepage = "https://github.com/KdroidFilter/NucleusDemo"
 
         linux {
