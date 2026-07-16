@@ -57,6 +57,9 @@ import org.gradle.jvm.tasks.Jar
 private val defaultJvmArgs: List<String> =
     buildList {
         add("-D$CONFIGURE_SWING_GLOBALS=true")
+        // Nucleus runtime modules load native libraries via JNI; without this flag
+        // JDK 24+ (JEP 472) emits warnings and future JDKs will refuse access.
+        add("--enable-native-access=ALL-UNNAMED")
         if (currentOS == OS.MacOS) {
             // The decorated-window module uses reflection on java.desktop internals
             // (sun.awt.AWTAccessor) to obtain the native NSWindow pointer.
