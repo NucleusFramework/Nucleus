@@ -299,6 +299,11 @@ abstract class AbstractElectronBuilderPackageTask
             if (targetFormat == TargetFormat.Pkg) {
                 signPkgInstaller(outputDir)
             }
+
+            // Must run before signLinuxPackage(): rebuilding the .deb archive to recompress its
+            // payload would invalidate any embedded/detached signature produced downstream.
+            recompressDebWithXz(outputDir, dist)
+
             signLinuxPackage(outputDir, dist)
 
             // Must run before cleanupBuildTemporaries(), which removes the isolated npm cache
@@ -1083,6 +1088,180 @@ abstract class AbstractElectronBuilderPackageTask
                 spec.executable = "hdiutil"
                 spec.args = listOf("verify", dmg.absolutePath)
                 spec.isIgnoreExitValue = false
+            }
+        }
+
+        /**
+         * Post-processes the `.deb` electron-builder just produced by recompressing its `data.tar`
+         * payload at maximum xz effort (`dpkg-deb --build -Zxz -z9 -Sextreme`, i.e. `xz -9e`).
+         *
+         * electron-builder builds debs via fpm, whose `compression: maximum` does not raise the
+         * internal xz level — the payload stays at fpm's default preset. Re-building the deb with
+         * `dpkg-deb` at the highest xz effort typically shrinks it ~25%. Mirrors [recompressDmgWithLzma].
+         *
+         * Runs only when the user opted into maximum compression and electron-builder is not
+         * publishing inline (mirroring the DMG path). RPM payload recompression would require
+         * rebuilding via rpmbuild/rpmrebuild and is out of scope.
+         */
+        private fun recompressDebWithXz(
+            outputDir: File,
+            dist: JvmApplicationDistributions,
+        ) {
+            if (currentOS != OS.Linux) return
+            if (targetFormat != TargetFormat.Deb) return
+            if (dist.compressionLevel != CompressionLevel.Maximum) return
+            if (resolvePublishFlag() != "never") {
+                logger.warn(
+                    "Skipping xz deb recompression: electron-builder is publishing inline " +
+                        "(publish != never), so the .deb has already been uploaded. Use a separate " +
+                        "upload step (publish = never) to benefit from recompression.",
+                )
+                return
+            }
+
+            val dpkgDeb = findExecutableInPath("dpkg-deb")
+            if (dpkgDeb == null) {
+                logger.info("dpkg-deb not found in PATH; skipping xz deb recompression")
+                return
+            }
+
+            val debs =
+                outputDir
+                    .listFiles { f -> f.isFile && f.extension.equals("deb", ignoreCase = true) }
+                    ?.toList()
+                    .orEmpty()
+            if (debs.isEmpty()) {
+                logger.info("No .deb artifact found to recompress in ${outputDir.absolutePath}")
+                return
+            }
+            for (deb in debs) {
+                recompressSingleDeb(deb, dpkgDeb)
+            }
+        }
+
+        private fun recompressSingleDeb(
+            deb: File,
+            dpkgDeb: File,
+        ) {
+            val sizeBefore = deb.length()
+            val extractDir = File(deb.parentFile, "${deb.nameWithoutExtension}.xz-repack")
+            val rebuilt = File(deb.parentFile, "${deb.nameWithoutExtension}.xz.deb")
+            try {
+                extractDir.deleteRecursively()
+                if (rebuilt.exists()) rebuilt.delete()
+
+                logger.lifecycle("Recompressing ${deb.name} with xz -9e…")
+                // Raw-extract preserves the DEBIAN/ control files, permissions, symlinks and conffiles.
+                execOperations.exec { spec ->
+                    spec.executable = dpkgDeb.absolutePath
+                    spec.args = listOf("--raw-extract", deb.absolutePath, extractDir.absolutePath)
+                    spec.isIgnoreExitValue = false
+                }
+                execOperations.exec { spec ->
+                    spec.executable = dpkgDeb.absolutePath
+                    // --root-owner-group forces uid/gid 0:0; without it the rebuilt archive would
+                    // record the build user's ownership instead of the root:root that fpm emits.
+                    spec.args =
+                        listOf(
+                            "--root-owner-group",
+                            "--build",
+                            "-Zxz",
+                            "-z9",
+                            "-Sextreme",
+                            extractDir.absolutePath,
+                            rebuilt.absolutePath,
+                        )
+                    spec.isIgnoreExitValue = false
+                }
+                if (!rebuilt.isFile) {
+                    throw GradleException("xz deb recompression produced no output: ${rebuilt.absolutePath}")
+                }
+                verifyDeb(dpkgDeb, rebuilt)
+
+                if (rebuilt.length() >= sizeBefore) {
+                    logger.lifecycle(
+                        "Recompressed ${deb.name} is not smaller " +
+                            "(${rebuilt.length()} ≥ $sizeBefore bytes); keeping the original",
+                    )
+                    return
+                }
+
+                if (!deb.delete()) throw GradleException("Could not replace original deb: ${deb.absolutePath}")
+                if (!rebuilt.renameTo(deb)) {
+                    rebuilt.copyTo(deb, overwrite = true)
+                    rebuilt.delete()
+                }
+
+                refreshDebMetadata(deb)
+
+                val sizeAfter = deb.length()
+                val savedPct = if (sizeBefore > 0) (sizeBefore - sizeAfter) * 100.0 / sizeBefore else 0.0
+                logger.lifecycle(
+                    String.format(
+                        Locale.ROOT,
+                        "xz recompression: %s  %,d → %,d bytes (−%.1f%%)",
+                        deb.name,
+                        sizeBefore,
+                        sizeAfter,
+                        savedPct,
+                    ),
+                )
+            } finally {
+                extractDir.deleteRecursively()
+                if (rebuilt.exists()) rebuilt.delete()
+            }
+        }
+
+        /** Verifies the rebuilt [deb] is a well-formed archive before it replaces the original. */
+        private fun verifyDeb(
+            dpkgDeb: File,
+            deb: File,
+        ) {
+            execOperations.exec { spec ->
+                spec.executable = dpkgDeb.absolutePath
+                spec.args = listOf("--info", deb.absolutePath)
+                spec.isIgnoreExitValue = false
+                spec.standardOutput = ByteArrayOutputStream()
+            }
+            execOperations.exec { spec ->
+                spec.executable = dpkgDeb.absolutePath
+                spec.args = listOf("--contents", deb.absolutePath)
+                spec.isIgnoreExitValue = false
+                spec.standardOutput = ByteArrayOutputStream()
+            }
+        }
+
+        /**
+         * Refreshes auto-update metadata after a deb is recompressed: drops the now-stale blockmap
+         * (updaters fall back to a full download) and rewrites the sha512/size of any manifest entry
+         * that references [deb]. Mirrors [refreshDmgMetadata]; a no-op in the common publish = never
+         * case where no manifest exists yet (it is generated afterwards from the recompressed file).
+         */
+        private fun refreshDebMetadata(deb: File) {
+            val blockmap = File(deb.parentFile, "${deb.name}.blockmap")
+            if (blockmap.exists()) blockmap.delete()
+
+            val newHash = UpdateYmlChecksums.sha512Base64(deb)
+            val newSize = deb.length()
+            val ymls =
+                deb.parentFile.listFiles { f ->
+                    f.isFile && (f.extension == "yml" || f.extension == "yaml")
+                } ?: return
+            for (yml in ymls) {
+                val content = yml.readText()
+                if (!content.contains(deb.name)) continue
+                val updated = UpdateYmlChecksums.updateYamlEntry(content, deb.name, newHash, newSize, null)
+                if (updated != content) {
+                    yml.writeText(updated)
+                    logger.lifecycle("Updated auto-update manifest ${yml.name} for ${deb.name}")
+                }
+            }
+        }
+
+        private fun findExecutableInPath(executableName: String): File? {
+            val pathEnv = System.getenv("PATH") ?: return null
+            return pathEnv.split(File.pathSeparator).firstNotNullOfOrNull { dir ->
+                File(dir, executableName).takeIf { it.isFile && it.canExecute() }
             }
         }
 
