@@ -13,6 +13,7 @@ import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
+import dev.nucleusframework.desktop.application.internal.ExternalToolRunner
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
@@ -303,6 +304,10 @@ abstract class AbstractElectronBuilderPackageTask
             // Must run before signLinuxPackage(): rebuilding the .deb archive to recompress its
             // payload would invalidate any embedded/detached signature produced downstream.
             recompressDebWithXz(outputDir, dist)
+
+            // Must run before signLinuxPackage(): rebuilding the .rpm payload to inject %dir
+            // entries would invalidate any embedded/detached signature produced downstream.
+            injectRpmDirectoryEntries(outputDir)
 
             signLinuxPackage(outputDir, dist)
 
@@ -1137,6 +1142,352 @@ abstract class AbstractElectronBuilderPackageTask
             }
             for (deb in debs) {
                 recompressSingleDeb(deb, dpkgDeb)
+            }
+        }
+
+        /**
+         * Rebuilds the .rpm produced by electron-builder/fpm to inject `%dir` entries for all
+         * directories in the payload.
+         *
+         * The jpackage C launcher (`libapplauncher.so`) queries the owning RPM package via
+         * `rpm -ql <package>` and scans the output for lines ending in `/app` and `/runtime` to
+         * discover the app directory and JVM runtime path. fpm-based RPMs only list files, not
+         * directories, so the launcher cannot locate its `.cfg` file and fails with:
+         * `Error opening "<app>.cfg" file: No such file or directory`.
+         *
+         * This function extracts the RPM payload, builds a spec file that includes `%dir`
+         * entries (mirroring JDK's `template.spec` logic), and re-packages via `rpmbuild`,
+         * preserving the original metadata and scriptlets.
+         */
+        private fun injectRpmDirectoryEntries(outputDir: File) {
+            if (currentOS != OS.Linux) return
+            if (targetFormat != TargetFormat.Rpm) return
+
+            val rpmbuild = findExecutableInPath("rpmbuild") ?: run {
+                logger.warn("rpmbuild not found in PATH; skipping RPM directory entry injection")
+                return
+            }
+            val rpm2cpio = findExecutableInPath("rpm2cpio") ?: run {
+                logger.warn("rpm2cpio not found in PATH; skipping RPM directory entry injection")
+                return
+            }
+            val cpio = findExecutableInPath("cpio") ?: run {
+                logger.warn("cpio not found in PATH; skipping RPM directory entry injection")
+                return
+            }
+            val rpm = findExecutableInPath("rpm") ?: run {
+                logger.warn("rpm not found in PATH; skipping RPM directory entry injection")
+                return
+            }
+
+            val rpms =
+                outputDir
+                    .listFiles { f -> f.isFile && f.extension.equals("rpm", ignoreCase = true) }
+                    ?.toList()
+                    .orEmpty()
+            if (rpms.isEmpty()) {
+                logger.info("No .rpm artifact found to inject directory entries in ${outputDir.absolutePath}")
+                return
+            }
+            for (rpmFile in rpms) {
+                injectRpmDirectoryEntriesSingle(rpmFile, rpmbuild, rpm2cpio, cpio, rpm)
+            }
+        }
+
+        private fun injectRpmDirectoryEntriesSingle(
+            rpmFile: File,
+            rpmbuild: File,
+            rpm2cpio: File,
+            cpio: File,
+            rpm: File,
+        ) {
+            // Check if the RPM already has directory entries for /app and /runtime.
+            // If it does, no injection is needed (e.g. native jpackage RPM or already fixed).
+            val allLines = captureRpmOutput(rpm, listOf("-qlp", rpmFile.absolutePath)).lines().filter { it.isNotBlank() }
+
+            val hasAppDir = allLines.any { it.endsWith("/app") }
+            val hasRuntimeDir = allLines.any { it.endsWith("/runtime") }
+            if (hasAppDir && hasRuntimeDir) {
+                logger.info("RPM ${rpmFile.name} already has directory entries; skipping injection")
+                return
+            }
+
+            logger.lifecycle("Injecting %dir entries into ${rpmFile.name}…")
+
+            val workDir = File(rpmFile.parentFile, "${rpmFile.nameWithoutExtension}.dir-inject")
+            val buildroot = File(workDir, "BUILDROOT")
+            val topDir = File(workDir, "rpmbuild")
+            val buildDir = File(workDir, "BUILD")
+            buildroot.deleteRecursively()
+            topDir.deleteRecursively()
+            buildDir.deleteRecursively()
+            buildroot.mkdirs()
+            listOf("BUILD", "RPMS", "SOURCES", "SPECS", "SRPMS").forEach {
+                File(topDir, it).mkdirs()
+            }
+            buildDir.mkdirs()
+
+            // Extract RPM payload into buildroot
+            runExternalTool(
+                rpm2cpio,
+                listOf(rpmFile.absolutePath),
+                logToConsole = ExternalToolRunner.LogToConsole.Never,
+                checkExitCodeIsNormal = true,
+            ).assertNormalExitValue()
+            // Extract RPM payload into buildroot via rpm2cpio | cpio
+            execOperations.exec { spec ->
+                spec.executable = "sh"
+                spec.args = listOf(
+                    "-c",
+                    "${rpm2cpio.absolutePath} '${rpmFile.absolutePath}' | ${cpio.absolutePath} -idmu --quiet",
+                )
+                spec.workingDir = buildroot
+                spec.isIgnoreExitValue = false
+            }
+
+            // Build the file list for %files
+            // Collect all directories (excluding filesystem package directories)
+            val appDirs =
+                buildroot.walkTopDown()
+                    .filter { d -> d.isDirectory && d != buildroot }
+                    .map { d ->
+                        val p = buildroot.toPath().relativize(d.toPath()).toString()
+                        if (p.startsWith(".")) p.substring(1) else "/$p"
+                    }
+                    .filter { it.isNotBlank() && it != "/" }
+                    .sorted()
+                    .toList()
+
+            // Default filesystem directories to exclude (mirrors JDK template.spec)
+            val defaultFilesystem =
+                setOf(
+                    "/",
+                    "/opt",
+                    "/usr",
+                    "/usr/bin",
+                    "/usr/lib",
+                    "/usr/local",
+                    "/usr/local/bin",
+                    "/usr/local/lib",
+                )
+
+            // Get filesystem package directories if available
+            val fsDirs =
+                try {
+                    captureRpmOutput(rpm, listOf("-ql", "filesystem"))
+                        .lines()
+                        .filter { it.isNotBlank() }
+                        .toSet()
+                } catch (e: Exception) {
+                    emptySet()
+                }
+
+            val excludeDirs = defaultFilesystem + fsDirs
+            val pkgDirs = appDirs.filter { it !in excludeDirs }
+
+            // Collect all files (including symlinks)
+            val pkgFiles =
+                buildroot.walkTopDown()
+                    .filter { it.isFile || java.nio.file.Files.isSymbolicLink(it.toPath()) }
+                    .map { f ->
+                        val p = buildroot.toPath().relativize(f.toPath()).toString()
+                        if (p.startsWith(".")) p.substring(1) else "/$p"
+                    }
+                    .filter { it.isNotBlank() && it != "/" }
+                    .sorted()
+                    .toList()
+
+            // Build filelist for %files
+            val filelistFile = File(workDir, "filelist.txt")
+            filelistFile.bufferedWriter().use { writer ->
+                for (dir in pkgDirs) {
+                    writer.write("%dir \"$dir\"")
+                    writer.newLine()
+                }
+                for (file in pkgFiles) {
+                    writer.write("\"$file\"")
+                    writer.newLine()
+                }
+            }
+
+            // Extract RPM metadata for the spec
+            val name = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{NAME}", rpmFile.absolutePath)).trim()
+            val version = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{VERSION}", rpmFile.absolutePath)).trim()
+            val release = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{RELEASE}", rpmFile.absolutePath)).trim()
+            val arch = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{ARCH}", rpmFile.absolutePath)).trim()
+            val summary = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{SUMMARY}", rpmFile.absolutePath)).trim()
+            val license = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{LICENSE}", rpmFile.absolutePath)).trim()
+            val vendor = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{VENDOR}", rpmFile.absolutePath)).trim()
+            val url = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{URL}", rpmFile.absolutePath)).trim()
+            val description = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{DESCRIPTION}", rpmFile.absolutePath)).trim()
+            val group = captureRpmOutput(rpm, listOf("-qp", "--qf", "%{GROUP}", rpmFile.absolutePath)).trim()
+
+            // Extract scriptlets
+            val postScript = captureRpmScripts(rpm, rpmFile, "post")
+            val preScript = captureRpmScripts(rpm, rpmFile, "pre")
+            val postunScript = captureRpmScripts(rpm, rpmFile, "postun")
+            val preunScript = captureRpmScripts(rpm, rpmFile, "preun")
+
+            // Build spec file
+            val specFile = File(topDir, "SPECS/$name.spec")
+            specFile.bufferedWriter().use { writer ->
+                writer.write("Summary: $summary")
+                writer.newLine()
+                writer.write("Name: $name")
+                writer.newLine()
+                writer.write("Version: $version")
+                writer.newLine()
+                writer.write("Release: $release")
+                writer.newLine()
+                writer.write("License: $license")
+                writer.newLine()
+                if (vendor.isNotBlank()) {
+                    writer.write("Vendor: $vendor")
+                    writer.newLine()
+                }
+                if (url.isNotBlank() && url != "(none)") {
+                    writer.write("URL: $url")
+                    writer.newLine()
+                }
+                writer.write("BuildArch: $arch")
+                writer.newLine()
+                writer.write("Autoprov: 0")
+                writer.newLine()
+                writer.write("Autoreq: 0")
+                writer.newLine()
+                writer.write("%define __jar_repack %{nil}")
+                writer.newLine()
+                writer.write("%define _build_id_links none")
+                writer.newLine()
+                writer.newLine()
+                writer.write("%description")
+                writer.newLine()
+                writer.write(description)
+                writer.newLine()
+                writer.newLine()
+                writer.write("%prep")
+                writer.newLine()
+                writer.newLine()
+                writer.write("%build")
+                writer.newLine()
+                writer.newLine()
+                writer.write("%install")
+                writer.newLine()
+                writer.write("rm -rf %{buildroot}")
+                writer.newLine()
+                writer.write("mkdir -p %{buildroot}")
+                writer.newLine()
+                writer.write("cp -a %{_sourcedir}/* %{buildroot}/")
+                writer.newLine()
+                writer.newLine()
+                if (preScript.isNotBlank()) {
+                    writer.write("%pre")
+                    writer.newLine()
+                    writer.write(preScript)
+                    writer.newLine()
+                    writer.newLine()
+                }
+                if (postScript.isNotBlank()) {
+                    writer.write("%post")
+                    writer.newLine()
+                    writer.write(postScript)
+                    writer.newLine()
+                    writer.newLine()
+                }
+                if (preunScript.isNotBlank()) {
+                    writer.write("%preun")
+                    writer.newLine()
+                    writer.write(preunScript)
+                    writer.newLine()
+                    writer.newLine()
+                }
+                if (postunScript.isNotBlank()) {
+                    writer.write("%postun")
+                    writer.newLine()
+                    writer.write(postunScript)
+                    writer.newLine()
+                    writer.newLine()
+                }
+                writer.write("%files -f ${filelistFile.absolutePath}")
+                writer.newLine()
+            }
+
+            // Copy buildroot contents to SOURCES (for cp in %install)
+            val sourcesDir = File(topDir, "SOURCES")
+            buildroot.listFiles()?.forEach { child ->
+                child.copyRecursively(File(sourcesDir, child.name), overwrite = true)
+            }
+
+            // Run rpmbuild
+            runExternalTool(
+                rpmbuild,
+                listOf(
+                    "-bb",
+                    specFile.absolutePath,
+                    "--define",
+                    "_topdir ${topDir.absolutePath}",
+                    "--define",
+                    "_rpmdir ${workDir.absolutePath}",
+                    "--define",
+                    "_sourcedir ${sourcesDir.absolutePath}",
+                    "--define",
+                    "_builddir ${buildDir.absolutePath}",
+                    "--define",
+                    "buildroot ${buildroot.absolutePath}",
+                    "--define",
+                    "_rpmfilename ${name}-${version}-${release}.${arch}.rpm",
+                ),
+                logToConsole = ExternalToolRunner.LogToConsole.Always,
+                checkExitCodeIsNormal = true,
+            ).assertNormalExitValue()
+
+            val rebuiltRpm = File(workDir, "$name-$version-$release.$arch.rpm")
+            if (!rebuiltRpm.isFile) {
+                throw GradleException("RPM directory entry injection produced no output: ${rebuiltRpm.absolutePath}")
+            }
+
+            // Replace the original RPM
+            if (!rpmFile.delete()) {
+                throw GradleException("Could not replace original rpm: ${rpmFile.absolutePath}")
+            }
+            rebuiltRpm.copyTo(rpmFile, overwrite = true)
+            rebuiltRpm.delete()
+
+            // Cleanup
+            workDir.deleteRecursively()
+
+            logger.lifecycle("Injected %dir entries into ${rpmFile.name}")
+        }
+
+        private fun captureRpmOutput(
+            rpm: File,
+            args: List<String>,
+        ): String {
+            val tempFile = File.createTempFile("rpm-capture", ".txt")
+            tempFile.deleteOnExit()
+            runExternalTool(
+                rpm,
+                args,
+                logToConsole = ExternalToolRunner.LogToConsole.Never,
+                checkExitCodeIsNormal = false,
+                processStdout = { content ->
+                    tempFile.writeText(content)
+                },
+            )
+            return tempFile.readText().also { tempFile.delete() }
+        }
+
+        private fun captureRpmScripts(
+            rpm: File,
+            rpmFile: File,
+            scriptlet: String,
+        ): String {
+            return try {
+                captureRpmOutput(rpm, listOf("-qp", "--qf", "%{$scriptlet}", rpmFile.absolutePath)).let {
+                    if (it.trim() == "(none)" || it.isBlank()) "" else it
+                }
+            } catch (e: Exception) {
+                ""
             }
         }
 
