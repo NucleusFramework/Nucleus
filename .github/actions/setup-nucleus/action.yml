@@ -79,9 +79,20 @@ runs:
         path: ~/.gradle/nucleus/graalvm
         key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-version }}
 
+    # In GraalVM mode any JDK can run Gradle: the native image is built entirely by
+    # the plugin-provisioned GraalVM, so nothing JBR-specific ends up in the output.
+    # JBR (below) stays for JVM packaging modes, where jpackage bundles the running
+    # JDK into the distributed app and decorated-window-jbr needs the JBR API.
+    - name: Set up Gradle JDK
+      if: inputs.graalvm == 'true'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
     # ── JBR Download & Install ──────────────────────────────────────────
     - name: Install JBR (Linux)
-      if: runner.os == 'Linux'
+      if: runner.os == 'Linux' && inputs.graalvm != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -121,7 +132,7 @@ runs:
         echo "$JBR_DIR/bin" >> "$GITHUB_PATH"
 
     - name: Install JBR (macOS)
-      if: runner.os == 'macOS'
+      if: runner.os == 'macOS' && inputs.graalvm != 'true'
       shell: bash
       run: |
         set -euo pipefail
@@ -164,7 +175,7 @@ runs:
         echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
 
     - name: Install JBR (Windows)
-      if: runner.os == 'Windows'
+      if: runner.os == 'Windows' && inputs.graalvm != 'true'
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
