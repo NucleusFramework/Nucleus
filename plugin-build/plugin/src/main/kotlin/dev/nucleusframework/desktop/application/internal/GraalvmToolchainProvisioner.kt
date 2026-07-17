@@ -2,8 +2,16 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
+import dev.nucleusframework.internal.utils.currentArch
+import dev.nucleusframework.internal.utils.currentOS
 import groovy.json.JsonSlurper
 import org.gradle.api.logging.Logger
+import org.gradle.api.logging.Logging
+import org.gradle.api.provider.Property
+import org.gradle.api.provider.ValueSource
+import org.gradle.api.provider.ValueSourceParameters
+import org.gradle.process.ExecOperations
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.RandomAccessFile
@@ -12,6 +20,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
+import javax.inject.Inject
 
 /**
  * What GraalVM toolchain to provision for the current build machine.
@@ -28,6 +37,39 @@ internal data class GraalvmToolchainRequest(
     val macosIntelFallback: Boolean,
     val installBaseDir: File,
 )
+
+/**
+ * Configuration-cache-safe entry point to [GraalvmToolchainProvisioner]. Provisioning runs
+ * at configuration time (the resolved home feeds `Exec.executable` and `Copy.from`), and a
+ * [ValueSource] with injected [ExecOperations] is Gradle's sanctioned way to start external
+ * processes (`tar`) there. The value is also re-checked on configuration-cache hits, so a
+ * deleted toolchain directory invalidates the entry and re-provisions.
+ */
+internal abstract class GraalvmToolchainValueSource :
+    ValueSource<String, GraalvmToolchainValueSource.Params> {
+    interface Params : ValueSourceParameters {
+        val version: Property<String>
+        val macosIntelFallback: Property<Boolean>
+        val installBaseDir: Property<String>
+    }
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    override fun obtain(): String {
+        val request =
+            GraalvmToolchainRequest(
+                version = parameters.version.get(),
+                os = currentOS,
+                arch = currentArch,
+                macosIntelFallback = parameters.macosIntelFallback.get(),
+                installBaseDir = File(parameters.installBaseDir.get()),
+            )
+        return GraalvmToolchainProvisioner
+            .provision(request, execOperations, Logging.getLogger(GraalvmToolchainProvisioner::class.java))
+            .absolutePath
+    }
+}
 
 /**
  * Downloads and caches the GraalVM JDK used for native-image builds, so no locally
@@ -53,10 +95,14 @@ internal object GraalvmToolchainProvisioner {
     private const val READ_TIMEOUT_MS = 60_000
     private const val MAX_REDIRECTS = 5
     private const val DOWNLOAD_BUFFER_SIZE = 1 shl 16
+    private const val HTTP_FIRST_REDIRECT = 300
+    private const val HTTP_FIRST_ERROR = 400
+    private const val BITNESS_64 = 64
     private const val BELLSOFT_NIK_API = "https://api.bell-sw.com/v1/nik/releases?os=macos&output=json"
 
     fun provision(
         request: GraalvmToolchainRequest,
+        execOperations: ExecOperations,
         logger: Logger,
     ): File {
         environmentOverride(logger)?.let { return it }
@@ -70,7 +116,7 @@ internal object GraalvmToolchainProvisioner {
         RandomAccessFile(File(request.installBaseDir, "$id.lock"), "rw").use { lockFile ->
             lockFile.channel.lock().use {
                 readMarker(installDir)?.let { return it }
-                return downloadAndInstall(request, id, installDir, logger)
+                return downloadAndInstall(request, id, installDir, execOperations, logger)
             }
         }
     }
@@ -112,6 +158,7 @@ internal object GraalvmToolchainProvisioner {
         request: GraalvmToolchainRequest,
         id: String,
         installDir: File,
+        execOperations: ExecOperations,
         logger: Logger,
     ): File {
         val source =
@@ -129,7 +176,7 @@ internal object GraalvmToolchainProvisioner {
             verifyChecksum(archive, source, logger)
 
             extractDir.deleteRecursively()
-            extract(archive, extractDir)
+            extract(archive, extractDir, execOperations)
 
             val topDir =
                 extractDir.listFiles()?.singleOrNull { it.isDirectory }
@@ -196,7 +243,8 @@ internal object GraalvmToolchainProvisioner {
         return DownloadSource(
             url = url,
             description = "Oracle GraalVM $version ($osToken-$archToken)",
-            sha256Url = "$url.sha256",
+            // GDS (innovation releases) publishes no .sha256 side-file; download.oracle.com does.
+            sha256Url = "$url.sha256".takeUnless { url.startsWith("https://gds.oracle.com/") },
         )
     }
 
@@ -213,7 +261,7 @@ internal object GraalvmToolchainProvisioner {
         val candidates =
             releases.filter {
                 it["architecture"] == "x86" &&
-                    (it["bitness"] as? Number)?.toInt() == 64 &&
+                    (it["bitness"] as? Number)?.toInt() == BITNESS_64 &&
                     it["bundleType"] == "standard" &&
                     it["packageType"] == "tar.gz" &&
                     it["installationType"] == "archive"
@@ -355,14 +403,14 @@ internal object GraalvmToolchainProvisioner {
             connection.instanceFollowRedirects = true
             val code = connection.responseCode
             when {
-                code in 300..399 -> {
+                code in HTTP_FIRST_REDIRECT until HTTP_FIRST_ERROR -> {
                     val location =
                         connection.getHeaderField("Location")
                             ?: throw IOException("Redirect without Location header from $current")
                     connection.disconnect()
                     current = location
                 }
-                code >= 400 -> throw IOException("HTTP $code from $current")
+                code >= HTTP_FIRST_ERROR -> throw IOException("HTTP $code from $current")
                 else -> return connection
             }
         }
@@ -372,18 +420,23 @@ internal object GraalvmToolchainProvisioner {
     /**
      * Extracts with the system `tar`, which preserves permissions and symlinks (Gradle's
      * tarTree does not) and is available on Linux, macOS and Windows 10+ (bsdtar, which
-     * also handles zip).
+     * also handles zip). Runs through [ExecOperations] so it stays legal at configuration
+     * time under the configuration cache (see [GraalvmToolchainValueSource]).
      */
     private fun extract(
         archive: File,
         destDir: File,
+        execOperations: ExecOperations,
     ) {
         destDir.mkdirs()
-        val process =
-            ProcessBuilder("tar", "-xf", archive.absolutePath, "-C", destDir.absolutePath)
-                .redirectErrorStream(true)
-                .start()
-        val output = process.inputStream.bufferedReader().readText()
-        check(process.waitFor() == 0) { "tar failed extracting ${archive.name}: $output" }
+        val output = ByteArrayOutputStream()
+        val result =
+            execOperations.exec { spec ->
+                spec.commandLine("tar", "-xf", archive.absolutePath, "-C", destDir.absolutePath)
+                spec.standardOutput = output
+                spec.errorOutput = output
+                spec.isIgnoreExitValue = true
+            }
+        check(result.exitValue == 0) { "tar failed extracting ${archive.name}: $output" }
     }
 }

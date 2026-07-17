@@ -66,26 +66,25 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         // Auto-provisioned toolchain: Oracle GraalVM (Liberica NIK on Intel macs) is
         // downloaded on first use and cached under the Gradle user home, so once
         // provisioned resolution costs a single marker-file read. GRAALVM_HOME, when
-        // set to a valid installation, bypasses the download.
-        val toolchainRequest =
-            GraalvmToolchainRequest(
-                version =
+        // set to a valid installation, bypasses the download. Provisioning goes through
+        // a ValueSource so the `tar` extraction stays configuration-cache compatible.
+        graalvmHome =
+            project.providers.of(GraalvmToolchainValueSource::class.java) { spec ->
+                spec.parameters.version.set(
                     graalvm.toolchain.version.orNull
                         ?: graalvm.toolchain.channel
                             .get()
                             .defaultVersion,
-                os = currentOS,
-                arch = currentArch,
-                macosIntelFallback = graalvm.toolchain.macosIntelFallback.get(),
-                installBaseDir =
-                    graalvm.toolchain.installDir.orNull
-                        ?.asFile
-                        ?: project.gradle.gradleUserHomeDir.resolve("nucleus/graalvm"),
-            )
-        val logger = project.logger
-        val provisionedHome =
-            lazy { GraalvmToolchainProvisioner.provision(toolchainRequest, logger).absolutePath }
-        graalvmHome = project.provider { provisionedHome.value }
+                )
+                spec.parameters.macosIntelFallback.set(graalvm.toolchain.macosIntelFallback.get())
+                spec.parameters.installBaseDir.set(
+                    (
+                        graalvm.toolchain.installDir.orNull
+                            ?.asFile
+                            ?: project.gradle.gradleUserHomeDir.resolve("nucleus/graalvm")
+                    ).absolutePath,
+                )
+            }
         graalvmJavaExecutable = graalvmHome.map { javaExecutable(it) }
     } else {
         val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
