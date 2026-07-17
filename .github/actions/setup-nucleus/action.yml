@@ -1,19 +1,11 @@
 name: Setup Nucleus
-description: Setup JBR, packaging tools, Gradle, and Node.js for Nucleus builds
+description: Setup JDK, packaging tools, Gradle, and Node.js for Nucleus builds
 
 inputs:
-  jbr-version:
-    description: 'JBR version (e.g. 25.0.2b329.66)'
+  java-version:
+    description: 'Temurin JDK version used to run Gradle (and bundled by jpackage in JVM packaging builds)'
     required: false
-    default: '25.0.2b329.66'
-  jbr-variant:
-    description: 'JBR variant (jbrsdk, jbrsdk_jcef, etc.)'
-    required: false
-    default: 'jbrsdk'
-  jbr-download-url:
-    description: 'Override complete JBR download URL'
-    required: false
-    default: ''
+    default: '25'
   packaging-tools:
     description: 'Install xvfb, rpm, fakeroot, libarchive-tools (Linux only)'
     required: false
@@ -49,18 +41,24 @@ inputs:
 
 outputs:
   java-home:
-    description: 'Path to the JBR installation'
+    description: 'Path to the JDK installation'
     value: ${{ steps.set-java-home.outputs.java-home }}
 
 runs:
   using: composite
   steps:
+    # ── JDK ─────────────────────────────────────────────────────────────
+    - name: Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ inputs.java-version }}
+
     # ── GraalVM native-image prerequisites ──────────────────────────────
-    # The GraalVM JDK itself is no longer installed here: the Nucleus plugin
-    # auto-downloads Oracle GraalVM (Liberica NIK on Intel macOS) per the
-    # graalvm { toolchain { } } DSL and caches it under ~/.gradle/nucleus/graalvm.
-    # Only the native build tools (Xcode/MSVC) and the toolchain cache are set up;
-    # Gradle itself runs on the JBR installed below.
+    # The GraalVM JDK is not installed here: the Nucleus plugin auto-downloads
+    # Oracle GraalVM (Liberica NIK on Intel macOS) per the graalvm { toolchain { } }
+    # DSL and caches it under ~/.gradle/nucleus/graalvm. Only the native build
+    # tools (Xcode/MSVC) and the toolchain cache are GraalVM-specific.
     - name: Select Xcode 26
       if: runner.os == 'macOS' && inputs.graalvm == 'true'
       shell: bash
@@ -78,139 +76,6 @@ runs:
       with:
         path: ~/.gradle/nucleus/graalvm
         key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-version }}
-
-    # In GraalVM mode any JDK can run Gradle: the native image is built entirely by
-    # the plugin-provisioned GraalVM, so nothing JBR-specific ends up in the output.
-    # JBR (below) stays for JVM packaging modes, where jpackage bundles the running
-    # JDK into the distributed app and decorated-window-jbr needs the JBR API.
-    - name: Set up Gradle JDK
-      if: inputs.graalvm == 'true'
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '21'
-
-    # ── JBR Download & Install ──────────────────────────────────────────
-    - name: Install JBR (Linux)
-      if: runner.os == 'Linux' && inputs.graalvm != 'true'
-      shell: bash
-      run: |
-        set -euo pipefail
-
-        INPUT_VERSION="${{ inputs.jbr-version }}"
-        INPUT_VARIANT="${{ inputs.jbr-variant }}"
-        INPUT_URL="${{ inputs.jbr-download-url }}"
-
-        if [ -n "$INPUT_URL" ]; then
-          URL="$INPUT_URL"
-        else
-          # Parse version: 25.0.2b315.62 → version=25.0.2, build=315.62
-          VERSION="${INPUT_VERSION%b*}"
-          BUILD="${INPUT_VERSION#*b}"
-
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)  JBR_ARCH="x64" ;;
-            aarch64) JBR_ARCH="aarch64" ;;
-            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
-          esac
-
-          URL="https://cache-redirector.jetbrains.com/intellij-jbr/${INPUT_VARIANT}-${VERSION}-linux-${JBR_ARCH}-b${BUILD}.tar.gz"
-        fi
-
-        echo "Downloading JBR from: $URL"
-        curl -fL -o jbr.tar.gz "$URL"
-        mkdir -p "$RUNNER_TEMP/jbr"
-        tar -xzf jbr.tar.gz -C "$RUNNER_TEMP/jbr"
-        rm -f jbr.tar.gz
-
-        JBR_DIR=$(find "$RUNNER_TEMP/jbr" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-        if [ ! -d "$JBR_DIR/bin" ]; then
-          echo "Could not locate bin/ in extracted JBR"; exit 1
-        fi
-        echo "JAVA_HOME=$JBR_DIR" >> "$GITHUB_ENV"
-        echo "$JBR_DIR/bin" >> "$GITHUB_PATH"
-
-    - name: Install JBR (macOS)
-      if: runner.os == 'macOS' && inputs.graalvm != 'true'
-      shell: bash
-      run: |
-        set -euo pipefail
-
-        INPUT_VERSION="${{ inputs.jbr-version }}"
-        INPUT_VARIANT="${{ inputs.jbr-variant }}"
-        INPUT_URL="${{ inputs.jbr-download-url }}"
-
-        if [ -n "$INPUT_URL" ]; then
-          URL="$INPUT_URL"
-        else
-          VERSION="${INPUT_VERSION%b*}"
-          BUILD="${INPUT_VERSION#*b}"
-
-          ARCH="$(uname -m)"
-          case "$ARCH" in
-            x86_64)  JBR_ARCH="x64" ;;
-            arm64)   JBR_ARCH="aarch64" ;;
-            *)       echo "Unsupported architecture: $ARCH"; exit 1 ;;
-          esac
-
-          URL="https://cache-redirector.jetbrains.com/intellij-jbr/${INPUT_VARIANT}-${VERSION}-osx-${JBR_ARCH}-b${BUILD}.tar.gz"
-        fi
-
-        echo "Downloading JBR from: $URL"
-        curl -fL -o jbr.tar.gz "$URL"
-        mkdir -p "$RUNNER_TEMP/jbr"
-        tar -xzf jbr.tar.gz -C "$RUNNER_TEMP/jbr"
-        rm -f jbr.tar.gz
-
-        ROOT_DIR=$(find "$RUNNER_TEMP/jbr" -mindepth 1 -maxdepth 1 -type d | head -n 1)
-        if [ -d "$ROOT_DIR/Contents/Home/bin" ]; then
-          JAVA_HOME="$ROOT_DIR/Contents/Home"
-        elif [ -d "$ROOT_DIR/bin" ]; then
-          JAVA_HOME="$ROOT_DIR"
-        else
-          echo "Could not locate bin/ in extracted JBR"; exit 1
-        fi
-        echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
-        echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
-
-    - name: Install JBR (Windows)
-      if: runner.os == 'Windows' && inputs.graalvm != 'true'
-      shell: pwsh
-      run: |
-        $ErrorActionPreference = 'Stop'
-        $ProgressPreference = 'SilentlyContinue'
-
-        $inputVersion = '${{ inputs.jbr-version }}'
-        $inputVariant = '${{ inputs.jbr-variant }}'
-        $inputUrl = '${{ inputs.jbr-download-url }}'
-
-        if ($inputUrl -ne '') {
-          $url = $inputUrl
-        } else {
-          # Parse version: 25.0.2b315.62 → version=25.0.2, build=315.62
-          $parts = $inputVersion -split 'b', 2
-          $version = $parts[0]
-          $build = $parts[1]
-
-          $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower()
-          switch ($arch) {
-            'x64'   { $jbrArch = 'x64' }
-            'arm64' { $jbrArch = 'aarch64' }
-            default { Write-Error "Unsupported architecture: $arch"; exit 1 }
-          }
-
-          $url = "https://cache-redirector.jetbrains.com/intellij-jbr/${inputVariant}-${version}-windows-${jbrArch}-b${build}.zip"
-        }
-
-        Write-Host "Downloading JBR from: $url"
-        Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\jbr.zip"
-        Expand-Archive -Path "$env:RUNNER_TEMP\jbr.zip" -DestinationPath "$env:RUNNER_TEMP\jbr" -Force
-        Remove-Item "$env:RUNNER_TEMP\jbr.zip" -Force
-
-        $jbrDir = Get-ChildItem "$env:RUNNER_TEMP\jbr" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
-        "$([string]::Format('JAVA_HOME={0}', $jbrDir.FullName))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        "$($jbrDir.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
     - name: Set java-home output
       id: set-java-home

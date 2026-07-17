@@ -49,10 +49,8 @@ jobs:
             node-version: '22' # npm 11 (Node 24) has ECOMPROMISED bugs on Windows ARM64
           - os: macos-latest
             arch: arm64
-            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-aarch64.tar.gz'
           - os: macos-15-intel
             arch: amd64
-            jbr-download-url: 'https://github.com/kdroidFilter/JetBrainsRuntime/releases/download/v25.0.2b329.66-rtl/jdk-macos-x64.tar.gz'
 
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -76,8 +74,6 @@ jobs:
       - name: Setup Nucleus
         uses: ./.github/actions/setup-nucleus
         with:
-          jbr-version: '25.0.2b329.66'
-          jbr-download-url: ${{ matrix.jbr-download-url || '' }}
           packaging-tools: 'true'
           flatpak: 'true'
           snap: 'true'
