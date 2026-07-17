@@ -22,6 +22,14 @@ internal object OracleRepoParser {
         val jniConfig = File(dir, "jni-config.json")
         val resourceConfig = File(dir, "resource-config.json")
 
+        // Newer repo versions ship a single reachability-metadata.json instead of the
+        // per-type *-config.json files. Prefer it when none of the old configs exist.
+        val hasOldFormat = reflectConfig.exists() || jniConfig.exists() || resourceConfig.exists()
+        val reachabilityMetadata = File(dir, "reachability-metadata.json")
+        if (!hasOldFormat && reachabilityMetadata.exists()) {
+            return parseReachabilityMetadata(reachabilityMetadata)
+        }
+
         val reflectionEntries = if (reflectConfig.exists()) parseReflectConfig(reflectConfig) else emptySet()
         val jniEntries = if (jniConfig.exists()) parseJniConfig(jniConfig) else emptySet()
         val resourcePatterns = if (resourceConfig.exists()) parseResourceConfig(resourceConfig) else emptySet()
@@ -104,11 +112,19 @@ internal object OracleRepoParser {
         @Suppress("UNCHECKED_CAST")
         val reflectionArray = root["reflection"] as? List<Map<String, Any?>> ?: emptyList()
 
+        // Legacy top-level "jni" array (older schema).
         @Suppress("UNCHECKED_CAST")
         val jniArray = root["jni"] as? List<Map<String, Any?>> ?: emptyList()
 
         val reflectionEntries = reflectionArray.map { parseTypeMap(it).toReflectionEntry() }.toSet()
-        val jniEntries = jniArray.map { parseTypeMap(it).toJniEntry() }.toSet()
+
+        // Current schema no longer has a separate "jni" section; JNI-accessible types are
+        // reflection entries flagged with "jniAccessible": true.
+        val jniFromReflection =
+            reflectionArray
+                .filter { it["jniAccessible"] == true }
+                .map { parseTypeMap(it).toJniEntry() }
+        val jniEntries = (jniArray.map { parseTypeMap(it).toJniEntry() } + jniFromReflection).toSet()
 
         val resourcePatterns = mutableSetOf<ResourcePattern>()
 
