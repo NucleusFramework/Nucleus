@@ -21,6 +21,8 @@ abstract class GraalvmSettings
     ) {
         val isEnabled: Property<Boolean> = objects.notNullProperty(false)
 
+        // Gradle toolchain spec used only when toolchain.autoDownload is disabled; the
+        // auto-downloaded toolchain is selected via toolchain { channel / version } instead.
         @Suppress("MagicNumber")
         val javaLanguageVersion: Property<Int> = objects.notNullProperty(25)
         val jvmVendor: Property<JvmVendorSpec> = objects.nullableProperty()
@@ -58,10 +60,15 @@ abstract class GraalvmSettings
 
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
+        val toolchain: GraalvmToolchainSettings = objects.new()
         val macOS: GraalvmMacOSSettings = objects.new()
         val windows: GraalvmWindowsSettings = objects.new()
         val metadataRepository: MetadataRepositorySettings = objects.new()
         val pgo: GraalvmPgoSettings = objects.new()
+
+        fun toolchain(fn: Action<GraalvmToolchainSettings>) {
+            fn.execute(toolchain)
+        }
 
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
             fn.execute(macOS)
@@ -78,6 +85,52 @@ abstract class GraalvmSettings
         fun pgo(fn: Action<GraalvmPgoSettings>) {
             fn.execute(pgo)
         }
+    }
+
+/**
+ * GraalVM JDK toolchain acquisition.
+ *
+ * By default the plugin downloads Oracle GraalVM (the former Enterprise Edition) on first
+ * use and caches it under `<gradle-user-home>/nucleus/graalvm` — no locally installed
+ * GraalVM is required. Innovation releases (the default [channel]) come from
+ * `gds.oracle.com`, LTS and pinned releases from `download.oracle.com`. On Intel macs,
+ * which Oracle stopped supporting after GraalVM 25.0.1, the plugin falls back to BellSoft
+ * Liberica NIK (resolved through the BellSoft discovery API).
+ *
+ * A `GRAALVM_HOME` environment variable pointing at a valid GraalVM installation always
+ * wins over the download — useful on CI where `setup-graalvm` already provisioned one.
+ * Set [autoDownload] to `false` to resolve through the regular Gradle toolchain machinery
+ * instead ([GraalvmSettings.javaLanguageVersion] / [GraalvmSettings.jvmVendor]).
+ *
+ * "latest" versions ("25", "25i1") are sticky once downloaded; delete the corresponding
+ * directory under [installDir] to pick up a newer build.
+ */
+abstract class GraalvmToolchainSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /** Download and cache the GraalVM JDK automatically. Defaults to `true`. */
+        val autoDownload: Property<Boolean> = objects.notNullProperty(true)
+
+        /** Release channel used when [version] is not set. Defaults to [GraalvmChannel.INNOVATION]. */
+        val channel: Property<GraalvmChannel> = objects.notNullProperty(GraalvmChannel.INNOVATION)
+
+        /**
+         * Explicit Oracle GraalVM version, overriding [channel]: an innovation release
+         * (`"25i1"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * patch release (`"25.0.1"`).
+         */
+        val version: Property<String> = objects.nullableProperty()
+
+        /**
+         * Use Liberica NIK on Intel macs, where Oracle GraalVM is no longer shipped.
+         * Defaults to `true`.
+         */
+        val macosIntelFallback: Property<Boolean> = objects.notNullProperty(true)
+
+        /** Where downloaded toolchains are cached. Defaults to `<gradle-user-home>/nucleus/graalvm`. */
+        val installDir: DirectoryProperty = objects.directoryProperty()
     }
 
 /**

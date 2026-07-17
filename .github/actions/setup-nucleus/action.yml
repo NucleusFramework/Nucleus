@@ -31,13 +31,13 @@ inputs:
     required: false
     default: 'true'
   graalvm:
-    description: 'Use GraalVM (Oracle GraalVM) instead of JBR'
+    description: 'Prepare a GraalVM native-image build: native build tools (Xcode/MSVC) and toolchain cache. The GraalVM JDK itself is auto-downloaded by the Nucleus plugin.'
     required: false
     default: 'false'
   graalvm-version:
-    description: "Oracle GraalVM version for setup-graalvm's 'version' input (e.g. 25.1 feature release, 25.0 LTS)"
+    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i1, 25).'
     required: false
-    default: '25.1'
+    default: '25i1'
   setup-node:
     description: 'Setup Node.js'
     required: false
@@ -55,49 +55,33 @@ outputs:
 runs:
   using: composite
   steps:
-    # ── GraalVM (Oracle GraalVM) ─────────────────────────────────────────
+    # ── GraalVM native-image prerequisites ──────────────────────────────
+    # The GraalVM JDK itself is no longer installed here: the Nucleus plugin
+    # auto-downloads Oracle GraalVM (Liberica NIK on Intel macOS) per the
+    # graalvm { toolchain { } } DSL and caches it under ~/.gradle/nucleus/graalvm.
+    # Only the native build tools (Xcode/MSVC) and the toolchain cache are set up;
+    # Gradle itself runs on the JBR installed below.
     - name: Select Xcode 26
       if: runner.os == 'macOS' && inputs.graalvm == 'true'
       shell: bash
       run: sudo xcode-select -s /Applications/Xcode_26.0.app/Contents/Developer
 
-    # Oracle GraalVM (not CE) ships native-image AND supports AWT. The builds request
-    # jvmVendor = ORACLE, so the installed JDK must report the Oracle vendor — otherwise
-    # Gradle's toolchain resolver auto-provisions a plain Oracle JDK without native-image.
-    #
-    # setup-graalvm's `version` input selects the feature release (e.g. 25.1) for
-    # distribution 'graalvm'. GraalVM 25.1 has no macOS x64 build, so on Intel macOS we fall
-    # back to the 25.0 LTS line, which does publish macos-x64.
-    - name: Resolve Oracle GraalVM version
-      if: inputs.graalvm == 'true'
-      id: graalvm-version
-      shell: bash
-      env:
-        REQUESTED: ${{ inputs.graalvm-version }}
-      run: |
-        set -euo pipefail
-        V="$REQUESTED"
-        if [ "$RUNNER_OS" = "macOS" ] && [ "$RUNNER_ARCH" = "X64" ] && [ "$V" = "25.1" ]; then
-          echo "GraalVM 25.1 has no macos-x64 build; using 25.0 LTS on Intel macOS."
-          V="25.0"
-        fi
-        echo "version=$V" >> "$GITHUB_OUTPUT"
-
-    - name: Set up Oracle GraalVM
-      if: inputs.graalvm == 'true'
-      uses: graalvm/setup-graalvm@v1
-      with:
-        version: ${{ steps.graalvm-version.outputs.version }}
-        distribution: 'graalvm'
-        github-token: ${{ github.token }}
-
     - name: Setup MSVC
       if: runner.os == 'Windows' && inputs.graalvm == 'true'
       uses: ilammy/msvc-dev-cmd@v1
 
+    # Keyed per OS/arch: the plugin resolves a platform-specific toolchain, and
+    # cache entries with different keys are never shared across runners.
+    - name: Cache GraalVM toolchain
+      if: inputs.graalvm == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ~/.gradle/nucleus/graalvm
+        key: graalvm-toolchain-${{ runner.os }}-${{ runner.arch }}-${{ inputs.graalvm-version }}
+
     # ── JBR Download & Install ──────────────────────────────────────────
     - name: Install JBR (Linux)
-      if: runner.os == 'Linux' && inputs.graalvm != 'true'
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         set -euo pipefail
@@ -137,7 +121,7 @@ runs:
         echo "$JBR_DIR/bin" >> "$GITHUB_PATH"
 
     - name: Install JBR (macOS)
-      if: runner.os == 'macOS' && inputs.graalvm != 'true'
+      if: runner.os == 'macOS'
       shell: bash
       run: |
         set -euo pipefail
@@ -180,7 +164,7 @@ runs:
         echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
 
     - name: Install JBR (Windows)
-      if: runner.os == 'Windows' && inputs.graalvm != 'true'
+      if: runner.os == 'Windows'
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
@@ -215,10 +199,9 @@ runs:
 
         $jbrDir = Get-ChildItem "$env:RUNNER_TEMP\jbr" | Where-Object { $_.PSIsContainer } | Select-Object -First 1
         "$([string]::Format('JAVA_HOME={0}', $jbrDir.FullName))" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-        "$($jbrDir.FullName)in" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+        "$($jbrDir.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
 
     - name: Set java-home output
-      if: inputs.graalvm != 'true'
       id: set-java-home
       shell: bash
       run: echo "java-home=$JAVA_HOME" >> "$GITHUB_OUTPUT"
