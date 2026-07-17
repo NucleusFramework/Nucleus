@@ -1,11 +1,15 @@
 name: Setup Nucleus
-description: Setup JDK, packaging tools, Gradle, and Node.js for Nucleus builds
+description: Setup JBR, packaging tools, Gradle, and Node.js for Nucleus builds
 
 inputs:
   java-version:
-    description: 'Temurin JDK version used to run Gradle (and bundled by jpackage in JVM packaging builds)'
+    description: 'JBR (JetBrains Runtime) version used to run Gradle and bundled by jpackage in JVM packaging builds. A bare LTS major like "25" resolves to the latest JBR build; setup-java handles every CI OS/arch, including windows-aarch64 where Temurin 25 is EA-only.'
     required: false
     default: '25'
+  java-package:
+    description: 'JBR package variant (jdk, jre, jdk+jcef, jre+jcef, jdk+ft, jre+ft). Defaults to the full JDK so jpackage/jlink can build a custom runtime.'
+    required: false
+    default: 'jdk'
   packaging-tools:
     description: 'Install xvfb, rpm, fakeroot, libarchive-tools (Linux only)'
     required: false
@@ -41,18 +45,29 @@ inputs:
 
 outputs:
   java-home:
-    description: 'Path to the JDK installation'
+    description: 'Path to the JBR installation'
     value: ${{ steps.set-java-home.outputs.java-home }}
 
 runs:
   using: composite
   steps:
-    # ── JDK ─────────────────────────────────────────────────────────────
-    - name: Set up JDK
+    # ── JDK (JetBrains Runtime) ────────────────────────────────────────
+    # JBR is the single JDK for every job. setup-java's jetbrains distribution
+    # resolves the latest JBR build for the given LTS major and covers every CI
+    # OS/arch — including windows-aarch64, where Temurin 25 is only published as
+    # an EA beta. jpackage bundles this JDK into the distributed app, and
+    # decorated-window-jbr needs the JBR API at runtime. In GraalVM mode the
+    # native image is built entirely by the plugin-provisioned GraalVM, so the
+    # Gradle JDK contributes nothing to that output — JBR is used uniformly for
+    # simplicity.
+    - name: Set up JDK (JBR)
       uses: actions/setup-java@v4
       with:
-        distribution: 'temurin'
+        distribution: 'jetbrains'
         java-version: ${{ inputs.java-version }}
+        java-package: ${{ inputs.java-package }}
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
 
     # ── GraalVM native-image prerequisites ──────────────────────────────
     # The GraalVM JDK is not installed here: the Nucleus plugin auto-downloads
