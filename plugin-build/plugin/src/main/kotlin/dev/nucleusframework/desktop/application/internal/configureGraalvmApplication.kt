@@ -4,6 +4,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
@@ -668,7 +669,16 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedStaticMetadataDir = staticMetadataDir.get().asFile
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
-            val resolvedMarch = graalvm.march.get()
+            // Default: portable baseline everywhere, except macOS on Apple Silicon where the
+            // armv8-a baseline is already universal so "native" is a free perf win.
+            val resolvedMarch =
+                (
+                    graalvm.march.orNull ?: if (currentOS == OS.MacOS && currentArch == Arch.Arm64) {
+                        NativeImageMarch.NATIVE
+                    } else {
+                        NativeImageMarch.COMPATIBILITY
+                    }
+                ).flag
             val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()

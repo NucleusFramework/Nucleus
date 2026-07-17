@@ -25,10 +25,12 @@ abstract class GraalvmSettings
         val javaLanguageVersion: Property<Int> = objects.notNullProperty(25)
         val jvmVendor: Property<JvmVendorSpec> = objects.nullableProperty()
         val imageName: Property<String> = objects.nullableProperty()
-        // Portable ISA baseline by default: the produced binary is meant to be distributed, so it
-        // must run on any x86-64 CPU. "native" optimizes for the build machine only and crashes on
-        // older CPUs ("does not support all of the following CPU features"). Override for local perf.
-        val march: Property<String> = objects.notNullProperty("compatibility")
+        // Target CPU instruction set (`-march`). Leave unset for the per-platform default:
+        // [NativeImageMarch.COMPATIBILITY] (portable baseline for distributed binaries) everywhere
+        // except macOS on Apple Silicon, which defaults to [NativeImageMarch.NATIVE] (its armv8-a
+        // baseline is present on every supported Mac, so there is no portability cost). Set to
+        // [NativeImageMarch.NATIVE] to tune for the build machine (crashes on older/different CPUs).
+        val march: Property<NativeImageMarch> = objects.nullableProperty()
 
         // Optimization level for native-image (the `-O*` flag). Leave unset to keep native-image's
         // own default (`-O2`). Use [NativeImageOptimization.SIZE] to shrink Compose images (~20–30%),

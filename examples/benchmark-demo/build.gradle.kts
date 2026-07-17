@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -55,7 +56,7 @@ nucleus.application {
         // ISA parity with what Swift/Rust actually ship on macOS ARM: their target-triple
         // baseline is the M1 ISA (AES/SHA/LSE/CRC32...), so `native` here — GraalVM's default
         // `compatibility` targets bare ARMv8.0, a portability no macOS app needs.
-        march = "native"
+        march = NativeImageMarch.NATIVE
         // PGO (Oracle GraalVM): build instrumented with -Ppgo=instrument, run the binary with
         // --headless to record default.iprof into pgo/, then rebuild — the profile is applied
         // automatically whenever pgo/default.iprof exists. True PGO replaces ML-inferred PGO.

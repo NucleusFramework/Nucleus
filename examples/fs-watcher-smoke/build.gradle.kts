@@ -1,3 +1,4 @@
+import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.gradle.api.tasks.Exec
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -32,7 +33,10 @@ nucleus.application {
         javaLanguageVersion = 25
         jvmVendor = JvmVendorSpec.BELLSOFT
         imageName = "fs-watcher-native-smoke"
-        march = providers.gradleProperty("nativeMarch").getOrElse("compatibility")
+        // Leave unset for the per-platform default; -PnativeMarch=native overrides it locally.
+        providers.gradleProperty("nativeMarch").orNull?.let {
+            march = NativeImageMarch.valueOf(it.uppercase())
+        }
         buildArgs.addAll(
             "-H:+AddAllCharsets",
             "-Djava.awt.headless=true",

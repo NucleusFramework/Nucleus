@@ -56,7 +56,7 @@ process is what gets measured. `run-all.sh` reads `JDK_C2_HOME` and `GRAALVM_HOM
 - PGO flow: build `-Ppgo=instrument` → run the binary with cwd = `pgo/` → close the window at
   "Done" → `default.iprof` is written on process exit → rebuild (the profile is auto-detected).
   Train in **GUI** (not headless) to cover the render paths.
-- `march = "native"` in the graalvm DSL: ISA parity with what Swift/Rust ship on macOS ARM.
+- `march = NativeImageMarch.NATIVE` in the graalvm DSL: ISA parity with what Swift/Rust ship on macOS ARM.
   `compatibility` = bare ARMv8.0, ~-15% composite.
 
 ## Measurement protocol
