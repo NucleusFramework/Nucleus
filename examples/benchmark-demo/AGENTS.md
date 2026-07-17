@@ -26,7 +26,7 @@ Tauri/Rust, Flutter/Dart) across 13 CPU kernels + 3 render ramps + 1 list bench.
 | jvm-c2 | `./gradlew :examples:benchmark-demo:run` (C2, no ProGuard) |
 | jvm-c2-pg | `runRelease` with `-PrunJavaHome=<jdk>` (C2 + ProGuard) |
 | jvm-graal | `runRelease` with `-PrunJavaHome=<graalvm>` (GraalVM JIT + ProGuard) |
-| aot-os / o2 / o3 / o3-pgo | `nativeImageCompile` + `-Popt=s\|2\|(none)` and `-Ppgo=off\|(auto)` |
+| aot-os / o2 / o3 / o3-pgo | `nativeImageCompile` + `-Popt=s\|2\|(none)` and `-Pnucleus.graalvm.pgo=off\|(auto)` |
 | swiftui | `swift build -c release` then `.build/release/BenchmarkDemo` |
 | tauri | `cargo build --release` then `target/release/benchmark-demo` |
 | flutter | `flutter build macos --release` then the binary inside the `.app` |
@@ -39,7 +39,7 @@ process is what gets measured. `run-all.sh` reads `JDK_C2_HOME` and `GRAALVM_HOM
 ## Non-negotiable build rules
 
 - **GraalVM native: ALWAYS `--no-configuration-cache --rerun`.** The Gradle configuration cache
-  serves phantom builds (BUILD SUCCESSFUL in 2s without recompiling) when `-Ppgo`/`-Popt` change.
+  serves phantom builds (BUILD SUCCESSFUL in 2s without recompiling) when `-Pnucleus.graalvm.pgo`/`-Popt` change.
   Verify the `Graal compiler: optimization level: X, target machine: Y, PGO: Z` line in the output
   — the only proof of the config actually compiled.
 - **Native builds MUST run with `JAVA_HOME=<graalvm>` (current JVM = GraalVM).** Gradle prefers the
@@ -53,10 +53,11 @@ process is what gets measured. `run-all.sh` reads `JDK_C2_HOME` and `GRAALVM_HOM
   binary. Use `--rerun-tasks` (global) to force the whole graph.
 - Each native build overwrites `build/compose/tmp/main/graalvm/nativeCompile/` — to compare
   variants, copy the **whole dir** (binary + AWT dylibs), never the binary alone.
-- PGO flow: build `-Ppgo=instrument` → run the binary with cwd = `pgo/` → close the window at
-  "Done" → `default.iprof` is written on process exit → rebuild (the profile is auto-detected).
+- PGO flow: `runWithPgoInstrument` (builds the instrumented image, runs it, records
+  `graalvm/pgo/default.iprof` on exit) → close the window at "Done" → rebuild (the profile is
+  auto-detected).
   Train in **GUI** (not headless) to cover the render paths.
-- `march = "native"` in the graalvm DSL: ISA parity with what Swift/Rust ship on macOS ARM.
+- `march = NativeImageMarch.NATIVE` in the graalvm DSL: ISA parity with what Swift/Rust ship on macOS ARM.
   `compatibility` = bare ARMv8.0, ~-15% composite.
 
 ## Measurement protocol

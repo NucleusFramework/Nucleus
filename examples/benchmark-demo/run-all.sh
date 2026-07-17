@@ -69,9 +69,9 @@ if wants jvm-c2 || wants jvm-c2-pg || wants jvm-graal; then
   (cd "$ROOT" && ./gradlew :examples:benchmark-demo:compileKotlin \
       :examples:benchmark-demo:proguardReleaseJars -q) >> "$OUT/run.log" 2>&1
 fi
-wants aot-os     && build_native aot-os     -Popt=s -Ppgo=off
-wants aot-o2     && build_native aot-o2     -Popt=2 -Ppgo=off
-wants aot-o3     && build_native aot-o3     -Ppgo=off
+wants aot-os     && build_native aot-os     -Popt=s -Pnucleus.graalvm.pgo=off
+wants aot-o2     && build_native aot-o2     -Popt=2 -Pnucleus.graalvm.pgo=off
+wants aot-o3     && build_native aot-o3     -Pnucleus.graalvm.pgo=off
 wants aot-o3-pgo && build_native aot-o3-pgo
 if wants swiftui; then
   log "build swiftui…"

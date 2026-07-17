@@ -4,6 +4,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
@@ -39,6 +40,20 @@ private val graalvmDefaultJvmArgs: List<String> =
         }
     }
 
+// Oracle GraalVM ships PGO (--pgo / --pgo-instrument); community builds (GraalVM CE, Liberica
+// NIK, Mandrel) reject those flags as unknown options. Detected from the JDK `release` file
+// (Oracle GraalVM reports IMPLEMENTOR="Oracle Corporation").
+private fun isOracleGraalvm(javaHome: File): Boolean =
+    javaHome
+        .resolve("release")
+        .takeIf { it.isFile }
+        ?.readLines()
+        .orEmpty()
+        .any { line ->
+            (line.startsWith("IMPLEMENTOR=") || line.startsWith("VENDOR=")) &&
+                line.contains("Oracle", ignoreCase = true)
+        }
+
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
     val graalvm = app.graalvm
@@ -59,6 +74,33 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
     val nativeImageConfigDir = graalvm.nativeImageConfigBaseDir
     val mainClassName = app.mainClass
+
+    // ── PGO (Profile-Guided Optimization, Oracle GraalVM only) ──
+    // `runWithPgoInstrument` builds an instrumented image, runs the packaged app and records
+    // a profile on exit; every later native-image build applies it automatically (--pgo=...),
+    // replacing Oracle's default ML-inferred profile with real runtime data.
+    // The instrumented compile is triggered by requesting the run task itself (detected via
+    // startParameter, which is part of the configuration-cache key) or explicitly with
+    // -Pnucleus.graalvm.pgo=instrument; -Pnucleus.graalvm.pgo=off ignores a recorded profile.
+
+    val pgoProfileFile: File =
+        graalvm.pgo.profile.orNull?.asFile
+            ?: project.layout.projectDirectory
+                .file("graalvm/pgo/default.iprof")
+                .asFile
+    val pgoInstrumentTaskName = "run${buildType.classifier.uppercaseFirstChar()}WithPgoInstrument"
+    val pgoMode: String =
+        run {
+            val instrumentRunRequested =
+                project.gradle.startParameter.taskNames.any {
+                    it.substringAfterLast(':').equals(pgoInstrumentTaskName, ignoreCase = true)
+                }
+            if (instrumentRunRequested) {
+                "instrument"
+            } else {
+                NucleusProperties.graalvmPgoMode(project.providers).orNull ?: "auto"
+            }
+        }
 
     // ── Uber JAR (reuse existing task) ──
 
@@ -668,10 +710,27 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedStaticMetadataDir = staticMetadataDir.get().asFile
             val resolvedMetadataRepoDirsFile = metadataRepoDirsFile.get().asFile
             val resolvedBuildArgs = graalvm.buildArgs.get()
-            val resolvedMarch = graalvm.march.get()
+            // Default: portable baseline everywhere, except macOS on Apple Silicon where the
+            // armv8-a baseline is already universal so "native" is a free perf win.
+            val resolvedMarch =
+                (
+                    graalvm.march.orNull ?: if (currentOS == OS.MacOS && currentArch == Arch.Arm64) {
+                        NativeImageMarch.NATIVE
+                    } else {
+                        NativeImageMarch.COMPATIBILITY
+                    }
+                ).flag
             val resolvedOptimizationFlag = graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
             val resolvedMlProfileInference = graalvm.mlProfileInference.get()
+            val resolvedPgoMode = pgoMode
+            val resolvedPgoEnabled = graalvm.pgo.enabled.get()
+            val resolvedPgoProfile = pgoProfileFile
+            val resolvedGraalvmHome = graalvmHome.get()
+            // Rerun the compile when the PGO mode or the recorded profile changes — the args are
+            // assembled in doFirst, so they are not tracked as inputs by themselves.
+            inputs.property("pgoMode", resolvedPgoMode)
+            inputs.files(project.files(pgoProfileFile))
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
@@ -698,6 +757,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             doFirst {
                 outputDir.mkdirs()
 
+                // PGO flags are Oracle GraalVM-only: community toolchains (GraalVM CE, Liberica
+                // NIK, Mandrel) reject --pgo/--pgo-instrument as unknown options. Gate on the
+                // resolved toolchain so a committed profile never breaks builds on those JDKs.
+                val pgoSupported = isOracleGraalvm(File(resolvedGraalvmHome))
+
                 // Build args at execution time so that outputs from dependent tasks
                 // (static analysis dir, metadata repo dirs file, …) exist on disk.
                 args =
@@ -723,6 +787,33 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // user buildArgs so an explicit override there still wins.
                         if (!resolvedMlProfileInference) {
                             add("-H:-MLProfileInference")
+                        }
+
+                        // PGO: either instrument (collect a profile) or apply a recorded one.
+                        when {
+                            resolvedPgoMode == "instrument" -> {
+                                check(pgoSupported) {
+                                    "PGO instrumentation requires Oracle GraalVM " +
+                                        "(--pgo-instrument is not available in GraalVM CE, Liberica NIK or " +
+                                        "Mandrel). Current toolchain: $resolvedGraalvmHome. " +
+                                        "Set graalvm { jvmVendor = JvmVendorSpec.ORACLE }."
+                                }
+                                add("--pgo-instrument")
+                                logger.lifecycle(
+                                    "PGO: building instrumented image — run it to record ${resolvedPgoProfile.name}",
+                                )
+                            }
+                            resolvedPgoMode != "off" && resolvedPgoEnabled && resolvedPgoProfile.exists() -> {
+                                if (pgoSupported) {
+                                    add("--pgo=${resolvedPgoProfile.absolutePath}")
+                                    logger.lifecycle("PGO: applying recorded profile $resolvedPgoProfile")
+                                } else {
+                                    logger.warn(
+                                        "PGO: recorded profile $resolvedPgoProfile ignored — --pgo requires " +
+                                            "Oracle GraalVM (current toolchain: $resolvedGraalvmHome)",
+                                    )
+                                }
+                            }
                         }
 
                         // macOS: force the link-time deployment target. native-image does NOT
@@ -824,6 +915,31 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
 
     // ── Run the native image ──
 
+    val packagedBinaryFile =
+        when (currentOS) {
+            OS.MacOS -> {
+                val dir =
+                    appTmpDir.map {
+                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}.app/Contents/MacOS")
+                    }
+                dir.map { it.file(imageName.get()) }
+            }
+            OS.Windows -> {
+                val dir =
+                    appTmpDir.map {
+                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
+                    }
+                dir.map { it.file(binaryName.get()) }
+            }
+            OS.Linux -> {
+                val dir =
+                    appTmpDir.map {
+                        it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
+                    }
+                dir.map { it.file(imageName.get()) }
+            }
+        }
+
     tasks.register<Exec>(
         taskNameAction = "run",
         taskNameObject = "graalvmNative",
@@ -831,33 +947,45 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         description = "Build and run the GraalVM native image"
         dependsOn(packageGraalvmNative)
 
-        val binaryFile =
-            when (currentOS) {
-                OS.MacOS -> {
-                    val dir =
-                        appTmpDir.map {
-                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}.app/Contents/MacOS")
-                        }
-                    dir.map { it.file(imageName.get()) }
-                }
-                OS.Windows -> {
-                    val dir =
-                        appTmpDir.map {
-                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
-                        }
-                    dir.map { it.file(binaryName.get()) }
-                }
-                OS.Linux -> {
-                    val dir =
-                        appTmpDir.map {
-                            it.dir("graalvm/output/${resolvedPackageNameProvider().get()}")
-                        }
-                    dir.map { it.file(imageName.get()) }
-                }
-            }
-
-        executable = binaryFile.get().asFile.absolutePath
+        executable = packagedBinaryFile.get().asFile.absolutePath
         args = app.args
+    }
+
+    // ── Record a PGO profile ──
+    // Builds and packages an instrumented image (the instrumented compile is enabled by the
+    // startParameter detection above), runs it, and lets SubstrateVM dump the profile to
+    // pgoProfileFile on exit. The next regular build picks the profile up automatically.
+
+    tasks.register<Exec>(
+        taskNameAction = "run",
+        taskNameObject = "withPgoInstrument",
+    ) {
+        description = "Build and run an instrumented native image to record a PGO profile"
+        dependsOn(packageGraalvmNative)
+
+        executable = packagedBinaryFile.get().asFile.absolutePath
+        // -XX:ProfilesDumpFile is a SubstrateVM runtime option: it is consumed at isolate
+        // startup and never reaches the application's main(args).
+        args = listOf("-XX:ProfilesDumpFile=${pgoProfileFile.absolutePath}") + app.args
+
+        val resolvedInstrumenting = pgoMode == "instrument"
+        val resolvedProfile = pgoProfileFile
+        val resolvedTaskName = pgoInstrumentTaskName
+        doFirst {
+            check(resolvedInstrumenting) {
+                "The native image was not built with PGO instrumentation. Invoke the task by its " +
+                    "full name (./gradlew $resolvedTaskName) or pass " +
+                    "-P${NucleusProperties.GRAALVM_PGO_MODE}=instrument."
+            }
+            resolvedProfile.parentFile.mkdirs()
+        }
+        doLast {
+            logger.lifecycle("PGO profile recorded to: $resolvedProfile")
+            logger.lifecycle(
+                "Subsequent native image builds apply it automatically (--pgo). " +
+                    "Delete the file or pass -P${NucleusProperties.GRAALVM_PGO_MODE}=off to opt out.",
+            )
+        }
     }
 
     // ── Electron-builder integration ──

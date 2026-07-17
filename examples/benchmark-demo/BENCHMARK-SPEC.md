@@ -27,7 +27,7 @@ JIT/interpreter. Kernel correctness is verifiable on the VM with `dart run bin/c
 Every runtime builds what its stack actually ships to macOS users. Swift/Rust target-triple
 baseline = the M1 ISA (AES/SHA/LSE/CRC32 — every ARM Mac has them). GraalVM's default
 `-march=compatibility` targets bare ARMv8.0 (portability no macOS app needs), so the benchmark
-sets `march = "native"` (`graalvm {}` DSL) — the honest equivalent of the Swift/Rust baseline on
+sets `march = NativeImageMarch.NATIVE` (`graalvm {}` DSL) — the honest equivalent of the Swift/Rust baseline on
 this platform. Measured impact of that asymmetry (M-series, -O3 + recorded PGO): composite 238 →
 254, mandelbrot ×2.
 
@@ -37,12 +37,11 @@ GraalVM's default ML-inferred one). The `--headless` CPU suite is the training w
 exercises all 12 kernels:
 
 ```bash
-./gradlew :examples:benchmark-demo:nativeImageCompileRelease -Ppgo=instrument
-cd examples/benchmark-demo/pgo && <instrumented benchmark-demo> --headless   # writes default.iprof
-./gradlew :examples:benchmark-demo:nativeImageCompileRelease                 # applies pgo/default.iprof
+./gradlew :examples:benchmark-demo:runWithPgoInstrument   # instrumented build + run, records graalvm/pgo/default.iprof
+./gradlew :examples:benchmark-demo:nativeImageCompile      # applies graalvm/pgo/default.iprof
 ```
 
-`build.gradle.kts` applies `pgo/default.iprof` automatically whenever the file exists.
+The Nucleus plugin applies `graalvm/pgo/default.iprof` automatically whenever the file exists.
 
 ## Suite overview (Geekbench-style spread)
 

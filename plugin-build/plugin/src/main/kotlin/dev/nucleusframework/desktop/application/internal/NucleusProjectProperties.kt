@@ -39,6 +39,9 @@ internal object NucleusProperties {
     internal const val ELECTRON_BUILDER_NODE_PATH = "compose.electronBuilder.nodePath"
     internal const val ELECTRON_BUILDER_PUBLISH_MODE = "compose.electronBuilder.publishMode"
 
+    /** GraalVM PGO mode override: `instrument` or `off`. Unset = use a recorded profile when present. */
+    internal const val GRAALVM_PGO_MODE = "nucleus.graalvm.pgo"
+
     fun isVerbose(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(VERBOSE).toBooleanProvider(false)
 
     fun preserveWorkingDir(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(PRESERVE_WD).toBooleanProvider(false)
@@ -100,6 +103,8 @@ internal object NucleusProperties {
 
     @Suppress("MaxLineLength")
     fun electronBuilderPublishMode(providers: ProviderFactory): Provider<String> = providers.valueOrNull(ELECTRON_BUILDER_PUBLISH_MODE)
+
+    fun graalvmPgoMode(providers: ProviderFactory): Provider<String> = providers.valueOrNull(GRAALVM_PGO_MODE)
 
     // providers.valueOrNull works only with root gradle.properties
     fun dontSyncResources(project: Project): Provider<Boolean> =

@@ -79,15 +79,16 @@ step measured on this machine:
 | JVM JIT reference | 137.6 |
 
 Level 3 alone is real but modest; the recorded profile is the big lever — together they take AOT
-from **-37% vs the JIT to -5%**. Toggle builds with `-Popt=2` (level) and `-Ppgo=off|instrument`
+from **-37% vs the JIT to -5%**. Toggle builds with `-Popt=2` (level) and `-Pnucleus.graalvm.pgo=off|instrument`
 (profile); the graphics score is insensitive to all of it (rendering lives in native Skia).
 
-PGO flow (profile at `pgo/default.iprof`, applied automatically when present):
+PGO flow (profile at `graalvm/pgo/default.iprof`, applied automatically when present) — the plugin's
+built-in `runWithPgoInstrument` task builds the instrumented image, runs it, and records the
+profile on exit:
 
 ```bash
-./gradlew :examples:benchmark-demo:nativeImageCompile -Ppgo=instrument --no-configuration-cache --rerun
-cd examples/benchmark-demo/pgo && ../build/compose/tmp/main/graalvm/nativeCompile/benchmark-demo
-# let the suite run in the window, close it at "Done" → writes default.iprof
+./gradlew :examples:benchmark-demo:runWithPgoInstrument --no-configuration-cache --rerun
+# let the suite run in the window, close it at "Done" → writes graalvm/pgo/default.iprof
 ./gradlew :examples:benchmark-demo:nativeImageCompile --no-configuration-cache --rerun
 ```
 
