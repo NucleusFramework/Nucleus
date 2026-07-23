@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -43,13 +44,16 @@ import net.coobird.thumbnailator.Thumbnails
 import net.coobird.thumbnailator.filters.Canvas
 import net.coobird.thumbnailator.geometry.Positions
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.logging.Logger
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
@@ -187,6 +191,16 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         internal val nonValidatedMacBundleID: Property<String> = objects.nullableProperty()
+
+        @get:Internal
+        internal val macAppExtensions: ListProperty<MacAppExtension> =
+            objects.listProperty(MacAppExtension::class.java).convention(emptyList())
+
+        // Tracks the .appex payload + per-extension entitlements/profiles for up-to-date checks.
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macAppExtensionFiles: ConfigurableFileCollection = objects.fileCollection()
 
         @get:Input
         @get:Optional
@@ -712,6 +726,15 @@ abstract class AbstractElectronBuilderPackageTask
                 spec.isIgnoreExitValue = false
             }
 
+            // The blanket `--deep` above re-signs embedded extensions ad-hoc, dropping their
+            // own entitlements. When extensions are configured, re-sign them with their
+            // entitlements and re-seal the outer bundle (without --deep) to preserve them.
+            // NoCertificateSigner only signs on Apple Silicon; on Intel the --deep result stands.
+            if (signer != null && currentArch == Arch.Arm64 && macAppExtensions.get().isNotEmpty()) {
+                signAppExtensions(appDir, signer)
+                signer.sign(appDir, macEntitlementsFile.orNull?.asFile, forceEntitlements = true)
+            }
+
             logger.info("Ad-hoc signature applied successfully")
         }
 
@@ -759,8 +782,57 @@ abstract class AbstractElectronBuilderPackageTask
                 }
             }
 
+            // Re-sign embedded app extensions (Contents/PlugIns) with their own entitlements
+            // before sealing the outer bundle. The jpackage task embedded them; the copy that
+            // electron-builder packages must carry a valid nested signature.
+            signAppExtensions(appDir, signer)
+
             // Re-sign the entire app bundle
             signer.sign(appDir, appEntitlements, forceEntitlements = true)
+        }
+
+        /**
+         * Re-signs each configured app extension found under `Contents/PlugIns/` with its own
+         * entitlements, inside-out. Mirrors the embedding done by the jpackage task; here the
+         * `.appex` already exists in the bundle copy and only needs a fresh signature.
+         */
+        private fun signAppExtensions(
+            appDir: File,
+            signer: MacSigner,
+        ) {
+            val extensions = macAppExtensions.get()
+            if (extensions.isEmpty()) return
+
+            val plugInsDir = appDir.resolve("Contents/PlugIns")
+            for (extension in extensions) {
+                val appexName = extension.appex?.name ?: continue
+                val appex = plugInsDir.resolve(appexName)
+                if (!appex.exists()) continue
+                signBundleInsideOut(appex, extension.entitlements, signer)
+            }
+        }
+
+        /**
+         * Signs a nested bundle (e.g. an `.appex`) inside-out: nested executables/dylibs in its
+         * `Contents/Frameworks` first, then the bundle itself with its [entitlements].
+         */
+        private fun signBundleInsideOut(
+            bundle: File,
+            entitlements: File?,
+            signer: MacSigner,
+        ) {
+            val frameworks = bundle.resolve("Contents/Frameworks")
+            if (frameworks.exists()) {
+                frameworks.walk().forEach { file ->
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        signer.sign(file, entitlements)
+                    }
+                }
+            }
+            signer.sign(bundle, entitlements, forceEntitlements = true)
         }
 
         /**

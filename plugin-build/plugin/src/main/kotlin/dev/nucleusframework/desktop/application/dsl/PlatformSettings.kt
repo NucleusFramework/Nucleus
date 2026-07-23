@@ -132,6 +132,28 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
         fn.execute(launchAgents)
     }
 
+    /**
+     * Configures macOS app extensions (`.appex`) to embed under `Contents/PlugIns/`,
+     * each signed with its own entitlements and provisioning profile.
+     *
+     * ```kotlin
+     * macOS {
+     *     appExtensions {
+     *         extension("NetworkFilter") {
+     *             appex(file("build/NetworkExtension/NetworkFilter.appex"))
+     *             entitlements(file("packaging/networkextension.entitlements"))
+     *             provisioningProfile(file("packaging/NetworkFilter.provisionprofile"))
+     *         }
+     *     }
+     * }
+     * ```
+     */
+    val appExtensions: MacAppExtensionSettings = MacAppExtensionSettings()
+
+    fun appExtensions(fn: Action<MacAppExtensionSettings>) {
+        fn.execute(appExtensions)
+    }
+
     internal val infoPlistSettings = InfoPlistSettings()
 
     fun infoPlist(fn: Action<InfoPlistSettings>) {
