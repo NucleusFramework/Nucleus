@@ -13,6 +13,7 @@ class Notification internal constructor(
     val message: String,
     val largeImage: String?,
     val smallIcon: String?,
+    val urgency: NotificationUrgency,
     val buttons: List<NotificationButton>,
     val onActivated: (() -> Unit)?,
     val onDismissed: ((DismissReason) -> Unit)?,
@@ -68,6 +69,7 @@ class NotificationButtonBuilder internal constructor() {
  * @param message The notification body text.
  * @param largeImage URI to a large image (hero image on Windows, image hint on Linux, attachment on macOS).
  * @param smallIcon URI to a small icon (app logo override on Windows, app icon on Linux, ignored on macOS).
+ * @param urgency Prominence hint mapped to the native equivalent on every platform (see [NotificationUrgency]).
  * @param onActivated Called when the user clicks the notification body.
  * @param onDismissed Called when the notification is dismissed, with the [DismissReason].
  * @param onFailed Called if the notification fails to display.
@@ -78,6 +80,7 @@ fun notification(
     message: String = "",
     largeImage: String? = null,
     smallIcon: String? = null,
+    urgency: NotificationUrgency = NotificationUrgency.NORMAL,
     onActivated: (() -> Unit)? = null,
     onDismissed: ((DismissReason) -> Unit)? = null,
     onFailed: (() -> Unit)? = null,
@@ -89,5 +92,15 @@ fun notification(
         } else {
             emptyList()
         }
-    return Notification(title, message, largeImage, smallIcon, buttonList, onActivated, onDismissed, onFailed)
+    return Notification(
+        title = title,
+        message = message,
+        largeImage = largeImage,
+        smallIcon = smallIcon,
+        urgency = urgency,
+        buttons = buttonList,
+        onActivated = onActivated,
+        onDismissed = onDismissed,
+        onFailed = onFailed,
+    )
 }

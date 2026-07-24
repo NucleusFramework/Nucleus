@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.notification.common.NotificationHandle
 import dev.nucleusframework.notification.common.NotificationManager
 import dev.nucleusframework.notification.common.NotificationResult
+import dev.nucleusframework.notification.common.NotificationUrgency
 import dev.nucleusframework.notification.common.notification
 
 private const val EVENT_LOG_MAX = 20
@@ -50,6 +51,7 @@ fun CommonNotificationsScreen() {
     var message by remember { mutableStateOf("This is a cross-platform notification.") }
     var largeImage by remember { mutableStateOf("") }
     var smallIcon by remember { mutableStateOf("") }
+    var urgency by remember { mutableStateOf(NotificationUrgency.NORMAL) }
 
     fun log(msg: String) {
         events.add(0, msg)
@@ -143,6 +145,34 @@ fun CommonNotificationsScreen() {
                 }
             }
 
+            // -- Urgency (common hint) --
+            SectionCard("Urgency (common hint)") {
+                Text(
+                    "The only prominence hint exposed by the common API. " +
+                        "Linux: urgency · macOS: interruptionLevel · Windows: priority + reminder scenario (CRITICAL).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NotificationUrgency.entries.forEach { level ->
+                        Button(onClick = {
+                            val result =
+                                notification(
+                                    title = "Urgency: ${level.name}",
+                                    message = "Sent with $level urgency",
+                                    urgency = level,
+                                    onActivated = { log("Urgency $level: activated") },
+                                    onDismissed = { reason -> log("Urgency $level: dismissed ($reason)") },
+                                ).send()
+                            logResult("Urgency $level", result, events = events, onHandle = { lastHandle = it })
+                        }) {
+                            Text(level.name)
+                        }
+                    }
+                }
+            }
+
             // -- Custom Notification --
             SectionCard("Custom Notification") {
                 OutlinedTextField(
@@ -177,6 +207,18 @@ fun CommonNotificationsScreen() {
                     singleLine = true,
                 )
                 Spacer(Modifier.height(12.dp))
+                Text("Urgency", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    NotificationUrgency.entries.forEach { level ->
+                        if (level == urgency) {
+                            Button(onClick = { urgency = level }) { Text(level.name) }
+                        } else {
+                            OutlinedButton(onClick = { urgency = level }) { Text(level.name) }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(onClick = {
                         val result =
@@ -185,6 +227,7 @@ fun CommonNotificationsScreen() {
                                 message = message,
                                 largeImage = largeImage.ifBlank { null },
                                 smallIcon = smallIcon.ifBlank { null },
+                                urgency = urgency,
                                 onActivated = { log("Custom: activated") },
                                 onDismissed = { reason -> log("Custom: dismissed ($reason)") },
                                 onFailed = { log("Custom: FAILED") },
@@ -204,6 +247,7 @@ fun CommonNotificationsScreen() {
                                 message = message,
                                 largeImage = largeImage.ifBlank { null },
                                 smallIcon = smallIcon.ifBlank { null },
+                                urgency = urgency,
                                 onActivated = { log("Custom (no buttons): activated") },
                                 onDismissed = { reason -> log("Custom (no buttons): dismissed ($reason)") },
                             ).send()

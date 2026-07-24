@@ -84,7 +84,7 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     inputs.dir(nativeDir)
     outputs.dir(nativeResourceDir)
     workingDir(nativeDir)
-    commandLine("cmd.exe", "/c", "build.bat")
+    commandLine("cmd", "/c", nativeDir.file("build.bat").asFile.absolutePath)
 }
 
 tasks.processResources {

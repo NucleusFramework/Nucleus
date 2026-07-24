@@ -29,6 +29,21 @@ enum class AfterActivationBehavior(
     PENDING_UPDATE("pendingUpdate"),
 }
 
+/**
+ * Toast priority, mapped to WinRT `ToastNotificationPriority` (`IToastNotification4::put_Priority`).
+ *
+ * Only meaningful within a session; Windows exposes just two levels.
+ */
+enum class ToastNotificationPriority(
+    val nativeValue: Int,
+) {
+    /** Default priority. */
+    DEFAULT(0),
+
+    /** High priority — delivered even under Focus Assist where the app is allowed. */
+    HIGH(1),
+}
+
 // -- Scenarios --
 
 /** Pre-defined toast display/audio behavior scenarios. */
@@ -37,6 +52,12 @@ enum class ToastScenario(
 ) {
     /** Normal toast behavior. */
     DEFAULT("default"),
+
+    /**
+     * Important notification: distinct visual treatment and breaks through Focus Assist /
+     * Do Not Disturb. Requires Windows 10 build 19041+; ignored on older builds.
+     */
+    URGENT("urgent"),
 
     /** Pre-expanded, stays on screen until dismissed. */
     REMINDER("reminder"),

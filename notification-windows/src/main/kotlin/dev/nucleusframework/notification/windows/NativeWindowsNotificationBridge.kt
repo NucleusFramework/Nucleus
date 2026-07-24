@@ -50,6 +50,7 @@ internal object NativeWindowsNotificationBridge {
         expiresOnReboot: Boolean,
         expirationTimeMs: Long,
         suppressPopup: Boolean,
+        priority: Int,
         dataKeys: Array<String>,
         dataValues: Array<String>,
         dataSequenceNumber: Int,
@@ -63,6 +64,7 @@ internal object NativeWindowsNotificationBridge {
                 expiresOnReboot,
                 expirationTimeMs,
                 suppressPopup,
+                priority,
                 dataKeys,
                 dataValues,
                 dataSequenceNumber,
@@ -153,6 +155,7 @@ internal object NativeWindowsNotificationBridge {
      * @param expiresOnReboot Whether to remove the notification on reboot.
      * @param expirationTimeMs Expiration time in ms from now (0 = no expiration).
      * @param suppressPopup If true, the notification goes directly to Action Center.
+     * @param priority Toast priority (0 = default, 1 = high).
      * @param callbackId Callback ID for result notification.
      */
     @JvmStatic
@@ -164,6 +167,7 @@ internal object NativeWindowsNotificationBridge {
         expiresOnReboot: Boolean,
         expirationTimeMs: Long,
         suppressPopup: Boolean,
+        priority: Int,
         dataKeys: Array<String>,
         dataValues: Array<String>,
         dataSequenceNumber: Int,

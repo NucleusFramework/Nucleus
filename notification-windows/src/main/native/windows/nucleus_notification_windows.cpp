@@ -29,6 +29,7 @@
 
 #include <wrl/implements.h>
 #include <wrl/event.h>
+#include <windows.foundation.h>
 #include <windows.ui.notifications.h>
 #include <windows.data.xml.dom.h>
 
@@ -448,7 +449,7 @@ Java_dev_nucleusframework_notification_windows_NativeWindowsNotificationBridge_n
     JNIEnv *env, jclass clazz,
     jstring jXml, jstring jTag, jstring jGroup,
     jboolean expiresOnReboot, jlong expirationTimeMs,
-    jboolean suppressPopup,
+    jboolean suppressPopup, jint priority,
     jobjectArray jDataKeys, jobjectArray jDataValues, jint dataSequenceNumber,
     jlong callbackId
 ) {
@@ -495,6 +496,48 @@ Java_dev_nucleusframework_notification_windows_NativeWindowsNotificationBridge_n
                 toast2->put_Group(HStringWrapper(group).Get());
             if (suppressPopup)
                 toast2->put_SuppressPopup(TRUE);
+        }
+
+        // Set priority via IToastNotification4 (0 = default, 1 = high)
+        if (priority > 0) {
+            ComPtr<IToastNotification4> toast4prio;
+            if (SUCCEEDED(toast.As(&toast4prio))) {
+                toast4prio->put_Priority(ToastNotificationPriority_High);
+            }
+        }
+
+        // Auto-expire after expirationTimeMs via IToastNotification::put_ExpirationTime
+        if (expirationTimeMs > 0) {
+            FILETIME ft;
+            GetSystemTimePreciseAsFileTime(&ft);
+            ULARGE_INTEGER uli;
+            uli.LowPart = ft.dwLowDateTime;
+            uli.HighPart = ft.dwHighDateTime;
+
+            ABI::Windows::Foundation::DateTime dt;
+            // DateTime and FILETIME share the 1601 epoch in 100ns ticks; ms -> 100ns == *10000.
+            dt.UniversalTime = (INT64)uli.QuadPart + (INT64)expirationTimeMs * 10000LL;
+
+            ComPtr<ABI::Windows::Foundation::IPropertyValueStatics> propStatics;
+            if (SUCCEEDED(RoGetActivationFactory(
+                    HStringWrapper(RuntimeClass_Windows_Foundation_PropertyValue).Get(),
+                    IID_PPV_ARGS(&propStatics)))) {
+                ComPtr<IInspectable> dtInsp;
+                if (SUCCEEDED(propStatics->CreateDateTime(dt, &dtInsp))) {
+                    ComPtr<ABI::Windows::Foundation::IReference<ABI::Windows::Foundation::DateTime>> dtRef;
+                    if (SUCCEEDED(dtInsp.As(&dtRef))) {
+                        toast->put_ExpirationTime(dtRef.Get());
+                    }
+                }
+            }
+        }
+
+        // Remove on reboot via IToastNotification6
+        if (expiresOnReboot) {
+            ComPtr<IToastNotification6> toast6;
+            if (SUCCEEDED(toast.As(&toast6))) {
+                toast6->put_ExpiresOnReboot(TRUE);
+            }
         }
 
         // Attach initial NotificationData for data binding (progress bars)

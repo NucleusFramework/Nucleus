@@ -5,11 +5,13 @@ import dev.nucleusframework.notification.common.DismissReason
 import dev.nucleusframework.notification.common.Notification
 import dev.nucleusframework.notification.common.NotificationHandle
 import dev.nucleusframework.notification.common.NotificationResult
+import dev.nucleusframework.notification.common.NotificationUrgency
 import dev.nucleusframework.notification.linux.CloseReason
 import dev.nucleusframework.notification.linux.LinuxNotificationCenter
 import dev.nucleusframework.notification.linux.LinuxNotificationListener
 import dev.nucleusframework.notification.linux.NotificationAction
 import dev.nucleusframework.notification.linux.NotificationHints
+import dev.nucleusframework.notification.linux.Urgency
 import java.util.logging.Level
 import java.util.logging.Logger
 import dev.nucleusframework.notification.linux.Notification as LinuxNotification
@@ -91,6 +93,7 @@ internal class LinuxDispatcher private constructor() : PlatformDispatcher {
 
         val hints =
             NotificationHints(
+                urgency = notification.urgency.toLinux(),
                 imagePath = notification.largeImage?.let { FreedesktopIcon.Custom(it) },
             )
 
@@ -139,6 +142,13 @@ internal class LinuxDispatcher private constructor() : PlatformDispatcher {
         }
     }
 }
+
+private fun NotificationUrgency.toLinux(): Urgency =
+    when (this) {
+        NotificationUrgency.LOW -> Urgency.LOW
+        NotificationUrgency.NORMAL -> Urgency.NORMAL
+        NotificationUrgency.CRITICAL -> Urgency.CRITICAL
+    }
 
 private fun CloseReason.toCommon(): DismissReason =
     when (this) {

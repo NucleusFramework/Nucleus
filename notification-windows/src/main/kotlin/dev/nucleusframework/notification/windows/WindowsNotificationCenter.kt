@@ -124,6 +124,7 @@ object WindowsNotificationCenter {
      * @param expiresOnReboot Remove the notification on system reboot.
      * @param expirationTimeMs Auto-remove after this duration in ms (0 = no expiration).
      * @param suppressPopup Send directly to Action Center without popup.
+     * @param priority Toast priority (`IToastNotification4::put_Priority`).
      * @param callback Optional callback with error string (null on success).
      */
     fun show(
@@ -133,6 +134,7 @@ object WindowsNotificationCenter {
         expiresOnReboot: Boolean = false,
         expirationTimeMs: Long = 0,
         suppressPopup: Boolean = false,
+        priority: ToastNotificationPriority = ToastNotificationPriority.DEFAULT,
         initialData: ToastNotificationData? = null,
         callback: ((error: String?) -> Unit)? = null,
     ) {
@@ -148,6 +150,7 @@ object WindowsNotificationCenter {
             expiresOnReboot = expiresOnReboot,
             expirationTimeMs = expirationTimeMs,
             suppressPopup = suppressPopup,
+            priority = priority.nativeValue,
             dataKeys = initialData?.values?.keys?.toTypedArray() ?: emptyArray(),
             dataValues = initialData?.values?.values?.toTypedArray() ?: emptyArray(),
             dataSequenceNumber = initialData?.sequenceNumber ?: 0,
@@ -167,6 +170,7 @@ object WindowsNotificationCenter {
         expiresOnReboot: Boolean = false,
         expirationTimeMs: Long = 0,
         suppressPopup: Boolean = false,
+        priority: ToastNotificationPriority = ToastNotificationPriority.DEFAULT,
         initialData: ToastNotificationData? = null,
         callback: ((error: String?) -> Unit)? = null,
     ) {
@@ -181,6 +185,7 @@ object WindowsNotificationCenter {
             expiresOnReboot = expiresOnReboot,
             expirationTimeMs = expirationTimeMs,
             suppressPopup = suppressPopup,
+            priority = priority.nativeValue,
             dataKeys = initialData?.values?.keys?.toTypedArray() ?: emptyArray(),
             dataValues = initialData?.values?.values?.toTypedArray() ?: emptyArray(),
             dataSequenceNumber = initialData?.sequenceNumber ?: 0,

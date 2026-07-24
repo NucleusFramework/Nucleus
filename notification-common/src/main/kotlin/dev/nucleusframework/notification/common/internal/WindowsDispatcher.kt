@@ -4,8 +4,11 @@ import dev.nucleusframework.notification.common.DismissReason
 import dev.nucleusframework.notification.common.Notification
 import dev.nucleusframework.notification.common.NotificationHandle
 import dev.nucleusframework.notification.common.NotificationResult
+import dev.nucleusframework.notification.common.NotificationUrgency
 import dev.nucleusframework.notification.windows.DismissalReason
 import dev.nucleusframework.notification.windows.ToastNotificationListener
+import dev.nucleusframework.notification.windows.ToastNotificationPriority
+import dev.nucleusframework.notification.windows.ToastScenario
 import dev.nucleusframework.notification.windows.WindowsNotificationCenter
 import dev.nucleusframework.notification.windows.toast
 import java.util.concurrent.atomic.AtomicBoolean
@@ -111,8 +114,15 @@ internal class WindowsDispatcher private constructor() : PlatformDispatcher {
         val tag = generateTag()
         val platformId = toPlatformId(tag, GROUP)
 
+        // CRITICAL uses the "urgent" scenario: distinct visual treatment that breaks through
+        // Focus Assist / Do Not Disturb (Windows 10 build 19041+, ignored on older builds).
+        // put_Priority(High) below only affects connected-standby screen wake and Action Center
+        // ordering, so the scenario is what makes CRITICAL visibly different on desktop.
         val toastContent =
             toast {
+                if (notification.urgency == NotificationUrgency.CRITICAL) {
+                    scenario = ToastScenario.URGENT
+                }
                 visual {
                     text(notification.title)
                     if (notification.message.isNotEmpty()) {
@@ -151,10 +161,18 @@ internal class WindowsDispatcher private constructor() : PlatformDispatcher {
         )
 
         var sendError: String? = null
+        val priority =
+            if (notification.urgency == NotificationUrgency.CRITICAL) {
+                ToastNotificationPriority.HIGH
+            } else {
+                ToastNotificationPriority.DEFAULT
+            }
+
         WindowsNotificationCenter.show(
             content = toastContent,
             tag = tag,
             group = GROUP,
+            priority = priority,
         ) { error ->
             if (error != null) {
                 sendError = error

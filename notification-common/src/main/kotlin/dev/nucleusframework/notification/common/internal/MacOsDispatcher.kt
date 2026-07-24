@@ -3,6 +3,7 @@ package dev.nucleusframework.notification.common.internal
 import dev.nucleusframework.notification.ActionOption
 import dev.nucleusframework.notification.CategoryOption
 import dev.nucleusframework.notification.DeliveredNotification
+import dev.nucleusframework.notification.InterruptionLevel
 import dev.nucleusframework.notification.NotificationAction
 import dev.nucleusframework.notification.NotificationAttachment
 import dev.nucleusframework.notification.NotificationCategory
@@ -16,6 +17,7 @@ import dev.nucleusframework.notification.common.DismissReason
 import dev.nucleusframework.notification.common.Notification
 import dev.nucleusframework.notification.common.NotificationHandle
 import dev.nucleusframework.notification.common.NotificationResult
+import dev.nucleusframework.notification.common.NotificationUrgency
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Level
@@ -110,6 +112,7 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
                 body = notification.message,
                 categoryIdentifier = categoryId,
                 attachments = attachments,
+                interruptionLevel = notification.urgency.toInterruptionLevel(),
             )
 
         val request =
@@ -146,6 +149,15 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
     override fun dismiss(platformId: String) {
         NotificationCenter.removeDeliveredNotifications(listOf(platformId))
     }
+
+    // CRITICAL maps to TIME_SENSITIVE, not the OS CRITICAL level, which requires a special
+    // Apple entitlement. interruptionLevel requires macOS 12+ and is ignored on older systems.
+    private fun NotificationUrgency.toInterruptionLevel(): InterruptionLevel =
+        when (this) {
+            NotificationUrgency.LOW -> InterruptionLevel.PASSIVE
+            NotificationUrgency.NORMAL -> InterruptionLevel.ACTIVE
+            NotificationUrgency.CRITICAL -> InterruptionLevel.TIME_SENSITIVE
+        }
 
     private fun registerCategoryForButtons(notification: Notification): String {
         val signature = notification.buttons.joinToString("|") { it.title }
