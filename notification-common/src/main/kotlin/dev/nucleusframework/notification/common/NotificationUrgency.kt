@@ -13,9 +13,14 @@ package dev.nucleusframework.notification.common
  * | [CRITICAL]  | `urgency = critical`| `interruptionLevel = timeSensitive`| high priority + `scenario = urgent`    |
  *
  * Notes:
- * - macOS: [CRITICAL] maps to `timeSensitive`, not the OS `critical` level, which requires a
- *   special Apple entitlement. `interruptionLevel` requires macOS 12+ and is ignored on older
- *   systems.
+ * - macOS: [CRITICAL] maps to `timeSensitive` (breaks through Focus / Do Not Disturb when the user
+ *   allows time-sensitive notifications for the app), not the OS `critical` level. The `critical`
+ *   level requires the restricted `com.apple.developer.usernotifications.critical-alerts`
+ *   entitlement, which Apple grants manually per App ID and which must be embedded in a
+ *   provisioning profile even for Developer ID (non-App-Store) apps — so it is unusable by a
+ *   general-purpose library and is not exposed here. `timeSensitive` does not change the
+ *   notification's expiration/lifetime. `interruptionLevel` requires macOS 12+ and is ignored on
+ *   older systems.
  * - Windows: `put_Priority(High)` only affects connected-standby screen wake and Action Center
  *   ordering, so it is not visibly different on a normal desktop. [CRITICAL] therefore also uses
  *   the `urgent` scenario, which gives the toast distinct visual treatment and breaks through
@@ -33,6 +38,10 @@ enum class NotificationUrgency {
     /** Default priority. */
     NORMAL,
 
-    /** High priority; time-sensitive and, where supported, does not auto-expire. */
+    /**
+     * High priority and time-sensitive: breaks through Focus / Do Not Disturb where the platform
+     * and user settings allow. On Linux it also stays resident until dismissed; macOS and Windows
+     * do not change the notification's lifetime.
+     */
     CRITICAL,
 }

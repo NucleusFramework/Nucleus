@@ -150,8 +150,10 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
         NotificationCenter.removeDeliveredNotifications(listOf(platformId))
     }
 
-    // CRITICAL maps to TIME_SENSITIVE, not the OS CRITICAL level, which requires a special
-    // Apple entitlement. interruptionLevel requires macOS 12+ and is ignored on older systems.
+    // CRITICAL maps to TIME_SENSITIVE, not the OS CRITICAL level: the latter needs Apple's
+    // restricted critical-alerts entitlement (granted manually per App ID, and requires an
+    // embedded provisioning profile even for non-App-Store apps), so it is not exposed here.
+    // interruptionLevel requires macOS 12+ and is ignored on older systems.
     private fun NotificationUrgency.toInterruptionLevel(): InterruptionLevel =
         when (this) {
             NotificationUrgency.LOW -> InterruptionLevel.PASSIVE
