@@ -1,13 +1,11 @@
 package dev.nucleusframework.window.tao.popup
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -15,7 +13,6 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
@@ -30,7 +27,9 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
 import dev.nucleusframework.window.tao.scene.LocalTaoWindowsTextureHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.TaoWindowsTextureHost
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.preservingAngleBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
@@ -66,7 +65,8 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
 
     private var panel: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
     private var disposed = false
 
     /**
@@ -83,7 +83,6 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     override var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     override var onKeyEvent: ((KeyEvent) -> Boolean)? = null
 
-    private val frameClock = BroadcastFrameClock { scheduleRender() }
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
@@ -150,14 +149,14 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                             null
                         }
                     if (directContext != null) {
-                        scene =
-                            CanvasLayersComposeScene(
+                        sceneBundle =
+                            canvasLayersSceneBundle(
+                                coroutineContext = flushingDispatcher,
                                 density = Density(scale),
                                 layoutDirection = GlobalLayoutDirection,
                                 size = IntSize(1, 1),
-                                coroutineContext = flushingDispatcher + frameClock,
                                 platformContext = StandalonePopupPlatformContext(),
-                                invalidate = { scheduleRender() },
+                                requestFrame = { scheduleRender() },
                             )
                         PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
                         publishTextureHost()
@@ -178,7 +177,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent(content = content)
         scheduleRender()
     }
 
@@ -319,8 +318,8 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         preservingAngleBinding {
             // Drop the TextureView handle before the context it points at dies.
             textureHostState.value = null
-            scene?.close()
-            scene = null
+            sceneBundle?.close()
+            sceneBundle = null
             // An ownerless panel binds the immortal headless EGL context, not
             // the caller's — so the Skia frees below need it made current
             // explicitly, and they can't disturb any window host's GL state.
@@ -350,7 +349,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         renderPending.set(false)
         if (disposed) return
         val ctx = directContext ?: return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
 
         // Pace self-invalidating content (animations): DComp presents don't
@@ -375,10 +374,10 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         val frameNs = if (now - nextFrameNs > FRAME_INTERVAL_NS) now else nextFrameNs
         nextFrameNs = frameNs + FRAME_INTERVAL_NS
 
-        // Tick the frame clock before rendering (same ordering as the window
-        // hosts) so withFrameNanos-driven animation state is current.
-        flushingDispatcher.drain()
-        frameClock.sendFrame(frameNs)
+        // Drain queued main-thread work before the frame. The scene's frame
+        // clock is ticked inside `bundle.render` (FrameRecomposer.performFrame)
+        // with the paced `frameNs` timestamp, so withFrameNanos-driven
+        // animations are fed evenly spaced times for smooth motion.
         flushingDispatcher.drain()
 
         // Surface-neutral, like the bring-up: whatever was bound before this
@@ -397,8 +396,8 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                 directContext = ctx,
                 clearColorArgb = 0x00000000,
                 present = { PopupNativeBridgeWindows.nativeSwapBuffers(panel) },
-            ) { canvas, nanoTime ->
-                sc.render(canvas.asComposeCanvas(), nanoTime)
+            ) { canvas, _ ->
+                bundle.render(canvas, frameNs)
             }
         }
     }

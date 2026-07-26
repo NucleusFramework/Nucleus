@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -15,10 +14,8 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -187,11 +184,11 @@ internal class TaoComposeSceneHost(
     private var attachmentHandle: Long = 0
     private var nsViewHandle: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val frameClock = BroadcastFrameClock()
 
     // Dispatcher that funnels Compose's async work (notably MouseWheel scroll
     // dispatching, which uses the scene's coroutineContext) onto the render
@@ -337,12 +334,6 @@ internal class TaoComposeSceneHost(
             prepareFullscreenFrame(targetW, targetH)
         }
 
-        // CRITICAL: provide our own MonotonicFrameClock (BroadcastFrameClock)
-        // in the scene's coroutineContext. Without one, Compose's recomposer
-        // can't tell when a frame has finished and re-fires `invalidate` after
-        // every render — causing a continuous render loop that saturates the
-        // main thread. We tick the clock manually at the end of each
-        // onRedrawRequested.
         // The DnD manager needs lazy access to the scene's rootDragAndDropNode,
         // but the scene cannot be constructed before we hand it the
         // PlatformContext that owns the manager. Resolve on each call.
@@ -380,51 +371,54 @@ internal class TaoComposeSceneHost(
             )
 
         val hostPopupHost = if (nativePopupLayers) popupHost() else null
-        scene =
+        // The scene's MonotonicFrameClock is owned by the FrameRecomposer inside the
+        // bundle (Compose 1.12). It matters that the clock exists: without one the
+        // recomposer can't tell when a frame finished and re-fires the invalidation
+        // after every render, saturating the main thread. The recomposer now ticks it
+        // itself in `performFrame` (one frame per FrameDispatcher tick, re-scheduling
+        // only while animations remain), so the host no longer sends frames manually.
+        sceneBundle =
             if (hostPopupHost != null) {
                 // Opt-in path (e.g. tray popups): every Popup becomes a native
                 // NSPanel owned by this window, so popup content can extend
                 // beyond — and float independently of — the window bounds.
-                PlatformLayersComposeScene(
+                platformLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     size = IntSize(widthPx, heightPx),
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
                         TaoComposeSceneContext(
                             platformContext = taoPlatformContext,
-                        ) { density, layoutDirection, focusable, cc ->
+                        ) { density, layoutDirection, focusable, consumeOutside ->
                             TaoPopupSceneLayer(
                                 host = hostPopupHost,
                                 initialDensity = density,
                                 initialLayoutDirection = layoutDirection,
                                 initialFocusable = focusable,
-                                parentCompositionContext = cc,
+                                initialConsumePointerInputOutside = consumeOutside,
                             )
                         },
-                    invalidate = {
-                        frameDispatcher?.scheduleFrame()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    // Schedule a frame on the render loop (coalesced); it renders
+                    // then waits for the next vsync. See startRenderLoop.
+                    requestFrame = { frameDispatcher?.scheduleFrame() },
+                )
             } else {
                 // Match Windows and Linux for the main host scene: Compose
                 // Popup / DropdownMenu / Tooltip content stays in the same
                 // Metal render target instead of becoming a native NSPanel.
                 // NativeView overlay scenes still opt into TaoComposeSceneContext
                 // when their popups must float above an embedded AppKit view.
-                CanvasLayersComposeScene(
+                canvasLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     size = IntSize(widthPx, heightPx),
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = taoPlatformContext,
-                    invalidate = {
-                        // Schedule a frame on the render loop (coalesced); it renders
-                        // then waits for the next vsync. See startRenderLoop.
-                        frameDispatcher?.scheduleFrame()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { frameDispatcher?.scheduleFrame() },
+                )
             }
+        scene?.compositionLocalContext = pendingCompositionLocalContext
 
         registerInboundDnD()
     }
@@ -793,7 +787,7 @@ internal class TaoComposeSceneHost(
                 return if (w > 0 && h > 0) IntSize(w, h) else parentWindowSize
             }
             override val sceneCoroutineContext: CoroutineContext
-                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+                get() = outer.coroutineContext + outer.flushingDispatcher
 
             override fun requestRedraw() = outer.window.requestRedraw()
 
@@ -1298,7 +1292,7 @@ internal class TaoComposeSceneHost(
      * frees the Tao main loop during GPU encode + present + vsync wait.
      */
     private suspend fun renderFrameSuspending(handle: Long) {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
 
@@ -1324,7 +1318,7 @@ internal class TaoComposeSceneHost(
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
@@ -1418,11 +1412,11 @@ internal class TaoComposeSceneHost(
      * [renderFrameSuspending].
      */
     fun renderFrameBlocking() {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         TaoMainDispatcher.pump()
         val handle = attachmentHandle
@@ -1448,8 +1442,8 @@ internal class TaoComposeSceneHost(
         frameDispatcher = null
         renderLoopJob.cancel()
         textToolbar.hide()
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
@@ -1486,8 +1480,8 @@ internal class TaoComposeSceneHost(
      * pumps queued blocks on every `Event::MainEventsCleared` tick of the
      * Tao loop. We also call `window.requestRedraw()` so the loop is woken
      * if it was idle — without it, animations driven by `withFrameNanos`
-     * (whose continuations land here when `frameClock.sendFrame` fires
-     * inside `BaseComposeScene.recompose`) would freeze until input arrives.
+     * (whose continuations land here when `FrameRecomposer.performFrame`
+     * ticks the scene's frame clock) would freeze until input arrives.
      *
      * The auto-pump matters: in the previous implementation, blocks only
      * ran during [onRedrawRequested]'s explicit drain — a chicken-and-egg

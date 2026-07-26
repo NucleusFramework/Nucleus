@@ -13,7 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
+
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -146,8 +146,9 @@ class TaoSceneOuterLocalsBridgeTest {
  */
 private fun captureOuterLocals(layoutDirection: LayoutDirection = GlobalLayoutDirection): CompositionLocalContext {
     var captured: CompositionLocalContext? = null
-    val outerScene =
-        CanvasLayersComposeScene(
+    val outer =
+        canvasLayersSceneBundle(
+            coroutineContext = kotlin.coroutines.EmptyCoroutineContext,
             density = Density(1f),
             layoutDirection = GlobalLayoutDirection,
             size = IntSize(1, 1),
@@ -159,16 +160,16 @@ private fun captureOuterLocals(layoutDirection: LayoutDirection = GlobalLayoutDi
                             containerDpSize = DpSize(1.dp, 1.dp)
                         }
                 },
-            invalidate = {},
+            requestFrame = {},
         )
     try {
-        outerScene.setContent {
+        outer.scene.setContent {
             CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
                 captured = currentCompositionLocalContext
             }
         }
     } finally {
-        outerScene.close()
+        outer.close()
     }
     return requireNotNull(captured) { "outer scene never composed" }
 }

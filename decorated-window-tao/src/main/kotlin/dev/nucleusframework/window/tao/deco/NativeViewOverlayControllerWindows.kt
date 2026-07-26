@@ -17,7 +17,6 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -28,6 +27,8 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.platformLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
@@ -256,7 +257,8 @@ internal class NativeViewOverlayControllerWindows(
      * `popupHost.hostDirectContext` is the source of truth.
      */
     private val directContext: DirectContext = popupHost.hostDirectContext
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
     private val regions: MutableMap<Any, IntArray> = LinkedHashMap()
     private var pendingContent: (@Composable () -> Unit)? = null
     private var firstBoundsApplied = false
@@ -454,28 +456,28 @@ internal class NativeViewOverlayControllerWindows(
             // HWND owned by the host main HWND. They can extend beyond
             // the overlay's bounds, intercept their own clicks, and
             // dismiss on outside-click via the popup's SetCapture monitor.
-            scene =
-                PlatformLayersComposeScene(
+            sceneBundle =
+                platformLayersSceneBundle(
+                    coroutineContext = popupHost.sceneCoroutineContext,
                     density = Density(scale),
                     layoutDirection = LayoutDirection.Ltr,
                     size = IntSize(widthPx, heightPx),
-                    coroutineContext = popupHost.sceneCoroutineContext,
                     composeSceneContext =
                         TaoComposeSceneContext(
                             platformContext = ourPlatformContext,
-                        ) { density, layoutDirection, focusable, cc ->
+                        ) { density, layoutDirection, focusable, consumeOutside ->
                             TaoPopupSceneLayerWindows(
                                 host = overlayPopupHost,
                                 initialDensity = density,
                                 initialLayoutDirection = layoutDirection,
                                 initialFocusable = focusable,
-                                parentCompositionContext = cc,
+                                initialConsumePointerInputOutside = consumeOutside,
                             )
                         },
-                    invalidate = { popupHost.requestRedraw() },
+                    requestFrame = { popupHost.requestRedraw() },
                 )
             pendingContent?.let {
-                scene?.setContent(it)
+                scene?.setContent(content = it)
                 pendingContent = null
             }
         } else {
@@ -496,7 +498,7 @@ internal class NativeViewOverlayControllerWindows(
             content()
         }
         val sc = scene
-        if (sc != null) sc.setContent(wrapped) else pendingContent = wrapped
+        if (sc != null) sc.setContent(content = wrapped) else pendingContent = wrapped
         popupHost.requestRedraw()
     }
 
@@ -545,7 +547,7 @@ internal class NativeViewOverlayControllerWindows(
     }
 
     private fun renderFrame() {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         if (widthPx == 0 || heightPx == 0) return
         if (overlayHandle == 0L) return
         if (!NativeTaoWindowsOverlayBridge.nativeMakeCurrent(overlayHandle)) return
@@ -558,7 +560,7 @@ internal class NativeViewOverlayControllerWindows(
             widthPx = widthPx,
             heightPx = heightPx,
             directContext = directContext,
-            scene = sc,
+            bundle = bundle,
             // Premultiplied transparent black: alpha=0, RGB=0. DWM honors
             // the alpha channel via the empty-blur-region trick armed at
             // overlay creation.
@@ -574,8 +576,8 @@ internal class NativeViewOverlayControllerWindows(
         popupHost.unregisterOwnerMoveListener(moveListenerToken)
         popupHost.unregisterOwnerFocusLostListener(focusLostListenerToken)
         popupHost.unregisterPopupClosingListener(popupClosingToken)
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         capturedFocusManager = null
         pressedButtons.clear()
         manualCursorByKey.clear()
