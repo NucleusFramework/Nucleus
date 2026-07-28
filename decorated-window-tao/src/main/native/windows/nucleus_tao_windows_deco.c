@@ -3,8 +3,13 @@
  *
  * Subclasses the HWND created by Tao to:
  *   - WM_NCCALCSIZE: extend client area into the title bar
- *   - WM_NCHITTEST: 3-zone hit test (resize borders, caption, client)
- *   - WM_NCMOUSEMOVE: forward as WM_MOUSEMOVE for Compose pointer tracking
+ *   - WM_NCHITTEST: 4-zone hit test (resize borders, caption buttons,
+ *     caption, client) — reporting the Compose-drawn minimize/maximize/close
+ *     buttons as HTMINBUTTON/HTMAXBUTTON/HTCLOSE is what earns them the system
+ *     tooltips and the Windows 11 Snap Layouts flyout
+ *   - WM_NC{MOUSEMOVE,MOUSELEAVE,LBUTTON*}: caption-button hover/press/click,
+ *     fed back to Compose over JNI; other NC moves forward as WM_MOUSEMOVE
+ *     for Compose pointer tracking
  *   - DwmExtendFrameIntoClientArea for DWM shadow
  *
  * Forked from decorated-window-jni's nucleus_windows_decoration.c with the
@@ -69,6 +74,22 @@ static int getSystemMetrics(int index, UINT dpi) {
 /* Per-HWND state */
 static const wchar_t *PROP_NAME = L"NucleusTaoDecoState";
 
+/* Caption button identifiers — keep in sync with Kotlin's CaptionButton. */
+#define CAPTION_BUTTON_NONE     (-1)
+#define CAPTION_BUTTON_MINIMIZE   0
+#define CAPTION_BUTTON_MAXIMIZE   1
+#define CAPTION_BUTTON_CLOSE      2
+#define CAPTION_BUTTON_COUNT      3
+
+static int captionButtonForHitTest(LRESULT hit) {
+    switch (hit) {
+    case HTMINBUTTON: return CAPTION_BUTTON_MINIMIZE;
+    case HTMAXBUTTON: return CAPTION_BUTTON_MAXIMIZE;
+    case HTCLOSE:     return CAPTION_BUTTON_CLOSE;
+    default:          return CAPTION_BUTTON_NONE;
+    }
+}
+
 typedef struct {
     WNDPROC originalWndProc;
     int     titleBarHeightPx;
@@ -82,10 +103,109 @@ typedef struct {
      * (instead of Tao's consuming subclass) so the OS synthesises legacy mouse
      * messages for an OS-driven title-bar drag with Aero Snap. See decoWndProc. */
     BOOL    titleBarDragArmed;
+    /* Bounds (client px) of the Compose-drawn caption buttons, indexed by
+     * CAPTION_BUTTON_*. Reporting them through WM_NCHITTEST as
+     * HTMINBUTTON/HTMAXBUTTON/HTCLOSE is what makes Windows treat them as real
+     * caption buttons: system tooltips, the Windows 11 Snap Layouts flyout on
+     * the maximize button, and UI Automation naming all come for free.
+     * An empty rect means the button is not on screen. */
+    RECT    captionButtonRects[CAPTION_BUTTON_COUNT];
+    /* Which button the cursor is over / is pressing, or CAPTION_BUTTON_NONE.
+     * Windows routes the buttons' input through the non-client stream once
+     * they hit-test as caption buttons, so Compose no longer sees it. */
+    int     hotButton;
+    int     pressedButton;
+    /* The button a mouse-down landed on, kept until the matching up (or a
+     * capture loss). Distinct from `pressedButton`, which is the visual state
+     * and drops as soon as the cursor leaves the button: Windows emits a
+     * WM_NCMOUSELEAVE right after WM_NCLBUTTONDOWN, so the visual state alone
+     * cannot decide whether the click completed. */
+    int     armedButton;
+    BOOL    ncMouseTracking;
 } DecoState;
+
 
 static DecoState *getState(HWND hwnd) {
     return (DecoState *)GetPropW(hwnd, PROP_NAME);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Upcalls into NativeTaoWindowsDecoBridge (caption button state)      */
+/* ------------------------------------------------------------------ */
+
+static JavaVM   *sJvm = NULL;
+static jclass    sBridgeClass = NULL;
+static jmethodID sOnButtonStateMethod = NULL; /* static (JII)V */
+static jmethodID sOnButtonClickMethod = NULL; /* static (JI)V */
+
+/* `clazz` of any static native on the bridge *is* the bridge class, so the
+ * callbacks resolve without a FindClass (which would depend on the loader
+ * that happened to call System.load). */
+static void ensureCallbackCache(JNIEnv *env, jclass clazz) {
+    if (sBridgeClass) return;
+    if (!sJvm) (*env)->GetJavaVM(env, &sJvm);
+
+    jobject global = (*env)->NewGlobalRef(env, clazz);
+    if (!global) return;
+
+    jmethodID onState = (*env)->GetStaticMethodID(
+        env, (jclass)global, "onCaptionButtonState", "(JII)V");
+    jmethodID onClick = (*env)->GetStaticMethodID(
+        env, (jclass)global, "onCaptionButtonClick", "(JI)V");
+    if (onState && onClick) {
+        sBridgeClass = (jclass)global;
+        sOnButtonStateMethod = onState;
+        sOnButtonClickMethod = onClick;
+    } else {
+        (*env)->ExceptionClear(env);
+        (*env)->DeleteGlobalRef(env, global);
+    }
+}
+
+static JNIEnv *attachThread(void) {
+    if (!sJvm) return NULL;
+    JNIEnv *env = NULL;
+    jint status = (*sJvm)->GetEnv(sJvm, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_OK) return env;
+    if (status == JNI_EDETACHED &&
+        (*sJvm)->AttachCurrentThreadAsDaemon(sJvm, (void **)&env, NULL) == JNI_OK) {
+        return env;
+    }
+    return NULL;
+}
+
+static void setButtonState(HWND hwnd, DecoState *state, int hot, int pressed) {
+    if (state->hotButton == hot && state->pressedButton == pressed) return;
+    state->hotButton = hot;
+    state->pressedButton = pressed;
+
+    if (!sBridgeClass) return;
+    JNIEnv *env = attachThread();
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sBridgeClass, sOnButtonStateMethod,
+        (jlong)(uintptr_t)hwnd, (jint)hot, (jint)pressed);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+static void notifyButtonClick(HWND hwnd, int button) {
+    if (!sBridgeClass) return;
+    JNIEnv *env = attachThread();
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sBridgeClass, sOnButtonClickMethod,
+        (jlong)(uintptr_t)hwnd, (jint)button);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+/* WM_NCMOUSELEAVE is the only signal that the cursor left a caption button
+ * without entering the client area (e.g. straight out of the window). */
+static void trackNcMouseLeave(HWND hwnd, DecoState *state) {
+    if (state->ncMouseTracking) return;
+    TRACKMOUSEEVENT tme;
+    tme.cbSize = sizeof(tme);
+    tme.dwFlags = TME_LEAVE | TME_NONCLIENT;
+    tme.hwndTrack = hwnd;
+    tme.dwHoverTime = 0;
+    if (TrackMouseEvent(&tme)) state->ncMouseTracking = TRUE;
 }
 
 static int getResizeBorderWidth(HWND hwnd, BOOL isVertical) {
@@ -256,11 +376,33 @@ static LRESULT CALLBACK decoWndProc(
             if (pt.y >= windowRect.bottom - borderHeight) return HTBOTTOM;
         }
 
-        /* Title bar zone — always HTCLIENT.
-         * NEVER return HTMINBUTTON/HTMAXBUTTON/HTCLOSE: DWM would draw native
-         * buttons on top of our Compose UI. Compose handles the whole title
-         * bar, including its own min/max/close buttons; unconsumed clicks call
-         * window.dragWindow() which posts WM_NCLBUTTONDOWN HTCAPTION via Tao. */
+        /* Caption buttons. Answering HTMINBUTTON/HTMAXBUTTON/HTCLOSE is what
+         * makes Windows treat the Compose-drawn buttons as real caption
+         * buttons — system tooltips and the Windows 11 Snap Layouts flyout on
+         * the maximize button are both driven off this hit-test result.
+         *
+         * Nothing native is painted on top: WM_NCCALCSIZE leaves no non-client
+         * area for DefWindowProc to draw into. The trade-off is that Windows
+         * routes these rects through the non-client message stream, so Compose
+         * stops seeing pointer events there and the handlers below feed hover,
+         * press and click back to it. */
+        if (!state->isFullscreen) {
+            POINT client = pt;
+            ScreenToClient(hwnd, &client);
+            if (PtInRect(&state->captionButtonRects[CAPTION_BUTTON_CLOSE], client)) {
+                return HTCLOSE;
+            }
+            if (PtInRect(&state->captionButtonRects[CAPTION_BUTTON_MAXIMIZE], client)) {
+                return HTMAXBUTTON;
+            }
+            if (PtInRect(&state->captionButtonRects[CAPTION_BUTTON_MINIMIZE], client)) {
+                return HTMINBUTTON;
+            }
+        }
+
+        /* Title bar zone — always HTCLIENT. Compose handles the whole title
+         * bar; unconsumed clicks call window.dragWindow() which posts
+         * WM_NCLBUTTONDOWN HTCAPTION via Tao. */
         if (pt.y < windowRect.top + state->titleBarHeightPx) {
             return HTCLIENT;
         }
@@ -268,7 +410,16 @@ static LRESULT CALLBACK decoWndProc(
         return HTCLIENT;
     }
 
+    /* Caption buttons are consumed, never forwarded to DefWindowProc: it
+     * would run SC_CLOSE/SC_MINIMIZE/SC_MAXIMIZE itself and bypass the app's
+     * onCloseRequest. The action is dispatched from Kotlin on button-up. */
     case WM_NCLBUTTONDOWN: {
+        int button = captionButtonForHitTest((LRESULT)wParam);
+        if (button != CAPTION_BUTTON_NONE) {
+            state->armedButton = button;
+            setButtonState(hwnd, state, button, button);
+            return 0;
+        }
         if (wParam == HTCAPTION) {
             ReleaseCapture();
             return DefWindowProcW(hwnd, msg, wParam, lParam);
@@ -276,20 +427,68 @@ static LRESULT CALLBACK decoWndProc(
         break;
     }
 
+    /* Windows sends DOWN, UP, DBLCLK, UP for a double click: re-arming the
+     * pressed state here makes the second click fire too, matching a native
+     * caption button. */
     case WM_NCLBUTTONDBLCLK: {
+        int button = captionButtonForHitTest((LRESULT)wParam);
+        if (button != CAPTION_BUTTON_NONE) {
+            state->armedButton = button;
+            setButtonState(hwnd, state, button, button);
+            return 0;
+        }
         if (wParam == HTCAPTION) {
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         break;
     }
 
+    /* No SetCapture: Windows keeps delivering non-client mouse messages while
+     * the cursor stays over the button, and `armedButton` covers the case
+     * where it does not. */
+    case WM_NCLBUTTONUP: {
+        int button = captionButtonForHitTest((LRESULT)wParam);
+        int armed = state->armedButton;
+        state->armedButton = CAPTION_BUTTON_NONE;
+        if (button != CAPTION_BUTTON_NONE) {
+            setButtonState(hwnd, state, button, CAPTION_BUTTON_NONE);
+            if (armed == button) notifyButtonClick(hwnd, button);
+            return 0;
+        }
+        break;
+    }
+
+    /* A release anywhere else, or a capture loss, cancels the armed click —
+     * dragging off a caption button must not activate it. */
+    case WM_LBUTTONUP:
+    case WM_CAPTURECHANGED:
+        state->armedButton = CAPTION_BUTTON_NONE;
+        break;
+
     case WM_NCMOUSEMOVE: {
+        int button = captionButtonForHitTest((LRESULT)wParam);
+        if (button != CAPTION_BUTTON_NONE) {
+            trackNcMouseLeave(hwnd, state);
+            setButtonState(hwnd, state, button, state->pressedButton);
+            /* DefWindowProc owns the caption-button tooltip; it has no
+             * non-client area left to repaint, so this only shows the
+             * "Minimize"/"Maximize"/"Close" tip. */
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+        setButtonState(hwnd, state, CAPTION_BUTTON_NONE, CAPTION_BUTTON_NONE);
+
         POINT pt;
         pt.x = (short)LOWORD(lParam);
         pt.y = (short)HIWORD(lParam);
         ScreenToClient(hwnd, &pt);
         PostMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELPARAM(pt.x, pt.y));
         break;
+    }
+
+    case WM_NCMOUSELEAVE: {
+        state->ncMouseTracking = FALSE;
+        setButtonState(hwnd, state, CAPTION_BUTTON_NONE, CAPTION_BUTTON_NONE);
+        return DefWindowProcW(hwnd, msg, wParam, lParam);
     }
 
     case WM_SYSCOMMAND: {
@@ -353,9 +552,10 @@ JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
-    (void)env; (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return;
+
+    ensureCallbackCache(env, clazz);
 
     DecoState *existing = getState(hwnd);
     if (existing) {
@@ -370,6 +570,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
     state->titleBarHeightPx = (int)titleBarHeightPx;
     state->bgColor = RGB(255, 255, 255);
     state->startupBackgroundErase = TRUE;
+    /* HEAP_ZERO_MEMORY would otherwise mean "minimize button is hot". */
+    state->hotButton = CAPTION_BUTTON_NONE;
+    state->pressedButton = CAPTION_BUTTON_NONE;
+    state->armedButton = CAPTION_BUTTON_NONE;
 
     SetPropW(hwnd, PROP_NAME, (HANDLE)state);
 
@@ -420,6 +624,36 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTit
     if (!hwnd) return;
     DecoState *state = getState(hwnd);
     if (state) state->titleBarHeightPx = (int)heightPx;
+}
+
+/* Bounds of one Compose-drawn caption button, in client physical pixels, so
+ * WM_NCHITTEST can answer HTMINBUTTON/HTMAXBUTTON/HTCLOSE there. An empty rect
+ * removes the zone (button not on screen: non-resizable window, fullscreen
+ * overlay bar, …). */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetCaptionButtonBounds(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint button,
+    jint left, jint top, jint right, jint bottom)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+    if (button < 0 || button >= CAPTION_BUTTON_COUNT) return;
+
+    DecoState *state = getState(hwnd);
+    if (!state) return;
+
+    RECT *rect = &state->captionButtonRects[button];
+    rect->left = (LONG)left;
+    rect->top = (LONG)top;
+    rect->right = (LONG)right;
+    rect->bottom = (LONG)bottom;
+
+    if (right <= left || bottom <= top) {
+        if (state->hotButton == button || state->pressedButton == button) {
+            setButtonState(hwnd, state, CAPTION_BUTTON_NONE, CAPTION_BUTTON_NONE);
+        }
+    }
 }
 
 /* Background color (ARGB) — synced to DWM caption/border color and dark-mode

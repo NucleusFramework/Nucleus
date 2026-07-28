@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -24,6 +26,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
@@ -53,6 +56,7 @@ import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge.CaptionButton
 
 // Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
 // output is identical between the AWT-based backend and the Tao backend.
@@ -86,9 +90,10 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
  * hover/pressed colors, same active/inactive variants) so the two backends
  * stay visually consistent.
  *
- * Hit-testing rule: drawn entirely in Compose because the WndProc subclass
- * returns HTCLIENT for the title bar zone — DWM never repaints native buttons
- * on top, which would otherwise happen on non-JBR JDKs.
+ * Hit-testing rule: drawn entirely in Compose, but reported to the WndProc as
+ * real caption buttons (see [WindowsCaptionButtons]) so Windows contributes its
+ * own tooltips and the Windows 11 Snap Layouts flyout. DWM has no non-client
+ * area left to paint into, so no native button is ever drawn on top.
  */
 @Suppress("FunctionNaming", "CyclomaticComplexMethod")
 @Composable
@@ -101,6 +106,9 @@ internal fun WindowControlsWindows(
     onExitFullscreen: (() -> Unit)? = null,
 ) {
     val isDark = LocalIsDarkTheme.current
+    // Hit-test registry shared by the three buttons; `null` when the deco
+    // native library is unavailable (plain Compose hit-testing then).
+    val captionButtons = rememberWindowsCaptionButtons(win)
     // Match decorated-window-jni's WindowsWindowControlArea: LTR renders
     // Minimize/Maximize/Close, RTL mirrors it to Close/Maximize/Minimize.
     CompositionLocalProvider(LocalLayoutDirection provides LocalControlButtonsDirection.current) {
@@ -121,6 +129,8 @@ internal fun WindowControlsWindows(
                         }
                     },
                 contentDescription = "Minimize",
+                captionButtons = captionButtons,
+                captionButton = CaptionButton.Minimize,
             )
 
             // Fullscreen → exit-fullscreen button replaces maximize/restore.
@@ -146,43 +156,25 @@ internal fun WindowControlsWindows(
                         },
                     contentDescription = "Exit fullscreen",
                 )
-            } else if (win.isResizable && state.isMaximized) {
+            } else if (win.isResizable) {
                 // Maximize / Restore — switches icon based on actual window state.
                 // Hidden when non-resizable (win.isResizable is snapshot-backed,
                 // so runtime setResizable() recomposes — mirrors the AWT
                 // backends' WindowsWindowControlArea gating, #260).
+                //
+                // Maximize and restore share one call site so the HTMAXBUTTON
+                // zone survives the toggle instead of being torn down and
+                // re-registered — Windows would otherwise drop the Snap
+                // Layouts flyout mid-hover.
+                val restore = state.isMaximized
                 WindowsCaptionButton(
-                    onClick = { win.setMaximized(false) },
+                    onClick = { win.setMaximized(!restore) },
                     isDark = isDark,
                     style = style,
-                    icon =
-                        if (state.isActive) {
-                            if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
-                        } else {
-                            if (isDark) {
-                                WindowsControlButtonIcons.RestoreInactiveDark
-                            } else {
-                                WindowsControlButtonIcons.RestoreInactive
-                            }
-                        },
-                    contentDescription = "Restore",
-                )
-            } else if (win.isResizable) {
-                WindowsCaptionButton(
-                    onClick = { win.setMaximized(true) },
-                    isDark = isDark,
-                    style = style,
-                    icon =
-                        if (state.isActive) {
-                            if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
-                        } else {
-                            if (isDark) {
-                                WindowsControlButtonIcons.MaximizeInactiveDark
-                            } else {
-                                WindowsControlButtonIcons.MaximizeInactive
-                            }
-                        },
-                    contentDescription = "Maximize",
+                    icon = maximizeIcon(restore = restore, isActive = state.isActive, isDark = isDark),
+                    contentDescription = if (restore) "Restore" else "Maximize",
+                    captionButtons = captionButtons,
+                    captionButton = CaptionButton.Maximize,
                 )
             }
 
@@ -206,13 +198,30 @@ internal fun WindowControlsWindows(
                 iconHover = WindowsControlButtonIcons.CloseHover,
                 isCloseButton = true,
                 contentDescription = "Close",
+                captionButtons = captionButtons,
+                captionButton = CaptionButton.Close,
             )
         }
     }
 }
 
+private fun maximizeIcon(
+    restore: Boolean,
+    isActive: Boolean,
+    isDark: Boolean,
+) = when {
+    isActive && restore ->
+        if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
+    isActive ->
+        if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
+    restore ->
+        if (isDark) WindowsControlButtonIcons.RestoreInactiveDark else WindowsControlButtonIcons.RestoreInactive
+    else ->
+        if (isDark) WindowsControlButtonIcons.MaximizeInactiveDark else WindowsControlButtonIcons.MaximizeInactive
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
-@Suppress("FunctionNaming")
+@Suppress("FunctionNaming", "LongParameterList")
 @Composable
 private fun WindowsCaptionButton(
     onClick: () -> Unit,
@@ -222,9 +231,28 @@ private fun WindowsCaptionButton(
     contentDescription: String,
     iconHover: androidx.compose.ui.graphics.vector.ImageVector? = null,
     isCloseButton: Boolean = false,
+    captionButtons: WindowsCaptionButtons? = null,
+    captionButton: CaptionButton? = null,
 ) {
-    var hovered by remember { mutableStateOf(false) }
-    var pressed by remember { mutableStateOf(false) }
+    var pointerHovered by remember { mutableStateOf(false) }
+    var pointerPressed by remember { mutableStateOf(false) }
+
+    // Registered as a native caption button, this rect is hit-tested as
+    // HTMIN/HTMAX/HTCLOSE: its mouse input arrives as non-client messages and
+    // Compose sees none of it, so the WndProc state is the only source of
+    // hover/press. The pointer flags still cover the fallback path (no deco
+    // native library) and the exit-fullscreen button, which has no native
+    // caption equivalent.
+    val hovered = pointerHovered || (captionButton != null && captionButtons?.hot == captionButton)
+    val pressed = pointerPressed || (captionButton != null && captionButtons?.pressed == captionButton)
+
+    if (captionButtons != null && captionButton != null) {
+        val currentOnClick by rememberUpdatedState(onClick)
+        DisposableEffect(captionButtons, captionButton) {
+            captionButtons.setAction(captionButton) { currentOnClick() }
+            onDispose { captionButtons.release(captionButton) }
+        }
+    }
 
     val backgroundColor =
         captionButtonBackground(
@@ -256,16 +284,22 @@ private fun WindowsCaptionButton(
                 .fillMaxHeight()
                 .width(WINDOWS_BUTTON_WIDTH)
                 .background(backgroundColor)
-                .onPointerEvent(PointerEventType.Enter) { hovered = true }
+                .onPointerEvent(PointerEventType.Enter) { pointerHovered = true }
                 .onPointerEvent(PointerEventType.Exit) {
-                    hovered = false
-                    pressed = false
-                }.onPointerEvent(PointerEventType.Press) { pressed = true }
-                .onPointerEvent(PointerEventType.Release) { pressed = false }
+                    pointerHovered = false
+                    pointerPressed = false
+                }.onPointerEvent(PointerEventType.Press) { pointerPressed = true }
+                .onPointerEvent(PointerEventType.Release) { pointerPressed = false }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
                     onClick = onClick,
+                ).then(
+                    if (captionButtons != null && captionButton != null) {
+                        Modifier.onGloballyPositioned { captionButtons.reportBounds(captionButton, it) }
+                    } else {
+                        Modifier
+                    },
                 ),
         contentAlignment = Alignment.Center,
     ) {

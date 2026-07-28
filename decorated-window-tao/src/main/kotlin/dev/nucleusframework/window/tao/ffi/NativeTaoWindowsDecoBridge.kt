@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.ffi
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import java.util.concurrent.ConcurrentHashMap
 
 private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
 
@@ -152,4 +153,91 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * A Compose-drawn caption button that the WndProc reports to Windows as a
+     * real one. The ordinals are the wire format shared with
+     * `CAPTION_BUTTON_*` in `nucleus_tao_windows_deco.c`.
+     */
+    internal enum class CaptionButton {
+        Minimize,
+        Maximize,
+        Close,
+    }
+
+    /**
+     * Reports a caption button's bounds, in client physical pixels, so
+     * `WM_NCHITTEST` answers `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` there.
+     * That is what gives the Compose-drawn buttons the native affordances:
+     * system tooltips on all three, and the Windows 11 Snap Layouts flyout on
+     * maximize.
+     *
+     * Pass an empty rect (all zeros) to remove the zone when the button is not
+     * on screen.
+     */
+    @JvmStatic
+    external fun nativeSetCaptionButtonBounds(
+        hwnd: Long,
+        button: Int,
+        left: Int,
+        top: Int,
+        right: Int,
+        bottom: Int,
+    )
+
+    /**
+     * Receives the caption buttons' interaction stream. Hit-testing them as
+     * caption buttons moves their mouse input into the non-client stream, so
+     * Compose no longer sees enter/exit/press over them and the WndProc feeds
+     * the state back instead.
+     *
+     * Callbacks run on the Tao event-loop thread, which is the Compose UI
+     * thread — implementations may write snapshot state directly.
+     */
+    internal interface CaptionButtonListener {
+        /** [hot] and [pressed] are `null` when no button is hot/pressed. */
+        fun onStateChanged(
+            hot: CaptionButton?,
+            pressed: CaptionButton?,
+        )
+
+        fun onClick(button: CaptionButton)
+    }
+
+    private val captionButtonListeners = ConcurrentHashMap<Long, CaptionButtonListener>()
+
+    fun setCaptionButtonListener(
+        hwnd: Long,
+        listener: CaptionButtonListener?,
+    ) {
+        if (listener == null) {
+            captionButtonListeners.remove(hwnd)
+        } else {
+            captionButtonListeners[hwnd] = listener
+        }
+    }
+
+    private fun captionButtonOf(ordinal: Int): CaptionButton? = CaptionButton.entries.getOrNull(ordinal)
+
+    // Called from decoWndProc — keep the names and signatures in sync with
+    // `ensureCallbackCache` in nucleus_tao_windows_deco.c.
+    @Suppress("unused")
+    @JvmStatic
+    private fun onCaptionButtonState(
+        hwnd: Long,
+        hot: Int,
+        pressed: Int,
+    ) {
+        captionButtonListeners[hwnd]?.onStateChanged(captionButtonOf(hot), captionButtonOf(pressed))
+    }
+
+    @Suppress("unused")
+    @JvmStatic
+    private fun onCaptionButtonClick(
+        hwnd: Long,
+        button: Int,
+    ) {
+        val resolved = captionButtonOf(button) ?: return
+        captionButtonListeners[hwnd]?.onClick(resolved)
+    }
 }

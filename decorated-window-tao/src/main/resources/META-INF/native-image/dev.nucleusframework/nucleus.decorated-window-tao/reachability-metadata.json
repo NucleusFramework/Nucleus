@@ -169,7 +169,11 @@
         },
         {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge",
-            "jniAccessible": true
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onCaptionButtonState", "parameterTypes": ["long","int","int"] },
+                { "name": "onCaptionButtonClick", "parameterTypes": ["long","int"] }
+            ]
         },
         {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge",
