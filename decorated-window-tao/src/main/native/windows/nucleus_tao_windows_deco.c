@@ -197,13 +197,30 @@ static void notifyButtonClick(HWND hwnd, int button) {
 }
 
 /* WM_NCMOUSELEAVE is the only signal that the cursor left a caption button
- * without entering the client area (e.g. straight out of the window). */
-static void trackNcMouseLeave(HWND hwnd, DecoState *state) {
+ * without entering the client area (e.g. straight out of the window).
+ *
+ * Tracking must be armed on the window that owns the mouse for the OS: over
+ * the caption buttons that is the GL surface child, which answers the caption
+ * hit-tests itself (see surfaceWndProc in nucleus_tao_gl.c) and forwards the
+ * NC stream here. Arming the parent while the cursor sits on the child would
+ * fire the leave immediately and wipe the hover state. The child is found via
+ * ChildWindowFromPointEx WITHOUT CWP_SKIPTRANSPARENT — the GL surface is
+ * WS_EX_TRANSPARENT. Its own WM_NCMOUSELEAVE is forwarded back to this
+ * WndProc, which clears the state. */
+static void trackNcMouseLeave(HWND hwnd, DecoState *state, LPARAM screenPos) {
     if (state->ncMouseTracking) return;
+
+    POINT pt;
+    pt.x = (short)LOWORD(screenPos);
+    pt.y = (short)HIWORD(screenPos);
+    ScreenToClient(hwnd, &pt);
+    HWND under = ChildWindowFromPointEx(
+        hwnd, pt, CWP_SKIPINVISIBLE | CWP_SKIPDISABLED);
+
     TRACKMOUSEEVENT tme;
     tme.cbSize = sizeof(tme);
     tme.dwFlags = TME_LEAVE | TME_NONCLIENT;
-    tme.hwndTrack = hwnd;
+    tme.hwndTrack = under ? under : hwnd;
     tme.dwHoverTime = 0;
     if (TrackMouseEvent(&tme)) state->ncMouseTracking = TRUE;
 }
@@ -468,7 +485,7 @@ static LRESULT CALLBACK decoWndProc(
     case WM_NCMOUSEMOVE: {
         int button = captionButtonForHitTest((LRESULT)wParam);
         if (button != CAPTION_BUTTON_NONE) {
-            trackNcMouseLeave(hwnd, state);
+            trackNcMouseLeave(hwnd, state, lParam);
             setButtonState(hwnd, state, button, state->pressedButton);
             /* DefWindowProc owns the caption-button tooltip; it has no
              * non-client area left to repaint, so this only shows the

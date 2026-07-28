@@ -159,11 +159,44 @@ static volatile LONG sSurfaceClassRegistered = 0;
 
 static LRESULT CALLBACK surfaceWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
-    case WM_NCHITTEST:
-        /* Transparent to every hit test: mouse, touch (WM_POINTER) and
+    case WM_NCHITTEST: {
+        /* Caption buttons: HTTRANSPARENT only works for same-thread input
+         * routing. The Windows 11 shell probes the hovered window from its
+         * own process (WindowFromPoint stops at this child), so the Snap
+         * Layouts flyout on the maximize button only appears if THIS window
+         * answers HTMAXBUTTON — mirroring Windows Terminal, whose drag-bar
+         * child answers the caption hit-tests itself. Delegate to the Tao
+         * parent (deco subclass) which knows the Compose button rects, and
+         * relay only the caption-button answers; the NC mouse messages that
+         * then land here are forwarded back to the parent below. */
+        HWND parent = GetAncestor(hwnd, GA_PARENT);
+        if (parent) {
+            LRESULT hit = SendMessageW(parent, WM_NCHITTEST, wParam, lParam);
+            if (hit == HTMINBUTTON || hit == HTMAXBUTTON || hit == HTCLOSE) {
+                return hit;
+            }
+        }
+        /* Transparent to every other hit test: mouse, touch (WM_POINTER) and
          * WindowFromPoint (OLE drag-and-drop) all resolve to the Tao
          * parent, whose deco subclass owns input handling. */
         return HTTRANSPARENT;
+    }
+
+    /* Because the caption hit-tests above are answered by this child, the
+     * corresponding non-client mouse stream is delivered here. The deco
+     * subclass on the parent owns the button state machine — hand everything
+     * over verbatim (lParam is in screen coordinates, so no translation).
+     * WM_NCMOUSELEAVE tracking for the hover reset is armed by the parent's
+     * handler on this child (see trackNcMouseLeave in the deco). */
+    case WM_NCMOUSEMOVE:
+    case WM_NCMOUSELEAVE:
+    case WM_NCLBUTTONDOWN:
+    case WM_NCLBUTTONUP:
+    case WM_NCLBUTTONDBLCLK: {
+        HWND parent = GetAncestor(hwnd, GA_PARENT);
+        if (parent) return SendMessageW(parent, msg, wParam, lParam);
+        break;
+    }
     case WM_ERASEBKGND:
         /* GL owns every pixel. The themed startup fill stays on the parent
          * (deco WM_ERASEBKGND); without WS_CLIPCHILDREN it covers this
