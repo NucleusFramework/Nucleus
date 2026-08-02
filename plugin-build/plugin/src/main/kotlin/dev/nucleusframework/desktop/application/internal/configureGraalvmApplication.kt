@@ -4,6 +4,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.UrlProtocol
@@ -1615,6 +1616,29 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             commandLine("codesign", "--force", "--deep", "--sign", "-", bundleDir.get().asFile.absolutePath)
         }
 
+    // Embed and (ad-hoc) sign app extensions into Contents/PlugIns after the bundle is sealed,
+    // then re-seal the outer bundle without --deep so each extension keeps its own entitlements.
+    val macAppExtensions = app.nativeDistributions.macOS.appExtensions.extensions
+    val embedAppExtensions =
+        if (macAppExtensions.isNotEmpty()) {
+            tasks.register<Exec>(
+                taskNameAction = "embed",
+                taskNameObject = "graalvmAppExtensions",
+            ) {
+                description = "Embed and sign macOS app extensions (.appex) into the .app bundle"
+                dependsOn(codesignBundle)
+                for (extension in macAppExtensions) {
+                    extension.appex?.let { inputs.dir(it) }
+                    extension.entitlements?.let { inputs.file(it) }
+                    extension.provisioningProfile?.let { inputs.file(it) }
+                }
+                val bundleDir = appTmpDir.map { it.dir("graalvm/output/${appBundleName.get()}") }.get().asFile
+                commandLine("bash", "-c", buildGraalvmAppExtensionEmbedScript(bundleDir, macAppExtensions))
+            }
+        } else {
+            null
+        }
+
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
@@ -1635,6 +1659,48 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             copyIcon,
         )
         copyFileAssociationIcons?.let { dependsOn(it) }
+        embedAppExtensions?.let { dependsOn(it) }
+    }
+}
+
+/**
+ * Builds the bash script that embeds each `.appex` into the GraalVM `.app` bundle's
+ * `Contents/PlugIns/`, signs it (ad-hoc) with its own entitlements inside-out, and re-seals
+ * the outer bundle without `--deep`. GraalVM native images are always ad-hoc signed.
+ */
+private fun buildGraalvmAppExtensionEmbedScript(
+    bundleDir: File,
+    extensions: List<MacAppExtension>,
+): String {
+    fun quote(file: File): String = "'" + file.absolutePath.replace("'", "'\\''") + "'"
+
+    val plugInsDir = File(bundleDir, "Contents/PlugIns")
+    return buildString {
+        appendLine("set -euo pipefail")
+        appendLine("mkdir -p ${quote(plugInsDir)}")
+        for (extension in extensions) {
+            val source =
+                extension.appex
+                    ?: error("appExtension '${extension.name}': no .appex file configured (call appex(...))")
+            val dest = File(plugInsDir, source.name)
+            val frameworks = File(dest, "Contents/Frameworks")
+            val entitlementsArg = extension.entitlements?.let { " --entitlements ${quote(it)}" } ?: ""
+
+            appendLine("rm -rf ${quote(dest)}")
+            appendLine("cp -R ${quote(source)} ${quote(plugInsDir)}/")
+            extension.provisioningProfile?.let { profile ->
+                appendLine("cp ${quote(profile)} ${quote(File(dest, "Contents/embedded.provisionprofile"))}")
+            }
+            // Sign nested frameworks first (inside-out), then the extension bundle.
+            appendLine(
+                "if [ -d ${quote(frameworks)} ]; then find ${quote(frameworks)} -type f " +
+                    "-exec codesign --force --options runtime$entitlementsArg --sign - {} +; fi",
+            )
+            appendLine("codesign --force --options runtime$entitlementsArg --sign - ${quote(dest)}")
+        }
+        // Re-seal the outer bundle (no --deep) so the nested extension signatures are preserved.
+        appendLine("codesign --force --options runtime --sign - ${quote(bundleDir)}")
+        appendLine("codesign --verify --deep --strict --verbose=2 ${quote(bundleDir)}")
     }
 }
 
@@ -2027,6 +2093,12 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                             mac.runtimeEntitlementsFile.orElse(
                                 unpackDefaultResources.flatMap { it.resources.defaultEntitlements },
                             ),
+                        )
+                        macAppExtensions.set(mac.appExtensions.extensions)
+                        macAppExtensionFiles.from(
+                            mac.appExtensions.extensions.flatMap {
+                                listOfNotNull(it.appex, it.entitlements, it.provisioningProfile)
+                            },
                         )
                     }
                 }

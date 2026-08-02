@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      HOST APP entitlements. These are distinct from the extension's
+      (packaging/extension/NetworkExtension.entitlements).
+
+      The host app needs the networkextension entitlement to install/enable the
+      extension via the NetworkExtension management APIs, and the SAME App Group
+      as the extension to share a container / IPC.
+    -->
+    <key>com.apple.developer.networking.networkextension</key>
+    <array>
+        <string>content-filter-provider</string>
+    </array>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.dev.nucleusframework.appexdemo</string>
+    </array>
+    <!-- JVM apps need these; keep them when adding a hardened-runtime signature. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+</dict>
+</plist>
