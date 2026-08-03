@@ -1,7 +1,6 @@
 package dev.nucleusframework.sampleshared
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +36,7 @@ enum class Tab(
     Events("Events"),
     WebView("WebView"),
     SwiftUI("SwiftUI"),
+    Texture("Texture"),
 }
 
 @Composable

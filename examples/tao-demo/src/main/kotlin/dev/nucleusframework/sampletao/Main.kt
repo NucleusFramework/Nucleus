@@ -396,6 +396,7 @@ private fun runApp() =
                             Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                             Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
                             Tab.SwiftUI -> SwiftUITab(modifier = Modifier.fillMaxSize())
+                            Tab.Texture -> TextureTab(modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
