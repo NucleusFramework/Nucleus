@@ -13,8 +13,13 @@ import dev.nucleusframework.updater.internal.PlatformInfo
 import dev.nucleusframework.updater.internal.PlatformInstaller
 import dev.nucleusframework.updater.internal.UpdateMarker
 import dev.nucleusframework.updater.internal.YamlParser
+import dev.nucleusframework.updater.internal.delta.DeltaPlan
+import dev.nucleusframework.updater.internal.delta.DeltaResolver
+import dev.nucleusframework.updater.internal.delta.DifferentialDownloader
+import dev.nucleusframework.updater.internal.delta.UpdateCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
@@ -23,6 +28,8 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.coroutines.cancellation.CancellationException
 
 class NucleusUpdater(
@@ -38,6 +45,11 @@ class NucleusUpdater(
                 .newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .build()
+
+    /** Holds the last downloaded artifact, which the next differential download builds upon. */
+    private val cache: UpdateCache by lazy {
+        config.cacheDir?.let(::UpdateCache) ?: UpdateCache.default()
+    }
 
     fun isUpdateSupported(): Boolean {
         val type = resolveExecutableType()
@@ -71,45 +83,9 @@ class NucleusUpdater(
             val finalFile = File(tempDir, targetFile.fileName)
 
             try {
-                val requestBuilder =
-                    HttpRequest
-                        .newBuilder()
-                        .uri(URI.create(targetFile.url))
-                        .GET()
-                applyAuthHeaders(requestBuilder)
-                val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream())
-
-                if (response.statusCode() != HTTP_OK) {
-                    throw NetworkException("HTTP ${response.statusCode()} downloading ${targetFile.url}")
-                }
-
-                val totalBytes = targetFile.size
-                var bytesDownloaded = 0L
-
-                response.body().use { inputStream ->
-                    tempFile.outputStream().use { outputStream ->
-                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                        var bytesRead: Int
-                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
-                            bytesDownloaded += bytesRead
-                            val percent =
-                                if (totalBytes > 0) {
-                                    (bytesDownloaded.toDouble() / totalBytes * PERCENT_MAX).coerceAtMost(PERCENT_MAX)
-                                } else {
-                                    0.0
-                                }
-                            emit(DownloadProgress(bytesDownloaded, totalBytes, percent))
-                        }
-                    }
-                }
-
-                // Verify checksum
-                if (!ChecksumVerifier.verify(tempFile, targetFile.sha512)) {
-                    val actual = ChecksumVerifier.computeSha512Base64(tempFile)
-                    tempFile.delete()
-                    throw ChecksumException(targetFile.sha512, actual)
-                }
+                val outcome =
+                    downloadDifferentially(targetFile, tempFile)
+                        ?: downloadFully(targetFile, tempFile)
 
                 // Rename to final file
                 if (finalFile.exists()) finalFile.delete()
@@ -120,7 +96,18 @@ class NucleusUpdater(
                 // the installer simply falls back to the standard (password-prompting) path.
                 downloadDetachedSignature(targetFile.url, File(finalFile.parentFile, "${finalFile.name}.asc"))
 
-                emit(DownloadProgress(bytesDownloaded, totalBytes, PERCENT_MAX, finalFile))
+                // Keep this artifact around so the next update only has to fetch what changed.
+                cacheForNextUpdate(targetFile, finalFile, info.version, outcome.blockMapGzip)
+
+                emit(
+                    DownloadProgress(
+                        bytesDownloaded = outcome.bytesTransferred,
+                        totalBytes = outcome.bytesTransferred,
+                        percent = PERCENT_MAX,
+                        file = finalFile,
+                        isDifferential = outcome.isDifferential,
+                    ),
+                )
             } catch (e: UpdateException) {
                 tempFile.delete()
                 throw e
@@ -134,6 +121,144 @@ class NucleusUpdater(
                 throw NetworkException("Download failed", e)
             }
         }.flowOn(Dispatchers.IO)
+
+    /** Outcome of one of the two download strategies. */
+    private class DownloadOutcome(
+        val bytesTransferred: Long,
+        val isDifferential: Boolean,
+        val blockMapGzip: ByteArray?,
+    )
+
+    /**
+     * Assembles [targetFile] from the copy already on this machine plus range requests for the
+     * changed blocks, or returns `null` when that is not possible so the caller downloads it whole.
+     *
+     * Every failure mode — no local artifact, no block map published, a server that ignores `Range`,
+     * a digest mismatch on the assembled file — resolves to `null`, because a full download is
+     * always a correct answer. Only cancellation propagates.
+     */
+    private suspend fun FlowCollector<DownloadProgress>.downloadDifferentially(
+        targetFile: UpdateFile,
+        tempFile: File,
+    ): DownloadOutcome? {
+        if (!config.differentialDownload) return null
+        return try {
+            val resolver = DeltaResolver(httpClient, config.provider.authHeaders(), cache)
+            val resolved =
+                resolver.resolve(
+                    target = targetFile,
+                    blockMapUrl = config.provider.getBlockMapUrl(targetFile.url),
+                    destination = tempFile,
+                ) ?: return null
+
+            val plannedBytes = DeltaPlan.downloadSize(resolved.download.operations)
+            logger.info(
+                "Differential update of ${targetFile.fileName}: fetching $plannedBytes " +
+                    "of ${targetFile.size} bytes",
+            )
+            emit(DownloadProgress(0, plannedBytes, 0.0, isDifferential = true))
+
+            val transferred =
+                DifferentialDownloader(httpClient, config.provider.authHeaders())
+                    .download(resolved.download) { downloaded, total ->
+                        emit(DownloadProgress(downloaded, total, percentOf(downloaded, total), isDifferential = true))
+                    }
+            DownloadOutcome(transferred, isDifferential = true, blockMapGzip = resolved.blockMapGzip)
+        } catch (e: CancellationException) {
+            tempFile.delete()
+            throw e
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            logger.log(Level.INFO, "Differential update unavailable, downloading the full artifact", e)
+            tempFile.delete()
+            null
+        }
+    }
+
+    private suspend fun FlowCollector<DownloadProgress>.downloadFully(
+        targetFile: UpdateFile,
+        tempFile: File,
+    ): DownloadOutcome {
+        val requestBuilder =
+            HttpRequest
+                .newBuilder()
+                .uri(URI.create(targetFile.url))
+                .GET()
+        applyAuthHeaders(requestBuilder)
+        val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofInputStream())
+
+        if (response.statusCode() != HTTP_OK) {
+            throw NetworkException("HTTP ${response.statusCode()} downloading ${targetFile.url}")
+        }
+
+        val totalBytes = targetFile.size
+        var bytesDownloaded = 0L
+
+        response.body().use { inputStream ->
+            tempFile.outputStream().use { outputStream ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                var bytesRead: Int
+                while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                    outputStream.write(buffer, 0, bytesRead)
+                    bytesDownloaded += bytesRead
+                    emit(DownloadProgress(bytesDownloaded, totalBytes, percentOf(bytesDownloaded, totalBytes)))
+                }
+            }
+        }
+
+        // Verify checksum
+        if (!ChecksumVerifier.verify(tempFile, targetFile.sha512)) {
+            val actual = ChecksumVerifier.computeSha512Base64(tempFile)
+            tempFile.delete()
+            throw ChecksumException(targetFile.sha512, actual)
+        }
+
+        // Fetch the block map so the *next* update can be differential. Artifacts that embed their
+        // own (blockMapSize is set) need no companion file, and nothing needs one at all when
+        // differential downloads are off.
+        val blockMapGzip =
+            if (config.differentialDownload && targetFile.blockMapSize == null) {
+                fetchBlockMap(config.provider.getBlockMapUrl(targetFile.url))
+            } else {
+                null
+            }
+        return DownloadOutcome(bytesDownloaded, isDifferential = false, blockMapGzip = blockMapGzip)
+    }
+
+    private fun percentOf(
+        downloaded: Long,
+        total: Long,
+    ): Double =
+        if (total > 0) {
+            (downloaded.toDouble() / total * PERCENT_MAX).coerceAtMost(PERCENT_MAX)
+        } else {
+            0.0
+        }
+
+    /** Downloads a block map, or returns `null` when the release does not publish one. */
+    private fun fetchBlockMap(url: String): ByteArray? =
+        try {
+            val requestBuilder = HttpRequest.newBuilder().uri(URI.create(url)).GET()
+            applyAuthHeaders(requestBuilder)
+            val response = httpClient.send(requestBuilder.build(), HttpResponse.BodyHandlers.ofByteArray())
+            response.body()?.takeIf { response.statusCode() == HTTP_OK && it.isNotEmpty() }
+        } catch (
+            @Suppress("TooGenericExceptionCaught") e: Exception,
+        ) {
+            logger.log(Level.FINE, "No block map at $url; the next update will be a full download", e)
+            null
+        }
+
+    private fun cacheForNextUpdate(
+        targetFile: UpdateFile,
+        artifact: File,
+        version: String,
+        blockMapGzip: ByteArray?,
+    ) {
+        if (!config.differentialDownload) return
+        cache.store(artifact, targetFile.fileName, version, blockMapGzip)
+    }
 
     /**
      * Downloads `<url>.asc` to [dest] if present. Failures are swallowed: the detached signature is
@@ -310,6 +435,8 @@ class NucleusUpdater(
     companion object {
         private const val HTTP_OK = 200
         private const val PERCENT_MAX = 100.0
+
+        private val logger: Logger = Logger.getLogger(NucleusUpdater::class.java.name)
 
         private val SELF_UPDATABLE_TYPES =
             setOf(
