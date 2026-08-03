@@ -2,7 +2,7 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -153,13 +153,14 @@ public fun TextureView(
         return
     }
 
+    // The lease is a RememberObserver: the registry ref is released on
+    // onForgotten AND onAbandoned, so a composition that computes this
+    // remember block but is never applied can't leak the native import
+    // (a DisposableEffect would never run in that case).
     val imported =
         remember(d3dSource, popupHost) {
-            TextureImportRegistry.acquire(popupHost, d3dSource)
-        }
-    DisposableEffect(imported) {
-        onDispose { imported?.let(TextureImportRegistry::release) }
-    }
+            TextureImportLease(popupHost, d3dSource)
+        }.imported
     if (imported == null) {
         Box(modifier)
         return
@@ -187,9 +188,14 @@ public fun TextureView(
                 // Draw runs on the event-loop thread during the scene
                 // render: the staging copy is enqueued on ANGLE's device
                 // queue ahead of Skia's sampling flush, so this frame
-                // already composites the copied content.
-                imported.lastCopiedStamp = stamp
-                NativeTaoTextureBridge.nativeUpdateFrame(imported.handle)
+                // already composites the copied content. The stamp is
+                // only consumed when the copy happened — a false return
+                // means the producer held the mutex past the timeout,
+                // and the next redraw must retry or the last frame
+                // would stay stale forever.
+                if (NativeTaoTextureBridge.nativeUpdateFrame(imported.handle)) {
+                    imported.lastCopiedStamp = stamp
+                }
             }
 
             val srcSize = Size(d3dSource.widthPx.toFloat(), d3dSource.heightPx.toFloat())
@@ -216,6 +222,36 @@ public fun TextureView(
             }
         },
     )
+}
+
+/**
+ * Composition-lifetime holder of one registry reference. Implements
+ * [RememberObserver] so the reference is released both when the
+ * composable leaves the composition (onForgotten) and when the
+ * composition is abandoned before being applied (onAbandoned) — the
+ * case a DisposableEffect can't cover.
+ */
+private class TextureImportLease(
+    popupHost: TaoPopupHostWindows,
+    source: D3D11SharedTextureSource,
+) : RememberObserver {
+    val imported: ImportedExternalTexture? = TextureImportRegistry.acquire(popupHost, source)
+
+    private fun release() {
+        imported?.let(TextureImportRegistry::release)
+    }
+
+    override fun onRemembered() {
+        // The reference was already taken in the constructor.
+    }
+
+    override fun onForgotten() {
+        release()
+    }
+
+    override fun onAbandoned() {
+        release()
+    }
 }
 
 /**

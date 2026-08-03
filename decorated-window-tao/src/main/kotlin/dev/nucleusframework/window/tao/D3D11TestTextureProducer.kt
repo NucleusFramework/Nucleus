@@ -14,8 +14,10 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoTextureBridge
  * [fill] brackets its writes with `AcquireSync(0)`/`ReleaseSync(0)` and
  * [TextureView] switches to its tear-free staging path automatically.
  *
- * [fill] is safe from any single producer thread — the device is
- * private to this producer.
+ * All methods are thread-safe: draw calls and [close] serialize on an
+ * internal lock, so a producer loop on a background thread can never
+ * race a dispose-time [close] into a native use-after-free. [close] is
+ * idempotent; draw calls after it are no-ops.
  *
  * Windows only — [create] returns null elsewhere.
  */
@@ -23,9 +25,15 @@ public class D3D11TestTextureProducer private constructor(
     private val producer: Long,
     public val source: TextureViewSource,
 ) : AutoCloseable {
+    private val lock = Any()
+    private var closed = false
+
     /** Clears the shared texture to [argb] and flushes the producer device. */
     public fun fill(argb: Int) {
-        NativeTaoTextureBridge.nativeTestProducerFill(producer, argb)
+        synchronized(lock) {
+            if (closed) return
+            NativeTaoTextureBridge.nativeTestProducerFill(producer, argb)
+        }
     }
 
     /**
@@ -37,11 +45,18 @@ public class D3D11TestTextureProducer private constructor(
         tick: Int,
         backgroundArgb: Int,
     ) {
-        NativeTaoTextureBridge.nativeTestProducerDrawPattern(producer, tick, backgroundArgb)
+        synchronized(lock) {
+            if (closed) return
+            NativeTaoTextureBridge.nativeTestProducerDrawPattern(producer, tick, backgroundArgb)
+        }
     }
 
     override fun close() {
-        NativeTaoTextureBridge.nativeTestProducerDestroy(producer)
+        synchronized(lock) {
+            if (closed) return
+            closed = true
+            NativeTaoTextureBridge.nativeTestProducerDestroy(producer)
+        }
     }
 
     public companion object {
