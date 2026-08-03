@@ -477,6 +477,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalWindowClearColorLayers provides clearColorLayers,
                 LocalRequestedGlassBackground provides host.glassBackgroundState,
                 LocalTaoPopupHost provides host.popupHost(),
+                dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+                    provides host.metalTextureHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
             ) {

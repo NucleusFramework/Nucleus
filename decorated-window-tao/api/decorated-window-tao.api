@@ -212,6 +212,20 @@ public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
 	public static fun values ()[Ldev/nucleusframework/window/tao/MacOSStyle;
 }
 
+public final class dev/nucleusframework/window/tao/MetalTestTextureProducer : java/lang/AutoCloseable {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/MetalTestTextureProducer$Companion;
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/TextureViewSource;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun drawTestPattern (II)V
+	public final fun fill (I)V
+	public final fun getSource ()Ldev/nucleusframework/window/tao/TextureViewSource;
+}
+
+public final class dev/nucleusframework/window/tao/MetalTestTextureProducer$Companion {
+	public final fun create (II)Ldev/nucleusframework/window/tao/MetalTestTextureProducer;
+}
+
 public final class dev/nucleusframework/window/tao/NativeViewKt {
 	public static final fun NativeView-hGBTI10 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;FLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
 }
@@ -664,6 +678,8 @@ public final class dev/nucleusframework/window/tao/TextureViewController {
 public final class dev/nucleusframework/window/tao/TextureViewKt {
 	public static final fun TextureView-0ZWTemg (Ldev/nucleusframework/window/tao/TextureViewSource;Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TextureViewController;ILandroidx/compose/ui/layout/ContentScale;Landroidx/compose/ui/Alignment;Landroidx/compose/runtime/Composer;II)V
 	public static final fun nucleusD3D11SharedTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusIOSurfaceTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusMetalTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
 	public static final fun rememberTextureViewController (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/window/tao/TextureViewController;
 }
 

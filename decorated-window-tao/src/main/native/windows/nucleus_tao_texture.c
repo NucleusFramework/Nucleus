@@ -106,7 +106,6 @@ static PFN_glGetIntegerv    pglGetIntegerv    = NULL;
 
 static void resolveTexEntryPoints(void) {
     if (sTexResolved) return;
-    sTexResolved = TRUE;
 
     pEglGetError2 = (PFNEGLGETERRORPROC) nucleus_tao_host_egl_proc("eglGetError");
     pEglQueryDisplayAttribEXT2 = (PFNEGLQUERYDISPLAYATTRIBEXTPROC)
@@ -133,6 +132,20 @@ static void resolveTexEntryPoints(void) {
                      pEglDestroySurface2 && pEglQueryDisplayAttribEXT2 &&
                      pEglQueryDeviceAttribEXT2 && pglGenTextures && pglDeleteTextures &&
                      pglBindTexture && pglTexParameteri && pglGetIntegerv);
+    /* Published last: a racing caller must never see "resolved" while the
+     * pointers are still NULL (it would report a spurious -1 "EGL missing"). */
+    sTexResolved = TRUE;
+}
+
+/* Re-makes whatever was current before the pbuffer was bound current again.
+ * A zeroed (never captured) surface reads as EGL_NO_SURFACE, in which case the
+ * thread is simply left with nothing current. */
+static void restoreCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGLContext ctx) {
+    if (draw != EGL_NO_SURFACE && ctx != EGL_NO_CONTEXT) {
+        pEglMakeCurrent2(dpy, draw, read, ctx);
+    } else {
+        pEglMakeCurrent2(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    }
 }
 
 /* GUIDs kept local — avoids linking dxguid.lib under /NODEFAULTLIB. */
@@ -160,6 +173,15 @@ typedef struct {
     EGLDisplay           dpy;
     EGLSurface           pbuffer;
     unsigned int         texId;
+    /* Surfaces/context that were current when this import ran, so binding the
+     * pbuffer can be undone. Import and destroy are called from inside
+     * ComposeScene.render(), i.e. in the MIDDLE of a host frame whose Skia
+     * output goes to the window surface — leaving the pbuffer current would
+     * redirect the rest of that frame (and its flush) into the producer's
+     * texture. */
+    EGLSurface           hostDraw;
+    EGLSurface           hostRead;
+    EGLContext           hostCtx;
     /* Texture the pbuffer wraps: the private staging copy (keyed-mutex
      * mode) or the opened shared texture itself (direct mode). */
     ID3D11Texture2D     *sampleTexture;
@@ -262,10 +284,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeImportD3D1
         return -err;
     }
 
-    /* Bind the pbuffer's colour buffer onto a fresh GL texture. Needs the
-     * host context current; binding the new pbuffer as the draw surface is
-     * always config-compatible, and the host frame loop re-makes its own
-     * window surface current before each render anyway. */
+    /* Bind the pbuffer's colour buffer onto a fresh GL texture. eglBindTexImage
+     * needs the pbuffer current, so remember what was current first: this runs
+     * from inside ComposeScene.render(), i.e. in the MIDDLE of a host frame
+     * whose Skia output targets the window surface. Leaving the pbuffer bound
+     * would send the rest of that frame — and its flushAndSubmit — into the
+     * producer's texture instead of the window. */
+    EGLSurface hostDraw = pEglGetCurrentSurface2(EGL_DRAW);
+    EGLSurface hostRead = pEglGetCurrentSurface2(EGL_READ);
     EGLBoolean bound = EGL_FALSE;
     unsigned int tex = 0;
     if (pEglMakeCurrent2(dpy, pb, pb, ctx)) {
@@ -279,12 +305,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeImportD3D1
         pglTexParameteri(NUCLEUS_GL_TEXTURE_2D, NUCLEUS_GL_TEXTURE_WRAP_T, (int)NUCLEUS_GL_CLAMP_TO_EDGE);
         bound = pEglBindTexImage(dpy, pb, EGL_BACK_BUFFER);
         pglBindTexture(NUCLEUS_GL_TEXTURE_2D, (unsigned int)prevTex);
+        restoreCurrent(dpy, hostDraw, hostRead, ctx);
     }
     if (!bound) {
         jlong err = (jlong)(0x50000 | (pEglGetError2 ? (unsigned int)pEglGetError2() : 0u));
         if (tex) pglDeleteTextures(1, &tex);
         if (pEglGetCurrentSurface2(EGL_DRAW) == pb) {
-            pEglMakeCurrent2(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            restoreCurrent(dpy, hostDraw, hostRead, ctx);
         }
         pEglDestroySurface2(dpy, pb);
         if (keyedMutex) IDXGIKeyedMutex_Release(keyedMutex);
@@ -300,7 +327,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeImportD3D1
         pEglReleaseTexImage(dpy, pb, EGL_BACK_BUFFER);
         pglDeleteTextures(1, &tex);
         if (pEglGetCurrentSurface2(EGL_DRAW) == pb) {
-            pEglMakeCurrent2(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            restoreCurrent(dpy, hostDraw, hostRead, ctx);
         }
         pEglDestroySurface2(dpy, pb);
         if (keyedMutex) IDXGIKeyedMutex_Release(keyedMutex);
@@ -312,6 +339,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeImportD3D1
     t->dpy = dpy;
     t->pbuffer = pb;
     t->texId = tex;
+    t->hostDraw = hostDraw;
+    t->hostRead = hostRead;
+    t->hostCtx = ctx;
     t->sampleTexture = sampleTex;
     if (keyedMutex) {
         t->sharedTexture = sharedTex;
@@ -389,9 +419,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeDestroy(
     if (!t) return;
     if (t->pbuffer != EGL_NO_SURFACE) {
         pEglReleaseTexImage(t->dpy, t->pbuffer, EGL_BACK_BUFFER);
-        /* Never destroy a surface while it's bound on this thread. */
+        /* Never destroy a surface while it's bound on this thread — and put the
+         * host's own surface back rather than leaving the thread with nothing
+         * current: disposal runs inside a host frame too. */
         if (pEglGetCurrentSurface2(EGL_DRAW) == t->pbuffer) {
-            pEglMakeCurrent2(t->dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+            restoreCurrent(t->dpy, t->hostDraw, t->hostRead, t->hostCtx);
         }
         pEglDestroySurface2(t->dpy, t->pbuffer);
     }

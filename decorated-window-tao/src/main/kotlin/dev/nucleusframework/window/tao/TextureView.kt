@@ -2,42 +2,31 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.RememberObserver
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.skiaCanvas
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.IntSize
-import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.ffi.NativeTaoTextureBridge
-import dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
-import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
-import org.jetbrains.skia.BackendTexture
-import org.jetbrains.skia.ColorType
 import org.jetbrains.skia.FilterMipmap
 import org.jetbrains.skia.FilterMode
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.MipmapMode
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.SamplingMode
-import org.jetbrains.skia.SurfaceOrigin
 import kotlin.math.roundToInt
-
-/** `GL_TEXTURE_2D` / `GR_GL_RGBA8` — Skia's GL backend constants. */
-private const val GL_TEXTURE_2D = 0x0DE1
-private const val GR_GL_RGBA8 = 0x8058
 
 /**
  * Handle to an external GPU texture composited by [TextureView].
- * Obtain one from a platform-specific factory such as
- * [nucleusD3D11SharedTextureSource].
+ * Obtain one from a platform-specific factory:
+ * [nucleusD3D11SharedTextureSource] (Windows),
+ * [nucleusIOSurfaceTextureSource] / [nucleusMetalTextureSource] (macOS).
  */
 public sealed interface TextureViewSource
 
@@ -76,6 +65,68 @@ internal data class D3D11SharedTextureSource(
 ) : TextureViewSource
 
 /**
+ * macOS source: an `IOSurfaceRef` ([ioSurface] as its raw pointer) — the
+ * platform's shareable GPU buffer and the counterpart of the DXGI shared
+ * handle on Windows. The consumer maps it as an `id<MTLTexture>` on the
+ * window's own Metal device, so the producer's pixels are never copied
+ * on the CPU, whatever device (or process) produced them.
+ *
+ * The surface must be 32-bit `BGRA` or `RGBA` with premultiplied alpha, and
+ * [widthPx] × [heightPx] must match its plane dimensions exactly (Metal
+ * validates the texture descriptor against them). It must also be backed by
+ * memory the window's GPU can share — true on Apple silicon and Intel
+ * integrated GPUs; on a discrete-only Intel Mac the import fails and
+ * [TextureView] renders an empty `Box`.
+ *
+ * Synchronization: Skia's Metal backend exposes no way to sample a wrapped
+ * `id<MTLTexture>` directly, so each frame is pulled through one GPU-GPU
+ * copy on the window's command queue — the equivalent of the Windows
+ * keyed-mutex staging path, minus the mutex. Producers should therefore
+ * finish their writes (`commit` + `waitUntilCompleted`, or double buffering)
+ * *before* calling [TextureViewController.markFrameAvailable]; a producer
+ * still writing while the compositor copies can tear, never crash.
+ */
+public fun nucleusIOSurfaceTextureSource(
+    ioSurface: Long,
+    widthPx: Int,
+    heightPx: Int,
+): TextureViewSource = IOSurfaceTextureSource(ioSurface, widthPx, heightPx)
+
+internal data class IOSurfaceTextureSource(
+    val ioSurface: Long,
+    val widthPx: Int,
+    val heightPx: Int,
+) : TextureViewSource
+
+/**
+ * macOS source: a producer-owned `id<MTLTexture>` ([metalTexture] as its raw
+ * pointer), for same-process Metal producers. The texture is sampled in place
+ * when it already lives on the window's Metal device with
+ * `MTLTextureUsageRenderTarget`; otherwise its `IOSurface` backing is
+ * re-wrapped on that device — which covers foreign-device textures and
+ * `CVMetalTextureCache` output (video decoders), whose textures carry no
+ * render-target usage.
+ *
+ * A texture that is neither render-target-capable on the window's device nor
+ * `IOSurface`-backed cannot be imported; hand over an
+ * [nucleusIOSurfaceTextureSource] in that case. Pixel format must be
+ * `BGRA8Unorm` or `RGBA8Unorm` (sRGB variants included) with premultiplied
+ * alpha. Same frame-copy and synchronization contract as
+ * [nucleusIOSurfaceTextureSource].
+ */
+public fun nucleusMetalTextureSource(
+    metalTexture: Long,
+    widthPx: Int,
+    heightPx: Int,
+): TextureViewSource = MetalTextureSource(metalTexture, widthPx, heightPx)
+
+internal data class MetalTextureSource(
+    val metalTexture: Long,
+    val widthPx: Int,
+    val heightPx: Int,
+) : TextureViewSource
+
+/**
  * Frame-availability signal for [TextureView] — the counterpart of
  * Flutter's `markTextureFrameAvailable`. The producer calls
  * [markFrameAvailable] after publishing a frame; only the **draw pass**
@@ -85,16 +136,16 @@ internal data class D3D11SharedTextureSource(
  * [markFrameAvailable] is safe to call from any thread.
  */
 public class TextureViewController {
-    private var stampCounter = 0L
-    internal val frameStamp = mutableStateOf(0L)
+    // Unboxed: this is written once per producer frame (60-120 Hz per producer),
+    // so a boxed Long state would allocate on the hottest path of the feature.
+    internal val frameStamp = mutableLongStateOf(0L)
 
     /** Signals that the producer published a new frame. Any thread. */
     public fun markFrameAvailable() {
         // Synchronized so concurrent producers still yield distinct,
         // monotonic stamps (a lost increment could suppress a redraw).
         synchronized(this) {
-            stampCounter += 1
-            frameStamp.value = stampCounter
+            frameStamp.longValue += 1
         }
     }
 }
@@ -110,8 +161,9 @@ public fun rememberTextureViewController(): TextureViewController = remember { T
  * widget. Unlike [NativeView], the pixels take part in normal
  * composition: z-order, clipping, `Modifier.graphicsLayer` transforms
  * and scrolling all apply, and no CPU frame copy ever happens (the
- * producer's D3D11 texture is sampled by Skia through ANGLE's
- * shared-resource import).
+ * producer's texture is imported straight onto the GPU device the window
+ * renders with — ANGLE's shared-resource import on Windows, an
+ * `IOSurface`-backed `MTLTexture` on macOS).
  *
  * Frame updates flow through [controller]: the producer renders, then
  * calls [TextureViewController.markFrameAvailable] (any thread) — only
@@ -121,11 +173,12 @@ public fun rememberTextureViewController(): TextureViewController = remember { T
  * Input is deliberately not handled — the composable is a plain drawing
  * surface; interactive native widgets remain [NativeView] territory.
  *
- * **Windows (Tao backend) only for now.** On other platforms — or when
- * [source] is null or the import fails (ANGLE unavailable, bad handle)
- * — it renders as an empty `Box(modifier)`.
+ * **Windows and macOS (Tao backend).** On Linux — or when [source] is null,
+ * does not match the running platform, or the import fails (ANGLE/Metal
+ * unavailable, bad handle) — it renders as an empty `Box(modifier)`.
  *
- * @param source producer texture handle, see [nucleusD3D11SharedTextureSource].
+ * @param source producer texture handle, see [nucleusD3D11SharedTextureSource]
+ *   (Windows) and [nucleusIOSurfaceTextureSource] (macOS).
  * @param controller frame-availability signal; omit for static content.
  * @param filterQuality sampling filter, like `Image`'s parameter
  *   ([FilterQuality.None] = nearest, [FilterQuality.High] = cubic).
@@ -142,222 +195,56 @@ public fun TextureView(
     contentScale: ContentScale = ContentScale.FillBounds,
     alignment: Alignment = Alignment.Center,
 ) {
-    val popupHost = LocalTaoPopupHostWindows.current
-    val d3dSource = source as? D3D11SharedTextureSource
-    if (Platform.Current != Platform.Windows ||
-        popupHost == null ||
-        d3dSource == null ||
-        !NativeTaoTextureBridge.isLoaded
-    ) {
-        Box(modifier)
-        return
-    }
-
-    // The lease is a RememberObserver: the registry ref is released on
-    // onForgotten AND onAbandoned, so a composition that computes this
-    // remember block but is never applied can't leak the native import
-    // (a DisposableEffect would never run in that case).
-    val imported =
-        remember(d3dSource, popupHost) {
-            TextureImportLease(popupHost, d3dSource)
-        }.imported
-    if (imported == null) {
-        Box(modifier)
-        return
-    }
-
-    val srcRect =
-        remember(d3dSource) {
-            Rect(0f, 0f, d3dSource.widthPx.toFloat(), d3dSource.heightPx.toFloat())
-        }
-    val sampling =
-        remember(filterQuality) {
-            when (filterQuality) {
-                FilterQuality.None -> FilterMipmap(FilterMode.NEAREST, MipmapMode.NONE)
-                FilterQuality.Low -> FilterMipmap(FilterMode.LINEAR, MipmapMode.NONE)
-                FilterQuality.Medium -> FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR)
-                else -> SamplingMode.MITCHELL
-            }
-        }
-    Box(
-        modifier.drawBehind {
-            // Snapshot read of the frame stamp: markFrameAvailable()
-            // invalidates exactly this draw pass, nothing recomposes.
-            val stamp = controller?.frameStamp?.value ?: 0L
-            if (imported.isSynchronized && imported.lastCopiedStamp != stamp) {
-                // Draw runs on the event-loop thread during the scene
-                // render: the staging copy is enqueued on ANGLE's device
-                // queue ahead of Skia's sampling flush, so this frame
-                // already composites the copied content. The stamp is
-                // only consumed when the copy happened — a false return
-                // means the producer held the mutex past the timeout,
-                // and the next redraw must retry or the last frame
-                // would stay stale forever.
-                if (NativeTaoTextureBridge.nativeUpdateFrame(imported.handle)) {
-                    imported.lastCopiedStamp = stamp
-                }
-            }
-
-            val srcSize = Size(d3dSource.widthPx.toFloat(), d3dSource.heightPx.toFloat())
-            val scaleFactor = contentScale.computeScaleFactor(srcSize, size)
-            val scaledW = srcSize.width * scaleFactor.scaleX
-            val scaledH = srcSize.height * scaleFactor.scaleY
-            val offset =
-                alignment.align(
-                    IntSize(scaledW.roundToInt(), scaledH.roundToInt()),
-                    IntSize(size.width.roundToInt(), size.height.roundToInt()),
-                    layoutDirection,
-                )
-            clipRect {
-                drawIntoCanvas { canvas ->
-                    canvas.skiaCanvas.drawImageRect(
-                        imported.image,
-                        srcRect,
-                        Rect.makeXYWH(offset.x.toFloat(), offset.y.toFloat(), scaledW, scaledH),
-                        sampling,
-                        null,
-                        true,
-                    )
-                }
-            }
-        },
-    )
-}
-
-/**
- * Composition-lifetime holder of one registry reference. Implements
- * [RememberObserver] so the reference is released both when the
- * composable leaves the composition (onForgotten) and when the
- * composition is abandoned before being applied (onAbandoned) — the
- * case a DisposableEffect can't cover.
- */
-private class TextureImportLease(
-    popupHost: TaoPopupHostWindows,
-    source: D3D11SharedTextureSource,
-) : RememberObserver {
-    val imported: ImportedExternalTexture? = TextureImportRegistry.acquire(popupHost, source)
-
-    private fun release() {
-        imported?.let(TextureImportRegistry::release)
-    }
-
-    override fun onRemembered() {
-        // The reference was already taken in the constructor.
-    }
-
-    override fun onForgotten() {
-        release()
-    }
-
-    override fun onAbandoned() {
-        release()
+    when (source) {
+        is D3D11SharedTextureSource ->
+            WindowsTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
+        is IOSurfaceTextureSource, is MetalTextureSource ->
+            MacTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
+        null -> Box(modifier)
     }
 }
 
+/** Skia sampling for a Compose [FilterQuality]; mirrors `Image`'s mapping. */
+internal fun samplingFor(filterQuality: FilterQuality): SamplingMode =
+    when (filterQuality) {
+        FilterQuality.None -> FilterMipmap(FilterMode.NEAREST, MipmapMode.NONE)
+        FilterQuality.Low -> FilterMipmap(FilterMode.LINEAR, MipmapMode.NONE)
+        FilterQuality.Medium -> FilterMipmap(FilterMode.LINEAR, MipmapMode.LINEAR)
+        else -> SamplingMode.MITCHELL
+    }
+
 /**
- * Pairs the native pbuffer binding with the Skia image that adopted the
- * GL texture. Skia owns the texture id after adoption (deleted with the
- * image); the native side only tears down the pbuffer.
+ * Draws [image] (the imported texture) into the current draw scope with
+ * [contentScale]/[alignment] applied and anything outside the composable's
+ * bounds clipped away — shared by both platform implementations.
  */
-private class ImportedExternalTexture(
-    val handle: Long,
-    val image: Image,
+internal fun DrawScope.drawExternalTexture(
+    image: Image,
+    srcRect: Rect,
+    contentScale: ContentScale,
+    alignment: Alignment,
+    sampling: SamplingMode,
 ) {
-    /** Keyed-mutex staging mode — tear-free copies via [NativeTaoTextureBridge.nativeUpdateFrame]. */
-    val isSynchronized: Boolean = NativeTaoTextureBridge.nativeIsSynchronized(handle)
-
-    /** Last controller stamp whose frame was copied. Main thread only. */
-    var lastCopiedStamp: Long = -1L
-
-    fun close() {
-        image.close()
-        NativeTaoTextureBridge.nativeDestroy(handle, deleteTexture = false)
-    }
-}
-
-/**
- * Shares GPU imports between [TextureView]s: N composables showing the
- * same source in the same window use one pbuffer/GL texture/Skia image
- * (and, in keyed-mutex mode, one staging copy per frame) — the moral
- * equivalent of Flutter's texture registry. Main thread only.
- */
-private object TextureImportRegistry {
-    private data class Key(
-        val hwnd: Long,
-        val sharedHandle: Long,
-        val widthPx: Int,
-        val heightPx: Int,
-    )
-
-    private class Entry(
-        val imported: ImportedExternalTexture,
-    ) {
-        var refCount: Int = 1
-    }
-
-    private val entries = HashMap<Key, Entry>()
-    private val keys = HashMap<ImportedExternalTexture, Key>()
-
-    fun acquire(
-        popupHost: TaoPopupHostWindows,
-        source: D3D11SharedTextureSource,
-    ): ImportedExternalTexture? {
-        val key = Key(popupHost.parentHwnd, source.sharedHandle, source.widthPx, source.heightPx)
-        entries[key]?.let { entry ->
-            entry.refCount++
-            return entry.imported
-        }
-        val imported = importTexture(popupHost, source) ?: return null
-        entries[key] = Entry(imported)
-        keys[imported] = key
-        return imported
-    }
-
-    fun release(imported: ImportedExternalTexture) {
-        val key = keys[imported] ?: return
-        val entry = entries[key] ?: return
-        entry.refCount--
-        if (entry.refCount <= 0) {
-            entries.remove(key)
-            keys.remove(imported)
-            imported.close()
-        }
-    }
-}
-
-private fun importTexture(
-    popupHost: TaoPopupHostWindows,
-    source: D3D11SharedTextureSource,
-): ImportedExternalTexture? {
-    val handle =
-        NativeTaoTextureBridge.nativeImportD3D11SharedHandle(
-            popupHost.parentHwnd,
-            source.sharedHandle,
-            source.widthPx,
-            source.heightPx,
+    val srcSize = Size(srcRect.width, srcRect.height)
+    val scaleFactor = contentScale.computeScaleFactor(srcSize, size)
+    val scaledW = srcSize.width * scaleFactor.scaleX
+    val scaledH = srcSize.height * scaleFactor.scaleY
+    val offset =
+        alignment.align(
+            IntSize(scaledW.roundToInt(), scaledH.roundToInt()),
+            IntSize(size.width.roundToInt(), size.height.roundToInt()),
+            layoutDirection,
         )
-    if (handle <= 0L) return null
-    val texId = NativeTaoTextureBridge.nativeGlTextureId(handle)
-    val image =
-        runCatching {
-            Image.adoptTextureFrom(
-                popupHost.hostDirectContext,
-                BackendTexture.makeGL(
-                    source.widthPx,
-                    source.heightPx,
-                    false,
-                    texId,
-                    GL_TEXTURE_2D,
-                    GR_GL_RGBA8,
-                ),
-                SurfaceOrigin.TOP_LEFT,
-                ColorType.RGBA_8888,
+    clipRect {
+        drawIntoCanvas { canvas ->
+            canvas.skiaCanvas.drawImageRect(
+                image,
+                srcRect,
+                Rect.makeXYWH(offset.x.toFloat(), offset.y.toFloat(), scaledW, scaledH),
+                sampling,
+                null,
+                true,
             )
-        }.getOrNull()
-    if (image == null) {
-        // Skia never adopted the texture — the native side must delete it.
-        NativeTaoTextureBridge.nativeDestroy(handle, deleteTexture = true)
-        return null
+        }
     }
-    return ImportedExternalTexture(handle, image)
 }

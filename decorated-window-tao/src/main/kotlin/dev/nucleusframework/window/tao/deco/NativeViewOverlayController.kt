@@ -3,6 +3,7 @@
 package dev.nucleusframework.window.tao.deco
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -27,7 +28,9 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
+import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
+import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
@@ -413,9 +416,37 @@ internal class NativeViewOverlayController(
     }
 
     fun setContent(content: @Composable () -> Unit) {
+        // The overlay renders through its own Skia context, so `TextureView`s in
+        // the overlay slot must import onto it rather than the window scene's.
+        // Resolved at composition time — the context only exists after attach().
+        val wrapped: @Composable () -> Unit = {
+            CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost()) {
+                content()
+            }
+        }
         val sc = scene
-        if (sc != null) sc.setContent(content) else pendingContent = content
+        if (sc != null) sc.setContent(wrapped) else pendingContent = wrapped
         popupHost.requestRedraw()
+    }
+
+    /** Stable [TaoMetalTextureHost] for the overlay surface; null before attach. */
+    private var metalTextureHostCache: TaoMetalTextureHost? = null
+
+    private fun metalTextureHost(): TaoMetalTextureHost? {
+        metalTextureHostCache?.let { return it }
+        val ctx = directContext ?: return null
+        if (attachmentHandle == 0L) return null
+        val device = NativeMetalBridge.nativeDevicePtr(attachmentHandle)
+        if (device == 0L) return null
+        val created =
+            object : TaoMetalTextureHost {
+                override val metalDevicePtr: Long = device
+                override val directContext: DirectContext = ctx
+
+                override fun <T> runOnRenderThread(block: () -> T): T = popupHost.runOnRenderThread(block)
+            }
+        metalTextureHostCache = created
+        return created
     }
 
     @Suppress("ComplexCondition")
@@ -490,6 +521,8 @@ internal class NativeViewOverlayController(
         disposed = true
         scene?.close()
         scene = null
+        // Drop the TextureView handle before the context it points at dies.
+        metalTextureHostCache = null
         // Close the Skia context on its owning render thread. dispose() runs in
         // the host's main-thread record pass (Compose disposal), when the render
         // thread is idle, so this blocking hop returns immediately without racing
