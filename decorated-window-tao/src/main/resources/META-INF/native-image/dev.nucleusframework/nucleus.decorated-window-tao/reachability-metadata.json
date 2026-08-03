@@ -176,6 +176,10 @@
             "jniAccessible": true
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoTextureBridge",
+            "jniAccessible": true
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge",
             "jniAccessible": true,
             "methods": [

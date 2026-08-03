@@ -176,6 +176,21 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeVi
 	public final fun getLambda$1447510722$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 }
 
+public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer : java/lang/AutoCloseable {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion;
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/TextureViewSource;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun drawTestPattern (II)V
+	public final fun fill (I)V
+	public final fun getSource ()Ldev/nucleusframework/window/tao/TextureViewSource;
+}
+
+public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion {
+	public final fun create (IIZ)Ldev/nucleusframework/window/tao/D3D11TestTextureProducer;
+	public static synthetic fun create$default (Ldev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion;IIZILjava/lang/Object;)Ldev/nucleusframework/window/tao/D3D11TestTextureProducer;
+}
+
 public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
 	public static final fun DecoratedDialog (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
@@ -638,6 +653,21 @@ public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TouchI
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TrackpadGestureListener {
 	public abstract fun onGesture (IIIII)V
+}
+
+public final class dev/nucleusframework/window/tao/TextureViewController {
+	public static final field $stable I
+	public fun <init> ()V
+	public final fun markFrameAvailable ()V
+}
+
+public final class dev/nucleusframework/window/tao/TextureViewKt {
+	public static final fun TextureView-0ZWTemg (Ldev/nucleusframework/window/tao/TextureViewSource;Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TextureViewController;ILandroidx/compose/ui/layout/ContentScale;Landroidx/compose/ui/Alignment;Landroidx/compose/runtime/Composer;II)V
+	public static final fun nucleusD3D11SharedTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun rememberTextureViewController (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/window/tao/TextureViewController;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/TextureViewSource {
 }
 
 public final class dev/nucleusframework/window/tao/render/MetalFrame {

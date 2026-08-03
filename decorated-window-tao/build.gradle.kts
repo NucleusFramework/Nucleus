@@ -89,6 +89,7 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     inputs.file(file("src/main/native/Cargo.toml"))
     inputs.file(file("src/main/native/windows/nucleus_tao_windows_deco.c"))
     inputs.file(file("src/main/native/windows/nucleus_tao_gl.c"))
+    inputs.file(file("src/main/native/windows/nucleus_tao_texture.c"))
     outputs.dir(outputDir)
     workingDir(file("src/main/native/windows"))
     commandLine("cmd", "/c", ".\\build.bat")
