@@ -579,21 +579,27 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeTestProduc
     }
     testProducerClear(p, argbBg);
 
-    int barX = (tick * 2) % (p->widthPx - NUCLEUS_TEST_BAR_PX + 1);
+    /* Bars shrink to the texture on tiny producers: keeps the modulo
+     * divisor >= 1 (a 15px-wide texture would otherwise divide by 0)
+     * and the UpdateSubresource boxes inside the resource. */
+    int barW = NUCLEUS_TEST_BAR_PX < p->widthPx ? NUCLEUS_TEST_BAR_PX : p->widthPx;
+    int barH = NUCLEUS_TEST_BAR_PX < p->heightPx ? NUCLEUS_TEST_BAR_PX : p->heightPx;
+
+    int barX = (tick * 2) % (p->widthPx - barW + 1);
     if (barX < 0) barX = 0;
     D3D11_BOX vBox;
-    vBox.left = (UINT)barX;  vBox.right  = (UINT)(barX + NUCLEUS_TEST_BAR_PX);
+    vBox.left = (UINT)barX;  vBox.right  = (UINT)(barX + barW);
     vBox.top = 0;            vBox.bottom = (UINT)p->heightPx;
     vBox.front = 0;          vBox.back   = 1;
     ID3D11DeviceContext_UpdateSubresource(
         p->imCtx, (ID3D11Resource *)p->texture, 0, &vBox,
-        p->barPixels, (UINT)(NUCLEUS_TEST_BAR_PX * 4), 0);
+        p->barPixels, (UINT)(barW * 4), 0);
 
-    int barY = tick % (p->heightPx - NUCLEUS_TEST_BAR_PX + 1);
+    int barY = tick % (p->heightPx - barH + 1);
     if (barY < 0) barY = 0;
     D3D11_BOX hBox;
     hBox.left = 0;           hBox.right  = (UINT)p->widthPx;
-    hBox.top = (UINT)barY;   hBox.bottom = (UINT)(barY + NUCLEUS_TEST_BAR_PX);
+    hBox.top = (UINT)barY;   hBox.bottom = (UINT)(barY + barH);
     hBox.front = 0;          hBox.back   = 1;
     ID3D11DeviceContext_UpdateSubresource(
         p->imCtx, (ID3D11Resource *)p->texture, 0, &hBox,
