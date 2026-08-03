@@ -15,6 +15,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,10 +29,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.tao.D3D11TestTextureProducer
+import dev.nucleusframework.window.tao.MetalTestTextureProducer
 import dev.nucleusframework.window.tao.TextureView
+import dev.nucleusframework.window.tao.TextureViewSource
 import dev.nucleusframework.window.tao.rememberTextureViewController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 
@@ -39,19 +41,20 @@ private const val TEX_W = 128
 private const val TEX_H = 96
 
 /**
- * TextureView demo (discussion #338): external D3D11 producers render an
+ * TextureView demo (discussion #338): external GPU producers render an
  * animated pattern on their own device+thread; frames reach the Compose
  * scene via `markFrameAvailable` — draw-only invalidation, zero
  * recompositions per frame (watch the recomposition counter stay put
- * while the pattern animates). The keyed-mutex producer takes the
- * tear-free staging path automatically; the plain one is sampled
- * zero-copy. Windows-only; elsewhere the boxes stay empty.
+ * while the pattern animates). Windows uses D3D11 shared handles (the
+ * keyed-mutex producer takes the tear-free staging path, the plain one is
+ * sampled zero-copy); macOS uses Metal `IOSurface`s. On Linux the boxes
+ * stay empty.
  */
 @Suppress("FunctionNaming", "MagicNumber", "LongMethod")
 @Composable
 fun TextureTab(modifier: Modifier = Modifier) {
-    val syncProducer = remember { D3D11TestTextureProducer.create(TEX_W, TEX_H, useKeyedMutex = true) }
-    val rawProducer = remember { D3D11TestTextureProducer.create(TEX_W, TEX_H, useKeyedMutex = false) }
+    val syncProducer = remember { createDemoProducer(TEX_W, TEX_H, synchronized = true) }
+    val rawProducer = remember { createDemoProducer(TEX_W, TEX_H, synchronized = false) }
     DisposableEffect(Unit) {
         onDispose {
             syncProducer?.close()
@@ -62,14 +65,22 @@ fun TextureTab(modifier: Modifier = Modifier) {
     val syncController = rememberTextureViewController()
     val rawController = rememberTextureViewController()
 
-    // Producer loop on a background dispatcher: proves markFrameAvailable
-    // is thread-safe and that animation never touches the composition.
+    // Producer loop, display-paced: `withFrameNanos` ticks once per composited
+    // frame, so the pattern animates at the panel's refresh rate (90 Hz, 120 Hz
+    // on ProMotion, …) instead of a hard-coded 60. The GPU work itself stays on
+    // a background dispatcher — that is what proves markFrameAvailable is
+    // thread-safe and that animation never touches the composition.
     LaunchedEffect(syncProducer, rawProducer) {
-        withContext(Dispatchers.Default) {
-            var tick = 0
-            while (isActive) {
-                val hue = (tick % 360).toFloat()
-                val bg = Color.hsv(hue, 0.65f, 0.75f).toArgb()
+        // No producer (Linux, or Metal/D3D11 unavailable): stay out of the frame
+        // clock entirely — a withFrameNanos awaiter re-arms the frame dispatcher
+        // every tick, which would spin the render loop on empty frames.
+        if (syncProducer == null && rawProducer == null) return@LaunchedEffect
+        var tick = 0
+        while (isActive) {
+            withFrameNanos { }
+            val hue = (tick % 360).toFloat()
+            val bg = Color.hsv(hue, 0.65f, 0.75f).toArgb()
+            withContext(Dispatchers.Default) {
                 if (syncProducer != null) {
                     syncProducer.drawTestPattern(tick, bg)
                     syncController.markFrameAvailable()
@@ -78,14 +89,13 @@ fun TextureTab(modifier: Modifier = Modifier) {
                     rawProducer.drawTestPattern(tick, bg)
                     rawController.markFrameAvailable()
                 }
-                tick++
-                delay(16)
             }
+            tick++
         }
     }
 
     // Increments on every recomposition of this tab — must NOT follow the
-    // 60 fps producer (frame updates invalidate the draw pass only).
+    // producer (frame updates invalidate the draw pass only).
     val recompositions = remember { intArrayOf(0) }
     recompositions[0]++
 
@@ -100,15 +110,18 @@ fun TextureTab(modifier: Modifier = Modifier) {
         BasicText(
             text =
                 if (syncProducer == null) {
-                    "TextureView — producer unavailable (not Windows, or D3D11/ANGLE missing)"
+                    "TextureView — producer unavailable (needs Windows + D3D11/ANGLE, or macOS + Metal)"
                 } else {
-                    "TextureView — external D3D11 producers, ${TEX_W}x$TEX_H @ 60 fps " +
+                    "TextureView — external ${syncProducer.kind} producers, ${TEX_W}x$TEX_H at display rate " +
                         "(recompositions=${recompositions[0]})"
                 },
             style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
         )
 
-        BasicText("Keyed mutex (tear-free staging) — shared import, contentScale variants:", style = label)
+        BasicText(
+            text = "${syncProducer?.syncMode ?: "Primary producer"} — shared import, contentScale variants:",
+            style = label,
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextureView(
@@ -185,7 +198,7 @@ fun TextureTab(modifier: Modifier = Modifier) {
             }
         }
 
-        BasicText("No mutex — true zero copy (producer just flushes):", style = label)
+        BasicText("${rawProducer?.altSyncMode ?: "Second producer"}:", style = label)
         Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
             TextureView(
                 source = rawProducer?.source,
@@ -194,6 +207,57 @@ fun TextureTab(modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/**
+ * Platform-agnostic view of the two bundled test producers, so the demo body
+ * stays identical on Windows (D3D11 shared handle) and macOS (Metal
+ * `IOSurface`). [synchronized] only means something on Windows, where it picks
+ * the keyed-mutex producer.
+ */
+private class DemoTextureProducer(
+    val source: TextureViewSource,
+    val kind: String,
+    val syncMode: String,
+    val altSyncMode: String,
+    private val pattern: (tick: Int, backgroundArgb: Int) -> Unit,
+    private val closeProducer: () -> Unit,
+) : AutoCloseable {
+    fun drawTestPattern(
+        tick: Int,
+        backgroundArgb: Int,
+    ) = pattern(tick, backgroundArgb)
+
+    override fun close() = closeProducer()
+}
+
+private fun createDemoProducer(
+    widthPx: Int,
+    heightPx: Int,
+    synchronized: Boolean,
+): DemoTextureProducer? {
+    // Each factory returns null off its platform, so the first non-null wins.
+    D3D11TestTextureProducer.create(widthPx, heightPx, useKeyedMutex = synchronized)?.let { producer ->
+        return DemoTextureProducer(
+            source = producer.source,
+            kind = "D3D11",
+            syncMode = "Keyed mutex (tear-free staging)",
+            altSyncMode = "No mutex — true zero copy (producer just flushes)",
+            pattern = producer::drawTestPattern,
+            closeProducer = producer::close,
+        )
+    }
+    MetalTestTextureProducer.create(widthPx, heightPx)?.let { producer ->
+        return DemoTextureProducer(
+            source = producer.source,
+            kind = "Metal IOSurface",
+            syncMode = "IOSurface import (one GPU copy per frame)",
+            altSyncMode = "Second producer — own MTLDevice + IOSurface",
+            pattern = producer::drawTestPattern,
+            closeProducer = producer::close,
+        )
+    }
+    return null
 }
 
 private fun demoBox(

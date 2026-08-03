@@ -56,6 +56,11 @@ fi
 JNI_INCLUDE="$JAVA_HOME/include"
 JNI_INCLUDE_DARWIN="$JAVA_HOME/include/darwin"
 SRC="$SCRIPT_DIR/NucleusTaoMetal.m"
+# External GPU texture import for the TextureView composable. Linked into the
+# Metal dylib (not its own library) so it shares the Metal/IOSurface frameworks
+# and the JNI symbols resolve through the already-loaded nucleus_tao_metal —
+# same arrangement as nucleus_tao_texture.c inside nucleus_tao_gl.dll on Windows.
+TEX_SRC="$SCRIPT_DIR/texture.m"
 
 COMMON_FLAGS=(
     -dynamiclib
@@ -63,6 +68,7 @@ COMMON_FLAGS=(
     -framework Cocoa
     -framework QuartzCore
     -framework Metal
+    -framework IOSurface
     -framework CoreVideo
     # Carbon: menu bar reveal tracking (kEventClassMenu) for the fullscreen
     # Safari-style title bar — see applyMenuBarFraction in NucleusTaoMetal.m.
@@ -77,11 +83,11 @@ COMMON_FLAGS=(
 )
 
 clang -arch arm64 "${COMMON_FLAGS[@]}" \
-    -o "$OUT_DIR_ARM64/libnucleus_tao_metal.dylib" "$SRC"
+    -o "$OUT_DIR_ARM64/libnucleus_tao_metal.dylib" "$SRC" "$TEX_SRC"
 strip -x "$OUT_DIR_ARM64/libnucleus_tao_metal.dylib"
 
 clang -arch x86_64 "${COMMON_FLAGS[@]}" \
-    -o "$OUT_DIR_X64/libnucleus_tao_metal.dylib" "$SRC"
+    -o "$OUT_DIR_X64/libnucleus_tao_metal.dylib" "$SRC" "$TEX_SRC"
 strip -x "$OUT_DIR_X64/libnucleus_tao_metal.dylib"
 
 # ── 3) Objective-C DnD helper (libnucleus_tao_dnd.dylib) ────────────────────
