@@ -106,6 +106,10 @@ val buildNativeLinux by tasks.registering(Exec::class) {
     inputs.dir(file("src/main/native/src"))
     inputs.file(file("src/main/native/Cargo.toml"))
     inputs.file(file("src/main/native/linux/nucleus_tao_egl.c"))
+    inputs.file(file("src/main/native/linux/nucleus_tao_texture_linux.c"))
+    // Shared by both C translation units above: editing it alone must not leave
+    // the task UP-TO-DATE with a stale .so in the resources.
+    inputs.file(file("src/main/native/linux/nucleus_tao_egl_internal.h"))
     outputs.dir(outputDir)
     workingDir(file("src/main/native/linux"))
     commandLine("bash", "build.sh")

@@ -697,6 +697,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
+                // Read as state: a Wayland hide/show rebuilds the EGL + Skia
+                // context pair, and TextureView imports must follow it.
+                dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
+                    provides host.glTextureHostState.value,
                 dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
                     provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
