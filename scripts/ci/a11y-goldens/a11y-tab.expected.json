@@ -20,7 +20,8 @@
     { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
     { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
     { "name": "WebView", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
-    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Texture", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
   ],
   "nodes": [
     {

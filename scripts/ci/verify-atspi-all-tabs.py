@@ -35,6 +35,10 @@ TAB_CHECKS = [
     ("Events", ["Events"], 8),
     ("WebView", ["WebView"], 6),
     ("SwiftUI", ["SwiftUI"], 6),
+    # Texture: the contentScale / filterQuality labels are the only strings that
+    # are identical on every platform (the producer summary line differs, and on
+    # Linux there is no producer at all).
+    ("Texture", ["FillBounds", "Crop", "None (nearest)"], 8),
 ]
 
 

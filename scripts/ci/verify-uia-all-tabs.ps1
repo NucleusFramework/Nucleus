@@ -152,7 +152,7 @@ Write-Host "window: '$($win.Current.Name)'"
 # -- Tab bar itself --------------------------------------------------------
 $tabLabels = @(
     "Demo", "Scroll", "Zoom", "Window actions", "A11y", "Complex",
-    "Events", "WebView", "SwiftUI"
+    "Events", "WebView", "SwiftUI", "Texture"
 )
 Write-Host "`n-- Tab bar --"
 foreach ($t in $tabLabels) {
@@ -178,6 +178,8 @@ $tabChecks = [ordered]@{
     "Events"          = @{ must = @("Events"); minNamed = 8; action = $null }
     "WebView"         = @{ must = @("WebView"); minNamed = 6; action = $null }
     "SwiftUI"         = @{ must = @("SwiftUI"); minNamed = 6; action = $null }
+    # Only the contentScale / filterQuality labels are platform-independent here.
+    "Texture"         = @{ must = @("FillBounds", "Crop", "None (nearest)"); minNamed = 8; action = $null }
 }
 
 $report = New-Object System.Collections.Generic.List[string]
