@@ -47,6 +47,11 @@ jobs:
         shell: cmd
         run: call native-ssl\src\main\native\windows\build.bat
 
+      - name: Build native-proxy Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call native-proxy\src\main\native\windows\build.bat
+
       - name: Build decorated-window-jni Windows DLLs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         shell: cmd
@@ -139,6 +144,7 @@ jobs:
           FILES=(
             "darkmode-detector/nucleus_windows_theme.dll"
             "native-ssl/nucleus_ssl.dll"
+            "native-proxy/nucleus_proxy.dll"
             "decorated-window-jni/nucleus_windows_decoration.dll"
             "system-color/nucleus_systemcolor.dll"
             "energy-manager/nucleus_energy_manager.dll"

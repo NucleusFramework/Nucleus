@@ -1,0 +1,8 @@
+{
+    "reflection": [
+        {
+            "type": "dev.nucleusframework.nativeproxy.windows.WindowsProxyBridge",
+            "jniAccessible": true
+        }
+    ]
+}
