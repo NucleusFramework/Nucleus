@@ -62,6 +62,7 @@ class TaoSceneTestBatteryDriftTest {
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
             OutboundDragPumpNativeSmokeTest::class.java to "resolves the platform DnD JNI entry points",
             MacExternalTextureNativeSmokeTest::class.java to "drives a real Metal device + IOSurface import",
+            LinuxExternalTextureNativeSmokeTest::class.java to "drives a real GBM/EGL device + DMA-BUF import",
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",

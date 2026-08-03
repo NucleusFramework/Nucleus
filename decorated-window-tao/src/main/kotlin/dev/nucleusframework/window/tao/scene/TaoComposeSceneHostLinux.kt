@@ -4,7 +4,9 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
@@ -46,6 +48,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
+import dev.nucleusframework.window.tao.releaseGlTextureImports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -177,6 +180,22 @@ internal class TaoComposeSceneHostLinux(
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
     private var scene: ComposeScene? = null
+
+    /**
+     * Handle `TextureView`s in this window's scene import onto — see
+     * [TaoGlTextureHost]. A **state** rather than a plain field because a
+     * Wayland hide/show cycle destroys and rebuilds the EGL attachment and the
+     * Skia context ([suspendGpu] / [resumeGpu]): the composition reads it, so
+     * imports made on the old context are dropped and redone on the new one
+     * instead of silently drawing into a dead context.
+     */
+    val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
+
+    /**
+     * Coroutine drains left for the current frame's swap window — see the
+     * swap-in-flight branch of [onRedrawRequested]. Reset on every render.
+     */
+    private var skipDrainBudget: Int = SKIP_DRAIN_BUDGET_PER_FRAME
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
@@ -530,7 +549,18 @@ internal class TaoComposeSceneHostLinux(
             "NativeTaoEglBridge.nativeGetProcAddrFunctionPointer returned 0 — libEGL.so.1 missing?"
         }
         val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
-        directContext = DirectContext.makeGLWithInterface(iface)
+        val ctx = DirectContext.makeGLWithInterface(iface)
+        directContext = ctx
+        // Publish the TextureView handle for the fresh EGL context / Skia
+        // context pair (see glTextureHostState).
+        glTextureHostState.value =
+            object : TaoGlTextureHost {
+                override val directContext: DirectContext = ctx
+
+                // Read live: 0 once the window detached, so a late disposal
+                // can't bind (nor dereference) a freed attachment.
+                override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachmentHandle, block)
+            }
 
         // The native attach binds the EGL context to *this* thread (the GTK
         // main thread). Release it so the swap thread can take it for
@@ -570,6 +600,11 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
+        // Drop TextureView imports made on this context while it is still
+        // current and alive; the composition survives the hide, so its leases
+        // would otherwise hold Skia images on a destroyed context.
+        directContext?.let(::releaseGlTextureImports)
+        glTextureHostState.value = null
         // The DirectContext is bound to the EGL context being destroyed; the
         // scene itself survives and renders again once [resumeGpu] rebuilds it.
         directContext?.close()
@@ -1167,8 +1202,35 @@ internal class TaoComposeSceneHostLinux(
         // rendering — the parent's swap latency was paid on the input thread.)
         val st = swapThread
         if (st != null && !st.tryBeginRenderOrMarkOwed()) {
+            // The GPU is busy presenting; the CPU is not. Drain the scene's
+            // coroutine queue anyway — pure CPU work, with no GL context bound
+            // (the same state as the drain in the render path below).
+            //
+            // Without this, a continuation that lands while a swap is in flight
+            // waits for the *next* render pass, i.e. a full frame. A coroutine
+            // that hops to a worker and back once per frame — a `TextureView`
+            // producer pulling frames off the frame clock is the canonical case
+            // — then advances only every other frame and animates at half the
+            // refresh rate. Measured on an 89.8 Hz panel: 11.1 ms round trip and
+            // 45 producer fps before, 0.25 ms and 90 fps after, at identical CPU
+            // (the extra event-loop wakeups replace work that was merely being
+            // deferred).
+            //
+            // Budgeted per frame because draining re-arms the redraw whenever the
+            // queue is left non-empty: a continuation that immediately
+            // re-dispatches on this dispatcher (a main-confined `yield()` loop, a
+            // Channel ping-pong) would otherwise spin this thread — which also
+            // dispatches all input — for as long as the swap takes, i.e. forever
+            // on an occluded Wayland window whose frame callbacks stopped coming.
+            // Legitimate per-frame traffic is a couple of continuations; past the
+            // budget the frame behaves as it did before, deferring to the render.
+            if (skipDrainBudget > 0) {
+                skipDrainBudget--
+                flushingDispatcher.drain()
+            }
             return
         }
+        skipDrainBudget = SKIP_DRAIN_BUDGET_PER_FRAME
 
         val ctx = directContext ?: return
         val sc = scene ?: return
@@ -1894,6 +1956,10 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
+        // Belt for TextureView imports a leaked composition may still hold:
+        // scene.close() above released the leases of every live one.
+        directContext?.let(::releaseGlTextureImports)
+        glTextureHostState.value = null
         directContext?.close()
         directContext = null
         // Clear any input region we may have set while the window was
@@ -1927,6 +1993,14 @@ internal class TaoComposeSceneHostLinux(
         private const val DEGREES_PER_RADIAN: Float = 180f
         private const val MIN_GESTURE_SCALE: Float = 0.05f
         private const val WHEEL_ZOOM_IDLE_END_MS: Long = 120L
+
+        /**
+         * How many times a single swap window may drain the scene's coroutine
+         * queue. Generous next to real per-frame traffic (a worker round trip is
+         * one or two continuations), small enough that a self-redispatching
+         * coroutine can't turn the event-loop thread into a spin loop.
+         */
+        private const val SKIP_DRAIN_BUDGET_PER_FRAME: Int = 8
     }
 
     /**

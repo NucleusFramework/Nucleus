@@ -26,7 +26,8 @@ import kotlin.math.roundToInt
  * Handle to an external GPU texture composited by [TextureView].
  * Obtain one from a platform-specific factory:
  * [nucleusD3D11SharedTextureSource] (Windows),
- * [nucleusIOSurfaceTextureSource] / [nucleusMetalTextureSource] (macOS).
+ * [nucleusIOSurfaceTextureSource] / [nucleusMetalTextureSource] (macOS),
+ * [nucleusDmaBufTextureSource] / [nucleusEglImageTextureSource] (Linux).
  */
 public sealed interface TextureViewSource
 
@@ -127,6 +128,112 @@ internal data class MetalTextureSource(
 ) : TextureViewSource
 
 /**
+ * Single-plane 32-bit RGB DRM FourCC codes accepted by
+ * [nucleusDmaBufTextureSource]. The names follow the DRM convention, where the
+ * channel order is the one seen by a little-endian 32-bit read — so
+ * [ARGB8888] is `B, G, R, A` in memory, the layout GBM and Wayland
+ * compositors use by default.
+ *
+ * The FourCC is handed to the driver, which sets the imported texture up so GL
+ * sampling always yields (R, G, B, A) — no channel order leaks into
+ * application code. The `X` variants have no alpha channel and sample as
+ * opaque.
+ */
+public object NucleusDrmFormat {
+    /** `AR24` — `DRM_FORMAT_ARGB8888`, GBM's and Wayland's default. */
+    public const val ARGB8888: Int = 0x34325241
+
+    /** `XR24` — `DRM_FORMAT_XRGB8888` (no alpha). */
+    public const val XRGB8888: Int = 0x34325258
+
+    /** `AB24` — `DRM_FORMAT_ABGR8888`, i.e. `R, G, B, A` in memory. */
+    public const val ABGR8888: Int = 0x34324241
+
+    /** `XB24` — `DRM_FORMAT_XBGR8888` (no alpha). */
+    public const val XBGR8888: Int = 0x34324258
+
+    /** `DRM_FORMAT_MOD_INVALID` — "the buffer layout is implicit". */
+    public const val MODIFIER_INVALID: Long = 0x00FFFFFFFFFFFFFFL
+
+    /** `DRM_FORMAT_MOD_LINEAR` — untiled, row-major. */
+    public const val MODIFIER_LINEAR: Long = 0L
+}
+
+/**
+ * Linux source: one plane of a **DMA-BUF** ([fd]) — the platform's shareable
+ * GPU buffer and the counterpart of the DXGI shared handle on Windows and the
+ * `IOSurface` on macOS. It is imported as an `EGLImage` on the window's own
+ * `EGLDisplay` and bound onto a GL texture Skia samples, so the producer's
+ * pixels are never copied: they are the pixels the compositor reads, whatever
+ * device or process produced them.
+ *
+ * The buffer must be single-plane 32-bit RGB ([fourcc], see [NucleusDrmFormat])
+ * with premultiplied alpha, [widthPx] × [heightPx], [stride] bytes per row and
+ * the plane starting at [offset]. [modifier] is the DRM format modifier the
+ * allocator picked (`gbm_bo_get_modifier`, a Wayland
+ * `zwp_linux_dmabuf_v1` feedback event, …) — pass
+ * [NucleusDrmFormat.MODIFIER_INVALID] to let the driver assume an implicit
+ * layout. Explicit modifiers need `EGL_EXT_image_dma_buf_import_modifiers`
+ * (universal on Mesa and NVIDIA); the import fails cleanly otherwise and
+ * [TextureView] renders an empty `Box`.
+ *
+ * [fd] stays owned by the caller: EGL takes its own reference to the buffer at
+ * import time, so it may be closed as soon as every [TextureView] using this
+ * source has been composed once — keeping it open for the producer's lifetime
+ * is the simple, safe choice.
+ *
+ * Synchronization: sampling is zero-copy, so there is no per-frame copy to
+ * order against — but nothing implicitly fences the producer's writes either.
+ * Producers should finish them (`glFinish`, `vkQueueWaitIdle`, or double
+ * buffering) *before* calling [TextureViewController.markFrameAvailable]; a
+ * producer still writing while the compositor samples can tear, never crash.
+ */
+@Suppress("LongParameterList")
+public fun nucleusDmaBufTextureSource(
+    fd: Int,
+    widthPx: Int,
+    heightPx: Int,
+    stride: Int,
+    fourcc: Int = NucleusDrmFormat.ARGB8888,
+    offset: Int = 0,
+    modifier: Long = NucleusDrmFormat.MODIFIER_INVALID,
+): TextureViewSource = DmaBufTextureSource(fd, widthPx, heightPx, stride, fourcc, offset, modifier)
+
+internal data class DmaBufTextureSource(
+    val fd: Int,
+    val widthPx: Int,
+    val heightPx: Int,
+    val stride: Int,
+    val fourcc: Int,
+    val offset: Int,
+    val modifier: Long,
+) : TextureViewSource
+
+/**
+ * Linux source: a producer-owned `EGLImageKHR` ([eglImage] as its raw pointer),
+ * for same-process producers that already have one — a GStreamer / VA-API
+ * pipeline, or a renderer that imported its own DMA-BUF. Only the GL texture
+ * bound onto it belongs to [TextureView]; the image itself stays the producer's
+ * to destroy, and must outlive every [TextureView] using this source.
+ *
+ * The image **must** have been created on the same `EGLDisplay` as the window
+ * (i.e. the display of the session's GPU connection) and describe premultiplied
+ * 32-bit RGB pixels. Same frame-signalling and synchronization contract as
+ * [nucleusDmaBufTextureSource].
+ */
+public fun nucleusEglImageTextureSource(
+    eglImage: Long,
+    widthPx: Int,
+    heightPx: Int,
+): TextureViewSource = EglImageTextureSource(eglImage, widthPx, heightPx)
+
+internal data class EglImageTextureSource(
+    val eglImage: Long,
+    val widthPx: Int,
+    val heightPx: Int,
+) : TextureViewSource
+
+/**
  * Frame-availability signal for [TextureView] — the counterpart of
  * Flutter's `markTextureFrameAvailable`. The producer calls
  * [markFrameAvailable] after publishing a frame; only the **draw pass**
@@ -163,7 +270,7 @@ public fun rememberTextureViewController(): TextureViewController = remember { T
  * and scrolling all apply, and no CPU frame copy ever happens (the
  * producer's texture is imported straight onto the GPU device the window
  * renders with — ANGLE's shared-resource import on Windows, an
- * `IOSurface`-backed `MTLTexture` on macOS).
+ * `IOSurface`-backed `MTLTexture` on macOS, a DMA-BUF `EGLImage` on Linux).
  *
  * Frame updates flow through [controller]: the producer renders, then
  * calls [TextureViewController.markFrameAvailable] (any thread) — only
@@ -173,12 +280,13 @@ public fun rememberTextureViewController(): TextureViewController = remember { T
  * Input is deliberately not handled — the composable is a plain drawing
  * surface; interactive native widgets remain [NativeView] territory.
  *
- * **Windows and macOS (Tao backend).** On Linux — or when [source] is null,
- * does not match the running platform, or the import fails (ANGLE/Metal
- * unavailable, bad handle) — it renders as an empty `Box(modifier)`.
+ * **Windows, macOS and Linux (Tao backend).** When [source] is null, does not
+ * match the running platform, or the import fails (ANGLE/Metal/EGL DMA-BUF
+ * import unavailable, bad handle), it renders as an empty `Box(modifier)`.
  *
  * @param source producer texture handle, see [nucleusD3D11SharedTextureSource]
- *   (Windows) and [nucleusIOSurfaceTextureSource] (macOS).
+ *   (Windows), [nucleusIOSurfaceTextureSource] (macOS) and
+ *   [nucleusDmaBufTextureSource] (Linux).
  * @param controller frame-availability signal; omit for static content.
  * @param filterQuality sampling filter, like `Image`'s parameter
  *   ([FilterQuality.None] = nearest, [FilterQuality.High] = cubic).
@@ -200,6 +308,8 @@ public fun TextureView(
             WindowsTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
         is IOSurfaceTextureSource, is MetalTextureSource ->
             MacTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
+        is DmaBufTextureSource, is EglImageTextureSource ->
+            LinuxTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
         null -> Box(modifier)
     }
 }

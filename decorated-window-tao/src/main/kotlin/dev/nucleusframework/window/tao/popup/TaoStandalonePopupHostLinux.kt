@@ -2,6 +2,9 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -24,7 +27,11 @@ import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.releaseGlTextureImports
+import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.renderGlFrame
+import dev.nucleusframework.window.tao.scene.withEglContextCurrent
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
@@ -144,6 +151,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                                 invalidate = { scheduleRender() },
                             )
                         PopupNativeBridgeLinux.nativeSetEventCallback(panel, PanelEventCallback())
+                        publishGlTextureHost()
                         valid = true
                         logger.fine { "Standalone popup panel ready (panel=$panel, scale=$panelScale)" }
                     } else {
@@ -161,8 +169,35 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        // This panel owns its EGL and Skia contexts, so `TextureView`s inside it
+        // import onto those rather than a window scene's.
+        scene?.setContent {
+            CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHostState.value) {
+                content()
+            }
+        }
         scheduleRender()
+    }
+
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as **state**,
+     * like the window scene and popup layers: the composition reads it, so
+     * dropping it in [dispose] takes effect instead of leaving a live composition
+     * importing onto a context that is about to be destroyed.
+     */
+    private val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
+
+    private fun publishGlTextureHost() {
+        val ctx = directContext ?: return
+        if (attachment == 0L) return
+        glTextureHostState.value =
+            object : TaoGlTextureHost {
+                override val directContext: DirectContext = ctx
+
+                // Read live: 0 once the panel disposed, so a late disposal can't
+                // bind (nor dereference) a freed attachment.
+                override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachment, block)
+            }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -244,9 +279,14 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         disposed = true
         PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, null)
+        // Drop the TextureView handle before the context it points at dies.
+        glTextureHostState.value = null
         scene?.close()
         scene = null
         NativeTaoEglBridge.nativeMakeCurrent(attachment)
+        // Belt for imports a leaked composition may still hold; scene.close()
+        // above released the leases of every live one.
+        directContext?.let(::releaseGlTextureImports)
         directContext?.close()
         directContext = null
         NativeTaoEglBridge.nativeDetach(attachment)

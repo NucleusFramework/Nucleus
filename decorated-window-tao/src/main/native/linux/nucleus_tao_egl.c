@@ -67,6 +67,8 @@
 #include <string.h>
 #include <dlfcn.h>
 
+#include "nucleus_tao_egl_internal.h"
+
 #define NUCLEUS_TAO_EGL_DEBUG 0
 #if NUCLEUS_TAO_EGL_DEBUG
 #define DBG(...) fprintf(stderr, "[nucleus_tao_egl] " __VA_ARGS__)
@@ -220,6 +222,8 @@ typedef EGLBoolean (*PFN_eglSwapInterval)(EGLDisplay, EGLint);
 typedef EGLint     (*PFN_eglGetError)(void);
 typedef void      *(*PFN_eglGetProcAddress)(const char *);
 typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
+typedef EGLContext (*PFN_eglGetCurrentContext)(void);
+typedef EGLDisplay (*PFN_eglGetCurrentDisplay)(void);
 
 #define EGL_VENDOR  0x3053
 #define EGL_VERSION 0x3054
@@ -336,6 +340,8 @@ static PFN_eglSwapInterval       p_eglSwapInterval       = NULL;
 static PFN_eglGetError           p_eglGetError           = NULL;
 static PFN_eglGetProcAddress     p_eglGetProcAddress     = NULL;
 static PFN_eglQueryString        p_eglQueryString        = NULL;
+static PFN_eglGetCurrentContext  p_eglGetCurrentContext  = NULL;
+static PFN_eglGetCurrentDisplay  p_eglGetCurrentDisplay  = NULL;
 
 static PFN_XGetWindowAttributes  p_XGetWindowAttributes  = NULL;
 static PFN_XVisualIDFromVisual   p_XVisualIDFromVisual   = NULL;
@@ -439,6 +445,10 @@ static int load_libs(void) {
     LOAD(g_libegl, eglGetError);
     LOAD(g_libegl, eglGetProcAddress);
     LOAD(g_libegl, eglQueryString);
+    /* Used by nucleus_tao_texture_linux.c to resolve (and validate) the EGL
+     * display/context the external-texture import must run on. */
+    LOAD(g_libegl, eglGetCurrentContext);
+    LOAD(g_libegl, eglGetCurrentDisplay);
 
     LOAD(g_libx11, XGetWindowAttributes);
     LOAD(g_libx11, XVisualIDFromVisual);
@@ -616,6 +626,31 @@ typedef struct {
     int             heightPx;
     float      scale;
 } EglAttachment;
+
+/* ── Internal surface shared inside libnucleus_tao_egl.so ───────────────── */
+/* Implemented here because this TU owns the dlopen'd EGL entry points and the
+ * per-window attachment state; see nucleus_tao_egl_internal.h. */
+
+int nucleus_tao_egl_ensure_libs(void) {
+    return load_libs();
+}
+
+void *nucleus_tao_egl_proc_address(const char *name) {
+    return nucleus_tao_egl_get_proc(NULL, name);
+}
+
+void *nucleus_tao_egl_current_display(void) {
+    return p_eglGetCurrentDisplay ? p_eglGetCurrentDisplay() : NULL;
+}
+
+void *nucleus_tao_egl_current_context(void) {
+    return p_eglGetCurrentContext ? p_eglGetCurrentContext() : NULL;
+}
+
+void *nucleus_tao_egl_attachment_context(long long handle) {
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    return att ? att->context : NULL;
+}
 
 /* ── JNI surface ────────────────────────────────────────────────────────── */
 

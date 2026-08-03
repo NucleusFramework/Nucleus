@@ -14,11 +14,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
@@ -29,13 +33,17 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.tao.D3D11TestTextureProducer
+import dev.nucleusframework.window.tao.DmaBufTestTextureProducer
 import dev.nucleusframework.window.tao.MetalTestTextureProducer
+import dev.nucleusframework.window.tao.NucleusDrmFormat
 import dev.nucleusframework.window.tao.TextureView
 import dev.nucleusframework.window.tao.TextureViewSource
 import dev.nucleusframework.window.tao.rememberTextureViewController
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicInteger
 
 private const val TEX_W = 128
 private const val TEX_H = 96
@@ -47,8 +55,8 @@ private const val TEX_H = 96
  * recompositions per frame (watch the recomposition counter stay put
  * while the pattern animates). Windows uses D3D11 shared handles (the
  * keyed-mutex producer takes the tear-free staging path, the plain one is
- * sampled zero-copy); macOS uses Metal `IOSurface`s. On Linux the boxes
- * stay empty.
+ * sampled zero-copy); macOS uses Metal `IOSurface`s; Linux uses DMA-BUFs
+ * imported as `EGLImage`s (zero copy, no per-frame work at all).
  */
 @Suppress("FunctionNaming", "MagicNumber", "LongMethod")
 @Composable
@@ -65,13 +73,19 @@ fun TextureTab(modifier: Modifier = Modifier) {
     val syncController = rememberTextureViewController()
     val rawController = rememberTextureViewController()
 
+    // Frame-rate probe: producer frames are counted on the producer thread,
+    // composited draws inside the primary TextureView's draw pass. Both are
+    // sampled once a second by [FrameRateReadout], which is the only thing that
+    // recomposes for them — the tab's own recomposition counter must stay put.
+    val meter = remember { FrameRateMeter() }
+
     // Producer loop, display-paced: `withFrameNanos` ticks once per composited
     // frame, so the pattern animates at the panel's refresh rate (90 Hz, 120 Hz
     // on ProMotion, …) instead of a hard-coded 60. The GPU work itself stays on
     // a background dispatcher — that is what proves markFrameAvailable is
     // thread-safe and that animation never touches the composition.
     LaunchedEffect(syncProducer, rawProducer) {
-        // No producer (Linux, or Metal/D3D11 unavailable): stay out of the frame
+        // No producer (no D3D11 / Metal / DRM render node): stay out of the frame
         // clock entirely — a withFrameNanos awaiter re-arms the frame dispatcher
         // every tick, which would spin the render loop on empty frames.
         if (syncProducer == null && rawProducer == null) return@LaunchedEffect
@@ -90,6 +104,7 @@ fun TextureTab(modifier: Modifier = Modifier) {
                     rawController.markFrameAvailable()
                 }
             }
+            meter.onProducerFrame()
             tick++
         }
     }
@@ -110,13 +125,16 @@ fun TextureTab(modifier: Modifier = Modifier) {
         BasicText(
             text =
                 if (syncProducer == null) {
-                    "TextureView — producer unavailable (needs Windows + D3D11/ANGLE, or macOS + Metal)"
+                    "TextureView — producer unavailable (needs Windows + D3D11/ANGLE, macOS + Metal, " +
+                        "or Linux + a DRM render node)"
                 } else {
                     "TextureView — external ${syncProducer.kind} producers, ${TEX_W}x$TEX_H at display rate " +
                         "(recompositions=${recompositions[0]})"
                 },
             style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 13.sp),
         )
+
+        FrameRateReadout(meter, style = label)
 
         BasicText(
             text = "${syncProducer?.syncMode ?: "Primary producer"} — shared import, contentScale variants:",
@@ -127,7 +145,7 @@ fun TextureTab(modifier: Modifier = Modifier) {
                 TextureView(
                     source = syncProducer?.source,
                     controller = syncController,
-                    modifier = demoBox(160.dp, 120.dp),
+                    modifier = demoBox(160.dp, 120.dp).drawBehind { meter.onCompositedFrame() },
                     contentScale = ContentScale.FillBounds,
                 )
                 BasicText("FillBounds", style = label)
@@ -257,7 +275,68 @@ private fun createDemoProducer(
             closeProducer = producer::close,
         )
     }
+    // Linux: the second producer allocates the mirrored byte order on purpose —
+    // both boxes must look identical, which is what proves the DRM FourCC (and
+    // not the app) is what tells the driver how to read the buffer.
+    val fourcc = if (synchronized) NucleusDrmFormat.ARGB8888 else NucleusDrmFormat.ABGR8888
+    DmaBufTestTextureProducer.create(widthPx, heightPx, fourcc)?.let { producer ->
+        return DemoTextureProducer(
+            source = producer.source,
+            kind = "DMA-BUF",
+            syncMode = "DMA-BUF EGLImage import (true zero copy)",
+            altSyncMode = "Second producer — same import, ABGR8888 buffer",
+            pattern = producer::drawTestPattern,
+            closeProducer = producer::close,
+        )
+    }
     return null
+}
+
+/**
+ * Counts producer frames (any thread) and composited draw passes (draw thread),
+ * and turns them into per-second rates. Deliberately allocation-free on both hot
+ * paths: the whole point of the tab is that a producer frame costs the
+ * composition nothing.
+ */
+private class FrameRateMeter {
+    private val producerFrames = AtomicInteger()
+    private val compositedFrames = AtomicInteger()
+
+    fun onProducerFrame() {
+        producerFrames.incrementAndGet()
+    }
+
+    fun onCompositedFrame() {
+        compositedFrames.incrementAndGet()
+    }
+
+    /** Producer / composited frames since the previous call. */
+    fun sample(): Pair<Int, Int> = producerFrames.getAndSet(0) to compositedFrames.getAndSet(0)
+}
+
+/**
+ * Shows the two rates, refreshed once a second. Kept in its own composable so
+ * the state read (and the recomposition it causes) stays out of `TextureTab` —
+ * otherwise the tab's "recompositions" counter would climb every second and stop
+ * proving that producer frames never recompose anything.
+ */
+@Suppress("FunctionNaming")
+@Composable
+private fun FrameRateReadout(
+    meter: FrameRateMeter,
+    style: TextStyle,
+) {
+    var rates by remember { mutableStateOf(0 to 0) }
+    LaunchedEffect(meter) {
+        while (isActive) {
+            delay(1_000)
+            rates = meter.sample()
+        }
+    }
+    BasicText(
+        text = "producer ${rates.first} fps · composited ${rates.second} fps",
+        style = style,
+    )
 }
 
 private fun demoBox(

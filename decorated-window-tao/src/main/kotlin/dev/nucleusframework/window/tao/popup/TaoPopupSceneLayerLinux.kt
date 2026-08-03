@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -30,7 +32,11 @@ import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
+import dev.nucleusframework.window.tao.releaseGlTextureImports
+import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.renderGlFrame
+import dev.nucleusframework.window.tao.scene.withEglContextCurrent
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
@@ -103,6 +109,16 @@ internal class TaoPopupSceneLayerLinux(
     private var attachment: Long = 0
     private var directContext: DirectContext? = null
     private var shown = false
+
+    /**
+     * Handle for `TextureView`s composed inside this popup, published once EGL
+     * and Skia are up ([attachGpu]) and dropped in [close] before the context
+     * dies. Recomposition follows because the inner scene reads it as state.
+     */
+    private val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
+
+    private val glTextureHost: TaoGlTextureHost?
+        get() = glTextureHostState.value
 
     private val scale: Float = if (host.scale > 0f) host.scale else 1f
 
@@ -222,6 +238,14 @@ internal class TaoPopupSceneLayerLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(handle)
         attachment = handle
         directContext = ctx
+        glTextureHostState.value =
+            object : TaoGlTextureHost {
+                override val directContext: DirectContext = ctx
+
+                // Read live: 0 once the layer closed, so a late disposal can't
+                // bind (nor dereference) a freed attachment.
+                override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachment, block)
+            }
         // Re-push any frame set before the window was ready, and paint.
         if (_bounds != IntRect.Zero) updateNativeFrame()
         host.requestRedraw()
@@ -276,11 +300,17 @@ internal class TaoPopupSceneLayerLinux(
         host.unregisterKeyHandler(keyHandlerToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
         host.unregisterOutsidePressListener(outsidePressToken)
+        // Drop the TextureView handle before the context it points at dies: a
+        // late composition must not import onto a closed context.
+        glTextureHostState.value = null
         innerScene.close()
         if (attachment != 0L) {
             // The DirectContext must die on its own (thread-bound) EGL
             // context — same protocol as the standalone popup host.
             NativeTaoEglBridge.nativeMakeCurrent(attachment)
+            // Belt for imports a leaked composition may still hold; the leases
+            // of every live one were released by innerScene.close() above.
+            directContext?.let(::releaseGlTextureImports)
             directContext?.close()
             directContext = null
             NativeTaoEglBridge.nativeReleaseCurrent(attachment)
@@ -293,10 +323,19 @@ internal class TaoPopupSceneLayerLinux(
     override fun setContent(content: @Composable () -> Unit) {
         innerScene.setContent {
             val locals = _compositionLocalContext
+            // Our texture host goes *inside* the replayed locals: those carry
+            // the window scene's host, which would otherwise shadow ours — and
+            // this popup window renders through its own EGL + Skia context, so
+            // a TextureView here must import onto that one.
+            val body: @Composable () -> Unit = {
+                CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHost) {
+                    content()
+                }
+            }
             if (locals != null) {
-                CompositionLocalProvider(locals) { content() }
+                CompositionLocalProvider(locals) { body() }
             } else {
-                content()
+                body()
             }
         }
         host.requestRedraw()
