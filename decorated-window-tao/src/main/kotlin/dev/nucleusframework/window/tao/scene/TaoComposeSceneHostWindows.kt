@@ -1133,6 +1133,34 @@ internal class TaoComposeSceneHostWindows(
             rt.close()
         }
 
+        // Post-record drain — pure CPU work; the host surface stays bound and
+        // its frame is already committed by the flushAndSubmit above.
+        //
+        // A continuation returning from a worker thread (the canonical
+        // `TextureView` producer: dispatched by the pre-render drain, back a
+        // millisecond later) would otherwise not be picked up by the NEXT
+        // frame's pre-render drain either: `markFrameAvailable` on the worker
+        // has already requested the redraw, so that frame's WM_PAINT can start
+        // before the continuation is even queued, and it then runs only AFTER
+        // `sendFrame`. Its next `withFrameNanos` misses the tick and waits a
+        // full extra frame — the producer animates at half the refresh rate.
+        //
+        // Draining here rather than after the present matters for jitter, not
+        // just throughput. Whatever the drain point, the continuation re-arms
+        // after this frame's tick, so its gap to the next producer frame is
+        // `one frame + round trip`: under half a frame it reads as a 1-frame
+        // gap, over it as 2. Draining after the blocking present leaves a round
+        // trip straddling that threshold, which alternates 1 and 2 frames — a
+        // higher average rate than the old cadence but visibly juddery.
+        // Recording is the expensive part of the frame, so draining right after
+        // it keeps the round trip a couple of milliseconds, well inside the
+        // threshold, and the cadence stays flat.
+        //
+        // Bounded by the queue snapshot, so a self-redispatching continuation
+        // cannot spin this thread — it just keeps requesting redraws, which
+        // `dispatch` already did before this drain existed.
+        flushingDispatcher.drain()
+
         // Drain overlay/popup renderers. Cross-surface sync:
         //   1. Host already flushed above (flushAndSubmit issues glFlush
         //      internally when committing the surface).
@@ -1152,6 +1180,11 @@ internal class TaoComposeSceneHostWindows(
         // window surface first (a popup renderer may have left its pbuffer
         // current) and eglSwapBuffers paces on the display refresh.
         NativeTaoGlBridge.nativePresent(attachmentHandle)
+
+        // Backstop for a continuation that landed after the post-record drain
+        // (a worker slower than the record). Costs it the jitter threshold
+        // above, but still beats waiting for the next frame's pre-render drain.
+        flushingDispatcher.drain()
     }
 
     fun onPointerMove(
