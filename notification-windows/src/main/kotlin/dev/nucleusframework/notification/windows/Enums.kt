@@ -46,6 +46,27 @@ enum class ToastScenario(
 
     /** Pre-expanded in special call format, audio loops with ringtone. */
     INCOMING_CALL("incomingCall"),
+
+    /**
+     * High-priority toast that can break through Focus Assist / Do Not Disturb.
+     *
+     * Requires Windows 11 (build 22000+); ignored on older versions.
+     */
+    URGENT("urgent"),
+}
+
+/** How long a toast stays on screen before moving to the Action Center. */
+enum class ToastDuration(
+    val xmlValue: String,
+) {
+    /** System default (roughly 7 seconds). */
+    DEFAULT(""),
+
+    /** Short duration (roughly 7 seconds). */
+    SHORT("short"),
+
+    /** Long duration (roughly 25 seconds). */
+    LONG("long"),
 }
 
 // -- Dismissal --

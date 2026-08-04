@@ -31,10 +31,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.notification.InterruptionLevel
 import dev.nucleusframework.notification.common.NotificationHandle
 import dev.nucleusframework.notification.common.NotificationManager
 import dev.nucleusframework.notification.common.NotificationResult
 import dev.nucleusframework.notification.common.notification
+import dev.nucleusframework.notification.linux.Urgency
+import dev.nucleusframework.notification.windows.ToastScenario
 
 private const val EVENT_LOG_MAX = 20
 
@@ -139,6 +142,52 @@ fun CommonNotificationsScreen() {
                         enabled = lastHandle != null,
                     ) {
                         Text("Dismiss Last")
+                    }
+                }
+            }
+
+            // -- Platform-specific options --
+            SectionCard("Platform-Specific Options") {
+                Text(
+                    text =
+                        "The common fields are shared across platforms. Behavior that differs per OS " +
+                            "(urgency, expiry, history) is set in linux { } / macos { } / windows { } blocks, " +
+                            "each honored only on that platform.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = {
+                        val result =
+                            notification(
+                                title = "Critical Alert",
+                                message = "Something needs your attention now",
+                            ) {
+                                linux { urgency = Urgency.CRITICAL; category = "device.error" }
+                                macos { interruptionLevel = InterruptionLevel.TIME_SENSITIVE }
+                                windows { scenario = ToastScenario.URGENT }
+                            }.send()
+                        logResult("Critical", result, events = events, onHandle = { lastHandle = it })
+                    }) {
+                        Text("Critical (all platforms)")
+                    }
+
+                    Button(onClick = {
+                        val result =
+                            notification(
+                                title = "Transient",
+                                message = "Shown but not kept in history (Linux)",
+                            ) {
+                                linux {
+                                    transient = true
+                                    category = "im.received"
+                                    expireTimeout = 3000
+                                }
+                            }.send()
+                        logResult("Transient", result, events = events, onHandle = { lastHandle = it })
+                    }) {
+                        Text("Linux: transient + 3s expire")
                     }
                 }
             }
