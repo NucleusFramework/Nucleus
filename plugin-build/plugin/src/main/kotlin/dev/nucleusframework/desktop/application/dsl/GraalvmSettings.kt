@@ -351,7 +351,19 @@ abstract class MetadataRepositorySettings
  * `LayeredCompilationBehavior` / `InitialLayerFeature`, which needs the set of SVM internals a given
  * application reaches to be known up front — the opposite of working for any application.
  *
- * Those two failures are the same coin. A base layer that *analyses* framework code — whether the
+ * There is one configuration that gets past both compile walls: a base layer that analyses Kotlin,
+ * the coroutines runtime and the framework's own modules — enough for the SVM core types to be seen —
+ * while Compose stays in the application layer, so nothing re-parses `SnapshotKt.sync`. It compiles:
+ * 28,045 types in the base layer, 10,478 types and a 42.8 MB executable in the application layer.
+ *
+ * And the result does not run. The two layers disagree on virtual dispatch tables, so the binary dies
+ * at startup with "Fatal error: Virtual method call used an illegal vtable entry that was seen as
+ * unused by the static analysis". `-H:+AbortOnLayeredDispatchTableDiscrepancies` turns that into a
+ * build failure ("Issue while comparing dispatch table info"), which is the safer behaviour — by
+ * default native-image emits the broken binary without a word. That alone is reason enough for this
+ * flag to stay off.
+ *
+ * The other two failures are the same coin. A base layer that *analyses* framework code — whether the
  * framework is selected with `package=` or simply put on the base layer's class path — makes the
  * application layer bail out on Kotlin's `synchronized` intrinsic. A base layer that analyses nothing
  * leaves the SVM core types unseen. There is no setting in between: the configuration space was walked
