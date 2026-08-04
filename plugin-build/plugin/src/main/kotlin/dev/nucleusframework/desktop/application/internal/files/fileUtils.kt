@@ -73,14 +73,32 @@ internal fun copyZipEntry(
     to: ZipOutputStream,
 ) {
     val newEntry =
-        ZipEntry(entry.name).apply {
-            comment = entry.comment
-            extra = entry.extra
-        }
+        ZipEntry(entry.name)
+            .apply {
+                comment = entry.comment
+                extra = entry.extra
+            }.withTimeOf(entry)
     to.withNewEntry(newEntry) {
         from.copyTo(to)
     }
 }
+
+/**
+ * Carries [source]'s last-modification time over, so rewriting a jar twice from the same input
+ * produces the same bytes.
+ *
+ * Without this, `java.util.zip` stamps the build time on every entry. A local file header sits
+ * immediately before the data it describes, so a fresh timestamp changes bytes throughout the
+ * archive — enough to invalidate most of its blocks for a differential update, even though not one
+ * entry's content changed. Entries built from scratch (no time set) keep the default behaviour.
+ */
+internal fun ZipEntry.withTimeOf(source: ZipEntry): ZipEntry =
+    apply {
+        if (source.time != NO_TIME) time = source.time
+    }
+
+/** What [ZipEntry.getTime] returns for an entry whose modification time was never set. */
+private const val NO_TIME = -1L
 
 internal inline fun ZipOutputStream.withNewEntry(
     zipEntry: ZipEntry,
