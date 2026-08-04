@@ -11,6 +11,7 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -646,14 +647,65 @@ internal class TaoComposeSceneHostWindows(
             dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE,
             dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK,
         ) { files, text, allowedEffects ->
-            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
-                hwnd = hwnd,
-                files = files,
-                text = text,
-                allowedEffects = allowedEffects,
-                pump = OutboundDragPump(),
-            )
+            // Drop VSync for the session, like the fullscreen transition does
+            // (see fullscreenTransitionResized). Frames painted from inside
+            // DoDragDrop's modal loop are presented inline on this thread, and
+            // this thread is what the OS drag loop — holder of the system-wide
+            // mouse capture — is waiting on. A vsync-paced present would park it
+            // until the next VBlank on every frame, which is felt as a laggy
+            // drag cursor and late drop-target feedback. Interval 0 also
+            // replaces the queued frame rather than lining up behind it, so
+            // what the user sees during the drag stays current.
+            val pacedByVSync = attachmentHandle != 0L
+            if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            try {
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
+                    hwnd = hwnd,
+                    files = files,
+                    text = text,
+                    allowedEffects = allowedEffects,
+                    pump = OutboundDragPump(),
+                )
+            } finally {
+                if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+                // Unwedge rendering: an invalidation raised during the drag
+                // latched `redrawPending` while DoDragDrop's pump ate the
+                // matching REDRAW_REQUESTED, which suppresses every later
+                // request. See TaoWindow.resetRedrawLatch.
+                window.resetRedrawLatch()
+                releasePointerAfterOutboundDrag()
+            }
         }
+    }
+
+    /**
+     * Unwinds the pointer gesture that `DoDragDrop` swallowed.
+     *
+     * The OS drag loop takes the mouse capture and consumes the button-up that
+     * ends the drag, so Compose never sees a [PointerEventType.Release] and
+     * stays parked in the gesture it started the drag from — the window looks
+     * frozen (no hover, no clicks) until an unrelated click re-syncs it.
+     *
+     * Posted rather than sent inline: we are still nested inside the
+     * `sendPointerEvent` that entered `DoDragDrop`, and re-entering the scene's
+     * pointer dispatch from within itself is a far worse proposition than the
+     * nested render [OutboundDragPump] already accepts. Running it on the next
+     * dispatcher tick lets the outer dispatch unwind first.
+     */
+    private fun releasePointerAfterOutboundDrag() {
+        dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+            .dispatch(EmptyCoroutineContext) {
+                scene?.sendPointerEvent(
+                    eventType = PointerEventType.Release,
+                    position = Offset(lastPointerX, lastPointerY),
+                    type = PointerType.Mouse,
+                    keyboardModifiers = currentKeyboardModifiers,
+                    button = PointerButton.Primary,
+                )
+                // The loop may have gone back to Wait with nothing left to
+                // invalidate it; make sure the post-drag state reaches a frame.
+                window.requestRedraw()
+            }
     }
 
     /**
@@ -694,6 +746,8 @@ internal class TaoComposeSceneHostWindows(
             if (now - lastRenderNanos < MIN_DRAG_FRAME_INTERVAL_NANOS) return
             lastRenderNanos = now
             onRedrawRequested()
+            // Counted here too: pump frames bypass TaoWindow.dispatch, so the
+            // probe's REDRAW_REQUESTED counter cannot see them.
         }
     }
 

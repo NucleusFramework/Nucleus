@@ -196,6 +196,26 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeRequestRedraw(handle)
     }
 
+    /**
+     * Clears the [redrawPending] coalescing latch and re-issues a request.
+     *
+     * For callers returning from an OS modal loop (`DoDragDrop`, and anything
+     * else that runs its own message pump): a redraw requested just before or
+     * during that loop latches `redrawPending` true, and the matching
+     * REDRAW_REQUESTED can be swallowed by the nested pump. The latch then
+     * suppresses *every* later [requestRedraw] and the window silently stops
+     * painting — until an unrelated event happens to clear it, which is why the
+     * symptom reads as "frozen until I click on it again" (the FOCUSED branch
+     * in [dispatch] clears the same latch for the same reason).
+     *
+     * No frame is lost by calling this: a genuinely in-flight redraw just
+     * yields one extra, idempotent request.
+     */
+    internal fun resetRedrawLatch() {
+        redrawPending.set(false)
+        requestRedraw()
+    }
+
     public fun requestClose() {
         // Actual destroy path (not the cancelable close-*request*). Present an
         // opaque themed frame first: a live backdrop's translucent clear would
