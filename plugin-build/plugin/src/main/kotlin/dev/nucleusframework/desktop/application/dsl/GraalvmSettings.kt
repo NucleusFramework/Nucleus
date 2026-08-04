@@ -341,6 +341,16 @@ abstract class MetadataRepositorySettings
  *    leaves the runtime lookup failing — but it is also what makes the reflection defect above fire,
  *    so the two cannot currently be satisfied at once.
  *
+ * Past that, the application layer stops on a second wall: "The core type
+ * `com.oracle.svm.core.jdk.AtomicFieldUpdaterAccessCheck` was not seen as reachable the initial layer.
+ * It is illegal for core types to become reachable in subsequent layers." A base layer holding only
+ * JDK modules analyses no application code, so it never sees the SVM internals the application will
+ * reach. Putting the application's classes on the base layer's class path does make it see them — and
+ * collapses the split: the base layer then analyses 28,400 types and 173,197 methods while the
+ * application layer is left with 158 types. GraalVM's prescribed escape is to pin those types via
+ * `LayeredCompilationBehavior` / `InitialLayerFeature`, which needs the set of SVM internals a given
+ * application reaches to be known up front — the opposite of working for any application.
+ *
  * Two further routes were tried and are dead ends worth not repeating. Substituting
  * `Toolkit.getProperty` to return its default (the JDK already does that for a missing bundle) has to
  * be applied in the layer that compiles `java.awt.Toolkit`, and a base layer only sees substitutions
@@ -388,7 +398,6 @@ abstract class GraalvmLayerSettings
                     "java.prefs",
                     "java.xml",
                     "java.net.http",
-                    "java.sql",
                     "java.instrument",
                     "jdk.unsupported",
                 ),
