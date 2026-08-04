@@ -356,7 +356,8 @@ abstract class MetadataRepositorySettings
  * application layer bail out on Kotlin's `synchronized` intrinsic. A base layer that analyses nothing
  * leaves the SVM core types unseen. There is no setting in between: the configuration space was walked
  * (base with and without a class path, framework selected by package and by class path, layer option
- * verification on and off, `-H:NumberOfThreads=1`, `-H:-UseSharedLayerGraphs`, GraalVM 25.1 and 25.2)
+ * verification on and off, `-H:NumberOfThreads=1`, `-H:-UseSharedLayerGraphs`,
+ * `-H:InlineBeforeAnalysisAllowedDepth=0`, GraalVM 25.1 and 25.2)
  * and every combination lands on one wall or the other.
  *
  * Two further routes were tried and are dead ends worth not repeating. Substituting
