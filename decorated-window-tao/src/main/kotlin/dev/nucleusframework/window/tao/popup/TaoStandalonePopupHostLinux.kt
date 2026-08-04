@@ -307,18 +307,27 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         disposed = true
         PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, null)
-        // Drop the TextureView handle before the context it points at dies.
-        glTextureHostState.value = null
-        scene?.close()
-        scene = null
-        NativeTaoEglBridge.nativeMakeCurrent(attachment)
-        // Belt for imports a leaked composition may still hold; scene.close()
-        // above released the leases of every live one.
-        directContext?.let(::releaseGlTextureImports)
-        directContext?.close()
-        directContext = null
-        NativeTaoEglBridge.nativeDetach(attachment)
-        attachment = 0
+        // Teardown binds this panel's context for the Skia frees below and then
+        // destroys it, and it arrives from `DisposableEffect.onDispose` — i.e.
+        // from the caller's composition, inside the window scene's render pass.
+        // Restoring the binding we displace is what keeps the remainder of that
+        // frame (glyph-atlas uploads, flushAndSubmit) from running with a
+        // destroyed context: it would fail silently and leave the window unable
+        // to raster new text until something rebuilt its surface.
+        preservingEglBinding {
+            // Drop the TextureView handle before the context it points at dies.
+            glTextureHostState.value = null
+            scene?.close()
+            scene = null
+            NativeTaoEglBridge.nativeMakeCurrent(attachment)
+            // Belt for imports a leaked composition may still hold; scene.close()
+            // above released the leases of every live one.
+            directContext?.let(::releaseGlTextureImports)
+            directContext?.close()
+            directContext = null
+            NativeTaoEglBridge.nativeDetach(attachment)
+            attachment = 0
+        }
         PopupNativeBridgeLinux.nativeRelease(panel)
         panel = 0
     }
