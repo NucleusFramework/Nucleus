@@ -106,9 +106,14 @@ abstract class GraalvmSettings
         val windows: GraalvmWindowsSettings = objects.new()
         val metadataRepository: MetadataRepositorySettings = objects.new()
         val pgo: GraalvmPgoSettings = objects.new()
+        val layers: GraalvmLayerSettings = objects.new()
 
         fun toolchain(fn: Action<GraalvmToolchainSettings>) {
             fn.execute(toolchain)
+        }
+
+        fun layers(fn: Action<GraalvmLayerSettings>) {
+            fn.execute(layers)
         }
 
         fun macOS(fn: Action<GraalvmMacOSSettings>) {
@@ -302,4 +307,75 @@ abstract class MetadataRepositorySettings
          */
         val moduleToConfigVersion: MapProperty<String, String> =
             objects.mapProperty(String::class.java, String::class.java)
+    }
+
+/**
+ * Splits the native image into a reusable base layer and a thin application layer.
+ *
+ * A monolithic native image is one blob whose layout `native-image` reshuffles globally, so a
+ * one-line source change invalidates nearly all of its blocks and an auto-update has to refetch the
+ * whole executable. With layers the AOT-compiled JDK lives in a shared library the application links
+ * against, and a release that only changes application code ships the same library byte for byte —
+ * so a differential update reuses it in full instead of downloading it again.
+ *
+ * The trade is disk for traffic: the base layer is not pruned against what the application actually
+ * uses, so the first download grows while every later one shrinks.
+ *
+ * **Not usable for a shipping application as of GraalVM 25.2.** Kept behind this flag because the
+ * scaffolding is correct and the payoff is measured (2.3x less traffic per update, break-even after
+ * ~1.2 updates on a macOS ZIP of `nucleus-demo`), but three things stand in the way:
+ *
+ *  - **The build is unstable.** The application layer intermittently fails with "This type is
+ *    incomplete and should not be used" — the same inputs produced 18 errors, then 48, then none.
+ *  - **Text fields crash at runtime.** Constructing a `java.awt.Cursor` (what `PointerIcon` does for
+ *    any text field) needs `sun.awt.resources.awtosx`, and that bundle cannot be registered: from the
+ *    application layer the lookup still fails, and registering it in the base layer that owns
+ *    `java.desktop` — by `-H:IncludeResourceBundles` or by reachability metadata — makes the
+ *    application layer fail to compile.
+ *  - **Requires GraalVM 25.2 or newer.** On 25.1 an application layer's JNI registrations are
+ *    invisible to `FindClass`, so every native bridge breaks: the window opens and never renders.
+ *
+ * When the build does succeed the application runs, Compose renders and the native macOS menu bar
+ * works, so only the two items above separate this from being usable.
+ *
+ * Only the JDK goes into the base layer. Putting classpath packages there as well would shrink the
+ * application layer further, but as of GraalVM 25.2 it makes the application layer fail to compile
+ * with a permanent Graal bailout ("Unstructured locking: too few monitorexits exiting frame") on
+ * Kotlin's `synchronized` intrinsic — which any Compose application reaches.
+ */
+abstract class GraalvmLayerSettings
+    @Inject
+    constructor(
+        objects: ObjectFactory,
+    ) {
+        /** Build the image as a base layer plus an application layer. Defaults to `false`. */
+        val isEnabled: Property<Boolean> = objects.notNullProperty(false)
+
+        /**
+         * JDK modules the base layer holds. The default covers what a Compose Desktop application
+         * reaches; `java.base` alone is not enough, and a module the application needs but the layer
+         * omits fails the build with "Newly seen boot package".
+         */
+        val modules: ListProperty<String> =
+            objects.listProperty(String::class.java).convention(
+                // The order is part of the recipe, not cosmetic: it changes the produced layer (a
+                // reordered list yields a differently sized library) and a layer built from another
+                // order made the application layer fail with "This type is incomplete and should not
+                // be used". This is the sequence that was validated end to end.
+                listOf(
+                    "java.base",
+                    "java.datatransfer",
+                    "java.desktop",
+                    "java.logging",
+                    "java.management",
+                    "java.naming",
+                    "java.prefs",
+                    "java.xml",
+                    "java.net.http",
+                    "java.sql",
+                    "java.instrument",
+                    "jdk.unsupported",
+                ),
+            )
+
     }
