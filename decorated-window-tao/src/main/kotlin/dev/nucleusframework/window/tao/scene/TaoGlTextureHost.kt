@@ -87,5 +87,34 @@ private fun restoreDisplacedBinding(attachment: Long) {
     }
 }
 
+/**
+ * Runs [block] and puts back the EGL binding it displaced — the counterpart of
+ * [withEglContextCurrent] for code that *creates* (or renders into) a surface of
+ * its own: `nativeAttach*` leaves the fresh context current, and Skia's
+ * `DirectContext` bring-up needs it, but that work can run inside **another**
+ * surface's render pass.
+ *
+ * A `TaoStandalonePopup` composed into a live window builds its host from
+ * `remember {}`, i.e. inside `ComposeScene.render()` with the window's context
+ * current. Without this, the rest of the window frame (frame decoration,
+ * `flushAndSubmit`) would issue GL against the panel's 1x1 context and
+ * desynchronise the window's Skia state cache for good — a permanently garbled
+ * window, not just one lost frame.
+ *
+ * When nothing was current beforehand, the newly bound context simply stays
+ * current: nothing was displaced, so there is nothing to put back.
+ */
+internal fun <T> preservingEglBinding(block: () -> T): T {
+    if (!NativeTaoLinuxTextureBridge.isLoaded) return block()
+    // Refused when a snapshot is already outstanding on this thread; the outer
+    // scope then restores the binding when it unwinds.
+    if (!NativeTaoLinuxTextureBridge.nativeSaveCurrentBinding()) return block()
+    return try {
+        block()
+    } finally {
+        NativeTaoLinuxTextureBridge.nativeRestoreBinding()
+    }
+}
+
 internal val LocalTaoGlTextureHost: ProvidableCompositionLocal<TaoGlTextureHost?> =
     compositionLocalOf { null }
