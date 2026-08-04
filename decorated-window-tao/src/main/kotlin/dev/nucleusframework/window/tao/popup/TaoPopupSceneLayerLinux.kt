@@ -35,6 +35,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.releaseGlTextureImports
 import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.preservingEglBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import dev.nucleusframework.window.tao.scene.withEglContextCurrent
 import org.jetbrains.skia.DirectContext
@@ -200,6 +201,13 @@ internal class TaoPopupSceneLayerLinux(
     private fun attachGpu() {
         if (released) return
         if (!NativeTaoEglBridge.isLoaded) return
+        // `nativeAttach*` leaves the fresh context current and Skia's bring-up
+        // needs it, so — like the teardown in [close] — hand back whatever
+        // binding this displaces instead of merely unbinding.
+        preservingEglBinding { attachGpuBound() }
+    }
+
+    private fun attachGpuBound() {
         val handles = NativeTaoBridge.nativeLinuxHandles(popupWindow.handle) ?: return
         if (handles.size != HANDLE_TRIPLE_SIZE || handles[0].toInt() == 0) return
         val kind = handles[0].toInt()
@@ -235,7 +243,6 @@ internal class TaoPopupSceneLayerLinux(
             NativeTaoEglBridge.nativeDetach(handle)
             return
         }
-        NativeTaoEglBridge.nativeReleaseCurrent(handle)
         attachment = handle
         directContext = ctx
         glTextureHostState.value =
@@ -305,17 +312,25 @@ internal class TaoPopupSceneLayerLinux(
         glTextureHostState.value = null
         innerScene.close()
         if (attachment != 0L) {
-            // The DirectContext must die on its own (thread-bound) EGL
-            // context — same protocol as the standalone popup host.
-            NativeTaoEglBridge.nativeMakeCurrent(attachment)
-            // Belt for imports a leaked composition may still hold; the leases
-            // of every live one were released by innerScene.close() above.
-            directContext?.let(::releaseGlTextureImports)
-            directContext?.close()
-            directContext = null
-            NativeTaoEglBridge.nativeReleaseCurrent(attachment)
-            NativeTaoEglBridge.nativeDetach(attachment)
-            attachment = 0
+            // A layer closes when Compose drops it — from the owner's
+            // composition, i.e. inside the window scene's render pass. Binding
+            // this layer's context and then unbinding it would leave the rest of
+            // that frame (glyph-atlas uploads, flushAndSubmit) with no context at
+            // all, silently, for good: the window keeps painting but stops
+            // rastering anything new until something rebuilds its surface. Put
+            // the owner's binding back — see [preservingEglBinding].
+            preservingEglBinding {
+                // The DirectContext must die on its own (thread-bound) EGL
+                // context — same protocol as the standalone popup host.
+                NativeTaoEglBridge.nativeMakeCurrent(attachment)
+                // Belt for imports a leaked composition may still hold; the leases
+                // of every live one were released by innerScene.close() above.
+                directContext?.let(::releaseGlTextureImports)
+                directContext?.close()
+                directContext = null
+                NativeTaoEglBridge.nativeDetach(attachment)
+                attachment = 0
+            }
         }
         popupWindow.requestClose()
     }
