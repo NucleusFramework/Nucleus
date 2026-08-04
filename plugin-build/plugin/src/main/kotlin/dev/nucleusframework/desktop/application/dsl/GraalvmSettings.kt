@@ -363,6 +363,12 @@ abstract class MetadataRepositorySettings
  * default native-image emits the broken binary without a word. That alone is reason enough for this
  * flag to stay off.
  *
+ * An open type world is not the missing piece: the discrepancy is identical with the defaults, with
+ * `-H:-ClosedTypeWorld`, and with `-H:-ClosedTypeWorld -H:-ClosedTypeWorldHubLayout` on both layers —
+ * the coherent combination, since the hub layout defaults to enabled and is documented as valid only
+ * under a closed world. The layer type counts do not move either, which suggests the layered dispatch
+ * tables do not key on the type-world mode at all.
+ *
  * The other two failures are the same coin. A base layer that *analyses* framework code — whether the
  * framework is selected with `package=` or simply put on the base layer's class path — makes the
  * application layer bail out on Kotlin's `synchronized` intrinsic. A base layer that analyses nothing
