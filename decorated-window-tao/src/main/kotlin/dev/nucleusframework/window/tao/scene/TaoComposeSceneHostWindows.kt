@@ -11,7 +11,6 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -673,39 +672,8 @@ internal class TaoComposeSceneHostWindows(
                 // matching REDRAW_REQUESTED, which suppresses every later
                 // request. See TaoWindow.resetRedrawLatch.
                 window.resetRedrawLatch()
-                releasePointerAfterOutboundDrag()
             }
         }
-    }
-
-    /**
-     * Unwinds the pointer gesture that `DoDragDrop` swallowed.
-     *
-     * The OS drag loop takes the mouse capture and consumes the button-up that
-     * ends the drag, so Compose never sees a [PointerEventType.Release] and
-     * stays parked in the gesture it started the drag from — the window looks
-     * frozen (no hover, no clicks) until an unrelated click re-syncs it.
-     *
-     * Posted rather than sent inline: we are still nested inside the
-     * `sendPointerEvent` that entered `DoDragDrop`, and re-entering the scene's
-     * pointer dispatch from within itself is a far worse proposition than the
-     * nested render [OutboundDragPump] already accepts. Running it on the next
-     * dispatcher tick lets the outer dispatch unwind first.
-     */
-    private fun releasePointerAfterOutboundDrag() {
-        dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-            .dispatch(EmptyCoroutineContext) {
-                scene?.sendPointerEvent(
-                    eventType = PointerEventType.Release,
-                    position = Offset(lastPointerX, lastPointerY),
-                    type = PointerType.Mouse,
-                    keyboardModifiers = currentKeyboardModifiers,
-                    button = PointerButton.Primary,
-                )
-                // The loop may have gone back to Wait with nothing left to
-                // invalidate it; make sure the post-drag state reaches a frame.
-                window.requestRedraw()
-            }
     }
 
     /**
@@ -727,6 +695,11 @@ internal class TaoComposeSceneHostWindows(
      */
     private inner class OutboundDragPump :
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump {
+        // Not a nanoTime sentinel: `System.nanoTime()`'s origin is arbitrary and
+        // may be negative, in which case `now - 0L` is below any threshold and
+        // the very first frame — and so every frame — would be throttled away,
+        // silently restoring the freeze this class exists to fix.
+        private var rendered = false
         private var lastRenderNanos = 0L
 
         override fun pump() {
@@ -743,11 +716,10 @@ internal class TaoComposeSceneHostWindows(
             // VSync several times per frame and visibly lag the drag cursor and
             // the destination's drop feedback.
             val now = System.nanoTime()
-            if (now - lastRenderNanos < MIN_DRAG_FRAME_INTERVAL_NANOS) return
+            if (rendered && now - lastRenderNanos < MIN_DRAG_FRAME_INTERVAL_NANOS) return
+            rendered = true
             lastRenderNanos = now
             onRedrawRequested()
-            // Counted here too: pump frames bypass TaoWindow.dispatch, so the
-            // probe's REDRAW_REQUESTED counter cannot see them.
         }
     }
 
