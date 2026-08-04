@@ -132,6 +132,11 @@ internal class DeltaResolver(
          * Formats that carry their block map appended to the artifact. Everything else publishes a
          * standalone `<artifact>.blockmap` — and still declares a `blockMapSize` in the manifest,
          * which is that companion file's length, so the flavour cannot be inferred from it.
+         *
+         * For these formats `blockMapSize` is instead the length of the appended payload, which is
+         * also written as the artifact's own last four bytes. electron-builder reports it that way,
+         * and `.github/actions/generate-update-yml` reads it back off the tail for AppImages, since
+         * they have no companion file to measure.
          */
         private val EMBEDDED_BLOCK_MAP_EXTENSIONS = setOf(APPIMAGE_EXTENSION, "7z")
 
