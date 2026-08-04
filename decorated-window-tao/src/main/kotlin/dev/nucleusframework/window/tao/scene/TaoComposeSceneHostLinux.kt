@@ -1706,6 +1706,29 @@ internal class TaoComposeSceneHostLinux(
                         ?.let { IntOffset(it[0].toInt(), it[1].toInt()) }
                         ?: IntOffset.Zero
                 }
+
+            /**
+             * Wayland: the toplevel is decorated with a hidden header bar so GTK
+             * draws the theme drop shadow, which means the parent **surface**
+             * starts at the shadow margin while the content subsurface sits at
+             * GTK's content-area origin (see [applyContentOffset]). A popup is a
+             * subsurface of that same parent surface, so it has to carry the very
+             * offset the content does — otherwise every popup lands up and left
+             * of its anchor by the decoration inset. Zero once GTK collapses the
+             * margins (maximized, fullscreen, tiled) and on X11, which keeps the
+             * flat undecorated presentation.
+             */
+            override val coordinateOffset: IntOffset get() =
+                if (outer.attachedKind != 2 || outer.window.handle == 0L) {
+                    IntOffset.Zero
+                } else {
+                    val packed = NativeTaoBridge.nativeLinuxContentOrigin(outer.window.handle)
+                    IntOffset(
+                        ((packed shr 32).toInt() * outer.scale).roundToInt(),
+                        (packed.toInt() * outer.scale).roundToInt(),
+                    )
+                }
+
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
 
