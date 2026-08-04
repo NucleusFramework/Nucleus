@@ -706,6 +706,12 @@ static void pump_host(NucleusDropSource *s) {
          * drag loop calls straight back into us and JNI would abort. */
         (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
+        /* Whatever broke (GL context, Skia recording) will break again on the
+         * very next mouse-move, and we are called once per move — latch the
+         * pump off so one failure reports once instead of flooding stderr with
+         * thousands of traces. The drag degrades to the old frozen-but-quiet
+         * behaviour and still completes normally. */
+        s->pumpMethod = NULL;
     }
     detach_if_needed(attached);
 }

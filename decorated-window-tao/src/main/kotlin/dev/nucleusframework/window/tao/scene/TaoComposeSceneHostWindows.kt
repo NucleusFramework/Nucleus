@@ -660,28 +660,40 @@ internal class TaoComposeSceneHostWindows(
      * Drives the host from inside `DoDragDrop`'s modal loop — see
      * [dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump].
      *
+     * Reentrancy, deliberately accepted: `DoDragDrop` is entered synchronously
+     * from `TaoDragAndDropManager.requestDragAndDropTransfer`, which Compose
+     * calls from inside `sendPointerEvent`. Every frame painted here therefore
+     * renders the scene while a pointer dispatch is still on the stack. There
+     * is no way to render during the drag *without* that nesting — refusing to
+     * render would just restore the freeze this exists to fix — so the scene is
+     * re-entered knowingly. If it proves unsafe, the principled fix is to defer
+     * the `DoDragDrop` call onto the main dispatcher so the session starts one
+     * loop iteration later, with no Compose dispatch below it.
+     *
      * Named class (not a lambda) for GraalVM JNI reachability, same as
      * [InboundDnDCallback].
      */
     private inner class OutboundDragPump :
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump {
-        // The upcall lands with Compose's pointer dispatch still on the stack
-        // (DoDragDrop was entered from `requestDragAndDropTransfer`, itself
-        // inside `sendPointerEvent`), and rendering re-enters the scene. Skia's
-        // recording is not re-entrant, so a nested tick must be dropped rather
-        // than allowed to interleave with the one already in flight.
-        private var pumping = false
+        private var lastRenderNanos = 0L
 
         override fun pump() {
-            if (pumping) return
-            pumping = true
-            try {
-                dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-                    .pump()
-                onRedrawRequested()
-            } finally {
-                pumping = false
-            }
+            // Draining is cheap and never blocks, so it runs on every callback.
+            dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                .pump()
+
+            // Rendering is not: the present is inline and VSync-paced
+            // (eglSwapInterval(1)), so each frame parks this thread until the
+            // next VBlank — and this thread is currently holding up the OS drag
+            // loop, which owns the mouse capture system-wide. Windows calls
+            // QueryContinueDrag on every mouse-move message, well above the
+            // display rate, so without this throttle a fast drag would block on
+            // VSync several times per frame and visibly lag the drag cursor and
+            // the destination's drop feedback.
+            val now = System.nanoTime()
+            if (now - lastRenderNanos < MIN_DRAG_FRAME_INTERVAL_NANOS) return
+            lastRenderNanos = now
+            onRedrawRequested()
         }
     }
 
@@ -1505,6 +1517,14 @@ internal class TaoComposeSceneHostWindows(
     }
 
     internal companion object {
+        /**
+         * Floor between two frames painted from inside `DoDragDrop`'s modal
+         * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz
+         * while still collapsing the burst of mouse-move callbacks Windows
+         * fires between two VBlanks.
+         */
+        private const val MIN_DRAG_FRAME_INTERVAL_NANOS: Long = 8_000_000L
+
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
