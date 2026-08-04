@@ -20,11 +20,15 @@ internal class ResolvedDelta(
  * for a first update and never an error.
  *
  * electron-builder emits two flavours of block map and the flavour dictates where both maps come
- * from. `blockMapSize` in the manifest means the artifact carries its map in its own tail (AppImage,
- * nsis-web): the new map is read with a single ranged request on that tail and the old map is read
- * from the local file. Otherwise the map is a standalone `<artifact>.blockmap` (NSIS installers,
- * macOS ZIPs, DMGs): the new map is downloaded and the old one comes from the cache, where the
- * previous update left it.
+ * from. AppImages and nsis-web packages carry their map in their own tail: the new map is read with a
+ * single ranged request on that tail and the old map is read from the local file. Every other format
+ * publishes a standalone `<artifact>.blockmap` (NSIS installers, macOS ZIPs, DMGs): the new map is
+ * downloaded and the old one comes from the cache, where the previous update left it.
+ *
+ * The flavour is keyed on the artifact format, not on `blockMapSize`: the manifests this project
+ * publishes set `blockMapSize` to the length of the standalone companion file for *every* artifact
+ * that has one (see `UpdateYmlGenerator` and `.github/actions/generate-update-yml`), so its presence
+ * says nothing about where the map lives.
  */
 internal class DeltaResolver(
     private val httpClient: HttpClient,
@@ -38,7 +42,7 @@ internal class DeltaResolver(
         destination: File,
     ): ResolvedDelta? {
         val oldFile = resolveOldArtifact(target) ?: return null
-        return if (target.blockMapSize != null) {
+        return if (embedsBlockMap(target)) {
             resolveEmbedded(target, oldFile, destination)
         } else {
             resolveStandalone(target, blockMapUrl, oldFile, destination)
@@ -119,9 +123,20 @@ internal class DeltaResolver(
         return response.body()
     }
 
-    private companion object {
-        const val HTTP_OK = 200
-        const val APPIMAGE_ENV = "APPIMAGE"
-        const val APPIMAGE_EXTENSION = "appimage"
+    internal companion object {
+        private const val HTTP_OK = 200
+        private const val APPIMAGE_ENV = "APPIMAGE"
+        private const val APPIMAGE_EXTENSION = "appimage"
+
+        /**
+         * Formats that carry their block map appended to the artifact. Everything else publishes a
+         * standalone `<artifact>.blockmap` — and still declares a `blockMapSize` in the manifest,
+         * which is that companion file's length, so the flavour cannot be inferred from it.
+         */
+        private val EMBEDDED_BLOCK_MAP_EXTENSIONS = setOf(APPIMAGE_EXTENSION, "7z")
+
+        fun embedsBlockMap(target: UpdateFile): Boolean =
+            target.blockMapSize != null &&
+                target.fileName.substringAfterLast('.', "").lowercase() in EMBEDDED_BLOCK_MAP_EXTENSIONS
     }
 }

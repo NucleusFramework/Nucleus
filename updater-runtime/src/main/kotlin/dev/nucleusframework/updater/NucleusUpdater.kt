@@ -215,10 +215,10 @@ class NucleusUpdater(
         }
 
         // Fetch the block map so the *next* update can be differential. Artifacts that embed their
-        // own (blockMapSize is set) need no companion file, and nothing needs one at all when
+        // own (AppImage, nsis-web) need no companion file, and nothing needs one at all when
         // differential downloads are off.
         val blockMapGzip =
-            if (config.differentialDownload && targetFile.blockMapSize == null) {
+            if (config.differentialDownload && !DeltaResolver.embedsBlockMap(targetFile)) {
                 fetchBlockMap(config.provider.getBlockMapUrl(targetFile.url))
             } else {
                 null
