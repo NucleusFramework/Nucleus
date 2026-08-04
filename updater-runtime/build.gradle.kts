@@ -39,6 +39,8 @@ val e2eProperties = providers.systemPropertiesPrefixedBy("nucleus.e2e.")
 
 tasks.withType<Test>().configureEach {
     systemProperties(e2eProperties.get())
+    // The real-artifact E2E tests hold a whole installer (100 MB+) in the loopback host.
+    maxHeapSize = "2g"
 }
 
 mavenPublishing {

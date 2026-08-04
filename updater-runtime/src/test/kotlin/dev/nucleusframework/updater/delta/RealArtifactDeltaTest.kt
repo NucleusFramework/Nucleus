@@ -99,7 +99,7 @@ class RealArtifactDeltaTest {
         assertEquals("assembled size", new.length(), last.file!!.length())
         assertTrue(
             "the assembled artifact must be byte-identical to the real one",
-            new.readBytes().contentEquals(last.file!!.readBytes()),
+            new.readBytes().contentEquals(last.file.readBytes()),
         )
         assertTrue(
             "a delta that transfers the whole artifact is no delta",
