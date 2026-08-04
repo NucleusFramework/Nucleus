@@ -1105,6 +1105,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
+                dev.nucleusframework.window.tao.scene.LocalTaoWindowsTextureHost
+                    provides host.windowsTextureHost(),
             ) {
                 // Light/dark for the whole chrome. One source of truth (the
                 // clear colour + the WindowAppearance override, both snapshot

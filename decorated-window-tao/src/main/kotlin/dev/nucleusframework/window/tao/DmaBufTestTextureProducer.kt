@@ -28,6 +28,13 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTextureBridge
  */
 public class DmaBufTestTextureProducer private constructor(
     private val producer: Long,
+    /**
+     * Source to hand [TextureView]. **Only valid while this producer is open**:
+     * [close] closes the underlying DMA-BUF fd, and the source carries that raw
+     * fd, which the OS is then free to recycle for something else. Drop the
+     * reference along with the producer — importing it afterwards would hand
+     * `eglCreateImageKHR` a foreign descriptor.
+     */
     public val source: TextureViewSource,
 ) : AutoCloseable {
     private val lock = Any()
@@ -56,6 +63,7 @@ public class DmaBufTestTextureProducer private constructor(
         }
     }
 
+    /** Closes the GBM/EGL resources **and the DMA-BUF fd** — see [source]. */
     override fun close() {
         synchronized(lock) {
             if (closed) return
