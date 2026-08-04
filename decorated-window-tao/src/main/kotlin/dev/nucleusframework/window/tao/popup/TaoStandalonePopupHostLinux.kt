@@ -97,6 +97,18 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     private var nextFrameNs = 0L
     private var visible = false
 
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as **state**,
+     * like the window scene and popup layers: the composition reads it, so
+     * dropping it in [dispose] takes effect instead of leaving a live composition
+     * importing onto a context that is about to be destroyed.
+     *
+     * Declared **before** [init], which publishes into it: Kotlin runs property
+     * initializers and `init` blocks in declaration order, so a state declared
+     * below would still be null when the panel comes up.
+     */
+    private val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
+
     init {
         var valid = false
         var panelScale = 1f
@@ -169,23 +181,20 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        // This panel owns its EGL and Skia contexts, so `TextureView`s inside it
-        // import onto those rather than a window scene's.
-        scene?.setContent {
-            CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHostState.value) {
-                content()
-            }
-        }
+        scene?.setContent(content)
         scheduleRender()
     }
 
     /**
-     * Handle for `TextureView`s composed inside this panel. Published as **state**,
-     * like the window scene and popup layers: the composition reads it, so
-     * dropping it in [dispose] takes effect instead of leaving a live composition
-     * importing onto a context that is about to be destroyed.
+     * This panel owns its EGL and Skia contexts, so `TextureView`s inside it
+     * import onto those rather than a window scene's.
      */
-    private val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHostState.value) {
+            content()
+        }
+    }
 
     private fun publishGlTextureHost() {
         val ctx = directContext ?: return

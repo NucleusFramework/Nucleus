@@ -90,6 +90,18 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     private var nextFrameNs = 0L
     private var visible = false
 
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as
+     * **state**, like the Linux twin: the composition reads it, so dropping it in
+     * [dispose] takes effect instead of leaving a live composition importing onto
+     * a context that is about to be destroyed.
+     *
+     * Declared **before** [init], which publishes into it: Kotlin runs property
+     * initializers and `init` blocks in declaration order, so a state declared
+     * below would still be null when the panel comes up.
+     */
+    private val textureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
+
     init {
         var valid = false
         if (!NativeTaoGlBridge.isLoaded || !PopupNativeBridgeWindows.isLoaded) {
@@ -153,28 +165,23 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        // This panel owns its Skia context, so `TextureView`s inside it must
-        // import onto that one rather than a window scene's.
-        scene?.setContent {
-            CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
-                content()
-            }
-        }
+        scene?.setContent(content)
         scheduleRender()
     }
 
+    /** This panel owns its Skia context, so `TextureView`s inside it must import onto that one. */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
+            content()
+        }
+    }
+
     /**
-     * Handle for `TextureView`s composed inside this panel. Published as
-     * **state**, like the Linux twin: the composition reads it, so dropping it in
-     * [dispose] takes effect instead of leaving a live composition importing onto
-     * a context that is about to be destroyed.
-     *
      * `hostHwnd = 0`: the panel renders through the process-wide headless ANGLE
      * context, which is exactly the fallback the native import takes when the
      * HWND lookup finds no EGL trio.
      */
-    private val textureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
-
     private fun publishTextureHost() {
         val ctx = directContext ?: return
         val outer = this
