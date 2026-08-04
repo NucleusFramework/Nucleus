@@ -164,7 +164,10 @@ fun CommonNotificationsScreen() {
                                 title = "Critical Alert",
                                 message = "Something needs your attention now",
                             ) {
-                                linux { urgency = Urgency.CRITICAL; category = "device.error" }
+                                linux {
+                                    urgency = Urgency.CRITICAL
+                                    category = "device.error"
+                                }
                                 macos { interruptionLevel = InterruptionLevel.TIME_SENSITIVE }
                                 windows { scenario = ToastScenario.URGENT }
                             }.send()
