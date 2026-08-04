@@ -336,7 +336,18 @@ abstract class MetadataRepositorySettings
  *  - **Text fields need an AWT resource bundle.** Constructing a `java.awt.Cursor` — what
  *    `PointerIcon` does for any text field — reads `sun.awt.resources.awtosx`. A base-layer build
  *    reaches no AWT code on its own, so native-image never registers those bundles the way it does
- *    for a monolithic image; [resourceBundles] registers them explicitly.
+ *    for a monolithic image; [resourceBundles] registers them explicitly, in the layer that owns
+ *    `java.desktop`. That is the only place it works — registering them from the application layer
+ *    leaves the runtime lookup failing — but it is also what makes the reflection defect above fire,
+ *    so the two cannot currently be satisfied at once.
+ *
+ * Two further routes were tried and are dead ends worth not repeating. Substituting
+ * `Toolkit.getProperty` to return its default (the JDK already does that for a missing bundle) has to
+ * be applied in the layer that compiles `java.awt.Toolkit`, and a base layer only sees substitutions
+ * if it is given a class path — at which point it absorbs the whole application and the application
+ * layer has nothing left to compile ("0 types, 0 fields, and 2 methods found reachable"). Moving
+ * `java.desktop` out of the base layer is not possible either: a base layer without it fails with
+ * "Newly seen boot package java.awt.datatransfer".
  *  - **Requires GraalVM 25.2 or newer.** On 25.1 an application layer's JNI registrations are
  *    invisible to `FindClass`, so every native bridge breaks: the window opens and never renders.
  *
