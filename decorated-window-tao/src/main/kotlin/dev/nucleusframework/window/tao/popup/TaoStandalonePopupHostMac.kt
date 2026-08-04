@@ -155,14 +155,19 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        // This panel owns its Skia context and render thread, so `TextureView`s
-        // inside it import onto that context rather than a window scene's.
-        scene?.setContent {
-            CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost()) {
-                content()
-            }
-        }
+        scene?.setContent(content)
         scheduleRender()
+    }
+
+    /**
+     * This panel owns its Skia context and render thread, so `TextureView`s
+     * inside it import onto that context rather than a window scene's.
+     */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost()) {
+            content()
+        }
     }
 
     /** Stable [TaoMetalTextureHost] for this panel; null until the context exists. */

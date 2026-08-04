@@ -1,6 +1,7 @@
 package dev.nucleusframework.sampletao
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,14 +31,18 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.WindowPosition
 import dev.nucleusframework.window.tao.D3D11TestTextureProducer
 import dev.nucleusframework.window.tao.DmaBufTestTextureProducer
 import dev.nucleusframework.window.tao.MetalTestTextureProducer
 import dev.nucleusframework.window.tao.NucleusDrmFormat
+import dev.nucleusframework.window.tao.TaoStandalonePopup
 import dev.nucleusframework.window.tao.TextureView
 import dev.nucleusframework.window.tao.TextureViewSource
+import dev.nucleusframework.window.tao.isTaoStandalonePopupAvailable
 import dev.nucleusframework.window.tao.rememberTextureViewController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -223,6 +228,55 @@ fun TextureTab(modifier: Modifier = Modifier) {
                 controller = rawController,
                 modifier = demoBox(160.dp, 120.dp),
             )
+        }
+
+        // Tray panel: a standalone, ownerless surface with its OWN Skia context.
+        // The same producer imported a second time, onto that context — the box
+        // in the panel must animate exactly like the ones above.
+        var panelVisible by remember { mutableStateOf(false) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(Color(0xFF2A3340))
+                        .clickable { panelVisible = !panelVisible }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+            ) {
+                BasicText(
+                    text = if (panelVisible) "Hide tray panel" else "Show tray panel",
+                    style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 12.sp),
+                )
+            }
+            BasicText("standalone panel — its own Skia context", style = label)
+        }
+        if (isTaoStandalonePopupAvailable()) {
+            TaoStandalonePopup(
+                visible = panelVisible,
+                position = WindowPosition.Absolute(40.dp, 40.dp),
+                size = DpSize(220.dp, 200.dp),
+                focusable = false,
+                onOutsideClick = { panelVisible = false },
+            ) {
+                Column(
+                    modifier =
+                        Modifier
+                            .background(Color(0xF015181D))
+                            .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    BasicText("Tray panel", style = TextStyle(color = Color.White, fontSize = 12.sp))
+                    TextureView(
+                        source = syncProducer?.source,
+                        controller = syncController,
+                        modifier = demoBox(160.dp, 120.dp),
+                        contentScale = ContentScale.FillBounds,
+                    )
+                }
+            }
         }
     }
 }
