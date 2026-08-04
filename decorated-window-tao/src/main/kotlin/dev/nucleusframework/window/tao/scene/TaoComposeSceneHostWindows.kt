@@ -651,7 +651,37 @@ internal class TaoComposeSceneHostWindows(
                 files = files,
                 text = text,
                 allowedEffects = allowedEffects,
+                pump = OutboundDragPump(),
             )
+        }
+    }
+
+    /**
+     * Drives the host from inside `DoDragDrop`'s modal loop — see
+     * [dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump].
+     *
+     * Named class (not a lambda) for GraalVM JNI reachability, same as
+     * [InboundDnDCallback].
+     */
+    private inner class OutboundDragPump :
+        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump {
+        // The upcall lands with Compose's pointer dispatch still on the stack
+        // (DoDragDrop was entered from `requestDragAndDropTransfer`, itself
+        // inside `sendPointerEvent`), and rendering re-enters the scene. Skia's
+        // recording is not re-entrant, so a nested tick must be dropped rather
+        // than allowed to interleave with the one already in flight.
+        private var pumping = false
+
+        override fun pump() {
+            if (pumping) return
+            pumping = true
+            try {
+                dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                    .pump()
+                onRedrawRequested()
+            } finally {
+                pumping = false
+            }
         }
     }
 

@@ -673,7 +673,42 @@ static IDataObjectVtbl g_data_object_vtbl = {
 typedef struct NucleusDropSource {
     IDropSourceVtbl *lpVtbl;
     LONG refCount;
+    jobject   pumpRef;    /* GlobalRef on the Kotlin DragPump, or NULL */
+    jmethodID pumpMethod; /* DragPump.pump()V */
 } NucleusDropSource;
+
+/*
+ * Lets the host breathe while DoDragDrop owns the thread.
+ *
+ * DoDragDrop pumps its own Win32 modal loop for the whole drag, so the Tao
+ * event loop — which is also the Compose dispatcher and the render thread —
+ * stops iterating: no MainEventsCleared, no dispatcher drain, no frame. The
+ * window would sit frozen until the user drops.
+ *
+ * Windows calls QueryContinueDrag on every mouse/keyboard state change during
+ * the drag, which is exactly the hook Qt uses for the same problem
+ * (QWindowsOleDropSource::QueryContinueDrag → QGuiApplication::processEvents).
+ * We mirror that: each callback upcalls into Kotlin, which drains the main
+ * dispatcher and paints one frame.
+ *
+ * Consequence to be aware of: with the cursor held still Windows stops calling
+ * us, so a running animation stalls until the next movement. Same trade-off Qt
+ * ships with, and far better than freezing outright.
+ */
+static void pump_host(NucleusDropSource *s) {
+    if (!s->pumpRef || !s->pumpMethod) return;
+    BOOL attached = FALSE;
+    JNIEnv *env = attach_thread(&attached);
+    if (!env) return;
+    (*env)->CallVoidMethod(env, s->pumpRef, s->pumpMethod);
+    if ((*env)->ExceptionCheck(env)) {
+        /* Must not leave a pending exception across the COM return: the OLE
+         * drag loop calls straight back into us and JNI would abort. */
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
+    detach_if_needed(attached);
+}
 
 static HRESULT STDMETHODCALLTYPE NDS_QueryInterface(IDropSource *self, REFIID riid, void **ppv) {
     if (!ppv) return E_POINTER;
@@ -688,14 +723,25 @@ static ULONG STDMETHODCALLTYPE NDS_AddRef(IDropSource *self) {
 static ULONG STDMETHODCALLTYPE NDS_Release(IDropSource *self) {
     NucleusDropSource *s = (NucleusDropSource *)self;
     LONG n = InterlockedDecrement(&s->refCount);
-    if (n == 0) HeapFree(GetProcessHeap(), 0, s);
+    if (n == 0) {
+        if (s->pumpRef && g_vm) {
+            BOOL attached = FALSE;
+            JNIEnv *env = attach_thread(&attached);
+            if (env) (*env)->DeleteGlobalRef(env, s->pumpRef);
+            detach_if_needed(attached);
+        }
+        HeapFree(GetProcessHeap(), 0, s);
+    }
     return (ULONG)n;
 }
 static HRESULT STDMETHODCALLTYPE NDS_QueryContinueDrag(IDropSource *self, BOOL fEscape, DWORD grfKeyState) {
-    (void)self;
     if (fEscape) return DRAGDROP_S_CANCEL;
     /* Drop on left-button release. MK_LBUTTON is bit 0x01 in grfKeyState. */
     if (!(grfKeyState & MK_LBUTTON)) return DRAGDROP_S_DROP;
+    /* Still dragging: give the frozen host a slice before returning to the
+     * modal loop. Deliberately not done on the cancel/drop paths above —
+     * DoDragDrop is about to return and the normal loop resumes anyway. */
+    pump_host((NucleusDropSource *)self);
     return S_OK;
 }
 static HRESULT STDMETHODCALLTYPE NDS_GiveFeedback(IDropSource *self, DWORD dwEffect) {
@@ -713,7 +759,8 @@ static IDropSourceVtbl g_drop_source_vtbl = {
 
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDndBridge_nativeStartDrag(
-    JNIEnv *env, jclass cls, jlong hwnd, jobjectArray files, jstring text, jint allowedEffects)
+    JNIEnv *env, jclass cls, jlong hwnd, jobjectArray files, jstring text, jint allowedEffects,
+    jobject pump)
 {
     (void)cls; (void)hwnd;
 
@@ -762,6 +809,21 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDndBridge_nativeStartDr
     }
     src->lpVtbl = &g_drop_source_vtbl;
     src->refCount = 1;
+
+    /* Resolve the pump upcall. Optional: a failure here only costs the
+     * host its frames during the drag, so keep the session going. */
+    if (pump) {
+        jclass pumpClass = (*env)->GetObjectClass(env, pump);
+        if (pumpClass) {
+            src->pumpMethod = (*env)->GetMethodID(env, pumpClass, "pump", "()V");
+            (*env)->DeleteLocalRef(env, pumpClass);
+        }
+        if (src->pumpMethod) {
+            src->pumpRef = (*env)->NewGlobalRef(env, pump);
+            if (!src->pumpRef) src->pumpMethod = NULL;
+        }
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    }
 
     /* DoDragDrop pumps its own modal loop until the user releases or escapes.
      * The thread must be STA — guaranteed if nativeRegister was called earlier

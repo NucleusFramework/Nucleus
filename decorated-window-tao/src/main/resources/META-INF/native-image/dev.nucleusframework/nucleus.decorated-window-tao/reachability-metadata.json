@@ -385,6 +385,20 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$DragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$OutboundDragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge",
             "jniAccessible": true
         },
