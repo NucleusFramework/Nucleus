@@ -815,10 +815,12 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 val outputDir = layerDir.get().asFile
                 outputs.dir(outputDir)
                 inputs.property("modules", graalvm.layers.modules)
+                inputs.property("resourceBundles", graalvm.layers.resourceBundles)
                 inputs.property("march", resolvedMarchFlag)
 
                 val nativeImageExe = graalvmHome.map { File(it).resolve("bin/native-image").absolutePath }
                 val modules = graalvm.layers.modules.get()
+                val bundles = graalvm.layers.resourceBundles.get()
                 val archive = layerArchiveFile.get().asFile
 
                 doFirst {
@@ -831,6 +833,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             "-march=$resolvedMarchFlag",
                             "-H:+UnlockExperimentalVMOptions",
                             "-H:LayerCreate=${archive.name}," + modules.joinToString(",") { "module=$it" },
+                            // The layer that owns java.desktop is where its localization support is
+                            // built, and nothing in a base-layer build reaches java.awt.Cursor, so
+                            // the AWT bundles are never registered on their own. Without this, any
+                            // text field dies at runtime on sun.awt.resources.awtosx.
+                            "-H:IncludeResourceBundles=${bundles.joinToString(",")}",
                             "-o",
                             "lib$GRAALVM_LAYER_NAME",
                         )

@@ -325,13 +325,18 @@ abstract class MetadataRepositorySettings
  * scaffolding is correct and the payoff is measured (2.3x less traffic per update, break-even after
  * ~1.2 updates on a macOS ZIP of `nucleus-demo`), but three things stand in the way:
  *
- *  - **The build is unstable.** The application layer intermittently fails with "This type is
- *    incomplete and should not be used" — the same inputs produced 18 errors, then 48, then none.
- *  - **Text fields crash at runtime.** Constructing a `java.awt.Cursor` (what `PointerIcon` does for
- *    any text field) needs `sun.awt.resources.awtosx`, and that bundle cannot be registered: from the
- *    application layer the lookup still fails, and registering it in the base layer that owns
- *    `java.desktop` — by `-H:IncludeResourceBundles` or by reachability metadata — makes the
- *    application layer fail to compile.
+ *  - **Reflection metadata versus base-layer types.** The application layer fails with "This type is
+ *    incomplete and should not be used", thrown from `BaseLayerType.getStaticFields` under
+ *    `ReflectionDataBuilder.checkHidingFields`: registering a type for reflection makes the builder
+ *    walk its subtypes and read their static fields, and a subtype that lives in the base layer is
+ *    only a stub in the application layer. There is no option that disables that walk, and the
+ *    metadata that triggers it is the metadata every real application needs. The number of errors
+ *    reported scales with `-H:NumberOfThreads` (the walk runs on a parallel executor), which makes it
+ *    look intermittent; the failure itself is not.
+ *  - **Text fields need an AWT resource bundle.** Constructing a `java.awt.Cursor` — what
+ *    `PointerIcon` does for any text field — reads `sun.awt.resources.awtosx`. A base-layer build
+ *    reaches no AWT code on its own, so native-image never registers those bundles the way it does
+ *    for a monolithic image; [resourceBundles] registers them explicitly.
  *  - **Requires GraalVM 25.2 or newer.** On 25.1 an application layer's JNI registrations are
  *    invisible to `FindClass`, so every native bridge breaks: the window opens and never renders.
  *
@@ -375,6 +380,26 @@ abstract class GraalvmLayerSettings
                     "java.sql",
                     "java.instrument",
                     "jdk.unsupported",
+                ),
+            )
+
+        /**
+         * Resource bundles the base layer embeds.
+         *
+         * The layer that owns `java.desktop` is where its localization support is built, and nothing
+         * in a base-layer build reaches `java.awt.Cursor`, so native-image never registers the AWT
+         * bundles on its own the way it does for a monolithic image. Without them any text field dies
+         * at runtime with "Resource bundle lookup must be loaded during native image generation:
+         * class sun.awt.resources.awtosx" — `PointerIcon` constructs a `Cursor`.
+         */
+        val resourceBundles: ListProperty<String> =
+            objects.listProperty(String::class.java).convention(
+                listOf(
+                    "sun.awt.resources.awt",
+                    "sun.awt.resources.awtosx",
+                    "sun.print.resources.serviceui",
+                    "com.sun.swing.internal.plaf.basic.resources.basic",
+                    "com.sun.swing.internal.plaf.metal.resources.metal",
                 ),
             )
 
