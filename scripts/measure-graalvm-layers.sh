@@ -10,6 +10,19 @@
 # This script builds both shapes of the same app, one source line apart, and reports how many bytes
 # an update transfers in each case. It is a measurement harness, not part of the build.
 #
+# STATUS: the layered path does not currently produce a working Compose application. The application
+# layer fails to compile with a permanent Graal bailout on `androidx.compose.runtime.snapshots
+# .SnapshotKt.sync` — Kotlin's `synchronized` intrinsic wrapping an inlined lambda:
+#
+#     PermanentBailoutException: Unstructured locking: too few monitorexits exiting frame
+#         at BytecodeParser.handleUnstructuredLockingForUnwindTarget
+#
+# A monolithic build compiles the same method without complaint. Reproduced on GraalVM CE 25.1.3 and
+# 25.2.4, with the layer option verification on and off, with the package assigned to either layer,
+# and with -H:-UseSharedLayerGraphs. Nothing works around it: the bailout is permanent, and
+# SnapshotKt.sync is reachable from any Compose application. The delta figures below were therefore
+# measured on a JDK-only base layer, whose application layer does build.
+#
 # Usage: scripts/measure-graalvm-layers.sh [output-dir]
 #
 # Requires:
@@ -59,14 +72,80 @@ resolve_app_builder() {
 # ── Building ──────────────────────────────────────────────────────────────────────────────────────
 
 # Compiles the base layer: a shared library holding the AOT-compiled JDK, plus the .nil archive that
-# app-layer builds consume. `-march` must match what the plugin passes for the app layer, or
-# native-image rejects the pair ("CPU Features should be consistent across layers").
+# app-layer builds consume.
+#
+# Both layers have to be built from the same option set, which is why real support belongs in the
+# plugin rather than in a script: it owns both invocations and can derive them from one list. Three
+# ways this bites, in the order they surface:
+#   - `-march` must match, or the pair is rejected ("CPU Features should be consistent across
+#     layers");
+#   - the same `-H:ConfigurationFileDirectories` must be passed to both, or class initialization
+#     diverges ("Class initialization info not stable between layers", first seen on
+#     kotlinx.coroutines.swing.Swing, whose directive comes from the Oracle metadata repository);
+#   - the shared options must appear at the same position, which `-H:+LayerOptionVerification`
+#     enforces. Disabling that check is not a fix: the build then proceeds into a miscompilation.
+# The -H:ConfigurationFileDirectories the plugin passes to the application layer. The base layer
+# needs the identical set (see above), and they only exist after one GraalVM build has run.
+collect_metadata_dirs() {
+    local tmp="$PWD/$DEMO/build/compose/tmp/main/graalvm" dir args=""
+    for dir in libraryMetadata platformMetadata staticAnalysis projectResources; do
+        [ -d "$tmp/$dir" ] && args="$args -H:ConfigurationFileDirectories=$tmp/$dir"
+    done
+    if [ -f "$tmp/metadataRepoDirs.txt" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] && args="$args -H:ConfigurationFileDirectories=$line"
+        done <"$tmp/metadataRepoDirs.txt"
+    fi
+    echo "$args"
+}
+
+# Every package in the uberjar that is not the application's own, as `package=` selectors. This is
+# the split worth having — the framework stops changing between releases — and it is what plugin
+# support would compute, since the plugin knows which packages the project itself produces. `path=`
+# cannot do it: the plugin hands native-image a single flattened uberjar.
+library_package_spec() {
+    local uber="$1"
+    python3 - "$uber" <<'PYTHON'
+import re, sys, zipfile
+uber = sys.argv[1]
+# The application's own packages stay in the application layer.
+APP_PREFIXES = ("com/example/demo",)
+IDENT = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
+
+def is_package(path):
+    # META-INF/versions/<n>/... are multi-release entries, not packages, and native-image rejects
+    # them outright ("could not find requested packages").
+    if path.startswith(("META-INF/", "WEB-INF/")):
+        return False
+    return all(IDENT.match(part) for part in path.split("/"))
+
+packages = {
+    name.rsplit("/", 1)[0]
+    for name in zipfile.ZipFile(uber).namelist()
+    if name.endswith(".class") and "/" in name
+}
+libraries = sorted(
+    p for p in packages
+    if is_package(p) and not p.startswith(APP_PREFIXES)
+)
+print(",".join("package=" + p.replace("/", ".") for p in libraries))
+PYTHON
+}
+
 build_base_layer() {
     local ni="$1" march="$2" spec="base.nil" module
     for module in "${BASE_MODULES[@]}"; do spec="$spec,module=$module"; done
+    # Opt in with LAYER_SPLIT=packages once the bailout above is fixed upstream.
+    if [ "${LAYER_SPLIT:-modules}" = "packages" ]; then
+        spec="$spec,$(library_package_spec "$(ls "$PWD/$DEMO"/build/compose/jars/*.jar | head -1)")"
+    fi
 
     echo "=== base layer (-march=$march) ==="
+    local metadata
+    metadata="$(collect_metadata_dirs)"
+    # shellcheck disable=SC2086  # word splitting is how the -H: flags are passed
     (cd "$OUT" && "$ni" -H:+UnlockExperimentalVMOptions "-march=$march" \
+        --enable-native-access=ALL-UNNAMED $metadata \
         "-H:LayerCreate=$spec" -o libbase 2>&1 | grep -E "Generating|Finished|Failed|Error:")
     [ -f "$OUT/libbase.dylib" ] || die "no base layer produced"
     [ -f "$OUT/base.nil" ] || die "no .nil archive produced"
@@ -178,8 +257,8 @@ AB="$(resolve_app_builder)"
 MARCH=compatibility
 [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ] && MARCH=native
 
-build_base_layer "$NI" "$MARCH"
-
+# The monolithic pair comes first: it produces the uberjar and the metadata directories that the
+# base layer has to be built against.
 echo "=== monolithic pair ==="
 package_zip 1.0.0
 collect "$OUT/mono" v1 "$AB"
@@ -189,6 +268,7 @@ collect "$OUT/mono" v2 "$AB"
 
 echo "=== layered pair ==="
 restore
+build_base_layer "$NI" "$MARCH"
 package_zip 1.0.0 "$OUT/base.nil"
 repackage_with_base_layer "$OUT/layered" v1 "$AB"
 patch_source
