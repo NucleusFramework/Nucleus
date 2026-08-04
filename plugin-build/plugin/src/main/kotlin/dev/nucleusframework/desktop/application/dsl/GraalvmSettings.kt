@@ -351,6 +351,14 @@ abstract class MetadataRepositorySettings
  * `LayeredCompilationBehavior` / `InitialLayerFeature`, which needs the set of SVM internals a given
  * application reaches to be known up front — the opposite of working for any application.
  *
+ * Those two failures are the same coin. A base layer that *analyses* framework code — whether the
+ * framework is selected with `package=` or simply put on the base layer's class path — makes the
+ * application layer bail out on Kotlin's `synchronized` intrinsic. A base layer that analyses nothing
+ * leaves the SVM core types unseen. There is no setting in between: the configuration space was walked
+ * (base with and without a class path, framework selected by package and by class path, layer option
+ * verification on and off, `-H:NumberOfThreads=1`, `-H:-UseSharedLayerGraphs`, GraalVM 25.1 and 25.2)
+ * and every combination lands on one wall or the other.
+ *
  * Two further routes were tried and are dead ends worth not repeating. Substituting
  * `Toolkit.getProperty` to return its default (the JDK already does that for a missing bundle) has to
  * be applied in the layer that compiles `java.awt.Toolkit`, and a base layer only sees substitutions
