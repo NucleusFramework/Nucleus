@@ -348,9 +348,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeImportD3D1
         t->keyedMutex = keyedMutex;
         t->copyCtx = copyCtx;
         /* Prime the staging copy so the first composited frame isn't an
-         * uninitialized texture. Zero timeout: if the producer holds the
-         * mutex right now, the first markFrameAvailable catches up. */
-        if (IDXGIKeyedMutex_AcquireSync(keyedMutex, 0, 0) == S_OK) {
+         * uninitialized texture. Same timeout as the per-frame path rather
+         * than 0: a producer that publishes one frame and goes idle would
+         * otherwise need a markFrameAvailable to ever fill the staging
+         * texture, and the copy that request triggers can lose the mutex
+         * race too. (TextureView schedules a retry redraw on a skipped copy,
+         * so this is belt-and-braces, not the only safeguard.) */
+        if (IDXGIKeyedMutex_AcquireSync(keyedMutex, 0, NUCLEUS_TEX_ACQUIRE_TIMEOUT_MS) == S_OK) {
             ID3D11DeviceContext_CopyResource(
                 copyCtx, (ID3D11Resource *)privateTex, (ID3D11Resource *)sharedTex);
             IDXGIKeyedMutex_ReleaseSync(keyedMutex, 0);
@@ -478,7 +482,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeTestProduc
     if (!d3dMod) return 0;
     PFN_D3D11_CREATE_DEVICE pCreateDevice =
         (PFN_D3D11_CREATE_DEVICE)GetProcAddress(d3dMod, "D3D11CreateDevice");
-    if (!pCreateDevice) return 0;
+    if (!pCreateDevice) {
+        FreeLibrary(d3dMod);
+        return 0;
+    }
 
     /* Own device, distinct from ANGLE's — that's the point: the shared
      * handle is the only bridge between producer and compositor. */
@@ -490,7 +497,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeTestProduc
         hr = pCreateDevice(NULL, D3D_DRIVER_TYPE_WARP, NULL, 0,
                            NULL, 0, D3D11_SDK_VERSION, &device, NULL, &imCtx);
     }
-    if (FAILED(hr) || !device || !imCtx) return 0;
+    if (FAILED(hr) || !device || !imCtx) {
+        FreeLibrary(d3dMod);
+        return 0;
+    }
+    /* The device keeps d3d11.dll loaded from here on; releasing our own
+     * reference keeps the failure paths above and the success path
+     * symmetrical (one LoadLibrary, one FreeLibrary). */
+    FreeLibrary(d3dMod);
 
     D3D11_TEXTURE2D_DESC desc;
     memset(&desc, 0, sizeof(desc));

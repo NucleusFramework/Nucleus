@@ -1329,6 +1329,22 @@ internal class TaoComposeSceneHostWindows(
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
 
+    /**
+     * Handle for `TextureView`s composed in this window's scene. Narrower than
+     * [popupHost] on purpose — see [TaoWindowsTextureHost].
+     */
+    fun windowsTextureHost(): TaoWindowsTextureHost? {
+        if (hwnd == 0L) return null
+        val ctx = directContext ?: return null
+        val outer = this
+        return object : TaoWindowsTextureHost {
+            override val hostHwnd: Long get() = outer.hwnd
+            override val directContext: DirectContext = ctx
+
+            override fun requestRedraw() = outer.window.requestRedraw()
+        }
+    }
+
     fun popupHost(): TaoPopupHostWindows? {
         if (hwnd == 0L) return null
         val ctx = directContext ?: return null

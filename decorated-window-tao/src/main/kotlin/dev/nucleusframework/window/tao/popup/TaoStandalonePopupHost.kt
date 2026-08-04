@@ -2,6 +2,9 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -24,7 +27,10 @@ import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.releaseWindowsTextureImports
+import dev.nucleusframework.window.tao.scene.LocalTaoWindowsTextureHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows
+import dev.nucleusframework.window.tao.scene.TaoWindowsTextureHost
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
@@ -130,6 +136,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                             invalidate = { scheduleRender() },
                         )
                     PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
+                    publishTextureHost()
                     // See TaoComposeSceneHostWindows: all contexts sharing the
                     // process EGL context must resetGLAll when siblings exist.
                     TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
@@ -146,8 +153,38 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        // This panel owns its Skia context, so `TextureView`s inside it must
+        // import onto that one rather than a window scene's.
+        scene?.setContent {
+            CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
+                content()
+            }
+        }
         scheduleRender()
+    }
+
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as
+     * **state**, like the Linux twin: the composition reads it, so dropping it in
+     * [dispose] takes effect instead of leaving a live composition importing onto
+     * a context that is about to be destroyed.
+     *
+     * `hostHwnd = 0`: the panel renders through the process-wide headless ANGLE
+     * context, which is exactly the fallback the native import takes when the
+     * HWND lookup finds no EGL trio.
+     */
+    private val textureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
+
+    private fun publishTextureHost() {
+        val ctx = directContext ?: return
+        val outer = this
+        textureHostState.value =
+            object : TaoWindowsTextureHost {
+                override val hostHwnd: Long = 0L
+                override val directContext: DirectContext = ctx
+
+                override fun requestRedraw() = outer.scheduleRender()
+            }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -231,8 +268,14 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         TaoComposeSceneHostWindows.attachedHostCount.decrementAndGet()
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeWindows.nativeSetEventCallback(panel, null)
+        // Drop the TextureView handle before the context it points at dies.
+        textureHostState.value = null
         scene?.close()
         scene = null
+        // Belt for imports a leaked composition may still hold; scene.close()
+        // above released the leases of every live one. The ANGLE context stays
+        // current on this thread, so the Skia frees are safe here.
+        directContext?.let(::releaseWindowsTextureImports)
         directContext?.close()
         directContext = null
         PopupNativeBridgeWindows.nativeRelease(panel)

@@ -141,8 +141,14 @@ private class MacImportedTexture(
      * once per view or let views with different controllers invalidate each
      * other on every draw pass. Main thread only; at most one entry per
      * controller (`null` = views without one, which need a single pull).
+     *
+     * Weak keys: the import outlives any single view (it is refcounted across
+     * all of them), so a strongly-keyed map would pin the controller of every
+     * view that ever drew through this import. A screen that creates one
+     * controller per item over a shared source would grow it without bound.
+     * Losing an entry early only costs one redundant snapshot.
      */
-    private val consumed = HashMap<TextureViewController?, Long>()
+    private val consumed = java.util.WeakHashMap<TextureViewController?, Long>()
 
     /**
      * Current GPU snapshot of the producer surface, re-pulled once per signalled
