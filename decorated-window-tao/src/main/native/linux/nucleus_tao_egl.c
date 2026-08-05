@@ -92,6 +92,9 @@ typedef unsigned long  EGLNativeWindowType;   /* X11 Window XID on Xlib */
 #define EGL_NO_CONTEXT                 ((EGLContext) 0)
 #define EGL_NO_SURFACE                 ((EGLSurface) 0)
 #define EGL_NONE                       0x3038
+/* Queryable surface attributes (egl.h) — declared locally like the rest. */
+#define EGL_HEIGHT                     0x3056
+#define EGL_WIDTH                      0x3057
 #define EGL_RED_SIZE                   0x3024
 #define EGL_GREEN_SIZE                 0x3023
 #define EGL_BLUE_SIZE                  0x3022
@@ -217,6 +220,7 @@ typedef EGLBoolean (*PFN_eglDestroySurface)(EGLDisplay, EGLSurface);
 typedef EGLBoolean (*PFN_eglMakeCurrent)(EGLDisplay, EGLSurface, EGLSurface, EGLContext);
 typedef EGLBoolean (*PFN_eglSwapBuffers)(EGLDisplay, EGLSurface);
 typedef EGLBoolean (*PFN_eglSwapInterval)(EGLDisplay, EGLint);
+typedef EGLBoolean (*PFN_eglQuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint *);
 typedef EGLint     (*PFN_eglGetError)(void);
 typedef void      *(*PFN_eglGetProcAddress)(const char *);
 typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
@@ -338,6 +342,7 @@ static PFN_eglDestroySurface     p_eglDestroySurface     = NULL;
 static PFN_eglMakeCurrent        p_eglMakeCurrent        = NULL;
 static PFN_eglSwapBuffers        p_eglSwapBuffers        = NULL;
 static PFN_eglSwapInterval       p_eglSwapInterval       = NULL;
+static PFN_eglQuerySurface       p_eglQuerySurface       = NULL;
 static PFN_eglGetError           p_eglGetError           = NULL;
 static PFN_eglGetProcAddress     p_eglGetProcAddress     = NULL;
 static PFN_eglQueryString        p_eglQueryString        = NULL;
@@ -498,6 +503,7 @@ static int load_libs(void) {
     LOAD(g_libegl, eglMakeCurrent);
     LOAD(g_libegl, eglSwapBuffers);
     LOAD(g_libegl, eglSwapInterval);
+    LOAD(g_libegl, eglQuerySurface);
     LOAD(g_libegl, eglGetError);
     LOAD(g_libegl, eglGetProcAddress);
     LOAD(g_libegl, eglQueryString);
@@ -1643,6 +1649,37 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetViewportDes
             p_wl_display_flush(att->wl_display_conn);
         }
     }
+}
+
+/**
+ * Returns the EGL window surface's **actual** current size, packed as
+ * `(width << 32) | height`, or 0 if unavailable.
+ *
+ * This is not the size we last asked for. `wl_egl_window_resize` only records a
+ * pending size; the buffer behind the GL default framebuffer is not reallocated
+ * until the next `eglSwapBuffers`. So between a resize and the swap that applies
+ * it, `eglQuerySurface` still reports the OLD size while our Kotlin state has
+ * moved on.
+ *
+ * That gap matters because `BackendRenderTarget.makeGL(..., fbId = 0)` wraps
+ * that same default framebuffer, and Skia is told the size we *requested*. With
+ * `SurfaceOrigin.BOTTOM_LEFT` Skia maps y=0 to GL row `height - 1`, so if the
+ * two disagree by N the whole frame is displaced by N — which is the measured
+ * artifact (a band exactly `delta-height` tall at the top of the window during a
+ * resize drag). See docs/linux-wayland-resize-latency.md.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSurfaceSize(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !p_eglQuerySurface || att->surface == EGL_NO_SURFACE) return 0;
+    EGLint w = 0, h = 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_WIDTH, &w)) return 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_HEIGHT, &h)) return 0;
+    if (w <= 0 || h <= 0) return 0;
+    return ((jlong) w << 32) | (jlong) (h & 0xFFFFFFFFL);
 }
 
 JNIEXPORT void JNICALL

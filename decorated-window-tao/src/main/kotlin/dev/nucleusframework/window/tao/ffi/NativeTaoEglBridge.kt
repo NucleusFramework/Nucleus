@@ -147,6 +147,21 @@ internal object NativeTaoEglBridge {
         commitNow: Boolean,
     )
 
+    /**
+     * The EGL window surface's **actual** size, packed `(width shl 32) or height`,
+     * or 0 if unavailable. Wayland only in practice.
+     *
+     * Deliberately not the size last passed to [nativeResize]:
+     * `wl_egl_window_resize` records a *pending* size and the buffer behind the
+     * GL default framebuffer is only reallocated on the next `eglSwapBuffers`.
+     * Between those two points this reports the OLD size, while our own state
+     * has already moved to the new one — and anything that wraps `fbId = 0`
+     * (i.e. `BackendRenderTarget.makeGL`) is wrapping a framebuffer of that old
+     * size. See `docs/linux-wayland-resize-latency.md`.
+     */
+    @JvmStatic
+    external fun nativeSurfaceSize(handle: Long): Long
+
     /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
     @JvmStatic
     external fun nativePresent(handle: Long)

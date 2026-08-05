@@ -222,6 +222,10 @@ internal class TaoComposeSceneHostLinux(
      */
     private var swapThread: SwapThread? = null
 
+    /** Real framebuffer size the cached Skia surface was built for. */
+    private var lastFbWidthPx: Int = 0
+    private var lastFbHeightPx: Int = 0
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -1008,6 +1012,33 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * Size to render at, from the EGL surface size packed by
+     * `nativeSurfaceSize`.
+     *
+     * The framebuffer lags the requested size in **either** direction: smaller
+     * while the window grows, larger while it shrinks. An earlier version of
+     * this guard required `w <= widthPx`, which silently disabled the whole fix
+     * for shrinking — and matched the report exactly ("almost gone when making
+     * the window larger, still very visible when making it smaller"). The bound
+     * is therefore symmetric.
+     *
+     * Its only job is to reject a *degenerate* report: before the first
+     * configure is applied the EGL surface can return something tiny, and laying
+     * the scene out into that leaves the window unmapped. A real resize step is
+     * a handful of pixels, so a factor-of-two window either way never rejects a
+     * legitimate value.
+     */
+    private fun resolveFramebufferSize(packed: Long): IntSize {
+        if (packed == 0L) return IntSize(widthPx, heightPx)
+        val w = (packed ushr 32).toInt()
+        val h = (packed and 0xFFFFFFFFL).toInt()
+        val sane =
+            w in (widthPx / 2)..(widthPx * 2) &&
+                h in (heightPx / 2)..(heightPx * 2)
+        return if (sane) IntSize(w, h) else IntSize(widthPx, heightPx)
+    }
+
+    /**
      * Pushes the *current* window size to the content surface's `wp_viewport`
      * destination, so the surface occupies the window rect regardless of how
      * stale the buffer we last rendered is.
@@ -1188,12 +1219,44 @@ internal class TaoComposeSceneHostLinux(
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
 
+        // Render at the framebuffer's REAL size, not the size we requested.
+        //
+        // `wl_egl_window_resize` only records a pending size; the buffer behind
+        // the GL default framebuffer is not reallocated until the next
+        // `eglSwapBuffers`. `BackendRenderTarget.makeGL(fbId = 0)` wraps that
+        // same framebuffer, so passing the requested size tells Skia the drawable
+        // is taller than it is — and with `SurfaceOrigin.BOTTOM_LEFT` Skia maps
+        // y=0 to GL row `height - 1`, off the top of the real drawable. The whole
+        // frame is displaced by the difference, leaving a band of clear colour at
+        // the top of the window, `delta-height` tall, flickering for the whole
+        // drag. Measured: the framebuffer is exactly one resize step behind on
+        // every resizing frame. See docs/linux-wayland-resize-latency.md.
+        //
+        // Drawing smaller than the window is safe: the `wp_viewport` destination
+        // already maps whatever we render onto the current window rect.
+        val packedFb = NativeTaoEglBridge.nativeSurfaceSize(attachmentHandle)
+        val fbSize = resolveFramebufferSize(packedFb)
+        val fbW = fbSize.width
+        val fbH = fbSize.height
+        if (fbW != lastFbWidthPx || fbH != lastFbHeightPx) {
+            cachedSurface?.close()
+            cachedSurface = null
+            cachedRt?.close()
+            cachedRt = null
+            lastFbWidthPx = fbW
+            lastFbHeightPx = fbH
+        }
+        if (scene?.size != IntSize(fbW, fbH)) {
+            scene?.size = IntSize(fbW, fbH)
+            updateWindowInfoSize()
+        }
+
         var surface = cachedSurface
         if (surface == null) {
             val rt =
                 BackendRenderTarget.makeGL(
-                    width = widthPx,
-                    height = heightPx,
+                    width = fbW,
+                    height = fbH,
                     sampleCnt = 0,
                     stencilBits = 8,
                     fbId = 0,
