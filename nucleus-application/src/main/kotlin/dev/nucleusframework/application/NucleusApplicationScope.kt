@@ -1,6 +1,7 @@
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.staticCompositionLocalOf
 import dev.nucleusframework.aot.runtime.AotRuntime
 import dev.nucleusframework.aot.runtime.AotRuntimeMode
 import dev.nucleusframework.core.runtime.DeepLinkHandler
@@ -54,6 +55,35 @@ sealed interface NucleusApplicationScope : AwtApplicationScope {
      */
     fun onDeepLink(block: (URI) -> Unit)
 }
+
+/**
+ * The [NucleusApplicationScope] of the surrounding [nucleusApplication].
+ *
+ * Secondary windows are rarely opened from the `nucleusApplication { … }`
+ * lambda — they come from a navigation destination, a row action, an "edit in
+ * a new window" button. This local makes the scope reachable from there
+ * without threading the receiver through every layer in between:
+ *
+ * ```
+ * @Composable
+ * fun EditorWindow(onClose: () -> Unit) {
+ *     with(LocalNucleusApplicationScope.current) {
+ *         MaterialDecoratedWindow(onCloseRequest = onClose) { … }
+ *     }
+ * }
+ * ```
+ *
+ * For plain [DecoratedWindow] / [DecoratedDialog] the receiver-less overloads
+ * already read this local, so no `with` is needed.
+ *
+ * Provided by [nucleusApplication] on both backends. On Tao each window owns
+ * its own `ComposeScene`, but the whole parent local context is bridged into
+ * it, so the scope stays reachable from nested window content too.
+ */
+val LocalNucleusApplicationScope =
+    staticCompositionLocalOf<NucleusApplicationScope> {
+        error("LocalNucleusApplicationScope not provided — use it inside a nucleusApplication { … } block.")
+    }
 
 internal class AwtNucleusApplicationScope(
     val composeScope: AwtApplicationScope,

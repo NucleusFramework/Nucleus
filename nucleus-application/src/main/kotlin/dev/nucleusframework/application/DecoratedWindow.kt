@@ -112,6 +112,58 @@ fun NucleusApplicationScope.DecoratedWindow(
     }
 }
 
+/**
+ * Receiver-less [DecoratedWindow], resolving the application scope from
+ * [LocalNucleusApplicationScope]. Parameters behave exactly like the
+ * [NucleusApplicationScope] overload.
+ *
+ * Use it to open a window from anywhere in the composition — a navigation
+ * destination, a row action — the way Compose Desktop's `Window` can be
+ * called. Fails outside a `nucleusApplication { … }` block, where no scope
+ * exists.
+ */
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+fun DecoratedWindow(
+    onCloseRequest: () -> Unit,
+    state: WindowState = rememberWindowState(),
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    alwaysOnTop: Boolean = false,
+    undecorated: Boolean = false,
+    popupFor: NucleusWindow? = null,
+    nativePopupLayers: Boolean = false,
+    hiddenFromDock: Boolean = false,
+    minimumSize: DpSize? = null,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+) {
+    LocalNucleusApplicationScope.current.DecoratedWindow(
+        onCloseRequest = onCloseRequest,
+        state = state,
+        visible = visible,
+        title = title,
+        icon = icon,
+        resizable = resizable,
+        enabled = enabled,
+        focusable = focusable,
+        alwaysOnTop = alwaysOnTop,
+        undecorated = undecorated,
+        popupFor = popupFor,
+        nativePopupLayers = nativePopupLayers,
+        hiddenFromDock = hiddenFromDock,
+        minimumSize = minimumSize,
+        onPreviewKeyEvent = onPreviewKeyEvent,
+        onKeyEvent = onKeyEvent,
+        content = content,
+    )
+}
+
 internal class AwtNucleusDecoratedWindowScope(
     private val delegate: AwtDecoratedWindowScope,
     override val nucleusWindow: NucleusWindow,
