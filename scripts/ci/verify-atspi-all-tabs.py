@@ -35,6 +35,12 @@ TAB_CHECKS = [
     ("Events", ["Events"], 8),
     ("WebView", ["WebView"], 6),
     ("SwiftUI", ["SwiftUI"], 6),
+    # Texture: the contentScale / filterQuality labels are the only strings that
+    # are identical on every platform. The producer summary line names the
+    # backend (D3D11 / Metal IOSurface / DMA-BUF) and degrades to an
+    # "unavailable" message on a CI runner with no render node, so it is not
+    # something to assert on.
+    ("Texture", ["FillBounds", "Crop", "None (nearest)"], 8),
 ]
 
 

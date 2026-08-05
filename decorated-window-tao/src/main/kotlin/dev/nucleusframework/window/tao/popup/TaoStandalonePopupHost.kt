@@ -2,6 +2,9 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asComposeCanvas
@@ -24,7 +27,11 @@ import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.releaseWindowsTextureImports
+import dev.nucleusframework.window.tao.scene.LocalTaoWindowsTextureHost
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows
+import dev.nucleusframework.window.tao.scene.TaoWindowsTextureHost
+import dev.nucleusframework.window.tao.scene.preservingAngleBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
@@ -84,61 +91,86 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     private var nextFrameNs = 0L
     private var visible = false
 
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as
+     * **state**, like the Linux twin: the composition reads it, so dropping it in
+     * [dispose] takes effect instead of leaving a live composition importing onto
+     * a context that is about to be destroyed.
+     *
+     * Declared **before** [init], which publishes into it: Kotlin runs property
+     * initializers and `init` blocks in declaration order, so a state declared
+     * below would still be null when the panel comes up.
+     */
+    private val textureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
+
     init {
         var valid = false
-        if (!NativeTaoGlBridge.isLoaded || !PopupNativeBridgeWindows.isLoaded) {
-            logger.warning("Standalone popup unavailable: native bridges not loaded")
-        } else if (!runCatching { NativeTaoGlBridge.nativeEnsureHeadlessContext() }
-                .onFailure { logger.warning("Standalone popup unavailable: $it") }
-                .getOrDefault(false)
-        ) {
-            logger.warning("Standalone popup unavailable: headless EGL bootstrap failed")
-        } else {
-            panel =
-                PopupNativeBridgeWindows.nativeCreatePanel(
-                    parentHwnd = 0L,
-                    xPx = HIDDEN_X_PX,
-                    yPx = HIDDEN_Y_PX,
-                    widthPx = 1,
-                    heightPx = 1,
-                )
-            if (panel == 0L) {
-                logger.warning("Standalone popup unavailable: panel creation failed")
+        // The whole bring-up is surface-displacing, and it runs wherever the panel
+        // was composed — `TaoStandalonePopup` builds the host from `remember {}`, so
+        // for a panel added to a live window that is inside the window scene's
+        // `ComposeScene.render()`. Two steps leave a foreign binding current: the
+        // headless EGL bootstrap (which ends bound to its immortal 1x1 pbuffer, on
+        // an unshared context) and this panel's own `nativeMakeCurrent`. Either one
+        // sends the remainder of that frame — frame decoration, glyph-atlas uploads,
+        // `flushAndSubmit` — onto a context the host's `DirectContext` does not own,
+        // which corrupts the window's GPU objects for good. So the guard wraps the
+        // entire block, exactly like the Linux twin. See [preservingAngleBinding].
+        preservingAngleBinding {
+            if (!NativeTaoGlBridge.isLoaded || !PopupNativeBridgeWindows.isLoaded) {
+                logger.warning("Standalone popup unavailable: native bridges not loaded")
+            } else if (!runCatching { NativeTaoGlBridge.nativeEnsureHeadlessContext() }
+                    .onFailure { logger.warning("Standalone popup unavailable: $it") }
+                    .getOrDefault(false)
+            ) {
+                logger.warning("Standalone popup unavailable: headless EGL bootstrap failed")
             } else {
-                PopupNativeBridgeWindows.nativeSetPanelVisible(panel, false)
-                directContext =
-                    if (PopupNativeBridgeWindows.nativeMakeCurrent(panel)) {
-                        runCatching {
-                            val intf =
-                                GLAssembledInterface.createFromNativePointers(
-                                    0L,
-                                    NativeTaoGlBridge.nativeEglGetProcFn(),
-                                )
-                            DirectContext.makeGLWithInterface(intf)
-                        }.getOrNull()
-                    } else {
-                        null
-                    }
-                if (directContext != null) {
-                    scene =
-                        CanvasLayersComposeScene(
-                            density = Density(scale),
-                            layoutDirection = GlobalLayoutDirection,
-                            size = IntSize(1, 1),
-                            coroutineContext = flushingDispatcher + frameClock,
-                            platformContext = StandalonePopupPlatformContext(),
-                            invalidate = { scheduleRender() },
-                        )
-                    PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
-                    // See TaoComposeSceneHostWindows: all contexts sharing the
-                    // process EGL context must resetGLAll when siblings exist.
-                    TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
-                    valid = true
-                    logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
+                panel =
+                    PopupNativeBridgeWindows.nativeCreatePanel(
+                        parentHwnd = 0L,
+                        xPx = HIDDEN_X_PX,
+                        yPx = HIDDEN_Y_PX,
+                        widthPx = 1,
+                        heightPx = 1,
+                    )
+                if (panel == 0L) {
+                    logger.warning("Standalone popup unavailable: panel creation failed")
                 } else {
-                    logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
-                    PopupNativeBridgeWindows.nativeRelease(panel)
-                    panel = 0
+                    PopupNativeBridgeWindows.nativeSetPanelVisible(panel, false)
+                    directContext =
+                        if (PopupNativeBridgeWindows.nativeMakeCurrent(panel)) {
+                            runCatching {
+                                val intf =
+                                    GLAssembledInterface.createFromNativePointers(
+                                        0L,
+                                        NativeTaoGlBridge.nativeEglGetProcFn(),
+                                    )
+                                DirectContext.makeGLWithInterface(intf)
+                            }.getOrNull()
+                        } else {
+                            null
+                        }
+                    if (directContext != null) {
+                        scene =
+                            CanvasLayersComposeScene(
+                                density = Density(scale),
+                                layoutDirection = GlobalLayoutDirection,
+                                size = IntSize(1, 1),
+                                coroutineContext = flushingDispatcher + frameClock,
+                                platformContext = StandalonePopupPlatformContext(),
+                                invalidate = { scheduleRender() },
+                            )
+                        PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
+                        publishTextureHost()
+                        // See TaoComposeSceneHostWindows: all contexts sharing the
+                        // process EGL context must resetGLAll when siblings exist.
+                        TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
+                        valid = true
+                        logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
+                    } else {
+                        logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
+                        PopupNativeBridgeWindows.nativeRelease(panel)
+                        panel = 0
+                    }
                 }
             }
         }
@@ -148,6 +180,31 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     override fun setContent(content: @Composable () -> Unit) {
         scene?.setContent(content)
         scheduleRender()
+    }
+
+    /** This panel owns its Skia context, so `TextureView`s inside it must import onto that one. */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
+            content()
+        }
+    }
+
+    /**
+     * `hostHwnd = 0`: the panel renders through the process-wide headless ANGLE
+     * context, which is exactly the fallback the native import takes when the
+     * HWND lookup finds no EGL trio.
+     */
+    private fun publishTextureHost() {
+        val ctx = directContext ?: return
+        val outer = this
+        textureHostState.value =
+            object : TaoWindowsTextureHost {
+                override val hostHwnd: Long = 0L
+                override val directContext: DirectContext = ctx
+
+                override fun requestRedraw() = outer.scheduleRender()
+            }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -162,17 +219,24 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         val y = (yDp * scale).roundToInt()
         val w = (widthDp * scale).roundToInt().coerceAtLeast(1)
         val h = (heightDp * scale).roundToInt().coerceAtLeast(1)
-        PopupNativeBridgeWindows.nativeSetFrameInWindow(
-            panel = panel,
-            xPx = x,
-            yPx = y,
-            widthPx = w,
-            heightPx = h,
-            contentXPx = 0,
-            contentYPx = 0,
-            contentWidthPx = w,
-            contentHeightPx = h,
-        )
+        // A size change rebuilds the panel's DComp swapchain and its EGL
+        // pbuffer, and the native side unbinds the thread when the pbuffer it
+        // destroys is the current one. This arrives from the caller's layout,
+        // i.e. from inside the window scene's render pass — see
+        // [preservingAngleBinding].
+        preservingAngleBinding {
+            PopupNativeBridgeWindows.nativeSetFrameInWindow(
+                panel = panel,
+                xPx = x,
+                yPx = y,
+                widthPx = w,
+                heightPx = h,
+                contentXPx = 0,
+                contentYPx = 0,
+                contentWidthPx = w,
+                contentHeightPx = h,
+            )
+        }
         if (w != widthPx || h != heightPx) {
             widthPx = w
             heightPx = h
@@ -231,12 +295,31 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         TaoComposeSceneHostWindows.attachedHostCount.decrementAndGet()
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeWindows.nativeSetEventCallback(panel, null)
-        scene?.close()
-        scene = null
-        directContext?.close()
-        directContext = null
-        PopupNativeBridgeWindows.nativeRelease(panel)
-        panel = 0
+        // Teardown binds this panel's own surface for the Skia frees below, and
+        // it arrives from `DisposableEffect.onDispose` — i.e. from the caller's
+        // composition, inside the window scene's render pass. Restoring the
+        // binding we displace is what keeps the remainder of that frame
+        // targeting the window. See [preservingAngleBinding].
+        preservingAngleBinding {
+            // Drop the TextureView handle before the context it points at dies.
+            textureHostState.value = null
+            scene?.close()
+            scene = null
+            // An ownerless panel binds the immortal headless EGL context, not
+            // the caller's — so the Skia frees below need it made current
+            // explicitly, and they can't disturb any window host's GL state.
+            PopupNativeBridgeWindows.nativeMakeCurrent(panel)
+            // Belt for imports a leaked composition may still hold; scene.close()
+            // above released the leases of every live one.
+            directContext?.let(::releaseWindowsTextureImports)
+            directContext?.close()
+            directContext = null
+            // Destroys the panel's pbuffer, which the native side unbinds first
+            // when it is the current one — inside the wrapper, so the caller's
+            // binding is put back afterwards either way.
+            PopupNativeBridgeWindows.nativeRelease(panel)
+            panel = 0
+        }
     }
 
     // ── Rendering ─────────────────────────────────────────────────────────
@@ -282,18 +365,25 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         frameClock.sendFrame(frameNs)
         flushingDispatcher.drain()
 
-        if (!PopupNativeBridgeWindows.nativeMakeCurrent(panel)) return
-        // The process EGL context is shared with window hosts and popup
-        // layers; our surface switch invalidates Skia's GL state cache.
-        ctx.resetGLAll()
-        renderGlFrame(
-            widthPx = widthPx,
-            heightPx = heightPx,
-            directContext = ctx,
-            clearColorArgb = 0x00000000,
-            present = { PopupNativeBridgeWindows.nativeSwapBuffers(panel) },
-        ) { canvas, nanoTime ->
-            sc.render(canvas.asComposeCanvas(), nanoTime)
+        // Surface-neutral, like the bring-up: whatever was bound before this
+        // render task gets it back. Window hosts re-bind their own surface at
+        // frame entry anyway, but this render also runs while a window frame is
+        // merely paused on an event-loop turn.
+        preservingAngleBinding {
+            if (!PopupNativeBridgeWindows.nativeMakeCurrent(panel)) return@preservingAngleBinding
+            // Cheap insurance: the headless context this panel binds is the
+            // fallback trio every ownerless surface shares, so another one may
+            // have issued GL on it since our last frame.
+            ctx.resetGLAll()
+            renderGlFrame(
+                widthPx = widthPx,
+                heightPx = heightPx,
+                directContext = ctx,
+                clearColorArgb = 0x00000000,
+                present = { PopupNativeBridgeWindows.nativeSwapBuffers(panel) },
+            ) { canvas, nanoTime ->
+                sc.render(canvas.asComposeCanvas(), nanoTime)
+            }
         }
     }
 

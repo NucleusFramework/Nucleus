@@ -793,6 +793,25 @@ internal class TaoComposeSceneHost(
         }
     }
 
+    private val metalTextureHostCache = MetalTextureHostCache()
+
+    /**
+     * Window scene's handle for the `TextureView` composable: the Metal device
+     * this window renders with, its Skia context, and its render thread. Null
+     * until [attach] has created them — see [MetalTextureHostCache].
+     */
+    fun metalTextureHost(): TaoMetalTextureHost? {
+        val outer = this
+        return metalTextureHostCache.get(attachmentHandle, directContext) { device, ctx ->
+            object : TaoMetalTextureHost {
+                override val metalDevicePtr: Long = device
+                override val directContext: DirectContext = ctx
+
+                override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
+            }
+        }
+    }
+
     private fun updateWindowInfoSize() {
         windowInfo.containerSize = IntSize(widthPx, heightPx)
         // `containerDpSize` is what Compose surfaces to user code via
@@ -1367,6 +1386,8 @@ internal class TaoComposeSceneHost(
         textToolbar.hide()
         scene?.close()
         scene = null
+        // Drop the TextureView handle before the context it points at dies.
+        metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
         // replay), then shut the render thread down.
         val ctx = directContext

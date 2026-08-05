@@ -176,6 +176,21 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeVi
 	public final fun getLambda$1447510722$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 }
 
+public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer : java/lang/AutoCloseable {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion;
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/TextureViewSource;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun drawTestPattern (II)V
+	public final fun fill (I)V
+	public final fun getSource ()Ldev/nucleusframework/window/tao/TextureViewSource;
+}
+
+public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion {
+	public final fun create (IIZ)Ldev/nucleusframework/window/tao/D3D11TestTextureProducer;
+	public static synthetic fun create$default (Ldev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion;IIZILjava/lang/Object;)Ldev/nucleusframework/window/tao/D3D11TestTextureProducer;
+}
+
 public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
 	public static final fun DecoratedDialog (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
@@ -188,6 +203,24 @@ public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
 	public static final fun getLocalTaoWindow ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
+public final class dev/nucleusframework/window/tao/DmaBufTestTextureProducer : java/lang/AutoCloseable {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion;
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/TextureViewSource;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun drawTestPattern (II)V
+	public final fun drawTestPatternFenced (II)I
+	public final fun fill (I)V
+	public final fun getSource ()Ldev/nucleusframework/window/tao/TextureViewSource;
+}
+
+public final class dev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion {
+	public final fun create (III)Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer;
+	public static synthetic fun create$default (Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion;IIIILjava/lang/Object;)Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer;
+	public final fun createYuv (IILdev/nucleusframework/window/tao/NucleusYuvFormat;Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;)Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer;
+	public static synthetic fun createYuv$default (Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion;IILdev/nucleusframework/window/tao/NucleusYuvFormat;Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer;
+}
+
 public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
 	public static final field Auto Ldev/nucleusframework/window/tao/MacOSStyle;
 	public static final field Classic Ldev/nucleusframework/window/tao/MacOSStyle;
@@ -197,8 +230,52 @@ public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
 	public static fun values ()[Ldev/nucleusframework/window/tao/MacOSStyle;
 }
 
+public final class dev/nucleusframework/window/tao/MetalTestTextureProducer : java/lang/AutoCloseable {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/MetalTestTextureProducer$Companion;
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/TextureViewSource;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun close ()V
+	public final fun drawTestPattern (II)V
+	public final fun fill (I)V
+	public final fun getSource ()Ldev/nucleusframework/window/tao/TextureViewSource;
+}
+
+public final class dev/nucleusframework/window/tao/MetalTestTextureProducer$Companion {
+	public final fun create (II)Ldev/nucleusframework/window/tao/MetalTestTextureProducer;
+}
+
 public final class dev/nucleusframework/window/tao/NativeViewKt {
 	public static final fun NativeView-hGBTI10 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function1;FLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/tao/NucleusDmaBufPlane {
+	public static final field $stable I
+	public fun <init> (IIIJ)V
+	public synthetic fun <init> (IIIJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()J
+	public final fun copy (IIIJ)Ldev/nucleusframework/window/tao/NucleusDmaBufPlane;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/tao/NucleusDmaBufPlane;IIIJILjava/lang/Object;)Ldev/nucleusframework/window/tao/NucleusDmaBufPlane;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFd ()I
+	public final fun getModifier ()J
+	public final fun getOffset ()I
+	public final fun getStride ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/NucleusDrmFormat {
+	public static final field $stable I
+	public static final field ABGR8888 I
+	public static final field ARGB8888 I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/NucleusDrmFormat;
+	public static final field MODIFIER_INVALID J
+	public static final field MODIFIER_LINEAR J
+	public static final field XBGR8888 I
+	public static final field XRGB8888 I
 }
 
 public abstract interface class dev/nucleusframework/window/tao/NucleusPlatformView {
@@ -260,6 +337,24 @@ public final class dev/nucleusframework/window/tao/NucleusPlatformViewFactoryKt 
 	public static synthetic fun nucleusHwndPlatformView$default (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/NucleusPlatformView$HWnd;
 	public static final fun nucleusNsPlatformView (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;)Ldev/nucleusframework/window/tao/NucleusPlatformView$NsView;
 	public static synthetic fun nucleusNsPlatformView$default (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/NucleusPlatformView$NsView;
+}
+
+public final class dev/nucleusframework/window/tao/NucleusYuvColorSpace : java/lang/Enum {
+	public static final field BT601_FULL Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+	public static final field BT601_LIMITED Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+	public static final field BT709_FULL Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+	public static final field BT709_LIMITED Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+	public static fun values ()[Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;
+}
+
+public final class dev/nucleusframework/window/tao/NucleusYuvFormat : java/lang/Enum {
+	public static final field I420 Ldev/nucleusframework/window/tao/NucleusYuvFormat;
+	public static final field YV12 Ldev/nucleusframework/window/tao/NucleusYuvFormat;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/tao/NucleusYuvFormat;
+	public static fun values ()[Ldev/nucleusframework/window/tao/NucleusYuvFormat;
 }
 
 public final class dev/nucleusframework/window/tao/OverlayInteractionModifierKt {
@@ -638,6 +733,34 @@ public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TouchI
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$TrackpadGestureListener {
 	public abstract fun onGesture (IIIII)V
+}
+
+public final class dev/nucleusframework/window/tao/TextureViewController {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/TextureViewController$Companion;
+	public static final field NO_FENCE I
+	public fun <init> ()V
+	public final fun markFrameAvailable ()V
+	public final fun markFrameAvailable (I)V
+}
+
+public final class dev/nucleusframework/window/tao/TextureViewController$Companion {
+}
+
+public final class dev/nucleusframework/window/tao/TextureViewKt {
+	public static final fun TextureView-0ZWTemg (Ldev/nucleusframework/window/tao/TextureViewSource;Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TextureViewController;ILandroidx/compose/ui/layout/ContentScale;Landroidx/compose/ui/Alignment;Landroidx/compose/runtime/Composer;II)V
+	public static final fun nucleusD3D11SharedTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusDmaBufTextureSource (IIIIIIJ)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static synthetic fun nucleusDmaBufTextureSource$default (IIIIIIJILjava/lang/Object;)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusEglImageTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusIOSurfaceTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusMetalTextureSource (JII)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun nucleusYuvDmaBufTextureSource (IILdev/nucleusframework/window/tao/NucleusYuvFormat;Ljava/util/List;Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static synthetic fun nucleusYuvDmaBufTextureSource$default (IILdev/nucleusframework/window/tao/NucleusYuvFormat;Ljava/util/List;Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TextureViewSource;
+	public static final fun rememberTextureViewController (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/window/tao/TextureViewController;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/TextureViewSource {
 }
 
 public final class dev/nucleusframework/window/tao/render/MetalFrame {

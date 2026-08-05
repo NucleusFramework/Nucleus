@@ -4,7 +4,9 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
@@ -40,6 +42,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
+import dev.nucleusframework.window.tao.releaseWindowsTextureImports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -154,6 +157,19 @@ internal class TaoComposeSceneHostWindows(
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
+
+    /**
+     * Handle for `TextureView`s composed in this window's scene. Narrower than
+     * [popupHost] on purpose — see [TaoWindowsTextureHost].
+     *
+     * Published as **state**, like the Linux twin's `glTextureHostState`, for two
+     * reasons: the composition reads it, so clearing it in [detach] takes effect
+     * instead of leaving a live composition importing onto a context that is
+     * about to be destroyed; and its identity is stable, whereas a value freshly
+     * built on every read of the composition local would re-key the imports'
+     * `remember` on every recomposition of the window root.
+     */
+    val windowsTextureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
 
     private var scene: ComposeScene? = null
 
@@ -379,6 +395,7 @@ internal class TaoComposeSceneHostWindows(
                 ).apply { compositionLocalContext = pendingCompositionLocalContext }
             }
 
+        publishWindowsTextureHost()
         registerInboundDnD()
         registerTouchInput()
 
@@ -1133,6 +1150,34 @@ internal class TaoComposeSceneHostWindows(
             rt.close()
         }
 
+        // Post-record drain — pure CPU work; the host surface stays bound and
+        // its frame is already committed by the flushAndSubmit above.
+        //
+        // A continuation returning from a worker thread (the canonical
+        // `TextureView` producer: dispatched by the pre-render drain, back a
+        // millisecond later) would otherwise not be picked up by the NEXT
+        // frame's pre-render drain either: `markFrameAvailable` on the worker
+        // has already requested the redraw, so that frame's WM_PAINT can start
+        // before the continuation is even queued, and it then runs only AFTER
+        // `sendFrame`. Its next `withFrameNanos` misses the tick and waits a
+        // full extra frame — the producer animates at half the refresh rate.
+        //
+        // Draining here rather than after the present matters for jitter, not
+        // just throughput. Whatever the drain point, the continuation re-arms
+        // after this frame's tick, so its gap to the next producer frame is
+        // `one frame + round trip`: under half a frame it reads as a 1-frame
+        // gap, over it as 2. Draining after the blocking present leaves a round
+        // trip straddling that threshold, which alternates 1 and 2 frames — a
+        // higher average rate than the old cadence but visibly juddery.
+        // Recording is the expensive part of the frame, so draining right after
+        // it keeps the round trip a couple of milliseconds, well inside the
+        // threshold, and the cadence stays flat.
+        //
+        // Bounded by the queue snapshot, so a self-redispatching continuation
+        // cannot spin this thread — it just keeps requesting redraws, which
+        // `dispatch` already did before this drain existed.
+        flushingDispatcher.drain()
+
         // Drain overlay/popup renderers. Cross-surface sync:
         //   1. Host already flushed above (flushAndSubmit issues glFlush
         //      internally when committing the surface).
@@ -1152,6 +1197,11 @@ internal class TaoComposeSceneHostWindows(
         // window surface first (a popup renderer may have left its pbuffer
         // current) and eglSwapBuffers paces on the display refresh.
         NativeTaoGlBridge.nativePresent(attachmentHandle)
+
+        // Backstop for a continuation that landed after the post-record drain
+        // (a worker slower than the record). Costs it the jitter threshold
+        // above, but still beats waiting for the next frame's pre-render drain.
+        flushingDispatcher.drain()
     }
 
     fun onPointerMove(
@@ -1295,6 +1345,23 @@ internal class TaoComposeSceneHostWindows(
 
     /** Current scale factor (logical→physical multiplier). */
     fun density(): Float = scale
+
+    /**
+     * Publishes [windowsTextureHostState] for the scene's `TextureView`s.
+     * Called from [attach], once `hwnd` and `directContext` are both set.
+     */
+    private fun publishWindowsTextureHost() {
+        if (hwnd == 0L) return
+        val ctx = directContext ?: return
+        val outer = this
+        windowsTextureHostState.value =
+            object : TaoWindowsTextureHost {
+                override val hostHwnd: Long get() = outer.hwnd
+                override val directContext: DirectContext = ctx
+
+                override fun requestRedraw() = outer.window.requestRedraw()
+            }
+    }
 
     fun popupHost(): TaoPopupHostWindows? {
         if (hwnd == 0L) return null
@@ -1524,6 +1591,11 @@ internal class TaoComposeSceneHostWindows(
         scene?.close()
         scene = null
         if (directContext != null) {
+            // Belt for TextureView imports a leaked composition may still hold:
+            // scene.close() above released the leases of every live one. They
+            // must go before the context they were adopted into.
+            directContext?.let(::releaseWindowsTextureImports)
+            windowsTextureHostState.value = null
             directContext?.close()
             directContext = null
             attachedHostCount.decrementAndGet()

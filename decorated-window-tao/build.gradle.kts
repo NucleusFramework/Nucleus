@@ -89,6 +89,7 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     inputs.file(file("src/main/native/Cargo.toml"))
     inputs.file(file("src/main/native/windows/nucleus_tao_windows_deco.c"))
     inputs.file(file("src/main/native/windows/nucleus_tao_gl.c"))
+    inputs.file(file("src/main/native/windows/nucleus_tao_texture.c"))
     outputs.dir(outputDir)
     workingDir(file("src/main/native/windows"))
     commandLine("cmd", "/c", ".\\build.bat")
@@ -105,6 +106,10 @@ val buildNativeLinux by tasks.registering(Exec::class) {
     inputs.dir(file("src/main/native/src"))
     inputs.file(file("src/main/native/Cargo.toml"))
     inputs.file(file("src/main/native/linux/nucleus_tao_egl.c"))
+    inputs.file(file("src/main/native/linux/nucleus_tao_texture_linux.c"))
+    // Shared by both C translation units above: editing it alone must not leave
+    // the task UP-TO-DATE with a stale .so in the resources.
+    inputs.file(file("src/main/native/linux/nucleus_tao_egl_internal.h"))
     outputs.dir(outputDir)
     workingDir(file("src/main/native/linux"))
     commandLine("bash", "build.sh")

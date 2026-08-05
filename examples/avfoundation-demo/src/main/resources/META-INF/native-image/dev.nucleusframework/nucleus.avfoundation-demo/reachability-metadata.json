@@ -1,0 +1,13 @@
+{
+  "comment": [
+    "The sample's own JNI bridge. Without this native-image eliminates the class,",
+    "and the helper's JNI symbols then resolve to nothing at runtime — silently,",
+    "which is the pitfall the module checklist in CLAUDE.md warns about."
+  ],
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.sampleavf.NativeAvfVideoBridge",
+      "jniAccessible": true
+    }
+  ]
+}

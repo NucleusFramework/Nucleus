@@ -84,13 +84,19 @@ JNI_INCLUDE_LINUX="$JAVA_HOME/include/linux"
 CC="${CC:-cc}"
 
 # ── 3) EGL helper (libnucleus_tao_egl.so) ──────────────────────────────────
+# nucleus_tao_texture_linux.c (external GPU texture import for the TextureView
+# composable) is linked in here rather than into its own library: it needs the
+# EGL entry points and per-window attachment state nucleus_tao_egl.c owns, and
+# its JNI symbols resolve through the already-loaded nucleus_tao_egl — the same
+# arrangement as nucleus_tao_texture.c inside nucleus_tao_gl.dll on Windows.
 
 build_egl() {
     local OUT_DIR="$1"
     local OUT="$OUT_DIR/libnucleus_tao_egl.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_egl.c" -ldl -lm \
+        "$SCRIPT_DIR/nucleus_tao_egl.c" \
+        "$SCRIPT_DIR/nucleus_tao_texture_linux.c" -ldl -lm -lpthread \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }

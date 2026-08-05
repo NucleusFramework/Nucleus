@@ -477,6 +477,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                 LocalWindowClearColorLayers provides clearColorLayers,
                 LocalRequestedGlassBackground provides host.glassBackgroundState,
                 LocalTaoPopupHost provides host.popupHost(),
+                dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+                    provides host.metalTextureHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
             ) {
@@ -695,6 +697,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
+                // Read as state: a Wayland hide/show rebuilds the EGL + Skia
+                // context pair, and TextureView imports must follow it.
+                dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
+                    provides host.glTextureHostState.value,
                 dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
                     provides host.overlayController(),
                 // Override the default Skiko `URIManager` (calls
@@ -1099,6 +1105,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),
+                dev.nucleusframework.window.tao.scene.LocalTaoWindowsTextureHost
+                    provides host.windowsTextureHostState.value,
             ) {
                 // Light/dark for the whole chrome. One source of truth (the
                 // clear colour + the WindowAppearance override, both snapshot

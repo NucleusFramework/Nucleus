@@ -27,6 +27,8 @@ import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
@@ -151,6 +153,19 @@ internal class TaoPopupSceneLayer(
      */
     @Volatile
     private var disposed: Boolean = false
+
+    /**
+     * Handle for `TextureView`s composed inside this popup. The panel renders
+     * through its own [directContext], so it must not inherit the window
+     * scene's — a GPU image belongs to exactly one Skia context.
+     */
+    private var metalTextureHost: TaoMetalTextureHost? =
+        object : TaoMetalTextureHost {
+            override val metalDevicePtr: Long = NativeMetalBridge.nativeDevicePtr(attachmentHandle)
+            override val directContext: DirectContext = this@TaoPopupSceneLayer.directContext
+
+            override fun <T> runOnRenderThread(block: () -> T): T = host.runOnRenderThread(block)
+        }
 
     /**
      * Inner scene at screen work-area size — see "measurement chicken-
@@ -375,6 +390,9 @@ internal class TaoPopupSceneLayer(
         // thread is idle, so this blocking hop returns immediately and can't race
         // an in-flight replay. nativeDetach / nativeRelease stay on the main
         // thread for the same reason — no replay is using this attachment now.
+        // Drop the TextureView handle before the context it points at dies:
+        // a late composition must not import onto a closed context.
+        metalTextureHost = null
         host.runOnRenderThread { directContext.close() }
         // Zero out before freeing the C struct so any pending recorder still in
         // the host's snapshot iteration bails instead of dereferencing freed
@@ -394,10 +412,17 @@ internal class TaoPopupSceneLayer(
             // by the time we compose, `_compositionLocalContext` is the
             // freshest.
             val locals = _compositionLocalContext
+            // Our texture host goes *inside* the replayed locals: those carry
+            // the window scene's host, which would otherwise shadow ours.
+            val body: @Composable () -> Unit = {
+                CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost) {
+                    content()
+                }
+            }
             if (locals != null) {
-                CompositionLocalProvider(locals) { content() }
+                CompositionLocalProvider(locals) { body() }
             } else {
-                content()
+                body()
             }
         }
         host.requestRedraw()

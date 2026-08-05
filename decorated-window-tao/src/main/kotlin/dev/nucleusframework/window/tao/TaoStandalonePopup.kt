@@ -121,7 +121,12 @@ public fun TaoStandalonePopup(
         host.setContent {
             CompositionLocalProvider(outerLocals.value) {
                 CompositionLocalProvider(LocalDensity provides sceneDensity) {
-                    currentContent.value()
+                    // Innermost, so the panel's own plumbing (its TextureView
+                    // texture host) wins over the same locals replayed from the
+                    // caller's window scene — see [StandalonePopupHost.ProvidePanelLocals].
+                    host.ProvidePanelLocals {
+                        currentContent.value()
+                    }
                 }
             }
         }

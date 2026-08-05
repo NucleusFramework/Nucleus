@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -24,6 +25,9 @@ import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
+import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import dev.nucleusframework.window.tao.scene.replayPictureToFrame
 import org.jetbrains.skia.DirectContext
@@ -156,6 +160,32 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         scheduleRender()
     }
 
+    /**
+     * This panel owns its Skia context and render thread, so `TextureView`s
+     * inside it import onto that context rather than a window scene's.
+     */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost()) {
+            content()
+        }
+    }
+
+    /** This panel's handle for `TextureView`s composed inside it — see [MetalTextureHostCache]. */
+    private val metalTextureHostCache = MetalTextureHostCache()
+
+    private fun metalTextureHost(): TaoMetalTextureHost? {
+        val outer = this
+        return metalTextureHostCache.get(attachmentHandle, directContext) { device, ctx ->
+            object : TaoMetalTextureHost {
+                override val metalDevicePtr: Long = device
+                override val directContext: DirectContext = ctx
+
+                override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
+            }
+        }
+    }
+
     /** Logical (dp) screen position and size of the panel. */
     override fun setFrame(
         xDp: Float,
@@ -244,6 +274,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         PopupNativeBridge.nativeSetEventCallback(panel, null)
         scene?.close()
         scene = null
+        metalTextureHostCache.invalidate()
         val ctx = directContext
         directContext = null
         if (ctx != null) runCatching { runOnRenderThread { ctx.close() } }
