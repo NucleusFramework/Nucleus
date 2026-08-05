@@ -2,7 +2,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -16,7 +15,6 @@ import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.ContentChangeMode
-import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
@@ -59,13 +57,9 @@ internal fun MacTextureView(
         return
     }
 
-    // RememberObserver lease, like the Windows path: the registry ref is
-    // released on onForgotten AND onAbandoned, so a composition that computes
-    // this remember block but is never applied cannot leak the native import
-    // (a DisposableEffect would never run in that case).
     val imported =
         remember(source, host) {
-            MetalTextureImportLease(host, source)
+            TextureImportLease(metalTextureImports, host, source)
         }.imported
     if (imported == null) {
         Box(modifier)
@@ -89,34 +83,6 @@ internal fun MacTextureView(
 }
 
 /**
- * Composition-lifetime holder of one registry reference — the macOS twin of
- * the Windows `TextureImportLease`. Releasing on both `onForgotten` and
- * `onAbandoned` keeps an abandoned composition from leaking the import.
- */
-private class MetalTextureImportLease(
-    host: TaoMetalTextureHost,
-    source: TextureViewSource,
-) : RememberObserver {
-    val imported: MacImportedTexture? = MetalTextureImportRegistry.acquire(host, source)
-
-    private fun release() {
-        imported?.let(MetalTextureImportRegistry::release)
-    }
-
-    override fun onRemembered() {
-        // The reference was already taken in the constructor.
-    }
-
-    override fun onForgotten() {
-        release()
-    }
-
-    override fun onAbandoned() {
-        release()
-    }
-}
-
-/**
  * One imported external texture: the native `id<MTLTexture>` mapping plus the
  * Skia objects wrapping it, and the current frame's snapshot. Everything Skia
  * touches lives on [host]'s render thread; the fields are only read/written
@@ -133,22 +99,8 @@ private class MacImportedTexture(
 ) {
     private var image: Image? = null
 
-    /**
-     * Newest stamp already pulled, per controller feeding this import (keys
-     * compare by identity — [TextureViewController] has no `equals`). One import
-     * is shared by every view on the same source, but each view reads *its own*
-     * controller's stamp, so a single "last stamp" slot would either re-snapshot
-     * once per view or let views with different controllers invalidate each
-     * other on every draw pass. Main thread only; at most one entry per
-     * controller (`null` = views without one, which need a single pull).
-     *
-     * Weak keys: the import outlives any single view (it is refcounted across
-     * all of them), so a strongly-keyed map would pin the controller of every
-     * view that ever drew through this import. A screen that creates one
-     * controller per item over a shared source would grow it without bound.
-     * Losing an entry early only costs one redundant snapshot.
-     */
-    private val consumed = java.util.WeakHashMap<TextureViewController?, Long>()
+    /** One snapshot per producer frame per controller — see [FrameStampGate]. */
+    private val consumed = FrameStampGate()
 
     /**
      * Current GPU snapshot of the producer surface, re-pulled once per signalled
@@ -163,11 +115,11 @@ private class MacImportedTexture(
         stamp: Long,
     ): Image? {
         val current = image
-        if (current != null && consumed[controller] == stamp) return current
+        if (current != null && !consumed.isPending(controller, stamp)) return current
         // Recorded even when the snapshot below fails: a broken GPU state must
         // not turn every subsequent draw pass into a blocking render-thread hop.
         // The next producer frame re-arms the retry.
-        consumed[controller] = stamp
+        consumed.markConsumed(controller, stamp)
         val fresh =
             host.runOnRenderThread {
                 runCatching {
@@ -206,53 +158,17 @@ private class MacImportedTexture(
 }
 
 /**
- * Shares GPU imports between [TextureView]s: N composables showing the same
- * source in the same surface use one `MTLTexture` mapping, one Skia surface and
- * one snapshot per frame — the moral equivalent of Flutter's texture registry.
- * Keyed by the Skia context too, since each macOS surface (window, popup panel,
- * `NativeView` overlay) owns its own. Main thread only.
+ * The macOS import ledger. Refcounted and keyed by Skia context + source; see
+ * [TextureImportRegistry] for why, and for the scaffolding the three backends
+ * share. Nothing calls `closeAllFor` here: a macOS surface closes its
+ * `DirectContext` only after the composition that leased through it is gone.
  */
-private object MetalTextureImportRegistry {
-    private data class Key(
-        val context: DirectContext,
-        val source: TextureViewSource,
+private val metalTextureImports =
+    TextureImportRegistry<TaoMetalTextureHost, MacImportedTexture>(
+        contextOf = { it.directContext },
+        importTexture = ::importTexture,
+        closeImport = { it.close() },
     )
-
-    private class Entry(
-        val imported: MacImportedTexture,
-    ) {
-        var refCount: Int = 1
-    }
-
-    private val entries = HashMap<Key, Entry>()
-    private val keys = HashMap<MacImportedTexture, Key>()
-
-    fun acquire(
-        host: TaoMetalTextureHost,
-        source: TextureViewSource,
-    ): MacImportedTexture? {
-        val key = Key(host.directContext, source)
-        entries[key]?.let { entry ->
-            entry.refCount++
-            return entry.imported
-        }
-        val imported = importTexture(host, source) ?: return null
-        entries[key] = Entry(imported)
-        keys[imported] = key
-        return imported
-    }
-
-    fun release(imported: MacImportedTexture) {
-        val key = keys[imported] ?: return
-        val entry = entries[key] ?: return
-        entry.refCount--
-        if (entry.refCount <= 0) {
-            entries.remove(key)
-            keys.remove(imported)
-            imported.close()
-        }
-    }
-}
 
 private fun importTexture(
     host: TaoMetalTextureHost,
