@@ -39,7 +39,7 @@ Deep dives (why a mechanism is built the way it is, measurements, E2E) live in [
 - `service-management-macos` - macOS `SMAppService` — login items, launch agents, daemons
 - `spellcheck` - Native spell checking for `nucleusApplication` text fields (Linux hunspell via JNI, macOS `NSSpellChecker`, Windows `ISpellChecker`); no-op when the library or dictionary is missing
 - `native-ssl` / `native-http` / `native-http-okhttp` / `native-http-ktor` - OS trust store integration
-- `native-proxy` - OS proxy configuration via JNI (Windows: WinHTTP/WPAD/PAC + Internet Settings registry watching; no-op on macOS/Linux)
+- `native-proxy` - OS proxy configuration via JNI (Windows: WinHTTP/WPAD/PAC; Linux: GSettings/KDE/env; no-op on macOS)
 - `linux-hidpi` - Native HiDPI scale detection on Linux
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
