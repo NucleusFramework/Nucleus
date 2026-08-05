@@ -2,7 +2,6 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
-import dev.nucleusframework.window.tao.ffi.NativeTaoTextureBridge
 import org.jetbrains.skia.DirectContext
 
 /**
@@ -81,18 +80,11 @@ internal interface TaoWindowsTextureHost {
  * thread — a window host's frame, an overlay renderer — must not inherit it.
  * Every such consumer binds its own surface at entry, so unbinding costs
  * nothing; leaving a 1x1 panel pbuffer current costs a corrupted frame.
+ *
+ * See [preservingBinding] for the save/restore contract, and
+ * [preservingEglBinding] for the Linux counterpart.
  */
-internal fun <T> preservingAngleBinding(block: () -> T): T {
-    if (!NativeTaoTextureBridge.isLoaded) return block()
-    // Refused when a snapshot is already outstanding on this thread; the outer
-    // scope then restores the binding when it unwinds.
-    if (!NativeTaoTextureBridge.nativeSaveCurrentBinding()) return block()
-    return try {
-        block()
-    } finally {
-        NativeTaoTextureBridge.nativeRestoreBinding()
-    }
-}
+internal fun <T> preservingAngleBinding(block: () -> T): T = preservingBinding(WindowsEglBindingSnapshot, block)
 
 internal val LocalTaoWindowsTextureHost: ProvidableCompositionLocal<TaoWindowsTextureHost?> =
     compositionLocalOf { null }
