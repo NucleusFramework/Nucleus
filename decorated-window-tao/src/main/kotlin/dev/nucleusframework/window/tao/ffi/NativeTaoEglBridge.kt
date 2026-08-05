@@ -121,6 +121,28 @@ internal object NativeTaoEglBridge {
         yLogical: Int,
     )
 
+    /**
+     * Wayland only: declares which part of the content surface is fully opaque,
+     * in surface (logical) units, with the four [cornerRadius]-sized corners
+     * excluded (they are painted transparent so the drop shadow shows through).
+     *
+     * Without this the compositor must treat our full-window surface as
+     * translucent and cannot cull the drop-shadow subsurface or GTK's toplevel
+     * underneath it — it alpha-blends all three every frame, which shows up as
+     * slower frame callbacks and therefore a slower resize. See
+     * `docs/linux-wayland-resize-latency.md`.
+     *
+     * Pass `logicalW <= 0` when the window really is translucent, which clears
+     * the region. Queued state — it lands with the next buffer commit.
+     */
+    @JvmStatic
+    external fun nativeSetOpaqueRegion(
+        handle: Long,
+        logicalW: Int,
+        logicalH: Int,
+        cornerRadius: Int,
+    )
+
     /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
     @JvmStatic
     external fun nativePresent(handle: Long)
