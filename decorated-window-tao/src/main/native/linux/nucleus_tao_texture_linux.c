@@ -126,6 +126,10 @@ typedef float         GLfloat;
 #define EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT   0x3443
 #define EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT   0x3444
 #define EGL_IMAGE_PRESERVED_KHR              0x30D2
+#define EGL_CONTEXT_MAJOR_VERSION            0x3098
+#define EGL_CONTEXT_MINOR_VERSION            0x30FB
+#define EGL_CONTEXT_OPENGL_PROFILE_MASK      0x30FD
+#define EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT 0x00000002
 #define EGL_SYNC_NATIVE_FENCE_ANDROID        0x3144
 #define EGL_SYNC_NATIVE_FENCE_FD_ANDROID     0x3145
 #define EGL_NO_NATIVE_FENCE_FD_ANDROID       (-1)
@@ -925,7 +929,17 @@ static int create_gbm_egl_context(
         if (p_eglTerminate) p_eglTerminate(display);
         return 0;
     }
-    EGLContext context = p_eglCreateContext(display, config, EGL_NO_CONTEXT, NULL);
+    /* The very attributes the window host asks for (nucleus_tao_egl.c): a 3.x
+     * compatibility profile. Left to the default, EGL hands out a GL 1.0 context —
+     * enough for the producer's clears, but a poor stand-in for a window when it is
+     * the consumer side that is being exercised. */
+    const EGLint ctx_attrs[] = {
+        EGL_CONTEXT_MAJOR_VERSION, 3,
+        EGL_CONTEXT_MINOR_VERSION, 0,
+        EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+        EGL_NONE
+    };
+    EGLContext context = p_eglCreateContext(display, config, EGL_NO_CONTEXT, ctx_attrs);
     if (context == EGL_NO_CONTEXT) {
         DBG("eglCreateContext(GBM) failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
         if (p_eglTerminate) p_eglTerminate(display);
