@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -27,7 +28,8 @@ import kotlin.math.roundToInt
  * Obtain one from a platform-specific factory:
  * [nucleusD3D11SharedTextureSource] (Windows),
  * [nucleusIOSurfaceTextureSource] / [nucleusMetalTextureSource] (macOS),
- * [nucleusDmaBufTextureSource] / [nucleusEglImageTextureSource] (Linux).
+ * [nucleusDmaBufTextureSource] / [nucleusYuvDmaBufTextureSource] /
+ * [nucleusEglImageTextureSource] (Linux).
  */
 public sealed interface TextureViewSource
 
@@ -234,6 +236,120 @@ internal data class EglImageTextureSource(
 ) : TextureViewSource
 
 /**
+ * One plane of a DMA-BUF, for [nucleusYuvDmaBufTextureSource]: [fd] with
+ * [stride] bytes per row, the plane's first byte at [offset], laid out according
+ * to [modifier] (see [nucleusDmaBufTextureSource] for what a modifier is).
+ *
+ * Planes may share a single [fd] — what a decoder allocating one buffer hands
+ * out, the offsets separating the planes — or carry one descriptor each; both are
+ * imported the same way. [fd] stays owned by the caller.
+ */
+public data class NucleusDmaBufPlane(
+    val fd: Int,
+    val stride: Int,
+    val offset: Int = 0,
+    val modifier: Long = NucleusDrmFormat.MODIFIER_INVALID,
+)
+
+/**
+ * 8-bit 4:2:0 planar layouts [nucleusYuvDmaBufTextureSource] accepts: the
+ * **three-plane** ones, whose luma and two chroma planes are each a plain
+ * single-channel image the GPU can sample directly. [planeCount] is how many
+ * [NucleusDmaBufPlane]s the source needs — three, for now.
+ *
+ * The two-plane layouts (`NV12` and `NV21`, whose Cb and Cr are interleaved in one
+ * plane) are **not supported yet**, which is a limitation of the Skia build
+ * Compose ships rather than of the import: it maps no colour type to a GPU
+ * two-channel texture, so the chroma plane cannot be sampled as one. If your
+ * producer hands out `NV12`, ask it for a three-plane format — VA-API, V4L2 and
+ * GBM all allocate `I420`/`YV12` — or de-interleave the chroma yourself.
+ */
+public enum class NucleusYuvFormat(
+    internal val planeCount: Int,
+) {
+    /** `DRM_FORMAT_YUV420` (`I420`) — Y, then a Cb and a Cr plane at half resolution. */
+    I420(PLANAR_420_PLANES),
+
+    /** `DRM_FORMAT_YVU420` (`YV12`) — as [I420], with the two chroma planes swapped. */
+    YV12(PLANAR_420_PLANES),
+}
+
+/** Luma, Cb and Cr — one plane each, which is what a three-plane layout means. */
+private const val PLANAR_420_PLANES = 3
+
+/**
+ * Matrix and quantisation range the consumer converts Y'CbCr with. This is
+ * metadata the producer owns — a decoder gets it from the bitstream (H.264/HEVC
+ * VUI, a `V4L2_COLORSPACE_*`, a `VAProcColorStandardType`) — and getting it wrong
+ * shows up as washed-out or oversaturated colour, never as a failure.
+ *
+ * `LIMITED` (studio swing, Y' in 16..235) is what video pipelines produce;
+ * `FULL` (0..255) is what still-image and screen-capture pipelines produce.
+ * [BT709_LIMITED] is the HD default and the default here.
+ */
+public enum class NucleusYuvColorSpace {
+    /** SDTV / JPEG primaries, studio swing. */
+    BT601_LIMITED,
+
+    /** SDTV / JPEG primaries, full swing — "JFIF" YCbCr. */
+    BT601_FULL,
+
+    /** HD primaries, studio swing. */
+    BT709_LIMITED,
+
+    /** HD primaries, full swing. */
+    BT709_FULL,
+}
+
+/**
+ * Linux source: a **planar YUV** DMA-BUF — a hardware video decoder's native
+ * output (VA-API, V4L2 stateful/stateless, NVDEC through EGL) — composited with
+ * no CPU copy and no colour conversion pass of its own.
+ *
+ * Each plane of [planes] is imported as an independent single-channel `EGLImage`
+ * on the window's `EGLDisplay`, exactly like [nucleusDmaBufTextureSource] does for
+ * a packed RGB buffer, and the three are combined by one shader while the scene is
+ * drawn: the conversion happens inside the draw that samples them, so there is
+ * still no copy, no intermediate RGB surface and no per-frame work beyond the draw
+ * itself. Importing the buffer *whole* and letting the driver convert would need
+ * `GL_TEXTURE_EXTERNAL_OES`, which desktop GL does not have.
+ *
+ * [widthPx] × [heightPx] is the **luma** size and must be even; chroma planes are
+ * half that in both directions. Plane order follows [format], and their count
+ * must match [NucleusYuvFormat.planeCount] — the one thing checked eagerly, since
+ * it can only be a programming error. Anything the driver refuses (a modifier it
+ * cannot read, a plane stride below the row size) fails the import instead, and
+ * [TextureView] renders an empty `Box`.
+ *
+ * Same fd ownership and synchronization contract as
+ * [nucleusDmaBufTextureSource] — including the option of handing over an acquire
+ * fence rather than finishing the writes, see
+ * [TextureViewController.markFrameAvailable].
+ */
+public fun nucleusYuvDmaBufTextureSource(
+    widthPx: Int,
+    heightPx: Int,
+    format: NucleusYuvFormat,
+    planes: List<NucleusDmaBufPlane>,
+    colorSpace: NucleusYuvColorSpace = NucleusYuvColorSpace.BT709_LIMITED,
+): TextureViewSource {
+    require(planes.size == format.planeCount) {
+        "$format needs ${format.planeCount} DMA-BUF planes, got ${planes.size}"
+    }
+    // Copied: the source is a registry key, so it must not change under the
+    // import once a caller keeps mutating the list it passed.
+    return YuvDmaBufTextureSource(widthPx, heightPx, format, planes.toList(), colorSpace)
+}
+
+internal data class YuvDmaBufTextureSource(
+    val widthPx: Int,
+    val heightPx: Int,
+    val format: NucleusYuvFormat,
+    val planes: List<NucleusDmaBufPlane>,
+    val colorSpace: NucleusYuvColorSpace,
+) : TextureViewSource
+
+/**
  * Frame-availability signal for [TextureView] — the counterpart of
  * Flutter's `markTextureFrameAvailable`. The producer calls
  * [markFrameAvailable] after publishing a frame; only the **draw pass**
@@ -247,19 +363,92 @@ public class TextureViewController {
     // so a boxed Long state would allocate on the hottest path of the feature.
     internal val frameStamp = mutableLongStateOf(0L)
 
+    /** Acquire fence of the newest frame, or [NO_FENCE]. Guarded by `this`. */
+    private var acquireFence = NO_FENCE
+
+    /**
+     * Whether a fence is worth looking for at all. Read once per draw pass by
+     * every attached view, so it is a volatile flag rather than the lock: a
+     * producer on the default contract must keep costing the draw nothing.
+     */
+    @Volatile
+    internal var hasAcquireFence: Boolean = false
+        private set
+
     /** Signals that the producer published a new frame. Any thread. */
-    public fun markFrameAvailable() {
+    public fun markFrameAvailable(): Unit = signalFrame(NO_FENCE)
+
+    /**
+     * Signals a new frame together with the **acquire fence** the compositor must
+     * wait for before sampling it: a `sync_file` descriptor, as
+     * `eglDupNativeFenceFDANDROID`, `VK_KHR_external_fence_fd` or a V4L2 / VA-API
+     * out-fence produce. The consumer's GPU waits on it, so the producer does not
+     * have to finish its writes on the CPU before signalling — the alternative to
+     * the `glFinish` the plain [markFrameAvailable] contract asks for.
+     *
+     * **Linux DMA-BUF sources only**, and only on a driver with
+     * `EGL_ANDROID_native_fence_sync` (Mesa and NVIDIA both ship it). There, this
+     * takes ownership of [acquireFenceFd]: it is closed when the next frame is
+     * signalled or when [rememberTextureViewController]'s composition leaves, and
+     * every surface compositing the frame waits on a dup of it. Everywhere else
+     * the descriptor is ignored and stays the caller's — passing a fence to a
+     * Windows or macOS source is a no-op, not a leak.
+     *
+     * Pass [NO_FENCE] to signal a frame with no fence. Any thread.
+     */
+    public fun markFrameAvailable(acquireFenceFd: Int): Unit = signalFrame(acquireFenceFd)
+
+    /**
+     * Runs [block] with the newest frame's acquire fence, or returns null when
+     * there is none. Held under the lock, so the descriptor cannot be closed by a
+     * concurrent [markFrameAvailable] while the caller waits on it.
+     */
+    internal fun <T : Any> withAcquireFence(block: (Int) -> T): T? =
+        synchronized(this) {
+            if (acquireFence == NO_FENCE) null else block(acquireFence)
+        }
+
+    /** Closes the fence still held, if any — the composition is going away. */
+    internal fun releaseAcquireFence() {
+        synchronized(this) {
+            if (acquireFence != NO_FENCE) closeAcquireFenceFd(acquireFence)
+            acquireFence = NO_FENCE
+            hasAcquireFence = false
+        }
+    }
+
+    private fun signalFrame(fenceFd: Int) {
         // Synchronized so concurrent producers still yield distinct,
         // monotonic stamps (a lost increment could suppress a redraw).
         synchronized(this) {
+            // The previous frame's fence is obsolete: this frame supersedes it,
+            // and whoever was going to wait on it now has a newer one (or none,
+            // which means the producer finished its writes itself).
+            if (acquireFence != NO_FENCE) closeAcquireFenceFd(acquireFence)
+            acquireFence = if (fenceFd != NO_FENCE && canOwnAcquireFence()) fenceFd else NO_FENCE
+            hasAcquireFence = acquireFence != NO_FENCE
             frameStamp.longValue += 1
         }
     }
+
+    public companion object {
+        /** "No acquire fence" — the value [markFrameAvailable] treats as absent. */
+        public const val NO_FENCE: Int = -1
+    }
 }
 
-/** Remembers a [TextureViewController] for the current composition. */
+/**
+ * Remembers a [TextureViewController] for the current composition, releasing the
+ * acquire fence it may still hold when that composition goes away.
+ */
 @Composable
-public fun rememberTextureViewController(): TextureViewController = remember { TextureViewController() }
+public fun rememberTextureViewController(): TextureViewController {
+    val controller = remember { TextureViewController() }
+    DisposableEffect(controller) {
+        onDispose { controller.releaseAcquireFence() }
+    }
+    return controller
+}
 
 /**
  * Composites an externally produced GPU texture inside the Compose
@@ -286,7 +475,7 @@ public fun rememberTextureViewController(): TextureViewController = remember { T
  *
  * @param source producer texture handle, see [nucleusD3D11SharedTextureSource]
  *   (Windows), [nucleusIOSurfaceTextureSource] (macOS) and
- *   [nucleusDmaBufTextureSource] (Linux).
+ *   [nucleusDmaBufTextureSource] / [nucleusYuvDmaBufTextureSource] (Linux).
  * @param controller frame-availability signal; omit for static content.
  * @param filterQuality sampling filter, like `Image`'s parameter
  *   ([FilterQuality.None] = nearest, [FilterQuality.High] = cubic).
@@ -308,7 +497,7 @@ public fun TextureView(
             WindowsTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
         is IOSurfaceTextureSource, is MetalTextureSource ->
             MacTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
-        is DmaBufTextureSource, is EglImageTextureSource ->
+        is DmaBufTextureSource, is EglImageTextureSource, is YuvDmaBufTextureSource ->
             LinuxTextureView(source, modifier, controller, filterQuality, contentScale, alignment)
         null -> Box(modifier)
     }
@@ -335,6 +524,25 @@ internal fun DrawScope.drawExternalTexture(
     alignment: Alignment,
     sampling: SamplingMode,
 ) {
+    val dstRect = externalTextureDstRect(srcRect, contentScale, alignment)
+    clipRect {
+        drawIntoCanvas { canvas ->
+            canvas.skiaCanvas.drawImageRect(image, srcRect, dstRect, sampling, null, true)
+        }
+    }
+}
+
+/**
+ * Where a texture of [srcRect]'s size lands inside the composable's bounds under
+ * [contentScale] and [alignment] — the geometry half of [drawExternalTexture],
+ * split out because the Linux planar path draws a shader over that rectangle
+ * instead of an image into it.
+ */
+internal fun DrawScope.externalTextureDstRect(
+    srcRect: Rect,
+    contentScale: ContentScale,
+    alignment: Alignment,
+): Rect {
     val srcSize = Size(srcRect.width, srcRect.height)
     val scaleFactor = contentScale.computeScaleFactor(srcSize, size)
     val scaledW = srcSize.width * scaleFactor.scaleX
@@ -345,16 +553,5 @@ internal fun DrawScope.drawExternalTexture(
             IntSize(size.width.roundToInt(), size.height.roundToInt()),
             layoutDirection,
         )
-    clipRect {
-        drawIntoCanvas { canvas ->
-            canvas.skiaCanvas.drawImageRect(
-                image,
-                srcRect,
-                Rect.makeXYWH(offset.x.toFloat(), offset.y.toFloat(), scaledW, scaledH),
-                sampling,
-                null,
-                true,
-            )
-        }
-    }
+    return Rect.makeXYWH(offset.x.toFloat(), offset.y.toFloat(), scaledW, scaledH)
 }
