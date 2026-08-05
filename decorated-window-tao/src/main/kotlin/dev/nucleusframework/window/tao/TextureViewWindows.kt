@@ -131,6 +131,7 @@ private class TextureImportLease(
 private class ImportedExternalTexture(
     val handle: Long,
     val image: Image,
+    private val host: TaoWindowsTextureHost,
 ) {
     /** Keyed-mutex staging mode — tear-free copies via [NativeTaoTextureBridge.nativeUpdateFrame]. */
     val isSynchronized: Boolean = NativeTaoTextureBridge.nativeIsSynchronized(handle)
@@ -165,6 +166,10 @@ private class ImportedExternalTexture(
     fun close() {
         image.close()
         NativeTaoTextureBridge.nativeDestroy(handle, deleteTexture = false)
+        // The destroy released the pbuffer binding on this surface's EGL
+        // context; teardown runs inside a host frame too, so resync Skia's
+        // state cache before that frame flushes.
+        host.markGlStateDirtied()
     }
 }
 
@@ -275,7 +280,9 @@ private fun importTexture(
     if (image == null) {
         // Skia never adopted the texture — the native side must delete it.
         NativeTaoTextureBridge.nativeDestroy(handle, deleteTexture = true)
+        host.markGlStateDirtied()
         return null
     }
-    return ImportedExternalTexture(handle, image)
+    host.markGlStateDirtied()
+    return ImportedExternalTexture(handle, image, host)
 }

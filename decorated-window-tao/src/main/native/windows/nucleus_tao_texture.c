@@ -98,6 +98,8 @@ static PFNEGLRELEASETEXIMAGEPROC               pEglReleaseTexImage              
 static PFNEGLMAKECURRENTPROC                   pEglMakeCurrent2                  = NULL;
 static PFNEGLGETCURRENTSURFACEPROC             pEglGetCurrentSurface2            = NULL;
 static PFNEGLDESTROYSURFACEPROC                pEglDestroySurface2               = NULL;
+static PFNEGLGETCURRENTDISPLAYPROC             pEglGetCurrentDisplay2            = NULL;
+static PFNEGLGETCURRENTCONTEXTPROC             pEglGetCurrentContext2            = NULL;
 static PFN_glGenTextures    pglGenTextures    = NULL;
 static PFN_glDeleteTextures pglDeleteTextures = NULL;
 static PFN_glBindTexture    pglBindTexture    = NULL;
@@ -119,6 +121,8 @@ static void resolveTexEntryPoints(void) {
     pEglMakeCurrent2       = (PFNEGLMAKECURRENTPROC)       nucleus_tao_host_egl_proc("eglMakeCurrent");
     pEglGetCurrentSurface2 = (PFNEGLGETCURRENTSURFACEPROC) nucleus_tao_host_egl_proc("eglGetCurrentSurface");
     pEglDestroySurface2    = (PFNEGLDESTROYSURFACEPROC)    nucleus_tao_host_egl_proc("eglDestroySurface");
+    pEglGetCurrentDisplay2 = (PFNEGLGETCURRENTDISPLAYPROC) nucleus_tao_host_egl_proc("eglGetCurrentDisplay");
+    pEglGetCurrentContext2 = (PFNEGLGETCURRENTCONTEXTPROC) nucleus_tao_host_egl_proc("eglGetCurrentContext");
     /* ANGLE's eglGetProcAddress also returns core ES entry points
      * (EGL_KHR_get_all_proc_addresses). */
     pglGenTextures    = (PFN_glGenTextures)    nucleus_tao_host_egl_proc("glGenTextures");
@@ -146,6 +150,97 @@ static void restoreCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
     } else {
         pEglMakeCurrent2(dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     }
+}
+
+/* ── Binding save / restore ──────────────────────────────────────────────
+ *
+ * The Kotlin side binds a surface's own EGL surface on paths that run outside
+ * that surface's render pass — a standalone tray panel's bring-up, render and
+ * teardown — and those paths can be *inside another* surface's render pass: a
+ * `TaoStandalonePopup` composed into a live window builds its host from
+ * `remember {}`, i.e. from inside the window scene's `ComposeScene.render()`.
+ * Leaving the panel's 1x1 surface current there sends the rest of that frame,
+ * and its `flushAndSubmit`, into the panel instead of the window.
+ *
+ * The displaced binding is therefore snapshotted here and restored by
+ * [nativeRestoreBinding] — the same contract as the Linux bridge's, and the
+ * creation-side counterpart of the surface restore the import path already does.
+ *
+ * Single slot, not thread-local: every entry point in this file is documented
+ * event-loop-thread only, and TLS under /NODEFAULTLIB would need the CRT's
+ * `_tls_used`. One level deep is all the callers need; a nested save would
+ * overwrite the outer one, so [nativeSaveCurrentBinding] refuses to nest and the
+ * caller then runs without rebinding (its enclosing scope restores instead). */
+
+typedef struct {
+    EGLDisplay dpy;
+    EGLContext ctx;
+    EGLSurface draw;
+    EGLSurface read;
+    BOOL       saved;
+} NucleusDisplacedBinding;
+
+static NucleusDisplacedBinding sDisplaced;
+
+static BOOL bindingProcsAvailable(void) {
+    resolveTexEntryPoints();
+    return pEglMakeCurrent2 && pEglGetCurrentSurface2 &&
+           pEglGetCurrentDisplay2 && pEglGetCurrentContext2;
+}
+
+/**
+ * Snapshots the EGL binding current on this thread so [nativeRestoreBinding]
+ * can put it back. Returns JNI_FALSE when a snapshot is already outstanding
+ * (nesting), in which case the caller must not rebind.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeSaveCurrentBinding(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    if (!bindingProcsAvailable()) return JNI_FALSE;
+    if (sDisplaced.saved) return JNI_FALSE;
+    sDisplaced.dpy  = pEglGetCurrentDisplay2();
+    sDisplaced.ctx  = pEglGetCurrentContext2();
+    sDisplaced.draw = pEglGetCurrentSurface2(EGL_DRAW);
+    sDisplaced.read = pEglGetCurrentSurface2(EGL_READ);
+    sDisplaced.saved = TRUE;
+    return JNI_TRUE;
+}
+
+/**
+ * Restores the binding [nativeSaveCurrentBinding] snapshotted. When nothing was
+ * current at that point the thread is *unbound* instead: whatever the caller
+ * bound in between is its own surface, and leaving it current would hand the
+ * next unrelated GL work a foreign draw target. Nothing was displaced there by
+ * construction — code running inside another surface's render pass always has
+ * that surface current, so the snapshot is non-empty exactly when there is
+ * something to put back.
+ *
+ * Returns JNI_FALSE only when there was no outstanding snapshot at all.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeRestoreBinding(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    if (!sDisplaced.saved) return JNI_FALSE;
+    const EGLDisplay dpy  = sDisplaced.dpy;
+    const EGLContext ctx  = sDisplaced.ctx;
+    const EGLSurface draw = sDisplaced.draw;
+    const EGLSurface read = sDisplaced.read;
+    memset(&sDisplaced, 0, sizeof(sDisplaced));
+    if (dpy != EGL_NO_DISPLAY && ctx != EGL_NO_CONTEXT) {
+        return pEglMakeCurrent2(dpy, draw, read, ctx) ? JNI_TRUE : JNI_FALSE;
+    }
+    /* eglMakeCurrent needs a display even to unbind; the process display is the
+     * one every surface here lives on. */
+    EGLDisplay hostDpy = (EGLDisplay) nucleus_tao_host_egl_display();
+    if (hostDpy == EGL_NO_DISPLAY) hostDpy = pEglGetCurrentDisplay2();
+    if (hostDpy != EGL_NO_DISPLAY) {
+        pEglMakeCurrent2(hostDpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    }
+    return JNI_TRUE;
 }
 
 /* GUIDs kept local — avoids linking dxguid.lib under /NODEFAULTLIB. */
