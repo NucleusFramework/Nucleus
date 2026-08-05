@@ -414,12 +414,55 @@ internal class TaoComposeSceneHost(
             dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE,
             dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK,
         ) { files, text, allowedEffects ->
+            // No VSync dance and no post-drag `window.resetRedrawLatch()`, unlike
+            // the Windows counterpart. Nothing is consumed while tao's tick is
+            // suppressed: `AppState::cleared` returns early before it drains
+            // either the user-event channel (`RequestRedraw`) or the pending
+            // redraw list, so both survive the session and the latch un-wedges
+            // itself on the first tick after it.
             dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.nativeStartDrag(
                 nsView = nsViewHandle,
                 files = files,
                 text = text,
                 allowedEffects = allowedEffects,
+                pump = OutboundDragPump(),
             )
+        }
+    }
+
+    /**
+     * Drives the host while an outbound drag session owns the main thread — see
+     * [dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DragPump].
+     *
+     * [requestFrame] is not optional here: Compose enters the session from
+     * inside `sendPointerEvent`, and `BaseComposeScene.postponeInvalidation`
+     * holds the scene's `invalidate` callback off for that whole dispatch — so
+     * nothing schedules a frame on its own, however diligently we drain.
+     *
+     * Mirrors `TaoComposeSceneHostWindows.OutboundDragPump` minus its VSync
+     * toggle and frame throttle: a frame is recorded on this thread but
+     * replayed, presented and paced (`nativeVSyncWait`) on the render thread, so
+     * a tick never parks AppKit's drag tracking, and skiko's `FrameDispatcher`
+     * coalescing plus that pacing already cap the rate at the display's.
+     *
+     * Reentrancy, deliberately accepted: every frame recorded here renders the
+     * scene with a pointer dispatch still on the stack. There is no way to
+     * render during the drag *without* that nesting — refusing to render would
+     * just restore the freeze this exists to fix — so the scene is re-entered
+     * knowingly. If it proves unsafe, the principled fix is to defer
+     * `nativeStartDrag` onto the main dispatcher so the session starts one loop
+     * iteration later, with no Compose dispatch below it.
+     *
+     * Named class (not a lambda) for GraalVM JNI reachability, same as
+     * [InboundDnDCallback].
+     */
+    private inner class OutboundDragPump :
+        dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DragPump {
+        override fun pump() {
+            // Schedule before draining, so the frame runs in this very drain
+            // instead of waiting for the next tick.
+            requestFrame()
+            TaoMainDispatcher.pump()
         }
     }
 

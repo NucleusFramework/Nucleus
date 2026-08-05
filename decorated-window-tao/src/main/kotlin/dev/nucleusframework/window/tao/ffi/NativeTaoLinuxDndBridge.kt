@@ -73,10 +73,35 @@ internal object NativeTaoLinuxDndBridge {
     external fun nativeRevoke(handle: Long): Int
 
     /**
+     * Keeps the host alive while an outbound drag session owns the GTK main
+     * thread.
+     *
+     * [pump] is upcalled ~120×/s off a `glib` timeout that [nativeStartDrag]
+     * schedules for the session's lifetime, on the GTK main thread (= Tao
+     * event-loop thread). Implementations must drain the main dispatcher and
+     * paint a frame — and must not block, since the drag's GTK pump is waiting
+     * on the return.
+     *
+     * Must be a named class, not a lambda or anonymous object: GraalVM's
+     * `GetMethodID` does not pick up inherited interface methods on anonymous
+     * classes (same constraint as [Callback]).
+     */
+    interface DragPump {
+        fun pump()
+    }
+
+    /**
      * Synchronous outbound DnD via `gtk_drag_begin_with_coordinates`. The
      * native side cooperatively pumps `gtk::main_iteration_do(true)` until
      * `drag-end` (or `drag-failed`) fires, then returns the negotiated drop
      * effect. Must run on the GTK main thread (= Tao event-loop thread).
+     *
+     * That GTK pump dispatches GDK events but never re-enters tao's event
+     * loop — this call is made from inside one of its callbacks — so without
+     * [pump] the host paints nothing for the whole session.
+     *
+     * @param pump invoked repeatedly during the drag so the suppressed Tao tick
+     *   can still drain and render; see [DragPump]. `null` disables it.
      */
     @JvmStatic
     external fun nativeStartDrag(
@@ -84,6 +109,7 @@ internal object NativeTaoLinuxDndBridge {
         files: Array<String>?,
         text: String?,
         allowedEffects: Int,
+        pump: DragPump?,
     ): Int
 
     const val DROP_EFFECT_NONE: Int = 0

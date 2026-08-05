@@ -27,8 +27,16 @@ import atspi_probe as ap  # noqa: E402
 
 TEXT_FIELD = "A11y text field"
 
+# Upper bound on grabFocus → 'focused' state in the AT-SPI tree. Nothing about
+# that chain is synchronous: grabFocus is a D-Bus round trip, Compose applies the
+# focus request on its next frame, and AccessKit pushes the resulting tree update
+# after it — so on a loaded CI runner the state can land well past the settle
+# time a fixed sleep would allow. Polled, not slept.
+FOCUS_TIMEOUT_S = 8
+
 
 def focus_node(app, name, role=None):
+    """grabFocus on `name` and wait for the 'focused' state to actually land."""
     node = ap.find_by_name(app, name, role=role, timeout_s=6)
     if node is None:
         return None
@@ -36,8 +44,22 @@ def focus_node(app, name, role=None):
         node.queryComponent().grabFocus()
     except Exception:
         return node
-    time.sleep(0.4)
+    if not focus_landed(app, name):
+        # Never observed carrying the state; give the caller the same minimal
+        # settle the fixed sleep used to provide before it reads the tree.
+        time.sleep(0.4)
     return node
+
+
+def focus_landed(app, name):
+    """Whether `name` carries the AT-SPI 'focused' state within the timeout."""
+    return bool(
+        ap.wait_for(
+            lambda: name in ap.focused_nodes(app),
+            timeout_s=FOCUS_TIMEOUT_S,
+            interval_s=0.25,
+        )
+    )
 
 
 def entry_text(app):
@@ -100,9 +122,10 @@ def main():
     reporter.section("Focus via AT-SPI grabFocus")
     increment = focus_node(app, "Increment")
     reporter.check(increment is not None, "Increment element found")
+    landed = focus_landed(app, "Increment")
     focused = ap.focused_nodes(app)
     print(f"  focused accessibles: {focused}")
-    reporter.check("Increment" in focused, f"Increment carries the 'focused' state (got {focused})")
+    reporter.check(landed, f"Increment carries the 'focused' state (got {focused})")
 
     reporter.section("Tab key traversal")
     visited = set()

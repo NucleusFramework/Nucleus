@@ -385,6 +385,20 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$DragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$OutboundDragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge",
             "jniAccessible": true
         },
@@ -409,6 +423,20 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge$DragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$OutboundDragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge",
             "jniAccessible": true
         },
@@ -430,6 +458,20 @@
                 { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
                 { "name": "onDragLeave", "parameterTypes": ["long"] },
                 { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge$DragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$OutboundDragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
             ]
         },
         {

@@ -646,12 +646,80 @@ internal class TaoComposeSceneHostWindows(
             dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_MOVE,
             dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DROP_EFFECT_LINK,
         ) { files, text, allowedEffects ->
-            dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
-                hwnd = hwnd,
-                files = files,
-                text = text,
-                allowedEffects = allowedEffects,
-            )
+            // Drop VSync for the session, like the fullscreen transition does
+            // (see fullscreenTransitionResized). Frames painted from inside
+            // DoDragDrop's modal loop are presented inline on this thread, and
+            // this thread is what the OS drag loop — holder of the system-wide
+            // mouse capture — is waiting on. A vsync-paced present would park it
+            // until the next VBlank on every frame, which is felt as a laggy
+            // drag cursor and late drop-target feedback. Interval 0 also
+            // replaces the queued frame rather than lining up behind it, so
+            // what the user sees during the drag stays current.
+            val pacedByVSync = attachmentHandle != 0L
+            if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            try {
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
+                    hwnd = hwnd,
+                    files = files,
+                    text = text,
+                    allowedEffects = allowedEffects,
+                    pump = OutboundDragPump(),
+                )
+            } finally {
+                if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+                // Unwedge rendering: an invalidation raised during the drag
+                // latched `redrawPending` while DoDragDrop's pump ate the
+                // matching REDRAW_REQUESTED, which suppresses every later
+                // request. See TaoWindow.resetRedrawLatch.
+                window.resetRedrawLatch()
+            }
+        }
+    }
+
+    /**
+     * Drives the host from inside `DoDragDrop`'s modal loop — see
+     * [dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump].
+     *
+     * Reentrancy, deliberately accepted: `DoDragDrop` is entered synchronously
+     * from `TaoDragAndDropManager.requestDragAndDropTransfer`, which Compose
+     * calls from inside `sendPointerEvent`. Every frame painted here therefore
+     * renders the scene while a pointer dispatch is still on the stack. There
+     * is no way to render during the drag *without* that nesting — refusing to
+     * render would just restore the freeze this exists to fix — so the scene is
+     * re-entered knowingly. If it proves unsafe, the principled fix is to defer
+     * the `DoDragDrop` call onto the main dispatcher so the session starts one
+     * loop iteration later, with no Compose dispatch below it.
+     *
+     * Named class (not a lambda) for GraalVM JNI reachability, same as
+     * [InboundDnDCallback].
+     */
+    private inner class OutboundDragPump :
+        dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump {
+        // Not a nanoTime sentinel: `System.nanoTime()`'s origin is arbitrary and
+        // may be negative, in which case `now - 0L` is below any threshold and
+        // the very first frame — and so every frame — would be throttled away,
+        // silently restoring the freeze this class exists to fix.
+        private var rendered = false
+        private var lastRenderNanos = 0L
+
+        override fun pump() {
+            // Draining is cheap and never blocks, so it runs on every callback.
+            dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                .pump()
+
+            // Rendering is not: the present is inline and VSync-paced
+            // (eglSwapInterval(1)), so each frame parks this thread until the
+            // next VBlank — and this thread is currently holding up the OS drag
+            // loop, which owns the mouse capture system-wide. Windows calls
+            // QueryContinueDrag on every mouse-move message, well above the
+            // display rate, so without this throttle a fast drag would block on
+            // VSync several times per frame and visibly lag the drag cursor and
+            // the destination's drop feedback.
+            val now = System.nanoTime()
+            if (rendered && now - lastRenderNanos < MIN_DRAG_FRAME_INTERVAL_NANOS) return
+            rendered = true
+            lastRenderNanos = now
+            onRedrawRequested()
         }
     }
 
@@ -1475,6 +1543,14 @@ internal class TaoComposeSceneHostWindows(
     }
 
     internal companion object {
+        /**
+         * Floor between two frames painted from inside `DoDragDrop`'s modal
+         * loop — see [OutboundDragPump]. ~8 ms leaves headroom above 120 Hz
+         * while still collapsing the burst of mouse-move callbacks Windows
+         * fires between two VBlanks.
+         */
+        private const val MIN_DRAG_FRAME_INTERVAL_NANOS: Long = 8_000_000L
+
         // Wire scales — must match Rust `CURSOR_FIXED_SCALE` and
         // `TOUCH_FORCE_FIXED_SCALE` in `events.rs`.
         private const val TOUCH_POSITION_SCALE: Float = 1024f
