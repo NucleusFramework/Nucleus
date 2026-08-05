@@ -740,6 +740,13 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     // ── Cleanup manual metadata ──
     // Removes entries from the project's reachability-metadata.json that are already
     // covered by L1 (library JARs), L2 (Oracle repo), L3 (platform), or static analysis.
+    // Also reports (opt-in removes) types that do not exist on the runtime classpath.
+
+    // Exact packages for the cleanup gate (same list as the dev-loop compile input).
+    // When non-empty, unresolvable types under these prefixes stay — under exact mode
+    // they restore ClassNotFoundException for optional-dependency probes (issue #439).
+    val (cleanupExactPackages, _) =
+        resolveExactReachabilityPackages(exactReachabilitySetting, mainClassName)
 
     project.tasks
         .register(
@@ -748,7 +755,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         ).apply {
             configure { task ->
                 task.description =
-                    "Remove entries from manual reachability-metadata.json that are already managed by Nucleus"
+                    "Remove entries from manual reachability-metadata.json that are already managed by Nucleus " +
+                        "(and report unresolvable types; remove with -Pnucleus.graalvm.cleanup.removeUnresolvable=true)"
                 task.group = NUCLEUS_TASK_GROUP
                 task.dependsOn(resolveReachabilityMetadata)
                 task.dependsOn(analyzeStaticMetadata)
@@ -777,6 +785,13 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             .asFile
                     },
                 )
+                task.removeUnresolvable.set(
+                    NucleusProperties.graalvmCleanupRemoveUnresolvable(project.providers),
+                )
+                task.dryRun.set(
+                    NucleusProperties.graalvmCleanupDryRun(project.providers),
+                )
+                task.exactReachabilityPackages.set(cleanupExactPackages)
             }
         }
 

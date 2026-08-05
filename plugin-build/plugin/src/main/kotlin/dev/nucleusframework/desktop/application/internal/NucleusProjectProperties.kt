@@ -50,6 +50,22 @@ internal object NucleusProperties {
      */
     internal const val GRAALVM_MISSING_REGISTRATION = "nucleus.graalvm.missingRegistration"
 
+    /**
+     * When `true`, `cleanupGraalvmMetadata` removes entries whose types are not on the
+     * runtime classpath (and not JDK). Default is report-only: unresolvable entries are
+     * listed as `[unresolvable]` but kept, because under `--exact-reachability-metadata`
+     * a registration for a missing type is what restores `ClassNotFoundException` for
+     * optional-dependency probes.
+     */
+    internal const val GRAALVM_CLEANUP_REMOVE_UNRESOLVABLE = "nucleus.graalvm.cleanup.removeUnresolvable"
+
+    /**
+     * When `true`, `cleanupGraalvmMetadata` reports what it would remove (baseline
+     * duplicates and unresolvable types) but never rewrites the project's
+     * `reachability-metadata.json`.
+     */
+    internal const val GRAALVM_CLEANUP_DRY_RUN = "nucleus.graalvm.cleanup.dryRun"
+
     fun isVerbose(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(VERBOSE).toBooleanProvider(false)
 
     fun preserveWorkingDir(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(PRESERVE_WD).toBooleanProvider(false)
@@ -116,6 +132,12 @@ internal object NucleusProperties {
 
     fun graalvmMissingRegistration(providers: ProviderFactory): Provider<String> =
         providers.valueOrNull(GRAALVM_MISSING_REGISTRATION)
+
+    fun graalvmCleanupRemoveUnresolvable(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(GRAALVM_CLEANUP_REMOVE_UNRESOLVABLE).toBooleanProvider(false)
+
+    fun graalvmCleanupDryRun(providers: ProviderFactory): Provider<Boolean> =
+        providers.valueOrNull(GRAALVM_CLEANUP_DRY_RUN).toBooleanProvider(false)
 
     // providers.valueOrNull works only with root gradle.properties
     fun dontSyncResources(project: Project): Provider<Boolean> =
