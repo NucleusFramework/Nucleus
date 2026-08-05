@@ -42,6 +42,14 @@ internal object NucleusProperties {
     /** GraalVM PGO mode override: `instrument` or `off`. Unset = use a recorded profile when present. */
     internal const val GRAALVM_PGO_MODE = "nucleus.graalvm.pgo"
 
+    /**
+     * Runtime reporting for missing reachability registrations on `runGraalvmNative`
+     * (`-XX:MissingRegistrationReportingMode=`): `warn` (default), `exit`, or `throw`.
+     * Only effective when the image was built with exact reachability metadata (quick-build
+     * dev loop).
+     */
+    internal const val GRAALVM_MISSING_REGISTRATION = "nucleus.graalvm.missingRegistration"
+
     fun isVerbose(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(VERBOSE).toBooleanProvider(false)
 
     fun preserveWorkingDir(providers: ProviderFactory): Provider<Boolean> = providers.valueOrNull(PRESERVE_WD).toBooleanProvider(false)
@@ -105,6 +113,9 @@ internal object NucleusProperties {
     fun electronBuilderPublishMode(providers: ProviderFactory): Provider<String> = providers.valueOrNull(ELECTRON_BUILDER_PUBLISH_MODE)
 
     fun graalvmPgoMode(providers: ProviderFactory): Provider<String> = providers.valueOrNull(GRAALVM_PGO_MODE)
+
+    fun graalvmMissingRegistration(providers: ProviderFactory): Provider<String> =
+        providers.valueOrNull(GRAALVM_MISSING_REGISTRATION)
 
     // providers.valueOrNull works only with root gradle.properties
     fun dontSyncResources(project: Project): Provider<Boolean> =
