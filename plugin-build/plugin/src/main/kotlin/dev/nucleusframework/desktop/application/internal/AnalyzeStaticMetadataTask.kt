@@ -6,9 +6,6 @@ import dev.nucleusframework.desktop.application.internal.analyzer.JniEntry
 import dev.nucleusframework.desktop.application.internal.analyzer.MethodSignature
 import dev.nucleusframework.desktop.application.internal.analyzer.ReflectionEntry
 import dev.nucleusframework.desktop.application.internal.analyzer.ResourcePattern
-import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassReferenceCollector
-import dev.nucleusframework.desktop.application.internal.analyzer.detectors.OrphanProjectClassDetector
-import dev.nucleusframework.desktop.application.internal.analyzer.mergeReflectionEntries
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
@@ -21,7 +18,6 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
-import java.util.jar.JarFile
 
 /**
  * Statically analyzes bytecode in all runtime classpath JARs and generates
@@ -30,18 +26,20 @@ import java.util.jar.JarFile
  *
  * The output directory contains a `reachability-metadata.json` file in the
  * standard GraalVM format, ready to be passed as `-H:ConfigurationFileDirectories=`.
+ *
+ * Orphan / project-class detection (#441) is performed inside
+ * [BytecodeAnalyzer.analyzeClasspath] in the same classpath walk as the other detectors.
  */
 @CacheableTask
 abstract class AnalyzeStaticMetadataTask : DefaultTask() {
-    /** The runtime classpath JARs to analyze. */
+    /** The runtime classpath JARs (and class directories) to analyze. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val runtimeClasspath: ConfigurableFileCollection
 
     /**
      * The project's own compiled class directories (e.g. `build/classes/kotlin/main`).
-     * Used by the orphan-project-class detector (#441); must not include dependency JARs.
-     * Entries may overlap with [runtimeClasspath] — that is fine.
+     * Must not include dependency JARs. May overlap with [runtimeClasspath].
      */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.RELATIVE)
@@ -56,7 +54,8 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
 
     /**
      * When true, register a public no-arg `<init>` for every project class that has one.
-     * Opt-in sledgehammer; implies a larger image. See #441.
+     * Opt-in sledgehammer; implies a larger image. Supersedes the orphan rule when both
+     * are enabled (superset). See #441.
      */
     @get:Input
     abstract val reflectionForProjectClasses: Property<Boolean>
@@ -80,41 +79,25 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 if (classDirs.isNotEmpty()) " + ${classDirs.size} class directories" else "",
         )
 
-        val result = BytecodeAnalyzer.analyzeClasspath(classpathEntries)
-
-        val projectDirs = projectClassDirs.files.filter { it.isDirectory && it.exists() }
         val orphanEnabled = detectOrphanProjectClasses.getOrElse(true)
         val allProjectEnabled = reflectionForProjectClasses.getOrElse(false)
+        val projectDirs = projectClassDirs.files.filter { it.isDirectory && it.exists() }
 
-        val projectClassBytes =
-            if (orphanEnabled || allProjectEnabled) {
-                indexClassDirs(projectDirs)
-            } else {
-                emptyMap()
-            }
+        val result =
+            BytecodeAnalyzer.analyzeClasspath(
+                files = classpathEntries,
+                projectClassDirs = projectDirs,
+                detectOrphanProjectClasses = orphanEnabled,
+                reflectionForProjectClasses = allProjectEnabled,
+            )
 
-        val projectReflection =
-            when {
-                allProjectEnabled -> {
-                    val all = OrphanProjectClassDetector.detectAllProjectClasses(projectClassBytes)
-                    logProjectEntries("project-class", all)
-                    all
-                }
-                orphanEnabled && projectClassBytes.isNotEmpty() -> {
-                    val (classpathRefs, appRefs) = collectReferenceSets(classpathEntries, projectDirs)
-                    val orphans =
-                        OrphanProjectClassDetector.detect(
-                            projectClassBytes = projectClassBytes,
-                            classpathReferencedTypes = classpathRefs,
-                            appReferencedTypes = appRefs,
-                        )
-                    logProjectEntries("orphan", orphans)
-                    orphans
-                }
-                else -> emptySet()
-            }
+        val projectEntries = result.projectClassEntries
+        if (orphanEnabled || allProjectEnabled) {
+            val tag = if (allProjectEnabled) "project-class" else "orphan"
+            logProjectEntries(tag, projectEntries)
+        }
 
-        val allReflection = mergeReflectionEntries(result.allReflectionEntries + projectReflection)
+        val allReflection = result.allReflectionEntries
         val jniEntries = result.jniEntries
         val resources = result.resourcePatterns
 
@@ -123,8 +106,8 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 "${allReflection.size} reflection, " +
                 "${jniEntries.size} JNI, " +
                 "${resources.size} resource entries" +
-                if (projectReflection.isNotEmpty()) {
-                    " (${projectReflection.size} from project-class detector)"
+                if (projectEntries.isNotEmpty()) {
+                    " (${projectEntries.size} from project-class detector)"
                 } else {
                     ""
                 },
@@ -147,115 +130,15 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
             "Project-class detector ($tag): ${entries.size} entr" +
                 if (entries.size == 1) "y" else "ies",
         )
-        for (entry in entries.sortedBy { it.type }) {
-            // Auditable set for #441 — keep the prefix stable so grepping build logs is easy.
+        // Cap log volume for the sledgehammer path (can register hundreds of types).
+        val limit = if (tag == "project-class") 50 else Int.MAX_VALUE
+        val sorted = entries.sortedBy { it.type }
+        for (entry in sorted.take(limit)) {
             logger.lifecycle("[$tag] ${entry.type}")
         }
-    }
-
-    /**
-     * @return pair of (full-classpath referenced FQCNs, app-only referenced FQCNs)
-     */
-    private fun collectReferenceSets(
-        classpathEntries: Collection<File>,
-        projectDirs: Collection<File>,
-    ): Pair<Set<String>, Set<String>> {
-        val classpathRefs = mutableSetOf<String>()
-        val appRefs = mutableSetOf<String>()
-        val projectDirSet = projectDirs.map { it.canonicalFile }.toSet()
-
-        for (file in classpathEntries) {
-            when {
-                file.isDirectory -> {
-                    val canonical = file.canonicalFile
-                    val isProject =
-                        canonical in projectDirSet ||
-                            projectDirSet.any { projectDir ->
-                                canonical.toPath().startsWith(projectDir.toPath())
-                            }
-                    forEachClassBytes(file) { bytes ->
-                        val refs = ClassReferenceCollector.collect(bytes)
-                        classpathRefs.addAll(refs)
-                        if (isProject) appRefs.addAll(refs)
-                    }
-                }
-                file.isFile && file.name.endsWith(".jar") -> {
-                    forEachJarClassBytes(file) { bytes ->
-                        classpathRefs.addAll(ClassReferenceCollector.collect(bytes))
-                    }
-                }
-            }
+        if (sorted.size > limit) {
+            logger.lifecycle("[$tag] … and ${sorted.size - limit} more")
         }
-        // Project dirs may not all be on runtimeClasspath (shouldn't happen, but be safe)
-        for (dir in projectDirs) {
-            forEachClassBytes(dir) { bytes ->
-                val refs = ClassReferenceCollector.collect(bytes)
-                classpathRefs.addAll(refs)
-                appRefs.addAll(refs)
-            }
-        }
-        return classpathRefs to appRefs
-    }
-}
-
-/**
- * Indexes `.class` files under [dirs] as internal name → bytes.
- */
-internal fun indexClassDirs(dirs: Collection<File>): Map<String, ByteArray> {
-    val index = mutableMapOf<String, ByteArray>()
-    for (dir in dirs) {
-        if (!dir.isDirectory) continue
-        dir
-            .walkTopDown()
-            .filter { it.isFile && it.extension == "class" }
-            .forEach { classFile ->
-                val relative = classFile.relativeTo(dir).path
-                // Normalize Windows separators
-                val internalName = relative.removeSuffix(".class").replace('\\', '/')
-                try {
-                    index[internalName] = classFile.readBytes()
-                } catch (_: Exception) {
-                    // unreadable class file — skip
-                }
-            }
-    }
-    return index
-}
-
-private fun forEachClassBytes(
-    dir: File,
-    action: (ByteArray) -> Unit,
-) {
-    if (!dir.isDirectory) return
-    dir
-        .walkTopDown()
-        .filter { it.isFile && it.extension == "class" }
-        .forEach { classFile ->
-            try {
-                action(classFile.readBytes())
-            } catch (_: Exception) {
-                // skip
-            }
-        }
-}
-
-private fun forEachJarClassBytes(
-    jarPath: File,
-    action: (ByteArray) -> Unit,
-) {
-    try {
-        JarFile(jarPath).use { jar ->
-            for (entry in jar.entries()) {
-                if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) continue
-                try {
-                    action(jar.getInputStream(entry).use { it.readBytes() })
-                } catch (_: Exception) {
-                    // skip
-                }
-            }
-        }
-    } catch (_: Exception) {
-        // corrupt JAR — skip
     }
 }
 
