@@ -212,8 +212,7 @@ internal object PlatformInstaller {
      * `/usr/bin/<app>` (symlink), `/opt/<App>/<app>`, or `/opt/<App>/bin/<app>` (jpackage layout),
      * so walk up a few parents from the canonical launcher path until the helper is found.
      */
-    internal fun resolveUpdateHelper(launcher: String): File? =
-        resolveUpdateHelperFromLauncher(launcher)
+    internal fun resolveUpdateHelper(launcher: String): File? = resolveUpdateHelperFromLauncher(launcher)
 
     private fun logLinuxInstallFallback(
         helper: File?,
