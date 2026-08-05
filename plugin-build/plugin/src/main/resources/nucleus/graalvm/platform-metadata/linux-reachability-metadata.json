@@ -436,6 +436,27 @@
             ]
         },
         {
+            "type": "sun.font.FontConfigManager$FontConfigInfo",
+            "jniAccessible": true,
+            "allDeclaredMethods": true,
+            "allDeclaredFields": true,
+            "allDeclaredConstructors": true
+        },
+        {
+            "type": "sun.font.FontConfigManager$FcCompFont",
+            "jniAccessible": true,
+            "allDeclaredMethods": true,
+            "allDeclaredFields": true,
+            "allDeclaredConstructors": true
+        },
+        {
+            "type": "sun.font.FontConfigManager$FontConfigFont",
+            "jniAccessible": true,
+            "allDeclaredMethods": true,
+            "allDeclaredFields": true,
+            "allDeclaredConstructors": true
+        },
+        {
             "type": "sun.font.Font2D",
             "jniAccessible": true,
             "methods": [
