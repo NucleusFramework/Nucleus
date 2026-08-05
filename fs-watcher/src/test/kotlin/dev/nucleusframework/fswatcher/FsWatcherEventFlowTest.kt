@@ -1504,7 +1504,9 @@ class FsWatcherEventFlowTest {
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
 
-            val realRoot = Files.createTempDirectory("fs-watcher-moved-endpoint-projection-real")
+            // The symlink target has to be canonical for realTo below to be the path form a
+            // backend would actually report: on macOS a temp dir is reached through /var -> /private/var.
+            val realRoot = Files.createTempDirectory("fs-watcher-moved-endpoint-projection-real").toRealPath()
             val lexicalParent = Files.createTempDirectory("fs-watcher-moved-endpoint-projection-lexical")
             val lexicalRoot = lexicalParent.resolve("alias")
             try {
@@ -1527,11 +1529,13 @@ class FsWatcherEventFlowTest {
 
                 val event =
                     async(start = CoroutineStart.UNDISPATCHED) {
-                        watcher.events.first {
-                            it is FsWatchEvent.Moved &&
-                                it.source == registration.source &&
-                                it.from == from &&
-                                it.to == lexicalTo
+                        withTimeout(5_000) {
+                            watcher.events.first {
+                                it is FsWatchEvent.Moved &&
+                                    it.source == registration.source &&
+                                    it.from == from &&
+                                    it.to == lexicalTo
+                            }
                         }
                     }
 
