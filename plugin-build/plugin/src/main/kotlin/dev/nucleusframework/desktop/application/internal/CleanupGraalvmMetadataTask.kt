@@ -5,6 +5,7 @@ import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
@@ -25,11 +26,21 @@ import java.io.File
  * - **Static analysis**: Reflection/JNI/resource entries detected from bytecode
  * - **native-image.properties**: `-H:IncludeResources=` patterns from library JARs
  *
+ * After baseline dedup, a **resolvability** pass scans the runtime classpath for
+ * `.class` files and reports entries whose types cannot be found (typical tracing-agent
+ * noise such as mapped Kotlin types: `kotlin.Any`, `kotlin.collections.List`). Report
+ * is the default; removal requires
+ * `-Pnucleus.graalvm.cleanup.removeUnresolvable=true`. Types under
+ * [exactReachabilityPackages] are never removed — under exact reachability metadata a
+ * registration for a missing class restores `ClassNotFoundException` for optional probes.
+ *
+ * `-Pnucleus.graalvm.cleanup.dryRun=true` reports without rewriting the file.
+ *
  * Run with: `./gradlew cleanupGraalvmMetadata`
  */
 @DisableCachingByDefault(because = "Modifies user source files in-place")
 abstract class CleanupGraalvmMetadataTask : DefaultTask() {
-    /** Runtime classpath JARs (for L1 library metadata + native-image.properties). */
+    /** Runtime classpath JARs (for L1 library metadata + native-image.properties + class index). */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
     abstract val runtimeClasspath: ConfigurableFileCollection
@@ -59,6 +70,28 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
     @get:Input
     abstract val configDir: Property<File>
 
+    /**
+     * When true, drop unresolvable type entries after the baseline pass.
+     * Default false (report only) — see [NucleusProperties.GRAALVM_CLEANUP_REMOVE_UNRESOLVABLE].
+     */
+    @get:Input
+    abstract val removeUnresolvable: Property<Boolean>
+
+    /**
+     * When true, never rewrite the config file — only log what would change.
+     * See [NucleusProperties.GRAALVM_CLEANUP_DRY_RUN].
+     */
+    @get:Input
+    abstract val dryRun: Property<Boolean>
+
+    /**
+     * Package prefixes currently configured for exact reachability metadata
+     * (`APP_PACKAGES` / `packages(...)`). Unresolvable entries under these prefixes
+     * are reported but never removed, even with [removeUnresolvable].
+     */
+    @get:Input
+    abstract val exactReachabilityPackages: ListProperty<String>
+
     @TaskAction
     fun cleanup() {
         val targetDir = configDir.get()
@@ -66,6 +99,13 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
         if (!targetFile.exists()) {
             logger.lifecycle("No reachability-metadata.json found in $targetDir — nothing to clean up")
             return
+        }
+
+        val isDryRun = dryRun.getOrElse(false)
+        val shouldRemoveUnresolvable = removeUnresolvable.getOrElse(false)
+        val exactPackages = exactReachabilityPackages.getOrElse(emptyList())
+        if (isDryRun) {
+            logger.lifecycle("Dry run — will not rewrite $targetFile")
         }
 
         val slurper = JsonSlurper()
@@ -321,6 +361,51 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
             totalRemoved += before - targetResources.size
         }
 
+        // ── Resolvability pass ──
+        // Agent-recorded negative Class.forName lookups (kotlin.Any, kotlin.Int, …) and
+        // typos/stale renames never match a baseline. Scan the runtime classpath and
+        // report (default) or remove (opt-in) entries whose types resolve nowhere.
+        val classIndex = buildClasspathClassIndex(runtimeClasspath.files)
+        logger.lifecycle("Classpath class index: ${classIndex.size} types")
+
+        val unresolvableReported = mutableListOf<String>()
+        val unresolvableProtected = mutableListOf<String>()
+        for (section in listOf("reflection", "jni", "serialization")) {
+            @Suppress("UNCHECKED_CAST")
+            val targetArray = targetRoot[section] as? MutableList<Map<String, Any?>> ?: continue
+            val before = targetArray.size
+            targetArray.removeAll { projectEntry ->
+                if (isEntryResolvable(projectEntry, classIndex)) return@removeAll false
+                val label = entryDisplayName(projectEntry)
+                if (isEntryProtectedByExactReachability(projectEntry, exactPackages)) {
+                    unresolvableProtected.add("  [unresolvable/exact] [$section] $label")
+                    return@removeAll false
+                }
+                if (shouldRemoveUnresolvable) {
+                    removedEntries.add("  [unresolvable] [$section] $label")
+                    return@removeAll true
+                }
+                unresolvableReported.add("  [unresolvable] [$section] $label")
+                false
+            }
+            totalRemoved += before - targetArray.size
+        }
+
+        if (unresolvableReported.isNotEmpty()) {
+            logger.lifecycle(
+                "Unresolvable entries kept " +
+                    "(pass -P${NucleusProperties.GRAALVM_CLEANUP_REMOVE_UNRESOLVABLE}=true to remove):",
+            )
+            unresolvableReported.forEach { logger.lifecycle(it) }
+        }
+        if (unresolvableProtected.isNotEmpty()) {
+            logger.lifecycle(
+                "Unresolvable entries protected by exactReachabilityMetadata " +
+                    "(packages=${exactPackages.joinToString()}):",
+            )
+            unresolvableProtected.forEach { logger.lifecycle(it) }
+        }
+
         if (totalRemoved > 0) {
             // Remove empty sections
             for (section in listOf("reflection", "jni", "resources", "bundles", "serialization")) {
@@ -330,24 +415,37 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                     targetRoot.remove(section)
                 }
             }
-            targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
-            logger.lifecycle("Removed $totalRemoved entries from $targetFile:")
+            if (!isDryRun) {
+                targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(targetRoot)) + "\n")
+            }
+            val verb = if (isDryRun) "Would remove" else "Removed"
+            logger.lifecycle("$verb $totalRemoved entries from $targetFile:")
             removedEntries.forEach { logger.lifecycle(it) }
         } else {
             logger.lifecycle("No redundant entries found — manual config is already clean")
         }
 
-        // Report remaining entries
-        var remaining = 0
-        for (section in listOf("reflection", "jni")) {
+        // Report remaining entries that survived both baseline and resolvability passes.
+        // These are the ones worth a human look (member-less {"type": X} is not provably
+        // useless — it makes Class.forName(X) succeed — so it is never auto-removed).
+        val kept = mutableListOf<String>()
+        for (section in listOf("reflection", "jni", "serialization")) {
             @Suppress("UNCHECKED_CAST")
-            val arr = targetRoot[section] as? List<*>
-            remaining += arr?.size ?: 0
+            val arr = targetRoot[section] as? List<Map<String, Any?>> ?: continue
+            for (entry in arr) {
+                kept.add("  [kept — not covered by any managed source] [$section] ${entryDisplayName(entry)}")
+            }
         }
         @Suppress("UNCHECKED_CAST")
-        val resArr = targetRoot["resources"] as? List<*>
-        remaining += resArr?.size ?: 0
-        logger.lifecycle("Remaining manual entries: $remaining")
+        val resArr = targetRoot["resources"] as? List<Map<String, Any?>>
+        resArr?.forEach { entry ->
+            val glob = entry["glob"] ?: entry["bundle"] ?: "?"
+            kept.add("  [kept — not covered by any managed source] [resource] $glob")
+        }
+        logger.lifecycle("Remaining manual entries: ${kept.size}")
+        if (kept.isNotEmpty()) {
+            kept.forEach { logger.lifecycle(it) }
+        }
     }
 
     private fun countBaselineTypes(entries: Map<String, Map<String, MutableMap<String, Any?>>>): Int = entries.values.sumOf { it.size }
