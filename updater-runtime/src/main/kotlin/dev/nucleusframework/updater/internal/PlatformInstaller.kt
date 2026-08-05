@@ -4,8 +4,35 @@ import dev.nucleusframework.core.runtime.Platform
 import java.io.File
 import kotlin.system.exitProcess
 
+/**
+ * Walks up from [launcher]'s directory looking for [PlatformInstaller.UPDATE_HELPER_NAME].
+ * Exposed for unit tests (jpackage may run as `/opt/App/bin/App` or `/usr/bin/App`).
+ */
+internal fun resolveUpdateHelperFromLauncher(
+    launcher: String,
+    helperName: String = PlatformInstaller.UPDATE_HELPER_NAME,
+    maxDepth: Int = PlatformInstaller.HELPER_SEARCH_MAX_DEPTH,
+): File? {
+    var dir = File(launcher).canonicalFile.parentFile ?: return null
+    repeat(maxDepth) {
+        val helper = dir.resolve(helperName)
+        if (helper.isFile) return helper
+        dir = dir.parentFile ?: return null
+    }
+    return null
+}
+
 @Suppress("TooManyFunctions")
 internal object PlatformInstaller {
+    /**
+     * Package-owned silent-update helper file name (must match plugin
+     * `LinuxUpdateHelper.HELPER_FILE_NAME`).
+     */
+    internal const val UPDATE_HELPER_NAME = "nucleus-update-helper"
+
+    /** Max parents walked from the launcher path when looking for [UPDATE_HELPER_NAME]. */
+    internal const val HELPER_SEARCH_MAX_DEPTH = 3
+
     fun install(
         file: File,
         platform: Platform,
@@ -111,18 +138,23 @@ internal object PlatformInstaller {
             currentExecutablePath()
                 ?: error("Cannot resolve application launcher from the running process")
 
-        // Prefer the passwordless, signature-verifying update helper installed alongside the app
-        // (see the Gradle plugin's afterInstall script). It only runs without a password when its
-        // polkit policy is present, and only installs a package whose detached signature verifies
-        // against the bundled public key. Falls back to the standard prompting install otherwise.
+        // Prefer the passwordless, signature-verifying update helper (plugin silentUpdate).
+        // Both helper and detached <pkg>.asc are required for that path; otherwise we fall back
+        // to a password-prompting install and log why (no silent fallback without a reason).
         val helper = resolveUpdateHelper(launcher)
         val signatureFile = File("${packageFile.absolutePath}.asc")
         val installCmd =
             when {
                 helper != null && signatureFile.isFile ->
                     "pkexec \"${helper.absolutePath}\" \"\$PKG_FILE\""
-                extension == "deb" -> "pkexec dpkg -i \"\$PKG_FILE\""
-                extension == "rpm" -> "pkexec rpm -U \"\$PKG_FILE\""
+                extension == "deb" -> {
+                    logLinuxInstallFallback(helper, signatureFile)
+                    "pkexec dpkg -i \"\$PKG_FILE\""
+                }
+                extension == "rpm" -> {
+                    logLinuxInstallFallback(helper, signatureFile)
+                    "pkexec rpm -U \"\$PKG_FILE\""
+                }
                 else -> error("Unsupported package format: $extension")
             }
 
@@ -152,7 +184,8 @@ internal object PlatformInstaller {
             |
             |sleep 1
             |
-            |# Install the package (shows graphical authentication dialog)
+            |# Install the package. Silent path uses the signature-verifying helper;
+            |# otherwise pkexec dpkg/rpm shows an authentication dialog.
             |# Do not use set -e: dpkg/rpm may return non-zero on warnings,
             |# which would prevent the application from relaunching.
             |$installCmd
@@ -173,16 +206,33 @@ internal object PlatformInstaller {
     }
 
     /**
-     * Resolves the passwordless update helper installed next to the app, or `null` if absent.
+     * Resolves the passwordless update helper installed in the app dir, or `null` if absent.
      *
-     * The helper lives beside the real launcher binary (e.g. `/opt/<App>/nucleus-update-helper`).
-     * The running launcher may be a `/usr/bin` symlink, so resolve through it to the install dir.
+     * The helper is packaged as `/opt/<App>/nucleus-update-helper`. The running process may be
+     * `/usr/bin/<app>` (symlink), `/opt/<App>/<app>`, or `/opt/<App>/bin/<app>` (jpackage layout),
+     * so walk up a few parents from the canonical launcher path until the helper is found.
      */
-    private fun resolveUpdateHelper(launcher: String): File? =
-        File(launcher)
-            .canonicalFile.parentFile
-            ?.resolve("nucleus-update-helper")
-            ?.takeIf { it.isFile }
+    internal fun resolveUpdateHelper(launcher: String): File? =
+        resolveUpdateHelperFromLauncher(launcher)
+
+    private fun logLinuxInstallFallback(
+        helper: File?,
+        signatureFile: File,
+    ) {
+        val reason =
+            when {
+                helper == null ->
+                    "no $UPDATE_HELPER_NAME next to the launcher (app not packaged with silentUpdate?)"
+                !signatureFile.isFile ->
+                    "helper found at ${helper.absolutePath} but detached signature missing: " +
+                        "${signatureFile.absolutePath} (publish <pkg>.asc next to the package)"
+                else -> "unknown"
+            }
+        System.err.println(
+            "NucleusUpdater: passwordless Linux update unavailable ($reason); " +
+                "falling back to interactive pkexec install",
+        )
+    }
 
     /**
      * Resolves the absolute path of the executable that launched the current process.

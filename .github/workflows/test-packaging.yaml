@@ -82,6 +82,7 @@ jobs:
             echo "compose.desktop.linux.signing.keyId=$LINUX_GPG_KEY_ID"
             echo "compose.desktop.linux.signing.keyFile=$KEY_FILE"
             echo "compose.desktop.linux.signing.passphrase=$LINUX_GPG_PASSPHRASE"
+            echo "compose.desktop.linux.signing.silentUpdate=true"
           } >> gradle.properties
 
       - name: Build packages
@@ -96,7 +97,8 @@ jobs:
           path: |
             examples/nucleus-demo/build/compose/binaries/**/*.deb
             examples/nucleus-demo/build/compose/binaries/**/*.rpm
-            examples/nucleus-demo/build/compose/binaries/**/*.pub.asc
+            # Detached signatures (<pkg>.asc) for silent update + public keys (<pkg>.pub.asc)
+            examples/nucleus-demo/build/compose/binaries/**/*.asc
             examples/nucleus-demo/build/compose/binaries/**/*.pacman
             examples/nucleus-demo/build/compose/binaries/**/*.snap
             examples/nucleus-demo/build/compose/binaries/**/*.flatpak

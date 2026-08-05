@@ -67,3 +67,6 @@ examples/tao-demo/src/main/native/windows/build_log.txt
 hs_err_pid*.log
 replay_pid*.log
 core.[0-9]*
+
+# Machine-local Gradle property overrides (signing keys, etc.)
+gradle-local.properties

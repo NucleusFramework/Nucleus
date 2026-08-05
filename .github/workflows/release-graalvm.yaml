@@ -95,6 +95,7 @@ jobs:
             echo "compose.desktop.linux.signing.keyId=$LINUX_GPG_KEY_ID"
             echo "compose.desktop.linux.signing.keyFile=$KEY_FILE"
             echo "compose.desktop.linux.signing.passphrase=$LINUX_GPG_PASSPHRASE"
+            echo "compose.desktop.linux.signing.silentUpdate=true"
           } >> gradle.properties
 
       - name: Build GraalVM native packages
@@ -157,7 +158,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          find artifacts -type f \( -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name 'latest*.yml' -o -name 'beta*.yml' -o -name 'alpha*.yml' \) -exec cp {} release-assets/ \;
+          # Include detached GPG signatures (*.asc) next to deb/rpm so silent Linux
+          # self-update can download <url>.asc (see NucleusUpdater.downloadDetachedSignature).
+          find artifacts -type f \( \
+            -name '*.deb' -o -name '*.rpm' -o -name '*.asc' -o \
+            -name '*.dmg' -o -name '*.exe' -o \
+            -name 'latest*.yml' -o -name 'beta*.yml' -o -name 'alpha*.yml' \
+          \) -exec cp {} release-assets/ \;
           echo "==> Release assets:"
           ls -lh release-assets/
 
