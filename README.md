@@ -15,12 +15,22 @@ and adds native window decorations, deep operating-system integration, code sign
 and native installers — all configured through a single Gradle DSL. Your app runs
 either as a [GraalVM Native Image](https://www.graalvm.org/) or on the JVM.
 
-Java evolved into Kotlin. JavaScript evolved into TypeScript. Desktop development is
-going through the same shift: Electron was the pioneer — **Kotlin + Compose + Nucleus**
-is what comes next.
+It targets the gap between "a Compose Desktop window" and "an application the operating
+system treats as its own" — the work that is normally spread across a dozen half-maintained
+libraries and a hand-written packaging pipeline. Every OS integration is a real platform
+API behind a Kotlin one: no AWT dependency on the Tao backend, and the accessibility layer
+is verified against AT-SPI, UI Automation, and macOS AX in CI on all three platforms.
 
 Read [Why Nucleus](https://nucleusframework.dev/en/docs/why-nucleus) for how it compares to
 Electron and Tauri.
+
+## Project status
+
+Nucleus is under active development and moves fast. The `decorated-window-tao` backend runs
+in explicit-API mode with its public surface locked by a binary-compatibility dump; the other
+runtime modules are not API-frozen yet and can change between minor releases, so pin exact
+versions. The Tao backend is the recommended one for new projects — `decorated-window-jni`
+and `decorated-window-jbr` are kept for existing users and receive fixes only.
 
 ## Installation
 
@@ -129,18 +139,19 @@ each step.
 
 ## What Nucleus provides
 
-**Ship everywhere** — 18 packaging formats (DMG, PKG, NSIS, MSI, AppX/MSIX, Portable, DEB,
-RPM, AppImage, Snap, Flatpak, ZIP, TAR, 7Z), store publishing (Mac App Store, Microsoft
-Store, Snapcraft, Flathub), code signing and notarization, built-in auto-update, deep links,
-and file associations.
+**Ship everywhere** — 18 packaging formats (DMG, PKG, EXE, MSI, NSIS, NSIS-Web, Portable,
+AppX, DEB, RPM, Pacman, AppImage, raw AppImage, Snap, Flatpak, ZIP, TAR, 7Z), store
+publishing (Mac App Store, Microsoft Store, Snapcraft, Flathub), code signing and
+notarization, built-in auto-update, deep links, and file associations.
 
 **Feel native** — Decorated windows with native controls, notifications, taskbar/dock
 badges and menus, media controls (MPRIS, Now Playing, SMTC), dark mode, accent colors,
 global hotkeys, and system tray — all behind clean Kotlin APIs.
 
-**Perform** — GraalVM Native Image compiles your app to a standalone binary (~0.5s cold
-start, 100–150 MB RAM) with automatic reachability metadata; or run on the JVM with an AOT
-cache (JDK 25+) and ProGuard-optimized release builds.
+**Perform** — GraalVM Native Image compiles your app to a standalone binary with automatic
+reachability metadata; a typical Compose UI cold-starts in about half a second and settles
+around 100–150 MB of RAM. Or stay on the JVM with an AOT cache (JDK 25+) and
+ProGuard-optimized release builds.
 
 ## Runtime modules
 
