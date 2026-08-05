@@ -10,9 +10,19 @@ dependencies {
     implementation(project(":core-runtime"))
     implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
+    implementation(project(":graalvm-runtime"))
     implementation(libs.coroutines.core)
 }
 
 nucleus.application {
     mainClass = "dev.nucleusframework.samplegst.MainKt"
+
+    graalvm {
+        isEnabled = true
+        javaLanguageVersion = 25
+        imageName = "gstreamer-demo"
+        // The helper dlopens nothing: it links GStreamer at build time, so the image
+        // needs those libraries at runtime like the JVM run does.
+        buildArgs.add("-H:+AddAllCharsets")
+    }
 }
