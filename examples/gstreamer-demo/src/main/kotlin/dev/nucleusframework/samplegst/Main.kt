@@ -37,6 +37,7 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.graalvm.GraalVmInitializer
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.TextureView
@@ -62,6 +63,8 @@ import java.util.concurrent.atomic.AtomicInteger
  *   `examples/gstreamer-demo/src/main/native/linux/build.sh`
  */
 fun main(args: Array<String>) {
+    // First statement, as native-image requires.
+    GraalVmInitializer.initialize()
     val uri = resolveUri(args.firstOrNull() ?: System.getenv("NUCLEUS_GST_URI"))
     nucleusApplication(backend = NucleusBackend.Tao) {
         NucleusDecoratedWindowTheme(isDark = true) {
