@@ -12,6 +12,7 @@ package dev.nucleusframework.window.tao.ffi
  * producer owns its own D3D11 device and is safe from any single
  * producer thread.
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoTextureBridge {
     val isLoaded: Boolean get() = NativeTaoGlBridge.isLoaded
 
@@ -71,6 +72,26 @@ internal object NativeTaoTextureBridge {
         handle: Long,
         deleteTexture: Boolean,
     )
+
+    /**
+     * Snapshots the EGL binding current on the calling thread, so
+     * [nativeRestoreBinding] can put it back after another surface's EGL
+     * surface was bound over it. Returns false when a snapshot is already
+     * outstanding — the caller must then not rebind, or it would lose the
+     * outer binding.
+     */
+    @JvmStatic
+    external fun nativeSaveCurrentBinding(): Boolean
+
+    /**
+     * Restores the binding [nativeSaveCurrentBinding] took, or unbinds the
+     * thread when nothing was current then — whatever the caller bound in
+     * between is its own surface, and leaving it current would hand the next
+     * unrelated GL work a foreign draw target. Returns false only when no
+     * snapshot was outstanding.
+     */
+    @JvmStatic
+    external fun nativeRestoreBinding(): Boolean
 
     // ---- D3D11 test producer (demos / smoke tests) -------------------
 

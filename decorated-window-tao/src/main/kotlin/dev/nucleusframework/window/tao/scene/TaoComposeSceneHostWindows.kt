@@ -4,7 +4,9 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
@@ -40,6 +42,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
+import dev.nucleusframework.window.tao.releaseWindowsTextureImports
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -154,6 +157,19 @@ internal class TaoComposeSceneHostWindows(
     private var attachmentHandle: Long = 0
     private var hwnd: Long = 0
     private var directContext: DirectContext? = null
+
+    /**
+     * Handle for `TextureView`s composed in this window's scene. Narrower than
+     * [popupHost] on purpose — see [TaoWindowsTextureHost].
+     *
+     * Published as **state**, like the Linux twin's `glTextureHostState`, for two
+     * reasons: the composition reads it, so clearing it in [detach] takes effect
+     * instead of leaving a live composition importing onto a context that is
+     * about to be destroyed; and its identity is stable, whereas a value freshly
+     * built on every read of the composition local would re-key the imports'
+     * `remember` on every recomposition of the window root.
+     */
+    val windowsTextureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
 
     private var scene: ComposeScene? = null
 
@@ -379,6 +395,7 @@ internal class TaoComposeSceneHostWindows(
                 ).apply { compositionLocalContext = pendingCompositionLocalContext }
             }
 
+        publishWindowsTextureHost()
         registerInboundDnD()
         registerTouchInput()
 
@@ -1330,19 +1347,20 @@ internal class TaoComposeSceneHostWindows(
     fun density(): Float = scale
 
     /**
-     * Handle for `TextureView`s composed in this window's scene. Narrower than
-     * [popupHost] on purpose — see [TaoWindowsTextureHost].
+     * Publishes [windowsTextureHostState] for the scene's `TextureView`s.
+     * Called from [attach], once `hwnd` and `directContext` are both set.
      */
-    fun windowsTextureHost(): TaoWindowsTextureHost? {
-        if (hwnd == 0L) return null
-        val ctx = directContext ?: return null
+    private fun publishWindowsTextureHost() {
+        if (hwnd == 0L) return
+        val ctx = directContext ?: return
         val outer = this
-        return object : TaoWindowsTextureHost {
-            override val hostHwnd: Long get() = outer.hwnd
-            override val directContext: DirectContext = ctx
+        windowsTextureHostState.value =
+            object : TaoWindowsTextureHost {
+                override val hostHwnd: Long get() = outer.hwnd
+                override val directContext: DirectContext = ctx
 
-            override fun requestRedraw() = outer.window.requestRedraw()
-        }
+                override fun requestRedraw() = outer.window.requestRedraw()
+            }
     }
 
     fun popupHost(): TaoPopupHostWindows? {
@@ -1573,6 +1591,11 @@ internal class TaoComposeSceneHostWindows(
         scene?.close()
         scene = null
         if (directContext != null) {
+            // Belt for TextureView imports a leaked composition may still hold:
+            // scene.close() above released the leases of every live one. They
+            // must go before the context they were adopted into.
+            directContext?.let(::releaseWindowsTextureImports)
+            windowsTextureHostState.value = null
             directContext?.close()
             directContext = null
             attachedHostCount.decrementAndGet()
