@@ -7,6 +7,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 
@@ -41,6 +42,14 @@ sealed interface FsWatchDeliveryMode {
 }
 
 data class FsWatcherConfig(
+    /**
+     * Whether the backend descends into symlinks it meets inside a watched tree, and whether a
+     * watch root that *is itself* a symlink reports its target's events under the root's own path.
+     *
+     * This does not affect roots merely reached *through* a symlink — a root such as
+     * `/var/folders/…/T/app` on macOS is delivered either way, under the spelling it was
+     * registered with.
+     */
     val followSymlinks: Boolean = false,
     val backend: FsWatchBackendStrategy = FsWatchBackendStrategy.Auto,
     val eventBufferCapacity: Int = 64,
@@ -77,6 +86,17 @@ interface FsWatcher : AutoCloseable {
     val events: Flow<FsWatchEvent>
     val errors: Flow<FsWatchError>
 
+    /**
+     * Watches [path], optionally [recursive]ly, under an optional [name] used to tell registrations
+     * of the same root apart.
+     *
+     * [path] needs no canonicalization: delivered [FsWatchEvent] paths are rooted at the spelling
+     * passed here, whatever form the platform backend reports internally. Registering the same
+     * directory under two spellings does yield two independent registrations and two native
+     * watches, so pick one form per root if that matters.
+     *
+     * @throws FsWatchException if the root cannot be watched.
+     */
     fun watch(
         path: Path,
         recursive: Boolean = true,
@@ -214,16 +234,10 @@ private data class NativeWatchKey(
     val recursive: Boolean,
 )
 
-private enum class MatchRootKind {
-    ORIGINAL,
-    RESOLVED,
-}
-
 private data class LogicalMatch(
     val source: FsWatchSource,
     val originalRoot: Path,
-    val resolvedRoot: Path,
-    val rootKind: MatchRootKind,
+    val matchedRoot: Path,
 )
 
 private sealed interface RoutedFsWatchEvent {
@@ -464,28 +478,11 @@ internal class NativeBackedFsWatcher(
     private fun logicalMatchesForInstallationLocked(
         nativeInstallation: NativeWatchInstallation,
         path: Path,
-    ): List<LogicalMatch> {
-        return nativeInstallation.logicalSourcesLocked().mapNotNull { source ->
+    ): List<LogicalMatch> =
+        nativeInstallation.logicalSourcesLocked().mapNotNull { source ->
             val logical = logicalRegistrationsBySource[source] ?: return@mapNotNull null
-            when {
-                coversPath(logical.originalRoot, source.recursive, path) ->
-                    LogicalMatch(
-                        source = source,
-                        originalRoot = logical.originalRoot,
-                        resolvedRoot = logical.resolvedRoot,
-                        rootKind = MatchRootKind.ORIGINAL,
-                    )
-                config.followSymlinks && coversPath(logical.resolvedRoot, source.recursive, path) ->
-                    LogicalMatch(
-                        source = source,
-                        originalRoot = logical.originalRoot,
-                        resolvedRoot = logical.resolvedRoot,
-                        rootKind = MatchRootKind.RESOLVED,
-                    )
-                else -> null
-            }
+            logicalMatchForSource(logical, source, path)
         }
-    }
 
     private fun routeEventPayload(
         payload: NativeFsWatchEventPayload,
@@ -598,16 +595,11 @@ internal class NativeBackedFsWatcher(
         path: Path,
         match: LogicalMatch,
     ): Path? {
-        val matchedRoot =
-            when (match.rootKind) {
-                MatchRootKind.ORIGINAL -> match.originalRoot
-                MatchRootKind.RESOLVED -> match.resolvedRoot
-            }
-        if (path == matchedRoot) return match.originalRoot
+        if (path == match.matchedRoot) return match.originalRoot
 
         val relativeSuffix =
             try {
-                matchedRoot.relativize(path).normalize()
+                match.matchedRoot.relativize(path).normalize()
             } catch (_: IllegalArgumentException) {
                 return null
             }
@@ -620,24 +612,26 @@ internal class NativeBackedFsWatcher(
         logical: LogicalRegistrationState,
         source: FsWatchSource,
         path: Path,
-    ): LogicalMatch? =
-        when {
-            coversPath(logical.originalRoot, source.recursive, path) ->
-                LogicalMatch(
-                    source = source,
-                    originalRoot = logical.originalRoot,
-                    resolvedRoot = logical.resolvedRoot,
-                    rootKind = MatchRootKind.ORIGINAL,
-                )
-            config.followSymlinks && coversPath(logical.resolvedRoot, source.recursive, path) ->
-                LogicalMatch(
-                    source = source,
-                    originalRoot = logical.originalRoot,
-                    resolvedRoot = logical.resolvedRoot,
-                    rootKind = MatchRootKind.RESOLVED,
-                )
-            else -> null
-        }
+    ): LogicalMatch? {
+        // When the root is not a symlink itself, its resolved form is merely a second spelling of
+        // the same directory — macOS /var -> /private/var, so every Files.createTempDirectory()
+        // result — and FSEvents only ever reports that canonical spelling. Matching it is not
+        // symlink following, so it must not depend on followSymlinks. Resolving a root that *is* a
+        // symlink does follow one, and stays opt-in.
+        val resolvedRootMatchable = !logical.rootIsSymbolicLink || config.followSymlinks
+        val matchedRoot =
+            when {
+                coversPath(logical.originalRoot, source.recursive, path) -> logical.originalRoot
+                resolvedRootMatchable && coversPath(logical.resolvedRoot, source.recursive, path) ->
+                    logical.resolvedRoot
+                else -> return null
+            }
+        return LogicalMatch(
+            source = source,
+            originalRoot = logical.originalRoot,
+            matchedRoot = matchedRoot,
+        )
+    }
 
     private fun remapMovedEndpoint(
         path: Path,
@@ -877,6 +871,7 @@ internal class NativeBackedFsWatcher(
         var nativeInstallation: NativeWatchInstallation,
         val originalRoot: Path,
         val resolvedRoot: Path,
+        val rootIsSymbolicLink: Boolean,
         var refCount: Int,
     )
 
@@ -899,6 +894,7 @@ internal class NativeBackedFsWatcher(
                         nativeInstallation = this,
                         originalRoot = source.root,
                         resolvedRoot = resolveRootPath(source.root),
+                        rootIsSymbolicLink = Files.isSymbolicLink(source.root),
                         refCount = 1,
                     )
             } else {
