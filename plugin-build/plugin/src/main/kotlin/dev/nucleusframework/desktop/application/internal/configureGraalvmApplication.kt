@@ -36,6 +36,7 @@ import org.gradle.api.tasks.JavaExec
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaLauncher
 import org.gradle.jvm.toolchain.JavaToolchainService
 import org.jetbrains.kotlin.gradle.plugin.KotlinPlatformType
 import java.io.File
@@ -90,7 +91,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
     }
 
     val graalvmHome: Provider<String>
-    val graalvmJavaExecutable: Provider<String>
+    // Forking a JVM out of the resolved GraalVM goes through a JavaLauncher, never through
+    // `JavaExec.executable`: JavaExec validates that the two agree and fails with "Toolchain
+    // from `executable` property does not match toolchain from `javaLauncher` property" as soon
+    // as the GraalVM differs from the JVM `javaLauncher` defaults to (the Gradle daemon's).
+    val graalvmJavaLauncher: Provider<JavaLauncher>
     if (graalvm.toolchain.autoDownload.get()) {
         // Auto-provisioned toolchain: GraalVM CE by default (Liberica NIK on Intel macs) is
         // downloaded on first use and cached under the Gradle user home, so once
@@ -117,7 +122,18 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     ).absolutePath,
                 )
             }
-        graalvmJavaExecutable = graalvmHome.map { javaExecutable(it) }
+        // Gradle's toolchain machinery knows nothing about this installation, so wrap it in a
+        // JavaLauncher of our own. Built inside the `map` so the launcher — and with it the
+        // provisioning — stays as lazy as the home it points at.
+        val objects = project.objects
+        graalvmJavaLauncher =
+            graalvmHome.map { home ->
+                ExternalJavaLauncher(
+                    javaBinary = File(javaExecutable(home)),
+                    javaHome = File(home),
+                    objects = objects,
+                )
+            }
     } else {
         val javaToolchains = project.extensions.getByType(JavaToolchainService::class.java)
         val graalvmLauncher =
@@ -131,10 +147,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             graalvmLauncher.map { launcher ->
                 launcher.metadata.installationPath.asFile.absolutePath
             }
-        graalvmJavaExecutable =
-            graalvmLauncher.map { launcher ->
-                launcher.executablePath.asFile.absolutePath
-            }
+        graalvmJavaLauncher = graalvmLauncher
     }
 
     val nativeImageConfigDir = graalvm.nativeImageConfigBaseDir
@@ -200,9 +213,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             description = "Run the app with the GraalVM native-image-agent to collect reflection metadata"
 
             mainClass.set(app.mainClass)
-            // Resolved at execution time: querying the provider here would provision the
-            // toolchain as soon as the task is realized (an IDE sync, `gradlew tasks`).
-            doFirst { setExecutable(graalvmJavaExecutable.get()) }
+            // The launcher — not `executable`: JavaExec forks the JVM the launcher points at and
+            // rejects an `executable` resolving to a different one. Wired as a provider so the
+            // toolchain is only resolved when the task actually runs, never when it is merely
+            // realized (an IDE sync, `gradlew tasks`).
+            javaLauncher.set(graalvmJavaLauncher)
 
             useAppRuntimeFiles { (runtimeJars, _) ->
                 classpath = runtimeJars
