@@ -39,6 +39,7 @@ import dev.nucleusframework.window.tao.D3D11TestTextureProducer
 import dev.nucleusframework.window.tao.DmaBufTestTextureProducer
 import dev.nucleusframework.window.tao.MetalTestTextureProducer
 import dev.nucleusframework.window.tao.NucleusDrmFormat
+import dev.nucleusframework.window.tao.NucleusYuvFormat
 import dev.nucleusframework.window.tao.TaoStandalonePopup
 import dev.nucleusframework.window.tao.TextureView
 import dev.nucleusframework.window.tao.TextureViewSource
@@ -68,15 +69,27 @@ private const val TEX_H = 96
 fun TextureTab(modifier: Modifier = Modifier) {
     val syncProducer = remember { createDemoProducer(TEX_W, TEX_H, synchronized = true) }
     val rawProducer = remember { createDemoProducer(TEX_W, TEX_H, synchronized = false) }
+    // Linux only: a planar (I420) buffer, the layout a hardware video decoder
+    // hands out, published with an acquire fence instead of a blocking finish.
+    val planarProducer = remember { DmaBufTestTextureProducer.createYuv(TEX_W, TEX_H) }
+    // The same layout with its chroma planes listed the other way round: both
+    // boxes must look identical to the packed ones, which is what shows the plane
+    // order is the buffer's business and not the app's.
+    val swappedPlanarProducer =
+        remember { DmaBufTestTextureProducer.createYuv(TEX_W, TEX_H, NucleusYuvFormat.YV12) }
     DisposableEffect(Unit) {
         onDispose {
             syncProducer?.close()
             rawProducer?.close()
+            planarProducer?.close()
+            swappedPlanarProducer?.close()
         }
     }
 
     val syncController = rememberTextureViewController()
     val rawController = rememberTextureViewController()
+    val planarController = rememberTextureViewController()
+    val swappedController = rememberTextureViewController()
 
     // Frame-rate probe: producer frames are counted on the producer thread,
     // composited draws inside the primary TextureView's draw pass. Both are
@@ -89,11 +102,11 @@ fun TextureTab(modifier: Modifier = Modifier) {
     // on ProMotion, …) instead of a hard-coded 60. The GPU work itself stays on
     // a background dispatcher — that is what proves markFrameAvailable is
     // thread-safe and that animation never touches the composition.
-    LaunchedEffect(syncProducer, rawProducer) {
+    LaunchedEffect(syncProducer, rawProducer, planarProducer) {
         // No producer (no D3D11 / Metal / DRM render node): stay out of the frame
         // clock entirely — a withFrameNanos awaiter re-arms the frame dispatcher
         // every tick, which would spin the render loop on empty frames.
-        if (syncProducer == null && rawProducer == null) return@LaunchedEffect
+        if (syncProducer == null && rawProducer == null && planarProducer == null) return@LaunchedEffect
         var tick = 0
         while (isActive) {
             withFrameNanos { }
@@ -107,6 +120,16 @@ fun TextureTab(modifier: Modifier = Modifier) {
                 if (rawProducer != null) {
                     rawProducer.drawTestPattern(tick, bg)
                     rawController.markFrameAvailable()
+                }
+                if (planarProducer != null) {
+                    // The fence descriptor is handed straight over: the controller
+                    // takes ownership and the compositor's GPU waits on it, so this
+                    // producer never blocks on `glFinish`.
+                    planarController.markFrameAvailable(planarProducer.drawTestPatternFenced(tick, bg))
+                }
+                if (swappedPlanarProducer != null) {
+                    swappedPlanarProducer.drawTestPattern(tick, bg)
+                    swappedController.markFrameAvailable()
                 }
             }
             meter.onProducerFrame()
@@ -228,6 +251,27 @@ fun TextureTab(modifier: Modifier = Modifier) {
                 controller = rawController,
                 modifier = demoBox(160.dp, 120.dp),
             )
+        }
+
+        if (planarProducer != null) {
+            BasicText(
+                text =
+                    "Planar I420 DMA-BUF (a video decoder's layout) — three single-channel planes " +
+                        "converted in the draw, published with an acquire fence (I420, then YV12):",
+                style = label,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                TextureView(
+                    source = planarProducer.source,
+                    controller = planarController,
+                    modifier = demoBox(160.dp, 120.dp),
+                )
+                TextureView(
+                    source = swappedPlanarProducer?.source,
+                    controller = swappedController,
+                    modifier = demoBox(160.dp, 120.dp),
+                )
+            }
         }
 
         // Tray panel: a standalone, ownerless surface with its OWN Skia context.

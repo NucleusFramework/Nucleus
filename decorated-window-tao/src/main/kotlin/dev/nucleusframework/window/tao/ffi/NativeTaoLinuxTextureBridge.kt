@@ -17,7 +17,13 @@ package dev.nucleusframework.window.tao.ffi
  *
  * There is no per-frame native call: the imported texture aliases the
  * producer's DMA-BUF, so a producer's writes are visible to the next Skia draw
- * that samples it (true zero copy, like the Windows `MISC_SHARED` path).
+ * that samples it (true zero copy, like the Windows `MISC_SHARED` path) — unless
+ * the producer hands over an acquire fence, which costs one [nativeWaitFence]
+ * per frame per surface and still never blocks a thread.
+ *
+ * Planar YUV goes through [nativeImportDmaBuf] as well, once per plane: the
+ * accepted FourCCs include the plane formats, and the Kotlin side samples the
+ * resulting textures through one conversion shader.
  *
  * The test producer owns a private GBM device + EGL context and is safe from
  * any single producer thread (it binds its context per call).
@@ -34,9 +40,12 @@ internal object NativeTaoLinuxTextureBridge {
      *
      * [fd] is only read here; EGL takes its own reference to the buffer, so the
      * caller stays its owner and may close it right after. [fourcc] must be a
-     * single-plane 32-bit RGB DRM format (`AR24`, `XR24`, `AB24`, `XB24`, …) —
+     * single-plane DRM format: 32-bit RGB (`AR24`, `XR24`, `AB24`, `XB24`, …) —
      * the driver interprets it, so GL sampling always yields RGBA whatever the
-     * memory order. [modifier] is a DRM format modifier, or
+     * memory order — or one *plane* of a planar YUV buffer (`R8` for luma and
+     * I420 chroma, `GR88` / `RG88` for NV12's interleaved chroma), which the
+     * caller then samples through its own conversion shader. [modifier] is a DRM
+     * format modifier, or
      * `DRM_FORMAT_MOD_INVALID` (`0x00FFFFFFFFFFFFFF`) to let the driver assume
      * an implicit layout.
      *
@@ -102,6 +111,26 @@ internal object NativeTaoLinuxTextureBridge {
     @JvmStatic
     external fun nativeIsDmaBufImportSupported(): Boolean
 
+    /** Whether it also advertises `EGL_ANDROID_native_fence_sync`. */
+    @JvmStatic
+    external fun nativeIsNativeFenceSupported(): Boolean
+
+    /**
+     * Makes the EGL context current on this thread wait for [fenceFd] on the GPU
+     * before executing anything issued afterwards — the acquire fence a producer
+     * hands over instead of finishing its writes. Returns false when the driver
+     * has no native fence sync, no context is current, or the fd is not a fence.
+     *
+     * [fenceFd] stays the caller's: EGL is given a dup of it, so the same fence
+     * can be waited on by every surface that composites the frame.
+     */
+    @JvmStatic
+    external fun nativeWaitFence(fenceFd: Int): Boolean
+
+    /** `close(2)` for a fence fd Kotlin owns — the JDK cannot close a bare descriptor. */
+    @JvmStatic
+    external fun nativeCloseFenceFd(fenceFd: Int)
+
     /**
      * Snapshots the EGL binding current on this thread, so [nativeRestoreBinding]
      * can put it back after another surface's context was bound over it. Returns
@@ -136,17 +165,58 @@ internal object NativeTaoLinuxTextureBridge {
         fourcc: Int,
     ): Long
 
-    /** DMA-BUF fd of the producer's buffer — borrowed, valid until destroy. */
+    /**
+     * Planar counterpart: one GBM buffer in a planar DRM format ([yuvFormat] is a
+     * [dev.nucleusframework.window.tao.NucleusYuvFormat] ordinal — only the two
+     * "U before V" layouts, NV12 and I420, can be allocated), each of whose
+     * planes is imported on the producer's own display and attached to an FBO, so
+     * the pattern can be drawn into a YUV buffer with scissored clears alone.
+     * [colorSpace] is a [dev.nucleusframework.window.tao.NucleusYuvColorSpace]
+     * ordinal, and the conversion is the exact inverse of the consumer's — a frame
+     * must composite back as the colour it was asked for.
+     *
+     * Returns 0 when the driver cannot allocate or render to the format, or when
+     * libgbm has no plane accessors.
+     */
     @JvmStatic
-    external fun nativeTestProducerFd(producer: Long): Int
+    external fun nativeTestProducerCreateYuv(
+        widthPx: Int,
+        heightPx: Int,
+        yuvFormat: Int,
+        colorSpace: Int,
+    ): Long
 
-    /** Row pitch of the producer's buffer, in bytes. */
+    /** Number of DMA-BUF planes the producer publishes (1 for packed RGB). */
     @JvmStatic
-    external fun nativeTestProducerStride(producer: Long): Int
+    external fun nativeTestProducerPlaneCount(producer: Long): Int
 
-    /** DRM format modifier the driver picked for the producer's buffer. */
+    /** DMA-BUF fd of plane [index] — borrowed, valid until destroy. */
     @JvmStatic
-    external fun nativeTestProducerModifier(producer: Long): Long
+    external fun nativeTestProducerPlaneFd(
+        producer: Long,
+        index: Int,
+    ): Int
+
+    /** Row pitch of plane [index], in bytes. */
+    @JvmStatic
+    external fun nativeTestProducerPlaneStride(
+        producer: Long,
+        index: Int,
+    ): Int
+
+    /** Byte offset of plane [index] inside its buffer. */
+    @JvmStatic
+    external fun nativeTestProducerPlaneOffset(
+        producer: Long,
+        index: Int,
+    ): Int
+
+    /** DRM format modifier the driver picked for plane [index]. */
+    @JvmStatic
+    external fun nativeTestProducerPlaneModifier(
+        producer: Long,
+        index: Int,
+    ): Long
 
     /**
      * Clears the producer buffer to [argb] (premultiplied on the native side)
@@ -171,6 +241,20 @@ internal object NativeTaoLinuxTextureBridge {
         tick: Int,
         argbBg: Int,
     )
+
+    /**
+     * Same pattern, published with an **acquire fence** instead of a `glFinish`:
+     * returns a `sync_file` fd the consumer waits on with [nativeWaitFence], so
+     * neither side blocks on the CPU. Ownership passes to the caller. Returns -1
+     * when the driver has no native fence sync — the frame was then finished
+     * synchronously, so it is safe to signal either way.
+     */
+    @JvmStatic
+    external fun nativeTestProducerDrawPatternFenced(
+        producer: Long,
+        tick: Int,
+        argbBg: Int,
+    ): Int
 
     @JvmStatic
     external fun nativeTestProducerDestroy(producer: Long)

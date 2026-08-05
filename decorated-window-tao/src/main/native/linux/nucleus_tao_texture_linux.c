@@ -26,6 +26,23 @@
  * (R, G, B, A) whatever the buffer's byte order is. Kotlin therefore always
  * describes the adopted texture to Skia as RGBA8 — no per-format swizzle.
  *
+ * Planar YUV (a video decoder's native output) goes through the very same
+ * entry point, once per plane: the accepted FourCC set includes the
+ * single-channel and two-channel plane formats (`R8`, `GR88` / `RG88`), so an
+ * NV12 or I420 buffer is imported as two or three independent textures that
+ * Kotlin samples through one runtime-effect shader. Importing the *whole*
+ * multi-plane image instead would need `GL_TEXTURE_EXTERNAL_OES`, which is an
+ * ES-only target no desktop GL driver exposes — Mesa refuses such an image on
+ * `GL_TEXTURE_2D` outright.
+ *
+ * Fencing: the zero-copy contract ("finish your writes before you signal") is
+ * the default, but a producer that would rather not block can hand over an
+ * acquire fence instead — [nativeWaitFence] turns a `sync_file` fd into an EGL
+ * sync object and makes the consumer's context wait on the GPU, so nothing on
+ * either side stalls the CPU. Needs EGL_ANDROID_native_fence_sync (Mesa and
+ * NVIDIA both ship it); the fence fd is dup-ed, never consumed, because every
+ * surface drawing the frame has to wait on its own context.
+ *
  * Threading: import / destroy must run with the target window's EGL context
  * current on the calling thread, because they create and delete GL objects
  * that Skia's `DirectContext` for that context will own. On Linux that is the
@@ -70,6 +87,7 @@ typedef void         *EGLConfig;
 typedef void         *EGLContext;
 typedef void         *EGLSurface;
 typedef void         *EGLImageKHR;
+typedef void         *EGLSyncKHR;
 typedef void         *EGLClientBuffer;
 typedef int           EGLBoolean;
 typedef int           EGLint;
@@ -108,6 +126,10 @@ typedef float         GLfloat;
 #define EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT   0x3443
 #define EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT   0x3444
 #define EGL_IMAGE_PRESERVED_KHR              0x30D2
+#define EGL_SYNC_NATIVE_FENCE_ANDROID        0x3144
+#define EGL_SYNC_NATIVE_FENCE_FD_ANDROID     0x3145
+#define EGL_NO_NATIVE_FENCE_FD_ANDROID       (-1)
+#define EGL_NO_SYNC_KHR                      ((EGLSyncKHR) 0)
 
 #define GL_NO_ERROR                          0
 #define GL_TEXTURE_2D                        0x0DE1
@@ -142,6 +164,22 @@ typedef float         GLfloat;
 
 #define NUCLEUS_TEST_BAR_PX 16
 
+/* The planar format the bundled test producer allocates, mirrored from
+ * NucleusYuvFormat on the Kotlin side. YV12 is the same buffer with its chroma
+ * planes listed the other way round, which is a consumer-side concern. */
+#define NUCLEUS_TEST_YUV_I420 0
+
+/* Colour spaces, mirrored from NucleusYuvColorSpace. The producer converts its
+ * pattern to Y'CbCr with these; the consumer's shader inverts the very same
+ * definition, so a composited frame must come back the colour the caller asked
+ * for (what the YUV smoke tests assert). */
+#define NUCLEUS_YUV_BT601_LIMITED 0
+#define NUCLEUS_YUV_BT601_FULL    1
+#define NUCLEUS_YUV_BT709_LIMITED 2
+#define NUCLEUS_YUV_BT709_FULL    3
+
+#define NUCLEUS_TEST_MAX_PLANES 3
+
 /* ── Entry points ────────────────────────────────────────────────────────── */
 
 typedef EGLDisplay  (*PFN_eglGetPlatformDisplayEXT)(EGLenum, void *, const EGLint *);
@@ -157,6 +195,10 @@ typedef EGLint      (*PFN_eglGetError)(void);
 typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
 typedef EGLImageKHR (*PFN_eglCreateImageKHR)(EGLDisplay, EGLContext, EGLenum, EGLClientBuffer, const EGLint *);
 typedef EGLBoolean  (*PFN_eglDestroyImageKHR)(EGLDisplay, EGLImageKHR);
+typedef EGLSyncKHR  (*PFN_eglCreateSyncKHR)(EGLDisplay, EGLenum, const EGLint *);
+typedef EGLBoolean  (*PFN_eglDestroySyncKHR)(EGLDisplay, EGLSyncKHR);
+typedef EGLint      (*PFN_eglWaitSyncKHR)(EGLDisplay, EGLSyncKHR, EGLint);
+typedef EGLint      (*PFN_eglDupNativeFenceFDANDROID)(EGLDisplay, EGLSyncKHR);
 
 typedef void   (*PFN_glEGLImageTargetTexture2DOES)(GLenum, EGLImageKHR);
 typedef void   (*PFN_glGenTextures)(GLsizei, GLuint *);
@@ -177,6 +219,7 @@ typedef void   (*PFN_glEnable)(GLenum);
 typedef void   (*PFN_glDisable)(GLenum);
 typedef void   (*PFN_glViewport)(GLint, GLint, GLsizei, GLsizei);
 typedef void   (*PFN_glFinish)(void);
+typedef void   (*PFN_glFlush)(void);
 
 static PFN_eglGetPlatformDisplayEXT     p_eglGetPlatformDisplayEXT = NULL;
 static PFN_eglInitialize                p_eglInitialize            = NULL;
@@ -191,6 +234,10 @@ static PFN_eglGetError                  p_eglGetError              = NULL;
 static PFN_eglQueryString               p_eglQueryString           = NULL;
 static PFN_eglCreateImageKHR            p_eglCreateImageKHR        = NULL;
 static PFN_eglDestroyImageKHR           p_eglDestroyImageKHR       = NULL;
+static PFN_eglCreateSyncKHR             p_eglCreateSyncKHR         = NULL;
+static PFN_eglDestroySyncKHR            p_eglDestroySyncKHR        = NULL;
+static PFN_eglWaitSyncKHR               p_eglWaitSyncKHR           = NULL;
+static PFN_eglDupNativeFenceFDANDROID   p_eglDupNativeFenceFDANDROID = NULL;
 
 static PFN_glEGLImageTargetTexture2DOES p_glEGLImageTargetTexture2DOES = NULL;
 static PFN_glGenTextures                p_glGenTextures            = NULL;
@@ -211,6 +258,7 @@ static PFN_glEnable                     p_glEnable                 = NULL;
 static PFN_glDisable                    p_glDisable                = NULL;
 static PFN_glViewport                   p_glViewport               = NULL;
 static PFN_glFinish                     p_glFinish                 = NULL;
+static PFN_glFlush                      p_glFlush                  = NULL;
 
 /* GBM — dlopen-ed, and only for the bundled test producer. Real applications
  * bring their own DMA-BUF; nothing on the import path needs libgbm. */
@@ -221,6 +269,10 @@ typedef void      (*PFN_gbm_bo_destroy)(void *);
 typedef int       (*PFN_gbm_bo_get_fd)(void *);
 typedef uint32_t  (*PFN_gbm_bo_get_stride)(void *);
 typedef uint64_t  (*PFN_gbm_bo_get_modifier)(void *);
+typedef int       (*PFN_gbm_bo_get_plane_count)(void *);
+typedef int       (*PFN_gbm_bo_get_fd_for_plane)(void *, int);
+typedef uint32_t  (*PFN_gbm_bo_get_offset)(void *, int);
+typedef uint32_t  (*PFN_gbm_bo_get_stride_for_plane)(void *, int);
 
 static PFN_gbm_create_device   p_gbm_create_device   = NULL;
 static PFN_gbm_device_destroy  p_gbm_device_destroy  = NULL;
@@ -229,6 +281,12 @@ static PFN_gbm_bo_destroy      p_gbm_bo_destroy      = NULL;
 static PFN_gbm_bo_get_fd       p_gbm_bo_get_fd       = NULL;
 static PFN_gbm_bo_get_stride   p_gbm_bo_get_stride   = NULL;
 static PFN_gbm_bo_get_modifier p_gbm_bo_get_modifier = NULL;
+/* Plane accessors: only the planar test producer needs them, and only libgbm
+ * 17+ has them — a driver stack without them just cannot host that producer. */
+static PFN_gbm_bo_get_plane_count      p_gbm_bo_get_plane_count      = NULL;
+static PFN_gbm_bo_get_fd_for_plane     p_gbm_bo_get_fd_for_plane     = NULL;
+static PFN_gbm_bo_get_offset           p_gbm_bo_get_offset           = NULL;
+static PFN_gbm_bo_get_stride_for_plane p_gbm_bo_get_stride_for_plane = NULL;
 
 #define GBM_BO_USE_RENDERING (1u << 2)
 
@@ -273,6 +331,12 @@ static int resolve_entry_points_locked(void) {
     LOAD_PROC(eglGetPlatformDisplayEXT);
     LOAD_PROC(eglCreateImageKHR);
     LOAD_PROC(eglDestroyImageKHR);
+    /* Fence sync: optional. A driver without EGL_ANDROID_native_fence_sync
+     * simply leaves producers on the "finish before you signal" contract. */
+    LOAD_PROC(eglCreateSyncKHR);
+    LOAD_PROC(eglDestroySyncKHR);
+    LOAD_PROC(eglWaitSyncKHR);
+    LOAD_PROC(eglDupNativeFenceFDANDROID);
     LOAD_PROC(glEGLImageTargetTexture2DOES);
     LOAD_PROC(glGenTextures);
     LOAD_PROC(glDeleteTextures);
@@ -292,6 +356,7 @@ static int resolve_entry_points_locked(void) {
     LOAD_PROC(glDisable);
     LOAD_PROC(glViewport);
     LOAD_PROC(glFinish);
+    LOAD_PROC(glFlush);
 #undef LOAD_PROC
 
     if (!p_eglQueryString || !p_eglCreateImageKHR || !p_eglDestroyImageKHR ||
@@ -327,6 +392,10 @@ static int resolve_gbm_locked(void) {
     LOAD_GBM(gbm_bo_get_fd);
     LOAD_GBM(gbm_bo_get_stride);
     LOAD_GBM(gbm_bo_get_modifier);
+    LOAD_GBM(gbm_bo_get_plane_count);
+    LOAD_GBM(gbm_bo_get_fd_for_plane);
+    LOAD_GBM(gbm_bo_get_offset);
+    LOAD_GBM(gbm_bo_get_stride_for_plane);
 #undef LOAD_GBM
     if (!p_gbm_create_device || !p_gbm_bo_create || !p_gbm_bo_get_fd ||
         !p_gbm_bo_get_stride) {
@@ -371,10 +440,18 @@ static int has_extension(EGLDisplay display, const char *name) {
     return strstr(exts, name) != NULL;
 }
 
-/* Single-plane 32-bit RGB FourCCs. Anything else (planar YUV, 10-bit, …) would
- * import but sample as garbage once Skia treats plane 0 as RGBA8, so it is
- * rejected up front rather than silently mis-rendered. */
-static int is_supported_fourcc(int fourcc) {
+/**
+ * Bytes per pixel of an accepted **single-plane** FourCC, or 0 when the format
+ * is not one we can import. Anything outside this set (10-bit, tri-channel
+ * packings, a multi-plane FourCC handed over whole) would import on some drivers
+ * and then sample as garbage, so it is rejected up front rather than silently
+ * mis-rendered.
+ *
+ * The one-channel entry is a *plane* of a planar YUV buffer: I420 and YV12 are
+ * imported as three R8 planes, one per component. The value doubles as the stride
+ * validator: a stride below `width * bpp` cannot describe the plane.
+ */
+static int fourcc_bytes_per_pixel(int fourcc) {
     switch ((unsigned) fourcc) {
         case 0x34325241u: /* AR24 — DRM_FORMAT_ARGB8888 */
         case 0x34325258u: /* XR24 — DRM_FORMAT_XRGB8888 */
@@ -384,6 +461,8 @@ static int is_supported_fourcc(int fourcc) {
         case 0x34325852u: /* RX24 — DRM_FORMAT_RGBX8888 */
         case 0x34324142u: /* BA24 — DRM_FORMAT_BGRA8888 */
         case 0x34325842u: /* BX24 — DRM_FORMAT_BGRX8888 */
+            return 4;
+        case 0x20203852u: /* R8   — DRM_FORMAT_R8, a luma or chroma plane */
             return 1;
         default:
             return 0;
@@ -478,12 +557,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeImpor
     if (fd < 0 || widthPx < 1 || heightPx < 1 || stride < 1 || offset < 0) {
         return NUCLEUS_TEX_ERR_ARGS;
     }
-    if (!is_supported_fourcc(fourcc)) return NUCLEUS_TEX_ERR_ARGS;
-    /* Every accepted FourCC is 4 bytes per pixel, so a stride below the row
-     * size cannot describe the buffer. Drivers often accept such an image and
-     * then sample past the end of the plane — a caller who passed the stride in
-     * pixels instead of bytes would get garbage instead of a clean failure. */
-    if (stride / 4 < widthPx) return NUCLEUS_TEX_ERR_ARGS;
+    const int bpp = fourcc_bytes_per_pixel(fourcc);
+    if (bpp == 0) return NUCLEUS_TEX_ERR_ARGS;
+    /* A stride below the row size cannot describe the plane. Drivers often
+     * accept such an image and then sample past the end of it — a caller who
+     * passed the stride in pixels instead of bytes would get garbage instead of
+     * a clean failure. */
+    if ((long long) stride < (long long) widthPx * bpp) return NUCLEUS_TEX_ERR_ARGS;
     if (!resolve_entry_points()) return NUCLEUS_TEX_ERR_ENTRYPOINTS;
 
     EGLDisplay display = (EGLDisplay) nucleus_tao_egl_current_display();
@@ -660,27 +740,120 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeIsDma
     return has_extension(display, "EGL_EXT_image_dma_buf_import") ? JNI_TRUE : JNI_FALSE;
 }
 
+/* ── Acquire fences ──────────────────────────────────────────────────────
+ *
+ * The default contract is "finish your writes before you signal the frame",
+ * which costs the producer a `glFinish`. A producer that would rather not block
+ * its own thread can pass a `sync_file` fd instead — anything a GPU API hands
+ * out as a fence (`eglDupNativeFenceFDANDROID`, `VK_KHR_external_fence_fd`, a
+ * V4L2 / VA-API out-fence) — and the *consumer's* GPU waits on it.
+ *
+ * The wait has to be issued on the context that will sample the texture, and a
+ * frame can be composited by more than one surface (a window and a tray panel
+ * each own a context), so the fd is dup-ed here rather than consumed: EGL takes
+ * ownership of the dup and closes it with the sync object, while the caller's fd
+ * stays valid for the next surface — and for its own bookkeeping. */
+
+/** Whether the currently bound EGL display can wait on a native fence fd. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeIsNativeFenceSupported(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    if (!resolve_entry_points()) return JNI_FALSE;
+    if (!p_eglCreateSyncKHR || !p_eglDestroySyncKHR || !p_eglWaitSyncKHR) return JNI_FALSE;
+    EGLDisplay display = (EGLDisplay) nucleus_tao_egl_current_display();
+    if (display == EGL_NO_DISPLAY) return JNI_FALSE;
+    return has_extension(display, "EGL_ANDROID_native_fence_sync") ? JNI_TRUE : JNI_FALSE;
+}
+
+/**
+ * Makes the EGL context current on this thread wait for [fenceFd] to signal
+ * before executing any command issued after this call — a GPU-side wait, so
+ * neither thread blocks. Returns false when the driver has no native fence sync,
+ * no context is current, or the fd is not a fence; the caller then falls back to
+ * drawing straight away (the producer's own "finish before you signal" contract
+ * is what keeps that safe).
+ *
+ * [fenceFd] stays the caller's: only a dup of it is handed to EGL.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeWaitFence(
+        JNIEnv *env, jclass clazz, jint fenceFd) {
+    (void) env; (void) clazz;
+    if (fenceFd < 0) return JNI_FALSE;
+    if (!resolve_entry_points()) return JNI_FALSE;
+    if (!p_eglCreateSyncKHR || !p_eglDestroySyncKHR || !p_eglWaitSyncKHR) return JNI_FALSE;
+    EGLDisplay display = (EGLDisplay) nucleus_tao_egl_current_display();
+    if (display == EGL_NO_DISPLAY || nucleus_tao_egl_current_context() == NULL) return JNI_FALSE;
+
+    /* EGL closes the fd it is given when the sync object dies, whether or not
+     * creation succeeded — hence the dup, and hence closing it ourselves only
+     * on the path where creation refused it. */
+    int dup_fd = fcntl(fenceFd, F_DUPFD_CLOEXEC, 0);
+    if (dup_fd < 0) return JNI_FALSE;
+    const EGLint attrs[] = { EGL_SYNC_NATIVE_FENCE_FD_ANDROID, dup_fd, EGL_NONE };
+    EGLSyncKHR sync = p_eglCreateSyncKHR(display, EGL_SYNC_NATIVE_FENCE_ANDROID, attrs);
+    if (sync == EGL_NO_SYNC_KHR) {
+        DBG("eglCreateSyncKHR(native fence) failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        close(dup_fd);
+        return JNI_FALSE;
+    }
+    const EGLBoolean waited = p_eglWaitSyncKHR(display, sync, 0) == EGL_TRUE;
+    p_eglDestroySyncKHR(display, sync);
+    return waited ? JNI_TRUE : JNI_FALSE;
+}
+
+/**
+ * Closes a fence fd the Kotlin side took ownership of (the acquire fence a
+ * controller holds until the next frame replaces it). Plain `close(2)`, exposed
+ * here because the JDK offers no way to close a bare descriptor.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeCloseFenceFd(
+        JNIEnv *env, jclass clazz, jint fenceFd) {
+    (void) env; (void) clazz;
+    if (fenceFd >= 0) close(fenceFd);
+}
+
 /* ================================================================== */
 /*  GBM + EGL test producer (demos / smoke tests)                      */
 /* ================================================================== */
+
+/**
+ * One render target of the producer: a plane of its GBM buffer, imported on the
+ * producer's own EGL display and attached to an FBO. A packed RGB producer has
+ * exactly one; an NV12 one has two (R8 luma + two-channel chroma), an I420 one
+ * three (R8 each).
+ */
+typedef struct {
+    /* Exported descriptor for this plane — owned here, closed on destroy. */
+    int         fd;
+    int         offset;
+    int         stride;
+    uint64_t    modifier;
+    int         widthPx;
+    int         heightPx;
+    int         fourcc;
+    EGLImageKHR image;
+    GLuint      texture;
+    GLuint      fbo;
+} NucleusTaoTestPlane;
 
 typedef struct {
     int         drmFd;
     void       *gbmDevice;
     void       *bo;
-    int         dmaBufFd;
-    int         stride;
-    uint64_t    modifier;
-    int         fourcc;
+    int         planeCount;
+    NucleusTaoTestPlane planes[NUCLEUS_TEST_MAX_PLANES];
     int         widthPx;
     int         heightPx;
+    /* < 0 for a packed RGB buffer; otherwise the NucleusYuvColorSpace the
+     * pattern is converted to before it is written to the planes. */
+    int         yuvColorSpace;
     /* Private EGL display + context: the DMA-BUF is the only thing shared with
      * the consumer, exactly like a real producer. */
     EGLDisplay  display;
     EGLContext  context;
-    EGLImageKHR image;
-    GLuint      texture;
-    GLuint      fbo;
     /* Whatever was current on the calling thread when the producer bound its
      * own context, restored on release — a producer driven from the thread that
      * also renders the Compose scene must not steal the host's context. Only
@@ -805,106 +978,296 @@ static void producer_clear(jint argb) {
     p_glClear(GL_COLOR_BUFFER_BIT);
 }
 
-JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerCreate(
-        JNIEnv *env, jclass clazz, jint widthPx, jint heightPx, jint fourcc) {
-    (void) env; (void) clazz;
-    if (widthPx < 1 || heightPx < 1 || !is_supported_fourcc(fourcc)) return 0;
-    if (!resolve_entry_points() || !resolve_gbm()) return 0;
-    if (!p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D ||
-        !p_glCheckFramebufferStatus || !p_glClear || !p_glClearColor || !p_glScissor) {
+/**
+ * Y'CbCr texture values (each 0..1, as a plane sampler returns them) of an ARGB
+ * colour in [colorSpace] — the exact inverse of the matrix the consumer's shader
+ * applies, derived from the same Kr/Kb rather than copied from a table, so the
+ * two cannot drift apart. A frame written here therefore composites back as the
+ * colour asked for, which is what the YUV smoke tests assert.
+ */
+static void argb_to_yuv(int colorSpace, jint argb, float *y, float *u, float *v) {
+    const float r = (float) ((argb >> 16) & 0xFF) / 255.0f;
+    const float g = (float) ((argb >>  8) & 0xFF) / 255.0f;
+    const float b = (float) ( argb        & 0xFF) / 255.0f;
+    const int bt709 = colorSpace == NUCLEUS_YUV_BT709_LIMITED ||
+                      colorSpace == NUCLEUS_YUV_BT709_FULL;
+    const int limited = colorSpace == NUCLEUS_YUV_BT601_LIMITED ||
+                        colorSpace == NUCLEUS_YUV_BT709_LIMITED;
+    const float kr = bt709 ? 0.2126f : 0.299f;
+    const float kb = bt709 ? 0.0722f : 0.114f;
+    const float luma = kr * r + (1.0f - kr - kb) * g + kb * b;
+    const float cb = (b - luma) / (2.0f * (1.0f - kb));
+    const float cr = (r - luma) / (2.0f * (1.0f - kr));
+    /* 128, not 127.5: the neutral chroma sample is the same in both ranges. */
+    const float neutral = 128.0f / 255.0f;
+    if (limited) {
+        *y = (16.0f + 219.0f * luma) / 255.0f;
+        *u = neutral + cb * (224.0f / 255.0f);
+        *v = neutral + cr * (224.0f / 255.0f);
+    } else {
+        *y = luma;
+        *u = neutral + cb;
+        *v = neutral + cr;
+    }
+}
+
+/**
+ * Clears the bound FBO to the component plane [index] of this producer carries:
+ * luma for plane 0, then Cb and Cr.
+ */
+static void producer_clear_plane(
+        const NucleusTaoLinuxTestProducer *p, int index, float y, float u, float v) {
+    (void) p;
+    p_glClearColor(index == 0 ? y : (index == 1 ? u : v), 0.0f, 0.0f, 1.0f);
+    p_glClear(GL_COLOR_BUFFER_BIT);
+}
+
+/**
+ * Imports plane [index] of the producer's buffer on the producer's own display
+ * and attaches it to a fresh FBO. The producer's context must be current.
+ * Returns 0 on failure, with whatever it built already recorded in the plane so
+ * [producer_free] releases it.
+ */
+static int producer_plane_init(
+        NucleusTaoLinuxTestProducer *p, int index, int fourcc, int widthPx, int heightPx) {
+    NucleusTaoTestPlane *plane = &p->planes[index];
+    plane->fourcc   = fourcc;
+    plane->widthPx  = widthPx;
+    plane->heightPx = heightPx;
+    plane->image = create_dmabuf_image(p->display, plane->fd, fourcc, widthPx, heightPx,
+                                       plane->stride, plane->offset, plane->modifier);
+    if (plane->image == EGL_NO_IMAGE_KHR) {
+        DBG("producer plane %d eglCreateImageKHR(%.4s) failed: 0x%x\n",
+            index, (const char *) &fourcc, p_eglGetError ? p_eglGetError() : 0);
         return 0;
     }
-
-    NucleusTaoLinuxTestProducer *p = (NucleusTaoLinuxTestProducer *)
-        calloc(1, sizeof(NucleusTaoLinuxTestProducer));
-    if (p == NULL) return 0;
-    p->drmFd    = -1;
-    p->dmaBufFd = -1;
-    p->widthPx  = widthPx;
-    p->heightPx = heightPx;
-    p->fourcc   = fourcc;
-
-    if (!open_gbm_device(&p->drmFd, &p->gbmDevice)) goto fail;
-    p->bo = p_gbm_bo_create(p->gbmDevice, (uint32_t) widthPx, (uint32_t) heightPx,
-                            (uint32_t) fourcc, GBM_BO_USE_RENDERING);
-    if (p->bo == NULL) {
-        DBG("gbm_bo_create failed\n");
-        goto fail;
-    }
-    p->dmaBufFd = p_gbm_bo_get_fd(p->bo);
-    p->stride   = (int) p_gbm_bo_get_stride(p->bo);
-    p->modifier = p_gbm_bo_get_modifier ? p_gbm_bo_get_modifier(p->bo)
-                                        : NUCLEUS_DRM_FORMAT_MOD_INVALID;
-    if (p->dmaBufFd < 0 || p->stride < 1) goto fail;
-
-    if (!create_gbm_egl_context(p->gbmDevice, &p->display, &p->context)) goto fail;
-    if (!producer_bind(p)) goto fail;
-
-    /* Same import on the producer side: the buffer is its render target. */
-    p->image = create_dmabuf_image(p->display, p->dmaBufFd, fourcc, widthPx, heightPx,
-                                   p->stride, 0, p->modifier);
-    if (p->image == EGL_NO_IMAGE_KHR) {
-        DBG("producer eglCreateImageKHR failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
-        producer_release(p);
-        goto fail;
-    }
     GLenum gl_error = GL_NO_ERROR;
-    p->texture = texture_from_image(p->image, &gl_error);
-    if (p->texture == 0) {
-        producer_release(p);
-        goto fail;
+    plane->texture = texture_from_image(plane->image, &gl_error);
+    if (plane->texture == 0) {
+        DBG("producer plane %d target texture failed: 0x%x\n", index, gl_error);
+        return 0;
     }
-    p_glGenFramebuffers(1, &p->fbo);
-    p_glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
+    p_glGenFramebuffers(1, &plane->fbo);
+    p_glBindFramebuffer(GL_FRAMEBUFFER, plane->fbo);
     p_glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                             p->texture, 0);
-    GLenum status = p_glCheckFramebufferStatus(GL_FRAMEBUFFER);
+                             plane->texture, 0);
+    const GLenum status = p_glCheckFramebufferStatus(GL_FRAMEBUFFER);
     p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    producer_release(p);
     if (status != GL_FRAMEBUFFER_COMPLETE) {
-        DBG("producer FBO incomplete: 0x%x\n", status);
-        goto fail;
+        DBG("producer plane %d FBO incomplete: 0x%x\n", index, status);
+        return 0;
     }
-    return (jlong) (uintptr_t) p;
+    return 1;
+}
 
-fail:
-    if (p->image != EGL_NO_IMAGE_KHR && p_eglDestroyImageKHR) {
-        p_eglDestroyImageKHR(p->display, p->image);
+/** Releases everything the producer owns. Safe on a partially built one. */
+static void producer_free(NucleusTaoLinuxTestProducer *p) {
+    if (p->context != EGL_NO_CONTEXT && producer_bind(p)) {
+        for (int i = 0; i < p->planeCount; i++) {
+            if (p->planes[i].fbo != 0 && p_glDeleteFramebuffers) {
+                p_glDeleteFramebuffers(1, &p->planes[i].fbo);
+            }
+            if (p->planes[i].texture != 0) p_glDeleteTextures(1, &p->planes[i].texture);
+        }
+        producer_release(p);
+    }
+    for (int i = 0; i < p->planeCount; i++) {
+        if (p->planes[i].image != EGL_NO_IMAGE_KHR && p_eglDestroyImageKHR) {
+            p_eglDestroyImageKHR(p->display, p->planes[i].image);
+        }
+        if (p->planes[i].fd >= 0) close(p->planes[i].fd);
     }
     if (p->context != EGL_NO_CONTEXT) p_eglDestroyContext(p->display, p->context);
     if (p->display != EGL_NO_DISPLAY && p_eglTerminate) p_eglTerminate(p->display);
-    if (p->dmaBufFd >= 0) close(p->dmaBufFd);
     if (p->bo != NULL && p_gbm_bo_destroy) p_gbm_bo_destroy(p->bo);
     if (p->gbmDevice != NULL && p_gbm_device_destroy) p_gbm_device_destroy(p->gbmDevice);
     if (p->drmFd >= 0) close(p->drmFd);
     free(p);
-    return 0;
 }
 
-/** DMA-BUF fd of the producer's buffer — borrowed, valid until destroy. */
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerFd(
-        JNIEnv *env, jclass clazz, jlong producer) {
-    (void) env; (void) clazz;
-    if (producer == 0) return -1;
-    return (jint) PRODUCER_OF(producer)->dmaBufFd;
-}
-
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerStride(
-        JNIEnv *env, jclass clazz, jlong producer) {
-    (void) env; (void) clazz;
-    if (producer == 0) return 0;
-    return (jint) PRODUCER_OF(producer)->stride;
+/** Allocates the producer shell, its render node, GBM device and EGL context. */
+static NucleusTaoLinuxTestProducer *producer_new(int widthPx, int heightPx, int planeCount) {
+    if (!p_glGenFramebuffers || !p_glBindFramebuffer || !p_glFramebufferTexture2D ||
+        !p_glCheckFramebufferStatus || !p_glClear || !p_glClearColor || !p_glScissor) {
+        return NULL;
+    }
+    NucleusTaoLinuxTestProducer *p = (NucleusTaoLinuxTestProducer *)
+        calloc(1, sizeof(NucleusTaoLinuxTestProducer));
+    if (p == NULL) return NULL;
+    p->drmFd      = -1;
+    p->widthPx    = widthPx;
+    p->heightPx   = heightPx;
+    p->planeCount = planeCount;
+    for (int i = 0; i < NUCLEUS_TEST_MAX_PLANES; i++) p->planes[i].fd = -1;
+    if (!open_gbm_device(&p->drmFd, &p->gbmDevice) ||
+        !create_gbm_egl_context(p->gbmDevice, &p->display, &p->context)) {
+        producer_free(p);
+        return NULL;
+    }
+    return p;
 }
 
 JNIEXPORT jlong JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerModifier(
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerCreate(
+        JNIEnv *env, jclass clazz, jint widthPx, jint heightPx, jint fourcc) {
+    (void) env; (void) clazz;
+    if (widthPx < 1 || heightPx < 1 || fourcc_bytes_per_pixel(fourcc) != 4) return 0;
+    if (!resolve_entry_points() || !resolve_gbm()) return 0;
+
+    NucleusTaoLinuxTestProducer *p = producer_new(widthPx, heightPx, 1);
+    if (p == NULL) return 0;
+    p->yuvColorSpace = -1;
+
+    p->bo = p_gbm_bo_create(p->gbmDevice, (uint32_t) widthPx, (uint32_t) heightPx,
+                            (uint32_t) fourcc, GBM_BO_USE_RENDERING);
+    if (p->bo == NULL) {
+        DBG("gbm_bo_create failed\n");
+        producer_free(p);
+        return 0;
+    }
+    p->planes[0].fd       = p_gbm_bo_get_fd(p->bo);
+    p->planes[0].stride   = (int) p_gbm_bo_get_stride(p->bo);
+    p->planes[0].offset   = 0;
+    p->planes[0].modifier = p_gbm_bo_get_modifier ? p_gbm_bo_get_modifier(p->bo)
+                                                  : NUCLEUS_DRM_FORMAT_MOD_INVALID;
+    if (p->planes[0].fd < 0 || p->planes[0].stride < 1 || !producer_bind(p)) {
+        producer_free(p);
+        return 0;
+    }
+    /* Same import on the producer side: the buffer is its render target. */
+    const int ok = producer_plane_init(p, 0, fourcc, widthPx, heightPx);
+    producer_release(p);
+    if (!ok) {
+        producer_free(p);
+        return 0;
+    }
+    return (jlong) (uintptr_t) p;
+}
+
+/**
+ * Planar counterpart: one `I420` GBM buffer, each of whose three planes is
+ * imported as its own single-channel image and attached to an FBO — which is how
+ * the producer can draw into a YUV buffer with nothing but scissored clears, and
+ * how a real decoder's output looks to the consumer.
+ *
+ * Returns 0 when the driver cannot allocate or render to the format.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerCreateYuv(
+        JNIEnv *env, jclass clazz, jint widthPx, jint heightPx, jint yuvFormat, jint colorSpace) {
+    (void) env; (void) clazz;
+    /* Even dimensions only: a 4:2:0 plane of an odd size has no exact half. */
+    if (widthPx < 2 || heightPx < 2 || (widthPx % 2) != 0 || (heightPx % 2) != 0) return 0;
+    if (yuvFormat != NUCLEUS_TEST_YUV_I420) return 0;
+    if (colorSpace < NUCLEUS_YUV_BT601_LIMITED || colorSpace > NUCLEUS_YUV_BT709_FULL) return 0;
+    if (!resolve_entry_points() || !resolve_gbm()) return 0;
+    if (!p_gbm_bo_get_plane_count || !p_gbm_bo_get_fd_for_plane ||
+        !p_gbm_bo_get_offset || !p_gbm_bo_get_stride_for_plane) {
+        DBG("libgbm without plane accessors — no planar producer\n");
+        return 0;
+    }
+
+    const int planeCount = 3;
+    const uint32_t bufferFourcc = 0x32315559u; /* YU12 — I420 */
+    NucleusTaoLinuxTestProducer *p = producer_new(widthPx, heightPx, planeCount);
+    if (p == NULL) return 0;
+    p->yuvColorSpace = colorSpace;
+
+    p->bo = p_gbm_bo_create(p->gbmDevice, (uint32_t) widthPx, (uint32_t) heightPx,
+                            bufferFourcc, GBM_BO_USE_RENDERING);
+    if (p->bo == NULL || p_gbm_bo_get_plane_count(p->bo) < planeCount) {
+        DBG("gbm_bo_create(planar) failed or returned too few planes\n");
+        producer_free(p);
+        return 0;
+    }
+    const uint64_t modifier = p_gbm_bo_get_modifier
+        ? p_gbm_bo_get_modifier(p->bo) : NUCLEUS_DRM_FORMAT_MOD_INVALID;
+    for (int i = 0; i < planeCount; i++) {
+        p->planes[i].fd       = p_gbm_bo_get_fd_for_plane(p->bo, i);
+        p->planes[i].offset   = (int) p_gbm_bo_get_offset(p->bo, i);
+        p->planes[i].stride   = (int) p_gbm_bo_get_stride_for_plane(p->bo, i);
+        p->planes[i].modifier = modifier;
+        if (p->planes[i].fd < 0 || p->planes[i].stride < 1) {
+            producer_free(p);
+            return 0;
+        }
+    }
+    if (!producer_bind(p)) {
+        producer_free(p);
+        return 0;
+    }
+    int ok = producer_plane_init(p, 0, 0x20203852 /* R8 */, widthPx, heightPx) &&
+             producer_plane_init(p, 1, 0x20203852, widthPx / 2, heightPx / 2) &&
+             producer_plane_init(p, 2, 0x20203852, widthPx / 2, heightPx / 2);
+    producer_release(p);
+    if (!ok) {
+        producer_free(p);
+        return 0;
+    }
+    return (jlong) (uintptr_t) p;
+}
+
+/** Number of DMA-BUF planes the producer publishes (1 for packed RGB). */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerPlaneCount(
         JNIEnv *env, jclass clazz, jlong producer) {
     (void) env; (void) clazz;
-    if (producer == 0) return (jlong) NUCLEUS_DRM_FORMAT_MOD_INVALID;
-    return (jlong) PRODUCER_OF(producer)->modifier;
+    if (producer == 0) return 0;
+    return (jint) PRODUCER_OF(producer)->planeCount;
+}
+
+/** Plane geometry, borrowed and valid until destroy. Index out of range → -1/0. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerPlaneFd(
+        JNIEnv *env, jclass clazz, jlong producer, jint index) {
+    (void) env; (void) clazz;
+    if (producer == 0 || index < 0 || index >= PRODUCER_OF(producer)->planeCount) return -1;
+    return (jint) PRODUCER_OF(producer)->planes[index].fd;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerPlaneStride(
+        JNIEnv *env, jclass clazz, jlong producer, jint index) {
+    (void) env; (void) clazz;
+    if (producer == 0 || index < 0 || index >= PRODUCER_OF(producer)->planeCount) return 0;
+    return (jint) PRODUCER_OF(producer)->planes[index].stride;
+}
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerPlaneOffset(
+        JNIEnv *env, jclass clazz, jlong producer, jint index) {
+    (void) env; (void) clazz;
+    if (producer == 0 || index < 0 || index >= PRODUCER_OF(producer)->planeCount) return 0;
+    return (jint) PRODUCER_OF(producer)->planes[index].offset;
+}
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerPlaneModifier(
+        JNIEnv *env, jclass clazz, jlong producer, jint index) {
+    (void) env; (void) clazz;
+    if (producer == 0 || index < 0 || index >= PRODUCER_OF(producer)->planeCount) {
+        return (jlong) NUCLEUS_DRM_FORMAT_MOD_INVALID;
+    }
+    return (jlong) PRODUCER_OF(producer)->planes[index].modifier;
+}
+
+/** Fills every plane with the components of [argb]. Context must be current. */
+static void producer_fill_locked(NucleusTaoLinuxTestProducer *p, jint argb) {
+    if (p->yuvColorSpace < 0) {
+        p_glBindFramebuffer(GL_FRAMEBUFFER, p->planes[0].fbo);
+        p_glViewport(0, 0, p->widthPx, p->heightPx);
+        producer_clear(argb);
+        p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return;
+    }
+    float y = 0.0f, u = 0.0f, v = 0.0f;
+    argb_to_yuv(p->yuvColorSpace, argb, &y, &u, &v);
+    for (int i = 0; i < p->planeCount; i++) {
+        p_glBindFramebuffer(GL_FRAMEBUFFER, p->planes[i].fbo);
+        p_glViewport(0, 0, p->planes[i].widthPx, p->planes[i].heightPx);
+        producer_clear_plane(p, i, y, u, v);
+    }
+    p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 JNIEXPORT void JNICALL
@@ -914,22 +1277,24 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestP
     if (producer == 0) return;
     NucleusTaoLinuxTestProducer *p = PRODUCER_OF(producer);
     if (!producer_bind(p)) return;
-    p_glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
-    p_glViewport(0, 0, p->widthPx, p->heightPx);
-    producer_clear(argb);
+    producer_fill_locked(p, argb);
     /* The frame must be fully written before the caller signals it — that is
      * what makes the consumer's zero-copy sampling tear-free. */
     p_glFinish();
-    p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
     producer_release(p);
 }
 
 /**
- * Animated test pattern: [argbBg] background plus a white vertical bar (x
- * follows [tick]) and a white horizontal bar (y follows [tick]) — the same
- * shape the Windows and macOS producers draw, so the demo looks identical on
- * all three backends. Drawn with scissored clears, so the producer needs no
- * shader pipeline.
+ * Draws the animated test pattern into every plane. Context must be current;
+ * deliberately does **not** finish, so the two entry points below can choose
+ * between the blocking contract and an acquire fence.
+ *
+ * [argbBg] background plus a white vertical bar (x follows [tick]) and a white
+ * horizontal bar (y follows [tick]) — the same shape the Windows and macOS
+ * producers draw, so the demo looks identical on all three backends. Scissored
+ * clears only, so the producer needs no shader pipeline; on a planar buffer each
+ * plane gets the same rectangles scaled to its own size, which is exactly how a
+ * 4:2:0 encoder subsamples.
  *
  * No y flip: rendering into an FBO whose colour attachment is this texture
  * writes texture row `y` — i.e. buffer row `y` — and the consumer adopts the
@@ -937,12 +1302,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestP
  * [tick] moves the bar *down* the composited image like the other platforms.
  * `LinuxExternalTextureNativeSmokeTest` pins this end to end.
  */
-JNIEXPORT void JNICALL
-Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerDrawPattern(
-        JNIEnv *env, jclass clazz, jlong producer, jint tick, jint argbBg) {
-    (void) env; (void) clazz;
-    if (producer == 0) return;
-    NucleusTaoLinuxTestProducer *p = PRODUCER_OF(producer);
+static void producer_draw_pattern_locked(
+        NucleusTaoLinuxTestProducer *p, jint tick, jint argbBg) {
     const int barW = p->widthPx  < NUCLEUS_TEST_BAR_PX ? p->widthPx  : NUCLEUS_TEST_BAR_PX;
     const int barH = p->heightPx < NUCLEUS_TEST_BAR_PX ? p->heightPx : NUCLEUS_TEST_BAR_PX;
     int barX = (tick * 2) % (p->widthPx  - barW + 1);
@@ -950,19 +1311,103 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestP
     if (barX < 0) barX = 0;
     if (barY < 0) barY = 0;
 
-    if (!producer_bind(p)) return;
-    p_glBindFramebuffer(GL_FRAMEBUFFER, p->fbo);
-    p_glViewport(0, 0, p->widthPx, p->heightPx);
-    producer_clear(argbBg);
-    p_glEnable(GL_SCISSOR_TEST);
-    p_glScissor(barX, 0, barW, p->heightPx);
-    producer_clear(0xFFFFFFFF);
-    p_glScissor(0, barY, p->widthPx, barH);
-    producer_clear(0xFFFFFFFF);
-    p_glDisable(GL_SCISSOR_TEST);
-    p_glFinish();
+    float bgY = 0.0f, bgU = 0.0f, bgV = 0.0f;
+    float barY_ = 0.0f, barU = 0.0f, barV = 0.0f;
+    if (p->yuvColorSpace >= 0) {
+        argb_to_yuv(p->yuvColorSpace, argbBg, &bgY, &bgU, &bgV);
+        argb_to_yuv(p->yuvColorSpace, (jint) 0xFFFFFFFF, &barY_, &barU, &barV);
+    }
+    for (int i = 0; i < p->planeCount; i++) {
+        const NucleusTaoTestPlane *plane = &p->planes[i];
+        /* Integer ratio: every plane is either full or half size here. */
+        const int sx = p->widthPx  / plane->widthPx;
+        const int sy = p->heightPx / plane->heightPx;
+        const int pBarW = barW / sx < 1 ? 1 : barW / sx;
+        const int pBarH = barH / sy < 1 ? 1 : barH / sy;
+        p_glBindFramebuffer(GL_FRAMEBUFFER, plane->fbo);
+        p_glViewport(0, 0, plane->widthPx, plane->heightPx);
+        if (p->yuvColorSpace < 0) {
+            producer_clear(argbBg);
+        } else {
+            producer_clear_plane(p, i, bgY, bgU, bgV);
+        }
+        p_glEnable(GL_SCISSOR_TEST);
+        p_glScissor(barX / sx, 0, pBarW, plane->heightPx);
+        if (p->yuvColorSpace < 0) {
+            producer_clear(0xFFFFFFFF);
+        } else {
+            producer_clear_plane(p, i, barY_, barU, barV);
+        }
+        p_glScissor(0, barY / sy, plane->widthPx, pBarH);
+        if (p->yuvColorSpace < 0) {
+            producer_clear(0xFFFFFFFF);
+        } else {
+            producer_clear_plane(p, i, barY_, barU, barV);
+        }
+        p_glDisable(GL_SCISSOR_TEST);
+    }
     p_glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerDrawPattern(
+        JNIEnv *env, jclass clazz, jlong producer, jint tick, jint argbBg) {
+    (void) env; (void) clazz;
+    if (producer == 0) return;
+    NucleusTaoLinuxTestProducer *p = PRODUCER_OF(producer);
+    if (!producer_bind(p)) return;
+    producer_draw_pattern_locked(p, tick, argbBg);
+    p_glFinish();
     producer_release(p);
+}
+
+/**
+ * Fence fd for the GL work issued so far on the producer's context, or -1 when
+ * the driver has no native fence sync. The fence has to be flushed into the
+ * command stream before its fd can be exported — that is the whole point of it:
+ * the fd signals when the GPU reaches that point, with nothing blocking here.
+ */
+static int producer_fence_fd(NucleusTaoLinuxTestProducer *p) {
+    if (!p_eglCreateSyncKHR || !p_eglDestroySyncKHR || !p_eglDupNativeFenceFDANDROID) return -1;
+    if (!has_extension(p->display, "EGL_ANDROID_native_fence_sync")) return -1;
+    const EGLint attrs[] = {
+        EGL_SYNC_NATIVE_FENCE_FD_ANDROID, EGL_NO_NATIVE_FENCE_FD_ANDROID, EGL_NONE
+    };
+    EGLSyncKHR sync = p_eglCreateSyncKHR(p->display, EGL_SYNC_NATIVE_FENCE_ANDROID, attrs);
+    if (sync == EGL_NO_SYNC_KHR) {
+        DBG("producer eglCreateSyncKHR failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        return -1;
+    }
+    if (p_glFlush) p_glFlush();
+    const int fd = p_eglDupNativeFenceFDANDROID(p->display, sync);
+    p_eglDestroySyncKHR(p->display, sync);
+    if (fd == EGL_NO_NATIVE_FENCE_FD_ANDROID) {
+        DBG("eglDupNativeFenceFDANDROID failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        return -1;
+    }
+    return fd;
+}
+
+/**
+ * Same pattern, published with an **acquire fence** instead of a `glFinish`:
+ * returns a `sync_file` fd the consumer waits on (see [nativeWaitFence]), so
+ * neither side blocks on the CPU. Ownership passes to the caller.
+ *
+ * Falls back to finishing synchronously — and returns -1 — when the driver has no
+ * native fence sync, so the frame is always safe to signal either way.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestProducerDrawPatternFenced(
+        JNIEnv *env, jclass clazz, jlong producer, jint tick, jint argbBg) {
+    (void) env; (void) clazz;
+    if (producer == 0) return -1;
+    NucleusTaoLinuxTestProducer *p = PRODUCER_OF(producer);
+    if (!producer_bind(p)) return -1;
+    producer_draw_pattern_locked(p, tick, argbBg);
+    const int fd = producer_fence_fd(p);
+    if (fd < 0) p_glFinish();
+    producer_release(p);
+    return (jint) fd;
 }
 
 JNIEXPORT void JNICALL
@@ -970,20 +1415,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestP
         JNIEnv *env, jclass clazz, jlong producer) {
     (void) env; (void) clazz;
     if (producer == 0) return;
-    NucleusTaoLinuxTestProducer *p = PRODUCER_OF(producer);
-    if (producer_bind(p)) {
-        if (p->fbo != 0 && p_glDeleteFramebuffers) p_glDeleteFramebuffers(1, &p->fbo);
-        if (p->texture != 0) p_glDeleteTextures(1, &p->texture);
-        producer_release(p);
-    }
-    if (p->image != EGL_NO_IMAGE_KHR) p_eglDestroyImageKHR(p->display, p->image);
-    if (p->context != EGL_NO_CONTEXT) p_eglDestroyContext(p->display, p->context);
-    if (p->display != EGL_NO_DISPLAY && p_eglTerminate) p_eglTerminate(p->display);
-    if (p->dmaBufFd >= 0) close(p->dmaBufFd);
-    if (p->bo != NULL && p_gbm_bo_destroy) p_gbm_bo_destroy(p->bo);
-    if (p->gbmDevice != NULL && p_gbm_device_destroy) p_gbm_device_destroy(p->gbmDevice);
-    if (p->drmFd >= 0) close(p->drmFd);
-    free(p);
+    producer_free(PRODUCER_OF(producer));
 }
 
 /* ── Headless consumer context (smoke tests) ─────────────────────────────── */
