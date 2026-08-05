@@ -62,12 +62,12 @@ internal fun <T> withEglContextCurrent(
     attachment: Long,
     block: () -> T,
 ): T? {
-    if (attachment == 0L || !NativeTaoLinuxTextureBridge.isLoaded) return null
+    if (attachment == 0L || !LinuxEglBindingSnapshot.isAvailable) return null
     if (NativeTaoLinuxTextureBridge.nativeIsAttachmentCurrent(attachment)) return block()
     // Refused when a snapshot is already outstanding on this thread: rebinding
     // would then lose the outer binding, so give up instead (the caller treats
     // null as "context unavailable" and skips its GL work).
-    if (!NativeTaoLinuxTextureBridge.nativeSaveCurrentBinding()) return null
+    if (!LinuxEglBindingSnapshot.save()) return null
     NativeTaoEglBridge.nativeMakeCurrent(attachment)
     if (!NativeTaoLinuxTextureBridge.nativeIsAttachmentCurrent(attachment)) {
         restoreDisplacedBinding(attachment)
@@ -82,7 +82,7 @@ internal fun <T> withEglContextCurrent(
 
 /** Puts back the binding [withEglContextCurrent] displaced, or unbinds if there was none. */
 private fun restoreDisplacedBinding(attachment: Long) {
-    if (!NativeTaoLinuxTextureBridge.nativeRestoreBinding()) {
+    if (!LinuxEglBindingSnapshot.restore()) {
         NativeTaoEglBridge.nativeReleaseCurrent(attachment)
     }
 }
@@ -103,18 +103,11 @@ private fun restoreDisplacedBinding(attachment: Long) {
  *
  * When nothing was current beforehand, the newly bound context simply stays
  * current: nothing was displaced, so there is nothing to put back.
+ *
+ * See [preservingBinding] for the save/restore contract, and
+ * [preservingAngleBinding] for the Windows counterpart.
  */
-internal fun <T> preservingEglBinding(block: () -> T): T {
-    if (!NativeTaoLinuxTextureBridge.isLoaded) return block()
-    // Refused when a snapshot is already outstanding on this thread; the outer
-    // scope then restores the binding when it unwinds.
-    if (!NativeTaoLinuxTextureBridge.nativeSaveCurrentBinding()) return block()
-    return try {
-        block()
-    } finally {
-        NativeTaoLinuxTextureBridge.nativeRestoreBinding()
-    }
-}
+internal fun <T> preservingEglBinding(block: () -> T): T = preservingBinding(LinuxEglBindingSnapshot, block)
 
 internal val LocalTaoGlTextureHost: ProvidableCompositionLocal<TaoGlTextureHost?> =
     compositionLocalOf { null }
