@@ -105,34 +105,38 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
 
     init {
         var valid = false
-        if (!NativeTaoGlBridge.isLoaded || !PopupNativeBridgeWindows.isLoaded) {
-            logger.warning("Standalone popup unavailable: native bridges not loaded")
-        } else if (!runCatching { NativeTaoGlBridge.nativeEnsureHeadlessContext() }
-                .onFailure { logger.warning("Standalone popup unavailable: $it") }
-                .getOrDefault(false)
-        ) {
-            logger.warning("Standalone popup unavailable: headless EGL bootstrap failed")
-        } else {
-            panel =
-                PopupNativeBridgeWindows.nativeCreatePanel(
-                    parentHwnd = 0L,
-                    xPx = HIDDEN_X_PX,
-                    yPx = HIDDEN_Y_PX,
-                    widthPx = 1,
-                    heightPx = 1,
-                )
-            if (panel == 0L) {
-                logger.warning("Standalone popup unavailable: panel creation failed")
+        // The whole bring-up is surface-displacing, and it runs wherever the panel
+        // was composed — `TaoStandalonePopup` builds the host from `remember {}`, so
+        // for a panel added to a live window that is inside the window scene's
+        // `ComposeScene.render()`. Two steps leave a foreign binding current: the
+        // headless EGL bootstrap (which ends bound to its immortal 1x1 pbuffer, on
+        // an unshared context) and this panel's own `nativeMakeCurrent`. Either one
+        // sends the remainder of that frame — frame decoration, glyph-atlas uploads,
+        // `flushAndSubmit` — onto a context the host's `DirectContext` does not own,
+        // which corrupts the window's GPU objects for good. So the guard wraps the
+        // entire block, exactly like the Linux twin. See [preservingAngleBinding].
+        preservingAngleBinding {
+            if (!NativeTaoGlBridge.isLoaded || !PopupNativeBridgeWindows.isLoaded) {
+                logger.warning("Standalone popup unavailable: native bridges not loaded")
+            } else if (!runCatching { NativeTaoGlBridge.nativeEnsureHeadlessContext() }
+                    .onFailure { logger.warning("Standalone popup unavailable: $it") }
+                    .getOrDefault(false)
+            ) {
+                logger.warning("Standalone popup unavailable: headless EGL bootstrap failed")
             } else {
-                PopupNativeBridgeWindows.nativeSetPanelVisible(panel, false)
-                // The bring-up binds this panel's own EGL surface, and it runs
-                // from `remember {}` — i.e. potentially inside a live window
-                // scene's `ComposeScene.render()`. Restoring the binding it
-                // displaces is what keeps the remainder of that frame (frame
-                // decoration, flushAndSubmit) targeting the window instead of
-                // this 1x1 panel. See [preservingAngleBinding].
-                directContext =
-                    preservingAngleBinding {
+                panel =
+                    PopupNativeBridgeWindows.nativeCreatePanel(
+                        parentHwnd = 0L,
+                        xPx = HIDDEN_X_PX,
+                        yPx = HIDDEN_Y_PX,
+                        widthPx = 1,
+                        heightPx = 1,
+                    )
+                if (panel == 0L) {
+                    logger.warning("Standalone popup unavailable: panel creation failed")
+                } else {
+                    PopupNativeBridgeWindows.nativeSetPanelVisible(panel, false)
+                    directContext =
                         if (PopupNativeBridgeWindows.nativeMakeCurrent(panel)) {
                             runCatching {
                                 val intf =
@@ -145,28 +149,28 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                         } else {
                             null
                         }
+                    if (directContext != null) {
+                        scene =
+                            CanvasLayersComposeScene(
+                                density = Density(scale),
+                                layoutDirection = GlobalLayoutDirection,
+                                size = IntSize(1, 1),
+                                coroutineContext = flushingDispatcher + frameClock,
+                                platformContext = StandalonePopupPlatformContext(),
+                                invalidate = { scheduleRender() },
+                            )
+                        PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
+                        publishTextureHost()
+                        // See TaoComposeSceneHostWindows: all contexts sharing the
+                        // process EGL context must resetGLAll when siblings exist.
+                        TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
+                        valid = true
+                        logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
+                    } else {
+                        logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
+                        PopupNativeBridgeWindows.nativeRelease(panel)
+                        panel = 0
                     }
-                if (directContext != null) {
-                    scene =
-                        CanvasLayersComposeScene(
-                            density = Density(scale),
-                            layoutDirection = GlobalLayoutDirection,
-                            size = IntSize(1, 1),
-                            coroutineContext = flushingDispatcher + frameClock,
-                            platformContext = StandalonePopupPlatformContext(),
-                            invalidate = { scheduleRender() },
-                        )
-                    PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
-                    publishTextureHost()
-                    // See TaoComposeSceneHostWindows: all contexts sharing the
-                    // process EGL context must resetGLAll when siblings exist.
-                    TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
-                    valid = true
-                    logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
-                } else {
-                    logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
-                    PopupNativeBridgeWindows.nativeRelease(panel)
-                    panel = 0
                 }
             }
         }
