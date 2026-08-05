@@ -4,11 +4,13 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.snapshots.Snapshot
 import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.Logger
+import kotlin.coroutines.EmptyCoroutineContext
 
 private val a11yLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.a11y")
 
@@ -598,9 +600,7 @@ internal open class TaoAccessibilityController(
     internal fun onActionInvoked(
         nodeId: Long,
         action: Int,
-    ) {
-        if (isDisposed) return
-        val h = actionHandlers[nodeId] ?: return
+    ) = withHandlersOnMainThread(nodeId) { h ->
         when (action) {
             TaoA11yAction.CLICK -> h.onClick?.invoke()
             TaoA11yAction.INCREMENT -> h.onIncrement?.invoke()
@@ -612,26 +612,56 @@ internal open class TaoAccessibilityController(
             TaoA11yAction.SCROLL_RIGHT -> h.onScrollRight?.invoke()
             TaoA11yAction.DISMISS -> h.onDismiss?.invoke()
         }
-        wakeEventLoop()
     }
 
     internal fun onSetTextInvoked(
         nodeId: Long,
         text: String,
-    ) {
-        if (isDisposed) return
-        actionHandlers[nodeId]?.onSetText?.invoke(text)
-        wakeEventLoop()
-    }
+    ) = withHandlersOnMainThread(nodeId) { it.onSetText?.invoke(text) }
 
     internal fun onSetSelectionInvoked(
         nodeId: Long,
         start: Int,
         end: Int,
+    ) = withHandlersOnMainThread(nodeId) { it.onSetSelection?.invoke(start, end) }
+
+    /**
+     * Runs an a11y action handler on the Tao main thread, then makes sure the
+     * loop ticks so the resulting state change is recomposed and re-projected.
+     *
+     * The screen reader's own thread is NOT a safe place to run these: AT-SPI
+     * calls in from a D-Bus worker and UIA from an RPC thread (only AX already
+     * arrives on the main thread). Plain state writes survive that, which is why
+     * click / increment worked, but anything reaching into Compose UI does not —
+     * `SemanticsActions.RequestFocus` walks the focus machinery, whose
+     * `observeReads` belongs to the main thread's `SnapshotStateObserver` and
+     * throws `IllegalArgumentException: Detected multithreaded access …`. The
+     * focus transaction then aborts half-applied and no node ends up focused at
+     * all, which is what made the AT-SPI `grabFocus` assertion flaky in CI.
+     *
+     * Marshalling all of them rather than just focus: Compose UI's contract is
+     * single-threaded for every one of these paths, and a handler is free to
+     * grow into one that touches the node tree.
+     */
+    private inline fun withHandlersOnMainThread(
+        nodeId: Long,
+        crossinline body: (ActionHandlers) -> Unit,
     ) {
         if (isDisposed) return
-        actionHandlers[nodeId]?.onSetSelection?.invoke(start, end)
-        wakeEventLoop()
+        if (Thread.currentThread() === TaoMainDispatcher.taoMainThread) {
+            body(actionHandlers[nodeId] ?: return)
+            wakeEventLoop()
+            return
+        }
+        TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
+            if (isDisposed) return@dispatch
+            body(actionHandlers[nodeId] ?: return@dispatch)
+        }
+        // The dispatcher is only drained on MAIN_EVENTS_CLEARED, and `pump()`
+        // sends the apply notifications itself once it has run the block — all
+        // that is missing is a reason for the loop to tick now rather than on
+        // the next unrelated OS event.
+        NativeTaoBridge.nativeRequestRedraw(windowHandle)
     }
 
     private fun wakeEventLoop() {
@@ -684,32 +714,21 @@ internal open class TaoAccessibilityController(
     internal fun onCustomActionInvoked(
         nodeId: Long,
         index: Int,
-    ) {
-        if (isDisposed) return
-        val list = actionHandlers[nodeId]?.customActions ?: return
-        if (index < 0 || index >= list.size) return
-        list[index].invoke()
-        wakeEventLoop()
+    ) = withHandlersOnMainThread(nodeId) { h ->
+        val list = h.customActions
+        if (index in list.indices) list[index].invoke()
     }
 
     internal fun onScrollByInvoked(
         nodeId: Long,
         dx: Float,
         dy: Float,
-    ) {
-        if (isDisposed) return
-        actionHandlers[nodeId]?.onScrollBy?.invoke(dx, dy)
-        wakeEventLoop()
-    }
+    ) = withHandlersOnMainThread(nodeId) { it.onScrollBy?.invoke(dx, dy) }
 
     internal fun onSetValueInvoked(
         nodeId: Long,
         value: Double,
-    ) {
-        if (isDisposed) return
-        actionHandlers[nodeId]?.onSetValue?.invoke(value.toFloat())
-        wakeEventLoop()
-    }
+    ) = withHandlersOnMainThread(nodeId) { it.onSetValue?.invoke(value.toFloat()) }
 }
 
 /**
