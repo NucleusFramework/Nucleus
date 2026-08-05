@@ -111,6 +111,20 @@ abstract class GraalvmSettings
         val exactReachabilityMetadata: Property<ExactReachabilityMetadata> =
             objects.notNullProperty(ExactReachabilityMetadata.APP_PACKAGES)
 
+        // Detect project classes that no bytecode on the classpath references and register a
+        // public no-arg `<init>` for them. Covers annotation-processor output loaded by naming
+        // convention (Room `*_Impl`, Dagger/Hilt `*_Factory`, Moshi adapters, …) that L1/L2/L3
+        // and literal `Class.forName` analysis cannot see. Guards: concrete public class with a
+        // public no-arg ctor, and a supertype (≠ Object) or interface referenced by app code —
+        // so Kotlin file facades and most dead leaves stay out. Defaults to `true`; set `false`
+        // to opt out. See #441.
+        val detectOrphanProjectClasses: Property<Boolean> = objects.notNullProperty(true)
+
+        // Sledgehammer: register a public no-arg `<init>` for every project class that has one.
+        // Unblocks a missing reflective type in ~30s at the cost of measurable image growth.
+        // Strictly opt-in — never a default. Prefer [detectOrphanProjectClasses] first. See #441.
+        val reflectionForProjectClasses: Property<Boolean> = objects.notNullProperty(false)
+
         // Extra `native-image` arguments appended verbatim, after everything the plugin derives.
         //
         // Nucleus deliberately leaves the SLF4J lifecycle alone: the API and the app-selected
