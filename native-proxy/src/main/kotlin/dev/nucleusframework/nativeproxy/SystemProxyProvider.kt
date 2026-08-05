@@ -1,6 +1,7 @@
 package dev.nucleusframework.nativeproxy
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.nativeproxy.linux.LinuxSystemProxyProvider
 import dev.nucleusframework.nativeproxy.windows.WindowsSystemProxyProvider
 import java.net.URI
 
@@ -40,7 +41,8 @@ internal interface SystemProxyProvider {
         fun forCurrentPlatform(): SystemProxyProvider =
             when (Platform.Current) {
                 Platform.Windows -> WindowsSystemProxyProvider
-                Platform.MacOS, Platform.Linux, Platform.Unknown -> NoopSystemProxyProvider
+                Platform.Linux -> LinuxSystemProxyProvider
+                Platform.MacOS, Platform.Unknown -> NoopSystemProxyProvider
             }
     }
 }

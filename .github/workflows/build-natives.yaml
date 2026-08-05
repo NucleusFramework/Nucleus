@@ -383,6 +383,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash linux-hidpi/src/main/native/linux/build.sh
 
+      - name: Build native-proxy Linux native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash native-proxy/src/main/native/linux/build.sh
+
       - name: Build system-color Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/linux/build.sh
@@ -444,6 +448,7 @@ jobs:
             "darkmode-detector/libnucleus_linux_theme.so"
             "decorated-window-jni/libnucleus_linux_jni.so"
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
+            "native-proxy/libnucleus_proxy.so"
             "system-color/libnucleus_systemcolor.so"
             "energy-manager/libnucleus_energy_manager.so"
             "notification-linux/libnucleus_notification_linux.so"

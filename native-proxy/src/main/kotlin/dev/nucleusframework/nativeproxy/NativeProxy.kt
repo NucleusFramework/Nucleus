@@ -20,9 +20,10 @@ private const val MAX_PAC_CACHE_ENTRIES = 256
  * NativeProxy.addChangeListener { println("proxy configuration changed: $it") }
  * ```
  *
- * Windows is the only implemented platform (WinHTTP/WPAD/PAC + Internet
- * Settings registry watching); macOS and Linux report [isSupported] `false` and
- * every call degrades to a direct configuration.
+ * Windows (WinHTTP/WPAD/PAC + Internet Settings registry watching) and Linux
+ * (GSettings / KDE kioslaverc / env vars) are implemented; macOS reports
+ * [isSupported] `false` and every call degrades to a direct configuration.
+ * Linux does not evaluate PAC scripts yet — only static rules and bypass lists.
  */
 object NativeProxy {
     private val provider = SystemProxyProvider.forCurrentPlatform()

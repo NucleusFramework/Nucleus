@@ -42,13 +42,27 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     commandLine("cmd", "/c", File(nativeDir, "build.bat").absolutePath)
 }
 
+val buildNativeLinux by tasks.registering(Exec::class) {
+    description = "Compiles the C JNI bridge into a Linux shared library"
+    group = "build"
+    val nativeDir = file("src/main/native/linux")
+    val outputDir = file("src/main/resources/nucleus/native")
+    val arch = if (System.getProperty("os.arch") == "aarch64") "linux-aarch64" else "linux-x64"
+    val checkFile = File(outputDir, "$arch/libnucleus_proxy.so")
+    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
+    inputs.dir(nativeDir)
+    outputs.dir(outputDir)
+    workingDir(nativeDir)
+    commandLine("bash", File(nativeDir, "build.sh").absolutePath)
+}
+
 tasks.processResources {
-    dependsOn(buildNativeWindows)
+    dependsOn(buildNativeWindows, buildNativeLinux)
 }
 
 tasks.configureEach {
     if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows)
+        dependsOn(buildNativeWindows, buildNativeLinux)
     }
 }
 
@@ -57,7 +71,10 @@ mavenPublishing {
 
     pom {
         name.set("Nucleus Native Proxy")
-        description.set("OS proxy configuration integration (WinHTTP/WPAD/PAC) for JVM desktop applications")
+        description.set(
+            "OS proxy configuration integration (WinHTTP/WPAD/PAC on Windows; " +
+                "GSettings/KDE/env on Linux) for JVM desktop applications",
+        )
         url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {

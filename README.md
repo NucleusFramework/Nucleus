@@ -185,7 +185,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.autolaunch` | Start the app at user login across all platforms |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
-| `nucleus.native-proxy` | OS proxy configuration — WPAD/PAC, bypass rules (Windows) |
+| `nucleus.native-proxy` | OS proxy configuration — WPAD/PAC (Windows), GSettings/KDE/env (Linux) |
 | `nucleus.linux-hidpi` | Native HiDPI scale detection on Linux |
 | `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion |
 
