@@ -21,6 +21,7 @@ import dev.nucleusframework.desktop.application.internal.MacAssetsTool
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.PathingJarClasspath
 import dev.nucleusframework.desktop.application.internal.PlistKeys
 import dev.nucleusframework.desktop.application.internal.SKIKO_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.cliArg
@@ -627,6 +628,15 @@ abstract class AbstractJPackageTask
         override fun checkResult(result: ExecResult) {
             super.checkResult(result)
             modifyRuntimeOnMacOsIfNeeded()
+            // Linux only: shrink the jpackage launcher's serialized classpath so the parent
+            // process's single pipe read cannot short-read (JDK-8380085 / Nucleus #454).
+            if (currentOS == OS.Linux && targetFormat == TargetFormat.RawAppImage) {
+                PathingJarClasspath.collapseInLinuxAppImage(
+                    destinationDir = destinationDir.ioFile,
+                    packageName = packageName.get(),
+                    logger = logger,
+                )
+            }
             val outputFile = findOutputFileOrDir(destinationDir.ioFile, targetFormat)
             logger.lifecycle("The distribution is written to ${outputFile.canonicalPath}")
         }
