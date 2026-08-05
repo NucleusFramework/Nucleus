@@ -12,9 +12,9 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTextureBridge
  * renderer, another process) publishes frames. Applications plug their own
  * producer and only hand [TextureView] a [nucleusDmaBufTextureSource].
  *
- * [create] allocates a packed RGB buffer; [createYuv] a planar one (NV12 or
- * I420), which is what a hardware decoder hands out — there each plane is a
- * render target of its own, and the pattern is converted to Y'CbCr on the way in.
+ * [create] allocates a packed RGB buffer; [createYuv] a three-plane one
+ * (`I420` / `YV12`), where each plane is a render target of its own and the pattern
+ * is converted to Y'CbCr on the way in.
  *
  * [drawTestPattern] and [fill] `glFinish` before returning, so the frame is fully
  * written by the time the caller signals
