@@ -461,6 +461,20 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge$DragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostLinux$OutboundDragPump",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "pump", "parameterTypes": [] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge",
             "jniAccessible": true
         },

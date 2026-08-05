@@ -78,6 +78,12 @@ const DROP_EFFECT_LINK: jint = 4;
 /// leave/motion pair latency. Any incoming `drag-motion` cancels the timer.
 const LEAVE_DEBOUNCE_MS: u32 = 250;
 
+/// Pump interval while an outbound drag session owns the GTK main thread.
+/// ~120 Hz, the same order as the macOS run-loop timer: at or above every
+/// display's refresh rate, and anything the swap thread cannot absorb is
+/// coalesced by the host's owed-render gate.
+const DRAG_PUMP_INTERVAL_MS: u64 = 8;
+
 // ── Per-window registration ────────────────────────────────────────────────
 
 #[allow(dead_code)]
@@ -280,6 +286,25 @@ fn dispatch_drop(
         Ok(res.and_then(|v| v.i()).unwrap_or(DROP_EFFECT_NONE))
     })
     .unwrap_or(DROP_EFFECT_NONE)
+}
+
+/// Upcalls `DragPump.pump()` on the GTK main thread. Returns `false` once the
+/// upcall has failed so the caller can latch it off — a broken pump must report
+/// once, not ~120×/s for the whole drag.
+fn dispatch_pump(pump: &GlobalRef) -> bool {
+    let Some(vm) = JAVA_VM.get() else {
+        return false;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return false;
+    };
+    let res = env.call_method(pump.as_obj(), "pump", "()V", &[]);
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+        return false;
+    }
+    res.is_ok()
 }
 
 fn build_string_array<'a>(
@@ -525,6 +550,7 @@ fn start_outbound(
     files: Vec<String>,
     text: Option<String>,
     allowed: jint,
+    pump: Option<GlobalRef>,
 ) -> jint {
     if files.is_empty() && text.as_deref().map(str::is_empty).unwrap_or(true) {
         return DROP_EFFECT_NONE;
@@ -616,6 +642,38 @@ fn start_outbound(
         c.drag_set_icon_default();
     }
 
+    // Keep the host alive for the session, the Linux counterpart of the Windows
+    // `QueryContinueDrag` upcall and the macOS run-loop timer.
+    //
+    // The GTK pump below is not one: it dispatches GDK events, which push into
+    // tao's event channel, but nothing re-enters tao's own state machine —
+    // `start_outbound` is called from inside a `callback(…)` of
+    // `EventLoop::run_return`, so for the whole drag no `MainEventsCleared` is
+    // emitted (`TaoMainDispatcher` never drains) and no queued
+    // `RedrawRequested` is delivered (the host never paints). The window is
+    // frozen exactly as it was on the other two platforms.
+    //
+    // A glib timeout rather than the loop body: `main_iteration_do(true)`
+    // blocks until GTK has something to dispatch, so a cursor held still would
+    // stop ticking — the known Windows trade-off, which the timer avoids here
+    // for the same reason it does on macOS. It also wakes the loop, so the pump
+    // rate is the timer's and not the input rate's.
+    let pump_source = pump.map(|p| {
+        let mut broken = false;
+        glib::timeout_add_local(
+            std::time::Duration::from_millis(DRAG_PUMP_INTERVAL_MS),
+            move || {
+                if !broken && !dispatch_pump(&p) {
+                    broken = true;
+                }
+                // Never `Break`, even once latched off: the source is removed
+                // below, and `SourceId::remove` on an id that already returned
+                // `Break` is a GLib critical.
+                glib::ControlFlow::Continue
+            },
+        )
+    });
+
     // Cooperatively pump the GTK main loop until drag-end fires. The session
     // runs through the same loop we're already on; drag_begin returned
     // immediately. Mirrors Win32 `DoDragDrop`'s nested message pump.
@@ -623,6 +681,9 @@ fn start_outbound(
         gtk::main_iteration_do(true);
     }
 
+    if let Some(src) = pump_source {
+        src.remove();
+    }
     widget.disconnect(data_get_id);
     widget.disconnect(drag_end_id);
     widget.disconnect(drag_failed_id);
@@ -676,6 +737,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     files: JObjectArray,
     text: JString,
     allowed_effects: jint,
+    pump: JObject,
 ) -> jint {
     if handle == 0 {
         return DROP_EFFECT_NONE;
@@ -708,5 +770,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     } else {
         None
     };
-    start_outbound(handle as u64, files_vec, text_opt, allowed_effects)
+    // GlobalRef, unlike the macOS timer's raw jobject: the timeout closure is
+    // `'static`, so it cannot borrow this frame's local ref. It fires on this
+    // same already-attached thread either way.
+    let pump_ref: Option<GlobalRef> = if pump.is_null() {
+        None
+    } else {
+        env.new_global_ref(&pump).ok()
+    };
+    start_outbound(
+        handle as u64,
+        files_vec,
+        text_opt,
+        allowed_effects,
+        pump_ref,
+    )
 }

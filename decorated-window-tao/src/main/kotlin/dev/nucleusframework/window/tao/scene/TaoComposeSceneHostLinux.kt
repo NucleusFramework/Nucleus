@@ -606,12 +606,57 @@ internal class TaoComposeSceneHostLinux(
             dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE,
             dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK,
         ) { files, text, allowedEffects ->
+            // No VSync dance and no post-drag `window.resetRedrawLatch()`,
+            // unlike the Windows counterpart: the session's GTK pump consumes
+            // no tao event, so the `REDRAW_REQUESTED` matching a latched
+            // `redrawPending` still sits in tao's draw channel when the drag
+            // ends and the latch un-wedges itself on delivery.
             dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
                 handle = window.handle,
                 files = files,
                 text = text,
                 allowedEffects = allowedEffects,
+                pump = OutboundDragPump(),
             )
+        }
+    }
+
+    /**
+     * Drives the host while an outbound drag session owns the GTK main thread —
+     * see [dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DragPump].
+     *
+     * Paints directly instead of going through [requestRedrawCoalesced], like
+     * the Windows host and unlike the macOS one: on Linux the render happens
+     * inline on this thread, and a `requestRedraw` issued during the session
+     * would only land in tao's draw channel — undelivered until the drag is
+     * over, which is the freeze itself. The timer is therefore the only frame
+     * driver for the session, including after a tick that the swap-in-flight
+     * gate skipped (the swap thread's re-arm goes through that same dead
+     * channel).
+     *
+     * No VSync toggle and no frame throttle, unlike Windows: `eglSwapBuffers`
+     * and its vsync wait run on the swap thread, and [onRedrawRequested]
+     * returns immediately rather than blocking when a swap is still in flight,
+     * so a tick never parks the GTK pump the drag is running on.
+     *
+     * Reentrancy, deliberately accepted: every frame painted here renders the
+     * scene with a pointer dispatch still on the stack, since Compose enters the
+     * session from inside `sendPointerEvent`. There is no way to render during
+     * the drag *without* that nesting — refusing to render would just restore
+     * the freeze this exists to fix — so the scene is re-entered knowingly. If
+     * it proves unsafe, the principled fix is to defer `nativeStartDrag` onto
+     * the main dispatcher so the session starts one loop iteration later, with
+     * no Compose dispatch below it.
+     *
+     * Named class (not a lambda) for GraalVM JNI reachability, same as
+     * [InboundDnDCallback].
+     */
+    private inner class OutboundDragPump :
+        dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DragPump {
+        override fun pump() {
+            dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                .pump()
+            onRedrawRequested()
         }
     }
 
