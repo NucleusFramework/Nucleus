@@ -1136,11 +1136,11 @@ private fun JvmApplicationContext.configureRunTask(
                 .asFile
             val patchedJavaHomeFile = patchedBinFile.parentFile.parentFile
             exec.javaLauncher.set(
-                PatchedJavaLauncher(
-                    patchedJavaBinary = patchedBinFile,
-                    patchedJavaHome = patchedJavaHomeFile,
-                    sourceJavaHome = java.io.File(javaHome),
+                ExternalJavaLauncher(
+                    javaBinary = patchedBinFile,
+                    javaHome = patchedJavaHomeFile,
                     objects = project.objects,
+                    metadataJavaHome = java.io.File(javaHome),
                 ),
             )
             // `executable` isn't Provider-aware in Gradle 9, but it isn't
