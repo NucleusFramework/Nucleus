@@ -10,8 +10,10 @@ dependencies {
     implementation(project(":core-runtime"))
     implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
-    implementation(project(":graalvm-runtime"))
     implementation(libs.coroutines.core)
+    // OS-native Open dialog, so the sample can be pointed at a file without a
+    // command line.
+    implementation(libs.filekit.dialogs)
 }
 
 nucleus.application {

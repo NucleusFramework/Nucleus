@@ -19,6 +19,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -37,14 +38,18 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
-import dev.nucleusframework.graalvm.GraalVmInitializer
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.TextureView
 import dev.nucleusframework.window.tao.rememberTextureViewController
+import io.github.vinceglb.filekit.FileKit
+import io.github.vinceglb.filekit.dialogs.FileKitType
+import io.github.vinceglb.filekit.dialogs.openFilePicker
+import io.github.vinceglb.filekit.path
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
@@ -52,8 +57,8 @@ import java.util.concurrent.atomic.AtomicInteger
 /**
  * Plays a video into a `TextureView` with GStreamer: hardware decode, GPU colour
  * conversion, and the frame composited in the Compose scene without ever touching
- * the CPU. Pass a file path (or any URI `uridecodebin` accepts) as the first
- * argument, or set `NUCLEUS_GST_URI`.
+ * the CPU. Pick a file with the Open button, pass one as the first argument, or
+ * set `NUCLEUS_GST_URI`.
  *
  * The controls exist to show the part that matters: the video is not a hole punched
  * through the window, it is a composable. Clip it, fade it, turn it, put Compose on
@@ -63,8 +68,7 @@ import java.util.concurrent.atomic.AtomicInteger
  *   `examples/gstreamer-demo/src/main/native/linux/build.sh`
  */
 fun main(args: Array<String>) {
-    // First statement, as native-image requires.
-    GraalVmInitializer.initialize()
+    // No GraalVmInitializer call: nucleusApplication runs it first thing.
     val uri = resolveUri(args.firstOrNull() ?: System.getenv("NUCLEUS_GST_URI"))
     nucleusApplication(backend = NucleusBackend.Tao) {
         NucleusDecoratedWindowTheme(isDark = true) {
@@ -120,7 +124,11 @@ fun main(args: Array<String>) {
 /** How often the frame counter reaches the console. */
 private const val LOG_EVERY_FRAMES = 60
 
-/** `uridecodebin` wants a URI; a plain path is the friendlier thing to type. */
+/** What the Open dialog offers — the containers GStreamer's plugins demux. */
+private val VideoFiles =
+    FileKitType.File("mp4", "m4v", "mov", "mkv", "avi", "webm", "ts", "m2ts", "flv", "ogv")
+
+/** `playbin` wants a URI; a plain path is the friendlier thing to type. */
 private fun resolveUri(argument: String?): String? {
     if (argument.isNullOrBlank()) return null
     if (argument.contains("://")) return argument
@@ -134,12 +142,14 @@ private fun VideoContent(holder: VideoHolder) {
     val video = holder.video
     val controller = rememberTextureViewController()
     val frames = remember { AtomicInteger() }
+    val scope = rememberCoroutineScope()
 
     var clipped by remember { mutableStateOf(false) }
     var faded by remember { mutableStateOf(false) }
     var turned by remember { mutableStateOf(false) }
     var cropped by remember { mutableStateOf(false) }
     var overlaid by remember { mutableStateOf(true) }
+    var muted by remember(video) { mutableStateOf(false) }
 
     // Display-paced pull: `withFrameNanos` ticks once per composited frame, the GPU
     // work happens on a background dispatcher, and only the draw pass is
@@ -176,18 +186,36 @@ private fun VideoContent(holder: VideoHolder) {
         if (video != null) FrameRateReadout(frames, recompositions)
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Toggle("Open video…", on = false) {
+                scope.launch {
+                    // The picker is the OS dialog; the load closes the old pipeline
+                    // off the UI thread (its GL teardown unbinds a context, which the
+                    // render thread must not watch), and stages the new URI for the
+                    // next draw pass to bring up — see [VideoHolder.openIfNeeded].
+                    val picked = FileKit.openFilePicker(type = VideoFiles)?.path ?: return@launch
+                    val uri = resolveUri(picked) ?: return@launch
+                    withContext(Dispatchers.IO) { holder.load(uri) }
+                }
+            }
             Toggle("Rounded clip", clipped) { clipped = !clipped }
             Toggle("50 % alpha", faded) { faded = !faded }
             Toggle("Rotate 8°", turned) { turned = !turned }
             Toggle("Crop", cropped) { cropped = !cropped }
             Toggle("Compose on top", overlaid) { overlaid = !overlaid }
+            if (video?.hasAudio == true) {
+                Toggle(if (muted) "Unmute" else "Mute", muted) {
+                    muted = !muted
+                    video.muted = muted
+                }
+            }
         }
 
         Box(
             // The pipeline is brought up from a draw pass, which is the one place the
             // window's EGL context is current — composition alone is not, at least
-            // not the first one. It happens once, and the source it produces reaches
-            // the composable on the next frame.
+            // not the first one. It happens on the first frame and again whenever a
+            // new file is staged by [VideoHolder.load], and the source it produces
+            // reaches the composable on the next frame.
             modifier = Modifier.fillMaxSize().drawBehind { holder.openIfNeeded() },
             contentAlignment = Alignment.Center,
         ) {
@@ -243,25 +271,36 @@ private fun ComposeOverlay() {
 
 /**
  * Holds the pipeline and the moment it may be created. Opening blocks for the
- * preroll — a fraction of a second — which is why it happens once rather than per
- * frame, and why the window's first frame may be a little late.
+ * preroll — a fraction of a second — which is why it happens from the draw pass
+ * rather than per frame, and why the window's first frame may be a little late.
+ *
+ * The helper must capture the window's EGL context, current only inside a draw
+ * pass, so [openIfNeeded] is the one entry point that actually opens — it is the
+ * draw pass that calls it. [load] only stages a new URI (and tears the old
+ * pipeline down off the render thread); the next draw pass brings it up.
  */
 private class VideoHolder(
-    private val uri: String?,
+    initialUri: String?,
 ) {
     var video by mutableStateOf<GstVideoTexture?>(null)
         private set
 
-    var status by mutableStateOf(initialStatus(uri))
+    var status by mutableStateOf(initialStatus(initialUri))
         private set
 
-    private var attempted = false
+    private var uri by mutableStateOf(initialUri)
+
+    /** True once the current [uri] has been attempted, success or failure. A state
+     * so the draw pass — which may run on the render thread — sees a [load] that
+     * ran on a background dispatcher. */
+    private var done by mutableStateOf(false)
 
     /** Call from a draw pass only: it needs the window's EGL context current. */
     fun openIfNeeded() {
-        if (attempted || uri == null) return
-        attempted = true
-        val opened = GstVideoTexture.open(uri)
+        if (done) return
+        val target = uri ?: return
+        done = true
+        val opened = GstVideoTexture.open(target)
         video = opened
         status =
             if (opened == null) {
@@ -269,6 +308,22 @@ private class VideoHolder(
             } else {
                 "Decoded and converted on the GPU, composited with no copy"
             }
+    }
+
+    /**
+     * Stages [uri] to replace what is playing. Closes the old pipeline first —
+     * call from a background dispatcher: GL teardown unbinds a context, which the
+     * render thread must not watch happen. The actual open needs the window's EGL
+     * context, so it happens on the next draw pass; a file that cannot be opened
+     * leaves nothing playing.
+     */
+    fun load(uri: String) {
+        if (!GstVideoTexture.isAvailable) return
+        video?.close()
+        video = null
+        status = "Opening…"
+        this.uri = uri
+        done = false
     }
 
     fun close() {
@@ -282,7 +337,9 @@ private class VideoHolder(
                 !GstVideoTexture.isAvailable ->
                     "Helper library missing — run examples/gstreamer-demo/src/main/native/linux/build.sh"
 
-                uri == null -> "Pass a video file as the first argument, or set NUCLEUS_GST_URI"
+                uri == null ->
+                    "Pick a video with Open video…, or pass one as the first argument, or set NUCLEUS_GST_URI"
+
                 else -> "Opening…"
             }
     }

@@ -147,25 +147,6 @@ static GstBusSyncReply on_bus_message(GstBus *bus, GstMessage *message, gpointer
         g_free(debug);
         return GST_BUS_PASS;
     }
-    /* Errors and warnings reach the console: a sample that fails silently is
-     * useless, and the GL context handover is where things go wrong. */
-    if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR ||
-        GST_MESSAGE_TYPE(message) == GST_MESSAGE_WARNING) {
-        GError *error = NULL;
-        gchar *debug = NULL;
-        if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR) {
-            gst_message_parse_error(message, &error, &debug);
-        } else {
-            gst_message_parse_warning(message, &error, &debug);
-        }
-        LOG("%s from %s: %s (%s)\n",
-            GST_MESSAGE_TYPE(message) == GST_MESSAGE_ERROR ? "ERROR" : "WARNING",
-            GST_OBJECT_NAME(GST_MESSAGE_SRC(message)),
-            error != NULL ? error->message : "?", debug != NULL ? debug : "");
-        if (error != NULL) g_error_free(error);
-        g_free(debug);
-        return GST_BUS_PASS;
-    }
     if (GST_MESSAGE_TYPE(message) == GST_MESSAGE_EOS) {
         video->atEnd = TRUE;
         return GST_BUS_PASS;
@@ -244,6 +225,9 @@ static void video_free(NucleusGstVideo *video) {
         gst_element_set_state(video->pipeline, GST_STATE_NULL);
         gst_object_unref(video->pipeline);
     }
+    /* Our strong ref to the appsink (the pipeline held the other). Unref after the
+     * pipeline so the bin it sat in is already gone, and this is the last ref. */
+    if (video->sink != NULL) gst_object_unref(GST_OBJECT(video->sink));
     if (video->glWrapped != NULL) gst_object_unref(video->glWrapped);
     if (video->glDisplay != NULL) gst_object_unref(video->glDisplay);
     if (video->targetImage != EGL_NO_IMAGE_KHR && egl_destroy_image != NULL) {
@@ -299,10 +283,6 @@ Java_dev_nucleusframework_samplegst_NativeGstVideoBridge_nativeOpen(
      * GLES context cannot share with the window's desktop-GL one — EGL answers
      * EGL_BAD_CONTEXT and the pipeline never leaves NULL. */
     gst_gl_display_filter_gl_api(video->glDisplay, GST_GL_API_OPENGL3 | GST_GL_API_OPENGL);
-    /* Desktop GL only: left to itself the EGL backend reaches for GLES first, and a
-     * GLES context cannot share with the window's desktop-GL one — EGL answers
-     * EGL_BAD_CONTEXT and the pipeline never leaves NULL. */
-    gst_gl_display_filter_gl_api(video->glDisplay, GST_GL_API_OPENGL3 | GST_GL_API_OPENGL);
     video->glWrapped = gst_gl_context_new_wrapped(
         video->glDisplay, (guintptr) video->gstContext,
         GST_GL_PLATFORM_EGL, GST_GL_API_OPENGL3 | GST_GL_API_OPENGL);
@@ -340,22 +320,60 @@ Java_dev_nucleusframework_samplegst_NativeGstVideoBridge_nativeOpen(
     }
 
     const char *uri_chars = (*env)->GetStringUTFChars(env, uri, NULL);
-    gchar *description = g_strdup_printf(
-        "uridecodebin uri=\"%s\" ! glupload ! glcolorconvert ! "
-        "appsink name=sink max-buffers=1 drop=true sync=true "
-        "caps=\"video/x-raw(memory:GLMemory),format=RGBA\"",
-        uri_chars);
-    (*env)->ReleaseStringUTFChars(env, uri, uri_chars);
-    GError *error = NULL;
-    video->pipeline = gst_parse_launch(description, &error);
-    g_free(description);
-    if (video->pipeline == NULL) {
-        LOG("pipeline failed: %s\n", error != NULL ? error->message : "unknown");
-        if (error != NULL) g_error_free(error);
+
+    /* The video-sink bin: glupload → glcolorconvert → appsink, with a ghost pad
+     * named "sink" on the front. playbin's playsink looks for a static pad of
+     * exactly that name on the video-sink element (`gst_element_get_static_pad`),
+     * and a bare bin from gst_parse_launch exposes none of its own — without the
+     * ghost pad playsink refuses to link, decodebin then cannot negotiate caps
+     * and reports "no decoder available", and preroll never happens. */
+    GstElement *videoSink = gst_bin_new("nucleus-video-sink");
+    GstElement *glupload = gst_element_factory_make("glupload", NULL);
+    GstElement *glcolorconvert = gst_element_factory_make("glcolorconvert", NULL);
+    GstElement *appsink = gst_element_factory_make("appsink", "sink");
+    if (videoSink == NULL || glupload == NULL || glcolorconvert == NULL || appsink == NULL) {
+        LOG("could not build the video-sink bin (glupload/glcolorconvert/appsink)\n");
+        if (videoSink != NULL) gst_object_unref(videoSink);
+        if (glupload != NULL) gst_object_unref(glupload);
+        if (glcolorconvert != NULL) gst_object_unref(glcolorconvert);
+        if (appsink != NULL) gst_object_unref(appsink);
         video_free(video);
         return 0;
     }
-    video->sink = GST_APP_SINK(gst_bin_get_by_name(GST_BIN(video->pipeline), "sink"));
+    GstCaps *sinkCaps = gst_caps_from_string(
+        "video/x-raw(memory:GLMemory),format=RGBA");
+    g_object_set(appsink, "max-buffers", 1, "drop", TRUE, "sync", TRUE,
+                 "caps", sinkCaps, NULL);
+    gst_caps_unref(sinkCaps);
+    gst_bin_add_many(GST_BIN(videoSink), glupload, glcolorconvert, appsink, NULL);
+    gst_element_link_many(glupload, glcolorconvert, appsink, NULL);
+    GstPad *sinkPad = gst_element_get_static_pad(glupload, "sink");
+    gst_element_add_pad(videoSink, gst_ghost_pad_new("sink", sinkPad));
+    gst_object_unref(sinkPad);
+    /* Keep our own ref to the appsink across the bin's lifetime; the bin holds the
+     * other, released when playbin lets the video-sink go. video_free drops it. */
+    video->sink = GST_APP_SINK(g_object_ref(appsink));
+
+    /* `playbin` is the whole playback engine: it demuxes and decodes, wires an
+     * `autoaudiosink` for the sound itself, and — the part that matters here —
+     * takes its clock from the audio sink, so the appsink's `sync=true` paces the
+     * video against the audio. That is the same division of labour as the WASAPI
+     * and AVSampleBuffer paths in the Windows and macOS samples, except GStreamer
+     * owns the audio path outright: no PCM plumbing on this side at all. `mute`
+     * rides on playbin's own property. */
+    video->pipeline = gst_element_factory_make("playbin", "playbin");
+    if (video->pipeline == NULL) {
+        LOG("could not create playbin — is the playback plugin installed?\n");
+        gst_object_unref(videoSink);
+        video_free(video);
+        return 0;
+    }
+    g_object_set(video->pipeline, "uri", uri_chars, NULL);
+    g_object_set(video->pipeline, "video-sink", videoSink, NULL);
+    /* playbin holds the only strong ref to the bin now; ours goes. The appsink
+     * ref, kept on video->sink, is released in video_free. */
+    gst_object_unref(videoSink);
+    (*env)->ReleaseStringUTFChars(env, uri, uri_chars);
     GstBus *bus = gst_element_get_bus(video->pipeline);
     gst_bus_set_sync_handler(bus, on_bus_message, video, NULL);
     gst_object_unref(bus);
@@ -481,4 +499,38 @@ Java_dev_nucleusframework_samplegst_NativeGstVideoBridge_nativeClose(
         JNIEnv *env, jclass clazz, jlong handle) {
     (void) env; (void) clazz;
     if (handle != 0) video_free(VIDEO_OF(handle));
+}
+
+/**
+ * True when the file has an audio stream. `playbin` exposes `n-audio` once it has
+ * discovered the streams, which the preroll in [nativeOpen] forces — so by the
+ * time the Kotlin side asks, the count is settled.
+ */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_samplegst_NativeGstVideoBridge_nativeHasAudio(
+        JNIEnv *env, jclass clazz, jlong handle) {
+    (void) env; (void) clazz;
+    if (handle == 0) return JNI_FALSE;
+    NucleusGstVideo *video = VIDEO_OF(handle);
+    gint nAudio = 0;
+    if (video->pipeline != NULL) {
+        g_object_get(video->pipeline, "n-audio", &nAudio, NULL);
+    }
+    return nAudio > 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+/**
+ * Mutes the audio path. playbin's clock keeps running — only the render volume
+ * goes to zero — so video pacing is unaffected, and a file without audio is a
+ * no-op. The Kotlin side serialises this against [nativeClose].
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_samplegst_NativeGstVideoBridge_nativeSetMuted(
+        JNIEnv *env, jclass clazz, jlong handle, jboolean muted) {
+    (void) env; (void) clazz;
+    if (handle == 0) return;
+    NucleusGstVideo *video = VIDEO_OF(handle);
+    if (video->pipeline != NULL) {
+        g_object_set(video->pipeline, "mute", (gboolean) (muted ? TRUE : FALSE), NULL);
+    }
 }

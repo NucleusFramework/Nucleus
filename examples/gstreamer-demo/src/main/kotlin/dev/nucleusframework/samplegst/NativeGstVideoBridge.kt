@@ -41,6 +41,14 @@ internal object NativeGstVideoBridge {
     @JvmStatic
     external fun nativePullFrame(handle: Long): Int
 
+    /** True when the file has an audio stream — queried live from playbin's `n-audio`. */
+    @JvmStatic
+    external fun nativeHasAudio(handle: Long): Boolean
+
+    /** Mutes the audio path; a no-op for a file without audio. */
+    @JvmStatic
+    external fun nativeSetMuted(handle: Long, muted: Boolean)
+
     @JvmStatic
     external fun nativeClose(handle: Long)
 }

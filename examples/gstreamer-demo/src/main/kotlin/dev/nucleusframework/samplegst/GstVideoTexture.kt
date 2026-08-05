@@ -29,6 +29,7 @@ class GstVideoTexture private constructor(
     val widthPx: Int,
     val heightPx: Int,
     val source: TextureViewSource,
+    val hasAudio: Boolean,
 ) : AutoCloseable {
     private val lock = Any()
     private var closed = false
@@ -47,6 +48,16 @@ class GstVideoTexture private constructor(
     fun pullFrame(): Boolean =
         synchronized(lock) {
             if (closed) false else NativeGstVideoBridge.nativePullFrame(handle) == 1
+        }
+
+    /** Mutes playbin's audio path. The clock keeps running so video pacing is
+     * unaffected; a file without audio ignores this. */
+    var muted: Boolean = false
+        set(value) {
+            field = value
+            synchronized(lock) {
+                if (!closed) NativeGstVideoBridge.nativeSetMuted(handle, value)
+            }
         }
 
     override fun close() {
@@ -81,11 +92,13 @@ class GstVideoTexture private constructor(
                 NativeGstVideoBridge.nativeClose(handle)
                 return null
             }
+            val hasAudio = NativeGstVideoBridge.nativeHasAudio(handle)
             return GstVideoTexture(
                 handle,
                 widthPx,
                 heightPx,
                 nucleusEglImageTextureSource(image, widthPx, heightPx),
+                hasAudio,
             )
         }
     }
