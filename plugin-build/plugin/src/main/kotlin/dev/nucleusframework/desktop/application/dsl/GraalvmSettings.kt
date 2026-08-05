@@ -99,6 +99,18 @@ abstract class GraalvmSettings
         // which does not know the former option.
         val garbageCollector: Property<NativeImageGarbageCollector> = objects.nullableProperty()
 
+        // Exact reachability metadata on the `runGraalvmNative` (quick-build) dev loop only.
+        // Unregistered reflective lookups then throw `MissingReflectionRegistrationError` naming
+        // the missing element, instead of a nested ClassNotFoundException chain. Never applied to
+        // create/package distributable tasks — optional-dependency probes in third-party code die
+        // under exact mode. Defaults to [ExactReachabilityMetadata.APP_PACKAGES] (scoped to the
+        // package of mainClass). Set [ExactReachabilityMetadata.OFF] to opt out, or
+        // [ExactReachabilityMetadata.packages] for multi-root apps.
+        // Runtime reporting mode is selected with `-Pnucleus.graalvm.missingRegistration=warn|exit|throw`
+        // (default warn) so one run surfaces every missing registration.
+        val exactReachabilityMetadata: Property<ExactReachabilityMetadata> =
+            objects.notNullProperty(ExactReachabilityMetadata.APP_PACKAGES)
+
         // Extra `native-image` arguments appended verbatim, after everything the plugin derives.
         //
         // Nucleus deliberately leaves the SLF4J lifecycle alone: the API and the app-selected

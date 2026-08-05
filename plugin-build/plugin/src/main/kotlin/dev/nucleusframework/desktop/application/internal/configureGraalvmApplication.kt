@@ -193,6 +193,15 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             it.substringAfterLast(':').equals(quickBuildRunTaskName, ignoreCase = true)
         }
 
+    // Exact reachability metadata (dev loop only). See ExactReachabilityMetadata / issue #440.
+    // Resolved packages are tracked as a compile input so switching OFF ↔ APP_PACKAGES /
+    // packages(...) recompiles instead of reusing a binary with the other mode baked in.
+    val exactReachabilitySetting = graalvm.exactReachabilityMetadata.get()
+    val missingRegistrationMode =
+        MissingRegistrationReportingMode.parse(
+            NucleusProperties.graalvmMissingRegistration(project.providers).orNull,
+        )
+
     // ── Uber JAR (reuse existing task) ──
 
     // We need the uber JAR from the existing pipeline (respects build type classifier)
@@ -861,6 +870,16 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedPgoProfile = pgoProfileFile
             val resolvedAdvancedObfuscation = graalvm.advancedObfuscation.get()
             inputs.property("advancedObfuscation", resolvedAdvancedObfuscation)
+            // Exact reachability: only the package list matters for the image binary; the
+            // reporting mode is a runtime flag on runGraalvmNative. Track the packages (and
+            // whether we are in quick-build) so a mode/package change recompiles.
+            val (resolvedExactPackages, resolvedExactPackageWarning) =
+                resolveExactReachabilityPackages(exactReachabilitySetting, mainClassName)
+            inputs.property(
+                "exactReachabilityMetadata",
+                if (resolvedQuickBuild) resolvedExactPackages.joinToString(",") else "off",
+            )
+            val resolvedMissingRegistrationMode = missingRegistrationMode
             val resolvedMaxHeapSize = graalvm.maxHeapSize.orNull
             val resolvedMaxHeapSizePercent = graalvm.maxHeapSizePercent.get()
             inputs.property("maxHeapSize", resolvedMaxHeapSize ?: "")
@@ -1031,6 +1050,22 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                 )
                             }
                         }
+
+                        // Exact reachability metadata (quick-build / runGraalvmNative only).
+                        // Makes missing reflection registrations throw a named
+                        // MissingReflectionRegistrationError instead of a buried ClassNotFoundException.
+                        // Scoped to app packages so third-party optional-dependency probes still work.
+                        val exactResolution =
+                            resolveExactReachabilityMetadata(
+                                packages = resolvedExactPackages,
+                                packageWarning = resolvedExactPackageWarning,
+                                quickBuild = resolvedQuickBuild,
+                                javaHome = File(resolvedGraalvmHome),
+                                reportingMode = resolvedMissingRegistrationMode,
+                            )
+                        exactResolution.warning?.let { logger.warn(it) }
+                        exactResolution.lifecycleMessage?.let { logger.lifecycle(it) }
+                        addAll(exactResolution.buildArgs)
 
                         // macOS: force the link-time deployment target. native-image does NOT
                         // propagate MACOSX_DEPLOYMENT_TARGET to its internal linker, so the link
@@ -1219,11 +1254,23 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
         taskNameAction = "run",
         taskNameObject = "graalvmNative",
     ) {
-        description = "Build and run the GraalVM native image in quick-build mode (-Ob) for fast dev iteration"
+        description =
+            "Build and run the GraalVM native image in quick-build mode (-Ob) for fast dev iteration " +
+                "(exact reachability metadata scoped to the app packages)"
         dependsOn(packageGraalvmNative)
 
         executable = packagedBinaryFile.get().asFile.absolutePath
-        args = app.args
+        // Runtime counterpart of --exact-reachability-metadata: default Warn surfaces every
+        // missing registration in one run. Only passed when packages resolve (same condition
+        // that enables the build-time flag on the quick-build path). Selectable via
+        // -Pnucleus.graalvm.missingRegistration=warn|exit|throw.
+        val exactRuntimeArgs =
+            resolveExactReachabilityPackages(exactReachabilitySetting, mainClassName)
+                .first
+                .takeIf { it.isNotEmpty() }
+                ?.let { listOf(missingRegistrationMode.runtimeFlag) }
+                .orEmpty()
+        args = exactRuntimeArgs + app.args
     }
 
     // ── Record a PGO profile (Oracle GraalVM only) ──
