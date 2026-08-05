@@ -38,11 +38,18 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
 
     @TaskAction
     fun analyze() {
+        // Always materialize the output directory so consumers can declare it as a
+        // non-optional @InputDirectory / inputs.dir without fingerprint failures when
+        // the classpath is empty (Gradle requires @OutputDirectory to exist after the task).
+        val outDir = outputDir.get().asFile
+        outDir.mkdirs()
+
         val classpathEntries = runtimeClasspath.files.filter { it.exists() }
         val jars = classpathEntries.filter { it.name.endsWith(".jar") }
         val classDirs = classpathEntries.filter { it.isDirectory }
         if (jars.isEmpty() && classDirs.isEmpty()) {
             logger.info("No JARs or class directories to analyze for static metadata")
+            File(outDir, "reachability-metadata.json").writeText("{}\n")
             return
         }
 
@@ -63,9 +70,6 @@ abstract class AnalyzeStaticMetadataTask : DefaultTask() {
                 "${jniEntries.size} JNI, " +
                 "${resources.size} resource entries",
         )
-
-        val outDir = outputDir.get().asFile
-        outDir.mkdirs()
 
         val json = buildReachabilityMetadataJson(allReflection, jniEntries, resources)
         File(outDir, "reachability-metadata.json").writeText(json)

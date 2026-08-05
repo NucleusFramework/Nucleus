@@ -814,8 +814,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             generateWindowsResources?.let { dependsOn(it) }
 
             val uberJarFile = packageUberJar.flatMap { it.archiveFile }
-            inputs.file(uberJarFile)
-            inputs.file(metadataRepoDirsFile).optional()
             val outputDir = nativeCompileDir.get().asFile
             outputs.dir(outputDir)
 
@@ -875,7 +873,6 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 ).flag
             // Quick build (`-Ob`) wins over the configured optimization for the fast dev run.
             val resolvedQuickBuild = quickBuildRequested
-            inputs.property("quickBuild", resolvedQuickBuild)
             val resolvedOptimizationFlag =
                 if (resolvedQuickBuild) "-Ob" else graalvm.optimization.orNull?.flag
             val resolvedAllCharsets = graalvm.allCharsets.get()
@@ -884,49 +881,94 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedPgoEnabled = graalvm.pgo.enabled.get()
             val resolvedPgoProfile = pgoProfileFile
             val resolvedAdvancedObfuscation = graalvm.advancedObfuscation.get()
-            inputs.property("advancedObfuscation", resolvedAdvancedObfuscation)
             // Exact reachability: only the package list matters for the image binary; the
             // reporting mode is a runtime flag on runGraalvmNative. Track the packages (and
             // whether we are in quick-build) so a mode/package change recompiles.
             val (resolvedExactPackages, resolvedExactPackageWarning) =
                 resolveExactReachabilityPackages(exactReachabilitySetting, mainClassName)
-            inputs.property(
-                "exactReachabilityMetadata",
-                if (resolvedQuickBuild) resolvedExactPackages.joinToString(",") else "off",
-            )
             val resolvedMissingRegistrationMode = missingRegistrationMode
             val resolvedMaxHeapSize = graalvm.maxHeapSize.orNull
             val resolvedMaxHeapSizePercent = graalvm.maxHeapSizePercent.get()
-            inputs.property("maxHeapSize", resolvedMaxHeapSize ?: "")
-            inputs.property("maxHeapSizePercent", resolvedMaxHeapSizePercent)
             val resolvedGarbageCollector = graalvm.garbageCollector.orNull
-            inputs.property("garbageCollector", resolvedGarbageCollector?.name ?: "")
-            // Rerun the compile when the PGO mode or the recorded profile changes — the args are
-            // assembled in doFirst, so they are not tracked as inputs by themselves.
-            inputs.property("pgoMode", resolvedPgoMode)
-            inputs.files(project.files(pgoProfileFile))
             val resolvedImageName = imageName.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
                 if (currentOS == OS.MacOS) graalvm.macOS.minimumSystemVersion.get() else null
-            val resolvedStubObj =
+            // Keep File (not path strings) so inputs and -H:NativeLinkerOption share one value.
+            val resolvedStubObjFile: File? =
                 if (currentOS == OS.MacOS && compileStubs != null) {
-                    appTmpDir
-                        .get()
-                        .file("graalvm/cursor_stub.o")
-                        .asFile.absolutePath
+                    appTmpDir.get().file("graalvm/cursor_stub.o").asFile
                 } else {
                     null
                 }
-            val resolvedResFile =
+            val resolvedResFile: File? =
                 if (currentOS == OS.Windows && generateWindowsResources != null) {
-                    appTmpDir
-                        .get()
-                        .file("graalvm/icon.res")
-                        .asFile.absolutePath
+                    appTmpDir.get().file("graalvm/icon.res").asFile
                 } else {
                     null
                 }
+
+            // ── Inputs ──
+            // Args are assembled in doFirst, so Gradle cannot infer them from the command
+            // line. Declare every value that affects the binary here in one place (issue #431).
+            // Prefer producer task outputs for generated dirs so fingerprinting stays tied
+            // to the tasks that write them (dependsOn alone does not make outputs inputs).
+            //
+            // Optional paths that may not exist (user graalvm/ dir, Oracle extraction tree
+            // when the repo is empty, PGO profile before the first instrumented run) use
+            // fileTree / files() — inputs.dir(...).optional() still fails validation in
+            // Gradle 9 when the path is set but missing.
+            inputs.file(uberJarFile)
+            inputs
+                .files(project.fileTree(resolvedConfigDir))
+                .withPropertyName("nativeImageConfigDir")
+            inputs
+                .dir(filterLibraryMetadata.flatMap { it.outputDir })
+                .withPropertyName("libraryMetadataDir")
+            inputs
+                .files(generatePlatformMetadata.map { it.outputs.files })
+                .withPropertyName("platformMetadataDir")
+            inputs
+                .dir(analyzeStaticMetadata.flatMap { it.outputDir })
+                .withPropertyName("staticMetadataDir")
+            generateProjectResourceMetadata?.let { producer ->
+                inputs
+                    .dir(producer.flatMap { it.outputDir })
+                    .withPropertyName("projectResourceMetadataDir")
+            }
+            // Path list + extracted tree: a repo ZIP change that reuses the same relative
+            // dir names must still recompile.
+            inputs.files(project.layout.files(metadataRepoDirsFile)).withPropertyName("metadataRepoDirsFile")
+            inputs
+                .files(metadataRepoOutputDir.map { project.fileTree(it.asFile) })
+                .withPropertyName("metadataRepositoryDir")
+            resolvedStubObjFile?.let {
+                inputs.files(project.layout.files(it)).withPropertyName("cursorStubObj")
+            }
+            resolvedResFile?.let {
+                inputs.files(project.layout.files(it)).withPropertyName("windowsIconRes")
+            }
+            inputs.files(project.files(pgoProfileFile)).withPropertyName("pgoProfile")
+            inputs.property("quickBuild", resolvedQuickBuild)
+            inputs.property("optimization", resolvedOptimizationFlag ?: "")
+            inputs.property("advancedObfuscation", resolvedAdvancedObfuscation)
+            inputs.property(
+                "exactReachabilityMetadata",
+                if (resolvedQuickBuild) resolvedExactPackages.joinToString(",") else "off",
+            )
+            inputs.property("maxHeapSize", resolvedMaxHeapSize ?: "")
+            inputs.property("maxHeapSizePercent", resolvedMaxHeapSizePercent)
+            inputs.property("garbageCollector", resolvedGarbageCollector?.name ?: "")
+            inputs.property("march", resolvedMarch)
+            inputs.property("allCharsets", resolvedAllCharsets)
+            inputs.property("mlProfileInference", resolvedMlProfileInference)
+            inputs.property("buildArgs", resolvedBuildArgs)
+            inputs.property("pgoMode", resolvedPgoMode)
+            inputs.property("pgoEnabled", resolvedPgoEnabled)
+            inputs.property("imageName", resolvedImageName)
+            if (resolvedMacOsMinVersion != null) {
+                inputs.property("macOsMinVersion", resolvedMacOsMinVersion)
+            }
 
             doFirst {
                 outputDir.mkdirs()
@@ -1106,13 +1148,13 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         }
 
                         // macOS: link C stubs
-                        if (resolvedStubObj != null) {
-                            add("-H:NativeLinkerOption=$resolvedStubObj")
+                        if (resolvedStubObjFile != null) {
+                            add("-H:NativeLinkerOption=${resolvedStubObjFile.absolutePath}")
                         }
 
                         // Windows: link .res for icon + version info, configure subsystem
                         if (resolvedResFile != null) {
-                            add("-H:NativeLinkerOption=$resolvedResFile")
+                            add("-H:NativeLinkerOption=${resolvedResFile.absolutePath}")
                             add("-H:NativeLinkerOption=/SUBSYSTEM:WINDOWS")
                             add("-H:NativeLinkerOption=/ENTRY:mainCRTStartup")
                         }
