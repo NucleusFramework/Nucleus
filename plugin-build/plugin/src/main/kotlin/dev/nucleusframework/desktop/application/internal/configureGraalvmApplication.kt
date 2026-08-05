@@ -886,14 +886,37 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             inputs.property("maxHeapSizePercent", resolvedMaxHeapSizePercent)
             val resolvedGarbageCollector = graalvm.garbageCollector.orNull
             inputs.property("garbageCollector", resolvedGarbageCollector?.name ?: "")
-            // Rerun the compile when the PGO mode or the recorded profile changes — the args are
-            // assembled in doFirst, so they are not tracked as inputs by themselves.
+            // Args assembled in doFirst are invisible to Gradle's up-to-date checks unless
+            // declared here. Missing inputs made metadata edits a silent no-op (issue #431).
+            inputs
+                .dir(resolvedConfigDir)
+                .optional()
+                .withPropertyName("nativeImageConfigDir")
+            inputs.dir(libraryMetadataDir).withPropertyName("libraryMetadataDir")
+            inputs.dir(platformMetadataDir).withPropertyName("platformMetadataDir")
+            inputs.dir(staticMetadataDir).withPropertyName("staticMetadataDir")
+            if (generateProjectResourceMetadata != null) {
+                inputs.dir(projectResourceMetadataDir).withPropertyName("projectResourceMetadataDir")
+            }
+            // The path list file is already an input; also fingerprint the extracted tree so a
+            // repo ZIP change that reuses the same relative dir names still recompiles.
+            inputs.dir(metadataRepoOutputDir).optional().withPropertyName("metadataRepositoryDir")
+            inputs.property("march", resolvedMarch)
+            inputs.property("optimization", resolvedOptimizationFlag ?: "")
+            inputs.property("allCharsets", resolvedAllCharsets)
+            inputs.property("mlProfileInference", resolvedMlProfileInference)
+            inputs.property("buildArgs", resolvedBuildArgs)
             inputs.property("pgoMode", resolvedPgoMode)
+            inputs.property("pgoEnabled", resolvedPgoEnabled)
             inputs.files(project.files(pgoProfileFile))
             val resolvedImageName = imageName.get()
+            inputs.property("imageName", resolvedImageName)
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
                 if (currentOS == OS.MacOS) graalvm.macOS.minimumSystemVersion.get() else null
+            if (resolvedMacOsMinVersion != null) {
+                inputs.property("macOsMinVersion", resolvedMacOsMinVersion)
+            }
             val resolvedStubObj =
                 if (currentOS == OS.MacOS && compileStubs != null) {
                     appTmpDir
@@ -903,6 +926,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 } else {
                     null
                 }
+            if (resolvedStubObj != null) {
+                inputs.file(File(resolvedStubObj)).optional().withPropertyName("cursorStubObj")
+            }
             val resolvedResFile =
                 if (currentOS == OS.Windows && generateWindowsResources != null) {
                     appTmpDir
@@ -912,6 +938,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 } else {
                     null
                 }
+            if (resolvedResFile != null) {
+                inputs.file(File(resolvedResFile)).optional().withPropertyName("windowsIconRes")
+            }
 
             doFirst {
                 outputDir.mkdirs()
