@@ -17,6 +17,9 @@ class Notification internal constructor(
     val onActivated: (() -> Unit)?,
     val onDismissed: ((DismissReason) -> Unit)?,
     val onFailed: (() -> Unit)?,
+    internal val linux: LinuxNotificationScope?,
+    internal val macos: MacNotificationScope?,
+    internal val windows: WindowsNotificationScope?,
 ) {
     /** Sends this notification to the OS notification system. */
     fun send(): NotificationResult = NotificationManager.send(this)
@@ -32,10 +35,20 @@ data class NotificationButton internal constructor(
 @DslMarker
 annotation class NotificationDsl
 
-/** Builder for notification action buttons. */
+/**
+ * Builder for a cross-platform notification.
+ *
+ * Add up to [MAX_BUTTONS] action [button]s, and optionally attach platform-specific behavior
+ * via the [linux], [macos], and [windows] blocks. Each platform block is applied only when the
+ * notification is delivered on that OS — the semantics that differ between platforms (urgency,
+ * expiry, history, etc.) live there rather than in a lossy shared abstraction.
+ */
 @NotificationDsl
-class NotificationButtonBuilder internal constructor() {
+class NotificationBuilder internal constructor() {
     internal val buttons = mutableListOf<NotificationButton>()
+    internal var linuxScope: LinuxNotificationScope? = null
+    internal var macScope: MacNotificationScope? = null
+    internal var windowsScope: WindowsNotificationScope? = null
 
     /** Adds a button with the given [title] and [onClick] handler. Max $MAX_BUTTONS buttons. */
     fun button(
@@ -45,7 +58,26 @@ class NotificationButtonBuilder internal constructor() {
         require(buttons.size < MAX_BUTTONS) { "Maximum $MAX_BUTTONS buttons allowed" }
         buttons.add(NotificationButton(title, onClick))
     }
+
+    /** Configures Linux-specific options (see [LinuxNotificationScope]); a no-op on other platforms. */
+    fun linux(block: LinuxNotificationScope.() -> Unit) {
+        linuxScope = (linuxScope ?: LinuxNotificationScope()).apply(block)
+    }
+
+    /** Configures macOS-specific options (see [MacNotificationScope]); a no-op on other platforms. */
+    fun macos(block: MacNotificationScope.() -> Unit) {
+        macScope = (macScope ?: MacNotificationScope()).apply(block)
+    }
+
+    /** Configures Windows-specific options (see [WindowsNotificationScope]); a no-op on other platforms. */
+    fun windows(block: WindowsNotificationScope.() -> Unit) {
+        windowsScope = (windowsScope ?: WindowsNotificationScope()).apply(block)
+    }
 }
+
+/** Former name of [NotificationBuilder], kept for source compatibility. */
+@Deprecated("Renamed to NotificationBuilder", ReplaceWith("NotificationBuilder"))
+typealias NotificationButtonBuilder = NotificationBuilder
 
 /**
  * Creates a cross-platform notification.
@@ -60,6 +92,11 @@ class NotificationButtonBuilder internal constructor() {
  * ) {
  *     button("Open") { openFile() }
  *     button("Show in Folder") { showInFolder() }
+ *
+ *     // Platform-specific behavior, honored only on the matching OS:
+ *     linux { urgency = Urgency.CRITICAL; transient = true; category = "device.error" }
+ *     macos { interruptionLevel = InterruptionLevel.TIME_SENSITIVE }
+ *     windows { scenario = ToastScenario.URGENT }
  * }
  * n.send()
  * ```
@@ -71,7 +108,7 @@ class NotificationButtonBuilder internal constructor() {
  * @param onActivated Called when the user clicks the notification body.
  * @param onDismissed Called when the notification is dismissed, with the [DismissReason].
  * @param onFailed Called if the notification fails to display.
- * @param buttons Optional DSL block to add up to 5 action buttons.
+ * @param block Optional DSL block to add action buttons and per-platform options.
  */
 fun notification(
     title: String,
@@ -81,13 +118,20 @@ fun notification(
     onActivated: (() -> Unit)? = null,
     onDismissed: ((DismissReason) -> Unit)? = null,
     onFailed: (() -> Unit)? = null,
-    buttons: (NotificationButtonBuilder.() -> Unit)? = null,
+    block: (NotificationBuilder.() -> Unit)? = null,
 ): Notification {
-    val buttonList =
-        if (buttons != null) {
-            NotificationButtonBuilder().apply(buttons).buttons.toList()
-        } else {
-            emptyList()
-        }
-    return Notification(title, message, largeImage, smallIcon, buttonList, onActivated, onDismissed, onFailed)
+    val builder = block?.let { NotificationBuilder().apply(it) }
+    return Notification(
+        title = title,
+        message = message,
+        largeImage = largeImage,
+        smallIcon = smallIcon,
+        buttons = builder?.buttons?.toList() ?: emptyList(),
+        onActivated = onActivated,
+        onDismissed = onDismissed,
+        onFailed = onFailed,
+        linux = builder?.linuxScope,
+        macos = builder?.macScope,
+        windows = builder?.windowsScope,
+    )
 }

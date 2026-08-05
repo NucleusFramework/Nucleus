@@ -89,9 +89,14 @@ internal class LinuxDispatcher private constructor() : PlatformDispatcher {
             buttonCallbacks[key] = button.onClick
         }
 
+        val opts = notification.linux
         val hints =
             NotificationHints(
+                urgency = opts?.urgency,
+                category = opts?.category,
                 imagePath = notification.largeImage?.let { FreedesktopIcon.Custom(it) },
+                resident = opts?.resident,
+                transient = opts?.transient,
             )
 
         val linuxNotification =
@@ -101,6 +106,7 @@ internal class LinuxDispatcher private constructor() : PlatformDispatcher {
                 appIcon = notification.smallIcon?.let { FreedesktopIcon.Custom(it) },
                 actions = actions,
                 hints = hints,
+                expireTimeout = opts?.expireTimeout ?: SERVER_DEFAULT_EXPIRE_TIMEOUT,
             )
 
         val id = LinuxNotificationCenter.notify(linuxNotification)
@@ -139,6 +145,9 @@ internal class LinuxDispatcher private constructor() : PlatformDispatcher {
         }
     }
 }
+
+/** freedesktop `expire_timeout` sentinel meaning "let the server decide". */
+private const val SERVER_DEFAULT_EXPIRE_TIMEOUT = -1
 
 private fun CloseReason.toCommon(): DismissReason =
     when (this) {

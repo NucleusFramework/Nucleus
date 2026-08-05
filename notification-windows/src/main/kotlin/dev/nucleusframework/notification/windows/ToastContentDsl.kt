@@ -60,6 +60,7 @@ class ToastContentBuilder {
     var launch: String = ""
     var activationType: ActivationType = ActivationType.FOREGROUND
     var scenario: ToastScenario = ToastScenario.DEFAULT
+    var duration: ToastDuration = ToastDuration.DEFAULT
     var displayTimestamp: String? = null
 
     private var visual: ToastVisual? = null
@@ -107,6 +108,7 @@ class ToastContentBuilder {
             launch = launch,
             activationType = activationType,
             scenario = scenario,
+            duration = duration,
             displayTimestamp = displayTimestamp,
         )
     }

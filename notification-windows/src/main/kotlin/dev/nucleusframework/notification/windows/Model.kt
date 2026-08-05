@@ -18,6 +18,7 @@ package dev.nucleusframework.notification.windows
  * @param launch App-defined launch arguments when the toast body is clicked.
  * @param activationType How the app is activated on click.
  * @param scenario Pre-defined display/audio behavior.
+ * @param duration How long the toast stays on screen before moving to the Action Center.
  * @param displayTimestamp Custom timestamp override (ISO 8601 string).
  */
 data class ToastContent(
@@ -28,6 +29,7 @@ data class ToastContent(
     val launch: String = "",
     val activationType: ActivationType = ActivationType.FOREGROUND,
     val scenario: ToastScenario = ToastScenario.DEFAULT,
+    val duration: ToastDuration = ToastDuration.DEFAULT,
     val displayTimestamp: String? = null,
 )
 

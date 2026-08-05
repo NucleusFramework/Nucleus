@@ -3,6 +3,7 @@ package dev.nucleusframework.notification.common.internal
 import dev.nucleusframework.notification.ActionOption
 import dev.nucleusframework.notification.CategoryOption
 import dev.nucleusframework.notification.DeliveredNotification
+import dev.nucleusframework.notification.InterruptionLevel
 import dev.nucleusframework.notification.NotificationAction
 import dev.nucleusframework.notification.NotificationAttachment
 import dev.nucleusframework.notification.NotificationCategory
@@ -104,12 +105,16 @@ internal class MacOsDispatcher private constructor() : PlatformDispatcher {
                 emptyList()
             }
 
+        val opts = notification.macos
         val content =
             NotificationContent(
                 title = notification.title,
+                subtitle = opts?.subtitle ?: "",
                 body = notification.message,
                 categoryIdentifier = categoryId,
                 attachments = attachments,
+                interruptionLevel = opts?.interruptionLevel ?: InterruptionLevel.ACTIVE,
+                relevanceScore = opts?.relevanceScore ?: 0.0,
             )
 
         val request =

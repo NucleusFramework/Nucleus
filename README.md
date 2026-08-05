@@ -169,6 +169,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |
 | `nucleus.decorated-window-material2` | Material 2 integration |
 | `nucleus.decorated-window-material3` | Material 3 integration |
+| `nucleus.notification-common` | Cross-platform notification DSL with per-platform (`linux`/`macos`/`windows`) option blocks |
 | `nucleus.notification-macos` | macOS User Notifications |
 | `nucleus.notification-windows` | Windows Toast Notifications |
 | `nucleus.notification-linux` | Freedesktop Desktop Notifications |
