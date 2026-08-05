@@ -4,9 +4,16 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.globalhotkey.linux.NativeLinuxHotKeyBridge
 import dev.nucleusframework.globalhotkey.macos.NativeMacOsHotKeyBridge
 import dev.nucleusframework.globalhotkey.windows.NativeWindowsHotKeyBridge
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
 
 private const val WIN32_MOD_NOREPEAT = 0x4000
+
+/** Quiet period before auto-flushing portal BindShortcuts after register/unregister. */
+private const val PORTAL_BIND_DEBOUNCE_MS = 50L
 
 /**
  * Cross-platform manager for system-wide global hotkeys.
@@ -21,6 +28,9 @@ private const val WIN32_MOD_NOREPEAT = 0x4000
  * - **Linux (X11)**: X11 `XGrabKey` / `XUngrabKey` via JNI.
  * - **Linux (Wayland)**: `org.freedesktop.portal.GlobalShortcuts` D-Bus portal via JNI.
  *   Requires a reverse-DNS `.desktop` file and the app launched from it.
+ *   Portal shortcut ids are stable (`nucleus_m{mods}_k{keyCode}`) so the system
+ *   remembers grants across launches. Multiple [register] calls are coalesced into
+ *   a single BindShortcuts dialog (debounced; call [commitRegistrations] to flush now).
  *
  * Thread-safe singleton.
  *
@@ -48,6 +58,14 @@ object GlobalHotKeyManager {
     /** The last error from a native operation, or null if the last operation succeeded. */
     var lastError: String? = null
         private set
+
+    private val portalBindExecutor =
+        Executors.newSingleThreadScheduledExecutor { r ->
+            Thread(r, "nucleus-global-hotkey-portal-bind").apply { isDaemon = true }
+        }
+    private val portalBindLock = Any()
+    private var portalBindFuture: ScheduledFuture<*>? = null
+    private val portalBindPending = AtomicBoolean(false)
 
     /** Whether the native library is loaded and functional on this platform. */
     val isAvailable: Boolean
@@ -92,6 +110,10 @@ object GlobalHotKeyManager {
 
     /**
      * Register a global hotkey.
+     *
+     * On Linux/Wayland the portal BindShortcuts dialog is debounced: a tight loop of
+     * [register] calls produces a single system dialog. Call [commitRegistrations]
+     * to flush immediately and surface portal errors synchronously.
      *
      * @param keyCode AWT virtual key code (e.g., [java.awt.event.KeyEvent.VK_F12]).
      * @param modifiers bitmask of [HotKeyModifier] values (e.g., `HotKeyModifier.CONTROL + HotKeyModifier.ALT`).
@@ -161,12 +183,47 @@ object GlobalHotKeyManager {
     }
 
     /**
+     * Flush pending Linux/Wayland portal BindShortcuts immediately.
+     *
+     * [register] / [unregister] on the portal backend only update the local set and
+     * schedule a debounced bind; call this after a batch of registrations to show the
+     * system dialog once and learn whether the portal accepted the set.
+     *
+     * No-op on Windows, macOS, and Linux/X11.
+     *
+     * @return true if the flush succeeded (or was a no-op).
+     */
+    @Synchronized
+    fun commitRegistrations(): Boolean {
+        if (!ensureReady()) return false
+        if (Platform.Current != Platform.Linux) {
+            lastError = null
+            return true
+        }
+        cancelScheduledPortalBind()
+        return flushPortalBind()
+    }
+
+    /**
+     * Linux/Wayland portal `shortcut_id` for [handle], or null if unknown / not Linux.
+     *
+     * Stable across process launches for a given key+modifiers pair
+     * (`nucleus_m{mods}_k{keyCode}`), independent of registration order.
+     */
+    fun portalShortcutId(handle: Long): String? {
+        if (Platform.Current != Platform.Linux || !initialized) return null
+        return NativeLinuxHotKeyBridge.nativeShortcutId(handle)
+    }
+
+    /**
      * Shut down the hotkey subsystem.
      * Unregisters all hotkeys and stops the native message loop.
      */
     @Synchronized
     fun shutdown() {
         if (!initialized) return
+
+        cancelScheduledPortalBind()
 
         when (Platform.Current) {
             Platform.Windows -> {
@@ -268,6 +325,8 @@ object GlobalHotKeyManager {
             return -1
         }
         lastError = null
+        // Portal: coalesce BindShortcuts across a register() burst (X11 is a no-op bind).
+        schedulePortalBind()
         return id
     }
 
@@ -277,6 +336,43 @@ object GlobalHotKeyManager {
         lastError = error
         if (error != null) {
             logger.warning("unregister(handle=$handle) failed: $error")
+            return false
+        }
+        schedulePortalBind()
+        return true
+    }
+
+    private fun schedulePortalBind() {
+        if (!Platform.isWayland) return
+        portalBindPending.set(true)
+        synchronized(portalBindLock) {
+            portalBindFuture?.cancel(false)
+            portalBindFuture =
+                portalBindExecutor.schedule(
+                    {
+                        if (portalBindPending.compareAndSet(true, false)) {
+                            flushPortalBind()
+                        }
+                    },
+                    PORTAL_BIND_DEBOUNCE_MS,
+                    TimeUnit.MILLISECONDS,
+                )
+        }
+    }
+
+    private fun cancelScheduledPortalBind() {
+        synchronized(portalBindLock) {
+            portalBindFuture?.cancel(false)
+            portalBindFuture = null
+        }
+        portalBindPending.set(false)
+    }
+
+    private fun flushPortalBind(): Boolean {
+        val error = NativeLinuxHotKeyBridge.nativeBindShortcuts()
+        lastError = error
+        if (error != null) {
+            logger.warning("portal BindShortcuts failed: $error")
             return false
         }
         return true

@@ -17,6 +17,11 @@ internal object NativeLinuxHotKeyBridge {
     @JvmStatic
     external fun nativeInit(): String?
 
+    /**
+     * Store a hotkey entry. On the portal (Wayland) backend this does **not** call
+     * BindShortcuts — use [nativeBindShortcuts] after a batch of registrations so the
+     * system dialog appears once. X11 still grabs the key immediately.
+     */
     @JvmStatic
     external fun nativeRegister(
         id: Long,
@@ -27,6 +32,17 @@ internal object NativeLinuxHotKeyBridge {
 
     @JvmStatic
     external fun nativeUnregister(id: Long): String?
+
+    /**
+     * Push the full current hotkey set to `org.freedesktop.portal.GlobalShortcuts`
+     * via a single BindShortcuts call. No-op on X11.
+     */
+    @JvmStatic
+    external fun nativeBindShortcuts(): String?
+
+    /** Portal shortcut_id for [id], or null if unknown. Stable across launches. */
+    @JvmStatic
+    external fun nativeShortcutId(id: Long): String?
 
     @JvmStatic
     external fun nativeShutdown()

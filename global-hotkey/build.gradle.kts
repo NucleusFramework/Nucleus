@@ -13,8 +13,32 @@ val publishVersion =
         ?.removePrefix("refs/tags/v")
         ?: "1.0.0"
 
+// Controlled repro for issue #264 residual portal bugs (see src/repro/...).
+val repro by sourceSets.creating {
+    kotlin.srcDir("src/repro/kotlin")
+}
+
+configurations {
+    named("reproImplementation") { extendsFrom(configurations["implementation"]) }
+    named("reproRuntimeOnly") { extendsFrom(configurations["runtimeOnly"]) }
+}
+
 dependencies {
     implementation(project(":core-runtime"))
+    add("reproImplementation", sourceSets["main"].output)
+}
+
+val reproOrder = providers.gradleProperty("reproOrder").orElse("a")
+
+tasks.register<JavaExec>("runIssue264Repro") {
+    group = "verification"
+    description = "Reproduce issue #264 portal shortcut_id / multi-BindShortcuts bugs (Wayland)"
+    dependsOn(tasks.named("compileReproKotlin"), tasks.named("processResources"))
+    classpath = repro.runtimeClasspath
+    mainClass.set("dev.nucleusframework.globalhotkey.repro.Issue264ReproKt")
+    systemProperty("repro.order", reproOrder.get())
+    // Real portal path needs a session bus + Wayland; do not force headless.
+    isIgnoreExitValue = true
 }
 
 java {
