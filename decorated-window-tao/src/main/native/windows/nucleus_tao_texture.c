@@ -52,6 +52,8 @@
  * /NODEFAULTLIB memset shim at link time. */
 #include <string.h>
 
+#include "../shared/nucleus_tao_egl_binding.h"
+
 #define EGL_EGL_PROTOTYPES 0
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -155,32 +157,24 @@ static void restoreCurrent(EGLDisplay dpy, EGLSurface draw, EGLSurface read, EGL
 /* ── Binding save / restore ──────────────────────────────────────────────
  *
  * The Kotlin side binds a surface's own EGL surface on paths that run outside
- * that surface's render pass — a standalone tray panel's bring-up, render and
- * teardown — and those paths can be *inside another* surface's render pass: a
- * `TaoStandalonePopup` composed into a live window builds its host from
- * `remember {}`, i.e. from inside the window scene's `ComposeScene.render()`.
- * Leaving the panel's 1x1 surface current there sends the rest of that frame,
+ * that surface's render pass — a standalone tray panel's bring-up, resize,
+ * render and teardown — and those paths can be *inside another* surface's render
+ * pass: a `TaoStandalonePopup` composed into a live window builds its host from
+ * `remember {}`, sizes it from the caller's layout and disposes it from
+ * `onDispose`, all from inside the window scene's `ComposeScene.render()`.
+ * Leaving the panel's 1x1 pbuffer current there sends the rest of that frame,
  * and its `flushAndSubmit`, into the panel instead of the window.
  *
- * The displaced binding is therefore snapshotted here and restored by
- * [nativeRestoreBinding] — the same contract as the Linux bridge's, and the
- * creation-side counterpart of the surface restore the import path already does.
+ * The bookkeeping (one slot, nesting refused, consumed once) lives in the shared
+ * header, next to the Linux bridge's; what stays here is reading this platform's
+ * current binding and putting it back — including the unbind this side does
+ * itself, since the process EGL display is reachable from the host registry.
  *
  * Single slot, not thread-local: every entry point in this file is documented
- * event-loop-thread only, and TLS under /NODEFAULTLIB would need the CRT's
- * `_tls_used`. One level deep is all the callers need; a nested save would
- * overwrite the outer one, so [nativeSaveCurrentBinding] refuses to nest and the
- * caller then runs without rebinding (its enclosing scope restores instead). */
+ * event-loop-thread only, and `__declspec(thread)` would need the CRT's
+ * `_tls_used` that `/NODEFAULTLIB` drops. */
 
-typedef struct {
-    EGLDisplay dpy;
-    EGLContext ctx;
-    EGLSurface draw;
-    EGLSurface read;
-    BOOL       saved;
-} NucleusDisplacedBinding;
-
-static NucleusDisplacedBinding sDisplaced;
+static NucleusTaoEglBindingSlot sDisplaced;
 
 static BOOL bindingProcsAvailable(void) {
     resolveTexEntryPoints();
@@ -199,13 +193,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeSaveCurren
 {
     (void)env; (void)clazz;
     if (!bindingProcsAvailable()) return JNI_FALSE;
-    if (sDisplaced.saved) return JNI_FALSE;
-    sDisplaced.dpy  = pEglGetCurrentDisplay2();
-    sDisplaced.ctx  = pEglGetCurrentContext2();
-    sDisplaced.draw = pEglGetCurrentSurface2(EGL_DRAW);
-    sDisplaced.read = pEglGetCurrentSurface2(EGL_READ);
-    sDisplaced.saved = TRUE;
-    return JNI_TRUE;
+    return nucleus_tao_egl_binding_save(
+        &sDisplaced,
+        pEglGetCurrentDisplay2(),
+        pEglGetCurrentContext2(),
+        pEglGetCurrentSurface2(EGL_DRAW),
+        pEglGetCurrentSurface2(EGL_READ)) ? JNI_TRUE : JNI_FALSE;
 }
 
 /**
@@ -224,14 +217,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoTextureBridge_nativeRestoreBin
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
-    if (!sDisplaced.saved) return JNI_FALSE;
-    const EGLDisplay dpy  = sDisplaced.dpy;
-    const EGLContext ctx  = sDisplaced.ctx;
-    const EGLSurface draw = sDisplaced.draw;
-    const EGLSurface read = sDisplaced.read;
-    memset(&sDisplaced, 0, sizeof(sDisplaced));
-    if (dpy != EGL_NO_DISPLAY && ctx != EGL_NO_CONTEXT) {
-        return pEglMakeCurrent2(dpy, draw, read, ctx) ? JNI_TRUE : JNI_FALSE;
+    void *display, *context, *draw, *read;
+    if (!nucleus_tao_egl_binding_take(&sDisplaced, &display, &context, &draw, &read)) {
+        return JNI_FALSE;
+    }
+    if (display != EGL_NO_DISPLAY && context != EGL_NO_CONTEXT) {
+        return pEglMakeCurrent2((EGLDisplay)display, (EGLSurface)draw,
+                                (EGLSurface)read, (EGLContext)context) ? JNI_TRUE : JNI_FALSE;
     }
     /* eglMakeCurrent needs a display even to unbind; the process display is the
      * one every surface here lives on. */

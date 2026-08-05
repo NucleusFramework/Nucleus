@@ -52,6 +52,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "../shared/nucleus_tao_egl_binding.h"
+
 #include "nucleus_tao_egl_internal.h"
 
 #define NUCLEUS_TAO_TEX_DEBUG 0
@@ -601,20 +603,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeIsAtt
  * frame would issue GL against nothing: the Linux twin of the ANGLE
  * surface-restore bug this feature already fixed on Windows.
  *
- * The displaced binding is therefore snapshotted here, per thread, and restored
- * by [nativeRestoreBinding]. One level deep is all the callers need; a nested
- * save would overwrite the outer one, so [nativeSaveCurrentBinding] refuses to
- * nest and the caller keeps the "already current" fast path for that case. */
+ * The bookkeeping (one slot, nesting refused, consumed once) lives in the shared
+ * header; what stays here is reading this platform's current binding and putting
+ * it back. Per thread, because the test producer really does reach this bridge
+ * from its own thread. */
 
-typedef struct {
-    EGLDisplay display;
-    EGLContext context;
-    EGLSurface draw;
-    EGLSurface read;
-    int        saved;
-} NucleusTaoEglBinding;
-
-static __thread NucleusTaoEglBinding g_displaced;
+static __thread NucleusTaoEglBindingSlot g_displaced;
 
 /**
  * Snapshots the EGL binding current on this thread so [nativeRestoreBinding]
@@ -626,13 +620,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeSaveC
         JNIEnv *env, jclass clazz) {
     (void) env; (void) clazz;
     if (!resolve_entry_points()) return JNI_FALSE;
-    if (g_displaced.saved) return JNI_FALSE;
-    g_displaced.display = (EGLDisplay) nucleus_tao_egl_current_display();
-    g_displaced.context = (EGLContext) nucleus_tao_egl_current_context();
-    g_displaced.draw = p_eglGetCurrentSurface ? p_eglGetCurrentSurface(EGL_DRAW) : EGL_NO_SURFACE;
-    g_displaced.read = p_eglGetCurrentSurface ? p_eglGetCurrentSurface(EGL_READ) : EGL_NO_SURFACE;
-    g_displaced.saved = 1;
-    return JNI_TRUE;
+    return nucleus_tao_egl_binding_save(
+        &g_displaced,
+        nucleus_tao_egl_current_display(),
+        nucleus_tao_egl_current_context(),
+        p_eglGetCurrentSurface ? p_eglGetCurrentSurface(EGL_DRAW) : EGL_NO_SURFACE,
+        p_eglGetCurrentSurface ? p_eglGetCurrentSurface(EGL_READ) : EGL_NO_SURFACE)
+        ? JNI_TRUE : JNI_FALSE;
 }
 
 /**
@@ -645,14 +639,14 @@ JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeRestoreBinding(
         JNIEnv *env, jclass clazz) {
     (void) env; (void) clazz;
-    if (!g_displaced.saved) return JNI_FALSE;
-    const EGLDisplay display = g_displaced.display;
-    const EGLContext context = g_displaced.context;
-    const EGLSurface draw = g_displaced.draw;
-    const EGLSurface read = g_displaced.read;
-    memset(&g_displaced, 0, sizeof(g_displaced));
+    void *display, *context, *draw, *read;
+    if (!nucleus_tao_egl_binding_take(&g_displaced, &display, &context, &draw, &read)) {
+        return JNI_FALSE;
+    }
     if (display == EGL_NO_DISPLAY || context == EGL_NO_CONTEXT) return JNI_FALSE;
-    return p_eglMakeCurrent(display, draw, read, context) == EGL_TRUE ? JNI_TRUE : JNI_FALSE;
+    return p_eglMakeCurrent((EGLDisplay) display, (EGLSurface) draw,
+                            (EGLSurface) read, (EGLContext) context) == EGL_TRUE
+        ? JNI_TRUE : JNI_FALSE;
 }
 
 /** Whether the currently bound EGL display can import DMA-BUFs at all. */
