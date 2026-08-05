@@ -23,6 +23,10 @@ dependencies {
     implementation(compose.desktop.currentOs)
     // Runtime deps of the compiled test classes (kotlin.test assertions).
     implementation(kotlin("test"))
+    // Regression fixture for issue #443: an SLF4J 2.x backend that must initialize at
+    // RUN time. If anything on the classpath restores `--initialize-at-build-time=org.slf4j`,
+    // the native-image build fails on LogbackMDCAdapter in the image heap.
+    implementation(libs.logback.classic)
 }
 
 java {

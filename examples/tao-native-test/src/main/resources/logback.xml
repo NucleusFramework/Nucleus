@@ -1,0 +1,15 @@
+<!--
+  Minimal Logback configuration for the issue #443 native-image regression fixture:
+  keeps the run's output readable and proves the backend is configured at RUN time
+  (Joran reads this file from the binary's resources, not from the build machine).
+-->
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{20} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="INFO">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>
