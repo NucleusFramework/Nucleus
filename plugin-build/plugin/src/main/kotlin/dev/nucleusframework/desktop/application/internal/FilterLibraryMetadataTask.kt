@@ -12,7 +12,6 @@ import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import java.io.File
-import java.util.jar.JarFile
 
 /**
  * Filters per-library GraalVM metadata based on the runtime classpath and merges
@@ -98,39 +97,4 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
             "Library metadata: included $includedCount files, skipped $skippedCount conditional files",
         )
     }
-}
-
-/**
- * Scans classpath JARs and class directories to build a set of all Java package names present.
- * Only reads the ZIP central directory (fast) — no class file parsing.
- */
-private fun buildClasspathPackageIndex(files: Set<File>): Set<String> {
-    val packages = mutableSetOf<String>()
-    for (file in files) {
-        if (!file.exists()) continue
-        if (file.isDirectory) {
-            file
-                .walkTopDown()
-                .filter { it.isFile && it.name.endsWith(".class") }
-                .forEach { classFile ->
-                    val relative = classFile.relativeTo(file).path
-                    val pkg = relative.substringBeforeLast('/', "").replace('/', '.')
-                    if (pkg.isNotEmpty()) packages.add(pkg)
-                }
-        } else if (file.name.endsWith(".jar")) {
-            try {
-                JarFile(file).use { jar ->
-                    for (entry in jar.entries()) {
-                        if (entry.name.endsWith(".class") && !entry.isDirectory) {
-                            val pkg = entry.name.substringBeforeLast('/', "").replace('/', '.')
-                            if (pkg.isNotEmpty()) packages.add(pkg)
-                        }
-                    }
-                }
-            } catch (_: Exception) {
-                // Skip unreadable JARs
-            }
-        }
-    }
-    return packages
 }

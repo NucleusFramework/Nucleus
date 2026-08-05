@@ -100,6 +100,10 @@ class GraalvmMetadataResolvabilityTest {
         assertTrue(index.contains("org.lib.Helper"))
         assertFalse(isTypeResolvable("kotlin.Int", index))
         assertTrue(isTypeResolvable("com.example.App", index))
+
+        val packages = buildClasspathPackageIndex(listOf(classDir, jarFile))
+        assertTrue(packages.contains("com.example"))
+        assertTrue(packages.contains("org.lib"))
     }
 
     @Test
@@ -126,6 +130,7 @@ class GraalvmMetadataResolvabilityTest {
             )
         assertTrue(isEntryResolvable(full, index))
         assertFalse(isEntryResolvable(partial, index))
+        assertEquals("com.example.A,com.example.B", proxyKey(full))
         assertEquals(
             "proxy[com.example.A,com.example.B]",
             entryDisplayName(full),
@@ -133,24 +138,56 @@ class GraalvmMetadataResolvabilityTest {
     }
 
     @Test
-    fun `entry protected when any proxy interface is under exact packages`() {
-        val packages = listOf("com.example")
-        val entry =
+    fun `classifyUnresolvableEntry pure policy matrix`() {
+        val index = setOf("acme.app.Real")
+        val real = mapOf<String, Any?>("type" to "acme.app.Real")
+        val noise = mapOf<String, Any?>("type" to "kotlin.Int")
+        val probe = mapOf<String, Any?>("type" to "acme.app.Optional")
+        val proxyMissing =
             mapOf<String, Any?>(
-                "type" to mapOf("proxy" to listOf("kotlin.Function2", "com.example.Optional")),
+                "type" to mapOf("proxy" to listOf("acme.app.Real", "acme.app.Missing")),
             )
-        assertTrue(isEntryProtectedByExactReachability(entry, packages))
-        assertFalse(
-            isEntryProtectedByExactReachability(
-                mapOf("type" to "kotlin.Int"),
-                packages,
-            ),
+        val proxyExact =
+            mapOf<String, Any?>(
+                "type" to mapOf("proxy" to listOf("kotlin.Function2", "acme.app.Optional")),
+            )
+
+        assertEquals(
+            UnresolvableDisposition.RESOLVABLE,
+            classifyUnresolvableEntry(real, index, emptyList(), removeUnresolvable = true),
         )
-        assertTrue(
-            isEntryProtectedByExactReachability(
-                mapOf("type" to "com.example.OptionalFeature"),
-                packages,
-            ),
+        assertEquals(
+            UnresolvableDisposition.REPORT,
+            classifyUnresolvableEntry(noise, index, emptyList(), removeUnresolvable = false),
+        )
+        assertEquals(
+            UnresolvableDisposition.REMOVE,
+            classifyUnresolvableEntry(noise, index, emptyList(), removeUnresolvable = true),
+        )
+        assertEquals(
+            UnresolvableDisposition.PROTECT,
+            classifyUnresolvableEntry(probe, index, listOf("acme.app"), removeUnresolvable = true),
+        )
+        assertEquals(
+            UnresolvableDisposition.REMOVE,
+            classifyUnresolvableEntry(probe, index, emptyList(), removeUnresolvable = true),
+        )
+        assertEquals(
+            UnresolvableDisposition.REMOVE,
+            classifyUnresolvableEntry(proxyMissing, index, emptyList(), removeUnresolvable = true),
+        )
+        assertEquals(
+            UnresolvableDisposition.PROTECT,
+            classifyUnresolvableEntry(proxyExact, index, listOf("acme.app"), removeUnresolvable = true),
+        )
+    }
+
+    @Test
+    fun `formatDispositionLine is single-tag stable`() {
+        val entry = mapOf<String, Any?>("type" to "kotlin.Int")
+        assertEquals(
+            "  [unresolvable/kept] [reflection] kotlin.Int",
+            formatDispositionLine("unresolvable/kept", "reflection", entry),
         )
     }
 }

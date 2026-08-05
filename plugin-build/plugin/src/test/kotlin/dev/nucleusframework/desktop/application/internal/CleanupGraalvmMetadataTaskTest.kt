@@ -11,9 +11,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * End-to-end coverage for issue #439: after baseline dedup, unresolvable agent noise
- * (`kotlin.Any`, …) is reported by default and only removed under
- * `removeUnresolvable=true`, except types under exact-reachability packages.
+ * End-to-end coverage for issue #439: single disposition table, report-by-default,
+ * opt-in remove, exact-package protection, dryRun, and proxy entries.
  */
 class CleanupGraalvmMetadataTaskTest {
     @get:Rule
@@ -25,7 +24,7 @@ class CleanupGraalvmMetadataTaskTest {
     }
 
     private fun classDirWith(fqcn: String): File {
-        val classes = tmp.newFolder("classes-${fqcn.hashCode()}")
+        val classes = tmp.newFolder("classes-${fqcn.hashCode()}-${System.nanoTime()}")
         val path = fqcn.replace('.', '/') + ".class"
         val file = File(classes, path)
         file.parentFile.mkdirs()
@@ -40,12 +39,12 @@ class CleanupGraalvmMetadataTaskTest {
         dryRun: Boolean = false,
         exactPackages: List<String> = emptyList(),
     ): CleanupGraalvmMetadataTask {
-        val project = ProjectBuilder.builder().withProjectDir(tmp.root).build()
+        val project = ProjectBuilder.builder().withProjectDir(tmp.newFolder()).build()
         return project.tasks
             .register("cleanupGraalvmMetadata", CleanupGraalvmMetadataTask::class.java) { task ->
                 task.runtimeClasspath.from(classpath)
                 task.platformName.set("linux")
-                // Leave mainClass blank so the fixture types are not deduped as "main entry".
+                // Leave mainClass blank so fixture types are not deduped as "main entry".
                 task.mainClass.set("")
                 task.configDir.set(configDir)
                 task.removeUnresolvable.set(removeUnresolvable)
@@ -64,10 +63,7 @@ class CleanupGraalvmMetadataTaskTest {
     }
 
     /**
-     * Real app class on the fake classpath, plus agent-mapped kotlin.* noise and an optional
-     * probe type that only exists as a Class.forName string (no .class file).
-     * Package `acme.app` is intentionally outside every L1/L3 baseline so only the
-     * resolvability pass acts (L3 ships `java.lang.String` and would otherwise dedup it).
+     * Package `acme.app` stays outside L1/L3 baselines so only the resolvability pass acts.
      */
     private val fixtureJson =
         """
@@ -77,7 +73,8 @@ class CleanupGraalvmMetadataTaskTest {
             { "type": "kotlin.Any" },
             { "type": "kotlin.Int" },
             { "type": "kotlin.collections.List" },
-            { "type": "acme.app.OptionalProbe" }
+            { "type": "acme.app.OptionalProbe" },
+            { "type": { "proxy": ["acme.app.RealClass", "acme.app.MissingIface"] } }
           ],
           "serialization": [
             { "type": "kotlin.Boolean" },
@@ -87,7 +84,7 @@ class CleanupGraalvmMetadataTaskTest {
         """.trimIndent()
 
     @Test
-    fun `default mode reports unresolvable but does not rewrite them away`() {
+    fun `default mode reports unresolvable once and does not rewrite them away`() {
         val configDir = tmp.newFolder("graalvm-default")
         val metadata = writeMetadata(configDir, fixtureJson)
         val before = metadata.readText()
@@ -107,7 +104,7 @@ class CleanupGraalvmMetadataTaskTest {
     }
 
     @Test
-    fun `removeUnresolvable drops agent noise but keeps resolvable classpath types`() {
+    fun `removeUnresolvable drops agent noise and partial proxies, keeps resolvable types`() {
         val configDir = tmp.newFolder("graalvm-remove")
         val metadata = writeMetadata(configDir, fixtureJson)
 
@@ -127,12 +124,20 @@ class CleanupGraalvmMetadataTaskTest {
         assertFalse(reflection.contains("kotlin.collections.List"))
         assertFalse(reflection.contains("acme.app.OptionalProbe"))
 
+        // Partial proxy (MissingIface) must be gone.
+        @Suppress("UNCHECKED_CAST")
+        val root = JsonSlurper().parseText(metadata.readText()) as Map<String, Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        val entries = root["reflection"] as List<Map<String, Any?>>
+        assertTrue(entries.none { proxyInterfaceNames(it).isNotEmpty() })
+
         assertFalse(serialization.contains("kotlin.Boolean"))
         assertTrue(serialization.contains("acme.app.RealClass"))
     }
 
     @Test
-    fun `exact reachability packages protect unresolvable probes under scope`() {
+    fun `exact reachability packages protect unresolvable probes and proxies under scope`() {
         val configDir = tmp.newFolder("graalvm-exact")
         val metadata = writeMetadata(configDir, fixtureJson)
 
@@ -144,12 +149,18 @@ class CleanupGraalvmMetadataTaskTest {
         ).cleanup()
 
         val reflection = typeNames(metadata, "reflection")
-        // Under exact mode, optional Class.forName probes in app packages stay.
         assertTrue(reflection.contains("acme.app.OptionalProbe"))
         assertTrue(reflection.contains("acme.app.RealClass"))
-        // Mapped Kotlin types are outside the scope → removed.
         assertFalse(reflection.contains("kotlin.Any"))
         assertFalse(reflection.contains("kotlin.Int"))
+
+        // Proxy with any interface under acme.app is protected.
+        @Suppress("UNCHECKED_CAST")
+        val root = JsonSlurper().parseText(metadata.readText()) as Map<String, Any?>
+
+        @Suppress("UNCHECKED_CAST")
+        val entries = root["reflection"] as List<Map<String, Any?>>
+        assertTrue(entries.any { proxyInterfaceNames(it).contains("acme.app.MissingIface") })
     }
 
     @Test
@@ -176,5 +187,25 @@ class CleanupGraalvmMetadataTaskTest {
             classpath = emptyList(),
         ).cleanup()
         assertFalse(File(configDir, "reachability-metadata.json").exists())
+    }
+
+    @Test
+    fun `default mode does not claim already clean when unresolvable remain`() {
+        val configDir = tmp.newFolder("graalvm-msg")
+        writeMetadata(configDir, fixtureJson)
+        val task =
+            createTask(
+                configDir = configDir,
+                classpath = listOf(classDirWith("acme.app.RealClass")),
+                removeUnresolvable = false,
+            )
+
+        // Drive the action; assert on post-condition that is independent of logger wiring:
+        // file still has unresolvable entries, so the task's success path for "already clean"
+        // must not have rewritten. Message content is covered by classify + e2e gradle log.
+        task.cleanup()
+        assertTrue(typeNames(File(configDir, "reachability-metadata.json")).contains("kotlin.Int"))
+        // Kept resolvable + unresolvable still present — not "clean" by deletion.
+        assertEquals(5, typeNames(File(configDir, "reachability-metadata.json")).size)
     }
 }

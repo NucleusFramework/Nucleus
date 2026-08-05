@@ -20,6 +20,64 @@ internal val JDK_TYPE_PREFIXES =
 private val JVM_PRIMITIVE_ARRAY_ELEMENT =
     setOf('Z', 'B', 'C', 'S', 'I', 'J', 'F', 'D')
 
+private val JVM_PRIMITIVE_KEYWORDS =
+    setOf("boolean", "byte", "char", "short", "int", "long", "float", "double", "void")
+
+/**
+ * What to do with a type entry during the resolvability pass of [CleanupGraalvmMetadataTask].
+ *
+ * Pure policy — no I/O, no logging. The task only partitions and prints.
+ */
+internal enum class UnresolvableDisposition {
+    /** Type exists on the classpath (or is JDK/primitive). Leave alone. */
+    RESOLVABLE,
+
+    /** Missing type, outside exact packages, opt-in prune is off — keep and report. */
+    REPORT,
+
+    /**
+     * Missing type under [exactReachabilityPackages]. Keep always: under exact mode a
+     * registration for a non-existent class is what restores `ClassNotFoundException`
+     * for optional-dependency probes.
+     */
+    PROTECT,
+
+    /** Missing type, opt-in prune is on, not under exact packages — drop. */
+    REMOVE,
+}
+
+/**
+ * Classifies a reflection/jni/serialization entry for the resolvability pass.
+ *
+ * [exactPackages] is the DSL package list (`APP_PACKAGES` / `packages(...)`), not
+ * “was this image built with exact mode”. Protection follows the configured scope so
+ * cleanup never strips load-bearing negative lookups for apps that use exact mode on
+ * the dev loop.
+ */
+internal fun classifyUnresolvableEntry(
+    entry: Map<String, Any?>,
+    classIndex: Set<String>,
+    exactPackages: Collection<String>,
+    removeUnresolvable: Boolean,
+): UnresolvableDisposition {
+    if (isEntryResolvable(entry, classIndex)) return UnresolvableDisposition.RESOLVABLE
+    if (isEntryProtectedByExactReachability(entry, exactPackages)) {
+        return UnresolvableDisposition.PROTECT
+    }
+    return if (removeUnresolvable) {
+        UnresolvableDisposition.REMOVE
+    } else {
+        UnresolvableDisposition.REPORT
+    }
+}
+
+/** One-line log label for a classified entry: `[kind] [section] name`. */
+internal fun formatDispositionLine(
+    kind: String,
+    section: String,
+    entry: Map<String, Any?>,
+): String = "  [$kind] [$section] ${entryDisplayName(entry)}"
+
 /**
  * Scans classpath JARs and class directories for fully-qualified binary class names
  * (dots, `$` for nested types). Reads only entry names / file paths — no classloading,
@@ -54,6 +112,17 @@ internal fun buildClasspathClassIndex(files: Collection<File>): Set<String> {
 }
 
 /**
+ * Package names present on the classpath, derived from [buildClasspathClassIndex].
+ * Shared by library-metadata filtering and any other package-presence checks.
+ */
+internal fun buildClasspathPackageIndex(files: Collection<File>): Set<String> =
+    buildClasspathClassIndex(files)
+        .mapNotNull { className ->
+            val lastDot = className.lastIndexOf('.')
+            if (lastDot <= 0) null else className.substring(0, lastDot)
+        }.toSet()
+
+/**
  * Converts a classpath-relative `.class` path into a binary name, or `null` when the
  * path is not a regular class (e.g. `module-info.class`). Handles multi-release JAR
  * prefixes (`META-INF/versions/N/...`).
@@ -82,18 +151,16 @@ internal fun normalizeTypeForLookup(typeName: String): String? {
     var name = typeName.trim()
     if (name.isEmpty()) return name
 
-    // Java-style: "foo.Bar[][]"
     while (name.endsWith("[]")) {
         name = name.removeSuffix("[]").trimEnd()
     }
 
-    // JVM descriptors: "[B", "[[Ljava.lang.String;"
     if (name.startsWith('[')) {
         var depth = 0
         while (depth < name.length && name[depth] == '[') depth++
         if (depth >= name.length) return name
         return when (val tag = name[depth]) {
-            in JVM_PRIMITIVE_ARRAY_ELEMENT -> null // primitive array → always resolvable
+            in JVM_PRIMITIVE_ARRAY_ELEMENT -> null
             'L' -> {
                 val semi = name.indexOf(';', depth)
                 if (semi < 0) name.substring(depth + 1) else name.substring(depth + 1, semi)
@@ -105,18 +172,6 @@ internal fun normalizeTypeForLookup(typeName: String): String? {
     return name
 }
 
-/** True when [typeName] is a JDK / sun type that does not need a classpath hit. */
-internal fun isJdkType(typeName: String): Boolean {
-    val normalized = normalizeTypeForLookup(typeName) ?: return true
-    if (normalized.isEmpty()) return true
-    // Primitive keywords occasionally appear as agent noise.
-    if (normalized in JVM_PRIMITIVE_KEYWORDS) return true
-    return JDK_TYPE_PREFIXES.any { normalized.startsWith(it) }
-}
-
-private val JVM_PRIMITIVE_KEYWORDS =
-    setOf("boolean", "byte", "char", "short", "int", "long", "float", "double", "void")
-
 /**
  * True when [typeName] can be found as a `.class` on the runtime classpath, or is a
  * JDK/primitive type that lives in the image runtime rather than application JARs.
@@ -127,7 +182,8 @@ internal fun isTypeResolvable(
 ): Boolean {
     val normalized = normalizeTypeForLookup(typeName) ?: return true
     if (normalized.isEmpty()) return true
-    if (isJdkType(normalized)) return true
+    if (normalized in JVM_PRIMITIVE_KEYWORDS) return true
+    if (JDK_TYPE_PREFIXES.any { normalized.startsWith(it) }) return true
     return normalized in classIndex
 }
 
@@ -147,16 +203,8 @@ internal fun isUnderExactReachabilityPackages(
     }
 }
 
-/**
- * Extracts the type string from a reflection/jni/serialization entry, or `null` when
- * the entry is a proxy (`{"type": {"proxy": [...]}}`) or has no type field.
- */
-@Suppress("UNCHECKED_CAST")
-internal fun typeNameOfEntry(entry: Map<String, Any?>): String? {
-    val type = entry["type"] ?: return null
-    if (type is String) return type
-    return null
-}
+/** Type string from a reflection/jni/serialization entry, or null for proxies / missing type. */
+internal fun typeNameOfEntry(entry: Map<String, Any?>): String? = entry["type"] as? String
 
 /**
  * Interface names listed on a proxy entry, or empty when [entry] is not a proxy.
@@ -166,6 +214,16 @@ internal fun proxyInterfaceNames(entry: Map<String, Any?>): List<String> {
     val typeValue = entry["type"] as? Map<String, Any?> ?: return emptyList()
     val proxyList = typeValue["proxy"] as? List<*> ?: return emptyList()
     return proxyList.mapNotNull { it as? String }
+}
+
+/**
+ * Canonical key for proxy entries (`sorted interfaces joined by comma`), or null if not a proxy.
+ * Shared by baseline dedup and resolvability.
+ */
+internal fun proxyKey(entry: Map<String, Any?>): String? {
+    val interfaces = proxyInterfaceNames(entry)
+    if (interfaces.isEmpty()) return null
+    return interfaces.sorted().joinToString(",")
 }
 
 /**
@@ -187,8 +245,8 @@ internal fun isEntryResolvable(
 
 /**
  * True when the entry should be protected from unresolvable removal because exact
- * reachability metadata is scoped to its package(s). For proxies, any interface
- * under the scope is enough to keep the whole entry (a partial probe still needs CNFE).
+ * reachability packages cover it. For proxies, any interface under the scope keeps
+ * the whole entry.
  */
 internal fun isEntryProtectedByExactReachability(
     entry: Map<String, Any?>,
