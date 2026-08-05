@@ -291,6 +291,7 @@ typedef int             (*PFN_wl_display_flush)(wl_display *);
 #define WL_SURFACE_ATTACH                  1
 #define WL_SURFACE_DAMAGE                  2
 #define WL_SURFACE_FRAME                   3
+#define WL_SURFACE_SET_OPAQUE_REGION       4
 #define WL_SURFACE_SET_INPUT_REGION        5
 #define WL_SURFACE_COMMIT                  6
 #define WL_SURFACE_SET_BUFFER_SCALE        8
@@ -1480,6 +1481,76 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
             NULL, p_wl_proxy_get_version(att->wl_parent_surface), 0);
     }
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+}
+
+/**
+ * Declares which part of the content surface is fully opaque.
+ *
+ * Nothing ever set this, even though the whole design depends on it: without an
+ * opaque region the compositor must assume our full-window surface is
+ * translucent, so it cannot cull *anything* underneath — not the drop-shadow
+ * subsurface's interior, not GTK's toplevel. It alpha-blends all three, every
+ * frame, over the whole window.
+ *
+ * That lands on the compositor's frame timing, which is what GDK's frame clock
+ * waits on, which is what sets how fast the window edge can move during a
+ * resize. Measured: the toplevel's frame callback comes back ~5 ms sooner with
+ * the shadow disabled entirely. Declaring the opaque region lets the compositor
+ * discard the same work without removing the shadow.
+ *
+ * [cornerRadius] carves the four corners out of the region, because
+ * `applyFrameDecoration` paints them transparent so the shadow shows through —
+ * claiming them opaque would leave square corners with the shadow clipped away.
+ *
+ * Pass `logicalW <= 0` to clear the region (window genuinely translucent).
+ * Coordinates are surface-local (logical) units. Queued state: it lands with the
+ * next `eglSwapBuffers` commit, so there is no extra commit and no race with the
+ * swap thread.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetOpaqueRegion(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint logicalW, jint logicalH, jint cornerRadius)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_child_surface || !p_wl_proxy_marshal_flags) return;
+    if (!att->wl_compositor || !g_wl_region_interface) return;
+
+    if (logicalW <= 0 || logicalH <= 0) {
+        p_wl_proxy_marshal_flags(
+            att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,
+            p_wl_proxy_get_version(att->wl_child_surface), 0, NULL);
+        return;
+    }
+
+    wl_proxy *region = p_wl_proxy_marshal_flags(
+        (wl_proxy *) att->wl_compositor, WL_COMPOSITOR_CREATE_REGION,
+        g_wl_region_interface,
+        p_wl_proxy_get_version((wl_proxy *) att->wl_compositor), 0, NULL);
+    if (!region) return;
+    if (att->wl_queue && p_wl_proxy_set_queue) p_wl_proxy_set_queue(region, att->wl_queue);
+
+    int r = cornerRadius;
+    if (r < 0) r = 0;
+    if (2 * r >= logicalW || 2 * r >= logicalH) r = 0;
+    if (r == 0) {
+        p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
+            p_wl_proxy_get_version(region), 0, 0, 0, logicalW, logicalH);
+    } else {
+        /* Everything except the four r x r corner squares. */
+        p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
+            p_wl_proxy_get_version(region), 0, 0, r, logicalW, logicalH - 2 * r);
+        p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
+            p_wl_proxy_get_version(region), 0, r, 0, logicalW - 2 * r, r);
+        p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
+            p_wl_proxy_get_version(region), 0, r, logicalH - r, logicalW - 2 * r, r);
+    }
+    p_wl_proxy_marshal_flags(
+        att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,
+        p_wl_proxy_get_version(att->wl_child_surface), 0, region);
+    p_wl_proxy_marshal_flags(region, WL_REGION_DESTROY, NULL,
+        p_wl_proxy_get_version(region), WL_MARSHAL_FLAG_DESTROY);
 }
 
 JNIEXPORT void JNICALL

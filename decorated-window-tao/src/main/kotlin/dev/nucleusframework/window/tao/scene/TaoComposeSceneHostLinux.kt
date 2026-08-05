@@ -222,6 +222,9 @@ internal class TaoComposeSceneHostLinux(
      */
     private var swapThread: SwapThread? = null
 
+    /** Last opaque region pushed: (logicalW, logicalH, cornerRadius). */
+    private var lastOpaqueRegion: Triple<Int, Int, Int>? = null
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -1024,6 +1027,11 @@ internal class TaoComposeSceneHostLinux(
             updateWindowInfoSize()
             lastSceneSizeUpdateNs = now
         }
+        val opaqueScale = scale.roundToInt().coerceAtLeast(1)
+        pushOpaqueRegion(
+            (widthPx / opaqueScale).coerceAtLeast(1),
+            (heightPx / opaqueScale).coerceAtLeast(1),
+        )
         requestRedrawCoalesced()
     }
 
@@ -1043,6 +1051,41 @@ internal class TaoComposeSceneHostLinux(
         val xLogical = (packed shr 32).toInt()
         val yLogical = packed.toInt()
         NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)
+    }
+
+    /**
+     * Tells the compositor which part of our surface is fully opaque, so it can
+     * skip compositing the drop shadow's interior and GTK's toplevel underneath
+     * us. Nothing declared this before, so the compositor blended all three
+     * across the whole window on every frame — which slows its frame callbacks,
+     * which throttles GDK's frame clock, which is what caps how fast the window
+     * edge moves during a resize.
+     *
+     * Cleared when the window is genuinely translucent: [clearColorArgbState] is
+     * what the scene is cleared to each frame, so an alpha below 255 means
+     * pixels really can show through and claiming otherwise would corrupt them.
+     * The rounded corners are excluded for the same reason — see
+     * [applyFrameDecoration], which carves them out.
+     */
+    private fun pushOpaqueRegion(
+        logicalW: Int,
+        logicalH: Int,
+    ) {
+        if (attachmentHandle == 0L) return
+        val opaque = (clearColorArgbState.value ushr 24) and 0xFF == 0xFF
+        if (!opaque) {
+            if (lastOpaqueRegion != null) {
+                NativeTaoEglBridge.nativeSetOpaqueRegion(attachmentHandle, 0, 0, 0)
+                lastOpaqueRegion = null
+            }
+            return
+        }
+        val squared = window.isMaximized || window.isFullscreen || window.isTiled
+        val radius = if (cornerRadiusPx > 0 && !squared) cornerRadiusPx else 0
+        val key = Triple(logicalW, logicalH, radius)
+        if (key == lastOpaqueRegion) return
+        lastOpaqueRegion = key
+        NativeTaoEglBridge.nativeSetOpaqueRegion(attachmentHandle, logicalW, logicalH, radius)
     }
 
     /**
