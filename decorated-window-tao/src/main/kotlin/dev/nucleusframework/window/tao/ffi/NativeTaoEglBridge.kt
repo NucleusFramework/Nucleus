@@ -136,14 +136,23 @@ internal object NativeTaoEglBridge {
      * safe from the event-loop thread **while no swap is in flight** — the swap
      * thread commits the same surface. Callers must hold that gate themselves.
      *
-     * No-op on X11, on compositors without `wp_viewporter`, and when the
-     * destination is unchanged and [commitNow] is false.
+     * [srcW]/[srcH] crop the window rect out of the buffer, which is
+     * over-allocated on a coarse grid so a drag rarely reallocates it. **They
+     * must not exceed the buffer currently in flight** — a source rectangle
+     * running past the buffer is a fatal `wp_viewport` protocol error — so the
+     * caller clamps them to the size reported by [nativeSurfaceSize]. Pass 0 to
+     * fall back to the destination size.
+     *
+     * No-op on X11, on compositors without `wp_viewporter`, and when nothing
+     * changed and [commitNow] is false.
      */
     @JvmStatic
     external fun nativeSetViewportDestination(
         handle: Long,
         logicalW: Int,
         logicalH: Int,
+        srcW: Int,
+        srcH: Int,
         commitNow: Boolean,
     )
 

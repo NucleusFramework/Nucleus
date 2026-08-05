@@ -1072,8 +1072,24 @@ internal class TaoComposeSceneHostLinux(
         val bufferScale = scale.roundToInt().coerceAtLeast(1)
         val w = (widthPx / bufferScale).coerceAtLeast(1)
         val h = (heightPx / bufferScale).coerceAtLeast(1)
+        // Crop exactly the window rect out of the over-allocated buffer, so the
+        // presented image is 1:1 and nothing is scaled. Clamped to the buffer
+        // actually in flight: while the window grows past a grid boundary the
+        // buffer is briefly smaller, and a source rect past its edge is a fatal
+        // protocol error. In that one frame the crop is short and the compositor
+        // scales it — the same transient this change removes everywhere else.
+        val packed = NativeTaoEglBridge.nativeSurfaceSize(attachmentHandle)
+        val srcW: Int
+        val srcH: Int
+        if (packed != 0L) {
+            srcW = minOf(w, ((packed ushr 32).toInt() / bufferScale).coerceAtLeast(1))
+            srcH = minOf(h, ((packed and 0xFFFFFFFFL).toInt() / bufferScale).coerceAtLeast(1))
+        } else {
+            srcW = 0
+            srcH = 0
+        }
         val commit = allowCommit && (swapThread?.isSwapIdle() ?: true)
-        NativeTaoEglBridge.nativeSetViewportDestination(attachmentHandle, w, h, commit)
+        NativeTaoEglBridge.nativeSetViewportDestination(attachmentHandle, w, h, srcW, srcH, commit)
     }
 
     /**
@@ -1246,8 +1262,13 @@ internal class TaoComposeSceneHostLinux(
             lastFbWidthPx = fbW
             lastFbHeightPx = fbH
         }
-        if (scene?.size != IntSize(fbW, fbH)) {
-            scene?.size = IntSize(fbW, fbH)
+        // Lay out at the *window* size, not the buffer's. The buffer is
+        // over-allocated on a coarse grid so a drag rarely reallocates it;
+        // wp_viewport.set_source crops the window rect back out, so the extra
+        // is never presented. Skia is still told the buffer's real size below —
+        // that is what keeps the BOTTOM_LEFT origin flip correct.
+        if (scene?.size != IntSize(widthPx, heightPx)) {
+            scene?.size = IntSize(widthPx, heightPx)
             updateWindowInfoSize()
         }
 

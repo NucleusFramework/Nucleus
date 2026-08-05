@@ -367,6 +367,27 @@ static void *g_libwlclient = NULL;
 static int g_libs_loaded = 0;
 
 static PFN_wl_egl_window_create  p_wl_egl_window_create  = NULL;
+
+/* Round an axis up to EGL_ALLOC_GRID, plus one whole grid of headroom.
+ *
+ * The grid alone stops the buffer being reallocated every frame, but on the
+ * frame the window first crosses a boundary the buffer is still the old size,
+ * so that frame crops short and is scaled. The headroom means the buffer is
+ * always at least a grid larger than the window, so growth has somewhere to go
+ * and the window only outruns it if it gains a full grid within one frame.
+ *
+ * It also matters most where it is cheapest. The scale error at a crossing is
+ * one frame of drag motion over the window size, so it is far more visible on a
+ * small window (~3% at 1024 px) than a large one (~1% at 3800 px) — which is
+ * exactly when the absolute cost of the extra headroom is smallest.
+ */
+#define EGL_ALLOC_GRID 128
+static inline int egl_bucket(int px) {
+    if (px < 1) px = 1;
+    return ((px + EGL_ALLOC_GRID - 1) / EGL_ALLOC_GRID) * EGL_ALLOC_GRID
+           + EGL_ALLOC_GRID;
+}
+
 static PFN_wl_egl_window_destroy p_wl_egl_window_destroy = NULL;
 static PFN_wl_egl_window_resize  p_wl_egl_window_resize  = NULL;
 
@@ -682,6 +703,8 @@ typedef struct {
     wl_proxy       *wl_viewport;
     int             viewport_w;         /* last destination sent, -1 = unset */
     int             viewport_h;
+    int             viewport_src_w;     /* last source rect sent, -1 = unset */
+    int             viewport_src_h;
     wl_egl_window  *wl_window;
     /* Content-area origin inside the parent surface, logical px. (0,0) for a
      * plain undecorated toplevel; the GTK theme's shadow margins when the
@@ -1336,7 +1359,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     }
 
     /* Wrap our owned child wl_surface — NOT GTK's — into a wl_egl_window. */
-    wl_egl_window *wlwin = p_wl_egl_window_create((wl_surface *) child_surface, phys_w, phys_h);
+    /* Bucketed from the start: creating at the exact size leaves the first
+     * drag with no headroom, which is why it stretched while later drags did
+     * not. */
+    wl_egl_window *wlwin = p_wl_egl_window_create(
+        (wl_surface *) child_surface, egl_bucket(phys_w), egl_bucket(phys_h));
     if (!wlwin) {
         DBG("wl_egl_window_create returned NULL\n");
         p_eglDestroyContext(edpy, ctx);
@@ -1402,6 +1429,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->wl_viewporter    = bind_state.viewporter;
     att->viewport_w       = -1;
     att->viewport_h       = -1;
+    att->viewport_src_w   = -1;
+    att->viewport_src_h   = -1;
     /* One viewport per content surface, created up front so the per-frame path
      * is a single `set_destination`. Left NULL (and simply unused) when the
      * compositor did not advertise wp_viewporter. */
@@ -1525,6 +1554,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeReleaseCurrent
     p_eglMakeCurrent(att->display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 }
 
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
     JNIEnv *env, jclass clazz, jlong handle, jint widthPx, jint heightPx, jfloat scale)
@@ -1549,8 +1579,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
      * eglSwapBuffers. Without this the buffer stays at its original
      * dimensions and the compositor scales it up, blurring the result. */
     if (att->wl_window && p_wl_egl_window_resize) {
+        /* Allocate on a coarse grid rather than at the exact window size.
+         *
+         * The buffer behind the GL default framebuffer is only reallocated by
+         * `eglSwapBuffers`, so at the exact size it is always one resize step
+         * behind during a drag — and presenting it means either a gap at the
+         * growing edge or scaling it to fit. Rounding up means the allocation
+         * usually does not change at all while dragging, so every frame can be
+         * rendered at the true window size and `wp_viewport.set_source` crops
+         * the exact window rect back out. Costs at most one grid step of unused
+         * buffer per axis. */
         p_wl_egl_window_resize(att->wl_window,
-                               att->widthPx, att->heightPx, 0, 0);
+                               egl_bucket(att->widthPx), egl_bucket(att->heightPx),
+                               0, 0);
         /* Track DPI changes: re-assert the integer buffer scale so the new
          * buffer is still read as `logical` surface units. Queued state, lands
          * with the next eglSwapBuffers commit. */
@@ -1623,21 +1664,42 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetViewportDestination(
     JNIEnv *env, jclass clazz, jlong handle,
-    jint logicalW, jint logicalH, jboolean commitNow)
+    jint logicalW, jint logicalH, jint srcW, jint srcH, jboolean commitNow)
 {
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
     if (!att || !att->wl_viewport || !p_wl_proxy_marshal_flags) return;
     if (logicalW <= 0 || logicalH <= 0) return;
-    if (att->viewport_w == logicalW && att->viewport_h == logicalH && !commitNow) return;
 
-    if (att->viewport_w != logicalW || att->viewport_h != logicalH) {
+    /* Crop the window rect out of the (over-allocated) buffer, then present it
+     * 1:1. Source is wl_fixed_t — 24.8 fixed point — and MUST lie inside the
+     * buffer: a source rectangle that runs past it is a fatal protocol error,
+     * which is why the caller clamps it to the buffer actually in flight. */
+    int src_w = srcW > 0 ? srcW : logicalW;
+    int src_h = srcH > 0 ? srcH : logicalH;
+    /* Never crop to a degenerate rect. Before the first configure is applied the
+     * surface can read back far smaller than the window, and stretching a
+     * handful of pixels across it would flash. Anything under half the
+     * destination means "no useful crop": fall back to the whole surface, which
+     * is just the pre-crop behaviour for that frame. */
+    if (src_w * 2 < logicalW || src_h * 2 < logicalH) {
+        src_w = logicalW;
+        src_h = logicalH;
+    }
+    if (att->viewport_w != logicalW || att->viewport_h != logicalH ||
+        att->viewport_src_w != src_w || att->viewport_src_h != src_h) {
+        p_wl_proxy_marshal_flags(
+            att->wl_viewport, WP_VIEWPORT_SET_SOURCE, NULL,
+            p_wl_proxy_get_version(att->wl_viewport), 0,
+            0, 0, src_w << 8, src_h << 8);
         p_wl_proxy_marshal_flags(
             att->wl_viewport, WP_VIEWPORT_SET_DESTINATION, NULL,
             p_wl_proxy_get_version(att->wl_viewport), 0,
             logicalW, logicalH);
         att->viewport_w = logicalW;
         att->viewport_h = logicalH;
+        att->viewport_src_w = src_w;
+        att->viewport_src_h = src_h;
     } else if (!commitNow) {
         return;
     }
