@@ -591,6 +591,9 @@ internal class TaoComposeSceneHostLinux(
         // The redraw gate may have latched while hidden (invalidations with no
         // draw ever arriving); clear it so the re-arm below goes through.
         redrawPending.set(false)
+        // The swap in flight during the last configure has finished by now, so a
+        // destination whose commit had to be skipped can land here.
+        pushViewportDestination(allowCommit = true)
         requestRedrawCoalesced()
     }
 
@@ -979,6 +982,10 @@ internal class TaoComposeSceneHostLinux(
             updateWindowInfoSize()
             lastSceneSizeUpdateNs = now
         }
+        // Track the window immediately, without waiting to render at the new
+        // size: this is the configure -> surface-size path that previously had
+        // to run through the whole render pipeline. See [pushViewportDestination].
+        pushViewportDestination(allowCommit = true)
         requestRedrawCoalesced()
     }
 
@@ -998,6 +1005,44 @@ internal class TaoComposeSceneHostLinux(
         val xLogical = (packed shr 32).toInt()
         val yLogical = packed.toInt()
         NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)
+    }
+
+    /**
+     * Pushes the *current* window size to the content surface's `wp_viewport`
+     * destination, so the surface occupies the window rect regardless of how
+     * stale the buffer we last rendered is.
+     *
+     * This is the resize fix. Without it the surface size is `buffer_px /
+     * buffer_scale`, which only advances when a new buffer finishes rendering —
+     * ~37 ms after the configure on a large window, against the ~7 ms GTK takes
+     * to commit the matching window geometry. That ~30 ms difference is the
+     * artifact: the content sits visibly offset from the dragged edge, leaving a
+     * gap or overhanging it (never scaled — see the notes doc). Driving the
+     * destination from [widthPx]/[heightPx], which track the newest configure,
+     * makes the surface follow the window immediately and leaves the compositor
+     * to scale the stale buffer for a frame or two.
+     *
+     * Exact at rest, which matters more than the resize behaviour: once the drag
+     * stops, `widthPx == lastAppliedWidthPx` and the divisor is the same integer
+     * buffer scale handed to `nativeAttachWayland`, so the destination equals
+     * the buffer-derived size and the compositor does no filtering at all.
+     * Getting that wrong would blur the window permanently — a far worse bug
+     * than the one being fixed.
+     *
+     * [allowCommit] commits the surface immediately instead of letting the
+     * change ride the next `eglSwapBuffers`. That is the whole point — it lets
+     * the destination advance *between* our frames — but it is only safe while
+     * the swap thread is not itself committing this surface, hence the
+     * [SwapThread.isSwapIdle] gate. Event-loop thread only.
+     */
+    private fun pushViewportDestination(allowCommit: Boolean) {
+        if (attachmentHandle == 0L) return
+        if (widthPx <= 0 || heightPx <= 0) return
+        val bufferScale = scale.roundToInt().coerceAtLeast(1)
+        val w = (widthPx / bufferScale).coerceAtLeast(1)
+        val h = (heightPx / bufferScale).coerceAtLeast(1)
+        val commit = allowCommit && (swapThread?.isSwapIdle() ?: true)
+        NativeTaoEglBridge.nativeSetViewportDestination(attachmentHandle, w, h, commit)
     }
 
     /**
@@ -1180,6 +1225,10 @@ internal class TaoComposeSceneHostLinux(
         applyFrameDecoration(surface.canvas)
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+        // Queued, not committed: this one rides the swap's own commit and only
+        // guarantees the destination is never staler than the buffer it ships
+        // with. The two commits above are what close the latency gap.
+        pushViewportDestination(allowCommit = false)
         swapThread?.requestSwap()
 
         // Re-align the content subsurface with GTK's content area AFTER the
@@ -1945,6 +1994,19 @@ internal class TaoComposeSceneHostLinux(
                     true
                 }
             }
+
+        /**
+         * True when no swap is queued or running, i.e. nothing else is
+         * currently committing the content `wl_surface`. Unlike
+         * [tryBeginRenderOrMarkOwed] this does not mark a render owed — it is a
+         * plain gate for [pushViewportDestination], which commits the surface
+         * directly.
+         *
+         * Only meaningful when called from the event-loop thread: that thread
+         * is the sole caller of [requestSwap], so a `true` answer cannot go
+         * stale underneath it.
+         */
+        fun isSwapIdle(): Boolean = lock.withLock { !swapPending && !swapping }
 
         fun shutdownAndJoin() {
             lock.withLock {

@@ -294,6 +294,11 @@ typedef int             (*PFN_wl_display_flush)(wl_display *);
 #define WL_SURFACE_SET_INPUT_REGION        5
 #define WL_SURFACE_COMMIT                  6
 #define WL_SURFACE_SET_BUFFER_SCALE        8
+#define WP_VIEWPORTER_DESTROY              0
+#define WP_VIEWPORTER_GET_VIEWPORT         1
+#define WP_VIEWPORT_DESTROY                0
+#define WP_VIEWPORT_SET_SOURCE             1
+#define WP_VIEWPORT_SET_DESTINATION        2
 
 /* ── Xlib function pointer types ────────────────────────────────────────── */
 
@@ -381,6 +386,63 @@ static const struct wl_interface *g_wl_subsurface_interface   = NULL;
 static const struct wl_interface *g_wl_surface_interface      = NULL;
 static const struct wl_interface *g_wl_region_interface       = NULL;
 static const struct wl_interface *g_wl_callback_interface     = NULL;
+/* ── wp_viewporter introspection tables (hand-authored) ─────────────────────
+ *
+ * Every interface above is fetched with `dlsym` from libwayland-client.so.0,
+ * but that only works for **core** protocol. `wp_viewporter` is an extension:
+ * `wayland-scanner` generates its `wl_interface` tables into each client, and
+ * GTK links its copies privately, so there is no symbol to look up. They have
+ * to be built by hand, matching the `wl_message` / `wl_interface` layouts
+ * declared near the top of this file.
+ *
+ * Why we want it: the surface's size is normally derived from the buffer
+ * (`buffer_px / buffer_scale`), which means it inherits our full render
+ * latency. A viewport lets us state the surface size *independently* of the
+ * buffer — so a buffer that is a couple of frames stale is scaled to exactly
+ * fill the current window rect instead of leaving a gap or overhanging it.
+ * See docs/linux-wayland-resize-latency.md.
+ *
+ * Both interfaces are version 1 and have been stable since 2014. Neither has
+ * events, so no listener plumbing is needed.
+ */
+static struct wl_interface g_wp_viewporter_iface;
+static struct wl_interface g_wp_viewport_iface;
+
+/* Per-argument interface types. Only get_viewport has non-NULL entries, and
+ * they are filled at load time because one of them comes from `dlsym`. */
+static const struct wl_interface *g_wp_no_types[4]                = { NULL, NULL, NULL, NULL };
+static const struct wl_interface *g_wp_get_viewport_types[2]      = { NULL, NULL };
+
+static const struct wl_message g_wp_viewporter_requests[] = {
+    { "destroy",         "",     g_wp_no_types },
+    { "get_viewport",    "no",   g_wp_get_viewport_types },
+};
+static const struct wl_message g_wp_viewport_requests[] = {
+    { "destroy",         "",     g_wp_no_types },
+    { "set_source",      "ffff", g_wp_no_types },
+    { "set_destination", "ii",   g_wp_no_types },
+};
+
+/** Populates the hand-authored tables. Safe to call more than once. */
+static void wl_init_viewport_interfaces(void) {
+    g_wp_get_viewport_types[0] = &g_wp_viewport_iface;
+    g_wp_get_viewport_types[1] = g_wl_surface_interface;
+
+    g_wp_viewport_iface.name         = "wp_viewport";
+    g_wp_viewport_iface.version      = 1;
+    g_wp_viewport_iface.method_count = 3;
+    g_wp_viewport_iface.methods      = g_wp_viewport_requests;
+    g_wp_viewport_iface.event_count  = 0;
+    g_wp_viewport_iface.events       = NULL;
+
+    g_wp_viewporter_iface.name         = "wp_viewporter";
+    g_wp_viewporter_iface.version      = 1;
+    g_wp_viewporter_iface.method_count = 2;
+    g_wp_viewporter_iface.methods      = g_wp_viewporter_requests;
+    g_wp_viewporter_iface.event_count  = 0;
+    g_wp_viewporter_iface.events       = NULL;
+}
+
 
 static int load_libs(void) {
     if (g_libs_loaded) return 1;
@@ -501,6 +563,8 @@ static int load_libs(void) {
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_region_interface");
         g_wl_callback_interface =
             (const struct wl_interface *) dlsym(g_libwlclient, "wl_callback_interface");
+        /* Extensions have no symbols to load — build their tables by hand. */
+        wl_init_viewport_interfaces();
     }
 #undef LOAD
 
@@ -603,6 +667,15 @@ typedef struct {
     wl_proxy       *wl_parent_surface; /* GTK's wl_surface — not owned, not destroyed. */
     wl_proxy       *wl_child_surface;
     wl_proxy       *wl_subsurface;
+    /* wp_viewporter: lets the content surface state its size independently of
+     * the buffer, so a stale buffer is scaled to fill the current window rect
+     * rather than leaving a gap / overhang at the dragged edge. Both NULL when
+     * the compositor has no wp_viewporter — the surface then sizes itself from
+     * the buffer, exactly as before. */
+    wl_proxy       *wl_viewporter;
+    wl_proxy       *wl_viewport;
+    int             viewport_w;         /* last destination sent, -1 = unset */
+    int             viewport_h;
     wl_egl_window  *wl_window;
     /* Content-area origin inside the parent surface, logical px. (0,0) for a
      * plain undecorated toplevel; the GTK theme's shadow margins when the
@@ -924,6 +997,7 @@ typedef struct {
     wl_proxy *registry;
     wl_proxy *compositor;
     wl_proxy *subcompositor;
+    wl_proxy *viewporter;
 } WlBindState;
 
 static void wl_registry_global(
@@ -945,6 +1019,13 @@ static void wl_registry_global(
         st->subcompositor = p_wl_proxy_marshal_flags(
             registry, WL_REGISTRY_BIND, g_wl_subcompositor_interface, v, 0,
             name, "wl_subcompositor", v, NULL);
+    } else if (!st->viewporter && strcmp(interface, "wp_viewporter") == 0) {
+        /* Optional: absent on very old compositors, in which case the surface
+         * keeps deriving its size from the buffer exactly as before. */
+        uint32_t v = version < 1 ? version : 1;
+        st->viewporter = p_wl_proxy_marshal_flags(
+            registry, WL_REGISTRY_BIND, &g_wp_viewporter_iface, v, 0,
+            name, "wp_viewporter", v, NULL);
     }
 }
 
@@ -1312,6 +1393,22 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->wl_parent_surface = wparent;
     att->wl_child_surface = child_surface;
     att->wl_subsurface    = subsurface;
+    att->wl_viewporter    = bind_state.viewporter;
+    att->viewport_w       = -1;
+    att->viewport_h       = -1;
+    /* One viewport per content surface, created up front so the per-frame path
+     * is a single `set_destination`. Left NULL (and simply unused) when the
+     * compositor did not advertise wp_viewporter. */
+    if (att->wl_viewporter) {
+        att->wl_viewport = p_wl_proxy_marshal_flags(
+            att->wl_viewporter, WP_VIEWPORTER_GET_VIEWPORT,
+            &g_wp_viewport_iface,
+            p_wl_proxy_get_version(att->wl_viewporter), 0,
+            NULL, child_surface);
+        if (att->wl_viewport && p_wl_proxy_set_queue) {
+            p_wl_proxy_set_queue(att->wl_viewport, queue);
+        }
+    }
     att->wl_window        = wlwin;
     att->widthPx          = phys_w;
     att->heightPx         = phys_h;
@@ -1364,6 +1461,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeDetach(
      * Inverting any pair triggers a `Bad object` protocol error from Mutter. */
     if (att->wl_window && p_wl_egl_window_destroy) {
         p_wl_egl_window_destroy(att->wl_window);
+    }
+    /* Viewport before its wl_surface — it holds a reference to it. */
+    if (att->wl_viewport && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_viewport, WP_VIEWPORT_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_viewport),
+            WL_MARSHAL_FLAG_DESTROY);
+        att->wl_viewport = NULL;
+    }
+    if (att->wl_viewporter && p_wl_proxy_marshal_flags) {
+        p_wl_proxy_marshal_flags(att->wl_viewporter, WP_VIEWPORTER_DESTROY,
+            NULL, p_wl_proxy_get_version(att->wl_viewporter),
+            WL_MARSHAL_FLAG_DESTROY);
+        att->wl_viewporter = NULL;
     }
     if (att->wl_subsurface && p_wl_proxy_marshal_flags) {
         p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_DESTROY,
@@ -1480,6 +1590,59 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
             NULL, p_wl_proxy_get_version(att->wl_parent_surface), 0);
     }
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+}
+
+/**
+ * Sets the content surface's `wp_viewport` destination — the size the surface
+ * occupies, in surface (logical) units — decoupled from the buffer's own size.
+ *
+ * This is the resize fix. Normally the surface size is `buffer_px /
+ * buffer_scale`, so it only changes when a newly rendered buffer arrives, which
+ * on a large window is ~37 ms after the compositor asked for the new size.
+ * Meanwhile GTK commits the new *window geometry* within ~7 ms, and the ~30 ms
+ * difference is what the user sees as the content jumping relative to the
+ * dragged edge. Feeding the newest configure straight to the viewport lets the
+ * surface track the window immediately; the stale buffer is scaled to fit,
+ * which is a sub-1% error for one or two frames and is what GTK and Qt do
+ * during a resize anyway.
+ *
+ * [commitNow] issues a `wl_surface.commit` so the destination lands without
+ * waiting for the next `eglSwapBuffers`. **Only pass 1 from the event-loop
+ * thread while no swap is in flight** — `eglSwapBuffers` commits this same
+ * surface from the swap thread, and two committers would race for surface
+ * state ordering. The caller owns that gate (see `SwapThread.isSwapIdle`).
+ *
+ * No-op without wp_viewporter, leaving the buffer-derived sizing in place.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetViewportDestination(
+    JNIEnv *env, jclass clazz, jlong handle,
+    jint logicalW, jint logicalH, jboolean commitNow)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_viewport || !p_wl_proxy_marshal_flags) return;
+    if (logicalW <= 0 || logicalH <= 0) return;
+    if (att->viewport_w == logicalW && att->viewport_h == logicalH && !commitNow) return;
+
+    if (att->viewport_w != logicalW || att->viewport_h != logicalH) {
+        p_wl_proxy_marshal_flags(
+            att->wl_viewport, WP_VIEWPORT_SET_DESTINATION, NULL,
+            p_wl_proxy_get_version(att->wl_viewport), 0,
+            logicalW, logicalH);
+        att->viewport_w = logicalW;
+        att->viewport_h = logicalH;
+    } else if (!commitNow) {
+        return;
+    }
+    if (commitNow) {
+        p_wl_proxy_marshal_flags(
+            att->wl_child_surface, WL_SURFACE_COMMIT, NULL,
+            p_wl_proxy_get_version(att->wl_child_surface), 0);
+        if (p_wl_display_flush && att->wl_display_conn) {
+            p_wl_display_flush(att->wl_display_conn);
+        }
+    }
 }
 
 JNIEXPORT void JNICALL

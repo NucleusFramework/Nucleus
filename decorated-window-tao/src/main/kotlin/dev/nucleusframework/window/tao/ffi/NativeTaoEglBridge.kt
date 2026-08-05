@@ -121,6 +121,32 @@ internal object NativeTaoEglBridge {
         yLogical: Int,
     )
 
+    /**
+     * Wayland only: sets the content surface's `wp_viewport` destination —
+     * the size the surface occupies in surface (logical) units, independent of
+     * the buffer's size. The compositor scales the buffer to fit.
+     *
+     * This decouples "how big the window is" from "how big the buffer we last
+     * finished rendering is". Those are ~30 ms apart during a resize drag, and
+     * that gap is the resize artifact (see
+     * `docs/linux-wayland-resize-latency.md`).
+     *
+     * [commitNow] makes the change land immediately instead of waiting for the
+     * next `eglSwapBuffers`. It issues a `wl_surface.commit`, so it is only
+     * safe from the event-loop thread **while no swap is in flight** — the swap
+     * thread commits the same surface. Callers must hold that gate themselves.
+     *
+     * No-op on X11, on compositors without `wp_viewporter`, and when the
+     * destination is unchanged and [commitNow] is false.
+     */
+    @JvmStatic
+    external fun nativeSetViewportDestination(
+        handle: Long,
+        logicalW: Int,
+        logicalH: Int,
+        commitNow: Boolean,
+    )
+
     /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
     @JvmStatic
     external fun nativePresent(handle: Long)
