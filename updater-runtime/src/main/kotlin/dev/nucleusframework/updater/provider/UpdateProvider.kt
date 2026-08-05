@@ -17,6 +17,17 @@ interface UpdateProvider {
     fun authHeaders(): Map<String, String> = emptyMap()
 
     /**
+     * Returns the URL of the block map that describes [fileUrl], used to compute a differential
+     * download. electron-builder publishes it as `<artifact>.blockmap` next to the artifact, which
+     * the default implementation reproduces.
+     *
+     * Override this when artifacts are not addressed by a plain path — for instance behind a
+     * signed-URL gateway, where the query string must be re-signed for the block map too. A block
+     * map that cannot be fetched is not an error: the updater falls back to a full download.
+     */
+    fun getBlockMapUrl(fileUrl: String): String = "$fileUrl.blockmap"
+
+    /**
      * Returns the URL of the metadata (YAML) file for the given [channel] and [platform],
      * resolving it dynamically when the provider needs to consult a remote service first.
      *

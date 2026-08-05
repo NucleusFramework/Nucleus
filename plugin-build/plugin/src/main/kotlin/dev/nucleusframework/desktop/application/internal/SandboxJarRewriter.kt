@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.internal.files.withTimeOf
 import org.gradle.api.logging.Logger
 import java.io.BufferedInputStream
 import java.io.BufferedOutputStream
@@ -70,7 +71,7 @@ internal object SandboxJarRewriter {
                         // extraction time, and the bundled filename is identical for them.
                         manifest[sha] = bundledName
                         markedLibs++
-                        zos.putNextEntry(ZipEntry(entry.name))
+                        zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
                         zos.write(marker)
                         zos.closeEntry()
                         logger?.lifecycle("Sandboxing: marked '{}' from {}", entry.name, inputJar.name)
@@ -78,7 +79,7 @@ internal object SandboxJarRewriter {
                         val original = zis.readBytes()
                         val rewritten = SandboxBytecodeRewriter.rewriteSystemLoadCalls(original)
                         if (rewritten !== original) rewrittenClasses++
-                        zos.putNextEntry(ZipEntry(entry.name))
+                        zos.putNextEntry(ZipEntry(entry.name).withTimeOf(entry))
                         zos.write(rewritten)
                         zos.closeEntry()
                     } else {
