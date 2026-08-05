@@ -151,6 +151,7 @@ private fun VideoContent(holder: VideoHolder) {
     var turned by remember { mutableStateOf(false) }
     var cropped by remember { mutableStateOf(false) }
     var overlaid by remember { mutableStateOf(true) }
+    var muted by remember(video) { mutableStateOf(false) }
 
     // Opening decodes the first frame, which takes a moment: off the UI thread.
     // No render context is needed for it, unlike the Linux helper.
@@ -207,6 +208,12 @@ private fun VideoContent(holder: VideoHolder) {
             Toggle("Rotate 8°", turned) { turned = !turned }
             Toggle("Crop", cropped) { cropped = !cropped }
             Toggle("Compose on top", overlaid) { overlaid = !overlaid }
+            if (video?.hasAudio == true) {
+                Toggle(if (muted) "Unmute" else "Mute", muted) {
+                    muted = !muted
+                    video.muted = muted
+                }
+            }
         }
 
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

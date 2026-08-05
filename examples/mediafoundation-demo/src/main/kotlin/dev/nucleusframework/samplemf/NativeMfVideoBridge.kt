@@ -46,4 +46,10 @@ internal object NativeMfVideoBridge {
 
     @JvmStatic
     external fun nativeClose(handle: Long)
+
+    @JvmStatic
+    external fun nativeHasAudio(handle: Long): Boolean
+
+    @JvmStatic
+    external fun nativeSetMuted(handle: Long, muted: Boolean)
 }

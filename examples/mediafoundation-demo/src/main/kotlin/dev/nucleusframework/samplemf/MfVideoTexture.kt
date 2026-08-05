@@ -30,6 +30,7 @@ class MfVideoTexture private constructor(
     val widthPx: Int,
     val heightPx: Int,
     val source: TextureViewSource,
+    val hasAudio: Boolean,
 ) : AutoCloseable {
     private val lock = Any()
     private var closed = false
@@ -48,6 +49,16 @@ class MfVideoTexture private constructor(
     fun pullFrame(): Boolean =
         synchronized(lock) {
             if (closed) false else NativeMfVideoBridge.nativePullFrame(handle) == 1
+        }
+
+    /** Mutes the WASAPI render path. The audio clock keeps running so video pacing
+     * is unaffected; a file without audio ignores this. */
+    var muted: Boolean = false
+        set(value) {
+            field = value
+            synchronized(lock) {
+                if (!closed) NativeMfVideoBridge.nativeSetMuted(handle, value)
+            }
         }
 
     override fun close() {
@@ -84,11 +95,13 @@ class MfVideoTexture private constructor(
                 NativeMfVideoBridge.nativeClose(handle)
                 return null
             }
+            val hasAudio = NativeMfVideoBridge.nativeHasAudio(handle)
             return MfVideoTexture(
                 handle,
                 widthPx,
                 heightPx,
                 nucleusD3D11SharedTextureSource(sharedHandle, widthPx, heightPx),
+                hasAudio,
             )
         }
     }

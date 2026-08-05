@@ -1,7 +1,7 @@
 /**
  * Sample helper for the Media Foundation → TextureView demo: decodes a video
  * file on the GPU and publishes each frame in the shared D3D11 texture the
- * TextureView import path expects.
+ * TextureView import path expects, and plays its audio through WASAPI.
  *
  * Path, all of it on the GPU:
  *   IMFSourceReader (DXVA2 via IMFDXGIDeviceManager) → NV12 ID3D11Texture2D →
@@ -23,17 +23,20 @@
  * so writes are bracketed by AcquireSync(0)/ReleaseSync(0) and the compositor
  * takes its tear-free staging path.
  *
- * Pacing: a source reader has no clock — it decodes as fast as it is asked to.
- * A sample is therefore read ahead and held until its presentation time is
- * due against QueryPerformanceCounter, which is what makes playback run at the
- * file's own frame rate instead of the display's.
+ * Audio: the file's own track, decoded off the same reader on a thread of its
+ * own and rendered by WASAPI (shared mode, event-driven). It also carries the
+ * clock — see below.
+ *
+ * Pacing: a source reader has no clock, it decodes as fast as it is asked to,
+ * so a sample is read ahead and held until its presentation time is due. When
+ * there is audio, "due" is measured against the audio device's own position,
+ * which is what a real player does: the ear notices drift the eye does not, and
+ * a QueryPerformanceCounter clock drifts against the sound card's crystal.
+ * Without audio the QPC clock is the master instead.
  *
  * Software fallback: when DXVA is unavailable (VMs, some codecs) the reader
  * returns NV12 in system memory. That is uploaded through a staging texture
  * and converted by the same video processor, so the sample still plays.
- *
- * No audio: this is a TextureView demo, and a second pipeline would only add
- * noise to it.
  */
 
 #include <jni.h>
@@ -47,8 +50,20 @@
 #include <d3d11.h>
 #include <d3d11_4.h>
 
+#include <audioclient.h>
+#include <mmdeviceapi.h>
+
 #include <cstdio>
 #include <new>
+
+/* SDK 10.0.22621.0 is missing these; the engine still supports them at runtime
+ * on Windows 10 21H2 and later. */
+#ifndef AUDCLNT_STREAMFLAGS_AUTOCONVERT_PCM
+#define AUDCLNT_STREAMFLAGS_AUTOCONVERT_PCM 0x80000000
+#endif
+#ifndef AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY
+#define AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY 0x08000000
+#endif
 
 #pragma comment(lib, "mfplat.lib")
 #pragma comment(lib, "mfreadwrite.lib")
@@ -65,6 +80,46 @@ constexpr LONGLONG kHnsPerSecond = 10000000LL;
 
 /** How long a frame waits for the compositor's side of the keyed mutex. */
 constexpr DWORD kMutexTimeoutMs = 100;
+
+/**
+ * WASAPI buffer. Long enough that a slow decode or a scheduling hiccup does not
+ * become an audible dropout, short enough that the clock it provides stays a
+ * useful reference for the video.
+ */
+constexpr REFERENCE_TIME kAudioBufferHns = 2000000; /* 200 ms */
+
+/** The audio track of the file, rendered by WASAPI, and the playback clock. */
+struct MfAudio {
+    IMMDeviceEnumerator *enumerator = nullptr;
+    IMMDevice *endpoint = nullptr;
+    IAudioClient *client = nullptr;
+    IAudioRenderClient *render = nullptr;
+    IAudioClock *audioClock = nullptr;
+    WAVEFORMATEX *mixFormat = nullptr; /* CoTaskMemFree */
+    WAVEFORMATEX *ownFormat = nullptr; /* our fallback format, if any */
+    HANDLE readyEvent = nullptr;
+    HANDLE thread = nullptr;
+    UINT32 bufferFrames = 0;
+    UINT32 frameBytes = 0;
+    UINT32 sampleRate = 0;
+    UINT64 clockFrequency = 0;
+    volatile LONG stop = 0;
+    volatile LONG muted = 0;
+    bool active = false;
+
+    /* The decoded sample being written out, which rarely fits the space the
+     * device has free in one go. */
+    IMFMediaBuffer *heldBuffer = nullptr;
+    BYTE *heldData = nullptr;
+    UINT32 heldFrames = 0;
+    LONGLONG heldEndHns = 0; /* presentation time of the end of that sample */
+
+    /* The clock, read by the video thread: the stream time of the last frame
+     * handed to the device, and how many frames that is in total. */
+    CRITICAL_SECTION lock;
+    LONGLONG writtenEndHns = 0;
+    UINT64 framesWritten = 0;
+};
 
 template <class T>
 void release(T *&p) {
@@ -113,6 +168,8 @@ struct MfVideo {
     int widthPx = 0;
     int heightPx = 0;
     UINT defaultStride = 0; /* only used by the software path */
+
+    MfAudio audio;
 };
 
 LONGLONG nowTicks() {
@@ -127,6 +184,9 @@ bool ensureMediaFoundation() {
     static bool ok = false;
     if (started) return ok;
     started = true;
+    /* WASAPI is COM, and the apartment has to outlive every object created in
+     * it — so, like MFShutdown, CoUninitialize is deliberately never called. */
+    CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     ok = SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_LITE));
     if (!ok) NUCLEUS_LOG("MFStartup failed — Media Foundation unavailable (N edition without the media pack?)");
     return ok;
@@ -360,6 +420,277 @@ bool createProcessor(MfVideo *v, const StreamInfo &info) {
     return true;
 }
 
+/* ================================================================== */
+/*  Audio: the file's own track, rendered by WASAPI                    */
+/* ================================================================== */
+
+void releaseHeldAudio(MfAudio *a) {
+    if (a->heldBuffer) {
+        a->heldBuffer->Unlock();
+        release(a->heldBuffer);
+    }
+    a->heldData = nullptr;
+    a->heldFrames = 0;
+}
+
+/** Decodes the next audio sample and locks it for the writer. */
+bool fetchAudioSample(MfVideo *v) {
+    MfAudio *a = &v->audio;
+    DWORD flags = 0;
+    LONGLONG timeHns = 0;
+    IMFSample *sample = nullptr;
+    if (FAILED(v->reader->ReadSample((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0,
+                                     nullptr, &flags, &timeHns, &sample))) {
+        return false;
+    }
+    /* End of stream or a gap: the video side owns the loop, so there is simply
+     * nothing to play until it seeks. */
+    if (!sample) return false;
+
+    IMFMediaBuffer *buffer = nullptr;
+    BYTE *data = nullptr;
+    DWORD length = 0;
+    if (FAILED(sample->ConvertToContiguousBuffer(&buffer)) ||
+        FAILED(buffer->Lock(&data, nullptr, &length))) {
+        release(buffer);
+        release(sample);
+        return false;
+    }
+    release(sample);
+
+    a->heldBuffer = buffer;
+    a->heldData = data;
+    a->heldFrames = a->frameBytes ? (UINT32)(length / a->frameBytes) : 0u;
+    a->heldEndHns = timeHns + (LONGLONG)a->heldFrames * kHnsPerSecond / (LONGLONG)a->sampleRate;
+    if (a->heldFrames == 0) {
+        releaseHeldAudio(a);
+        return false;
+    }
+    return true;
+}
+
+/** Hands the device as much as it has room for. */
+void fillAudioBuffer(MfVideo *v) {
+    MfAudio *a = &v->audio;
+    UINT32 padding = 0;
+    if (FAILED(a->client->GetCurrentPadding(&padding))) return;
+    UINT32 freeFrames = a->bufferFrames - padding;
+
+    while (freeFrames > 0 && !a->stop) {
+        if (a->heldFrames == 0 && !fetchAudioSample(v)) return;
+        const UINT32 count = freeFrames < a->heldFrames ? freeFrames : a->heldFrames;
+        BYTE *dst = nullptr;
+        if (FAILED(a->render->GetBuffer(count, &dst))) return;
+        /* Muting writes silence rather than stopping the stream: the clock has to
+         * keep running, or the video would stop with it. */
+        if (a->muted) {
+            memset(dst, 0, (size_t)count * a->frameBytes);
+        } else {
+            memcpy(dst, a->heldData, (size_t)count * a->frameBytes);
+        }
+        a->render->ReleaseBuffer(count, 0);
+
+        a->heldData += (size_t)count * a->frameBytes;
+        a->heldFrames -= count;
+        freeFrames -= count;
+
+        EnterCriticalSection(&a->lock);
+        a->framesWritten += count;
+        /* Stream time of what has now been handed over: the end of the sample,
+         * less whatever of it is still waiting. */
+        a->writtenEndHns =
+            a->heldEndHns - (LONGLONG)a->heldFrames * kHnsPerSecond / (LONGLONG)a->sampleRate;
+        LeaveCriticalSection(&a->lock);
+
+        if (a->heldFrames == 0) releaseHeldAudio(a);
+    }
+}
+
+DWORD WINAPI audioThread(LPVOID param) {
+    MfVideo *v = (MfVideo *)param;
+    MfAudio *a = &v->audio;
+    /* WASAPI is COM, and this thread creates nothing but calls plenty. */
+    const HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    /* Audio is the one thing the user hears drop out. */
+    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+
+    /* Prime the buffer before starting, so the stream does not open on silence. */
+    fillAudioBuffer(v);
+    if (FAILED(a->client->Start())) {
+        NUCLEUS_LOG("IAudioClient::Start failed — playing without sound");
+    } else {
+        while (!a->stop) {
+            if (WaitForSingleObject(a->readyEvent, 200) == WAIT_FAILED) break;
+            fillAudioBuffer(v);
+        }
+        a->client->Stop();
+    }
+
+    releaseHeldAudio(a);
+    if (SUCCEEDED(coHr)) CoUninitialize();
+    return 0;
+}
+
+/** Asks the reader for [format] on the audio stream. */
+bool setAudioOutputType(MfVideo *v, const WAVEFORMATEX *format) {
+    IMFMediaType *type = nullptr;
+    if (FAILED(MFCreateMediaType(&type))) return false;
+    HRESULT hr = MFInitMediaTypeFromWaveFormatEx(
+        type, format, (UINT32)(sizeof(WAVEFORMATEX) + format->cbSize));
+    if (SUCCEEDED(hr)) {
+        hr = v->reader->SetCurrentMediaType((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, type);
+    }
+    type->Release();
+    return SUCCEEDED(hr);
+}
+
+/** The file's own sample rate, for the fallback format. */
+UINT32 nativeAudioSampleRate(MfVideo *v) {
+    IMFMediaType *type = nullptr;
+    UINT32 rate = 0;
+    if (SUCCEEDED(v->reader->GetNativeMediaType(
+            (DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, &type))) {
+        type->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &rate);
+        type->Release();
+    }
+    return rate ? rate : 48000u;
+}
+
+/**
+ * Selects the audio stream, negotiates a format both the decoder and the device
+ * accept, and starts the render thread. False simply means "no sound" — a file
+ * without audio, a machine without an endpoint — and playback goes on.
+ */
+bool setupAudio(MfVideo *v) {
+    MfAudio *a = &v->audio;
+    if (FAILED(v->reader->SetStreamSelection((DWORD)MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE))) {
+        return false; /* no audio stream in this file */
+    }
+
+    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                IID_PPV_ARGS(&a->enumerator))) ||
+        FAILED(a->enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &a->endpoint)) ||
+        FAILED(a->endpoint->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                     (void **)&a->client)) ||
+        FAILED(a->client->GetMixFormat(&a->mixFormat))) {
+        NUCLEUS_LOG("no usable audio endpoint — playing without sound");
+        return false;
+    }
+
+    /* First choice is the device's own mix format: the decoder converts straight
+     * to it and the audio engine has nothing left to do. */
+    const WAVEFORMATEX *format = a->mixFormat;
+    DWORD streamFlags = AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+    if (!setAudioOutputType(v, format)) {
+        /* Some decoders will not produce a multichannel float layout. 16-bit
+         * stereo at the file's own rate is universally available, and
+         * AUTOCONVERT_PCM lets the engine take it from there. */
+        a->ownFormat = (WAVEFORMATEX *)HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY,
+                                                 sizeof(WAVEFORMATEX));
+        if (!a->ownFormat) return false;
+        a->ownFormat->wFormatTag = WAVE_FORMAT_PCM;
+        a->ownFormat->nChannels = 2;
+        a->ownFormat->nSamplesPerSec = nativeAudioSampleRate(v);
+        a->ownFormat->wBitsPerSample = 16;
+        a->ownFormat->nBlockAlign = (WORD)(a->ownFormat->nChannels * 2);
+        a->ownFormat->nAvgBytesPerSec = a->ownFormat->nSamplesPerSec * a->ownFormat->nBlockAlign;
+        format = a->ownFormat;
+        streamFlags |= AUDCLNT_STREAMFLAGS_AUTOCONVERT_PCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+        if (!setAudioOutputType(v, format)) {
+            NUCLEUS_LOG("the audio decoder offered no usable format — playing without sound");
+            return false;
+        }
+    }
+
+    if (FAILED(a->client->Initialize(AUDCLNT_SHAREMODE_SHARED, streamFlags,
+                                     kAudioBufferHns, 0, format, nullptr))) {
+        NUCLEUS_LOG("IAudioClient::Initialize failed — playing without sound");
+        return false;
+    }
+    a->readyEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!a->readyEvent ||
+        FAILED(a->client->SetEventHandle(a->readyEvent)) ||
+        FAILED(a->client->GetBufferSize(&a->bufferFrames)) ||
+        FAILED(a->client->GetService(IID_PPV_ARGS(&a->render))) ||
+        FAILED(a->client->GetService(IID_PPV_ARGS(&a->audioClock))) ||
+        FAILED(a->audioClock->GetFrequency(&a->clockFrequency)) ||
+        a->clockFrequency == 0) {
+        NUCLEUS_LOG("could not set the audio render client up — playing without sound");
+        return false;
+    }
+    a->frameBytes = format->nBlockAlign;
+    a->sampleRate = format->nSamplesPerSec;
+
+    InitializeCriticalSection(&a->lock);
+    a->active = true;
+    a->thread = CreateThread(nullptr, 0, audioThread, v, 0, nullptr);
+    if (!a->thread) {
+        DeleteCriticalSection(&a->lock);
+        a->active = false;
+        return false;
+    }
+    return true;
+}
+
+/**
+ * Where playback actually is, in the stream's own time base, taken from the
+ * audio device: the time of the last frame handed over, less what is still
+ * queued ahead of the speaker. Self-correcting after a seek — the queue then
+ * holds pre-seek audio for one buffer's worth of time, during which the video
+ * waits rather than run ahead.
+ */
+bool audioTimeHns(MfVideo *v, LONGLONG *outHns) {
+    MfAudio *a = &v->audio;
+    if (!a->active) return false;
+    UINT64 position = 0;
+    if (FAILED(a->audioClock->GetPosition(&position, nullptr))) return false;
+
+    EnterCriticalSection(&a->lock);
+    const LONGLONG writtenEndHns = a->writtenEndHns;
+    const UINT64 framesWritten = a->framesWritten;
+    LeaveCriticalSection(&a->lock);
+    if (framesWritten == 0) return false; /* nothing has reached the device yet */
+
+    const LONGLONG playedHns = (LONGLONG)(position * kHnsPerSecond / a->clockFrequency);
+    const LONGLONG writtenHns =
+        (LONGLONG)(framesWritten * kHnsPerSecond / (UINT64)a->sampleRate);
+    const LONGLONG queuedHns = writtenHns > playedHns ? writtenHns - playedHns : 0;
+    *outHns = writtenEndHns - queuedHns;
+    return true;
+}
+
+void destroyAudio(MfAudio *a) {
+    if (a->thread) {
+        InterlockedExchange(&a->stop, 1);
+        SetEvent(a->readyEvent);
+        WaitForSingleObject(a->thread, 2000);
+        CloseHandle(a->thread);
+        a->thread = nullptr;
+    }
+    if (a->active) {
+        DeleteCriticalSection(&a->lock);
+        a->active = false;
+    }
+    releaseHeldAudio(a);
+    release(a->audioClock);
+    release(a->render);
+    release(a->client);
+    release(a->endpoint);
+    release(a->enumerator);
+    if (a->mixFormat) {
+        CoTaskMemFree(a->mixFormat);
+        a->mixFormat = nullptr;
+    }
+    if (a->ownFormat) {
+        HeapFree(GetProcessHeap(), 0, a->ownFormat);
+        a->ownFormat = nullptr;
+    }
+    if (a->readyEvent) {
+        CloseHandle(a->readyEvent);
+        a->readyEvent = nullptr;
+    }
+}
+
 /** Rewinds to the start, so the sample loops like the GStreamer one does. */
 void seekToStart(MfVideo *v) {
     PROPVARIANT pos;
@@ -567,6 +898,8 @@ int blitPending(MfVideo *v) {
 }
 
 void destroy(MfVideo *v) {
+    /* The render thread reads from the reader: it has to be gone first. */
+    destroyAudio(&v->audio);
     release(v->pending);
     release(v->inputView);
     v->inputViewTexture = nullptr;
@@ -642,6 +975,9 @@ Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativeOpen(
         destroy(v);
         return 0;
     }
+    /* Sound is a bonus, not a requirement: a file without an audio track, or a
+     * machine without an endpoint, still plays. */
+    if (!setupAudio(v)) destroyAudio(&v->audio);
     return (jlong)(uintptr_t)v;
 }
 
@@ -672,6 +1008,24 @@ Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativeSharedHandle(
     return v ? (jlong)(uintptr_t)v->sharedHandle : 0;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativeHasAudio(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void)env; (void)clazz;
+    MfVideo *v = (MfVideo *)(uintptr_t)handle;
+    return (v && v->audio.active) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativeSetMuted(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean muted)
+{
+    (void)env; (void)clazz;
+    MfVideo *v = (MfVideo *)(uintptr_t)handle;
+    if (v) InterlockedExchange(&v->audio.muted, muted ? 1 : 0);
+}
+
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativePullFrame(
     JNIEnv *env, jclass clazz, jlong handle)
@@ -682,10 +1036,14 @@ Java_dev_nucleusframework_samplemf_NativeMfVideoBridge_nativePullFrame(
 
     if (!v->pending && !readAhead(v)) return -1;
 
-    /* Pacing against the file's own timeline: the first frame starts the clock,
-     * every later frame waits for its presentation time. The caller ticks once
-     * per composited frame, so waiting here simply means "no frame yet". */
-    if (v->baseTimeHns < 0) {
+    /* Pacing against the file's own timeline. The caller ticks once per
+     * composited frame, so waiting here simply means "no frame yet". */
+    LONGLONG audioHns = 0;
+    if (audioTimeHns(v, &audioHns)) {
+        /* Sound leads: the frame goes up when the speaker reaches its time. */
+        if (v->pendingTimeHns > audioHns) return 0;
+    } else if (v->baseTimeHns < 0) {
+        /* No audio (or none playing yet): the first frame starts a QPC clock. */
         v->baseTimeHns = v->pendingTimeHns;
         v->startTicks = nowTicks();
     } else {
