@@ -27,6 +27,9 @@ ktlintGradle = "14.2.0"
 ktor = "3.5.1"
 lifecycleViewmodelNavigation3 = "2.10.0"
 lighthouse = "2.3.1"
+# Only used by :examples:tao-native-test, as the native-image regression fixture for the
+# SLF4J/Logback build-time-initialization clash (issue #443).
+logback = "1.5.34"
 material3 = "1.9.0"
 materialkolor = "4.1.1"
 navigation3 = "1.1.1"
@@ -102,6 +105,7 @@ filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "file
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
 lifecycle-viewmodel-navigation3 = { module = "org.jetbrains.androidx.lifecycle:lifecycle-viewmodel-navigation3", version.ref = "lifecycleViewmodelNavigation3" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
 materialkolor = { module = "com.materialkolor:material-kolor", version.ref = "materialkolor" }
 reorderable = { module = "sh.calvin.reorderable:reorderable", version.ref = "reorderable" }
 thumbnailator = { module = "net.coobird:thumbnailator", version.ref = "thumbnailator" }

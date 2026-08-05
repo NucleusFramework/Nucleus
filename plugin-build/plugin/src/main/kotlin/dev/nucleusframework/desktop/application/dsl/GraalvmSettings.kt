@@ -99,6 +99,26 @@ abstract class GraalvmSettings
         // which does not know the former option.
         val garbageCollector: Property<NativeImageGarbageCollector> = objects.nullableProperty()
 
+        // Extra `native-image` arguments appended verbatim, after everything the plugin derives.
+        //
+        // Nucleus deliberately leaves the SLF4J lifecycle alone: the API and the app-selected
+        // backend both initialize at RUN time, so the app keeps control of its provider, log
+        // levels and environment-dependent configuration. Forcing `org.slf4j` to build time from
+        // a shared runtime module breaks any backend that stays run-time initialized — SLF4J 2.x
+        // provider discovery would then park backend objects (Logback's `LogbackMDCAdapter` behind
+        // `MDC.MDC_ADAPTER`, its `LoggerContext` behind `LoggerFactory.PROVIDER`) in the image heap,
+        // which native-image rejects. Adding the backend's classes one by one only surfaces the
+        // next object in that graph.
+        //
+        // An app with a fixed, tested backend can still opt in here:
+        //
+        //     graalvm { buildArgs.add("--initialize-at-build-time=org.slf4j") }
+        //
+        // That trades flexibility for a cheaper first logging call and a deterministic setup: the
+        // provider is frozen at build time, and system properties / levels / other environment
+        // state can be captured from the build machine. Backend-specific reflection and resource
+        // metadata are a separate requirement either way. Worth it only after measuring a real
+        // benefit on the backend and platforms you ship.
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val toolchain: GraalvmToolchainSettings = objects.new()
