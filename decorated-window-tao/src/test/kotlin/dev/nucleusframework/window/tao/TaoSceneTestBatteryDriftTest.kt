@@ -60,6 +60,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoMainDispatcherReproTest::class.java to "spawns real threads against the JVM dispatcher",
             StandalonePanelNativeSmokeTest::class.java to "loads the Windows native popup chain",
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
+            OutboundDragPumpNativeSmokeTest::class.java to "resolves the platform DnD JNI entry points",
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
