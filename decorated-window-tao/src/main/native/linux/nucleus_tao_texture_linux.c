@@ -1432,6 +1432,45 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestP
     producer_free(PRODUCER_OF(producer));
 }
 
+/**
+ * Wraps a DMA-BUF as an `EGLImage` **on the display current here** — the stand-in for
+ * a same-process pipeline (a GStreamer `GstGLMemoryEGL`, a VA-API surface) that hands
+ * over an image it made on the window's own display, which is what
+ * `nucleusEglImageTextureSource` is for. Production code has no reason to call this:
+ * it imports the DMA-BUF itself.
+ *
+ * Returns the image, or 0. The caller owns it and must pass it to
+ * [nativeTestDestroyEglImage] once every import of it is gone.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestCreateEglImage(
+        JNIEnv *env, jclass clazz, jint fd, jint fourcc, jint widthPx, jint heightPx,
+        jint stride, jint offset, jlong modifier) {
+    (void) env; (void) clazz;
+    if (fd < 0 || widthPx < 1 || heightPx < 1 || stride < 1 || offset < 0) return 0;
+    if (fourcc_bytes_per_pixel(fourcc) == 0) return 0;
+    if (!resolve_entry_points()) return 0;
+    EGLDisplay display = (EGLDisplay) nucleus_tao_egl_current_display();
+    if (display == EGL_NO_DISPLAY || nucleus_tao_egl_current_context() == NULL) return 0;
+    if (!has_extension(display, "EGL_EXT_image_dma_buf_import")) return 0;
+    EGLImageKHR image = create_dmabuf_image(display, fd, fourcc, widthPx, heightPx,
+                                           stride, offset, (uint64_t) modifier);
+    if (image == EGL_NO_IMAGE_KHR) {
+        DBG("test eglCreateImageKHR failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        return 0;
+    }
+    return (jlong) (uintptr_t) image;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxTextureBridge_nativeTestDestroyEglImage(
+        JNIEnv *env, jclass clazz, jlong image) {
+    (void) env; (void) clazz;
+    if (image == 0 || !p_eglDestroyImageKHR) return;
+    p_eglDestroyImageKHR((EGLDisplay) nucleus_tao_egl_current_display(),
+                         (EGLImageKHR) (uintptr_t) image);
+}
+
 /* ── Headless consumer context (smoke tests) ─────────────────────────────── */
 
 typedef struct {

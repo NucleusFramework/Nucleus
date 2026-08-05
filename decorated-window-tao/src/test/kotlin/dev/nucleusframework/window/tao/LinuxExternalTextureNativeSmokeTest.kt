@@ -199,6 +199,56 @@ class LinuxExternalTextureNativeSmokeTest {
     }
 
     /**
+     * The producer-owned `EGLImageKHR` path — the one a same-process pipeline uses
+     * (GStreamer's `GstGLMemoryEGL`, a VA-API surface), and the only import route
+     * with no coverage until now. The image is made on the *consumer's* display, as
+     * such a pipeline's would be, and the producer keeps owning it: the import must
+     * bind its own GL texture onto it, composite it, and leave the image alone at
+     * teardown — a second frame through it proves the aliasing still holds.
+     */
+    @Test
+    fun eglImageSourceCompositesProducerPixels() {
+        withGpu { producer, host ->
+            val buffer = producer.source as DmaBufTextureSource
+            val image =
+                NativeTaoLinuxTextureBridge.nativeTestCreateEglImage(
+                    buffer.fd,
+                    buffer.fourcc,
+                    TEX_W,
+                    TEX_H,
+                    buffer.stride,
+                    buffer.offset,
+                    buffer.modifier,
+                )
+            assertTrue(image != 0L, "the driver refused an EGLImage over the producer's buffer")
+            val imported =
+                assertNotNull(
+                    importLinuxTexture(host, nucleusEglImageTextureSource(image, TEX_W, TEX_H)),
+                    "EGLImage import failed",
+                )
+            val target = gpuTarget(host.directContext)
+            val controller = TextureViewController()
+
+            assertEquals(
+                FILL_ARGB,
+                compositeFill(producer, imported, target, FILL_ARGB, controller),
+                "composited pixel does not match the producer fill",
+            )
+            assertEquals(
+                SECOND_FILL_ARGB,
+                compositeFill(producer, imported, target, SECOND_FILL_ARGB, controller),
+                "second producer frame did not reach the composited surface",
+            )
+
+            target.close()
+            // Closing the import must not take the producer's image with it, so the
+            // teardown order here is the one an application would use.
+            imported.close()
+            NativeTaoLinuxTextureBridge.nativeTestDestroyEglImage(image)
+        }
+    }
+
+    /**
      * The contract `withEglContextCurrent` relies on to bind another surface's
      * context from inside a live render pass without stealing it: the displaced
      * binding round-trips, and a nested snapshot is refused rather than
