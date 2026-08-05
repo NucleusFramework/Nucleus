@@ -259,6 +259,27 @@ internal object NativeTaoLinuxTextureBridge {
     @JvmStatic
     external fun nativeTestProducerDestroy(producer: Long)
 
+    /**
+     * Wraps a DMA-BUF as an `EGLImageKHR` on the display current here — the stand-in
+     * for a same-process pipeline that hands over an image made on the window's own
+     * display, which is what [dev.nucleusframework.window.tao.nucleusEglImageTextureSource]
+     * takes. Returns 0 when the driver refuses it; the caller owns the result.
+     */
+    @Suppress("LongParameterList")
+    @JvmStatic
+    external fun nativeTestCreateEglImage(
+        fd: Int,
+        fourcc: Int,
+        widthPx: Int,
+        heightPx: Int,
+        stride: Int,
+        offset: Int,
+        modifier: Long,
+    ): Long
+
+    @JvmStatic
+    external fun nativeTestDestroyEglImage(image: Long)
+
     // ---- Headless consumer context (smoke tests) ----------------------
 
     /**
