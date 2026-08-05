@@ -980,11 +980,17 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                             ),
                         )
 
-                        // Opt out of Oracle GraalVM's default ML-inferred PGO profile. Placed before
-                        // user buildArgs so an explicit override there still wins.
-                        if (!resolvedMlProfileInference) {
-                            add("-H:-MLProfileInference")
-                        }
+                        // Opt out of Oracle GraalVM's default ML-inferred PGO profile. Oracle-only:
+                        // community toolchains reject -H:-MLProfileInference as unknown. Placed
+                        // before user buildArgs so an explicit override there still wins.
+                        val mlProfileResolution =
+                            resolveMlProfileInferenceArgs(
+                                mlProfileInference = resolvedMlProfileInference,
+                                isOracleGraalvm = oracleGraalvm,
+                                graalvmHome = resolvedGraalvmHome,
+                            )
+                        mlProfileResolution.warning?.let { logger.warn(it) }
+                        addAll(mlProfileResolution.args)
 
                         // PGO: either instrument (collect a profile) or apply a recorded one.
                         when {
