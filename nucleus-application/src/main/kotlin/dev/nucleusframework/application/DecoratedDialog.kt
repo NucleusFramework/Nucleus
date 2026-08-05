@@ -80,6 +80,42 @@ fun NucleusApplicationScope.DecoratedDialog(
     }
 }
 
+/**
+ * Receiver-less [DecoratedDialog], resolving the application scope from
+ * [LocalNucleusApplicationScope]. Parameters behave exactly like the
+ * [NucleusApplicationScope] overload. Fails outside a `nucleusApplication { … }`
+ * block, where no scope exists.
+ */
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+fun DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: DialogState = rememberDialogState(),
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = false,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    LocalNucleusApplicationScope.current.DecoratedDialog(
+        onCloseRequest = onCloseRequest,
+        state = state,
+        visible = visible,
+        title = title,
+        icon = icon,
+        resizable = resizable,
+        enabled = enabled,
+        focusable = focusable,
+        onPreviewKeyEvent = onPreviewKeyEvent,
+        onKeyEvent = onKeyEvent,
+        content = content,
+    )
+}
+
 internal class AwtNucleusDecoratedDialogScope(
     private val delegate: AwtDecoratedDialogScope,
     override val nucleusWindow: NucleusWindow,

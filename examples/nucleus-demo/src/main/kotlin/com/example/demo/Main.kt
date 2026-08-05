@@ -354,13 +354,16 @@ fun main(args: Array<String>) =
                         }
                     }
                 }
-            }
 
-            FillCenterDemoWindow(
-                visible = isFillCenterWindowVisible,
-                onCloseRequest = { isFillCenterWindowVisible = false },
-                seedColor = seedColor,
-            )
+                // Declared inside the main window's content: the secondary
+                // window reaches the application scope through
+                // LocalNucleusApplicationScope, no receiver plumbing.
+                FillCenterDemoWindow(
+                    visible = isFillCenterWindowVisible,
+                    onCloseRequest = { isFillCenterWindowVisible = false },
+                    seedColor = seedColor,
+                )
+            }
         }
     }
 

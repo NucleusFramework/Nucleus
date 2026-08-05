@@ -89,7 +89,10 @@ fun nucleusApplication(
         NucleusBackend.Awt, NucleusBackend.Auto ->
             application {
                 val nucleusScope = AwtNucleusApplicationScope(this, args)
-                CompositionLocalProvider(LocalNucleusBackend provides NucleusBackend.Awt) {
+                CompositionLocalProvider(
+                    LocalNucleusBackend provides NucleusBackend.Awt,
+                    LocalNucleusApplicationScope provides nucleusScope,
+                ) {
                     nucleusScope.content()
                 }
             }

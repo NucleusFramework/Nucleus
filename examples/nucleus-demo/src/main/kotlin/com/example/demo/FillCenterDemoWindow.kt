@@ -32,7 +32,7 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.example.demo.gallery.GalleryScreen
-import dev.nucleusframework.application.NucleusApplicationScope
+import dev.nucleusframework.application.LocalNucleusApplicationScope
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.TitleBarLayoutPolicy
@@ -42,8 +42,13 @@ import dev.nucleusframework.window.material.MaterialDecoratedWindow
 import dev.nucleusframework.window.material.MaterialTitleBar
 import dev.nucleusframework.window.newFullscreenControls
 
+/**
+ * Opened from inside the main window's content, not from the
+ * `nucleusApplication { … }` lambda — the application scope is read from
+ * [LocalNucleusApplicationScope] instead of being threaded down as a receiver.
+ */
 @Composable
-fun NucleusApplicationScope.FillCenterDemoWindow(
+fun FillCenterDemoWindow(
     visible: Boolean,
     onCloseRequest: () -> Unit,
     seedColor: Color,
@@ -57,7 +62,8 @@ fun NucleusApplicationScope.FillCenterDemoWindow(
             size = DpSize(1340.dp, 480.dp),
         )
 
-    MaterialDecoratedWindow(
+    val applicationScope = LocalNucleusApplicationScope.current
+    applicationScope.MaterialDecoratedWindow(
         state = fillCenterWindowState,
         onCloseRequest = onCloseRequest,
         title = "Fill Title",
