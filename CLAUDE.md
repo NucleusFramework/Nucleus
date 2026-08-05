@@ -27,7 +27,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
 - `plugin-build/plugin` - Gradle plugin for packaging & distribution
-- `examples/` - Demo & sample applications (consolidated): `nucleus-demo` (flagship), `tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `extra-launcher-demo`, `benchmark-demo` (JIT-vs-GraalVM-O3 CPU benchmark suite, with SwiftUI + Tauri ports under `ports/`), `gstreamer-demo` (Linux: GStreamer video into a `TextureView`, needs its own `build.sh` and the GStreamer dev packages), `mediafoundation-demo` (Windows counterpart: Media Foundation/DXVA video into a `TextureView`, needs its own `build.bat`), plus `shared` (Compose helper used by tao/jni demos)
+- `examples/` - Demo & sample applications (consolidated): `nucleus-demo` (flagship), `tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `extra-launcher-demo`, `benchmark-demo` (JIT-vs-GraalVM-O3 CPU benchmark suite, with SwiftUI + Tauri ports under `ports/`), `gstreamer-demo` (Linux: GStreamer video into a `TextureView`, needs its own `build.sh` and the GStreamer dev packages), `mediafoundation-demo` (Windows counterpart: Media Foundation/DXVA video into a `TextureView`, needs its own `build.bat`), `avfoundation-demo` (macOS counterpart: AVFoundation/VideoToolbox video into a `TextureView`, needs its own `build.sh`), plus `shared` (Compose helper used by tao/jni demos)
 
 ## Build & Run
 
