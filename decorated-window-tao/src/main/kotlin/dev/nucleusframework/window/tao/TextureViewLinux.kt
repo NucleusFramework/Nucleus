@@ -2,7 +2,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,13 +57,9 @@ internal fun LinuxTextureView(
         return
     }
 
-    // RememberObserver lease, like the Windows and macOS paths: the registry ref
-    // is released on onForgotten AND onAbandoned, so a composition that computes
-    // this remember block but is never applied cannot leak the native import (a
-    // DisposableEffect would never run in that case).
     val imported =
         remember(source, host) {
-            GlTextureImportLease(host, source)
+            TextureImportLease(glTextureImports, host, source)
         }.imported
     if (imported == null) {
         Box(modifier)
@@ -86,34 +81,6 @@ internal fun LinuxTextureView(
             drawExternalTexture(imported.image, srcRect, contentScale, alignment, sampling)
         },
     )
-}
-
-/**
- * Composition-lifetime holder of one registry reference — the Linux twin of the
- * Windows `TextureImportLease`. Releasing on both `onForgotten` and
- * `onAbandoned` keeps an abandoned composition from leaking the import.
- */
-private class GlTextureImportLease(
-    host: TaoGlTextureHost,
-    source: TextureViewSource,
-) : RememberObserver {
-    val imported: LinuxImportedTexture? = GlTextureImportRegistry.acquire(host, source)
-
-    private fun release() {
-        imported?.let(GlTextureImportRegistry::release)
-    }
-
-    override fun onRemembered() {
-        // The reference was already taken in the constructor.
-    }
-
-    override fun onForgotten() {
-        release()
-    }
-
-    override fun onAbandoned() {
-        release()
-    }
 }
 
 /**
@@ -155,62 +122,16 @@ private class LinuxImportedTexture(
 }
 
 /**
- * Shares GPU imports between [TextureView]s: N composables showing the same
- * source in the same surface use one EGLImage / GL texture / Skia image — the
- * moral equivalent of Flutter's texture registry. Keyed by the Skia context too,
- * since each Linux surface (window scene, popup window, tray panel) owns its
- * own. Event-loop thread only.
+ * The Linux import ledger. Refcounted and keyed by Skia context + source; see
+ * [TextureImportRegistry] for why, and for the scaffolding the three backends
+ * share.
  */
-private object GlTextureImportRegistry {
-    private data class Key(
-        val context: DirectContext,
-        val source: TextureViewSource,
+private val glTextureImports =
+    TextureImportRegistry<TaoGlTextureHost, LinuxImportedTexture>(
+        contextOf = { it.directContext },
+        importTexture = ::importTexture,
+        closeImport = { it.close() },
     )
-
-    private class Entry(
-        val imported: LinuxImportedTexture,
-    ) {
-        var refCount: Int = 1
-    }
-
-    private val entries = HashMap<Key, Entry>()
-    private val keys = HashMap<LinuxImportedTexture, Key>()
-
-    fun acquire(
-        host: TaoGlTextureHost,
-        source: TextureViewSource,
-    ): LinuxImportedTexture? {
-        val key = Key(host.directContext, source)
-        entries[key]?.let { entry ->
-            entry.refCount++
-            return entry.imported
-        }
-        val imported = importTexture(host, source) ?: return null
-        entries[key] = Entry(imported)
-        keys[imported] = key
-        return imported
-    }
-
-    fun release(imported: LinuxImportedTexture) {
-        val key = keys[imported] ?: return
-        val entry = entries[key] ?: return
-        entry.refCount--
-        if (entry.refCount <= 0) {
-            entries.remove(key)
-            keys.remove(imported)
-            imported.close()
-        }
-    }
-
-    fun closeAllFor(context: DirectContext) {
-        val stale = entries.keys.filter { it.context == context }
-        for (key in stale) {
-            val entry = entries.remove(key) ?: continue
-            keys.remove(entry.imported)
-            entry.imported.close()
-        }
-    }
-}
 
 /**
  * Drops every import made on [context] — called by a surface right before it
@@ -220,7 +141,7 @@ private object GlTextureImportRegistry {
  * against a dead one. Leases releasing later find the import already closed.
  */
 internal fun releaseGlTextureImports(context: DirectContext) {
-    GlTextureImportRegistry.closeAllFor(context)
+    glTextureImports.closeAllFor(context)
 }
 
 private fun importTexture(

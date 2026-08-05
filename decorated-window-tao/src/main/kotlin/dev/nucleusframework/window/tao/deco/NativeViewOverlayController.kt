@@ -29,6 +29,7 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
@@ -429,25 +430,18 @@ internal class NativeViewOverlayController(
         popupHost.requestRedraw()
     }
 
-    /** Stable [TaoMetalTextureHost] for the overlay surface; null before attach. */
-    private var metalTextureHostCache: TaoMetalTextureHost? = null
+    /** This overlay's handle for `TextureView`s composed inside it — see [MetalTextureHostCache]. */
+    private val metalTextureHostCache = MetalTextureHostCache()
 
-    private fun metalTextureHost(): TaoMetalTextureHost? {
-        metalTextureHostCache?.let { return it }
-        val ctx = directContext ?: return null
-        if (attachmentHandle == 0L) return null
-        val device = NativeMetalBridge.nativeDevicePtr(attachmentHandle)
-        if (device == 0L) return null
-        val created =
+    private fun metalTextureHost(): TaoMetalTextureHost? =
+        metalTextureHostCache.get(attachmentHandle, directContext) { device, ctx ->
             object : TaoMetalTextureHost {
                 override val metalDevicePtr: Long = device
                 override val directContext: DirectContext = ctx
 
                 override fun <T> runOnRenderThread(block: () -> T): T = popupHost.runOnRenderThread(block)
             }
-        metalTextureHostCache = created
-        return created
-    }
+        }
 
     @Suppress("ComplexCondition")
     fun registerRegion(
@@ -522,7 +516,7 @@ internal class NativeViewOverlayController(
         scene?.close()
         scene = null
         // Drop the TextureView handle before the context it points at dies.
-        metalTextureHostCache = null
+        metalTextureHostCache.invalidate()
         // Close the Skia context on its owning render thread. dispose() runs in
         // the host's main-thread record pass (Compose disposal), when the render
         // thread is idle, so this blocking hop returns immediately without racing

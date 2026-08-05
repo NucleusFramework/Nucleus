@@ -2,7 +2,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,13 +44,9 @@ internal fun WindowsTextureView(
         return
     }
 
-    // The lease is a RememberObserver: the registry ref is released on
-    // onForgotten AND onAbandoned, so a composition that computes this
-    // remember block but is never applied can't leak the native import
-    // (a DisposableEffect would never run in that case).
     val imported =
         remember(source, host) {
-            TextureImportLease(host, source)
+            TextureImportLease(windowsTextureImports, host, source)
         }.imported
     if (imported == null) {
         Box(modifier)
@@ -94,36 +89,6 @@ internal fun WindowsTextureView(
 }
 
 /**
- * Composition-lifetime holder of one registry reference. Implements
- * [RememberObserver] so the reference is released both when the
- * composable leaves the composition (onForgotten) and when the
- * composition is abandoned before being applied (onAbandoned) — the
- * case a DisposableEffect can't cover.
- */
-private class TextureImportLease(
-    host: TaoWindowsTextureHost,
-    source: D3D11SharedTextureSource,
-) : RememberObserver {
-    val imported: ImportedExternalTexture? = TextureImportRegistry.acquire(host, source)
-
-    private fun release() {
-        imported?.let(TextureImportRegistry::release)
-    }
-
-    override fun onRemembered() {
-        // The reference was already taken in the constructor.
-    }
-
-    override fun onForgotten() {
-        release()
-    }
-
-    override fun onAbandoned() {
-        release()
-    }
-}
-
-/**
  * Pairs the native pbuffer binding with the Skia image that adopted the
  * GL texture. Skia owns the texture id after adoption (deleted with the
  * image); the native side only tears down the pbuffer.
@@ -136,31 +101,19 @@ private class ImportedExternalTexture(
     /** Keyed-mutex staging mode — tear-free copies via [NativeTaoTextureBridge.nativeUpdateFrame]. */
     val isSynchronized: Boolean = NativeTaoTextureBridge.nativeIsSynchronized(handle)
 
-    /**
-     * Newest stamp already staged, per controller feeding this import (keys
-     * compare by identity — [TextureViewController] has no `equals`). One import
-     * is shared by every view on the same source, but each view reads *its own*
-     * controller's stamp — a single slot would make views with different
-     * controllers (or one without) re-copy on every draw pass. Main thread only.
-     *
-     * Weak keys: the import outlives any single view (it is refcounted across
-     * all of them), so a strongly-keyed map would pin the controller of every
-     * view that ever drew through this import. A screen that creates one
-     * controller per item over a shared source would grow it without bound.
-     * Losing an entry early only costs one redundant copy.
-     */
-    private val copied = java.util.WeakHashMap<TextureViewController?, Long>()
+    /** One staging copy per producer frame per controller — see [FrameStampGate]. */
+    private val copied = FrameStampGate()
 
     fun needsCopy(
         controller: TextureViewController?,
         stamp: Long,
-    ): Boolean = copied[controller] != stamp
+    ): Boolean = copied.isPending(controller, stamp)
 
     fun markCopied(
         controller: TextureViewController?,
         stamp: Long,
     ) {
-        copied[controller] = stamp
+        copied.markConsumed(controller, stamp)
     }
 
     fun close() {
@@ -174,69 +127,16 @@ private class ImportedExternalTexture(
 }
 
 /**
- * Shares GPU imports between [TextureView]s: N composables showing the
- * same source in the same surface use one pbuffer/GL texture/Skia image
- * (and, in keyed-mutex mode, one staging copy per frame) — the moral
- * equivalent of Flutter's texture registry.
- *
- * Keyed by the Skia context, not the host HWND: every Windows surface shares one
- * ANGLE `EGLContext` but *not* one `DirectContext` — a standalone tray panel
- * builds its own and has no HWND of its own to key on, so an hwnd-keyed registry
- * would hand it a window's image and Skia would silently drop the draw.
- * Main thread only.
+ * The Windows import ledger. Refcounted and keyed by Skia context + source; see
+ * [TextureImportRegistry] for why, and for the scaffolding the three backends
+ * share.
  */
-private object TextureImportRegistry {
-    private data class Key(
-        val context: DirectContext,
-        val sharedHandle: Long,
-        val widthPx: Int,
-        val heightPx: Int,
+private val windowsTextureImports =
+    TextureImportRegistry<TaoWindowsTextureHost, ImportedExternalTexture>(
+        contextOf = { it.directContext },
+        importTexture = { host, source -> (source as? D3D11SharedTextureSource)?.let { importTexture(host, it) } },
+        closeImport = { it.close() },
     )
-
-    private class Entry(
-        val imported: ImportedExternalTexture,
-    ) {
-        var refCount: Int = 1
-    }
-
-    private val entries = HashMap<Key, Entry>()
-    private val keys = HashMap<ImportedExternalTexture, Key>()
-
-    fun acquire(
-        host: TaoWindowsTextureHost,
-        source: D3D11SharedTextureSource,
-    ): ImportedExternalTexture? {
-        val key = Key(host.directContext, source.sharedHandle, source.widthPx, source.heightPx)
-        entries[key]?.let { entry ->
-            entry.refCount++
-            return entry.imported
-        }
-        val imported = importTexture(host, source) ?: return null
-        entries[key] = Entry(imported)
-        keys[imported] = key
-        return imported
-    }
-
-    fun release(imported: ImportedExternalTexture) {
-        val key = keys[imported] ?: return
-        val entry = entries[key] ?: return
-        entry.refCount--
-        if (entry.refCount <= 0) {
-            entries.remove(key)
-            keys.remove(imported)
-            imported.close()
-        }
-    }
-
-    fun closeAllFor(context: DirectContext) {
-        val stale = entries.keys.filter { it.context == context }
-        for (key in stale) {
-            val entry = entries.remove(key) ?: continue
-            keys.remove(entry.imported)
-            entry.imported.close()
-        }
-    }
-}
 
 /**
  * Drops every import made on [context] — called by a surface right before it
@@ -245,7 +145,7 @@ private object TextureImportRegistry {
  * dead one. Leases releasing later find the import already closed.
  */
 internal fun releaseWindowsTextureImports(context: DirectContext) {
-    TextureImportRegistry.closeAllFor(context)
+    windowsTextureImports.closeAllFor(context)
 }
 
 private fun importTexture(

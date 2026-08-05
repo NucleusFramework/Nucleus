@@ -26,6 +26,7 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import dev.nucleusframework.window.tao.scene.replayPictureToFrame
@@ -170,25 +171,19 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         }
     }
 
-    /** Stable [TaoMetalTextureHost] for this panel; null until the context exists. */
-    private var metalTextureHostCache: TaoMetalTextureHost? = null
+    /** This panel's handle for `TextureView`s composed inside it — see [MetalTextureHostCache]. */
+    private val metalTextureHostCache = MetalTextureHostCache()
 
     private fun metalTextureHost(): TaoMetalTextureHost? {
-        metalTextureHostCache?.let { return it }
-        val ctx = directContext ?: return null
-        if (attachmentHandle == 0L) return null
-        val device = NativeMetalBridge.nativeDevicePtr(attachmentHandle)
-        if (device == 0L) return null
         val outer = this
-        val created =
+        return metalTextureHostCache.get(attachmentHandle, directContext) { device, ctx ->
             object : TaoMetalTextureHost {
                 override val metalDevicePtr: Long = device
                 override val directContext: DirectContext = ctx
 
                 override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
             }
-        metalTextureHostCache = created
-        return created
+        }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -279,7 +274,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         PopupNativeBridge.nativeSetEventCallback(panel, null)
         scene?.close()
         scene = null
-        metalTextureHostCache = null
+        metalTextureHostCache.invalidate()
         val ctx = directContext
         directContext = null
         if (ctx != null) runCatching { runOnRenderThread { ctx.close() } }
