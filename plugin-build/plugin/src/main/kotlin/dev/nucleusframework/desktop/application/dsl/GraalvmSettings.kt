@@ -55,7 +55,9 @@ abstract class GraalvmSettings
         // generally a small win, but it is Oracle-specific and non-deterministic across GraalVM
         // versions. Set to `false` to opt out (`-H:-MLProfileInference`), yielding `PGO: off`. Only
         // effective at optimization levels that run the ML pass (i.e. `-O2`); ignored under `-Os`.
-        // Defaults to `true` to match Oracle GraalVM's out-of-the-box behavior.
+        // Ignored on non-Oracle toolchains (a warning is logged) — community builds have no ML
+        // profile inference, so they already behave as if it were disabled. Defaults to `true` to
+        // match Oracle GraalVM's out-of-the-box behavior.
         val mlProfileInference: Property<Boolean> = objects.notNullProperty(true)
 
         // Automatically register the project's own resources (its source-set resource directories
