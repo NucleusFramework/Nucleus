@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.LocalTaoWindow
+import dev.nucleusframework.window.tao.TaoWindow
 
 /**
  * Declares this component as a window drag region: an unconsumed primary
@@ -36,6 +37,11 @@ import dev.nucleusframework.window.tao.LocalTaoWindow
  *
  * Must be used inside a Tao `DecoratedWindow` content tree; outside of one
  * (no [LocalTaoWindow]) the modifier is a no-op.
+ *
+ * Prefer the overload that takes an explicit [TaoWindow] when composing
+ * chrome that already holds the window handle (e.g. [BasicTitleBar]) — that
+ * path does not depend on [LocalTaoWindow] and stays correct if parent-window
+ * CompositionLocals are bridged into a secondary scene.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 public fun Modifier.windowDragArea(
@@ -45,6 +51,20 @@ public fun Modifier.windowDragArea(
     composed {
         val window = LocalTaoWindow.current
         if (!enabled || window == null) return@composed Modifier
+        windowDragArea(window = window, doubleClickAction = doubleClickAction)
+    }
+
+/**
+ * Same as [windowDragArea] but binds drag/maximize to the given [window]
+ * instead of [LocalTaoWindow]. Use from title-bar chrome that already
+ * resolves the window via [DecoratedWindowScope].
+ */
+@OptIn(ExperimentalComposeUiApi::class)
+public fun Modifier.windowDragArea(
+    window: TaoWindow,
+    doubleClickAction: WindowDoubleClickAction = WindowDoubleClickAction.ToggleMaximize,
+): Modifier =
+    composed {
         val viewConfig = LocalViewConfiguration.current
         var lastPress by remember { mutableLongStateOf(0L) }
         Modifier

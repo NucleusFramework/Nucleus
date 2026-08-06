@@ -278,11 +278,10 @@ public fun DecoratedWindowScope.BasicTitleBar(
             .let {
                 if (isMacOS) it.offset(y = menuBarOffset).zIndex(if (menuBarOffset > 0.dp) 1f else 0f) else it
             }.then(modifier)
-            // The whole bar drags the window, and a double-click toggles
-            // maximize; interactive children opt out by consuming the press.
-            // This is the same public modifier a custom `WindowScaffold` chrome
-            // uses, so the two can never drift apart.
-            .windowDragArea()
+            // Bind drag to [taoWindow] explicitly (not only LocalTaoWindow) so
+            // secondary windows stay movable when parent CompositionLocals are
+            // bridged into this scene and would otherwise clobber LocalTaoWindow.
+            .windowDragArea(window = taoWindow)
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =

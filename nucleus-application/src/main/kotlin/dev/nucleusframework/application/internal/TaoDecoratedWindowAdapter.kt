@@ -19,6 +19,8 @@ import dev.nucleusframework.application.ObserveSingleInstanceRestore
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedWindowState
+import dev.nucleusframework.window.LocalTitleBarInfo
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
 import dev.nucleusframework.window.tao.render.TaoTextSelectionAccessibility
@@ -91,14 +93,22 @@ internal object TaoDecoratedWindowAdapter {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
                 ObserveSingleInstanceRestore(nucleusWindow)
-                // outerLocals were captured in the OUTER application composition
-                // (NoOpApplier with GlobalDensity = Density(1f)). Blindly applying
-                // them inside the scene would override LocalDensity with the
-                // platform-incorrect 1.0 (the scene's own owner.density mirrors
-                // the screen's backing scale and is what Compose layout expects).
-                // Snapshot the scene's density BEFORE applying outerLocals so we
-                // can re-provide it inside. LocalLayoutDirection is intentionally
-                // left to outerLocals so an app-level RTL override propagates here.
+                // outerLocals were captured in the OUTER composition. Blindly
+                // applying them inside this scene would override:
+                //  - LocalDensity with the application root's Density(1f)
+                //  - LocalTaoWindow / LocalTitleBarInfo with the *parent*
+                //    window's values, when this window is opened from inside
+                //    another DecoratedWindow (secondary windows, demos, apps
+                //    that open windows from a navigation destination).
+                // Snapshot scene-owned locals BEFORE applying outerLocals and
+                // re-provide them below so title-bar drag, system controls, and
+                // title/icon state bind to *this* window on every platform
+                // (Windows / macOS / Linux). Without re-providing LocalTaoWindow,
+                // windowDragArea() and WindowControlsWindows would call
+                // dragWindow() / minimize / maximize on the parent window —
+                // the secondary window appears immovable.
+                // LocalLayoutDirection is intentionally left to outerLocals so
+                // an app-level RTL override propagates here.
                 val sceneDensity = LocalDensity.current
                 // outerLocals carries the app theme's own LocalTextContextMenu
                 // (e.g. Jewel's). Applying it here shadows the scene's selection
@@ -109,12 +119,16 @@ internal object TaoDecoratedWindowAdapter {
                 // publisher itself is reset by outerLocals, so snapshot + re-provide
                 // it, exactly like LocalDensity.
                 val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
+                val sceneTaoWindow = LocalTaoWindow.current
+                val sceneTitleBarInfo = LocalTitleBarInfo.current
                 CompositionLocalProvider(outerLocals) {
                     CompositionLocalProvider(
                         LocalDensity provides sceneDensity,
                         LocalTaoTextSelectionA11yPublisher provides scenePublisher,
                         LocalNucleusBackend provides NucleusBackend.Tao,
                         LocalNucleusWindow provides nucleusWindow,
+                        LocalTaoWindow provides sceneTaoWindow,
+                        LocalTitleBarInfo provides sceneTitleBarInfo,
                     ) {
                         TaoTextSelectionAccessibility {
                             nucleusScope.content()
