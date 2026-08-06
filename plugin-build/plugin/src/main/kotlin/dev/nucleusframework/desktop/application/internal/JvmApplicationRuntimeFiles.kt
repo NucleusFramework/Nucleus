@@ -35,6 +35,25 @@ internal class JvmApplicationRuntimeFiles(
 internal sealed class JvmApplicationRuntimeFilesProvider {
     abstract fun jvmApplicationRuntimeFiles(project: Project): JvmApplicationRuntimeFiles
 
+    /**
+     * Class directories produced by this app's own compilation (Kotlin + Java).
+     * Fed to the GraalVM orphan / project-class detectors (#441).
+     *
+     * Must resolve the **application's** JVM target output — including KMP named
+     * targets such as `jvm("desktop")` → `build/classes/kotlin/desktop/main` —
+     * not a hardcoded `jvm/main` path.
+     *
+     * Empty for [Custom] / `fromFiles` setups where the plugin does not own compilation.
+     */
+    open fun projectClassDirs(project: Project): FileCollection = project.files()
+
+    /**
+     * Tasks that produce [projectClassDirs] (e.g. `desktopMainClasses`, `classes`).
+     * [AnalyzeStaticMetadataTask] depends on these so Room/KSP outputs are on disk
+     * before the orphan detector walks the project class dirs.
+     */
+    open fun projectClassTaskDependencies(project: Project): Array<Any> = emptyArray()
+
     abstract class GradleJvmApplicationRuntimeFilesProvider : JvmApplicationRuntimeFilesProvider() {
         protected abstract val jarTaskName: String
         protected abstract val runtimeFiles: FileCollection
@@ -59,6 +78,11 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
 
         override val runtimeFiles: FileCollection
             get() = sourceSet.runtimeClasspath
+
+        override fun projectClassDirs(project: Project): FileCollection = sourceSet.output.classesDirs
+
+        override fun projectClassTaskDependencies(project: Project): Array<Any> =
+            arrayOf(sourceSet.classesTaskName)
     }
 
     class FromKotlinMppTarget(
@@ -69,6 +93,16 @@ internal sealed class JvmApplicationRuntimeFilesProvider {
 
         override val runtimeFiles: FileCollection
             get() = target.compilations.getByName("main").runtimeDependencyFiles
+
+        override fun projectClassDirs(project: Project): FileCollection =
+            target.compilations.getByName("main").output.classesDirs
+
+        /**
+         * `compileAllTaskName` is target-aware (`desktopMainClasses`, `jvmMainClasses`, …)
+         * and already depends on compileKotlin + compileJava for that compilation.
+         */
+        override fun projectClassTaskDependencies(project: Project): Array<Any> =
+            arrayOf(target.compilations.getByName("main").compileAllTaskName)
     }
 
     class Custom(

@@ -102,7 +102,8 @@ internal object OrphanProjectClassDetector {
     /**
      * @param projectFacts facts for the project's own compiled classes only
      * @param classpathReferencedTypes FQCNs referenced by any class on the full runtime
-     *   classpath (excluding self-references)
+     *   classpath (excluding self-references and nest-internal edges — see
+     *   [addExternalReferences])
      * @param appReferencedTypes FQCNs referenced by project class files only
      */
     fun detect(
@@ -119,6 +120,35 @@ internal object OrphanProjectClassDetector {
             entries.add(ReflectionEntry(type = fact.type, methods = setOf(NO_ARG_INIT)))
         }
         return entries
+    }
+
+    /**
+     * True when [source] is [outer] or a nested class of [outer] (JVM binary `$` nesting).
+     *
+     * Room (and similar generators) emit `AppDatabase_Impl$…` nested types that always
+     * use-site-reference the outer `_Impl`. Those edges must not disqualify the outer
+     * class as an orphan — it is still only reached via `Class.forName(… + "_Impl")`.
+     */
+    fun isNestMemberOf(
+        source: String,
+        outer: String,
+    ): Boolean = source == outer || source.startsWith("$outer$")
+
+    /**
+     * Adds [refs] collected from class [sourceFqcn] into [into], dropping edges from a
+     * nest member to its outer type(s). Self-references are already stripped by
+     * [ClassReferenceCollector].
+     */
+    fun addExternalReferences(
+        sourceFqcn: String,
+        refs: Set<String>,
+        into: MutableSet<String>,
+    ) {
+        for (ref in refs) {
+            if (!isNestMemberOf(sourceFqcn, ref)) {
+                into.add(ref)
+            }
+        }
     }
 
     /**

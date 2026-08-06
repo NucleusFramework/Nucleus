@@ -661,27 +661,11 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
-                    // Include the project's own compiled classes (not just dependency JARs)
-                    // KMP projects use jvmMainClasses, standard JVM uses main sourceSet
-                    val jvmMainClasses =
-                        project.tasks.findByName("jvmMainClasses")
-                            ?: project.tasks.findByName("compileKotlinJvm")
-                            ?: project.tasks.findByName("compileKotlin")
-                    if (jvmMainClasses != null) {
-                        task.dependsOn(jvmMainClasses)
-                    }
-                    project.tasks.findByName("compileJava")?.let { task.dependsOn(it) }
-                    // Add class output directories
-                    for (dirPath in listOf(
-                        "classes/kotlin/jvm/main",
-                        "classes/kotlin/main",
-                        "classes/java/main",
-                    )) {
-                        val classDir = project.layout.buildDirectory.dir(dirPath)
-                        task.runtimeClasspath.from(classDir)
-                        // Separate collection for the orphan / project-class detectors (#441)
-                        task.projectClassDirs.from(classDir)
-                    }
+                    // Project class dirs for orphan / project-class detectors (#441).
+                    // Resolve from the application target's compilation output so KMP
+                    // named targets (jvm("desktop") → classes/kotlin/desktop/main) work;
+                    // hardcoding jvm/main misses Room *_Impl and friends on those apps.
+                    wireProjectClassOutputs(task)
                 }
             }
 
@@ -2309,6 +2293,107 @@ private fun JvmApplicationContext.collectNativeBuildTasks(runtimeConfigName: Str
     collectProjectResourceProjects(runtimeConfigName).map { p ->
         p.tasks.matching { it.name.startsWith("buildNative") }
     }
+
+/**
+ * Wires the app's own compilation class directories into [AnalyzeStaticMetadataTask]
+ * for orphan / project-class detection (#441).
+ *
+ * Prefers [JvmApplicationRuntimeFilesProvider.projectClassDirs] (target-aware:
+ * `jvm("desktop")`, default `jvm`, Kotlin/JVM `main`, Java `main`). Falls back to
+ * discovering every JVM main compilation when the app was configured via
+ * `fromFiles` / custom jars without a provider.
+ */
+private fun JvmApplicationContext.wireProjectClassOutputs(task: AnalyzeStaticMetadataTask) {
+    val provider = app.jvmApplicationRuntimeFilesProvider
+    val classDirs: FileCollection
+    val taskDeps: Array<Any>
+    if (provider != null) {
+        classDirs = provider.projectClassDirs(project)
+        taskDeps = provider.projectClassTaskDependencies(project)
+    } else {
+        classDirs = project.files(discoverProjectClassDirCollections(project))
+        taskDeps = discoverProjectClassTaskDependencies(project)
+    }
+    task.runtimeClasspath.from(classDirs)
+    task.projectClassDirs.from(classDirs)
+    if (taskDeps.isNotEmpty()) {
+        task.dependsOn(*taskDeps)
+    }
+}
+
+/**
+ * Fallback: class-output collections for every JVM `main` compilation in the project
+ * (KMP named targets, Kotlin/JVM, plain Java). Used when no runtime-files provider
+ * is configured.
+ */
+internal fun discoverProjectClassDirCollections(project: Project): List<FileCollection> {
+    val collections = mutableListOf<FileCollection>()
+
+    runCatching {
+        project.mppExtOrNull
+            ?.targets
+            ?.filter { it.platformType == KotlinPlatformType.jvm }
+            ?.forEach { target ->
+                target.compilations.findByName("main")?.output?.classesDirs?.let(collections::add)
+            }
+    }
+
+    runCatching {
+        project.kotlinJvmExtOrNull
+            ?.target
+            ?.compilations
+            ?.findByName("main")
+            ?.output
+            ?.classesDirs
+            ?.let(collections::add)
+    }
+
+    runCatching {
+        project.extensions
+            .findByType(JavaPluginExtension::class.java)
+            ?.sourceSets
+            ?.findByName("main")
+            ?.output
+            ?.classesDirs
+            ?.let(collections::add)
+    }
+
+    return collections
+}
+
+/** Task names that produce [discoverProjectClassDirCollections] outputs. */
+internal fun discoverProjectClassTaskDependencies(project: Project): Array<Any> {
+    val deps = mutableListOf<Any>()
+
+    runCatching {
+        project.mppExtOrNull
+            ?.targets
+            ?.filter { it.platformType == KotlinPlatformType.jvm }
+            ?.forEach { target ->
+                target.compilations.findByName("main")?.compileAllTaskName?.let(deps::add)
+            }
+    }
+
+    runCatching {
+        project.kotlinJvmExtOrNull
+            ?.target
+            ?.compilations
+            ?.findByName("main")
+            ?.compileAllTaskName
+            ?.let(deps::add)
+    }
+
+    runCatching {
+        project.extensions
+            .findByType(JavaPluginExtension::class.java)
+            ?.sourceSets
+            ?.findByName("main")
+            ?.classesTaskName
+            ?.let(deps::add)
+    }
+
+    return deps.toTypedArray()
+}
 
 /** Resource source directory collections declared by a project, across KMP JVM, Kotlin/JVM and plain Java. */
 private fun resourceSrcDirsOf(p: Project): List<FileCollection> {
