@@ -16,6 +16,10 @@ import java.util.Locale
  * Inside [content], use [DecoratedWindow] / [DecoratedDialog] — both work
  * uniformly across backends and expose a [NucleusWindow] handle.
  *
+ * Compose's [androidx.compose.foundation.isSystemInDarkTheme] is bridged to
+ * Nucleus's reactive OS detector (`darkmode-detector`), so official and library
+ * call sites track live system theme changes without polling.
+ *
  * ```
  * fun main() = nucleusApplication(backend = NucleusBackend.Auto) {
  *     val state = rememberWindowState(size = DpSize(1200.dp, 800.dp))
@@ -89,11 +93,13 @@ fun nucleusApplication(
         NucleusBackend.Awt, NucleusBackend.Auto ->
             application {
                 val nucleusScope = AwtNucleusApplicationScope(this, args)
-                CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Awt,
-                    LocalNucleusApplicationScope provides nucleusScope,
-                ) {
-                    nucleusScope.content()
+                ProvideNucleusSystemTheme {
+                    CompositionLocalProvider(
+                        LocalNucleusBackend provides NucleusBackend.Awt,
+                        LocalNucleusApplicationScope provides nucleusScope,
+                    ) {
+                        nucleusScope.content()
+                    }
                 }
             }
     }
