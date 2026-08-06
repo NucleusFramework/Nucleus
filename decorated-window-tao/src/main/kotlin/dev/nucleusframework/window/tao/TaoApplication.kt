@@ -92,7 +92,13 @@ public object TaoApplication {
         undecoratedShadow: Boolean = true,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
-        val window = TaoWindow(handle, isResizable = resizable, isPopup = popupOf != null)
+        val window =
+            TaoWindow(
+                handle,
+                isResizable = resizable,
+                isPopup = popupOf != null,
+                popupParentHandle = popupOf?.handle ?: 0L,
+            )
         windows[handle] = window
         NativeTaoBridge.nativeCreateWindow(
             handle,
