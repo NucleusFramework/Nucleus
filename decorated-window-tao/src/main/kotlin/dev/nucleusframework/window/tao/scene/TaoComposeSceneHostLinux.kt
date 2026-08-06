@@ -266,6 +266,17 @@ internal class TaoComposeSceneHostLinux(
     private var lastAppliedHeightPx: Int = -1
     private var lastAppliedScale: Float = Float.NaN
 
+    /**
+     * Wayland: size of the EGL buffer currently in use for painting.
+     * `wl_egl_window_resize` only takes effect on the next `eglSwapBuffers`;
+     * painting at the *window* size into a still-old buffer (BOTTOM_LEFT)
+     * shifts/flashes the frame. We paint at [drawableWidthPx]×[drawableHeightPx]
+     * and advance those after each present to [lastAppliedWidthPx]×[lastAppliedHeightPx].
+     * X11 sets drawable = window immediately (no lag).
+     */
+    private var drawableWidthPx: Int = 0
+    private var drawableHeightPx: Int = 0
+
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -577,6 +588,9 @@ internal class TaoComposeSceneHostLinux(
         lastAppliedWidthPx = -1
         lastAppliedHeightPx = -1
         lastAppliedScale = Float.NaN
+        // Attach creates the wl_egl_window at the current physical size.
+        drawableWidthPx = widthPx.coerceAtLeast(0)
+        drawableHeightPx = heightPx.coerceAtLeast(0)
     }
 
     /**
@@ -603,6 +617,8 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
+        drawableWidthPx = 0
+        drawableHeightPx = 0
         // Drop TextureView imports made on this context while it is still
         // current and alive; the composition survives the hide, so its leases
         // would otherwise hold Skia images on a destroyed context.
@@ -1162,24 +1178,54 @@ internal class TaoComposeSceneHostLinux(
             return
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        // Drop the cached Skia surface so the next render rebuilds it at the
-        // new size/scale. Closing here (rather than lazily in `onRedrawRequested`)
-        // keeps the lifetime tied to the GL context being current. A scale
-        // change with an unchanged pixel size (rare on Wayland, but possible)
-        // must also rebuild — otherwise we'd serve a surface bound to the old
-        // buffer scale.
-        if (widthPx != lastAppliedWidthPx ||
-            heightPx != lastAppliedHeightPx ||
-            scale != lastAppliedScale
-        ) {
+        // X11: drawable tracks the window immediately — drop Skia cache now.
+        // Wayland: drawable lags until the next present; keep painting into the
+        // old-sized FB until [onDrawablePresented] advances it (avoids
+        // BOTTOM_LEFT shift/flash when Skia is larger than the real buffer).
+        if (attachedKind != 2) {
+            if (widthPx != lastAppliedWidthPx ||
+                heightPx != lastAppliedHeightPx ||
+                scale != lastAppliedScale
+            ) {
+                cachedSurface?.close()
+                cachedSurface = null
+                cachedRt?.close()
+                cachedRt = null
+            }
+            drawableWidthPx = widthPx
+            drawableHeightPx = heightPx
+        } else if (scale != lastAppliedScale) {
+            // Scale change: buffer_scale is reasserted; rebuild at the new window.
             cachedSurface?.close()
             cachedSurface = null
             cachedRt?.close()
             cachedRt = null
+            drawableWidthPx = widthPx
+            drawableHeightPx = heightPx
         }
         lastAppliedWidthPx = widthPx
         lastAppliedHeightPx = heightPx
         lastAppliedScale = scale
+    }
+
+    /**
+     * Wayland: after a present, the pending `wl_egl_window_resize` is in effect.
+     * Advance the paint size and re-arm a frame if the window is still ahead.
+     */
+    private fun onDrawablePresented() {
+        if (attachedKind != 2) return
+        if (lastAppliedWidthPx <= 0 || lastAppliedHeightPx <= 0) return
+        if (drawableWidthPx == lastAppliedWidthPx && drawableHeightPx == lastAppliedHeightPx) {
+            return
+        }
+        drawableWidthPx = lastAppliedWidthPx
+        drawableHeightPx = lastAppliedHeightPx
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+        // Paint the newly allocated buffer without waiting for more motion.
+        requestRedrawCoalesced()
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1293,12 +1339,31 @@ internal class TaoComposeSceneHostLinux(
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
 
+        // Paint size = drawable (Wayland may lag the window by one present).
+        val paintW =
+            if (attachedKind == 2 && drawableWidthPx > 0) drawableWidthPx else widthPx
+        val paintH =
+            if (attachedKind == 2 && drawableHeightPx > 0) drawableHeightPx else heightPx
+        // Layout must match the FB we draw into (BOTTOM_LEFT mis-size flashes).
+        val paintSize = IntSize(paintW, paintH)
+        if (sc.size != paintSize) {
+            sc.size = paintSize
+            lastSceneSizeUpdateNs = now
+        }
+
         var surface = cachedSurface
-        if (surface == null) {
+        if (surface == null ||
+            surface.width != paintW ||
+            surface.height != paintH
+        ) {
+            cachedSurface?.close()
+            cachedSurface = null
+            cachedRt?.close()
+            cachedRt = null
             val rt =
                 BackendRenderTarget.makeGL(
-                    width = widthPx,
-                    height = heightPx,
+                    width = paintW,
+                    height = paintH,
                     sampleCnt = 0,
                     stencilBits = 8,
                     fbId = 0,
@@ -1327,7 +1392,7 @@ internal class TaoComposeSceneHostLinux(
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        applyFrameDecoration(surface.canvas)
+        applyFrameDecoration(surface.canvas, paintW, paintH)
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
@@ -1359,7 +1424,11 @@ internal class TaoComposeSceneHostLinux(
      * pixels — dropped for maximized, fullscreen and tiled windows, which sit
      * flush against a screen edge and square off.
      */
-    private fun applyFrameDecoration(canvas: Canvas) {
+    private fun applyFrameDecoration(
+        canvas: Canvas,
+        surfaceW: Int = widthPx,
+        surfaceH: Int = heightPx,
+    ) {
         val isMaximized = window.isMaximized
         val isFullscreen = window.isFullscreen
         val isTiled = window.isTiled
@@ -1368,7 +1437,7 @@ internal class TaoComposeSceneHostLinux(
         // there look wrong — native CSD windows square off when tiled too.
         val roundCorners = cornerRadiusPx > 0 && !isMaximized && !isFullscreen && !isTiled
         if (roundCorners) {
-            // widthPx/heightPx are physical pixels and the canvas has no scale
+            // Coordinates are physical pixels and the canvas has no scale
             // transform, so scale the logical radius up to physical to keep the
             // corner curvature constant across DPI.
             val radiusPhysical = (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1)
@@ -1376,10 +1445,10 @@ internal class TaoComposeSceneHostLinux(
                 canvas,
                 left = 0,
                 top = 0,
-                right = widthPx,
-                bottom = heightPx,
-                surfaceW = widthPx,
-                surfaceH = heightPx,
+                right = surfaceW,
+                bottom = surfaceH,
+                surfaceW = surfaceW,
+                surfaceH = surfaceH,
                 radius = radiusPhysical,
             )
         }
@@ -2182,6 +2251,14 @@ internal class TaoComposeSceneHostLinux(
                                     renderOwed = false
                                     owed
                                 }
+                            // Drawable size advances only after this present.
+                            if (attachedKind == 2) {
+                                dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                                    .dispatch(
+                                        EmptyCoroutineContext,
+                                        Runnable { onDrawablePresented() },
+                                    )
+                            }
                             if (rearm) requestRedrawCoalesced()
                         }
                     }
