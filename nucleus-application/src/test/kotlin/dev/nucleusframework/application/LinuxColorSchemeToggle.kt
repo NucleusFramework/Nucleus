@@ -11,7 +11,11 @@ internal object LinuxColorSchemeToggle {
     private const val KEY = "color-scheme"
 
     val isAvailable: Boolean by lazy {
-        System.getProperty("os.name").orEmpty().lowercase().contains("linux") &&
+        System
+            .getProperty("os.name")
+            .orEmpty()
+            .lowercase()
+            .contains("linux") &&
             runCatching {
                 ProcessBuilder("gsettings", "get", SCHEMA, KEY)
                     .redirectErrorStream(true)
@@ -38,7 +42,11 @@ internal object LinuxColorSchemeToggle {
         check(p.waitFor(3, TimeUnit.SECONDS)) { "gsettings get timed out" }
         check(p.exitValue() == 0) { "gsettings get failed: ${p.inputStream.bufferedReader().readText()}" }
         // gsettings prints e.g. 'prefer-dark'
-        return p.inputStream.bufferedReader().readText().trim().trim('\'')
+        return p.inputStream
+            .bufferedReader()
+            .readText()
+            .trim()
+            .trim('\'')
     }
 
     fun write(value: String) {
@@ -66,8 +74,7 @@ internal object LinuxColorSchemeToggle {
     }
 
     /** Flip between prefer-dark and prefer-light. */
-    fun oppositeOf(current: String): String =
-        if (current == "prefer-dark") "prefer-light" else "prefer-dark"
+    fun oppositeOf(current: String): String = if (current == "prefer-dark") "prefer-light" else "prefer-dark"
 
     fun isDarkScheme(scheme: String): Boolean = scheme == "prefer-dark"
 }

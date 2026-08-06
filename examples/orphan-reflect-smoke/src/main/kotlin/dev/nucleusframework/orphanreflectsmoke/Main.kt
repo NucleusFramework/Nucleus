@@ -45,6 +45,7 @@ abstract class AppDatabase {
  * Stand-in for Room-generated `*_Impl`. Must stay unreferenced from app bytecode
  * (no field types, no direct `AppDatabase_Impl::class` usage).
  */
+@Suppress("ktlint:standard:class-naming")
 class AppDatabase_Impl : AppDatabase() {
     override fun name(): String = "impl-ok"
 }

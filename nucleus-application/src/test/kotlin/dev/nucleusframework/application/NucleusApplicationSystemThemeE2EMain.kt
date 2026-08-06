@@ -19,7 +19,6 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
-
 /**
  * Process-level E2E that **actually flips** the OS color-scheme and checks that
  * under [ProvideNucleusSystemTheme] both [isSystemInDarkMode] and official

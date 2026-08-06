@@ -47,7 +47,10 @@ internal object NativeGstVideoBridge {
 
     /** Mutes the audio path; a no-op for a file without audio. */
     @JvmStatic
-    external fun nativeSetMuted(handle: Long, muted: Boolean)
+    external fun nativeSetMuted(
+        handle: Long,
+        muted: Boolean,
+    )
 
     @JvmStatic
     external fun nativeClose(handle: Long)
