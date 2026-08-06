@@ -43,6 +43,22 @@ tasks.withType<Test>().configureEach {
     maxHeapSize = "2g"
 }
 
+/**
+ * Prints the exact production AppImage update script (used by
+ * `scripts/e2e-appimage-gui-restart.sh`).
+ *
+ * ```
+ * ./gradlew :updater-runtime:dumpLinuxAppImageUpdateScript \
+ *   --args="'/tmp/new.AppImage' '/tmp/old.AppImage' 12345 '/tmp/update.log' true"
+ * ```
+ */
+tasks.register<JavaExec>("dumpLinuxAppImageUpdateScript") {
+    group = "verification"
+    description = "Emit the production Linux AppImage update shell script to stdout"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("dev.nucleusframework.updater.DumpLinuxAppImageUpdateScriptKt")
+}
+
 mavenPublishing {
     coordinates("dev.nucleusframework", "nucleus.updater-runtime", publishVersion)
 
