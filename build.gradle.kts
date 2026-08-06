@@ -257,36 +257,27 @@ tasks.register<Exec>("publishDevToMavenLocal") {
 }
 
 tasks.register("preMerge") {
-    description = "Runs all the tests/verification tasks on both top level and included build."
+    description =
+        "Runs verification for every published library module plus the flagship demo " +
+            "and the included Gradle plugin. New library modules are picked up automatically."
 
-    // Binary-compatibility freeze for every published library module (api/*.api).
-    dependsOn("apiCheck")
-    dependsOn(":core-runtime:check")
-    dependsOn(":aot-runtime:check")
-    dependsOn(":updater-runtime:check")
-    dependsOn(":darkmode-detector:check")
-    dependsOn(":native-ssl:check")
-    dependsOn(":native-http:check")
-    dependsOn(":native-http-okhttp:check")
-    dependsOn(":native-http-ktor:check")
-    dependsOn(":decorated-window-core:check")
-    dependsOn(":decorated-window-tao:check")
-    dependsOn(":decorated-window-jbr:check")
-    dependsOn(":decorated-window-jni:check")
-    dependsOn(":decorated-window-jewel:check")
-    dependsOn(":decorated-window-material2:check")
-    dependsOn(":decorated-window-material3:check")
-    dependsOn(":graalvm-runtime:check")
-    dependsOn(":system-color:check")
-    dependsOn(":energy-manager:check")
-    dependsOn(":linux-hidpi:check")
-    dependsOn(":taskbar-progress:check")
-    dependsOn(":freedesktop-icons:check")
-    dependsOn(":notification-linux:check")
-    dependsOn(":notification-macos:check")
-    dependsOn(":launcher-linux:check")
-    dependsOn(":scheduler:check")
-    dependsOn(":fs-watcher:check")
+    // Every non-example subproject: compile + unit tests + detekt/ktlint + apiCheck
+    // (BCV wires apiCheck into each library module's `check`). Provider so the
+    // set of modules is resolved after projects are created and stays in sync
+    // with settings.gradle.kts (no hand-maintained allow-list).
+    dependsOn(
+        provider {
+            subprojects
+                // Skip the examples umbrella and every demo under it. The
+                // umbrella project has no `check` task; demos are opt-in
+                // (only nucleus-demo is wired below as a consumer smoke).
+                .filter { !it.path.startsWith(":examples") }
+                .filter { it.tasks.findByName("check") != null }
+                .map { it.tasks.named("check") }
+        },
+    )
+
+    // Flagship demo as a consumer smoke check (compile/test).
     dependsOn(":examples:nucleus-demo:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
