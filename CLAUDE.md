@@ -17,6 +17,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `system-color` - Reactive system accent color and high contrast detection via JNI
 - `energy-manager` - Energy efficiency & screen-awake APIs
 - `native-ssl` / `native-http` / `native-http-okhttp` / `native-http-ktor` - OS trust store integration
+- `native-proxy` - OS proxy configuration via JNI (Windows: WinHTTP/WPAD/PAC; macOS: SCDynamicStore/CFNetwork PAC; Linux: GSettings/KDE/env)
 - `linux-hidpi` - Native HiDPI scale detection on Linux
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
