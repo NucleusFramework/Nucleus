@@ -34,6 +34,10 @@ dependencies {
     // to jbr's) and tao for the no-AWT path.
     compileOnly(project(":decorated-window-jni"))
     compileOnly(project(":decorated-window-tao"))
+
+    testImplementation(libs.junit)
+    testImplementation(compose.desktop.currentOs)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {
@@ -45,6 +49,28 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
     }
+}
+
+/**
+ * Live process E2E for the system-theme bridge (needs a display / D-Bus on Linux).
+ * Not part of `check` — run explicitly: `./gradlew :nucleus-application:systemThemeE2E`
+ */
+tasks.register<JavaExec>("systemThemeE2E") {
+    group = "verification"
+    description =
+        "Boots a real Compose application under ProvideNucleusSystemTheme and " +
+            "asserts isSystemInDarkTheme() matches the native detector"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("dev.nucleusframework.application.NucleusApplicationSystemThemeE2EMainKt")
+    systemProperty(
+        "systemThemeE2E.report",
+        layout.buildDirectory
+            .file("reports/system-theme-e2e.report")
+            .get()
+            .asFile
+            .absolutePath,
+    )
 }
 
 mavenPublishing {
