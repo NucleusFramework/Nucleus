@@ -72,6 +72,7 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Logger
 import kotlin.concurrent.withLock
@@ -266,6 +267,26 @@ internal class TaoComposeSceneHostLinux(
     private var lastAppliedHeightPx: Int = -1
     private var lastAppliedScale: Float = Float.NaN
 
+    /**
+     * Wayland: size of the EGL buffer currently in use for painting.
+     * `wl_egl_window_resize` only takes effect on the next `eglSwapBuffers`.
+     * Used only when [useDrawableSizedPaint] is true (KWin): paint at this size
+     * and advance after present. Elsewhere (GNOME / main) paint at the window
+     * size so layout stays in sync with the configure.
+     */
+    private var drawableWidthPx: Int = 0
+    private var drawableHeightPx: Int = 0
+
+    /**
+     * KWin flashes if we paint at the window size into a still-old EGL FB
+     * (BOTTOM_LEFT). GNOME does not need that trade-off — keep master's
+     * window-sized paint there (and on every non-Plasma DE).
+     */
+    private val useDrawableSizedPaint: Boolean
+        get() =
+            attachedKind == 2 &&
+                LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
+
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -288,6 +309,25 @@ internal class TaoComposeSceneHostLinux(
     // clipped or have transparent margins, which is the same visual trade-off
     // macOS makes during live-resize.
     private var lastSceneSizeUpdateNs: Long = 0L
+
+    /**
+     * Interactive-resize burst (all Wayland DEs). While size is changing,
+     * drop [eglSwapInterval] to 0 and queue catch-up paints so the buffer
+     * from the pending `wl_egl_window_resize` is drawn without waiting on a
+     * frame callback. Restores interval 1 after [RESIZE_BURST_HOLD_NS] idle.
+     * Same visual path as before — no viewport stretch.
+     */
+    private var lastResizeEventNs: Long = 0L
+    private var resizeBurstActive: Boolean = false
+    private var appliedSwapInterval: Int = 1
+    private var pendingSwapInterval: Int? = null
+
+    /**
+     * Extra redraws after a size change so the buffer allocated by the next
+     * `eglSwapBuffers` is actually painted. Written on the event-loop thread
+     * ([onResized]), decremented on the swap thread after present.
+     */
+    private val postResizeCatchUpFrames = AtomicInteger(0)
     private val sceneSizeUpdateIntervalNs = 16_666_667L // 60fps
 
     private var lastPointerX: Float = 0f
@@ -577,6 +617,9 @@ internal class TaoComposeSceneHostLinux(
         lastAppliedWidthPx = -1
         lastAppliedHeightPx = -1
         lastAppliedScale = Float.NaN
+        // Attach creates the wl_egl_window at the current physical size.
+        drawableWidthPx = widthPx.coerceAtLeast(0)
+        drawableHeightPx = heightPx.coerceAtLeast(0)
     }
 
     /**
@@ -603,6 +646,8 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
+        drawableWidthPx = 0
+        drawableHeightPx = 0
         // Drop TextureView imports made on this context while it is still
         // current and alive; the composition survives the hide, so its leases
         // would otherwise hold Skia images on a destroyed context.
@@ -1050,6 +1095,21 @@ internal class TaoComposeSceneHostLinux(
         widthPx = widthPxNew
         heightPx = heightPxNew
 
+        // Enter / refresh the resize burst: drop vsync so the next buffer can
+        // land without waiting on a frame callback. Wayland only — X11 has no
+        // subsurface/geometry lag of this kind. All DEs (GNOME, KDE, …).
+        lastResizeEventNs = System.nanoTime()
+        if (attachedKind == 2 && !window.isPopup) {
+            if (!resizeBurstActive) {
+                resizeBurstActive = true
+                pendingSwapInterval = 0
+            }
+            // Two catch-up frames: (1) swap that allocates the new buffer,
+            // (2) paint into it. Refreshed on every motion so a continuous
+            // drag always has headroom after the last pixel.
+            postResizeCatchUpFrames.set(2)
+        }
+
         // Throttle scene.size updates to ~60fps so Compose can reuse its
         // layout cache between resize events. GTK fires an event for every
         // pixel of mouse movement; without throttling every frame is an
@@ -1068,6 +1128,27 @@ internal class TaoComposeSceneHostLinux(
             (heightPx / opaqueScale).coerceAtLeast(1),
         )
         requestRedrawCoalesced()
+    }
+
+    /**
+     * Applies a pending [pendingSwapInterval] while the EGL context is current.
+     * Ends the resize burst once the window has been stable for
+     * [RESIZE_BURST_HOLD_NS].
+     */
+    private fun updateResizeBurstSwapInterval() {
+        if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
+        if (resizeBurstActive &&
+            lastResizeEventNs > 0L &&
+            System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
+        ) {
+            resizeBurstActive = false
+            pendingSwapInterval = 1
+        }
+        val want = pendingSwapInterval ?: return
+        pendingSwapInterval = null
+        if (want == appliedSwapInterval) return
+        NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, want)
+        appliedSwapInterval = want
     }
 
     /**
@@ -1147,13 +1228,15 @@ internal class TaoComposeSceneHostLinux(
     private fun applyPendingNativeResize() {
         if (attachmentHandle == 0L) return
         if (widthPx <= 0 || heightPx <= 0) return
-        // Ensure scene size is caught up to the actual EGL surface size before
-        // rendering. The throttle in onResized may have skipped some updates.
-        val currentSize = IntSize(widthPx, heightPx)
-        if (scene?.size != currentSize) {
-            scene?.size = currentSize
-            updateWindowInfoSize()
-            lastSceneSizeUpdateNs = System.nanoTime()
+        // GNOME / main: scene tracks the window. KWin drawable path sets scene
+        // size from the paint size below (may lag the window by one present).
+        if (!useDrawableSizedPaint) {
+            val currentSize = IntSize(widthPx, heightPx)
+            if (scene?.size != currentSize) {
+                scene?.size = currentSize
+                updateWindowInfoSize()
+                lastSceneSizeUpdateNs = System.nanoTime()
+            }
         }
         if (widthPx == lastAppliedWidthPx &&
             heightPx == lastAppliedHeightPx &&
@@ -1162,24 +1245,50 @@ internal class TaoComposeSceneHostLinux(
             return
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        // Drop the cached Skia surface so the next render rebuilds it at the
-        // new size/scale. Closing here (rather than lazily in `onRedrawRequested`)
-        // keeps the lifetime tied to the GL context being current. A scale
-        // change with an unchanged pixel size (rare on Wayland, but possible)
-        // must also rebuild — otherwise we'd serve a surface bound to the old
-        // buffer scale.
-        if (widthPx != lastAppliedWidthPx ||
-            heightPx != lastAppliedHeightPx ||
-            scale != lastAppliedScale
-        ) {
+        if (!useDrawableSizedPaint) {
+            // Master behaviour: paint size follows the window immediately.
+            if (widthPx != lastAppliedWidthPx ||
+                heightPx != lastAppliedHeightPx ||
+                scale != lastAppliedScale
+            ) {
+                cachedSurface?.close()
+                cachedSurface = null
+                cachedRt?.close()
+                cachedRt = null
+            }
+            drawableWidthPx = widthPx
+            drawableHeightPx = heightPx
+        } else if (scale != lastAppliedScale) {
+            // KWin: keep drawable lagging on size-only changes; rebuild on scale.
             cachedSurface?.close()
             cachedSurface = null
             cachedRt?.close()
             cachedRt = null
+            drawableWidthPx = widthPx
+            drawableHeightPx = heightPx
         }
         lastAppliedWidthPx = widthPx
         lastAppliedHeightPx = heightPx
         lastAppliedScale = scale
+    }
+
+    /**
+     * KWin only: after a present, the pending `wl_egl_window_resize` is in
+     * effect — advance the paint size and re-arm a frame if still behind.
+     */
+    private fun onDrawablePresented() {
+        if (!useDrawableSizedPaint) return
+        if (lastAppliedWidthPx <= 0 || lastAppliedHeightPx <= 0) return
+        if (drawableWidthPx == lastAppliedWidthPx && drawableHeightPx == lastAppliedHeightPx) {
+            return
+        }
+        drawableWidthPx = lastAppliedWidthPx
+        drawableHeightPx = lastAppliedHeightPx
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+        requestRedrawCoalesced()
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1292,32 +1401,15 @@ internal class TaoComposeSceneHostLinux(
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
+        updateResizeBurstSwapInterval()
 
-        var surface = cachedSurface
-        if (surface == null) {
-            val rt =
-                BackendRenderTarget.makeGL(
-                    width = widthPx,
-                    height = heightPx,
-                    sampleCnt = 0,
-                    stencilBits = 8,
-                    fbId = 0,
-                    fbFormat = FramebufferFormat.GR_GL_RGBA8,
-                )
-            surface = Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.BOTTOM_LEFT,
-                colorFormat = SurfaceColorFormat.RGBA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: run {
-                rt.close()
-                NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
-                return
-            }
-            cachedRt = rt
-            cachedSurface = surface
+        val paintSize = resolvePaintSize()
+        if (sc.size != paintSize) {
+            sc.size = paintSize
+            lastSceneSizeUpdateNs = now
         }
+
+        val surface = ensurePaintSurface(ctx, paintSize.width, paintSize.height) ?: return
 
         // Clear to the resolved title-bar background (pushed by `TitleBar` via
         // [LocalRequestedClearColor]) so any Compose region without an explicit
@@ -1327,7 +1419,7 @@ internal class TaoComposeSceneHostLinux(
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        applyFrameDecoration(surface.canvas)
+        applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
@@ -1339,17 +1431,77 @@ internal class TaoComposeSceneHostLinux(
         // accompany a size change (maximize/restore/tile collapse the CSD
         // shadow margins).
         applyContentOffset()
+        drainPopupRenderers()
+    }
 
-        // Drain popup-layer renderers after the host context was released.
-        // Each layer binds its own private EGL context on this thread (the
-        // swap thread holds the *host* context on its own thread — EGL allows
-        // one current context per thread), paints, presents with swap
-        // interval 0 (non-blocking) and releases. Snapshot: rendering one
-        // layer can recompose and close a sibling.
-        if (popupRenderers.isNotEmpty()) {
-            val snapshot = popupRenderers.values.toList()
-            for (render in snapshot) render()
+    /**
+     * KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
+     * GNOME / others: paint at window size (master — no layout lag).
+     */
+    private fun resolvePaintSize(): IntSize {
+        val paintW =
+            if (useDrawableSizedPaint && drawableWidthPx > 0) drawableWidthPx else widthPx
+        val paintH =
+            if (useDrawableSizedPaint && drawableHeightPx > 0) drawableHeightPx else heightPx
+        return IntSize(paintW, paintH)
+    }
+
+    /**
+     * Rebuilds the Skia RT/surface when the paint size changed. Returns null if
+     * surface creation fails (EGL context already released by this call).
+     */
+    private fun ensurePaintSurface(
+        ctx: DirectContext,
+        paintW: Int,
+        paintH: Int,
+    ): Surface? {
+        val existing = cachedSurface
+        if (existing != null && existing.width == paintW && existing.height == paintH) {
+            return existing
         }
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+        val rt =
+            BackendRenderTarget.makeGL(
+                width = paintW,
+                height = paintH,
+                sampleCnt = 0,
+                stencilBits = 8,
+                fbId = 0,
+                fbFormat = FramebufferFormat.GR_GL_RGBA8,
+            )
+        val surface =
+            Surface.makeFromBackendRenderTarget(
+                context = ctx,
+                rt = rt,
+                origin = SurfaceOrigin.BOTTOM_LEFT,
+                colorFormat = SurfaceColorFormat.RGBA_8888,
+                colorSpace = ColorSpace.sRGB,
+            )
+        if (surface == null) {
+            rt.close()
+            NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+            return null
+        }
+        cachedRt = rt
+        cachedSurface = surface
+        return surface
+    }
+
+    /**
+     * Drain popup-layer renderers after the host context was released.
+     * Each layer binds its own private EGL context on this thread (the
+     * swap thread holds the *host* context on its own thread — EGL allows
+     * one current context per thread), paints, presents with swap
+     * interval 0 (non-blocking) and releases. Snapshot: rendering one
+     * layer can recompose and close a sibling.
+     */
+    private fun drainPopupRenderers() {
+        if (popupRenderers.isEmpty()) return
+        val snapshot = popupRenderers.values.toList()
+        for (render in snapshot) render()
     }
 
     /**
@@ -1359,7 +1511,11 @@ internal class TaoComposeSceneHostLinux(
      * pixels — dropped for maximized, fullscreen and tiled windows, which sit
      * flush against a screen edge and square off.
      */
-    private fun applyFrameDecoration(canvas: Canvas) {
+    private fun applyFrameDecoration(
+        canvas: Canvas,
+        surfaceW: Int = widthPx,
+        surfaceH: Int = heightPx,
+    ) {
         val isMaximized = window.isMaximized
         val isFullscreen = window.isFullscreen
         val isTiled = window.isTiled
@@ -1368,7 +1524,7 @@ internal class TaoComposeSceneHostLinux(
         // there look wrong — native CSD windows square off when tiled too.
         val roundCorners = cornerRadiusPx > 0 && !isMaximized && !isFullscreen && !isTiled
         if (roundCorners) {
-            // widthPx/heightPx are physical pixels and the canvas has no scale
+            // Coordinates are physical pixels and the canvas has no scale
             // transform, so scale the logical radius up to physical to keep the
             // corner curvature constant across DPI.
             val radiusPhysical = (cornerRadiusPx * scale).roundToInt().coerceAtLeast(1)
@@ -1376,10 +1532,10 @@ internal class TaoComposeSceneHostLinux(
                 canvas,
                 left = 0,
                 top = 0,
-                right = widthPx,
-                bottom = heightPx,
-                surfaceW = widthPx,
-                surfaceH = heightPx,
+                right = surfaceW,
+                bottom = surfaceH,
+                surfaceW = surfaceW,
+                surfaceH = surfaceH,
                 radius = radiusPhysical,
             )
         }
@@ -2039,6 +2195,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /** Keep swap-interval 0 briefly after the last pixel of resize motion. */
+        private const val RESIZE_BURST_HOLD_NS = 100_000_000L // 100 ms
+
         /**
          * How far outside the content (logical px) a pointer still counts as
          * the CSD shadow ring for resize hit-testing. Theme margins run
@@ -2182,7 +2341,24 @@ internal class TaoComposeSceneHostLinux(
                                     renderOwed = false
                                     owed
                                 }
-                            if (rearm) requestRedrawCoalesced()
+                            // KWin: drawable advances only after this present.
+                            if (useDrawableSizedPaint) {
+                                dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+                                    .dispatch(
+                                        EmptyCoroutineContext,
+                                        Runnable { onDrawablePresented() },
+                                    )
+                            }
+                            // Catch-up after size change: the buffer matching the
+                            // request only exists *after* this swap — paint it
+                            // without waiting for more motion (all Wayland DEs).
+                            val catchUp = postResizeCatchUpFrames.get() > 0
+                            if (catchUp) {
+                                postResizeCatchUpFrames.updateAndGet { n ->
+                                    (n - 1).coerceAtLeast(0)
+                                }
+                            }
+                            if (rearm || catchUp) requestRedrawCoalesced()
                         }
                     }
                 }
