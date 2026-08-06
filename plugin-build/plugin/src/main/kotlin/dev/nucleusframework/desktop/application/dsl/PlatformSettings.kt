@@ -236,6 +236,12 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(appx)
     }
 
+    val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)
+
+    fun portable(fn: Action<PortableSettings>) {
+        fn.execute(portable)
+    }
+
     val signing: WindowsSigningSettings = objects.newInstance(WindowsSigningSettings::class.java)
 
     fun signing(fn: Action<WindowsSigningSettings>) {

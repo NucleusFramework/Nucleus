@@ -121,6 +121,8 @@ nucleus.application {
         homepage = "https://github.com/KdroidFilter/NucleusDemo"
 
         // --- Compression ---
+        // Ultra enables DEB xz -9e + DMG LZMA post-processing. AppImage/portable should stay
+        // lighter (FUSE/squashfs cold start and portable self-extract) via format overrides below.
         compressionLevel = CompressionLevel.Ultra
 
         // --- Artifact naming ---
@@ -185,6 +187,8 @@ nucleus.application {
                 category = AppImageCategory.Utility
                 genericName = "Nucleus Demo"
                 synopsis = "Demo app using Nucleus"
+                // Override root Ultra: maximum squashfs compression makes AppImage cold starts very slow.
+                compressionLevel = CompressionLevel.Normal
             }
 
             // --- Snap (NEW) ---
@@ -271,6 +275,12 @@ nucleus.application {
                 multiLanguageInstaller = true // Default: false
                 // Languages: "en_US", "fr_FR", "de_DE", "es_ES", "ja_JP", "zh_CN", etc.
                 installerLanguages = listOf("en_US", "fr_FR")
+            }
+
+            // --- Portable EXE ---
+            // Override root Ultra so self-extract stays reasonable while NSIS/DEB keep max packing.
+            portable {
+                compressionLevel = CompressionLevel.Normal
             }
 
             // --- AppX/Windows Store (NEW) ---

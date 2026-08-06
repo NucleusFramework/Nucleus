@@ -24,6 +24,7 @@ import dev.nucleusframework.desktop.application.internal.electronbuilder.Electro
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderInvocation
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderToolManager
 import dev.nucleusframework.desktop.application.internal.electronbuilder.NodeJsDetector
+import dev.nucleusframework.desktop.application.internal.electronbuilder.resolveCompressionLevel
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
@@ -423,10 +424,15 @@ abstract class AbstractElectronBuilderPackageTask
             }
 
             // Both Maximum and Ultra map to electron-builder's "maximum"; warn for either.
-            if (targetFormat == TargetFormat.AppImage && distributions.compressionLevel?.id == "maximum") {
+            // Honor the AppImage-local override so Ultra globally + Normal on AppImage stays quiet.
+            val effectiveCompression =
+                resolveCompressionLevel(distributions, targetFormat)
+            if (targetFormat == TargetFormat.AppImage && effectiveCompression?.id == "maximum") {
                 logger.warn(
                     "AppImage with 'maximum' compression can cause extremely slow startup times (60s+) " +
-                        "due to squashfs/FUSE decompression overhead. Consider 'normal' or 'store' instead. " +
+                        "due to squashfs/FUSE decompression overhead. Prefer " +
+                        "linux { appImage { compressionLevel = CompressionLevel.Normal } } " +
+                        "(or Store), or lower the root compressionLevel. " +
                         "See https://github.com/electron-userland/electron-builder/issues/7483",
                 )
             }

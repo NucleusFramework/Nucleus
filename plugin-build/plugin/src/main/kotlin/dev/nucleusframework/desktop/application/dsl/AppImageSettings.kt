@@ -18,4 +18,14 @@ abstract class AppImageSettings {
 
     /** Additional desktop file entries (key=value) */
     var desktopEntries: Map<String, String> = emptyMap()
+
+    /**
+     * Archive compression for this AppImage only.
+     *
+     * Overrides the root [JvmApplicationDistributions.compressionLevel] when set.
+     * Prefer [CompressionLevel.Normal] or [CompressionLevel.Store]:
+     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] map to electron-builder
+     * `maximum` and can make cold starts very slow (squashfs/FUSE decompression).
+     */
+    var compressionLevel: CompressionLevel? = null
 }
