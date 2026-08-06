@@ -81,51 +81,69 @@ internal object PlatformInstaller {
         val currentAppImage =
             System.getenv("APPIMAGE")
                 ?: error("APPIMAGE environment variable not set — update is only supported from a packaged AppImage")
+        val destination = File(currentAppImage)
 
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch in a fully detached process\nnohup \"\$OLD_FILE\" > /dev/null 2>&1 &\n"
-            } else {
-                ""
-            }
+        // electron-updater pattern: unlink + replace while the running mount still holds the
+        // previous inode open. Avoids racing the FUSE unmount that follows process exit.
+        val replacedInPlace = replaceAppImageInPlace(newAppImage, destination)
 
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val tmpDir = System.getProperty("java.io.tmpdir")
+        val script = File(tmpDir, "nucleus-update.sh")
+        val logFile = File(tmpDir, "nucleus-update.log")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |set -e
-            |
-            |# Ignore SIGHUP to survive parent process exit
-            |trap '' HUP
-            |
-            |NEW_FILE="${newAppImage.absolutePath}"
-            |OLD_FILE="$currentAppImage"
-            |APP_PID=$pid
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |# Wait for the AppImage FUSE mount to fully clean up
-            |sleep 1
-            |
-            |# Replace the old AppImage with the new one
-            |mv -f "${'$'}NEW_FILE" "${'$'}OLD_FILE"
-            |chmod +x "${'$'}OLD_FILE"
-            |$relaunchCmd
-            |# Clean up this script
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildLinuxAppImageUpdateScript(
+                newFile = newAppImage.absolutePath,
+                oldFile = destination.absolutePath,
+                appPid = pid,
+                logFile = logFile.absolutePath,
+                restart = restart,
+                alreadyReplaced = replacedInPlace,
+            ),
         )
         script.setExecutable(true)
 
-        // Use setsid to start the script in a new session, fully detached
-        // from the current process tree
+        // New session, started from $HOME so a FUSE-mount CWD cannot poison the relaunch.
+        val home = File(System.getProperty("user.home") ?: tmpDir)
         ProcessBuilder("setsid", "bash", script.absolutePath)
+            .directory(home)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
+    }
+
+    /**
+     * Swaps [newAppImage] onto [destination] while this process is still running.
+     *
+     * Returns `true` when [destination] holds the new bytes (caller may leave [newAppImage]
+     * missing). Returns `false` when the swap could not be completed; the detached script
+     * will retry after this process exits.
+     */
+    internal fun replaceAppImageInPlace(
+        newAppImage: File,
+        destination: File,
+    ): Boolean {
+        if (!newAppImage.isFile) return false
+        return try {
+            // Unlink first so a busy destination (open as the loop/FUSE backend) does not block
+            // the subsequent rename the way a direct overwrite can on some kernels.
+            if (destination.exists() && !destination.delete() && destination.exists()) {
+                return false
+            }
+            val moved =
+                newAppImage.renameTo(destination) ||
+                    run {
+                        newAppImage.copyTo(destination, overwrite = true)
+                        newAppImage.delete()
+                        destination.isFile
+                    }
+            if (moved) {
+                // ownerOnly = false: match `chmod +x` so any user can relaunch the AppImage
+                destination.setExecutable(true, false)
+            }
+            moved && destination.isFile
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun installLinuxPackage(
