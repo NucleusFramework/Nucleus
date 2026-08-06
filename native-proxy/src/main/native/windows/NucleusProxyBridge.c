@@ -103,7 +103,36 @@ static WCHAR *java_to_wide(JNIEnv *env, jstring text) {
 
 /* ── Cached WinHTTP session ── */
 
-static PVOID volatile g_session = NULL;
+/*
+ * Lazy init uses InitOnceExecuteOnce (kernel32) rather than
+ * InterlockedCompareExchangePointer. The latter is not a freestanding
+ * intrinsic on ARM64 MSVC and pulls an unresolved `_Interlocked…` symbol
+ * under /NODEFAULTLIB.
+ */
+static INIT_ONCE g_session_once = INIT_ONCE_STATIC_INIT;
+static HINTERNET g_session = NULL;
+
+static BOOL CALLBACK init_proxy_session(
+    PINIT_ONCE once,
+    PVOID parameter,
+    PVOID *context) {
+    HINTERNET created;
+
+    (void)once;
+    (void)parameter;
+    (void)context;
+
+    created = WinHttpOpen(
+        L"Nucleus", WINHTTP_ACCESS_TYPE_NO_PROXY,
+        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (created == NULL) return FALSE;
+
+    WinHttpSetTimeouts(
+        created, RESOLVE_TIMEOUT_MS, CONNECT_TIMEOUT_MS,
+        SEND_TIMEOUT_MS, RECEIVE_TIMEOUT_MS);
+    g_session = created;
+    return TRUE;
+}
 
 /**
  * Returns the process-wide WinHTTP session used for PAC resolution, creating it
@@ -111,27 +140,8 @@ static PVOID volatile g_session = NULL;
  * itself go through a proxy to fetch the script.
  */
 static HINTERNET proxy_session(void) {
-    HINTERNET created;
-    PVOID previous;
-
-    PVOID existing = InterlockedCompareExchangePointer(&g_session, NULL, NULL);
-    if (existing != NULL) return (HINTERNET)existing;
-
-    created = WinHttpOpen(
-        L"Nucleus", WINHTTP_ACCESS_TYPE_NO_PROXY,
-        WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (created == NULL) return NULL;
-
-    WinHttpSetTimeouts(
-        created, RESOLVE_TIMEOUT_MS, CONNECT_TIMEOUT_MS,
-        SEND_TIMEOUT_MS, RECEIVE_TIMEOUT_MS);
-
-    previous = InterlockedCompareExchangePointer(&g_session, (PVOID)created, NULL);
-    if (previous != NULL) {
-        WinHttpCloseHandle(created);
-        return (HINTERNET)previous;
-    }
-    return created;
+    InitOnceExecuteOnce(&g_session_once, init_proxy_session, NULL, NULL);
+    return g_session;
 }
 
 /* ── Watched registry keys (same set as Chromium) ── */
@@ -159,25 +169,24 @@ static const WatchKey WATCH_KEYS[] = {
 
 /* ── Wake event, lets the JVM release a parked watcher thread ── */
 
-static PVOID volatile g_wake_event = NULL;
+static INIT_ONCE g_wake_once = INIT_ONCE_STATIC_INIT;
+static HANDLE g_wake_event = NULL;
+
+static BOOL CALLBACK init_wake_event(
+    PINIT_ONCE once,
+    PVOID parameter,
+    PVOID *context) {
+    (void)once;
+    (void)parameter;
+    (void)context;
+    /* Manual reset: the waiter clears it once it has observed the signal. */
+    g_wake_event = CreateEventW(NULL, TRUE, FALSE, NULL);
+    return g_wake_event != NULL;
+}
 
 static HANDLE wake_event(void) {
-    HANDLE created;
-    PVOID previous;
-
-    PVOID existing = InterlockedCompareExchangePointer(&g_wake_event, NULL, NULL);
-    if (existing != NULL) return (HANDLE)existing;
-
-    /* Manual reset: the waiter clears it once it has observed the signal. */
-    created = CreateEventW(NULL, TRUE, FALSE, NULL);
-    if (created == NULL) return NULL;
-
-    previous = InterlockedCompareExchangePointer(&g_wake_event, (PVOID)created, NULL);
-    if (previous != NULL) {
-        CloseHandle(created);
-        return (HANDLE)previous;
-    }
-    return created;
+    InitOnceExecuteOnce(&g_wake_once, init_wake_event, NULL, NULL);
+    return g_wake_event;
 }
 
 BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
