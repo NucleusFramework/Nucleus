@@ -284,6 +284,70 @@ public object TaoHeadfulTestSuiteMain {
                     open.close()
                 }
             },
+            // macOS dialog-parent e2e (real AppKit sheet, not a pointer smoke
+            // check): resolve the live NSWindow*, prove it is distinct from the
+            // Compose NSView, then parent a real NSOpenPanel via
+            // beginSheetModalForWindow: and cancel it. Mirrors the Linux portal
+            // FileChooser round-trips. FileKit's JVM picker still uses
+            // application-modal runModal() and has no .macos factory yet —
+            // this proves the Nucleus side of the sheet-parent contract.
+            TaoWindowTestCase(
+                name = "nsWindowHandle parents a real NSOpenPanel sheet",
+                timeoutMillis = 45_000L,
+                skip = { if (!isMac) "macOS only" else null },
+            ) {
+                awaitUntil("window mapped") { bounds() != null }
+                settle()
+
+                val nsView = window.nativeHandle
+                check(nsView != 0L) { "nativeHandle (NSView) must be non-zero on a mapped window" }
+
+                val nsWindow =
+                    checkNotNull(window.nsWindowHandle) {
+                        "nsWindowHandle null on a realized macOS window"
+                    }
+                check(nsWindow != 0L) { "nsWindowHandle must not be zero" }
+                // NSView* and NSWindow* are distinct AppKit objects.
+                check(nsWindow != nsView) {
+                    "nsWindowHandle must not equal nativeHandle (NSView); got both=$nsView"
+                }
+                // Stable while the window is alive (same pointer on re-read).
+                check(window.nsWindowHandle == nsWindow) {
+                    "nsWindowHandle must be stable across reads"
+                }
+                // Linux portal APIs must stay null on macOS.
+                check(window.x11WindowId == null)
+                check(window.x11PortalParent == null)
+                check(window.exportXdgForeignHandle(timeoutMs = 200L) == null)
+                check(window.xdgPortalParent(timeoutMs = 200L) == null)
+
+                // Negative: an NSView pointer is not a sheet parent — AppKit
+                // must not find it among NSApp.windows as an NSWindow.
+                val wrongParent =
+                    MacOsSheetParentProbe.probe(nsWindow = nsView, nsView = 0L)
+                check(wrongParent == MacOsSheetParentProbe.WINDOW_NOT_FOUND) {
+                    "NSView must not parent a sheet; got ${MacOsSheetParentProbe.describe(wrongParent)}"
+                }
+
+                // Positive: real beginSheetModalForWindow: + cancel.
+                val code = MacOsSheetParentProbe.probe(nsWindow = nsWindow, nsView = nsView)
+                check(code == MacOsSheetParentProbe.OK) {
+                    "sheet parent probe failed: ${MacOsSheetParentProbe.describe(code)} " +
+                        "(nsWindow=0x${nsWindow.toString(16)}, nsView=0x${nsView.toString(16)})"
+                }
+
+                // Window must still be alive after the nested runloop / sheet.
+                settle()
+                check(bounds() != null) { "window must survive sheet present + cancel" }
+                check(window.nsWindowHandle == nsWindow) {
+                    "nsWindowHandle must remain stable after sheet e2e"
+                }
+
+                println(
+                    "macOS sheet parent e2e: nsWindow=0x${nsWindow.toString(16)} " +
+                        "nsView=0x${nsView.toString(16)} probe=OK",
+                )
+            },
         ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
@@ -420,6 +484,11 @@ public object TaoHeadfulTestSuiteMain {
         }
         exitProcess(if (failures > 0) 1 else 0)
     }
+
+    private val isMac: Boolean =
+        System.getProperty("os.name", "").lowercase().let { os ->
+            os.contains("mac") || os.contains("darwin")
+        }
 
     private val isLinux: Boolean =
         System.getProperty("os.name", "").lowercase().let { os ->

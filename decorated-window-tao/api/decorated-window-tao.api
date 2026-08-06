@@ -678,6 +678,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun focus ()V
 	public final fun getHandle ()J
 	public final fun getNativeHandle ()J
+	public final fun getNsWindowHandle ()Ljava/lang/Long;
 	public final fun getScaleFactor ()F
 	public final fun getX11PortalParent ()Ljava/lang/String;
 	public final fun getX11WindowId ()Ljava/lang/Long;
