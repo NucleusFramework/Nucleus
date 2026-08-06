@@ -1,9 +1,9 @@
 package dev.nucleusframework.nativeproxy
 
 import dev.nucleusframework.nativeproxy.linux.LinuxProxyBridge
+import dev.nucleusframework.nativeproxy.macos.MacOsProxyBridge
 import dev.nucleusframework.nativeproxy.windows.WindowsProxyBridge
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
@@ -16,16 +16,6 @@ class NativeProxyTest {
     private val isWindows = os.contains("win")
     private val isLinux = os.contains("linux")
     private val isMac = os.contains("mac")
-
-    @Test
-    fun `unsupported platforms report a direct configuration`() {
-        assumeTrue("Test requires macOS (or another unsupported host)", isMac)
-
-        assertFalse(NativeProxy.isSupported)
-        assertEquals(SystemProxySettings.DIRECT, NativeProxy.settings())
-        assertTrue(NativeProxy.proxiesFor(URI("https://example.com")).isEmpty())
-        assertFalse(NativeProxy.install())
-    }
 
     @Test
     fun `native library loads on Windows`() {
@@ -74,6 +64,41 @@ class NativeProxyTest {
         } finally {
             NativeProxy.uninstall()
             // Best-effort restore if uninstall did not.
+            if (java.net.ProxySelector.getDefault() is NativeProxySelector) {
+                java.net.ProxySelector.setDefault(previous)
+            }
+        }
+    }
+
+    @Test
+    fun `native library loads on macOS`() {
+        assumeTrue("Test requires macOS", isMac)
+
+        assertTrue("Native proxy bridge should be loaded", MacOsProxyBridge.isLoaded)
+    }
+
+    @Test
+    fun `macOS is supported and the configuration is readable`() {
+        assumeTrue("Test requires macOS", isMac)
+        assumeTrue("Native library not loaded", MacOsProxyBridge.isLoaded)
+
+        assertTrue(NativeProxy.isSupported)
+        val settings = NativeProxy.settings()
+        assertNotNull(settings)
+        assertEquals(settings.isDirect, !settings.usesPacScript && settings.rules.isEmpty)
+    }
+
+    @Test
+    fun `install returns true on macOS`() {
+        assumeTrue("Test requires macOS", isMac)
+        assumeTrue("Native library not loaded", MacOsProxyBridge.isLoaded)
+
+        val previous = java.net.ProxySelector.getDefault()
+        try {
+            assertTrue(NativeProxy.install())
+            assertTrue(java.net.ProxySelector.getDefault() is NativeProxySelector)
+        } finally {
+            NativeProxy.uninstall()
             if (java.net.ProxySelector.getDefault() is NativeProxySelector) {
                 java.net.ProxySelector.setDefault(previous)
             }

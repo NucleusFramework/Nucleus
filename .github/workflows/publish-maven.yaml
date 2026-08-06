@@ -50,6 +50,8 @@ jobs:
             "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
             "native-proxy/src/main/resources/nucleus/native/win32-x64/nucleus_proxy.dll"
             "native-proxy/src/main/resources/nucleus/native/win32-aarch64/nucleus_proxy.dll"
+            "native-proxy/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_proxy.dylib"
+            "native-proxy/src/main/resources/nucleus/native/darwin-x64/libnucleus_proxy.dylib"
             "decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib"
             "decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib"
             "decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib"

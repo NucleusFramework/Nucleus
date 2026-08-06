@@ -215,6 +215,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash native-ssl/src/main/native/macos/build.sh
 
+      - name: Build native-proxy macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash native-proxy/src/main/native/macos/build.sh
+
       - name: Build decorated-window-jbr macOS dylibs
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash decorated-window-jbr/src/main/native/macos/build.sh
@@ -295,6 +299,7 @@ jobs:
           FILES=(
             "darkmode-detector/libnucleus_darkmode.dylib"
             "native-ssl/libnucleus_ssl.dylib"
+            "native-proxy/libnucleus_proxy.dylib"
             "decorated-window-jbr/libnucleus_macos.dylib"
             "decorated-window-jni/libnucleus_macos_jni.dylib"
             "system-color/libnucleus_systemcolor.dylib"
