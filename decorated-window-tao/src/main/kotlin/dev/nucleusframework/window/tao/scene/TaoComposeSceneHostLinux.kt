@@ -71,6 +71,7 @@ import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
+import java.util.concurrent.AtomicInteger
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Logger
@@ -326,8 +327,7 @@ internal class TaoComposeSceneHostLinux(
      * `eglSwapBuffers` is actually painted. Written on the event-loop thread
      * ([onResized]), decremented on the swap thread after present.
      */
-    private val postResizeCatchUpFrames =
-        java.util.concurrent.atomic.AtomicInteger(0)
+    private val postResizeCatchUpFrames = AtomicInteger(0)
     private val sceneSizeUpdateIntervalNs = 16_666_667L // 60fps
 
     private var lastPointerX: Float = 0f
@@ -1403,50 +1403,13 @@ internal class TaoComposeSceneHostLinux(
         applyPendingNativeResize()
         updateResizeBurstSwapInterval()
 
-        // KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
-        // GNOME / others: paint at window size (master — no layout lag).
-        val paintW =
-            if (useDrawableSizedPaint && drawableWidthPx > 0) drawableWidthPx else widthPx
-        val paintH =
-            if (useDrawableSizedPaint && drawableHeightPx > 0) drawableHeightPx else heightPx
-        val paintSize = IntSize(paintW, paintH)
+        val paintSize = resolvePaintSize()
         if (sc.size != paintSize) {
             sc.size = paintSize
             lastSceneSizeUpdateNs = now
         }
 
-        var surface = cachedSurface
-        if (surface == null ||
-            surface.width != paintW ||
-            surface.height != paintH
-        ) {
-            cachedSurface?.close()
-            cachedSurface = null
-            cachedRt?.close()
-            cachedRt = null
-            val rt =
-                BackendRenderTarget.makeGL(
-                    width = paintW,
-                    height = paintH,
-                    sampleCnt = 0,
-                    stencilBits = 8,
-                    fbId = 0,
-                    fbFormat = FramebufferFormat.GR_GL_RGBA8,
-                )
-            surface = Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.BOTTOM_LEFT,
-                colorFormat = SurfaceColorFormat.RGBA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: run {
-                rt.close()
-                NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
-                return
-            }
-            cachedRt = rt
-            cachedSurface = surface
-        }
+        val surface = ensurePaintSurface(ctx, paintSize.width, paintSize.height) ?: return
 
         // Clear to the resolved title-bar background (pushed by `TitleBar` via
         // [LocalRequestedClearColor]) so any Compose region without an explicit
@@ -1456,7 +1419,7 @@ internal class TaoComposeSceneHostLinux(
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         sc.render(surface.canvas.asComposeCanvas(), now)
-        applyFrameDecoration(surface.canvas, paintW, paintH)
+        applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
@@ -1468,17 +1431,77 @@ internal class TaoComposeSceneHostLinux(
         // accompany a size change (maximize/restore/tile collapse the CSD
         // shadow margins).
         applyContentOffset()
+        drainPopupRenderers()
+    }
 
-        // Drain popup-layer renderers after the host context was released.
-        // Each layer binds its own private EGL context on this thread (the
-        // swap thread holds the *host* context on its own thread — EGL allows
-        // one current context per thread), paints, presents with swap
-        // interval 0 (non-blocking) and releases. Snapshot: rendering one
-        // layer can recompose and close a sibling.
-        if (popupRenderers.isNotEmpty()) {
-            val snapshot = popupRenderers.values.toList()
-            for (render in snapshot) render()
+    /**
+     * KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
+     * GNOME / others: paint at window size (master — no layout lag).
+     */
+    private fun resolvePaintSize(): IntSize {
+        val paintW =
+            if (useDrawableSizedPaint && drawableWidthPx > 0) drawableWidthPx else widthPx
+        val paintH =
+            if (useDrawableSizedPaint && drawableHeightPx > 0) drawableHeightPx else heightPx
+        return IntSize(paintW, paintH)
+    }
+
+    /**
+     * Rebuilds the Skia RT/surface when the paint size changed. Returns null if
+     * surface creation fails (EGL context already released by this call).
+     */
+    private fun ensurePaintSurface(
+        ctx: DirectContext,
+        paintW: Int,
+        paintH: Int,
+    ): Surface? {
+        val existing = cachedSurface
+        if (existing != null && existing.width == paintW && existing.height == paintH) {
+            return existing
         }
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+        val rt =
+            BackendRenderTarget.makeGL(
+                width = paintW,
+                height = paintH,
+                sampleCnt = 0,
+                stencilBits = 8,
+                fbId = 0,
+                fbFormat = FramebufferFormat.GR_GL_RGBA8,
+            )
+        val surface =
+            Surface.makeFromBackendRenderTarget(
+                context = ctx,
+                rt = rt,
+                origin = SurfaceOrigin.BOTTOM_LEFT,
+                colorFormat = SurfaceColorFormat.RGBA_8888,
+                colorSpace = ColorSpace.sRGB,
+            )
+        if (surface == null) {
+            rt.close()
+            NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
+            return null
+        }
+        cachedRt = rt
+        cachedSurface = surface
+        return surface
+    }
+
+    /**
+     * Drain popup-layer renderers after the host context was released.
+     * Each layer binds its own private EGL context on this thread (the
+     * swap thread holds the *host* context on its own thread — EGL allows
+     * one current context per thread), paints, presents with swap
+     * interval 0 (non-blocking) and releases. Snapshot: rendering one
+     * layer can recompose and close a sibling.
+     */
+    private fun drainPopupRenderers() {
+        if (popupRenderers.isEmpty()) return
+        val snapshot = popupRenderers.values.toList()
+        for (render in snapshot) render()
     }
 
     /**
