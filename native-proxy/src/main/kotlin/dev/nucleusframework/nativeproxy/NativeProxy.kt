@@ -20,10 +20,10 @@ private const val MAX_PAC_CACHE_ENTRIES = 256
  * NativeProxy.addChangeListener { println("proxy configuration changed: $it") }
  * ```
  *
- * Windows (WinHTTP/WPAD/PAC + Internet Settings registry watching) and Linux
- * (GSettings / KDE kioslaverc / env vars) are implemented; macOS reports
- * [isSupported] `false` and every call degrades to a direct configuration.
- * Linux does not evaluate PAC scripts yet — only static rules and bypass lists.
+ * Windows (WinHTTP/WPAD/PAC + Internet Settings registry watching), macOS
+ * (`SCDynamicStore` + PAC via `CFNetworkExecuteProxyAutoConfigurationURL`) and
+ * Linux (GSettings / KDE kioslaverc / env vars) are implemented. Linux does not
+ * evaluate PAC scripts yet — only static rules and bypass lists.
  */
 object NativeProxy {
     private val provider = SystemProxyProvider.forCurrentPlatform()

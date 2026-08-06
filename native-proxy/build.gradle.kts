@@ -42,6 +42,19 @@ val buildNativeWindows by tasks.registering(Exec::class) {
     commandLine("cmd", "/c", File(nativeDir, "build.bat").absolutePath)
 }
 
+val buildNativeMacOs by tasks.registering(Exec::class) {
+    description = "Compiles the ObjC JNI bridge into macOS dylibs (arm64 + x86_64)"
+    group = "build"
+    val nativeDir = file("src/main/native/macos")
+    val outputDir = file("src/main/resources/nucleus/native")
+    val checkFile = File(outputDir, "darwin-aarch64/libnucleus_proxy.dylib")
+    onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
+    inputs.dir(nativeDir)
+    outputs.dir(outputDir)
+    workingDir(nativeDir)
+    commandLine("bash", File(nativeDir, "build.sh").absolutePath)
+}
+
 val buildNativeLinux by tasks.registering(Exec::class) {
     description = "Compiles the C JNI bridge into a Linux shared library"
     group = "build"
@@ -57,12 +70,12 @@ val buildNativeLinux by tasks.registering(Exec::class) {
 }
 
 tasks.processResources {
-    dependsOn(buildNativeWindows, buildNativeLinux)
+    dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
 }
 
 tasks.configureEach {
     if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows, buildNativeLinux)
+        dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
     }
 }
 
@@ -73,7 +86,8 @@ mavenPublishing {
         name.set("Nucleus Native Proxy")
         description.set(
             "OS proxy configuration integration (WinHTTP/WPAD/PAC on Windows; " +
-                "GSettings/KDE/env on Linux) for JVM desktop applications",
+                "SCDynamicStore/CFNetwork PAC on macOS; GSettings/KDE/env on Linux) " +
+                "for JVM desktop applications",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")
 

@@ -3,12 +3,11 @@ package dev.nucleusframework.nativeproxy
 import java.net.URI
 
 /**
- * No-op backend used on macOS (and unknown platforms).
+ * No-op backend used on unknown platforms.
  *
  * Reports an unsupported platform and a direct configuration, so
  * [NativeProxySelector] transparently delegates to the JDK default selector
- * (which already honours `http.proxyHost` and, on macOS, the
- * `java.net.useSystemProxies` bridge).
+ * (which already honours `http.proxyHost` / `https.proxyHost`).
  */
 internal object NoopSystemProxyProvider : SystemProxyProvider {
     override val isSupported: Boolean = false
