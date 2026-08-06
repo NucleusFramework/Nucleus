@@ -29,8 +29,17 @@ class MacOsProxySmokeTest {
         val httpEnabled = text.contains("HTTPEnable : 1")
         assumeTrue("No HTTP proxy configured on this Mac", httpEnabled)
 
-        val host = Regex("HTTPProxy : (\\S+)").find(text)?.groupValues?.get(1)
-        val port = Regex("HTTPPort : (\\d+)").find(text)?.groupValues?.get(1)?.toInt()
+        val host =
+            Regex("HTTPProxy : (\\S+)")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+        val port =
+            Regex("HTTPPort : (\\d+)")
+                .find(text)
+                ?.groupValues
+                ?.get(1)
+                ?.toInt()
         check(host != null && port != null)
 
         val settings = NativeProxy.refresh()
