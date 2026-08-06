@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.XdgPortalParent
 import dev.nucleusframework.window.tao.taoApplication
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -146,16 +147,10 @@ public object TaoHeadfulTestSuiteMain {
                     if (!isLinux) {
                         "Linux only"
                     } else {
-                        val backend = System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull()
-                        val forcedX11 =
-                            backend == "x11" ||
-                                System
-                                    .getenv("NUCLEUS_TAO_LINUX_RENDERER")
-                                    .orEmpty()
-                                    .equals("x11", ignoreCase = true)
-                        val wayland = System.getenv("WAYLAND_DISPLAY") != null && !forcedX11
                         when {
-                            !wayland -> "requires native Wayland (WAYLAND_DISPLAY)"
+                            forcedX11Backend -> "Wayland-only (forced X11 backend)"
+                            System.getenv("WAYLAND_DISPLAY") == null ->
+                                "requires native Wayland (WAYLAND_DISPLAY)"
                             !XdgPortalFileChooser.gdbusAvailable() -> "gdbus not on PATH"
                             !XdgPortalFileChooser.portalAvailable() ->
                                 "xdg-desktop-portal FileChooser unavailable"
@@ -166,24 +161,28 @@ public object TaoHeadfulTestSuiteMain {
             ) {
                 awaitUntil("window mapped") { bounds() != null }
                 settle()
-                // Export on the Tao main thread (nested GLib iteration is OK).
-                val export =
-                    checkNotNull(window.exportXdgForeignHandle(timeoutMs = 8_000L)) {
-                        "exportXdgForeignHandle returned null on a realized Wayland window"
+                val parent =
+                    checkNotNull(window.xdgPortalParent(timeoutMs = 8_000L)) {
+                        "xdgPortalParent returned null on a realized Wayland window"
                     }
+                check(parent is XdgPortalParent.Wayland) {
+                    "expected Wayland portal parent, got $parent"
+                }
                 try {
+                    val export = parent.export
                     check(export.handle.isNotEmpty()) { "empty xdg_foreign handle" }
                     check('\u0000' !in export.handle) { "handle contains NUL" }
                     check(!export.handle.startsWith("wayland:")) {
                         "handle must be unprefixed; got ${export.handle.take(32)}"
                     }
-                    check(export.portalParent == "wayland:${export.handle}")
+                    check(parent.portalParent == "wayland:${export.handle}")
+                    check(window.x11WindowId == null) { "XID must be null on native Wayland" }
+                    check(window.x11PortalParent == null)
 
-                    // Portal IPC is blocking; park it off the event loop.
                     val open =
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             XdgPortalFileChooser.openFile(
-                                parentWindow = export.portalParent,
+                                parentWindow = parent.portalParent,
                                 title = "Nucleus xdg_foreign e2e",
                             )
                         }
@@ -192,14 +191,12 @@ public object TaoHeadfulTestSuiteMain {
                     }
                     println(
                         "xdg_foreign e2e: handle=${export.handle.take(12)}… " +
-                            "portalParent=${export.portalParent.take(24)}… " +
+                            "portalParent=${parent.portalParent.take(24)}… " +
                             "request=${open.requestPath}",
                     )
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         open.close()
                     }
-                    // Second export while the first is still live must still
-                    // yield a usable token (GDK reuses the active export).
                     val again =
                         checkNotNull(window.exportXdgForeignHandle(timeoutMs = 5_000L)) {
                             "re-export while live failed"
@@ -207,8 +204,84 @@ public object TaoHeadfulTestSuiteMain {
                     check(again.handle.isNotEmpty())
                     again.close()
                 } finally {
-                    export.close()
-                    check(export.isClosed)
+                    parent.close()
+                    check(parent.export.isClosed)
+                }
+            },
+            // X11 / XWayland e2e: resolve the live XID and parent a real portal
+            // FileChooser with `x11:<hex>`. Run the suite with
+            // NUCLEUS_TAO_LINUX_RENDERER=x11 (or GDK_BACKEND=x11) on a Wayland
+            // host to force XWayland; also runs on native X11 sessions.
+            TaoWindowTestCase(
+                name = "x11 XID parents a real XDG portal FileChooser",
+                timeoutMillis = 45_000L,
+                skip = {
+                    if (!isLinux) {
+                        "Linux only"
+                    } else {
+                        when {
+                            !isX11Backend ->
+                                "requires X11/XWayland (set NUCLEUS_TAO_LINUX_RENDERER=x11)"
+                            !XdgPortalFileChooser.gdbusAvailable() -> "gdbus not on PATH"
+                            !XdgPortalFileChooser.portalAvailable() ->
+                                "xdg-desktop-portal FileChooser unavailable"
+                            else -> null
+                        }
+                    }
+                },
+            ) {
+                awaitUntil("window mapped") { bounds() != null }
+                settle()
+
+                val xid =
+                    checkNotNull(window.x11WindowId) {
+                        "x11WindowId null under X11 backend " +
+                            "(GDK_BACKEND=${System.getenv("GDK_BACKEND")}, " +
+                            "NUCLEUS_TAO_LINUX_RENDERER=${System.getenv("NUCLEUS_TAO_LINUX_RENDERER")})"
+                    }
+                check(xid in 1L..0xffff_ffffL) { "XID out of range: $xid" }
+
+                val portalFromProp =
+                    checkNotNull(window.x11PortalParent) { "x11PortalParent null while XID is set" }
+                check(portalFromProp == "x11:${xid.toString(16)}") {
+                    "x11PortalParent mismatch: $portalFromProp vs xid=$xid"
+                }
+                // FileKit canonical form: lowercase bare hex, no 0x prefix.
+                check(portalFromProp == portalFromProp.lowercase()) {
+                    "portal parent must be lowercase: $portalFromProp"
+                }
+                check(!portalFromProp.contains("0x")) { "unexpected 0x in $portalFromProp" }
+
+                val parent =
+                    checkNotNull(window.xdgPortalParent()) {
+                        "xdgPortalParent returned null under X11"
+                    }
+                check(parent is XdgPortalParent.X11) {
+                    "expected X11 portal parent, got $parent"
+                }
+                check(parent.xid == xid)
+                check(parent.portalParent == portalFromProp)
+                // Wayland export must not succeed on the X11 backend.
+                check(window.exportXdgForeignHandle(timeoutMs = 500L) == null) {
+                    "exportXdgForeignHandle must be null on X11"
+                }
+
+                val open =
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        XdgPortalFileChooser.openFile(
+                            parentWindow = parent.portalParent,
+                            title = "Nucleus x11 portal e2e",
+                        )
+                    }
+                check(open.requestPath.startsWith("/org/freedesktop/portal/desktop/request/")) {
+                    "unexpected request path: ${open.requestPath}"
+                }
+                println(
+                    "x11 portal e2e: xid=$xid (0x${xid.toString(16)}) " +
+                        "portalParent=$portalFromProp request=${open.requestPath}",
+                )
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    open.close()
                 }
             },
         ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
@@ -351,6 +424,30 @@ public object TaoHeadfulTestSuiteMain {
     private val isLinux: Boolean =
         System.getProperty("os.name", "").lowercase().let { os ->
             !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
+        }
+
+    /**
+     * True when the process was launched with an X11-forcing env var. The native
+     * loop also setenvs `GDK_BACKEND=x11` from `NUCLEUS_TAO_LINUX_RENDERER`, but
+     * that is too late for the JVM's env snapshot — honor both signals here.
+     */
+    private val forcedX11Backend: Boolean
+        get() {
+            val backend = System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull()
+            return backend == "x11" ||
+                System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
+        }
+
+    /**
+     * X11 session or forced XWayland. Native Wayland (no force) is false even
+     * when `DISPLAY` is set for XWayland compatibility.
+     */
+    private val isX11Backend: Boolean
+        get() {
+            if (forcedX11Backend) return true
+            // Pure X11 desktop: DISPLAY set, no WAYLAND_DISPLAY.
+            return !System.getenv("DISPLAY").isNullOrEmpty() &&
+                System.getenv("WAYLAND_DISPLAY").isNullOrEmpty()
         }
 
     private const val WINDOW_PUBLISH_TIMEOUT_MILLIS = 15_000L

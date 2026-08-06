@@ -679,6 +679,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun getHandle ()J
 	public final fun getNativeHandle ()J
 	public final fun getScaleFactor ()F
+	public final fun getX11PortalParent ()Ljava/lang/String;
 	public final fun getX11WindowId ()Ljava/lang/Long;
 	public final fun hide ()V
 	public final fun isFullscreen ()Z
@@ -724,6 +725,8 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun setResizable (Z)V
 	public final fun setTitle (Ljava/lang/String;)V
 	public final fun show ()V
+	public final fun xdgPortalParent (J)Ldev/nucleusframework/window/tao/XdgPortalParent;
+	public static synthetic fun xdgPortalParent$default (Ldev/nucleusframework/window/tao/TaoWindow;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/XdgPortalParent;
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TaoWindow$KeyEventListener {
@@ -772,6 +775,35 @@ public final class dev/nucleusframework/window/tao/XdgForeignExport : java/lang/
 	public final fun getHandle ()Ljava/lang/String;
 	public final fun getPortalParent ()Ljava/lang/String;
 	public final fun isClosed ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/window/tao/XdgPortalParent {
+	public static final field $stable I
+	public static final field X11_XID_MAX J
+	public abstract fun getPortalParent ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/XdgPortalParent$Wayland : dev/nucleusframework/window/tao/XdgPortalParent, java/lang/AutoCloseable {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/window/tao/XdgForeignExport;)V
+	public fun close ()V
+	public final fun getExport ()Ldev/nucleusframework/window/tao/XdgForeignExport;
+	public final fun getHandle ()Ljava/lang/String;
+	public fun getPortalParent ()Ljava/lang/String;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/XdgPortalParent$X11 : dev/nucleusframework/window/tao/XdgPortalParent {
+	public static final field $stable I
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/nucleusframework/window/tao/XdgPortalParent$X11;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/tao/XdgPortalParent$X11;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/XdgPortalParent$X11;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getPortalParent ()Ljava/lang/String;
+	public final fun getXid ()J
+	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
