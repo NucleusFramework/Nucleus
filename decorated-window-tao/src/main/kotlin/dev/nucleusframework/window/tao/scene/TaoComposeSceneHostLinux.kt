@@ -286,13 +286,6 @@ internal class TaoComposeSceneHostLinux(
             attachedKind == 2 &&
                 LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
-    /**
-     * Last eglSwapInterval. Dropped to 0 for the whole interactive resize/move
-     * grab (and while the paint size still lags the window on KWin) so buffer
-     * catch-up is not vsync-gated. Same on GNOME and KDE; restored to 1 at rest.
-     */
-    private var appliedSwapInterval: Int = 1
-
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -315,6 +308,26 @@ internal class TaoComposeSceneHostLinux(
     // clipped or have transparent margins, which is the same visual trade-off
     // macOS makes during live-resize.
     private var lastSceneSizeUpdateNs: Long = 0L
+
+    /**
+     * Interactive-resize burst (all Wayland DEs). While size is changing,
+     * drop [eglSwapInterval] to 0 and queue catch-up paints so the buffer
+     * from the pending `wl_egl_window_resize` is drawn without waiting on a
+     * frame callback. Restores interval 1 after [RESIZE_BURST_HOLD_NS] idle.
+     * Same visual path as before — no viewport stretch.
+     */
+    private var lastResizeEventNs: Long = 0L
+    private var resizeBurstActive: Boolean = false
+    private var appliedSwapInterval: Int = 1
+    private var pendingSwapInterval: Int? = null
+
+    /**
+     * Extra redraws after a size change so the buffer allocated by the next
+     * `eglSwapBuffers` is actually painted. Written on the event-loop thread
+     * ([onResized]), decremented on the swap thread after present.
+     */
+    private val postResizeCatchUpFrames =
+        java.util.concurrent.atomic.AtomicInteger(0)
     private val sceneSizeUpdateIntervalNs = 16_666_667L // 60fps
 
     private var lastPointerX: Float = 0f
@@ -1082,6 +1095,21 @@ internal class TaoComposeSceneHostLinux(
         widthPx = widthPxNew
         heightPx = heightPxNew
 
+        // Enter / refresh the resize burst: drop vsync so the next buffer can
+        // land without waiting on a frame callback. Wayland only — X11 has no
+        // subsurface/geometry lag of this kind. All DEs (GNOME, KDE, …).
+        lastResizeEventNs = System.nanoTime()
+        if (attachedKind == 2 && !window.isPopup) {
+            if (!resizeBurstActive) {
+                resizeBurstActive = true
+                pendingSwapInterval = 0
+            }
+            // Two catch-up frames: (1) swap that allocates the new buffer,
+            // (2) paint into it. Refreshed on every motion so a continuous
+            // drag always has headroom after the last pixel.
+            postResizeCatchUpFrames.set(2)
+        }
+
         // Throttle scene.size updates to ~60fps so Compose can reuse its
         // layout cache between resize events. GTK fires an event for every
         // pixel of mouse movement; without throttling every frame is an
@@ -1100,6 +1128,27 @@ internal class TaoComposeSceneHostLinux(
             (heightPx / opaqueScale).coerceAtLeast(1),
         )
         requestRedrawCoalesced()
+    }
+
+    /**
+     * Applies a pending [pendingSwapInterval] while the EGL context is current.
+     * Ends the resize burst once the window has been stable for
+     * [RESIZE_BURST_HOLD_NS].
+     */
+    private fun updateResizeBurstSwapInterval() {
+        if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
+        if (resizeBurstActive &&
+            lastResizeEventNs > 0L &&
+            System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
+        ) {
+            resizeBurstActive = false
+            pendingSwapInterval = 1
+        }
+        val want = pendingSwapInterval ?: return
+        pendingSwapInterval = null
+        if (want == appliedSwapInterval) return
+        NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, want)
+        appliedSwapInterval = want
     }
 
     /**
@@ -1352,6 +1401,7 @@ internal class TaoComposeSceneHostLinux(
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
+        updateResizeBurstSwapInterval()
 
         // KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
         // GNOME / others: paint at window size (master — no layout lag).
@@ -1408,19 +1458,6 @@ internal class TaoComposeSceneHostLinux(
         sc.render(surface.canvas.asComposeCanvas(), now)
         applyFrameDecoration(surface.canvas, paintW, paintH)
         surface.flushAndSubmit(syncCpu = false)
-
-        // Wayland (GNOME + KDE): drop vsync during interactive resize/move and
-        // while paint size lags the window so eglSwapBuffers is not held for a
-        // full refresh. Hold 0 for the whole grab to avoid 0↔1 thrash flashes.
-        if (attachedKind == 2 && !window.isPopup) {
-            val lagging = paintW != widthPx || paintH != heightPx
-            val wantInterval = if (lagging || compositorDragActive) 0 else 1
-            if (wantInterval != appliedSwapInterval) {
-                NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, wantInterval)
-                appliedSwapInterval = wantInterval
-            }
-        }
-
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
@@ -2135,6 +2172,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /** Keep swap-interval 0 briefly after the last pixel of resize motion. */
+        private const val RESIZE_BURST_HOLD_NS = 100_000_000L // 100 ms
+
         /**
          * How far outside the content (logical px) a pointer still counts as
          * the CSD shadow ring for resize hit-testing. Theme margins run
@@ -2286,7 +2326,16 @@ internal class TaoComposeSceneHostLinux(
                                         Runnable { onDrawablePresented() },
                                     )
                             }
-                            if (rearm) requestRedrawCoalesced()
+                            // Catch-up after size change: the buffer matching the
+                            // request only exists *after* this swap — paint it
+                            // without waiting for more motion (all Wayland DEs).
+                            val catchUp = postResizeCatchUpFrames.get() > 0
+                            if (catchUp) {
+                                postResizeCatchUpFrames.updateAndGet { n ->
+                                    (n - 1).coerceAtLeast(0)
+                                }
+                            }
+                            if (rearm || catchUp) requestRedrawCoalesced()
                         }
                     }
                 }
