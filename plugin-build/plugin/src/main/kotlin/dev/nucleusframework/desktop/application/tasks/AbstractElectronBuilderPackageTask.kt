@@ -249,7 +249,7 @@ abstract class AbstractElectronBuilderPackageTask
             val workingAppDir = copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
-            bundleUpdatePublicKey(workingAppDir, dist)
+            bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
@@ -259,7 +259,9 @@ abstract class AbstractElectronBuilderPackageTask
 
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
             val windowsIconOverride = resolveWindowsIcon()
-            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, isLinuxSilentUpdateEnabled(dist))
+            val silentUpdate = isLinuxSilentUpdateEnabled(dist)
+            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate)
+            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate)
             if (targetFormat == TargetFormat.AppX) {
                 val hasExplicitWindowsIcon =
                     dist.windows.iconFile.orNull
@@ -278,6 +280,7 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -399,6 +402,7 @@ abstract class AbstractElectronBuilderPackageTask
             linuxIconOverride: File?,
             windowsIconOverride: File?,
             linuxAfterInstallTemplate: File?,
+            linuxAfterRemoveTemplate: File?,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -439,6 +443,7 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
@@ -1349,27 +1354,32 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Exports the signing public key into the app's `resources/` so the installed update helper
-         * can verify downloaded updates against it. Must run before electron-builder packages the app.
+         * Ships silent-update artifacts in the **package payload** (helper + public key).
+         * afterInstall only installs polkit — see [LinuxUpdateHelper.polkitAfterInstallFragment].
          */
-        private fun bundleUpdatePublicKey(
+        private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,
         ) {
             if (!isLinuxSilentUpdateEnabled(dist)) return
             val signing = dist.linux.signing
             val keyId = signing.keyId.orNull ?: return
-            val dest = workingAppDir.resolve("resources/nucleus-update.pub.asc")
-            dest.parentFile.mkdirs()
+
+            val keyDest = workingAppDir.resolve(LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH)
+            keyDest.parentFile.mkdirs()
             LinuxSigner(runExternalTool, logger).exportPublicKey(
                 keyId = keyId,
                 keyFile =
                     signing.keyFile.orNull
                         ?.asFile,
                 passphrase = signing.passphrase.orNull,
-                destination = dest,
+                destination = keyDest,
             )
-            logger.lifecycle("Bundled update public key into resources/nucleus-update.pub.asc")
+            LinuxUpdateHelper.writeHelper(workingAppDir)
+            logger.lifecycle(
+                "Bundled silent-update artifacts " +
+                    "(${LinuxUpdateHelper.HELPER_FILE_NAME}, ${LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH})",
+            )
         }
 
         private fun prepareLinuxIconSet(outputDir: File): File? {
@@ -1641,58 +1651,40 @@ abstract class AbstractElectronBuilderPackageTask
                 fi
                 """.trimIndent() + "\n"
 
-            val fullScript = if (silentUpdate) script + linuxSilentUpdateAfterInstallBlock() else script
+            val fullScript =
+                if (silentUpdate) {
+                    script + "\n" + LinuxUpdateHelper.polkitAfterInstallFragment()
+                } else {
+                    script
+                }
             templateFile.writeText(fullScript)
             logger.info("Generated Linux after-install template at: ${templateFile.absolutePath}")
             return templateFile
         }
 
         /**
-         * Root-run afterInstall fragment that installs the passwordless update helper plus a polkit
-         * policy scoped to it. The helper verifies a detached signature against the bundled public
-         * key and only upgrades the package that owns the helper, so `allow_active=yes` cannot be
-         * abused to install arbitrary packages. `${'$'}{executable}`/`${'$'}{sanitizedProductName}`
-         * are substituted by electron-builder at package time.
+         * afterRemove template: removes the polkit policy for silent update (and keeps the
+         * default electron-builder unlink behavior via an empty base script when silent is off).
+         * Only generated when silent update is enabled.
          */
-        private fun linuxSilentUpdateAfterInstallBlock(): String {
-            val header =
-                $$"""
-                # --- Nucleus passwordless self-update (signature-verified) ---
-                NUCLEUS_HELPER='/opt/${sanitizedProductName}/nucleus-update-helper'
-                NUCLEUS_POLKIT_ACTION='dev.nucleusframework.${executable}.update'
-
-                cat > "$NUCLEUS_HELPER" <<'NUCLEUS_HELPER_EOF'
-                """.trimIndent()
-            val footer =
-                $$"""
-                NUCLEUS_HELPER_EOF
-                chmod 0755 "$NUCLEUS_HELPER"
-                chown root:root "$NUCLEUS_HELPER" 2>/dev/null || true
-
-                # polkit policy: an ACTIVE local session may run ONLY this helper without a password.
-                POLKIT_DIR='/usr/share/polkit-1/actions'
-                if mkdir -p "$POLKIT_DIR" 2>/dev/null; then
-                cat > "$POLKIT_DIR/$NUCLEUS_POLKIT_ACTION.policy" <<NUCLEUS_POLKIT_EOF
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
-                 "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-                <policyconfig>
-                  <action id="$NUCLEUS_POLKIT_ACTION">
-                    <description>Install ${sanitizedProductName} updates</description>
-                    <message>Authentication is required to install ${sanitizedProductName} updates</message>
-                    <defaults>
-                      <allow_any>auth_admin</allow_any>
-                      <allow_inactive>auth_admin</allow_inactive>
-                      <allow_active>yes</allow_active>
-                    </defaults>
-                    <annotate key="org.freedesktop.policykit.exec.path">$NUCLEUS_HELPER</annotate>
-                    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
-                  </action>
-                </policyconfig>
-                NUCLEUS_POLKIT_EOF
-                fi
-                """.trimIndent()
-            return "\n" + header + "\n" + LinuxUpdateHelper.SCRIPT + "\n" + footer + "\n"
+        private fun prepareLinuxAfterRemoveTemplate(
+            outputDir: File,
+            silentUpdate: Boolean,
+        ): File? {
+            if (!silentUpdate) return null
+            if (currentOS != OS.Linux) return null
+            if (targetFormat != TargetFormat.Deb &&
+                targetFormat != TargetFormat.Rpm &&
+                targetFormat != TargetFormat.Pacman
+            ) {
+                return null
+            }
+            val templateFile = outputDir.resolve("after-remove-nucleus.tpl")
+            templateFile.writeText(
+                "#!/bin/bash\n" + LinuxUpdateHelper.polkitAfterRemoveFragment(),
+            )
+            logger.info("Generated Linux after-remove template at: ${templateFile.absolutePath}")
+            return templateFile
         }
 
         private fun resizeIcon(

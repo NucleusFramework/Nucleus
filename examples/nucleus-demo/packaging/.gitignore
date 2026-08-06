@@ -1,0 +1,5 @@
+# Private GPG material — never commit. CI uses LINUX_GPG_* secrets instead.
+linux-signing-key.asc
+linux-signing-key.id
+linux-signing-key.fingerprint
+linux-signing.local.properties

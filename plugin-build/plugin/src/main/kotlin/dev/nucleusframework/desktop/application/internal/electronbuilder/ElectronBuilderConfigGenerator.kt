@@ -47,6 +47,7 @@ internal class ElectronBuilderConfigGenerator {
         linuxIconOverride: File? = null,
         windowsIconOverride: File? = null,
         linuxAfterInstallTemplate: File? = null,
+        linuxAfterRemoveTemplate: File? = null,
         executableName: String? = null,
         dmgBackgroundOverride: File? = null,
         dmgWindowOverride: DmgWindowOverride? = null,
@@ -121,6 +122,7 @@ internal class ElectronBuilderConfigGenerator {
                     startupWMClass = startupWMClass,
                     linuxIconOverride = linuxIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                     executableName = executableName,
                 )
         }
@@ -519,6 +521,7 @@ internal class ElectronBuilderConfigGenerator {
         startupWMClass: String?,
         linuxIconOverride: File?,
         linuxAfterInstallTemplate: File?,
+        linuxAfterRemoveTemplate: File?,
         executableName: String?,
     ) {
         yaml.appendLine("linux:")
@@ -550,6 +553,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
             TargetFormat.Rpm -> {
                 yaml.appendLine("rpm:")
@@ -560,6 +564,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
                 // fpm-generated RPMs list only files, never %dir entries for the app's own
                 // directory tree. The jpackage launcher (libapplauncher.so) discovers the app
                 // and runtime dirs by scanning `rpm -ql <pkg>` for paths ending in /app and
@@ -580,6 +585,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
             TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)

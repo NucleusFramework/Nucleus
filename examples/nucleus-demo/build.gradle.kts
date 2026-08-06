@@ -210,20 +210,31 @@ nucleus.application {
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
             }
 
-            // --- GPG signing (deb/rpm), for distribution outside a store ---
-            // Values default from `compose.desktop.linux.signing.*` properties / env vars,
-            // so CI can just export the secrets and leave this block as-is.
-            // A `<package>.pub.asc` public key is written next to each signed artifact.
-            //   deb: gpg --import app.deb.pub.asc && gpg --verify app.deb.asc app.deb
-            //   rpm: rpm --import app.rpm.pub.asc && rpm -K app.rpm
+            // --- GPG signing (deb/rpm) + passwordless self-update ---
+            // Keys: LinuxSigningSettings defaults from compose.desktop.linux.signing.*
+            //   CI: LINUX_GPG_* secrets → root gradle.properties (release-desktop / test-packaging)
+            //   Local: packaging/linux-signing.local.properties (gitignored) — see .example
+            // Verify: gpg --import <pkg>.pub.asc && gpg --verify <pkg>.asc <pkg>
             signing {
-                // enabled.set(true)
-                // keyId.set("ABCD1234DEADBEEF")          // GPG key id / fingerprint / email
-                // keyFile.set(file("packaging/signing-key.asc")) // optional: imported into a throwaway keyring
+                enabled.set(true)
+                silentUpdate.set(true)
+                val localSigning = file("packaging/linux-signing.local.properties")
+                if (localSigning.isFile) {
+                    val props =
+                        localSigning
+                            .readLines()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+                            .associate { line ->
+                                val i = line.indexOf('=')
+                                line.substring(0, i).trim() to line.substring(i + 1).trim()
+                            }
 
-                // Passwordless self-update: installs a signature-verifying helper + polkit policy so
-                // the app applies a verified update without a root password prompt. Requires enabled = true.
-                // silentUpdate.set(true)
+                    fun local(name: String): String? = props[name]?.takeIf { it.isNotEmpty() }
+                    local("compose.desktop.linux.signing.keyId")?.let { keyId.set(it) }
+                    local("compose.desktop.linux.signing.keyFile")?.let { keyFile.set(file(it)) }
+                    local("compose.desktop.linux.signing.passphrase")?.let { passphrase.set(it) }
+                }
             }
         }
 

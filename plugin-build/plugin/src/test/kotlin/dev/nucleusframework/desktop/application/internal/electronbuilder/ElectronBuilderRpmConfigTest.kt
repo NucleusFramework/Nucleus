@@ -31,6 +31,7 @@ class ElectronBuilderRpmConfigTest {
             startupWMClass = null,
             linuxIconOverride = null,
             linuxAfterInstallTemplate = null,
+            linuxAfterRemoveTemplate = null,
             executableName = "nucleusdemo",
         )
         return yaml.toString()

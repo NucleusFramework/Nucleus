@@ -1,0 +1,11 @@
+# Copy to linux-signing.local.properties (gitignored) and fill in, then either:
+#   1) symlink/copy values into the repo root gradle.properties, or
+#   2) export as Gradle project properties / CI-style keys.
+#
+# Generate a key:
+#   gpg --batch --passphrase '…' --quick-gen-key 'Nucleus Demo <demo@example.com>' default default 0
+#   gpg --armor --export-secret-keys KEYID > linux-signing-key.asc
+#
+# compose.desktop.linux.signing.keyId=YOUR_KEY_ID
+# compose.desktop.linux.signing.keyFile=/absolute/path/to/linux-signing-key.asc
+# compose.desktop.linux.signing.passphrase=YOUR_PASSPHRASE
