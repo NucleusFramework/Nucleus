@@ -228,7 +228,13 @@ internal object BytecodeAnalyzer {
 
                         analyzeClassBytes(classBytes, reflectionEntries, resourcePatterns)
                         if (collectReferences) {
-                            referencedTypes.addAll(ClassReferenceCollector.collect(classBytes))
+                            // Nest-internal edges (Outer$Nested → Outer) must not hide Room
+                            // orphans; see OrphanProjectClassDetector.addExternalReferences.
+                            OrphanProjectClassDetector.addExternalReferences(
+                                sourceFqcn = internalName.replace('/', '.'),
+                                refs = ClassReferenceCollector.collect(classBytes),
+                                into = referencedTypes,
+                            )
                         }
                     } catch (_: IllegalArgumentException) {
                         // ASM does not support this class file version (e.g. JDK 25+) — skip
@@ -325,7 +331,11 @@ internal object BytecodeAnalyzer {
 
                     analyzeClassBytes(classBytes, reflectionEntries, resourcePatterns)
                     if (collectReferences) {
-                        referencedTypes.addAll(ClassReferenceCollector.collect(classBytes))
+                        OrphanProjectClassDetector.addExternalReferences(
+                            sourceFqcn = relativePath.replace('/', '.'),
+                            refs = ClassReferenceCollector.collect(classBytes),
+                            into = referencedTypes,
+                        )
                     }
                     if (collectProjectFacts) {
                         OrphanProjectClassDetector.inspect(classBytes)?.let { projectFacts.add(it) }

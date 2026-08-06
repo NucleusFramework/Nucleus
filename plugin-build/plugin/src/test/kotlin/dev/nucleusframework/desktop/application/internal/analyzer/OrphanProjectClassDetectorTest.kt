@@ -343,6 +343,91 @@ class OrphanProjectClassDetectorTest {
     }
 
     @Test
+    fun `nested class use-site of outer does not hide Room-shaped orphan`() {
+        // Real Room AppDatabase_Impl emits nested types (e.g. createOpenDelegate lambdas)
+        // that reference the outer _Impl. Those nest-internal edges must not disqualify it.
+        val root = Files.createTempDirectory("orphan-nested").toFile()
+        try {
+            val projectDir = File(root, "project").also { it.mkdirs() }
+            writeClass(projectDir, "com/example/AppDatabase", publicClass("com/example/AppDatabase", abstract = true))
+            writeClass(
+                projectDir,
+                "com/example/AppDatabase_Impl",
+                publicClass(
+                    "com/example/AppDatabase_Impl",
+                    superName = "com/example/AppDatabase",
+                    publicNoArgCtor = true,
+                ),
+            )
+            // Nested class with a field of the outer type — the classic false-negative shape.
+            writeClass(
+                projectDir,
+                "com/example/AppDatabase_Impl\$createOpenDelegate\$1",
+                publicClass(
+                    "com/example/AppDatabase_Impl\$createOpenDelegate\$1",
+                    superName = "java/lang/Object",
+                    publicNoArgCtor = true,
+                    referencedTypes = listOf("com/example/AppDatabase_Impl"),
+                ),
+            )
+            writeClass(
+                projectDir,
+                "com/example/App",
+                publicClass(
+                    "com/example/App",
+                    publicNoArgCtor = true,
+                    referencedTypes = listOf("com/example/AppDatabase"),
+                ),
+            )
+
+            val result =
+                BytecodeAnalyzer.analyzeClasspath(
+                    files = listOf(projectDir),
+                    projectClassDirs = listOf(projectDir),
+                    detectOrphanProjectClasses = true,
+                    reflectionForProjectClasses = false,
+                )
+
+            assertTrue(
+                "AppDatabase_Impl must stay an orphan despite nested-class references: " +
+                    result.projectClassEntries.map { it.type },
+                result.projectClassEntries.any { it.type == "com.example.AppDatabase_Impl" },
+            )
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `isNestMemberOf recognizes JVM binary nesting`() {
+        assertTrue(OrphanProjectClassDetector.isNestMemberOf("com.example.Outer", "com.example.Outer"))
+        assertTrue(
+            OrphanProjectClassDetector.isNestMemberOf(
+                "com.example.Outer\$Nested",
+                "com.example.Outer",
+            ),
+        )
+        assertTrue(
+            OrphanProjectClassDetector.isNestMemberOf(
+                "com.example.Outer\$Nested\$Deeper",
+                "com.example.Outer",
+            ),
+        )
+        assertFalse(
+            OrphanProjectClassDetector.isNestMemberOf(
+                "com.example.OuterImpl",
+                "com.example.Outer",
+            ),
+        )
+        assertFalse(
+            OrphanProjectClassDetector.isNestMemberOf(
+                "com.example.Other",
+                "com.example.Outer",
+            ),
+        )
+    }
+
+    @Test
     fun `inspect returns concretePublicNoArg for valid class`() {
         val bytes =
             publicClass("com/example/Ok", superName = "java/lang/Object", publicNoArgCtor = true)
