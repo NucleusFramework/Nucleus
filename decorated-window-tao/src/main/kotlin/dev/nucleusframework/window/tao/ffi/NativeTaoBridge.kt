@@ -209,9 +209,36 @@ internal object NativeTaoBridge {
      * For Xlib, `display` is `Display*` and `nativeWindow` is the X11 `Window`
      * (XID). For Wayland, `display` is `wl_display*` and `nativeWindow` is
      * `wl_surface*`. Only resolvable on Linux.
+     *
+     * Prefer [TaoWindow.x11WindowId] / [TaoWindow.exportXdgForeignHandle] when
+     * the goal is XDG Desktop Portal dialog parenting rather than EGL.
      */
     @JvmStatic
     external fun nativeLinuxHandles(handle: Long): LongArray?
+
+    /**
+     * Linux/Wayland only: export this window's surface via `xdg_foreign` and
+     * return the **unprefixed** opaque handle string (for
+     * `FileKitDialogParent.wayland` / portal `wayland:<handle>`).
+     *
+     * Blocks until the compositor delivers the handle or [timeoutMs] elapses.
+     * Returns `null` on X11, when the window is not realized, or on failure.
+     * Pair with [nativeLinuxUnexportXdgForeignHandle] when the portal dialogs
+     * finish — FileKit borrows the handle and does not extend its lifetime.
+     */
+    @JvmStatic
+    external fun nativeLinuxExportXdgForeignHandle(
+        handle: Long,
+        timeoutMs: Int,
+    ): String?
+
+    /**
+     * Linux/Wayland only: drop the `xdg_foreign` export created by
+     * [nativeLinuxExportXdgForeignHandle]. No-op when never exported or not
+     * on Wayland.
+     */
+    @JvmStatic
+    external fun nativeLinuxUnexportXdgForeignHandle(handle: Long)
 
     /**
      * Linux only: returns the underlying `GtkApplicationWindow*` (cast

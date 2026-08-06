@@ -1235,6 +1235,7 @@ dependencies = [
  "accesskit_unix",
  "accesskit_windows",
  "cc",
+ "gdkwayland-sys",
  "gdkx11-sys",
  "glib",
  "gtk",

@@ -673,10 +673,13 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public static final field SCROLL_FIXED_SCALE F
 	public static final field WINDOWS_TOUCH_DRAG_THRESHOLD_PX I
 	public final fun dragWindow ()V
+	public final fun exportXdgForeignHandle (J)Ldev/nucleusframework/window/tao/XdgForeignExport;
+	public static synthetic fun exportXdgForeignHandle$default (Ldev/nucleusframework/window/tao/TaoWindow;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/XdgForeignExport;
 	public final fun focus ()V
 	public final fun getHandle ()J
 	public final fun getNativeHandle ()J
 	public final fun getScaleFactor ()F
+	public final fun getX11WindowId ()Ljava/lang/Long;
 	public final fun hide ()V
 	public final fun isFullscreen ()Z
 	public final fun isMaximized ()Z
@@ -761,6 +764,15 @@ public final class dev/nucleusframework/window/tao/TextureViewKt {
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TextureViewSource {
+}
+
+public final class dev/nucleusframework/window/tao/XdgForeignExport : java/lang/AutoCloseable {
+	public static final field $stable I
+	public fun close ()V
+	public final fun getHandle ()Ljava/lang/String;
+	public final fun getPortalParent ()Ljava/lang/String;
+	public final fun isClosed ()Z
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/window/tao/render/MetalFrame {

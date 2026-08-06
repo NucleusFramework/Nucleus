@@ -135,6 +135,82 @@ public object TaoHeadfulTestSuiteMain {
                 settle()
                 check(bounds() != null) { "window must survive a handled close request" }
             },
+            // Real Wayland session e2e (not a synthetic unit test): export the
+            // live surface via xdg_foreign, hand the token to the session
+            // xdg-desktop-portal FileChooser as parent_window, then Close the
+            // Request so no modal sticks around. Proves FileKit-style parenting.
+            TaoWindowTestCase(
+                name = "xdg_foreign export parents a real XDG portal FileChooser",
+                timeoutMillis = 45_000L,
+                skip = {
+                    if (!isLinux) {
+                        "Linux only"
+                    } else {
+                        val backend = System.getenv("GDK_BACKEND")?.split(',')?.firstOrNull()
+                        val forcedX11 =
+                            backend == "x11" ||
+                                System
+                                    .getenv("NUCLEUS_TAO_LINUX_RENDERER")
+                                    .orEmpty()
+                                    .equals("x11", ignoreCase = true)
+                        val wayland = System.getenv("WAYLAND_DISPLAY") != null && !forcedX11
+                        when {
+                            !wayland -> "requires native Wayland (WAYLAND_DISPLAY)"
+                            !XdgPortalFileChooser.gdbusAvailable() -> "gdbus not on PATH"
+                            !XdgPortalFileChooser.portalAvailable() ->
+                                "xdg-desktop-portal FileChooser unavailable"
+                            else -> null
+                        }
+                    }
+                },
+            ) {
+                awaitUntil("window mapped") { bounds() != null }
+                settle()
+                // Export on the Tao main thread (nested GLib iteration is OK).
+                val export =
+                    checkNotNull(window.exportXdgForeignHandle(timeoutMs = 8_000L)) {
+                        "exportXdgForeignHandle returned null on a realized Wayland window"
+                    }
+                try {
+                    check(export.handle.isNotEmpty()) { "empty xdg_foreign handle" }
+                    check('\u0000' !in export.handle) { "handle contains NUL" }
+                    check(!export.handle.startsWith("wayland:")) {
+                        "handle must be unprefixed; got ${export.handle.take(32)}"
+                    }
+                    check(export.portalParent == "wayland:${export.handle}")
+
+                    // Portal IPC is blocking; park it off the event loop.
+                    val open =
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            XdgPortalFileChooser.openFile(
+                                parentWindow = export.portalParent,
+                                title = "Nucleus xdg_foreign e2e",
+                            )
+                        }
+                    check(open.requestPath.startsWith("/org/freedesktop/portal/desktop/request/")) {
+                        "unexpected request path: ${open.requestPath}"
+                    }
+                    println(
+                        "xdg_foreign e2e: handle=${export.handle.take(12)}… " +
+                            "portalParent=${export.portalParent.take(24)}… " +
+                            "request=${open.requestPath}",
+                    )
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        open.close()
+                    }
+                    // Second export while the first is still live must still
+                    // yield a usable token (GDK reuses the active export).
+                    val again =
+                        checkNotNull(window.exportXdgForeignHandle(timeoutMs = 5_000L)) {
+                            "re-export while live failed"
+                        }
+                    check(again.handle.isNotEmpty())
+                    again.close()
+                } finally {
+                    export.close()
+                    check(export.isClosed)
+                }
+            },
         ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
