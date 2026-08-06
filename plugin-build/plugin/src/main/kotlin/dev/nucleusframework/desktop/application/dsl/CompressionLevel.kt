@@ -5,7 +5,12 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
-/** Archive compression level for electron-builder output. */
+/**
+ * Archive compression level for electron-builder output.
+ *
+ * Set globally via [JvmApplicationDistributions.compressionLevel], or per format via
+ * [AppImageSettings.compressionLevel] / [PortableSettings.compressionLevel].
+ */
 enum class CompressionLevel(
     internal val id: String,
 ) {
@@ -18,6 +23,8 @@ enum class CompressionLevel(
      * `"maximum"`), but additionally enables the plugin's post-processing recompression steps that
      * electron-builder's own `maximum` leaves on the table: LZMA (ULMO) for DMG and `xz -9e` for DEB.
      * These steps are slower and are therefore opt-in via this level rather than [Maximum].
+     *
+     * Not recommended for AppImage: use a format-local override to [Normal] or [Store] instead.
      */
     Ultra("maximum"),
 }

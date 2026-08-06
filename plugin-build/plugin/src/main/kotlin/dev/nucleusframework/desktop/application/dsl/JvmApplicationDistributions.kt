@@ -121,6 +121,16 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     // --- Compression level for archive formats ---
 
+    /**
+     * Default archive compression for electron-builder packages.
+     *
+     * Per-format overrides take precedence when set:
+     * - AppImage: [LinuxPlatformSettings.appImage] → [AppImageSettings.compressionLevel]
+     * - Windows portable: [WindowsPlatformSettings.portable] → [PortableSettings.compressionLevel]
+     *
+     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] are not recommended for AppImage
+     * (slow FUSE/squashfs cold start); override that format to [CompressionLevel.Normal] instead.
+     */
     var compressionLevel: CompressionLevel? = null
 
     // --- Artifact name template (e.g., "\${name}-\${version}-\${arch}.\${ext}") ---

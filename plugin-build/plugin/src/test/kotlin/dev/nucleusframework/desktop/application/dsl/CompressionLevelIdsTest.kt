@@ -9,5 +9,7 @@ class CompressionLevelIdsTest {
         assertEquals("store", CompressionLevel.Store.id)
         assertEquals("normal", CompressionLevel.Normal.id)
         assertEquals("maximum", CompressionLevel.Maximum.id)
+        // Ultra reuses electron-builder's maximum id; extra post-processing is plugin-side.
+        assertEquals("maximum", CompressionLevel.Ultra.id)
     }
 }

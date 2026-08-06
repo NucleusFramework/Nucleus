@@ -6,6 +6,7 @@
 package dev.nucleusframework.desktop.application.internal.electronbuilder
 
 import dev.nucleusframework.desktop.application.dsl.AppXSettings
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.DmgSettings
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.FlatpakSettings
@@ -19,6 +20,24 @@ import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
 import java.io.File
+
+/**
+ * Effective electron-builder compression for [targetFormat].
+ *
+ * Format-local overrides ([AppImageSettings.compressionLevel], [PortableSettings.compressionLevel])
+ * win over the root [JvmApplicationDistributions.compressionLevel].
+ */
+internal fun resolveCompressionLevel(
+    distributions: JvmApplicationDistributions,
+    targetFormat: TargetFormat,
+): CompressionLevel? =
+    when (targetFormat) {
+        TargetFormat.AppImage ->
+            distributions.linux.appImage.compressionLevel ?: distributions.compressionLevel
+        TargetFormat.Portable ->
+            distributions.windows.portable.compressionLevel ?: distributions.compressionLevel
+        else -> distributions.compressionLevel
+    }
 
 /**
  * Generates an electron-builder YAML configuration from the Gradle DSL settings.
@@ -88,7 +107,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("directories:")
         yaml.appendLine("  output: .")
 
-        appendIfNotNull(yaml, "compression", distributions.compressionLevel?.id)
+        appendIfNotNull(yaml, "compression", resolveCompressionLevel(distributions, targetFormat)?.id)
         yaml.appendLine("artifactName: ${withTargetSuffix(distributions.artifactName, targetFormat)}")
         generateFileAssociations(yaml, distributions, targetFormat)
 
@@ -298,7 +317,11 @@ internal class ElectronBuilderConfigGenerator {
                 yaml.appendLine("  perMachine: ${!distributions.windows.perUserInstall}")
             }
             TargetFormat.AppX -> generateAppXConfig(yaml, distributions.windows.appx)
-            TargetFormat.Portable -> yaml.appendLine("portable: {}")
+            TargetFormat.Portable -> {
+                // electron-builder only honors top-level `compression` for portable;
+                // the block is still required so the target is configured.
+                yaml.appendLine("portable: {}")
+            }
             else -> {}
         }
     }
