@@ -288,11 +288,12 @@ internal class TaoComposeSceneHostLinux(
     private var cachedRt: BackendRenderTarget? = null
     private var cachedSurface: Surface? = null
 
-    /** GPU intermediate at window size, used only while drawable lags the window. */
+    /**
+     * GPU intermediate at window size. On Wayland every frame paints here then
+     * blits into the real FB — one path for lag and steady state (no flash at
+     * the start/end of a resize from switching paint modes).
+     */
     private var intermediateSurface: Surface? = null
-
-    /** Last eglSwapInterval; 0 while drawable lags or a grab is active. */
-    private var appliedSwapInterval: Int = 1
 
     // Scene-size update throttle. Compose's layout cache is keyed on size: the
     // first frame at any new size triggers a full remeasure (80-150ms for
@@ -1384,7 +1385,6 @@ internal class TaoComposeSceneHostLinux(
             if (attachedKind == 2 && drawableWidthPx > 0) drawableWidthPx else widthPx
         val fbH =
             if (attachedKind == 2 && drawableHeightPx > 0) drawableHeightPx else heightPx
-        val lagging = attachedKind == 2 && (fbW != widthPx || fbH != heightPx)
 
         var surface = cachedSurface
         if (surface == null || surface.width != fbW || surface.height != fbH) {
@@ -1423,15 +1423,12 @@ internal class TaoComposeSceneHostLinux(
         // Tao hosts and the AWT backends, instead of showing the desktop through
         // a transparent clear. The rounded corners are carved back to
         // transparent by [applyFrameDecoration] below.
-        if (!lagging) {
-            intermediateSurface?.close()
-            intermediateSurface = null
-            surface.canvas.clear(clearArgb)
-            sc.render(surface.canvas.asComposeCanvas(), now)
-            applyFrameDecoration(surface.canvas, fbW, fbH)
-        } else {
-            // Drawable lags: layout at window size into an intermediate, then
-            // scale into the real FB (BOTTOM_LEFT-safe, Compose stays in sync).
+        //
+        // Wayland: always paint Compose at window size into an intermediate,
+        // then blit into the real FB. One path for lag and steady state so we
+        // do not flash when drawable catches up at the end of a resize (or
+        // when lag starts). X11: drawable tracks the window — paint direct.
+        if (attachedKind == 2) {
             val mid = obtainIntermediateSurface(ctx, widthPx, heightPx) ?: run {
                 NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
                 return
@@ -1442,27 +1439,29 @@ internal class TaoComposeSceneHostLinux(
             mid.flushAndSubmit(syncCpu = false)
             val snapshot = mid.makeImageSnapshot()
             surface.canvas.clear(clearArgb)
+            // NEAREST when sizes match (bit-identical to a direct paint); LINEAR
+            // only while scaling a lagging buffer.
+            val sampling =
+                if (fbW == widthPx && fbH == heightPx) {
+                    FilterMipmap(FilterMode.NEAREST, MipmapMode.NONE)
+                } else {
+                    FilterMipmap(FilterMode.LINEAR, MipmapMode.NONE)
+                }
             surface.canvas.drawImageRect(
                 snapshot,
                 Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
                 Rect.makeWH(fbW.toFloat(), fbH.toFloat()),
-                FilterMipmap(FilterMode.LINEAR, MipmapMode.NONE),
+                sampling,
                 null,
                 true,
             )
             snapshot.close()
+        } else {
+            surface.canvas.clear(clearArgb)
+            sc.render(surface.canvas.asComposeCanvas(), now)
+            applyFrameDecoration(surface.canvas, fbW, fbH)
         }
         surface.flushAndSubmit(syncCpu = false)
-
-        // Drop vsync while catching up so presents apply resize promptly.
-        if (attachedKind == 2 && !window.isPopup) {
-            val wantInterval = if (lagging || compositorDragActive) 0 else 1
-            if (wantInterval != appliedSwapInterval) {
-                NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, wantInterval)
-                appliedSwapInterval = wantInterval
-            }
-        }
-
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
