@@ -35,6 +35,10 @@ gtk = "0.18"
 # the context, drawable and display to all come from the same X connection,
 # so reusing GDK's is the only way the GLX bridge can render into the GTK XID.
 gdkx11-sys = "0.18"
+# Same for Wayland: `gdk_wayland_window_export_handle` / `unexport_handle` so
+# we can mint an xdg_foreign token for XDG Desktop Portal dialog parenting
+# (FileKit, etc.). Transitive via tao; explicit for the FFI symbols.
+gdkwayland-sys = "0.18"
 glib = "0.18"
 # AT-SPI2 accessibility provider via AccessKit. Pure-Rust D-Bus (zbus) so we
 # don't have to link libatspi / libatk / glib at runtime. We're an XWayland

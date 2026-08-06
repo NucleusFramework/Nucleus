@@ -393,8 +393,9 @@ public class TaoWindow internal constructor(
      *  - Windows: HWND as a `Long` (0 if unavailable).
      *  - macOS: NSView pointer as a `Long` — the AppKit subview hosting the
      *    Compose surface. The owning NSWindow can be obtained via `[view window]`.
-     *  - Linux: returns 0 (use [NativeTaoBridge.nativeLinuxHandles] for the
-     *    full `[kind, display, nativeWindow]` triplet).
+     *  - Linux: returns 0. Prefer [x11WindowId] (X11 portal parent) or
+     *    [exportXdgForeignHandle] (Wayland portal parent) — a raw `wl_surface*`
+     *    is not a valid XDG Desktop Portal parent.
      *
      * Intended for cross-module integration (e.g. taskbar, notifications) that
      * need to address the OS window directly without going through Tao APIs.
@@ -406,6 +407,75 @@ public class TaoWindow internal constructor(
                 Platform.MacOS -> NativeTaoBridge.nativeNsViewHandle(handle)
                 else -> 0L
             }
+
+    /**
+     * Linux/X11 only: the window's XID for XDG Desktop Portal parenting
+     * (`x11:<hex>` / `FileKitDialogParent.x11`). `null` when not on X11, not
+     * yet realized, or the native bridge is unavailable.
+     *
+     * Prefer [xdgPortalParent] when the caller only needs a portal string and
+     * should work on both X11 and Wayland.
+     */
+    public val x11WindowId: Long?
+        get() {
+            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return null
+            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return null
+            // [kind, display, nativeWindow] — kind 1 = Xlib, slot 2 = XID.
+            if (handles.size < 3 || handles[0] != 1L) return null
+            val xid = handles[2]
+            return xid.takeIf { it in 1L..0xffff_ffffL }
+        }
+
+    /**
+     * Linux/X11 only: portal `parent_window` value `x11:<lowercase-hex-xid>`.
+     * `null` when [x11WindowId] is unavailable.
+     */
+    public val x11PortalParent: String?
+        get() = x11WindowId?.let { xid -> "x11:${xid.toString(radix = 16)}" }
+
+    /**
+     * Linux/Wayland only: export this window via `xdg_foreign` for XDG Desktop
+     * Portal dialog parenting (FileKit `FileKitDialogParent.wayland`, portal
+     * `parent_window = wayland:<handle>`).
+     *
+     * Blocks until the compositor issues the token or [timeoutMs] elapses.
+     * Returns `null` on X11, when the window is not realized, or on failure.
+     * The returned [XdgForeignExport] must stay open until portal dialogs that
+     * borrow [XdgForeignExport.handle] complete — close it afterward.
+     *
+     * Prefer [xdgPortalParent] for a backend-agnostic Linux parent.
+     *
+     * Safe to call from a worker thread or the Tao main thread (the native
+     * side nests the GLib main context when already on the GTK thread).
+     */
+    public fun exportXdgForeignHandle(timeoutMs: Long = 5_000L): XdgForeignExport? {
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return null
+        val token =
+            NativeTaoBridge.nativeLinuxExportXdgForeignHandle(
+                handle,
+                timeoutMs.coerceIn(1L, Int.MAX_VALUE.toLong()).toInt(),
+            ) ?: return null
+        if (token.isEmpty()) return null
+        return XdgForeignExport(token, handle)
+    }
+
+    /**
+     * Linux only: resolve the XDG Desktop Portal parent for this window.
+     *
+     * - **X11 / XWayland** → [XdgPortalParent.X11] with the live XID (no
+     *   lifetime object; valid while the window is mapped).
+     * - **Wayland** → [XdgPortalParent.Wayland] wrapping an [XdgForeignExport]
+     *   that must stay open until portal dialogs complete.
+     *
+     * Returns `null` when the window is not realized, the bridge is missing,
+     * or Wayland export times out. [timeoutMs] only applies to the Wayland path.
+     */
+    public fun xdgPortalParent(timeoutMs: Long = 5_000L): XdgPortalParent? {
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return null
+        x11WindowId?.let { return XdgPortalParent.X11(it) }
+        val export = exportXdgForeignHandle(timeoutMs) ?: return null
+        return XdgPortalParent.Wayland(export)
+    }
 
     public val isMaximized: Boolean
         get() = NativeTaoBridge.nativeIsMaximized(handle)

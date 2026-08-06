@@ -173,11 +173,35 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     System.getProperty("nucleus.tao.headful.filter")?.let {
         systemProperty("nucleus.tao.headful.filter", it)
     }
+    // Honor a caller-forced Linux renderer (x11 / wayland) so portal parenting
+    // e2es can be launched against XWayland from a native Wayland session.
+    providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").orNull?.let {
+        environment("NUCLEUS_TAO_LINUX_RENDERER", it)
+    }
+    providers.environmentVariable("GDK_BACKEND").orNull?.let {
+        environment("GDK_BACKEND", it)
+    }
     // NO -XstartOnFirstThread here: taoApplication marshals to the AppKit main
     // thread itself (main_thread_dispatch.m), exactly like a normal `java`
     // launch — and the flag would deadlock the AWT classes the Compose host
     // touches. smokeStandalonePanelMac needs it only because it creates an
     // NSPanel directly, without the Tao loop machinery.
+}
+
+// X11 / XWayland portal parenting e2e: forces GDK onto X11 so Tao windows get
+// a real XID, then parents a session xdg-desktop-portal FileChooser with
+// `x11:<hex>`. Safe to run on a Wayland host (XWayland). Not part of `check`.
+val taoX11PortalE2E by tasks.registering(JavaExec::class) {
+    description = "E2E: X11 XID parents a real XDG portal FileChooser (forces XWayland)"
+    group = "verification"
+    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) }
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+    systemProperty("nucleus.tao.headful.filter", "x11 XID")
+    System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
+        systemProperty("nucleus.tao.headful.watchdogMillis", it)
+    }
+    environment("NUCLEUS_TAO_LINUX_RENDERER", "x11")
 }
 
 val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
