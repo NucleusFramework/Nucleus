@@ -44,6 +44,82 @@ internal enum class UnresolvableDisposition {
 
     /** Missing type, opt-in prune is on, not under exact packages — drop. */
     REMOVE,
+
+    /**
+     * Tracing-agent phantom for a Kotlin mapped type (`kotlin.Any`, `kotlin.Int`, …).
+     * Always drop — these never exist as `.class` files and are never load-bearing.
+     */
+    AGENT_NOISE,
+}
+
+/**
+ * Kotlin language types the GraalVM tracing agent records via negative `Class.forName`
+ * of mapped types / collection interfaces. None of these have a `.class` on the
+ * classpath (`kotlin.Int` → `int`/`Integer`, `kotlin.collections.List` → `java.util.List`).
+ */
+private val KOTLIN_AGENT_NOISE_EXACT =
+    setOf(
+        "kotlin.Any",
+        "kotlin.Nothing",
+        "kotlin.Boolean",
+        "kotlin.Byte",
+        "kotlin.Char",
+        "kotlin.Short",
+        "kotlin.Int",
+        "kotlin.Long",
+        "kotlin.Float",
+        "kotlin.Double",
+        "kotlin.Cloneable",
+        "kotlin.Comparable",
+        "kotlin.Annotation",
+        "kotlin.Enum",
+        "kotlin.Number",
+        "kotlin.CharSequence",
+        "kotlin.String",
+        "kotlin.Throwable",
+    )
+
+/** Mapped `kotlin.collections.*` interfaces with no dedicated class file. */
+private val KOTLIN_COLLECTIONS_AGENT_NOISE =
+    setOf(
+        "Collection",
+        "List",
+        "Map",
+        "Set",
+        "Iterable",
+        "Iterator",
+        "MutableCollection",
+        "MutableList",
+        "MutableMap",
+        "MutableSet",
+        "MutableIterable",
+        "MutableIterator",
+    )
+
+/**
+ * True when [typeName] is a known tracing-agent phantom for a Kotlin mapped type.
+ * Only meaningful for types that already failed [isTypeResolvable] — real stdlib
+ * classes (`kotlin.Unit`, `kotlin.coroutines.*`, …) resolve via the classpath.
+ */
+internal fun isKotlinAgentNoiseType(typeName: String): Boolean {
+    val normalized = normalizeTypeForLookup(typeName) ?: return false
+    if (normalized in KOTLIN_AGENT_NOISE_EXACT) return true
+    if (normalized.startsWith("kotlin.Function")) {
+        val suffix = normalized.removePrefix("kotlin.Function")
+        if (suffix.isNotEmpty() && suffix.all { it.isDigit() }) return true
+    }
+    if (normalized.startsWith("kotlin.collections.")) {
+        val simple = normalized.removePrefix("kotlin.collections.")
+        if (simple in KOTLIN_COLLECTIONS_AGENT_NOISE) return true
+    }
+    return false
+}
+
+/** True when every type on [entry] is agent noise (proxies never are). */
+internal fun isKotlinAgentNoiseEntry(entry: Map<String, Any?>): Boolean {
+    if (proxyInterfaceNames(entry).isNotEmpty()) return false
+    val typeName = typeNameOfEntry(entry) ?: return false
+    return isKotlinAgentNoiseType(typeName)
 }
 
 /**
@@ -53,6 +129,9 @@ internal enum class UnresolvableDisposition {
  * “was this image built with exact mode”. Protection follows the configured scope so
  * cleanup never strips load-bearing negative lookups for apps that use exact mode on
  * the dev loop.
+ *
+ * Kotlin agent phantoms (`kotlin.Any`, …) always return [UnresolvableDisposition.AGENT_NOISE]
+ * — they are never exact-protected and do not require `-P…removeUnresolvable`.
  */
 internal fun classifyUnresolvableEntry(
     entry: Map<String, Any?>,
@@ -61,6 +140,7 @@ internal fun classifyUnresolvableEntry(
     removeUnresolvable: Boolean,
 ): UnresolvableDisposition {
     if (isEntryResolvable(entry, classIndex)) return UnresolvableDisposition.RESOLVABLE
+    if (isKotlinAgentNoiseEntry(entry)) return UnresolvableDisposition.AGENT_NOISE
     if (isEntryProtectedByExactReachability(entry, exactPackages)) {
         return UnresolvableDisposition.PROTECT
     }

@@ -156,12 +156,13 @@ class GraalvmMetadataResolvabilityTest {
             UnresolvableDisposition.RESOLVABLE,
             classifyUnresolvableEntry(real, index, emptyList(), removeUnresolvable = true),
         )
+        // Kotlin mapped-type phantoms are always AGENT_NOISE (no removeUnresolvable flag needed).
         assertEquals(
-            UnresolvableDisposition.REPORT,
+            UnresolvableDisposition.AGENT_NOISE,
             classifyUnresolvableEntry(noise, index, emptyList(), removeUnresolvable = false),
         )
         assertEquals(
-            UnresolvableDisposition.REMOVE,
+            UnresolvableDisposition.AGENT_NOISE,
             classifyUnresolvableEntry(noise, index, emptyList(), removeUnresolvable = true),
         )
         assertEquals(
@@ -180,6 +181,11 @@ class GraalvmMetadataResolvabilityTest {
             UnresolvableDisposition.PROTECT,
             classifyUnresolvableEntry(proxyExact, index, listOf("acme.app"), removeUnresolvable = true),
         )
+        assertTrue(isKotlinAgentNoiseType("kotlin.Any"))
+        assertTrue(isKotlinAgentNoiseType("kotlin.Function2"))
+        assertTrue(isKotlinAgentNoiseType("kotlin.collections.List"))
+        assertFalse(isKotlinAgentNoiseType("kotlin.Unit"))
+        assertFalse(isKotlinAgentNoiseType("acme.app.Optional"))
     }
 
     @Test

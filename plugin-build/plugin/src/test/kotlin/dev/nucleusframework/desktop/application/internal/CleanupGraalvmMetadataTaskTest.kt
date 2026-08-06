@@ -84,10 +84,9 @@ class CleanupGraalvmMetadataTaskTest {
         """.trimIndent()
 
     @Test
-    fun `default mode reports unresolvable once and does not rewrite them away`() {
+    fun `default mode drops agent noise but keeps other unresolvable probes`() {
         val configDir = tmp.newFolder("graalvm-default")
         val metadata = writeMetadata(configDir, fixtureJson)
-        val before = metadata.readText()
 
         createTask(
             configDir = configDir,
@@ -95,12 +94,16 @@ class CleanupGraalvmMetadataTaskTest {
             removeUnresolvable = false,
         ).cleanup()
 
-        assertEquals("file must not drop unresolvable types by default", before, metadata.readText())
         val types = typeNames(metadata)
-        assertTrue(types.contains("kotlin.Any"))
-        assertTrue(types.contains("kotlin.Int"))
+        // Kotlin mapped-type phantoms are always stripped (no removeUnresolvable flag).
+        assertFalse(types.contains("kotlin.Any"))
+        assertFalse(types.contains("kotlin.Int"))
+        assertFalse(types.contains("kotlin.collections.List"))
+        // Real app probes stay unless removeUnresolvable is on.
         assertTrue(types.contains("acme.app.RealClass"))
         assertTrue(types.contains("acme.app.OptionalProbe"))
+        assertFalse(typeNames(metadata, "serialization").contains("kotlin.Boolean"))
+        assertTrue(typeNames(metadata, "serialization").contains("acme.app.RealClass"))
     }
 
     @Test
@@ -190,7 +193,7 @@ class CleanupGraalvmMetadataTaskTest {
     }
 
     @Test
-    fun `default mode does not claim already clean when unresolvable remain`() {
+    fun `default mode keeps app probes while stripping agent noise`() {
         val configDir = tmp.newFolder("graalvm-msg")
         writeMetadata(configDir, fixtureJson)
         val task =
@@ -200,12 +203,13 @@ class CleanupGraalvmMetadataTaskTest {
                 removeUnresolvable = false,
             )
 
-        // Drive the action; assert on post-condition that is independent of logger wiring:
-        // file still has unresolvable entries, so the task's success path for "already clean"
-        // must not have rewritten. Message content is covered by classify + e2e gradle log.
         task.cleanup()
-        assertTrue(typeNames(File(configDir, "reachability-metadata.json")).contains("kotlin.Int"))
-        // Kept resolvable + unresolvable still present — not "clean" by deletion.
-        assertEquals(5, typeNames(File(configDir, "reachability-metadata.json")).size)
+        val types = typeNames(File(configDir, "reachability-metadata.json"))
+        // App-level unresolvable probes stay (report-only without removeUnresolvable).
+        assertTrue(types.contains("acme.app.OptionalProbe"))
+        assertTrue(types.contains("acme.app.RealClass"))
+        // Agent phantoms are always gone.
+        assertFalse(types.contains("kotlin.Int"))
+        assertFalse(types.contains("kotlin.Any"))
     }
 }

@@ -29,6 +29,7 @@ import java.io.File
  * After baseline dedup, a **resolvability** pass scans the runtime classpath for
  * `.class` files and classifies each remaining type entry once:
  * - `removed [baseline]` — covered by L1/L2/L3/static (or main class)
+ * - `removed [agent-noise]` — Kotlin mapped-type phantoms (`kotlin.Any`, `kotlin.Int`, …); always
  * - `removed [unresolvable]` — opt-in prune (`-Pnucleus.graalvm.cleanup.removeUnresolvable=true`)
  * - `unresolvable (kept)` — missing type, default report-only
  * - `unresolvable (exact-protected)` — missing type under [exactReachabilityPackages]
@@ -379,16 +380,20 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
         // ── Resolvability pass ──
         // Agent-recorded negative Class.forName lookups (kotlin.Any, kotlin.Int, …) and
         // typos/stale renames never match a baseline. Classify each survivor once.
+        // Kotlin mapped-type phantoms are always removed (AGENT_NOISE); other missing
+        // types stay report-only unless removeUnresolvable is on.
         val classIndex = buildClasspathClassIndex(runtimeClasspath.files)
         logger.lifecycle("Classpath class index: ${classIndex.size} types")
 
         // Track which survivors were already classified as unresolvable so the final
         // "kept" pass does not re-list them.
         val classifiedUnresolvableKeys = mutableSetOf<String>()
+        var agentNoiseRemoved = 0
         for (section in listOf("reflection", "jni", "serialization")) {
             @Suppress("UNCHECKED_CAST")
             val targetArray = targetRoot[section] as? MutableList<Map<String, Any?>> ?: continue
             val before = targetArray.size
+            var sectionAgentNoise = 0
             targetArray.removeAll { projectEntry ->
                 when (
                     classifyUnresolvableEntry(
@@ -399,6 +404,11 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                     )
                 ) {
                     UnresolvableDisposition.RESOLVABLE -> false
+                    UnresolvableDisposition.AGENT_NOISE -> {
+                        report.add(formatDispositionLine("removed/agent-noise", section, projectEntry))
+                        sectionAgentNoise++
+                        true
+                    }
                     UnresolvableDisposition.REMOVE -> {
                         report.add(formatDispositionLine("removed/unresolvable", section, projectEntry))
                         true
@@ -417,7 +427,9 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
                     }
                 }
             }
-            unresolvableRemoved += before - targetArray.size
+            val removedHere = before - targetArray.size
+            agentNoiseRemoved += sectionAgentNoise
+            unresolvableRemoved += removedHere - sectionAgentNoise
         }
 
         // Resolvable leftovers not covered by any managed baseline — worth a human look.
@@ -441,7 +453,7 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
             keptResolvable++
         }
 
-        val totalRemoved = baselineRemoved + unresolvableRemoved
+        val totalRemoved = baselineRemoved + unresolvableRemoved + agentNoiseRemoved
         if (totalRemoved > 0) {
             for (section in listOf("reflection", "jni", "resources", "bundles", "serialization")) {
                 @Suppress("UNCHECKED_CAST")
@@ -460,7 +472,8 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
             totalRemoved > 0 ->
                 logger.lifecycle(
                     "$verb $totalRemoved entr${if (totalRemoved == 1) "y" else "ies"} " +
-                        "(baseline=$baselineRemoved, unresolvable=$unresolvableRemoved) from $targetFile",
+                        "(baseline=$baselineRemoved, unresolvable=$unresolvableRemoved, " +
+                        "agent-noise=$agentNoiseRemoved) from $targetFile",
                 )
             unresolvableReported > 0 || unresolvableProtected > 0 ->
                 logger.lifecycle(
@@ -483,7 +496,8 @@ abstract class CleanupGraalvmMetadataTask : DefaultTask() {
         }
         logger.lifecycle(
             "Summary: removed=$totalRemoved " +
-                "(baseline=$baselineRemoved, unresolvable=$unresolvableRemoved), " +
+                "(baseline=$baselineRemoved, unresolvable=$unresolvableRemoved, " +
+                "agent-noise=$agentNoiseRemoved), " +
                 "unresolvable/kept=$unresolvableReported, " +
                 "unresolvable/exact-protected=$unresolvableProtected, " +
                 "kept=$keptResolvable",
