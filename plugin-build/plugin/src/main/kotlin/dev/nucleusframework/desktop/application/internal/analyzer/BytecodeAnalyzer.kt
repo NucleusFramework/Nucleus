@@ -1,10 +1,13 @@
 package dev.nucleusframework.desktop.application.internal.analyzer
 
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassForNameDetector
+import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ClassReferenceCollector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.JarResourceDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.KotlinSerializableDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.MethodHandleDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.NativeMethodDetector
+import dev.nucleusframework.desktop.application.internal.analyzer.detectors.OrphanProjectClassDetector
+import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ProjectClassFact
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ProxyDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ReflectionApiDetector
 import dev.nucleusframework.desktop.application.internal.analyzer.detectors.ResourceAccessDetector
@@ -14,15 +17,176 @@ import java.io.File
 import java.util.jar.JarFile
 
 /**
- * Main entry point: scans one or more JARs and produces an [AnalysisResult].
+ * Main entry point: scans one or more JARs / class directories and produces an [AnalysisResult].
+ *
+ * When [detectOrphanProjectClasses] or [reflectionForProjectClasses] is enabled, a single
+ * classpath walk also collects type-use references and project class header facts, then
+ * runs [OrphanProjectClassDetector] — no second JAR pass (#441).
  */
 internal object BytecodeAnalyzer {
     /**
      * Analyzes a single JAR file.
      */
-    fun analyzeJar(jarPath: File): AnalysisResult {
-        require(jarPath.exists() && jarPath.name.endsWith(".jar")) {
-            "Not a valid JAR: $jarPath"
+    fun analyzeJar(jarPath: File): AnalysisResult = analyzeJarInternal(jarPath, collectReferences = false).toResult()
+
+    /**
+     * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
+     */
+    fun analyzeClassDir(dir: File): AnalysisResult =
+        analyzeClassDirInternal(
+            dir = dir,
+            collectReferences = false,
+            collectProjectFacts = false,
+        ).toResult()
+
+    /**
+     * Analyzes a classpath that may contain both JARs and class directories.
+     *
+     * @param projectClassDirs the app's own class output dirs (must not include dependency JARs).
+     *   Used only when orphan / all-project registration is enabled.
+     * @param detectOrphanProjectClasses register public no-arg `<init>` for project classes that
+     *   no bytecode references (default path for Room `_Impl` and friends).
+     * @param reflectionForProjectClasses sledgehammer: register every project class with a
+     *   public no-arg ctor. When true, takes precedence over the orphan rule (same registrations
+     *   are a superset).
+     */
+    fun analyzeClasspath(
+        files: Iterable<File>,
+        projectClassDirs: Collection<File> = emptyList(),
+        detectOrphanProjectClasses: Boolean = false,
+        reflectionForProjectClasses: Boolean = false,
+    ): AnalysisResult {
+        val needProjectFacts = detectOrphanProjectClasses || reflectionForProjectClasses
+        val needReferences = detectOrphanProjectClasses // all-project path does not need refs
+        if (!needProjectFacts) {
+            return analyzeClasspathLegacy(files)
+        }
+
+        val projectDirSet =
+            projectClassDirs
+                .filter { it.isDirectory && it.exists() }
+                .map { it.canonicalFile }
+                .toSet()
+
+        val allReferenced = mutableSetOf<String>()
+        val appReferenced = mutableSetOf<String>()
+        val projectFacts = mutableListOf<ProjectClassFact>()
+        val scannedProjectDirs = mutableSetOf<File>()
+        var merged = AnalysisResult()
+
+        for (file in files) {
+            when {
+                file.isDirectory && file.exists() -> {
+                    val canonical = file.canonicalFile
+                    val isProject =
+                        projectDirSet.any { projectDir ->
+                            canonical == projectDir || canonical.toPath().startsWith(projectDir.toPath())
+                        }
+                    val partial =
+                        analyzeClassDirInternal(
+                            dir = file,
+                            collectReferences = needReferences,
+                            collectProjectFacts = isProject,
+                        )
+                    merged += partial.toResult()
+                    if (needReferences) {
+                        allReferenced += partial.referencedTypes
+                        if (isProject) {
+                            appReferenced += partial.referencedTypes
+                        }
+                    }
+                    if (isProject) {
+                        projectFacts += partial.projectFacts
+                        scannedProjectDirs += canonical
+                    }
+                }
+                file.isFile && file.name.endsWith(".jar") && file.exists() -> {
+                    val partial = analyzeJarInternal(file, collectReferences = needReferences)
+                    merged += partial.toResult()
+                    if (needReferences) {
+                        allReferenced += partial.referencedTypes
+                    }
+                }
+            }
+        }
+
+        // Project dirs not already present on the runtime classpath (unusual, but cheap)
+        for (projectDir in projectDirSet) {
+            if (projectDir in scannedProjectDirs) continue
+            val partial =
+                analyzeClassDirInternal(
+                    dir = projectDir,
+                    collectReferences = true,
+                    collectProjectFacts = true,
+                )
+            merged += partial.toResult()
+            allReferenced += partial.referencedTypes
+            appReferenced += partial.referencedTypes
+            projectFacts += partial.projectFacts
+        }
+
+        val projectEntries =
+            when {
+                reflectionForProjectClasses -> OrphanProjectClassDetector.detectAll(projectFacts)
+                detectOrphanProjectClasses ->
+                    OrphanProjectClassDetector.detect(
+                        projectFacts = projectFacts,
+                        classpathReferencedTypes = allReferenced,
+                        appReferencedTypes = appReferenced,
+                    )
+                else -> emptySet()
+            }
+
+        return merged.copy(projectClassEntries = projectEntries)
+    }
+
+    /**
+     * Analyzes multiple JARs and merges results.
+     */
+    fun analyzeJars(jarPaths: List<File>): AnalysisResult {
+        var merged = AnalysisResult()
+        for (jar in jarPaths) {
+            merged = merged + analyzeJar(jar)
+        }
+        return merged
+    }
+
+    private fun analyzeClasspathLegacy(files: Iterable<File>): AnalysisResult {
+        var merged = AnalysisResult()
+        for (file in files) {
+            merged = merged +
+                when {
+                    file.isDirectory -> analyzeClassDir(file)
+                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
+                    else -> continue
+                }
+        }
+        return merged
+    }
+
+    private data class PartialScan(
+        val reflectionEntries: Set<ReflectionEntry> = emptySet(),
+        val jniEntries: Set<JniEntry> = emptySet(),
+        val resourcePatterns: Set<ResourcePattern> = emptySet(),
+        val serviceLoaderEntries: Set<ReflectionEntry> = emptySet(),
+        val referencedTypes: Set<String> = emptySet(),
+        val projectFacts: List<ProjectClassFact> = emptyList(),
+    ) {
+        fun toResult(): AnalysisResult =
+            AnalysisResult(
+                reflectionEntries = reflectionEntries,
+                jniEntries = jniEntries,
+                resourcePatterns = resourcePatterns,
+                serviceLoaderEntries = serviceLoaderEntries,
+            )
+    }
+
+    private fun analyzeJarInternal(
+        jarPath: File,
+        collectReferences: Boolean,
+    ): PartialScan {
+        if (!jarPath.exists() || !jarPath.name.endsWith(".jar")) {
+            return PartialScan()
         }
 
         val jniEntries = mutableSetOf<JniEntry>()
@@ -32,77 +196,74 @@ internal object BytecodeAnalyzer {
         val jniReferencedTypes = mutableSetOf<String>()
         val jniFieldTypes = mutableSetOf<String>()
         val jniSuperclassTypes = mutableSetOf<String>()
-        // Index: internal class name (com/foo/Bar) -> class bytes, for second-pass JNI callback resolution
         val classBytesIndex = mutableMapOf<String, ByteArray>()
+        val referencedTypes = mutableSetOf<String>()
 
-        JarFile(jarPath).use { jar ->
-            // Service loader detection (scans META-INF/services/)
-            val serviceResult = ServiceLoaderDetector.detect(jar)
-            serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
-            resourcePatterns.addAll(serviceResult.resourcePatterns)
+        try {
+            JarFile(jarPath).use { jar ->
+                val serviceResult = ServiceLoaderDetector.detect(jar)
+                serviceLoaderEntries.addAll(serviceResult.reflectionEntries)
+                resourcePatterns.addAll(serviceResult.resourcePatterns)
+                resourcePatterns.addAll(JarResourceDetector.detect(jar))
 
-            // JAR resource detection (native libs, properties, analysis resources)
-            resourcePatterns.addAll(JarResourceDetector.detect(jar))
+                for (entry in jar.entries()) {
+                    if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) continue
 
-            // Pass 1: scan all .class files
-            for (entry in jar.entries()) {
-                if (!entry.name.endsWith(".class") || entry.name.startsWith("META-INF/")) continue
+                    val classBytes =
+                        try {
+                            jar.getInputStream(entry).use { it.readBytes() }
+                        } catch (_: Exception) {
+                            continue
+                        }
 
-                val classBytes =
+                    val internalName = entry.name.removeSuffix(".class")
+                    classBytesIndex[internalName] = classBytes
+
                     try {
-                        jar.getInputStream(entry).use { it.readBytes() }
-                    } catch (_: Exception) {
-                        continue
+                        val nativeResult = NativeMethodDetector.detectWithReferences(classBytes)
+                        jniEntries.addAll(nativeResult.jniEntries)
+                        jniReferencedTypes.addAll(nativeResult.referencedTypes)
+                        jniFieldTypes.addAll(nativeResult.jniClassFieldTypes)
+                        nativeResult.superclassType?.let { jniSuperclassTypes.add(it) }
+
+                        analyzeClassBytes(classBytes, reflectionEntries, resourcePatterns)
+                        if (collectReferences) {
+                            referencedTypes.addAll(ClassReferenceCollector.collect(classBytes))
+                        }
+                    } catch (_: IllegalArgumentException) {
+                        // ASM does not support this class file version (e.g. JDK 25+) — skip
                     }
-
-                // Index by internal class name for second-pass lookup
-                val internalName = entry.name.removeSuffix(".class")
-                classBytesIndex[internalName] = classBytes
-
-                try {
-                    // Native method detection -> JNI entries + referenced types + field types + superclass
-                    val nativeResult = NativeMethodDetector.detectWithReferences(classBytes)
-                    jniEntries.addAll(nativeResult.jniEntries)
-                    jniReferencedTypes.addAll(nativeResult.referencedTypes)
-                    jniFieldTypes.addAll(nativeResult.jniClassFieldTypes)
-                    nativeResult.superclassType?.let { jniSuperclassTypes.add(it) }
-
-                    analyzeClassBytes(classBytes, jniEntries, reflectionEntries, resourcePatterns, jniReferencedTypes)
-                } catch (_: IllegalArgumentException) {
-                    // ASM does not support this class file version (e.g. JDK 25+) — skip
                 }
+
+                val allJniCallbackCandidates = jniFieldTypes + jniReferencedTypes + jniSuperclassTypes
+                resolveJniCallbackTypes(allJniCallbackCandidates, classBytesIndex, jniEntries)
+                enrichJniClassEntries(classBytesIndex, jniEntries)
             }
-
-            // Pass 2: resolve JNI callback types — field types, parameter/return types,
-            // superclasses of JNI classes, and inner classes of callback types
-            val allJniCallbackCandidates = jniFieldTypes + jniReferencedTypes + jniSuperclassTypes
-            resolveJniCallbackTypes(allJniCallbackCandidates, classBytesIndex, jniEntries)
-
-            // Pass 3: enrich JNI classes themselves with fields + non-native methods
-            // Native code accesses fields and calls non-native methods on JNI classes too
-            enrichJniClassEntries(classBytesIndex, jniEntries)
+        } catch (_: Exception) {
+            // Corrupt JAR — return whatever was collected
         }
 
-        // Add remaining JNI-referenced types that weren't resolved as callbacks
         for (refType in jniReferencedTypes) {
             if (jniEntries.none { it.type == refType }) {
                 jniEntries.add(JniEntry(type = refType))
             }
         }
 
-        return AnalysisResult(
+        return PartialScan(
             reflectionEntries = reflectionEntries,
             jniEntries = jniEntries,
             resourcePatterns = resourcePatterns,
             serviceLoaderEntries = serviceLoaderEntries,
+            referencedTypes = referencedTypes,
         )
     }
 
-    /**
-     * Analyzes a directory of compiled .class files (e.g. build/classes/kotlin/jvm/main).
-     */
-    fun analyzeClassDir(dir: File): AnalysisResult {
-        if (!dir.exists() || !dir.isDirectory) return AnalysisResult()
+    private fun analyzeClassDirInternal(
+        dir: File,
+        collectReferences: Boolean,
+        collectProjectFacts: Boolean,
+    ): PartialScan {
+        if (!dir.exists() || !dir.isDirectory) return PartialScan()
 
         val jniEntries = mutableSetOf<JniEntry>()
         val reflectionEntries = mutableSetOf<ReflectionEntry>()
@@ -112,8 +273,9 @@ internal object BytecodeAnalyzer {
         val jniFieldTypes = mutableSetOf<String>()
         val jniSuperclassTypes = mutableSetOf<String>()
         val classBytesIndex = mutableMapOf<String, ByteArray>()
+        val referencedTypes = mutableSetOf<String>()
+        val projectFacts = mutableListOf<ProjectClassFact>()
 
-        // Scan META-INF/services/ in class directories
         val servicesDir = File(dir, "META-INF/services")
         if (servicesDir.isDirectory) {
             servicesDir.listFiles()?.filter { it.isFile }?.forEach { serviceFile ->
@@ -135,7 +297,6 @@ internal object BytecodeAnalyzer {
             }
         }
 
-        // Pass 1: scan all .class files recursively
         dir
             .walkTopDown()
             .filter { it.isFile && it.extension == "class" }
@@ -147,7 +308,12 @@ internal object BytecodeAnalyzer {
                         return@forEach
                     }
 
-                val relativePath = classFile.relativeTo(dir).path.removeSuffix(".class")
+                val relativePath =
+                    classFile
+                        .relativeTo(dir)
+                        .path
+                        .removeSuffix(".class")
+                        .replace('\\', '/')
                 classBytesIndex[relativePath] = classBytes
 
                 try {
@@ -157,17 +323,20 @@ internal object BytecodeAnalyzer {
                     jniFieldTypes.addAll(nativeResult.jniClassFieldTypes)
                     nativeResult.superclassType?.let { jniSuperclassTypes.add(it) }
 
-                    analyzeClassBytes(classBytes, jniEntries, reflectionEntries, resourcePatterns, jniReferencedTypes)
+                    analyzeClassBytes(classBytes, reflectionEntries, resourcePatterns)
+                    if (collectReferences) {
+                        referencedTypes.addAll(ClassReferenceCollector.collect(classBytes))
+                    }
+                    if (collectProjectFacts) {
+                        OrphanProjectClassDetector.inspect(classBytes)?.let { projectFacts.add(it) }
+                    }
                 } catch (_: IllegalArgumentException) {
                     // ASM does not support this class file version (e.g. JDK 25+) — skip
                 }
             }
 
-        // Pass 2: resolve JNI callback types (including superclasses and inner classes)
         val allJniCallbackCandidates = jniFieldTypes + jniReferencedTypes + jniSuperclassTypes
         resolveJniCallbackTypes(allJniCallbackCandidates, classBytesIndex, jniEntries)
-
-        // Pass 3: enrich JNI classes themselves with fields + non-native methods
         enrichJniClassEntries(classBytesIndex, jniEntries)
 
         for (refType in jniReferencedTypes) {
@@ -176,52 +345,21 @@ internal object BytecodeAnalyzer {
             }
         }
 
-        return AnalysisResult(
+        return PartialScan(
             reflectionEntries = reflectionEntries,
             jniEntries = jniEntries,
             resourcePatterns = resourcePatterns,
             serviceLoaderEntries = serviceLoaderEntries,
+            referencedTypes = referencedTypes,
+            projectFacts = projectFacts,
         )
     }
 
-    /**
-     * Analyzes a classpath that may contain both JARs and class directories.
-     */
-    fun analyzeClasspath(files: Iterable<File>): AnalysisResult {
-        var merged = AnalysisResult()
-        for (file in files) {
-            merged = merged +
-                when {
-                    file.isDirectory -> analyzeClassDir(file)
-                    file.isFile && file.name.endsWith(".jar") -> analyzeJar(file)
-                    else -> continue
-                }
-        }
-        return merged
-    }
-
-    /**
-     * Analyzes multiple JARs and merges results.
-     */
-    fun analyzeJars(jarPaths: List<File>): AnalysisResult {
-        var merged = AnalysisResult()
-        for (jar in jarPaths) {
-            merged = merged + analyzeJar(jar)
-        }
-        return merged
-    }
-
-    /**
-     * Resolves JNI callback types: for each type found as a field, parameter, or superclass
-     * in a JNI class, scan that class to extract all non-private methods/fields as JNI-accessible
-     * entries. Also expands to inner classes (e.g., Function -> Function$Aggregate, Function$Window).
-     */
     private fun resolveJniCallbackTypes(
         callbackCandidates: Set<String>,
         classBytesIndex: Map<String, ByteArray>,
         jniEntries: MutableSet<JniEntry>,
     ) {
-        // Expand candidates with inner classes found in the classBytesIndex
         val expandedCandidates = mutableSetOf<String>()
         expandedCandidates.addAll(callbackCandidates)
 
@@ -235,11 +373,9 @@ internal object BytecodeAnalyzer {
         }
 
         for (typeName in expandedCandidates) {
-            // Skip JDK types and types already fully covered
             if (typeName.startsWith("java.") || typeName.startsWith("javax.")) continue
             if (jniEntries.any { it.type == typeName && it.methods.isNotEmpty() }) continue
 
-            // Look up the class bytes by internal name (com/foo/Bar)
             val internalName = typeName.replace('.', '/')
             val classBytes = classBytesIndex[internalName] ?: continue
 
@@ -250,23 +386,16 @@ internal object BytecodeAnalyzer {
                     continue
                 }
             if (callbackEntry != null && (callbackEntry.methods.isNotEmpty() || callbackEntry.fields.isNotEmpty())) {
-                // Remove any existing bare entry and replace with the detailed one
                 jniEntries.removeAll { it.type == typeName }
                 jniEntries.add(callbackEntry)
             }
         }
     }
 
-    /**
-     * Enriches JNI class entries (classes that declare native methods) with their
-     * non-private fields and non-native methods. Native code typically accesses fields
-     * via GetFieldID and calls non-native methods via CallMethod on these classes.
-     */
     private fun enrichJniClassEntries(
         classBytesIndex: Map<String, ByteArray>,
         jniEntries: MutableSet<JniEntry>,
     ) {
-        // Collect types that have native methods (they have methods in their JNI entry)
         val nativeClassTypes =
             jniEntries
                 .filter { it.methods.isNotEmpty() && !it.jniAccessible }
@@ -284,7 +413,6 @@ internal object BytecodeAnalyzer {
                     continue
                 }
 
-            // Merge: keep native methods from pass 1, add fields + non-native methods from callback scan
             val existingEntry = jniEntries.first { it.type == typeName }
             val mergedMethods = existingEntry.methods + fullEntry.methods
             val mergedFields = fullEntry.fields
@@ -303,12 +431,9 @@ internal object BytecodeAnalyzer {
 
     private fun analyzeClassBytes(
         classBytes: ByteArray,
-        @Suppress("UNUSED_PARAMETER") jniEntries: MutableSet<JniEntry>,
         reflectionEntries: MutableSet<ReflectionEntry>,
         resourcePatterns: MutableSet<ResourcePattern>,
-        @Suppress("UNUSED_PARAMETER") jniReferencedTypes: MutableSet<String>,
     ) {
-        // Note: NativeMethodDetector is now called separately by the caller (pass 1)
         reflectionEntries.addAll(ClassForNameDetector.detect(classBytes))
         reflectionEntries.addAll(ReflectionApiDetector.detect(classBytes))
         resourcePatterns.addAll(ResourceBundleDetector.detect(classBytes))

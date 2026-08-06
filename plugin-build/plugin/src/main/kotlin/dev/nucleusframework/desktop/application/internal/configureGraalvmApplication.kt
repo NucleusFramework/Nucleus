@@ -656,6 +656,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         "Statically analyze bytecode to detect GraalVM reflection/JNI/resource metadata"
                     task.group = NUCLEUS_TASK_GROUP
                     task.outputDir.set(staticMetadataDir)
+                    task.detectOrphanProjectClasses.set(graalvm.detectOrphanProjectClasses)
+                    task.reflectionForProjectClasses.set(graalvm.reflectionForProjectClasses)
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
@@ -677,6 +679,8 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                     )) {
                         val classDir = project.layout.buildDirectory.dir(dirPath)
                         task.runtimeClasspath.from(classDir)
+                        // Separate collection for the orphan / project-class detectors (#441)
+                        task.projectClassDirs.from(classDir)
                     }
                 }
             }
