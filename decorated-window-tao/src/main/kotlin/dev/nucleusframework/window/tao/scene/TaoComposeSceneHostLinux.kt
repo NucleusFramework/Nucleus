@@ -269,13 +269,22 @@ internal class TaoComposeSceneHostLinux(
     /**
      * Wayland: size of the EGL buffer currently in use for painting.
      * `wl_egl_window_resize` only takes effect on the next `eglSwapBuffers`.
-     * Painting at the *window* size into a still-old buffer with BOTTOM_LEFT
-     * shifts/flashes the frame (Fedora Mutter and KWin). We paint at this
-     * size and advance after present. Burst catch-up keeps lag to one buffer.
-     * X11: drawable tracks the window immediately.
+     * Used only when [useDrawableSizedPaint] is true (KWin): paint at this size
+     * and advance after present. Elsewhere (GNOME / main) paint at the window
+     * size so layout stays in sync with the configure.
      */
     private var drawableWidthPx: Int = 0
     private var drawableHeightPx: Int = 0
+
+    /**
+     * KWin flashes if we paint at the window size into a still-old EGL FB
+     * (BOTTOM_LEFT). GNOME does not need that trade-off — keep master's
+     * window-sized paint there (and on every non-Plasma DE).
+     */
+    private val useDrawableSizedPaint: Boolean
+        get() =
+            attachedKind == 2 &&
+                LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
@@ -1219,7 +1228,16 @@ internal class TaoComposeSceneHostLinux(
     private fun applyPendingNativeResize() {
         if (attachmentHandle == 0L) return
         if (widthPx <= 0 || heightPx <= 0) return
-        // Scene size is set from the paint size (drawable on Wayland).
+        // GNOME / main: scene tracks the window. KWin drawable path sets scene
+        // size from the paint size below (may lag the window by one present).
+        if (!useDrawableSizedPaint) {
+            val currentSize = IntSize(widthPx, heightPx)
+            if (scene?.size != currentSize) {
+                scene?.size = currentSize
+                updateWindowInfoSize()
+                lastSceneSizeUpdateNs = System.nanoTime()
+            }
+        }
         if (widthPx == lastAppliedWidthPx &&
             heightPx == lastAppliedHeightPx &&
             scale == lastAppliedScale
@@ -1227,11 +1245,8 @@ internal class TaoComposeSceneHostLinux(
             return
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        // X11: drawable tracks the window immediately — drop Skia cache now.
-        // Wayland: drawable lags until the next present; keep painting into the
-        // old-sized FB until [onDrawablePresented] advances it (avoids
-        // BOTTOM_LEFT shift/flash when Skia is larger than the real buffer).
-        if (attachedKind != 2) {
+        if (!useDrawableSizedPaint) {
+            // Master behaviour: paint size follows the window immediately.
             if (widthPx != lastAppliedWidthPx ||
                 heightPx != lastAppliedHeightPx ||
                 scale != lastAppliedScale
@@ -1244,6 +1259,7 @@ internal class TaoComposeSceneHostLinux(
             drawableWidthPx = widthPx
             drawableHeightPx = heightPx
         } else if (scale != lastAppliedScale) {
+            // KWin: keep drawable lagging on size-only changes; rebuild on scale.
             cachedSurface?.close()
             cachedSurface = null
             cachedRt?.close()
@@ -1257,11 +1273,11 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Wayland: after a present, the pending `wl_egl_window_resize` is in effect.
-     * Advance the paint size and re-arm a frame if the window is still ahead.
+     * KWin only: after a present, the pending `wl_egl_window_resize` is in
+     * effect — advance the paint size and re-arm a frame if still behind.
      */
     private fun onDrawablePresented() {
-        if (attachedKind != 2) return
+        if (!useDrawableSizedPaint) return
         if (lastAppliedWidthPx <= 0 || lastAppliedHeightPx <= 0) return
         if (drawableWidthPx == lastAppliedWidthPx && drawableHeightPx == lastAppliedHeightPx) {
             return
@@ -1387,13 +1403,12 @@ internal class TaoComposeSceneHostLinux(
         applyPendingNativeResize()
         updateResizeBurstSwapInterval()
 
-        // Paint at drawable size on Wayland (may lag the window by one present).
-        // Matches the FB so BOTTOM_LEFT cannot shift/flash (KWin + Fedora Mutter).
-        // Burst catch-up after present keeps the lag to one buffer step.
+        // KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
+        // GNOME / others: paint at window size (master — no layout lag).
         val paintW =
-            if (attachedKind == 2 && drawableWidthPx > 0) drawableWidthPx else widthPx
+            if (useDrawableSizedPaint && drawableWidthPx > 0) drawableWidthPx else widthPx
         val paintH =
-            if (attachedKind == 2 && drawableHeightPx > 0) drawableHeightPx else heightPx
+            if (useDrawableSizedPaint && drawableHeightPx > 0) drawableHeightPx else heightPx
         val paintSize = IntSize(paintW, paintH)
         if (sc.size != paintSize) {
             sc.size = paintSize
@@ -2303,8 +2318,8 @@ internal class TaoComposeSceneHostLinux(
                                     renderOwed = false
                                     owed
                                 }
-                            // Drawable size advances only after this present.
-                            if (attachedKind == 2) {
+                            // KWin: drawable advances only after this present.
+                            if (useDrawableSizedPaint) {
                                 dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
                                     .dispatch(
                                         EmptyCoroutineContext,
