@@ -286,6 +286,13 @@ internal class TaoComposeSceneHostLinux(
             attachedKind == 2 &&
                 LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
+    /**
+     * Last eglSwapInterval. Dropped to 0 for the whole interactive resize/move
+     * grab (and while the paint size still lags the window on KWin) so buffer
+     * catch-up is not vsync-gated. Same on GNOME and KDE; restored to 1 at rest.
+     */
+    private var appliedSwapInterval: Int = 1
+
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -1401,6 +1408,19 @@ internal class TaoComposeSceneHostLinux(
         sc.render(surface.canvas.asComposeCanvas(), now)
         applyFrameDecoration(surface.canvas, paintW, paintH)
         surface.flushAndSubmit(syncCpu = false)
+
+        // Wayland (GNOME + KDE): drop vsync during interactive resize/move and
+        // while paint size lags the window so eglSwapBuffers is not held for a
+        // full refresh. Hold 0 for the whole grab to avoid 0↔1 thrash flashes.
+        if (attachedKind == 2 && !window.isPopup) {
+            val lagging = paintW != widthPx || paintH != heightPx
+            val wantInterval = if (lagging || compositorDragActive) 0 else 1
+            if (wantInterval != appliedSwapInterval) {
+                NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, wantInterval)
+                appliedSwapInterval = wantInterval
+            }
+        }
+
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
 
