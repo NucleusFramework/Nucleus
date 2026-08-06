@@ -591,7 +591,7 @@ private fun parentOuterOriginLogical(parent: TaoWindow): Pair<Double, Double>? {
     val rect = parent.outerBoundsPx() ?: return null
     if (rect.size < 2) return null
     val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
-    return (rect[0] / scale) to (rect[1] / scale)
+    return (rect[0] / scale).toDouble() to (rect[1] / scale).toDouble()
 }
 
 /**
