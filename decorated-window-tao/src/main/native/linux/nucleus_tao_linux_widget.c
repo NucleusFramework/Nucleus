@@ -582,12 +582,25 @@ static int gtk_button_to_tao(unsigned int gtk_button) {
     }
 }
 
-static int translate_to_toplevel(GtkWidget *widget, double ex, double ey, int *out_x, int *out_y) {
+/* Map EventBox-local event coords into Compose's content-area logical space.
+ *
+ * With the yaru-style hidden-titlebar CSD, the GtkApplicationWindow includes
+ * theme shadow margins around the content GtkBox. Tao's normal pointer path
+ * (and the EGL subsurface) use content (0,0) — translating to the *toplevel*
+ * leaves those margins in the coords and shifts every overlay click by ~the
+ * shadow size. Prefer the bin child (content box); fall back to the toplevel
+ * when CSD is off / no child (identity for flat undecorated windows). */
+static int translate_to_content(GtkWidget *widget, double ex, double ey, int *out_x, int *out_y) {
     *out_x = -1; *out_y = -1;
     if (g.gtk_widget_get_toplevel == NULL || g.gtk_widget_translate_coordinates == NULL) return 0;
     GtkWidget *toplevel = g.gtk_widget_get_toplevel(widget);
     if (toplevel == NULL) return 0;
-    return g.gtk_widget_translate_coordinates(widget, toplevel, (int) ex, (int) ey, out_x, out_y) ? 1 : 0;
+    GtkWidget *target = toplevel;
+    if (g.gtk_bin_get_child != NULL) {
+        GtkWidget *child = g.gtk_bin_get_child(toplevel);
+        if (child != NULL) target = child;
+    }
+    return g.gtk_widget_translate_coordinates(widget, target, (int) ex, (int) ey, out_x, out_y) ? 1 : 0;
 }
 
 static gboolean on_input_box_button_press(GtkWidget *widget, void *event_ptr,
@@ -596,8 +609,8 @@ static gboolean on_input_box_button_press(GtkWidget *widget, void *event_ptr,
     gdk_event_button_t *e = (gdk_event_button_t *) event_ptr;
     if (e == NULL) return GTK_FALSE;
     int wx, wy;
-    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
-    /* Forward window-relative coords + press to Compose, bypassing
+    translate_to_content(widget, e->x, e->y, &wx, &wy);
+    /* Forward content-relative coords + press to Compose, bypassing
      * Tao's `cursor.window_at_position()` which on Wayland reports
      * EventBox-local coords because of WebKit's accelerated subsurface
      * stealing the seat focus. The callback updates the host's
@@ -619,7 +632,7 @@ static gboolean on_input_box_button_release(GtkWidget *widget, void *event_ptr,
     gdk_event_button_t *e = (gdk_event_button_t *) event_ptr;
     if (e == NULL) return GTK_FALSE;
     int wx, wy;
-    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
+    translate_to_content(widget, e->x, e->y, &wx, &wy);
     invoke_callback(widget, EVT_OVERLAY_RELEASE, wx, wy, gtk_button_to_tao(e->button));
     return GTK_TRUE;
 }
@@ -642,7 +655,7 @@ static gboolean on_input_box_motion_notify(GtkWidget *widget, void *event_ptr,
     gdk_event_motion_t *e = (gdk_event_motion_t *) event_ptr;
     if (e == NULL) return GTK_FALSE;
     int wx, wy;
-    translate_to_toplevel(widget, e->x, e->y, &wx, &wy);
+    translate_to_content(widget, e->x, e->y, &wx, &wy);
     invoke_callback(widget, EVT_OVERLAY_MOVE, wx, wy, /*button*/ 0);
     /* Consume so Tao's GtkApplicationWindow-level motion handler
      * doesn't ALSO fire — its `cursor.window_at_position()` reports

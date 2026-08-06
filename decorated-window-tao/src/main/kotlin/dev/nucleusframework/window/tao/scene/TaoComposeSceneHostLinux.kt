@@ -245,6 +245,15 @@ internal class TaoComposeSceneHostLinux(
     /** Last opaque region pushed: (logicalW, logicalH, cornerRadius). */
     private var lastOpaqueRegion: Triple<Int, Int, Int>? = null
 
+    /**
+     * GtkWidget handles currently embedded via [NativeView]. While any are
+     * present, Compose punches transparent holes (`BlendMode.Clear`) so the
+     * native widget shows through the EGL subsurface — that only works if the
+     * compositor still blends GTK underneath us, so we must not declare an
+     * opaque region. Tracked by handle so duplicate attach/detach is safe.
+     */
+    private val attachedNativeViews: MutableSet<Long> = linkedSetOf()
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -1177,9 +1186,13 @@ internal class TaoComposeSceneHostLinux(
      * which throttles GDK's frame clock, which is what caps how fast the window
      * edge moves during a resize.
      *
-     * Cleared when the window is genuinely translucent: [clearColorArgbState] is
-     * what the scene is cleared to each frame, so an alpha below 255 means
-     * pixels really can show through and claiming otherwise would corrupt them.
+     * Cleared when:
+     *  - the window is genuinely translucent: [clearColorArgbState] alpha < 255
+     *  - a [NativeView] GtkWidget is attached: Compose clears that rect to
+     *    alpha 0 so the native widget can show through; claiming the surface
+     *    opaque there makes the compositor drop GTK/WebKit underneath and
+     *    produces damage/cursor trails
+     *
      * The rounded corners are excluded for the same reason — see
      * [applyFrameDecoration], which carves them out.
      */
@@ -1188,7 +1201,9 @@ internal class TaoComposeSceneHostLinux(
         logicalH: Int,
     ) {
         if (attachmentHandle == 0L) return
-        val opaque = (clearColorArgbState.value ushr 24) and 0xFF == 0xFF
+        val opaque =
+            (clearColorArgbState.value ushr 24) and 0xFF == 0xFF &&
+                attachedNativeViews.isEmpty()
         if (!opaque) {
             if (lastOpaqueRegion != null) {
                 NativeTaoEglBridge.nativeSetOpaqueRegion(attachmentHandle, 0, 0, 0)
@@ -1202,6 +1217,16 @@ internal class TaoComposeSceneHostLinux(
         if (key == lastOpaqueRegion) return
         lastOpaqueRegion = key
         NativeTaoEglBridge.nativeSetOpaqueRegion(attachmentHandle, logicalW, logicalH, radius)
+    }
+
+    /** Re-pushes the opaque region for the current size (e.g. after NativeView attach). */
+    private fun refreshOpaqueRegion() {
+        if (widthPx <= 0 || heightPx <= 0) return
+        val opaqueScale = scale.roundToInt().coerceAtLeast(1)
+        pushOpaqueRegion(
+            (widthPx / opaqueScale).coerceAtLeast(1),
+            (heightPx / opaqueScale).coerceAtLeast(1),
+        )
     }
 
     /**
@@ -2002,11 +2027,21 @@ internal class TaoComposeSceneHostLinux(
             override fun attach(childHandle: Long) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
+                if (childHandle != 0L && outer.attachedNativeViews.add(childHandle)) {
+                    // Force a re-push: lastOpaqueRegion may still hold the full
+                    // opaque key from before the embed existed.
+                    outer.lastOpaqueRegion = Triple(-1, -1, -1)
+                    outer.refreshOpaqueRegion()
+                }
             }
 
             override fun detach(childHandle: Long) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
+                if (childHandle != 0L && outer.attachedNativeViews.remove(childHandle)) {
+                    outer.lastOpaqueRegion = null
+                    outer.refreshOpaqueRegion()
+                }
             }
 
             override fun setFrame(

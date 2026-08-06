@@ -59,7 +59,7 @@ tasks.register<JavaExec>("systemThemeE2E") {
     group = "verification"
     description =
         "Boots a real Compose application under ProvideNucleusSystemTheme and " +
-            "asserts isSystemInDarkTheme() matches the native detector"
+        "asserts isSystemInDarkTheme() matches the native detector"
     dependsOn(tasks.named("testClasses"))
     classpath = sourceSets["test"].runtimeClasspath
     mainClass.set("dev.nucleusframework.application.NucleusApplicationSystemThemeE2EMainKt")

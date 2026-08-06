@@ -109,9 +109,10 @@ internal object NativeTaoLinuxWidgetBridge {
 
     /**
      * Receives motion / press / release events forwarded from the
-     * native EventBox handlers. Coords are **logical pixels** in
-     * GtkApplicationWindow space (already translated via
-     * `gtk_widget_translate_coordinates`).
+     * native EventBox handlers. Coords are **logical pixels** in the
+     * window content area (bin child), matching Tao's CSD-normalised
+     * pointer path and Compose's (0,0) — not the decorated toplevel
+     * (which includes theme shadow margins under hidden-titlebar CSD).
      *
      * `type`: 0 = move, 1 = press, 2 = release.
      * `pressed`: 1 if currently pressed, 0 otherwise.
