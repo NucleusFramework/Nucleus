@@ -130,7 +130,8 @@ public object NucleusTaskbarProgress {
 // receiver.
 public fun NucleusWindow.setTaskbarProgress(value: Double): Boolean = NucleusTaskbarProgress.setProgress(this, value)
 
-public fun NucleusWindow.setTaskbarState(state: TaskbarProgress.State): Boolean = NucleusTaskbarProgress.setState(this, state)
+public fun NucleusWindow.setTaskbarState(state: TaskbarProgress.State): Boolean =
+    NucleusTaskbarProgress.setState(this, state)
 
 public fun NucleusWindow.showTaskbarProgress(value: Double): Boolean = NucleusTaskbarProgress.showProgress(this, value)
 
@@ -138,7 +139,8 @@ public fun NucleusWindow.showTaskbarError(value: Double = 1.0): Boolean = Nucleu
 
 public fun NucleusWindow.showTaskbarIndeterminate(): Boolean = NucleusTaskbarProgress.showIndeterminate(this)
 
-public fun NucleusWindow.showTaskbarPaused(value: Double = 1.0): Boolean = NucleusTaskbarProgress.showPaused(this, value)
+public fun NucleusWindow.showTaskbarPaused(value: Double = 1.0): Boolean =
+    NucleusTaskbarProgress.showPaused(this, value)
 
 public fun NucleusWindow.hideTaskbarProgress(): Boolean = NucleusTaskbarProgress.hideProgress(this)
 

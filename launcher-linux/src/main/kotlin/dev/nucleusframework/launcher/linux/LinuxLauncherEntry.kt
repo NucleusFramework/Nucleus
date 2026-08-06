@@ -102,7 +102,8 @@ public object LinuxLauncherEntry {
     /**
      * Clears the badge count.
      */
-    public fun clearCount(appUri: String): Boolean = update(appUri, LauncherProperties(count = 0L, countVisible = false))
+    public fun clearCount(appUri: String): Boolean =
+        update(appUri, LauncherProperties(count = 0L, countVisible = false))
 
     /**
      * Sets the progress bar on the launcher icon.

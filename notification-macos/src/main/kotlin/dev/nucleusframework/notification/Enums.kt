@@ -58,7 +58,8 @@ public enum class ShowPreviewsSetting(
     ;
 
     public companion object {
-        public fun fromRawValue(value: Int): ShowPreviewsSetting = entries.firstOrNull { it.rawValue == value } ?: ALWAYS
+        public fun fromRawValue(value: Int): ShowPreviewsSetting =
+            entries.firstOrNull { it.rawValue == value } ?: ALWAYS
     }
 }
 

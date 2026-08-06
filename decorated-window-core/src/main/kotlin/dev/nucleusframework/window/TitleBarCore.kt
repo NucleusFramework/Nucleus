@@ -219,6 +219,5 @@ public class TitleBarChildDataNode(
     public var horizontalAlignment: Alignment.Horizontal,
 ) : Modifier.Node(),
     ParentDataModifierNode {
-    override fun Density.modifyParentData(parentData: Any?): TitleBarChildDataNode =
-        this@TitleBarChildDataNode
+    override fun Density.modifyParentData(parentData: Any?): TitleBarChildDataNode = this@TitleBarChildDataNode
 }
