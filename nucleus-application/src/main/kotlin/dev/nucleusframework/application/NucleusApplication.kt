@@ -42,7 +42,7 @@ import java.util.Locale
  *     a single backend module — when both `decorated-window-tao` and an AWT
  *     backend (`-jbr` or `-jni`) are present, Tao wins.
  */
-fun nucleusApplication(
+public fun nucleusApplication(
     args: Array<String> = emptyArray(),
     backend: NucleusBackend = NucleusBackend.Auto,
     enableSingleInstance: Boolean = true,

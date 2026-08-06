@@ -34,7 +34,7 @@ import java.awt.event.MouseEvent
  *   window's title bar.
  * @return A modified [Modifier] that registers this composable as a client region.
  */
-fun Modifier.clientRegion(key: String): Modifier = then(RegisterClientRegionElement(key))
+public fun Modifier.clientRegion(key: String): Modifier = then(RegisterClientRegionElement(key))
 
 private data class RegisterClientRegionElement(
     private val key: String,

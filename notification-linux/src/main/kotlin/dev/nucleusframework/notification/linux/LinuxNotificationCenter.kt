@@ -8,13 +8,13 @@ package dev.nucleusframework.notification.linux
  *
  * Specification: https://specifications.freedesktop.org/notification/latest-single/
  */
-object LinuxNotificationCenter {
+public object LinuxNotificationCenter {
     /**
      * Whether the native library is loaded and the module is functional.
      *
      * Returns `false` on non-Linux platforms or if the native library could not be loaded.
      */
-    val isAvailable: Boolean
+    public val isAvailable: Boolean
         get() = NativeLinuxNotificationBridge.isLoaded
 
     /**
@@ -25,7 +25,7 @@ object LinuxNotificationCenter {
      *
      * @return The notification ID (> 0) on success, or 0 on failure.
      */
-    fun notify(notification: Notification): Int {
+    public fun notify(notification: Notification): Int {
         if (!isAvailable) return 0
 
         val actionKeys = notification.actions.map { it.key }.toTypedArray()
@@ -67,7 +67,7 @@ object LinuxNotificationCenter {
     /**
      * Forcefully closes a notification by its ID.
      */
-    fun closeNotification(id: Int) {
+    public fun closeNotification(id: Int) {
         if (!isAvailable) return
         NativeLinuxNotificationBridge.nativeCloseNotification(id)
     }
@@ -80,7 +80,7 @@ object LinuxNotificationCenter {
      *
      * @return List of capability strings, or an empty list on failure.
      */
-    fun getCapabilities(): List<String> {
+    public fun getCapabilities(): List<String> {
         if (!isAvailable) return emptyList()
         return NativeLinuxNotificationBridge.nativeGetCapabilities()?.toList() ?: emptyList()
     }
@@ -90,7 +90,7 @@ object LinuxNotificationCenter {
      *
      * @return Server information, or `null` on failure.
      */
-    fun getServerInformation(): ServerInformation? {
+    public fun getServerInformation(): ServerInformation? {
         if (!isAvailable) return null
         val info = NativeLinuxNotificationBridge.nativeGetServerInformation() ?: return null
         @Suppress("MagicNumber")
@@ -108,7 +108,7 @@ object LinuxNotificationCenter {
      *
      * Signal monitoring starts automatically when the first listener is added.
      */
-    fun addListener(listener: LinuxNotificationListener) {
+    public fun addListener(listener: LinuxNotificationListener) {
         NativeLinuxNotificationBridge.addListener(listener)
     }
 
@@ -117,7 +117,7 @@ object LinuxNotificationCenter {
      *
      * Signal monitoring stops automatically when the last listener is removed.
      */
-    fun removeListener(listener: LinuxNotificationListener) {
+    public fun removeListener(listener: LinuxNotificationListener) {
         NativeLinuxNotificationBridge.removeListener(listener)
     }
 }

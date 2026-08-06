@@ -1,0 +1,4 @@
+public final class dev/nucleusframework/nativehttp/ktor/NativeSslKtorExtensionKt {
+	public static final fun installNativeSsl (Lio/ktor/client/HttpClientConfig;)V
+}
+

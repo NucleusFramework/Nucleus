@@ -30,15 +30,15 @@ import javax.swing.SwingUtilities
  * @param objectPath The D-Bus object path for this menu server
  *   (e.g. `"/com/example/MyApp/Menu"`).
  */
-class LinuxQuicklist(
-    val objectPath: String,
+public class LinuxQuicklist(
+    public val objectPath: String,
 ) {
-    fun interface Listener {
-        fun onItemClicked(itemId: Int)
+    public fun interface Listener {
+        public fun onItemClicked(itemId: Int)
     }
 
     @Volatile
-    var listener: Listener? = null
+    public var listener: Listener? = null
 
     private var registered = false
 
@@ -49,7 +49,7 @@ class LinuxQuicklist(
      *   for sub-menus.
      * @return `true` if the layout was set and the D-Bus object registered successfully.
      */
-    fun setMenu(items: List<DbusmenuItem>): Boolean {
+    public fun setMenu(items: List<DbusmenuItem>): Boolean {
         if (!NativeLinuxLauncherBridge.isLoaded) return false
 
         // Flatten the tree into parallel arrays for JNI
@@ -111,7 +111,7 @@ class LinuxQuicklist(
     /**
      * Unregisters the D-Bus menu object and releases native resources.
      */
-    fun dispose() {
+    public fun dispose() {
         if (!registered) return
         if (!NativeLinuxLauncherBridge.isLoaded) return
         NativeLinuxLauncherBridge.nativeDestroyMenu(objectPath)

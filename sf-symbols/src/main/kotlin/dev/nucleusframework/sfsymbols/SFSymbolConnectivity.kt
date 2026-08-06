@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Connectivity (27 symbols). */
-enum class SFSymbolConnectivity(
+public enum class SFSymbolConnectivity(
     override val symbolName: String,
 ) : SFSymbol {
     CABLE_COAXIAL("cable.coaxial"),

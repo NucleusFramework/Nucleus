@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class NetworkInterfaceInfo(
+public data class NetworkInterfaceInfo(
     val name: String,
     val receivedBytes: Long,
     val transmittedBytes: Long,

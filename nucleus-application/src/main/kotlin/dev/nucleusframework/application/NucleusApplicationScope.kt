@@ -1,5 +1,6 @@
 package dev.nucleusframework.application
 
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.staticCompositionLocalOf
 import dev.nucleusframework.aot.runtime.AotRuntime
@@ -27,21 +28,21 @@ import dev.nucleusframework.window.tao.ApplicationScope as TaoApplicationScope
  * (e.g. ComposeNativeTray) with Tao.
  */
 @Stable
-sealed interface NucleusApplicationScope : AwtApplicationScope {
+public sealed interface NucleusApplicationScope : AwtApplicationScope {
     /** Posts an exit request to the underlying event loop. */
     override fun exitApplication()
 
     /** The backend currently driving this scope. Never [NucleusBackend.Auto]. */
-    val backend: NucleusBackend
+    public val backend: NucleusBackend
 
     /** Current AOT runtime mode, resolved from the `nucleus.aot.mode` system property. */
-    val aotMode: AotRuntimeMode get() = AotRuntime.mode()
+    public val aotMode: AotRuntimeMode get() = AotRuntime.mode()
 
     /** `true` when the JVM is running an AOT training pass. */
-    val isAotTraining: Boolean get() = aotMode == AotRuntimeMode.TRAINING
+    public val isAotTraining: Boolean get() = aotMode == AotRuntimeMode.TRAINING
 
     /** `true` when the JVM is running with an AOT cache loaded. */
-    val isAotRuntime: Boolean get() = aotMode == AotRuntimeMode.RUNTIME
+    public val isAotRuntime: Boolean get() = aotMode == AotRuntimeMode.RUNTIME
 
     /**
      * Registers [block] as the deep-link callback. Picks the right path for
@@ -53,7 +54,7 @@ sealed interface NucleusApplicationScope : AwtApplicationScope {
      *    the CLI [args]. Any deep link delivered before this call is buffered
      *    and replayed.
      */
-    fun onDeepLink(block: (URI) -> Unit)
+    public fun onDeepLink(block: (URI) -> Unit)
 }
 
 /**
@@ -87,7 +88,7 @@ sealed interface NucleusApplicationScope : AwtApplicationScope {
  * it, so the scope (and the window/dialog hosts) stay reachable from nested
  * window content too.
  */
-val LocalNucleusApplicationScope =
+public val LocalNucleusApplicationScope: ProvidableCompositionLocal<NucleusApplicationScope> =
     staticCompositionLocalOf<NucleusApplicationScope> {
         error("LocalNucleusApplicationScope not provided — use it inside a nucleusApplication { … } block.")
     }

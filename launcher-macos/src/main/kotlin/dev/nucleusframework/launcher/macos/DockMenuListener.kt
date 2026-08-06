@@ -1,7 +1,7 @@
 package dev.nucleusframework.launcher.macos
 
 /** Listener for dock menu item clicks. */
-fun interface DockMenuListener {
+public fun interface DockMenuListener {
     /** Called when the user clicks a dock menu item. Invoked on the Swing EDT. */
-    fun onItemClicked(itemId: Int)
+    public fun onItemClicked(itemId: Int)
 }

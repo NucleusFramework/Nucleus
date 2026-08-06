@@ -8,32 +8,32 @@ private const val MAX_BUTTONS = 5
  * Call [send] to display the notification on the current platform.
  * The same instance can be sent multiple times (each call creates a new notification).
  */
-class Notification internal constructor(
-    val title: String,
-    val message: String,
-    val largeImage: String?,
-    val smallIcon: String?,
-    val buttons: List<NotificationButton>,
-    val onActivated: (() -> Unit)?,
-    val onDismissed: ((DismissReason) -> Unit)?,
-    val onFailed: (() -> Unit)?,
+public class Notification internal constructor(
+    public val title: String,
+    public val message: String,
+    public val largeImage: String?,
+    public val smallIcon: String?,
+    public val buttons: List<NotificationButton>,
+    public val onActivated: (() -> Unit)?,
+    public val onDismissed: ((DismissReason) -> Unit)?,
+    public val onFailed: (() -> Unit)?,
     internal val linux: LinuxNotificationScope?,
     internal val macos: MacNotificationScope?,
     internal val windows: WindowsNotificationScope?,
 ) {
     /** Sends this notification to the OS notification system. */
-    fun send(): NotificationResult = NotificationManager.send(this)
+    public fun send(): NotificationResult = NotificationManager.send(this)
 }
 
 /** An action button on a notification. */
 @ConsistentCopyVisibility
-data class NotificationButton internal constructor(
+public data class NotificationButton internal constructor(
     val title: String,
     val onClick: () -> Unit,
 )
 
 @DslMarker
-annotation class NotificationDsl
+public annotation class NotificationDsl
 
 /**
  * Builder for a cross-platform notification.
@@ -44,14 +44,14 @@ annotation class NotificationDsl
  * expiry, history, etc.) live there rather than in a lossy shared abstraction.
  */
 @NotificationDsl
-class NotificationBuilder internal constructor() {
+public class NotificationBuilder internal constructor() {
     internal val buttons = mutableListOf<NotificationButton>()
     internal var linuxScope: LinuxNotificationScope? = null
     internal var macScope: MacNotificationScope? = null
     internal var windowsScope: WindowsNotificationScope? = null
 
     /** Adds a button with the given [title] and [onClick] handler. Max $MAX_BUTTONS buttons. */
-    fun button(
+    public fun button(
         title: String,
         onClick: () -> Unit,
     ) {
@@ -60,24 +60,24 @@ class NotificationBuilder internal constructor() {
     }
 
     /** Configures Linux-specific options (see [LinuxNotificationScope]); a no-op on other platforms. */
-    fun linux(block: LinuxNotificationScope.() -> Unit) {
+    public fun linux(block: LinuxNotificationScope.() -> Unit) {
         linuxScope = (linuxScope ?: LinuxNotificationScope()).apply(block)
     }
 
     /** Configures macOS-specific options (see [MacNotificationScope]); a no-op on other platforms. */
-    fun macos(block: MacNotificationScope.() -> Unit) {
+    public fun macos(block: MacNotificationScope.() -> Unit) {
         macScope = (macScope ?: MacNotificationScope()).apply(block)
     }
 
     /** Configures Windows-specific options (see [WindowsNotificationScope]); a no-op on other platforms. */
-    fun windows(block: WindowsNotificationScope.() -> Unit) {
+    public fun windows(block: WindowsNotificationScope.() -> Unit) {
         windowsScope = (windowsScope ?: WindowsNotificationScope()).apply(block)
     }
 }
 
 /** Former name of [NotificationBuilder], kept for source compatibility. */
 @Deprecated("Renamed to NotificationBuilder", ReplaceWith("NotificationBuilder"))
-typealias NotificationButtonBuilder = NotificationBuilder
+public typealias NotificationButtonBuilder = NotificationBuilder
 
 /**
  * Creates a cross-platform notification.
@@ -110,7 +110,7 @@ typealias NotificationButtonBuilder = NotificationBuilder
  * @param onFailed Called if the notification fails to display.
  * @param block Optional DSL block to add action buttons and per-platform options.
  */
-fun notification(
+public fun notification(
     title: String,
     message: String = "",
     largeImage: String? = null,

@@ -7,12 +7,12 @@ import dev.nucleusframework.notification.common.internal.PlatformDispatcher
  *
  * Use [dismiss] to programmatically close the notification.
  */
-class NotificationHandle internal constructor(
+public class NotificationHandle internal constructor(
     internal val platformId: String,
     private val dispatcher: PlatformDispatcher?,
 ) {
     /** Dismisses the notification if it is still visible. */
-    fun dismiss() {
+    public fun dismiss() {
         dispatcher?.dismiss(platformId)
     }
 

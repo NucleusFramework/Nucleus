@@ -10,8 +10,8 @@ package dev.nucleusframework.launcher.windows
  * @param id The native SHSTOCKICONID value.
  */
 @Suppress("MagicNumber")
-enum class StockIcon(
-    val id: Int,
+public enum class StockIcon(
+    public val id: Int,
 ) {
     // ---- Documents & Applications ----
     DOCUMENT_NO_ASSOCIATION(0),

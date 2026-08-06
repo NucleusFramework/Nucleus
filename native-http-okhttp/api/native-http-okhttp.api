@@ -1,0 +1,6 @@
+public final class dev/nucleusframework/nativehttp/okhttp/NativeOkHttpClient {
+	public static final field INSTANCE Ldev/nucleusframework/nativehttp/okhttp/NativeOkHttpClient;
+	public final fun create ()Lokhttp3/OkHttpClient;
+	public final fun withNativeSsl (Lokhttp3/OkHttpClient$Builder;)Lokhttp3/OkHttpClient$Builder;
+}
+

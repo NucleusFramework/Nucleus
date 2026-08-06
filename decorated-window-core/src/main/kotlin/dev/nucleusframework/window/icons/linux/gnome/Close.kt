@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.Close: ImageVector
+public val GnomeControlButtonsIcons.Close: ImageVector
     get() {
         if (_Close != null) {
             return _Close!!

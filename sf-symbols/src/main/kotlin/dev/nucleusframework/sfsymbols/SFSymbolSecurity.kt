@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Security (62 symbols). */
-enum class SFSymbolSecurity(
+public enum class SFSymbolSecurity(
     override val symbolName: String,
 ) : SFSymbol {
     KEY("key"),

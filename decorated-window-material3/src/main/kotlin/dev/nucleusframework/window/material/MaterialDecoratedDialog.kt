@@ -23,7 +23,7 @@ import dev.nucleusframework.application.DecoratedDialog as NucleusDecoratedDialo
 // nucleusApplication both overloads are applicable — the Nucleus one must win.
 @LowPriorityInOverloadResolution
 @Composable
-fun ApplicationScope.MaterialDecoratedDialog(
+public fun ApplicationScope.MaterialDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,
@@ -68,7 +68,7 @@ fun ApplicationScope.MaterialDecoratedDialog(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.MaterialDecoratedDialog(
+public fun NucleusApplicationScope.MaterialDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

@@ -13,15 +13,15 @@ package dev.nucleusframework.launcher.windows
  *   [TaskbarIconSource.FromFile], and [TaskbarIconSource.FromResource]. Null uses the app icon.
  * @property isSeparator Whether this entry is a visual separator (only valid in user tasks).
  */
-data class JumpListItem(
+public data class JumpListItem(
     val title: String = "",
     val arguments: String = "",
     val description: String = "",
     val icon: TaskbarIconSource? = null,
     val isSeparator: Boolean = false,
 ) {
-    companion object {
+    public companion object {
         /** A separator entry for the user tasks section. */
-        val SEPARATOR = JumpListItem(isSeparator = true)
+        public val SEPARATOR: JumpListItem = JumpListItem(isSeparator = true)
     }
 }

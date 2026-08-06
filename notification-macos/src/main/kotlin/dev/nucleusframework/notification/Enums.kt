@@ -3,8 +3,8 @@
 package dev.nucleusframework.notification
 
 /** Maps UNAuthorizationStatus */
-enum class AuthorizationStatus(
-    val rawValue: Int,
+public enum class AuthorizationStatus(
+    public val rawValue: Int,
 ) {
     NOT_DETERMINED(0),
     DENIED(1),
@@ -13,58 +13,58 @@ enum class AuthorizationStatus(
     EPHEMERAL(4),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): AuthorizationStatus =
+    public companion object {
+        public fun fromRawValue(value: Int): AuthorizationStatus =
             entries.firstOrNull { it.rawValue == value } ?: NOT_DETERMINED
     }
 }
 
 /** Maps UNNotificationSetting */
-enum class NotificationSetting(
-    val rawValue: Int,
+public enum class NotificationSetting(
+    public val rawValue: Int,
 ) {
     NOT_SUPPORTED(0),
     DISABLED(1),
     ENABLED(2),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): NotificationSetting =
+    public companion object {
+        public fun fromRawValue(value: Int): NotificationSetting =
             entries.firstOrNull { it.rawValue == value } ?: NOT_SUPPORTED
     }
 }
 
 /** Maps UNAlertStyle */
-enum class AlertStyle(
-    val rawValue: Int,
+public enum class AlertStyle(
+    public val rawValue: Int,
 ) {
     NONE(0),
     BANNER(1),
     ALERT(2),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): AlertStyle = entries.firstOrNull { it.rawValue == value } ?: NONE
+    public companion object {
+        public fun fromRawValue(value: Int): AlertStyle = entries.firstOrNull { it.rawValue == value } ?: NONE
     }
 }
 
 /** Maps UNShowPreviewsSetting */
-enum class ShowPreviewsSetting(
-    val rawValue: Int,
+public enum class ShowPreviewsSetting(
+    public val rawValue: Int,
 ) {
     ALWAYS(0),
     WHEN_AUTHENTICATED(1),
     NEVER(2),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): ShowPreviewsSetting = entries.firstOrNull { it.rawValue == value } ?: ALWAYS
+    public companion object {
+        public fun fromRawValue(value: Int): ShowPreviewsSetting = entries.firstOrNull { it.rawValue == value } ?: ALWAYS
     }
 }
 
 /** Maps UNNotificationInterruptionLevel (macOS 12.0+) */
-enum class InterruptionLevel(
-    val rawValue: Int,
+public enum class InterruptionLevel(
+    public val rawValue: Int,
 ) {
     PASSIVE(0),
     ACTIVE(1),
@@ -72,14 +72,14 @@ enum class InterruptionLevel(
     CRITICAL(3),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): InterruptionLevel = entries.firstOrNull { it.rawValue == value } ?: ACTIVE
+    public companion object {
+        public fun fromRawValue(value: Int): InterruptionLevel = entries.firstOrNull { it.rawValue == value } ?: ACTIVE
     }
 }
 
 /** Maps UNAuthorizationOptions (bitmask) */
-enum class AuthorizationOption(
-    val rawValue: Int,
+public enum class AuthorizationOption(
+    public val rawValue: Int,
 ) {
     BADGE(1 shl 0),
     SOUND(1 shl 1),
@@ -91,8 +91,8 @@ enum class AuthorizationOption(
 }
 
 /** Maps UNNotificationPresentationOptions (bitmask) */
-enum class PresentationOption(
-    val rawValue: Int,
+public enum class PresentationOption(
+    public val rawValue: Int,
 ) {
     BADGE(1 shl 0),
     SOUND(1 shl 1),
@@ -104,8 +104,8 @@ enum class PresentationOption(
 }
 
 /** Maps UNNotificationActionOptions (bitmask) */
-enum class ActionOption(
-    val rawValue: Int,
+public enum class ActionOption(
+    public val rawValue: Int,
 ) {
     AUTHENTICATION_REQUIRED(1 shl 0),
     DESTRUCTIVE(1 shl 1),
@@ -113,8 +113,8 @@ enum class ActionOption(
 }
 
 /** Maps UNNotificationCategoryOptions (bitmask) */
-enum class CategoryOption(
-    val rawValue: Int,
+public enum class CategoryOption(
+    public val rawValue: Int,
 ) {
     CUSTOM_DISMISS_ACTION(1 shl 0),
     ALLOW_IN_CAR_PLAY(1 shl 1),

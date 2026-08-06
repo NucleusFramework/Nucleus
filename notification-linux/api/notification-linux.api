@@ -1,0 +1,354 @@
+public final class dev/nucleusframework/notification/linux/CloseReason : java/lang/Enum {
+	public static final field CLOSED Ldev/nucleusframework/notification/linux/CloseReason;
+	public static final field Companion Ldev/nucleusframework/notification/linux/CloseReason$Companion;
+	public static final field DISMISSED Ldev/nucleusframework/notification/linux/CloseReason;
+	public static final field EXPIRED Ldev/nucleusframework/notification/linux/CloseReason;
+	public static final field UNDEFINED Ldev/nucleusframework/notification/linux/CloseReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/CloseReason;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/CloseReason;
+}
+
+public final class dev/nucleusframework/notification/linux/CloseReason$Companion {
+	public final fun fromValue (I)Ldev/nucleusframework/notification/linux/CloseReason;
+}
+
+public final class dev/nucleusframework/notification/linux/ImageData {
+	public fun <init> (IIIZII[B)V
+	public synthetic fun <init> (IIIZII[BILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()Z
+	public final fun component5 ()I
+	public final fun component6 ()I
+	public final fun component7 ()[B
+	public final fun copy (IIIZII[B)Ldev/nucleusframework/notification/linux/ImageData;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/linux/ImageData;IIIZII[BILjava/lang/Object;)Ldev/nucleusframework/notification/linux/ImageData;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBitsPerSample ()I
+	public final fun getChannels ()I
+	public final fun getData ()[B
+	public final fun getHasAlpha ()Z
+	public final fun getHeight ()I
+	public final fun getRowstride ()I
+	public final fun getWidth ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/LinuxNotificationCenter {
+	public static final field INSTANCE Ldev/nucleusframework/notification/linux/LinuxNotificationCenter;
+	public final fun addListener (Ldev/nucleusframework/notification/linux/LinuxNotificationListener;)V
+	public final fun closeNotification (I)V
+	public final fun getCapabilities ()Ljava/util/List;
+	public final fun getServerInformation ()Ldev/nucleusframework/notification/linux/ServerInformation;
+	public final fun isAvailable ()Z
+	public final fun notify (Ldev/nucleusframework/notification/linux/Notification;)I
+	public final fun removeListener (Ldev/nucleusframework/notification/linux/LinuxNotificationListener;)V
+}
+
+public abstract interface class dev/nucleusframework/notification/linux/LinuxNotificationListener {
+	public fun onActionInvoked (ILjava/lang/String;)V
+	public fun onActivationToken (ILjava/lang/String;)V
+	public fun onClosed (ILdev/nucleusframework/notification/linux/CloseReason;)V
+}
+
+public final class dev/nucleusframework/notification/linux/LinuxNotificationListener$DefaultImpls {
+	public static fun onActionInvoked (Ldev/nucleusframework/notification/linux/LinuxNotificationListener;ILjava/lang/String;)V
+	public static fun onActivationToken (Ldev/nucleusframework/notification/linux/LinuxNotificationListener;ILjava/lang/String;)V
+	public static fun onClosed (Ldev/nucleusframework/notification/linux/LinuxNotificationListener;ILdev/nucleusframework/notification/linux/CloseReason;)V
+}
+
+public final class dev/nucleusframework/notification/linux/Notification {
+	public fun <init> (Ljava/lang/String;ILdev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/notification/linux/NotificationHints;I)V
+	public synthetic fun <init> (Ljava/lang/String;ILdev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/notification/linux/NotificationHints;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/util/List;
+	public final fun component7 ()Ldev/nucleusframework/notification/linux/NotificationHints;
+	public final fun component8 ()I
+	public final fun copy (Ljava/lang/String;ILdev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/notification/linux/NotificationHints;I)Ldev/nucleusframework/notification/linux/Notification;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/linux/Notification;Ljava/lang/String;ILdev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/notification/linux/NotificationHints;IILjava/lang/Object;)Ldev/nucleusframework/notification/linux/Notification;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActions ()Ljava/util/List;
+	public final fun getAppIcon ()Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;
+	public final fun getAppName ()Ljava/lang/String;
+	public final fun getBody ()Ljava/lang/String;
+	public final fun getExpireTimeout ()I
+	public final fun getHints ()Ldev/nucleusframework/notification/linux/NotificationHints;
+	public final fun getReplacesId ()I
+	public final fun getSummary ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationAction {
+	public static final field Companion Ldev/nucleusframework/notification/linux/NotificationAction$Companion;
+	public static final field DEFAULT_KEY Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationAction;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/linux/NotificationAction;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/linux/NotificationAction;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getLabel ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationAction$Companion {
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationHints {
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/notification/linux/Urgency;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/linux/ImageData;Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/Boolean;Ljava/lang/String;Ldev/nucleusframework/notification/linux/NotificationSound;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ldev/nucleusframework/notification/linux/Urgency;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/linux/ImageData;Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/Boolean;Ljava/lang/String;Ldev/nucleusframework/notification/linux/NotificationSound;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/linux/Urgency;
+	public final fun component10 ()Ljava/lang/Boolean;
+	public final fun component11 ()Ljava/lang/Boolean;
+	public final fun component12 ()Ljava/lang/Integer;
+	public final fun component13 ()Ljava/lang/Integer;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/nucleusframework/notification/linux/ImageData;
+	public final fun component5 ()Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;
+	public final fun component6 ()Ljava/lang/Boolean;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun component8 ()Ldev/nucleusframework/notification/linux/NotificationSound;
+	public final fun component9 ()Ljava/lang/Boolean;
+	public final fun copy (Ldev/nucleusframework/notification/linux/Urgency;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/linux/ImageData;Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/Boolean;Ljava/lang/String;Ldev/nucleusframework/notification/linux/NotificationSound;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;)Ldev/nucleusframework/notification/linux/NotificationHints;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/linux/NotificationHints;Ldev/nucleusframework/notification/linux/Urgency;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/linux/ImageData;Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;Ljava/lang/Boolean;Ljava/lang/String;Ldev/nucleusframework/notification/linux/NotificationSound;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Ldev/nucleusframework/notification/linux/NotificationHints;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActionIcons ()Ljava/lang/Boolean;
+	public final fun getCategory ()Ljava/lang/String;
+	public final fun getDesktopEntry ()Ljava/lang/String;
+	public final fun getImageData ()Ldev/nucleusframework/notification/linux/ImageData;
+	public final fun getImagePath ()Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;
+	public final fun getResident ()Ljava/lang/Boolean;
+	public final fun getSoundFile ()Ljava/lang/String;
+	public final fun getSoundName ()Ldev/nucleusframework/notification/linux/NotificationSound;
+	public final fun getSuppressSound ()Ljava/lang/Boolean;
+	public final fun getTransient ()Ljava/lang/Boolean;
+	public final fun getUrgency ()Ldev/nucleusframework/notification/linux/Urgency;
+	public final fun getX ()Ljava/lang/Integer;
+	public final fun getY ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/notification/linux/NotificationSound {
+	public abstract fun getValue ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$Action : java/lang/Enum, dev/nucleusframework/notification/linux/NotificationSound {
+	public static final field AUDIO_CHANNEL_FRONT_CENTER Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_FRONT_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_FRONT_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_LFE Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_REAR_CENTER Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_REAR_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_REAR_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_SIDE_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_CHANNEL_SIDE_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_TEST_SIGNAL Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field AUDIO_VOLUME_CHANGE Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field BELL_TERMINAL Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field BELL_WINDOW_SYSTEM Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field CAMERA_FOCUS Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field CAMERA_SHUTTER Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field COMPLETION_FAIL Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field COMPLETION_PARTIAL Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field COMPLETION_ROTATION Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field COMPLETION_SUCCESS Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field COUNT_DOWN Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field FILE_TRASH Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field ITEM_DELETED Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field MESSAGE_SENT_EMAIL Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field MESSAGE_SENT_INSTANT Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field PHONE_OUTGOING_CALLING Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field SCREEN_CAPTURE Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static final field TRASH_EMPTY Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/NotificationSound$Action;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$Alert : java/lang/Enum, dev/nucleusframework/notification/linux/NotificationSound {
+	public static final field BATTERY_LOW Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field DIALOG_ERROR Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field NETWORK_CONNECTIVITY_ERROR Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field NETWORK_CONNECTIVITY_LOST Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field POWER_UNPLUG_BATTERY_LOW Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field SOFTWARE_UPDATE_URGENT Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static final field SUSPEND_ERROR Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/NotificationSound$Alert;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$Custom : dev/nucleusframework/notification/linux/NotificationSound {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$Custom;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$Game : java/lang/Enum, dev/nucleusframework/notification/linux/NotificationSound {
+	public static final field GAME_CARD_SHUFFLE Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static final field GAME_COMPUTER_MOVE Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static final field GAME_HUMAN_MOVE Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static final field GAME_OVER_LOSER Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static final field GAME_OVER_WINNER Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/NotificationSound$Game;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$InputFeedback : java/lang/Enum, dev/nucleusframework/notification/linux/NotificationSound {
+	public static final field BUTTON_PRESSED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field BUTTON_RELEASED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field BUTTON_TOGGLE_OFF Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field BUTTON_TOGGLE_ON Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DESKTOP_SWITCH_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DESKTOP_SWITCH_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DIALOG_CANCEL Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DIALOG_OK Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DRAG_ACCEPT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DRAG_FAIL Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field DRAG_START Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field EXPANDER_TOGGLE_OFF Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field EXPANDER_TOGGLE_ON Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field ITEM_SELECTED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field LINK_PRESSED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field LINK_RELEASED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field MENU_CLICK Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field MENU_POPDOWN Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field MENU_POPUP Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field MENU_REPLACE Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field NOTEBOOK_TAB_CHANGED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_DOWN Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_DOWN_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_LEFT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_LEFT_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_RIGHT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_RIGHT_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_UP Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field SCROLL_UP_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field TOOLTIP_POPDOWN Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field TOOLTIP_POPUP Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_CLOSE Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_INACTIVE_CLICK Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_MAXIMIZED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_MINIMIZED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_MOVE_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_MOVE_START Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_RESIZE_END Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_RESIZE_START Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_SLIDE_IN Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_SLIDE_OUT Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_SWITCH Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_UNMAXIMIZED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static final field WINDOW_UNMINIMIZED Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/NotificationSound$InputFeedback;
+}
+
+public final class dev/nucleusframework/notification/linux/NotificationSound$Notification : java/lang/Enum, dev/nucleusframework/notification/linux/NotificationSound {
+	public static final field ALARM_CLOCK_ELAPSED Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field BATTERY_CAUTION Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field BATTERY_FULL Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field COMPLETE_COPY Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field COMPLETE_DOWNLOAD Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field COMPLETE_MEDIA_BURN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field COMPLETE_MEDIA_RIP Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field COMPLETE_SCAN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DESKTOP_LOGIN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DESKTOP_LOGOUT Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DESKTOP_SCREEN_LOCK Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DEVICE_ADDED Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DEVICE_REMOVED Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DIALOG_INFORMATION Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DIALOG_QUESTION Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field DIALOG_WARNING Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field LID_CLOSE Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field LID_OPEN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field MESSAGE_NEW_EMAIL Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field MESSAGE_NEW_INSTANT Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field NETWORK_CONNECTIVITY_ESTABLISHED Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field PHONE_FAILURE Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field PHONE_HANGUP Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field PHONE_INCOMING_CALL Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field PHONE_OUTGOING_BUSY Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field POWER_PLUG Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field POWER_UNPLUG Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SEARCH_RESULTS Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SEARCH_RESULTS_EMPTY Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SERVICE_LOGIN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SERVICE_LOGOUT Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SOFTWARE_UPDATE_AVAILABLE Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SUSPEND_RESUME Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SUSPEND_START Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SYSTEM_BOOTUP Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SYSTEM_READY Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field SYSTEM_SHUTDOWN Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field WINDOW_ATTENTION_ACTIVE Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field WINDOW_ATTENTION_INACTIVE Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static final field WINDOW_NEW Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/NotificationSound$Notification;
+}
+
+public final class dev/nucleusframework/notification/linux/ServerInformation {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/linux/ServerInformation;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/linux/ServerInformation;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/linux/ServerInformation;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public final fun getSpecVersion ()Ljava/lang/String;
+	public final fun getVendor ()Ljava/lang/String;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/linux/Urgency : java/lang/Enum {
+	public static final field CRITICAL Ldev/nucleusframework/notification/linux/Urgency;
+	public static final field Companion Ldev/nucleusframework/notification/linux/Urgency$Companion;
+	public static final field LOW Ldev/nucleusframework/notification/linux/Urgency;
+	public static final field NORMAL Ldev/nucleusframework/notification/linux/Urgency;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/linux/Urgency;
+	public static fun values ()[Ldev/nucleusframework/notification/linux/Urgency;
+}
+
+public final class dev/nucleusframework/notification/linux/Urgency$Companion {
+	public final fun fromValue (I)Ldev/nucleusframework/notification/linux/Urgency;
+}
+

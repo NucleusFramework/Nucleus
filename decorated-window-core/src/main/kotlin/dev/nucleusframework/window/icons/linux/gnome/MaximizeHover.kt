@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.MaximizeHover: ImageVector
+public val GnomeControlButtonsIcons.MaximizeHover: ImageVector
     get() {
         if (_MaximizeHover != null) {
             return _MaximizeHover!!

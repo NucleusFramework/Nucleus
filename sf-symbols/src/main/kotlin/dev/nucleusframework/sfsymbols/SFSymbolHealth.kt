@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Health (57 symbols). */
-enum class SFSymbolHealth(
+public enum class SFSymbolHealth(
     override val symbolName: String,
 ) : SFSymbol {
     ALLERGENS("allergens"),

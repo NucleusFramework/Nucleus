@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.LayoutDirection
  * - [Ltr]: always place buttons as in a left-to-right layout (trailing = right side).
  * - [Rtl]: always place buttons as in a right-to-left layout (trailing = left side).
  */
-enum class ControlButtonsDirection {
+public enum class ControlButtonsDirection {
     Auto,
     System,
     SystemNative,
@@ -24,7 +24,7 @@ enum class ControlButtonsDirection {
     ;
 
     @Composable
-    fun resolve(): LayoutDirection =
+    public fun resolve(): LayoutDirection =
         when (this) {
             Auto -> LocalLayoutDirection.current
             System, SystemNative -> nativeSystemLayoutDirection()
@@ -41,5 +41,5 @@ enum class ControlButtonsDirection {
  * On Linux (or if the native library is unavailable), falls back to checking
  * `user.language` system property against known RTL languages.
  */
-fun nativeSystemLayoutDirection(): LayoutDirection =
+public fun nativeSystemLayoutDirection(): LayoutDirection =
     if (NativeLayoutDirectionBridge.nativeIsRTL()) LayoutDirection.Rtl else LayoutDirection.Ltr

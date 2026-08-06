@@ -8,33 +8,33 @@ import dev.nucleusframework.core.runtime.tools.ComposeNativeTrayLoggingLevel.Com
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
-var allowNucleusRuntimeLogging: Boolean = false
+public var allowNucleusRuntimeLogging: Boolean = false
 
 @Deprecated("migrate to composeNativeTrayLoggingLevel", ReplaceWith("composeNativeTrayLoggingLevel"))
-var composeNativeTrayloggingLevel by ::composeNativeTrayLoggingLevel
+public var composeNativeTrayloggingLevel: ComposeNativeTrayLoggingLevel by ::composeNativeTrayLoggingLevel
 
-var composeNativeTrayLoggingLevel: ComposeNativeTrayLoggingLevel = VERBOSE
+public var composeNativeTrayLoggingLevel: ComposeNativeTrayLoggingLevel = VERBOSE
 
-class ComposeNativeTrayLoggingLevel private constructor(
+public class ComposeNativeTrayLoggingLevel private constructor(
     private val priority: Int,
 ) : Comparable<ComposeNativeTrayLoggingLevel> {
     override fun compareTo(other: ComposeNativeTrayLoggingLevel): Int = priority.compareTo(other.priority)
 
-    companion object {
+    public companion object {
         @JvmField
-        val VERBOSE = ComposeNativeTrayLoggingLevel(0)
+        public val VERBOSE: ComposeNativeTrayLoggingLevel = ComposeNativeTrayLoggingLevel(0)
 
         @JvmField
-        val DEBUG = ComposeNativeTrayLoggingLevel(1)
+        public val DEBUG: ComposeNativeTrayLoggingLevel = ComposeNativeTrayLoggingLevel(1)
 
         @JvmField
-        val INFO = ComposeNativeTrayLoggingLevel(2)
+        public val INFO: ComposeNativeTrayLoggingLevel = ComposeNativeTrayLoggingLevel(2)
 
         @JvmField
-        val WARN = ComposeNativeTrayLoggingLevel(3)
+        public val WARN: ComposeNativeTrayLoggingLevel = ComposeNativeTrayLoggingLevel(3)
 
         @JvmField
-        val ERROR = ComposeNativeTrayLoggingLevel(4)
+        public val ERROR: ComposeNativeTrayLoggingLevel = ComposeNativeTrayLoggingLevel(4)
     }
 }
 

@@ -50,33 +50,33 @@ package dev.nucleusframework.notification.windows
  * }
  * ```
  */
-fun toast(block: ToastContentBuilder.() -> Unit): ToastContent = ToastContentBuilder().apply(block).build()
+public fun toast(block: ToastContentBuilder.() -> Unit): ToastContent = ToastContentBuilder().apply(block).build()
 
 @DslMarker
-annotation class ToastDsl
+public annotation class ToastDsl
 
 @ToastDsl
-class ToastContentBuilder {
-    var launch: String = ""
-    var activationType: ActivationType = ActivationType.FOREGROUND
-    var scenario: ToastScenario = ToastScenario.DEFAULT
-    var duration: ToastDuration = ToastDuration.DEFAULT
-    var displayTimestamp: String? = null
+public class ToastContentBuilder {
+    public var launch: String = ""
+    public var activationType: ActivationType = ActivationType.FOREGROUND
+    public var scenario: ToastScenario = ToastScenario.DEFAULT
+    public var duration: ToastDuration = ToastDuration.DEFAULT
+    public var displayTimestamp: String? = null
 
     private var visual: ToastVisual? = null
     private var actions: ToastActions? = null
     private var audio: ToastAudio? = null
     private var header: ToastHeader? = null
 
-    fun visual(block: ToastVisualBuilder.() -> Unit) {
+    public fun visual(block: ToastVisualBuilder.() -> Unit) {
         visual = ToastVisualBuilder().apply(block).build()
     }
 
-    fun actions(block: ToastActionsBuilder.() -> Unit) {
+    public fun actions(block: ToastActionsBuilder.() -> Unit) {
         actions = ToastActionsBuilder().apply(block).build()
     }
 
-    fun audio(
+    public fun audio(
         source: ToastAudioSource? = null,
         customSource: String? = null,
         loop: Boolean = false,
@@ -85,11 +85,11 @@ class ToastContentBuilder {
         audio = ToastAudio(source = source, customSource = customSource, loop = loop, silent = silent)
     }
 
-    fun silentAudio() {
+    public fun silentAudio() {
         audio = ToastAudio(silent = true)
     }
 
-    fun header(
+    public fun header(
         id: String,
         title: String,
         arguments: String,
@@ -115,13 +115,13 @@ class ToastContentBuilder {
 }
 
 @ToastDsl
-class ToastVisualBuilder {
+public class ToastVisualBuilder {
     private val children = mutableListOf<ToastVisualChild>()
     private var appLogoOverride: ToastGenericAppLogo? = null
     private var heroImage: ToastGenericHeroImage? = null
     private var attribution: ToastGenericAttributionText? = null
 
-    fun text(
+    public fun text(
         content: String,
         style: AdaptiveTextStyle = AdaptiveTextStyle.DEFAULT,
         wrap: Boolean? = null,
@@ -143,7 +143,7 @@ class ToastVisualBuilder {
         )
     }
 
-    fun image(
+    public fun image(
         source: String,
         crop: AdaptiveImageCrop = AdaptiveImageCrop.DEFAULT,
         alt: String? = null,
@@ -159,7 +159,7 @@ class ToastVisualBuilder {
         )
     }
 
-    fun appLogo(
+    public fun appLogo(
         source: String,
         crop: AdaptiveImageCrop = AdaptiveImageCrop.DEFAULT,
         alt: String? = null,
@@ -174,7 +174,7 @@ class ToastVisualBuilder {
             )
     }
 
-    fun heroImage(
+    public fun heroImage(
         source: String,
         alt: String? = null,
         addImageQuery: Boolean? = null,
@@ -187,14 +187,14 @@ class ToastVisualBuilder {
             )
     }
 
-    fun attribution(
+    public fun attribution(
         text: String,
         language: String? = null,
     ) {
         attribution = ToastGenericAttributionText(text = text, language = language)
     }
 
-    fun progressBar(
+    public fun progressBar(
         status: String,
         title: String? = null,
         value: Double? = null,
@@ -210,7 +210,7 @@ class ToastVisualBuilder {
         )
     }
 
-    fun group(block: AdaptiveGroupBuilder.() -> Unit) {
+    public fun group(block: AdaptiveGroupBuilder.() -> Unit) {
         children.add(AdaptiveGroupBuilder().apply(block).build())
     }
 
@@ -227,10 +227,10 @@ class ToastVisualBuilder {
 }
 
 @ToastDsl
-class AdaptiveGroupBuilder {
+public class AdaptiveGroupBuilder {
     private val subgroups = mutableListOf<AdaptiveSubgroup>()
 
-    fun subgroup(
+    public fun subgroup(
         weight: Int? = null,
         textStacking: AdaptiveSubgroupTextStacking = AdaptiveSubgroupTextStacking.DEFAULT,
         block: AdaptiveSubgroupBuilder.() -> Unit,
@@ -244,13 +244,13 @@ class AdaptiveGroupBuilder {
 }
 
 @ToastDsl
-class AdaptiveSubgroupBuilder(
+public class AdaptiveSubgroupBuilder(
     private val weight: Int?,
     private val textStacking: AdaptiveSubgroupTextStacking,
 ) {
     private val children = mutableListOf<AdaptiveSubgroupChild>()
 
-    fun text(
+    public fun text(
         content: String,
         style: AdaptiveTextStyle = AdaptiveTextStyle.DEFAULT,
         wrap: Boolean? = null,
@@ -272,7 +272,7 @@ class AdaptiveSubgroupBuilder(
         )
     }
 
-    fun image(
+    public fun image(
         source: String,
         crop: AdaptiveImageCrop = AdaptiveImageCrop.DEFAULT,
         removeMargin: Boolean? = null,
@@ -301,12 +301,12 @@ class AdaptiveSubgroupBuilder(
 }
 
 @ToastDsl
-class ToastActionsBuilder {
+public class ToastActionsBuilder {
     private val inputs = mutableListOf<ToastInput>()
     private val buttons = mutableListOf<ToastButton>()
     private val contextMenuItems = mutableListOf<ToastContextMenuItem>()
 
-    fun textBox(
+    public fun textBox(
         id: String,
         title: String? = null,
         placeholder: String? = null,
@@ -322,7 +322,7 @@ class ToastActionsBuilder {
         )
     }
 
-    fun selectionBox(
+    public fun selectionBox(
         id: String,
         title: String? = null,
         defaultSelectionId: String? = null,
@@ -339,7 +339,7 @@ class ToastActionsBuilder {
         )
     }
 
-    fun button(
+    public fun button(
         content: String,
         arguments: String,
         activationType: ActivationType = ActivationType.FOREGROUND,
@@ -361,7 +361,7 @@ class ToastActionsBuilder {
         )
     }
 
-    fun contextMenuItem(
+    public fun contextMenuItem(
         content: String,
         arguments: String,
         activationType: ActivationType = ActivationType.FOREGROUND,
@@ -384,10 +384,10 @@ class ToastActionsBuilder {
 }
 
 @ToastDsl
-class SelectionBoxBuilder {
+public class SelectionBoxBuilder {
     private val items = mutableListOf<ToastSelectionBoxItem>()
 
-    fun item(
+    public fun item(
         id: String,
         content: String,
     ) {

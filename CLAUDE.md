@@ -54,6 +54,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - Native modules use platform-specific JNI implementations — test on each OS
 - Plugin is published via included build in `plugin-build/`
 - Version catalog is the source of truth for all dependency versions
+- **Public API freeze**: root `build.gradle.kts` applies kotlinx binary-compatibility-validator + `explicitApi()` to every non-example module. Baselines live in `<module>/api/<module>.api`. After intentional public API changes run `./gradlew apiDump` and commit the dump; `apiCheck` (wired into `check` / `preMerge`) fails on accidental ABI drift. Exception: `decorated-window-jewel` (JVM 25) is ignored by BCV until ASM supports class-file 69 — still uses `explicitApi()`. Helper: `scripts/fix-explicit-api.py` for mechanical visibility/return-type fixes from kotlinc diagnostics.
 - `decorated-window-tao` is the recommended backend for new projects (no AWT, native event-loop-driven, true Windows fullscreen, GraalVM native-image first-class). `decorated-window-jni` and `decorated-window-jbr` (the AWT-based backends) are legacy/maintenance-only
 - macOS Liquid Glass enabled by default via `macOsSdkVersion = "26.0"` (vtool SDK patching)
 - The HotSpot GC is selected type-safely with `application { garbageCollector = GarbageCollector.Z }` (unset = JVM ergonomics). The flags are prepended to the launcher `.cfg` java-options and to the `run` task — before `jvmArgs`, so an explicit `-XX:+Use…GC` there still wins — and the AOT training run inherits them from the `.cfg`

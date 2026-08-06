@@ -27,7 +27,7 @@ import dev.nucleusframework.window.icons.windows.RestoreInactive
 import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-data class WindowsTitleBarIconSet(
+public data class WindowsTitleBarIconSet(
     val close: Painter,
     val closeHover: Painter,
     val closeInactive: Painter,
@@ -42,7 +42,7 @@ data class WindowsTitleBarIconSet(
 )
 
 @Composable
-fun windowsTitleBarIcons(isDark: Boolean = LocalIsDarkTheme.current): WindowsTitleBarIconSet =
+public fun windowsTitleBarIcons(isDark: Boolean = LocalIsDarkTheme.current): WindowsTitleBarIconSet =
     if (isDark) {
         WindowsTitleBarIconSet(
             close = rememberVectorPainter(WindowsControlButtonIcons.CloseDark),

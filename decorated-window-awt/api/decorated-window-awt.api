@@ -1,0 +1,66 @@
+public abstract interface class dev/nucleusframework/window/AwtDecoratedDialogScope : androidx/compose/ui/window/DialogWindowScope, dev/nucleusframework/window/DecoratedDialogScope {
+	public abstract fun getWindow ()Landroidx/compose/ui/awt/ComposeDialog;
+	public synthetic fun getWindow ()Ljava/awt/Window;
+}
+
+public abstract interface class dev/nucleusframework/window/AwtDecoratedWindowScope : androidx/compose/ui/window/FrameWindowScope, dev/nucleusframework/window/DecoratedWindowScope {
+	public abstract fun getWindow ()Landroidx/compose/ui/awt/ComposeWindow;
+	public synthetic fun getWindow ()Ljava/awt/Window;
+}
+
+public final class dev/nucleusframework/window/AwtDecoratedWindowScopeKt {
+	public static final fun DecoratedWindowBody (Landroidx/compose/ui/window/FrameWindowScope;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZLkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun of (Ldev/nucleusframework/window/DecoratedWindowState$Companion;Landroidx/compose/ui/awt/ComposeWindow;)J
+}
+
+public final class dev/nucleusframework/window/AwtTitleBarKt {
+	public static final fun TitleBarImpl-zkWFBl8 (Ldev/nucleusframework/window/AwtDecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/ui/unit/LayoutDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+	public static final fun windowDragHandler (Landroidx/compose/ui/Modifier;Ljava/awt/Window;)Landroidx/compose/ui/Modifier;
+}
+
+public final class dev/nucleusframework/window/ComposableSingletons$AwtTitleBarKt {
+	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$AwtTitleBarKt;
+	public fun <init> ()V
+	public final fun getLambda$-465839594$Nucleus_decorated_window_awt ()Lkotlin/jvm/functions/Function2;
+}
+
+public final class dev/nucleusframework/window/ComposableSingletons$DialogTitleBarImplKt {
+	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$DialogTitleBarImplKt;
+	public fun <init> ()V
+	public final fun getLambda$822135388$Nucleus_decorated_window_awt ()Lkotlin/jvm/functions/Function2;
+}
+
+public final class dev/nucleusframework/window/DecoratedDialogCoreKt {
+	public static final fun DecoratedDialogBody (Landroidx/compose/ui/window/DialogWindowScope;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;I)V
+	public static final fun of (Ldev/nucleusframework/window/DecoratedDialogState$Companion;Landroidx/compose/ui/awt/ComposeDialog;)J
+}
+
+public final class dev/nucleusframework/window/DecoratedDialogMeasurePolicy : androidx/compose/ui/layout/MeasurePolicy {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/DecoratedDialogMeasurePolicy;
+	public fun maxIntrinsicHeight (Landroidx/compose/ui/layout/IntrinsicMeasureScope;Ljava/util/List;I)I
+	public fun maxIntrinsicWidth (Landroidx/compose/ui/layout/IntrinsicMeasureScope;Ljava/util/List;I)I
+	public fun measure-3p2s80s (Landroidx/compose/ui/layout/MeasureScope;Ljava/util/List;J)Landroidx/compose/ui/layout/MeasureResult;
+	public fun minIntrinsicHeight (Landroidx/compose/ui/layout/IntrinsicMeasureScope;Ljava/util/List;I)I
+	public fun minIntrinsicWidth (Landroidx/compose/ui/layout/IntrinsicMeasureScope;Ljava/util/List;I)I
+}
+
+public final class dev/nucleusframework/window/DialogTitleBarImplKt {
+	public static final fun DialogTitleBarImpl-zkWFBl8 (Ldev/nucleusframework/window/AwtDecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/ui/unit/LayoutDirection;Ldev/nucleusframework/window/TitleBarLayoutPolicy;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/WindowControlAreaKt {
+	public static final fun DialogCloseButton-oY_1kOw (Ldev/nucleusframework/window/TitleBarScope;Ljava/awt/Window;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/runtime/Composer;I)V
+	public static final fun WindowControlArea-BihTXD0 (Ldev/nucleusframework/window/TitleBarScope;Ljava/awt/Window;JLdev/nucleusframework/window/styling/TitleBarStyle;ZLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/WindowsWindowControlAreaKt {
+	public static final fun WindowsDialogCloseButton-oY_1kOw (Ldev/nucleusframework/window/TitleBarScope;Ljava/awt/Window;JLdev/nucleusframework/window/styling/TitleBarStyle;Landroidx/compose/runtime/Composer;I)V
+	public static final fun WindowsWindowControlArea-BihTXD0 (Ldev/nucleusframework/window/TitleBarScope;Ljava/awt/Window;JLdev/nucleusframework/window/styling/TitleBarStyle;ZLkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/internal/MinimumSizeSupportKt {
+	public static final fun InstallMinimumSizeAfterCentering-jskYuWU (Landroidx/compose/ui/window/FrameWindowScope;Landroidx/compose/ui/unit/DpSize;Landroidx/compose/runtime/Composer;I)V
+	public static final fun inflateToMinimumSize-jskYuWU (Landroidx/compose/ui/window/WindowState;Landroidx/compose/ui/unit/DpSize;Landroidx/compose/runtime/Composer;I)V
+}
+

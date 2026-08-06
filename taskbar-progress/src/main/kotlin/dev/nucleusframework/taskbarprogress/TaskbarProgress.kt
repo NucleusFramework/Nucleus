@@ -15,7 +15,7 @@ import java.awt.Window
  * Linux: uses DBus `com.canonical.Unity.LauncherEntry` protocol (GNOME, KDE, etc.) via JNI.
  */
 @Suppress("TooManyFunctions")
-object TaskbarProgress {
+public object TaskbarProgress {
     private const val PROGRESS_MAX = 100L
 
     /** Last macOS attention request ID for cancellation. */
@@ -32,9 +32,9 @@ object TaskbarProgress {
      * [LinuxDesktopFileDetector].
      */
     @Volatile
-    var linuxDesktopFilename: String? = null
+    public var linuxDesktopFilename: String? = null
 
-    enum class AttentionType(
+    public enum class AttentionType(
         internal val nativeValue: Int,
     ) {
         /** Flash taskbar button briefly (4 times on Windows, bounce once on macOS). */
@@ -45,7 +45,7 @@ object TaskbarProgress {
     }
 
     @Suppress("MagicNumber")
-    enum class State(
+    public enum class State(
         internal val flag: Int,
     ) {
         /** No progress displayed. */
@@ -67,7 +67,7 @@ object TaskbarProgress {
     /**
      * Returns true if taskbar progress is available on this platform.
      */
-    fun isAvailable(): Boolean =
+    public fun isAvailable(): Boolean =
         when (Platform.Current) {
             Platform.Windows -> NativeWindowsTaskbarBridge.isLoaded
             Platform.MacOS -> NativeMacOsTaskbarBridge.isLoaded
@@ -83,7 +83,7 @@ object TaskbarProgress {
      * @param value  progress fraction in 0.0..1.0
      * @return true if the operation succeeded
      */
-    fun setProgress(
+    public fun setProgress(
         window: Window,
         value: Double,
     ): Boolean {
@@ -124,7 +124,7 @@ object TaskbarProgress {
      * @param state  the desired progress state
      * @return true if the operation succeeded
      */
-    fun setState(
+    public fun setState(
         window: Window,
         state: State,
     ): Boolean =
@@ -146,28 +146,28 @@ object TaskbarProgress {
         }
 
     /** Convenience: shows normal progress at the given value. */
-    fun showProgress(
+    public fun showProgress(
         window: Window,
         value: Double,
     ): Boolean = setState(window, State.NORMAL) && setProgress(window, value)
 
     /** Convenience: shows error progress at the given value. */
-    fun showError(
+    public fun showError(
         window: Window,
         value: Double = 1.0,
     ): Boolean = setState(window, State.ERROR) && setProgress(window, value)
 
     /** Convenience: shows indeterminate (pulsing) progress. */
-    fun showIndeterminate(window: Window): Boolean = setState(window, State.INDETERMINATE)
+    public fun showIndeterminate(window: Window): Boolean = setState(window, State.INDETERMINATE)
 
     /** Convenience: shows paused progress at the given value. */
-    fun showPaused(
+    public fun showPaused(
         window: Window,
         value: Double = 1.0,
     ): Boolean = setState(window, State.PAUSED) && setProgress(window, value)
 
     /** Hides progress from the taskbar button / dock icon. */
-    fun hideProgress(window: Window): Boolean = setState(window, State.NO_PROGRESS)
+    public fun hideProgress(window: Window): Boolean = setState(window, State.NO_PROGRESS)
 
     /**
      * Requests user attention.
@@ -182,7 +182,7 @@ object TaskbarProgress {
      * @param type   the attention urgency level
      * @return true if the operation succeeded
      */
-    fun requestAttention(
+    public fun requestAttention(
         window: Window,
         type: AttentionType = AttentionType.INFORMATIONAL,
     ): Boolean =
@@ -211,7 +211,7 @@ object TaskbarProgress {
      * @param window the AWT window (ignored on macOS/Linux)
      * @return true if the operation succeeded
      */
-    fun stopAttention(window: Window): Boolean =
+    public fun stopAttention(window: Window): Boolean =
         when (Platform.Current) {
             Platform.Windows -> {
                 if (!NativeWindowsTaskbarBridge.isLoaded) return false
@@ -239,7 +239,7 @@ object TaskbarProgress {
      * macOS/Linux the [hwnd] argument is ignored (the underlying APIs are
      * app-wide). Intended for non-AWT backends (e.g. Tao).
      */
-    fun setProgressForHwnd(
+    public fun setProgressForHwnd(
         hwnd: Long,
         value: Double,
     ): Boolean {
@@ -274,7 +274,7 @@ object TaskbarProgress {
     }
 
     /** AWT-free variant of [setState]. */
-    fun setStateForHwnd(
+    public fun setStateForHwnd(
         hwnd: Long,
         state: State,
     ): Boolean =
@@ -296,7 +296,7 @@ object TaskbarProgress {
         }
 
     /** AWT-free variant of [requestAttention]. */
-    fun requestAttentionForHwnd(
+    public fun requestAttentionForHwnd(
         hwnd: Long,
         type: AttentionType = AttentionType.INFORMATIONAL,
     ): Boolean =
@@ -320,7 +320,7 @@ object TaskbarProgress {
         }
 
     /** AWT-free variant of [stopAttention]. */
-    fun stopAttentionForHwnd(hwnd: Long): Boolean =
+    public fun stopAttentionForHwnd(hwnd: Long): Boolean =
         when (Platform.Current) {
             Platform.Windows -> {
                 if (!NativeWindowsTaskbarBridge.isLoaded) return false

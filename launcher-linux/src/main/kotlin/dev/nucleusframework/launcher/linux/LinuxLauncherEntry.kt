@@ -14,13 +14,13 @@ package dev.nucleusframework.launcher.linux
  * Supported desktops: Unity, Plank, KDE, budgie-panel, and others that
  * implement the `com.canonical.Unity.LauncherEntry` D-Bus interface.
  */
-object LinuxLauncherEntry {
+public object LinuxLauncherEntry {
     /**
      * Whether the native library is loaded and the module is functional.
      *
      * Returns `false` on non-Linux platforms or if the native library could not be loaded.
      */
-    val isAvailable: Boolean
+    public val isAvailable: Boolean
         get() = NativeLinuxLauncherBridge.isLoaded
 
     /**
@@ -28,7 +28,7 @@ object LinuxLauncherEntry {
      *
      * Example: `appUri("firefox.desktop")` returns `"application://firefox.desktop"`.
      */
-    fun appUri(desktopFileId: String): String = "application://$desktopFileId"
+    public fun appUri(desktopFileId: String): String = "application://$desktopFileId"
 
     /**
      * Emits a `com.canonical.Unity.LauncherEntry.Update` signal with the given properties.
@@ -41,7 +41,7 @@ object LinuxLauncherEntry {
      * @param properties The launcher entry properties to update.
      * @return `true` if the signal was emitted successfully.
      */
-    fun update(
+    public fun update(
         appUri: String,
         properties: LauncherProperties,
     ): Boolean {
@@ -69,7 +69,7 @@ object LinuxLauncherEntry {
      * @param appUri Application URI matching the one used in [update].
      * @return `true` if registration succeeded.
      */
-    fun registerQueryHandler(appUri: String): Boolean {
+    public fun registerQueryHandler(appUri: String): Boolean {
         if (!isAvailable) return false
         return NativeLinuxLauncherBridge.nativeRegisterQueryHandler(appUri)
     }
@@ -79,7 +79,7 @@ object LinuxLauncherEntry {
      *
      * Call this on application shutdown if [registerQueryHandler] was used.
      */
-    fun unregister() {
+    public fun unregister() {
         if (!isAvailable) return
         NativeLinuxLauncherBridge.nativeUnregister()
     }
@@ -93,7 +93,7 @@ object LinuxLauncherEntry {
      * @param count The count value to display.
      * @param visible Whether the count badge is visible. Defaults to `true`.
      */
-    fun setCount(
+    public fun setCount(
         appUri: String,
         count: Long,
         visible: Boolean = true,
@@ -102,7 +102,7 @@ object LinuxLauncherEntry {
     /**
      * Clears the badge count.
      */
-    fun clearCount(appUri: String): Boolean = update(appUri, LauncherProperties(count = 0L, countVisible = false))
+    public fun clearCount(appUri: String): Boolean = update(appUri, LauncherProperties(count = 0L, countVisible = false))
 
     /**
      * Sets the progress bar on the launcher icon.
@@ -111,7 +111,7 @@ object LinuxLauncherEntry {
      * @param progress Progress value in the range `0.0..1.0`.
      * @param visible Whether the progress bar is visible. Defaults to `true`.
      */
-    fun setProgress(
+    public fun setProgress(
         appUri: String,
         progress: Double,
         visible: Boolean = true,
@@ -121,13 +121,13 @@ object LinuxLauncherEntry {
      * Clears the progress bar.
      */
     @Suppress("MaxLineLength")
-    fun clearProgress(appUri: String): Boolean =
+    public fun clearProgress(appUri: String): Boolean =
         update(appUri, LauncherProperties(progress = 0.0, progressVisible = false))
 
     /**
      * Sets or clears the urgency flag on the launcher icon.
      */
-    fun setUrgent(
+    public fun setUrgent(
         appUri: String,
         urgent: Boolean,
     ): Boolean = update(appUri, LauncherProperties(urgent = urgent))
@@ -135,7 +135,7 @@ object LinuxLauncherEntry {
     /**
      * Sets or clears the updating flag on the launcher icon.
      */
-    fun setUpdating(
+    public fun setUpdating(
         appUri: String,
         updating: Boolean,
     ): Boolean = update(appUri, LauncherProperties(updating = updating))

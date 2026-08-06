@@ -23,8 +23,8 @@ import java.util.concurrent.Executors
  *   macOS/Linux: not yet implemented.
  */
 @Suppress("TooManyFunctions")
-object EnergyManager {
-    data class Result(
+public object EnergyManager {
+    public data class Result(
         val success: Boolean,
         val errorCode: Int = 0,
         val message: String = "",
@@ -43,17 +43,17 @@ object EnergyManager {
     /**
      * Returns true if the energy efficiency API is available on this platform.
      */
-    fun isAvailable(): Boolean = delegate?.isAvailable() ?: false
+    public fun isAvailable(): Boolean = delegate?.isAvailable() ?: false
 
     /**
      * Enables efficiency mode for the current process.
      */
-    fun enableEfficiencyMode(): Result = delegate?.enableEfficiencyMode() ?: unsupported
+    public fun enableEfficiencyMode(): Result = delegate?.enableEfficiencyMode() ?: unsupported
 
     /**
      * Disables efficiency mode, restoring default OS scheduling.
      */
-    fun disableEfficiencyMode(): Result = delegate?.disableEfficiencyMode() ?: unsupported
+    public fun disableEfficiencyMode(): Result = delegate?.disableEfficiencyMode() ?: unsupported
 
     /**
      * Enables light efficiency mode for the current process.
@@ -65,12 +65,12 @@ object EnergyManager {
      * Windows: EcoQoS only — no IDLE_PRIORITY_CLASS.
      * Linux: nice +10 only — no ioprio, no timer slack.
      */
-    fun enableLightEfficiencyMode(): Result = delegate?.enableLightEfficiencyMode() ?: unsupported
+    public fun enableLightEfficiencyMode(): Result = delegate?.enableLightEfficiencyMode() ?: unsupported
 
     /**
      * Disables light efficiency mode, restoring default QoS tiers.
      */
-    fun disableLightEfficiencyMode(): Result = delegate?.disableLightEfficiencyMode() ?: unsupported
+    public fun disableLightEfficiencyMode(): Result = delegate?.disableLightEfficiencyMode() ?: unsupported
 
     /**
      * Enables efficiency mode for the calling thread only.
@@ -79,7 +79,7 @@ object EnergyManager {
      * Linux: fully supported (nice, ioprio, timerslack are per-thread).
      * macOS: pthread QOS_CLASS_BACKGROUND.
      */
-    fun enableThreadEfficiencyMode(): Result = delegate?.enableThreadEfficiencyMode() ?: unsupported
+    public fun enableThreadEfficiencyMode(): Result = delegate?.enableThreadEfficiencyMode() ?: unsupported
 
     /**
      * Disables efficiency mode for the calling thread, restoring defaults.
@@ -88,7 +88,7 @@ object EnergyManager {
      * Linux: fully supported.
      * macOS: resets to QOS_CLASS_DEFAULT.
      */
-    fun disableThreadEfficiencyMode(): Result = delegate?.disableThreadEfficiencyMode() ?: unsupported
+    public fun disableThreadEfficiencyMode(): Result = delegate?.disableThreadEfficiencyMode() ?: unsupported
 
     /**
      * Prevents the display and system from entering sleep.
@@ -96,17 +96,17 @@ object EnergyManager {
      * Windows: uses SetThreadExecutionState with ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED.
      * macOS/Linux: not yet implemented.
      */
-    fun keepScreenAwake(): Result = delegate?.keepScreenAwake() ?: unsupported
+    public fun keepScreenAwake(): Result = delegate?.keepScreenAwake() ?: unsupported
 
     /**
      * Releases the screen-awake state, allowing the OS to sleep normally.
      */
-    fun releaseScreenAwake(): Result = delegate?.releaseScreenAwake() ?: unsupported
+    public fun releaseScreenAwake(): Result = delegate?.releaseScreenAwake() ?: unsupported
 
     /**
      * Returns true if screen-awake mode is currently active.
      */
-    fun isScreenAwakeActive(): Boolean = delegate?.isScreenAwakeActive() ?: false
+    public fun isScreenAwakeActive(): Boolean = delegate?.isScreenAwakeActive() ?: false
 
     /**
      * Executes [block] on a dedicated thread with efficiency mode enabled.
@@ -122,7 +122,7 @@ object EnergyManager {
      * }
      * ```
      */
-    suspend fun <T> withEfficiencyMode(block: suspend () -> T): T {
+    public suspend fun <T> withEfficiencyMode(block: suspend () -> T): T {
         val executor =
             Executors.newSingleThreadExecutor { runnable ->
                 Thread(runnable, "nucleus-efficient").apply { isDaemon = true }
@@ -156,7 +156,7 @@ object EnergyManager {
      * }
      * ```
      */
-    suspend fun <T> withLightEfficiencyMode(block: suspend () -> T): T {
+    public suspend fun <T> withLightEfficiencyMode(block: suspend () -> T): T {
         enableLightEfficiencyMode()
         return try {
             block()

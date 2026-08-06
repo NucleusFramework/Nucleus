@@ -32,7 +32,7 @@ import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindo
 // Low priority: NucleusApplicationScope implements ApplicationScope, so inside
 // nucleusApplication both overloads are applicable — the Nucleus one must win.
 @LowPriorityInOverloadResolution
-fun ApplicationScope.MaterialDecoratedWindow(
+public fun ApplicationScope.MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -86,7 +86,7 @@ fun ApplicationScope.MaterialDecoratedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.MaterialDecoratedWindow(
+public fun NucleusApplicationScope.MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

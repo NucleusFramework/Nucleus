@@ -11,13 +11,13 @@ package dev.nucleusframework.core.runtime.tools
  * 3) Main class from system property "sun.java.command" (first token)
  * 4) Fallback to "NucleusApp"
  */
-object AppIdProvider {
+public object AppIdProvider {
     private const val FALLBACK_ID = "NucleusApp"
     private const val MAX_ID_LENGTH = 128
     private const val RESOURCE_PATH = "nucleus/nucleus-app.properties"
     private val cached by lazy { computeAppId() }
 
-    fun appId(): String = cached
+    public fun appId(): String = cached
 
     @Suppress("TooGenericExceptionCaught")
     private fun computeAppId(): String {

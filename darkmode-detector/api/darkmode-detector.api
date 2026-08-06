@@ -1,0 +1,22 @@
+public final class dev/nucleusframework/darkmodedetector/DarkModeDetectorKt {
+	public static final fun getPlatformDarkModeDetector ()Ldev/nucleusframework/darkmodedetector/IDarkModeDetector;
+}
+
+public abstract interface class dev/nucleusframework/darkmodedetector/IDarkModeDetector {
+	public abstract fun isDark ()Z
+	public abstract fun registerListener (Ljava/util/function/Consumer;)V
+	public abstract fun removeListener (Ljava/util/function/Consumer;)V
+}
+
+public final class dev/nucleusframework/darkmodedetector/IsSystemInDarkModeKt {
+	public static final fun isSystemInDarkMode (Landroidx/compose/runtime/Composer;I)Z
+}
+
+public final class dev/nucleusframework/darkmodedetector/NoopDarkModeDetector : dev/nucleusframework/darkmodedetector/IDarkModeDetector {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/darkmodedetector/NoopDarkModeDetector;
+	public fun isDark ()Z
+	public fun registerListener (Ljava/util/function/Consumer;)V
+	public fun removeListener (Ljava/util/function/Consumer;)V
+}
+

@@ -1,16 +1,16 @@
 package dev.nucleusframework.menu.macos
 
 /** NSControlStateValue used by NSMenuItem.state. */
-enum class NsMenuItemState(
-    val nativeValue: Int,
+public enum class NsMenuItemState(
+    public val nativeValue: Int,
 ) {
     OFF(0),
     ON(1),
     MIXED(-1),
     ;
 
-    companion object {
-        fun fromNative(value: Int): NsMenuItemState = entries.firstOrNull { it.nativeValue == value } ?: OFF
+    public companion object {
+        public fun fromNative(value: Int): NsMenuItemState = entries.firstOrNull { it.nativeValue == value } ?: OFF
     }
 }
 
@@ -82,9 +82,9 @@ internal enum class NsMenuItemBadgeType(
 }
 
 /** Image source for NSMenuItem image properties. */
-sealed class NsMenuItemImage {
+public sealed class NsMenuItemImage {
     /** Named image from the app bundle or AppKit constants (e.g. "NSActionTemplate"). */
-    data class Named(
+    public data class Named(
         val name: String,
     ) : NsMenuItemImage()
 
@@ -102,19 +102,19 @@ sealed class NsMenuItemImage {
      * NsMenuItemImage.SystemSymbol("scissors")
      * ```
      */
-    data class SystemSymbol(
+    public data class SystemSymbol(
         val name: String,
         val accessibilityDescription: String? = null,
     ) : NsMenuItemImage() {
         /** Creates an image from a type-safe [SFSymbol][dev.nucleusframework.sfsymbols.SFSymbol] constant. */
-        constructor(
+        public constructor(
             symbol: dev.nucleusframework.sfsymbols.SFSymbol,
             accessibilityDescription: String? = null,
         ) : this(symbol.symbolName, accessibilityDescription)
     }
 
     /** Image loaded from a file path. */
-    data class File(
+    public data class File(
         val path: String,
     ) : NsMenuItemImage()
 }

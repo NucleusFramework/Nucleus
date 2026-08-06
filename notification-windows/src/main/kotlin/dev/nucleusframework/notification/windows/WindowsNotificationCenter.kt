@@ -10,7 +10,7 @@ import java.util.logging.Logger
  * Controls how the library handles Start Menu shortcuts with AUMID.
  * Mirrors WinToastLib's ShortcutPolicy.
  */
-enum class ShortcutPolicy(
+public enum class ShortcutPolicy(
     internal val nativeValue: Int,
 ) {
     /** Don't check, create, or modify any shortcut. */
@@ -37,12 +37,12 @@ enum class ShortcutPolicy(
  *
  * Thread-safe singleton.
  */
-object WindowsNotificationCenter {
+public object WindowsNotificationCenter {
     private val logger = Logger.getLogger(WindowsNotificationCenter::class.java.simpleName)
     private var initialized = false
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean get() = NativeWindowsNotificationBridge.isLoaded
+    public val isAvailable: Boolean get() = NativeWindowsNotificationBridge.isLoaded
 
     /**
      * Initialize the notification subsystem.
@@ -67,7 +67,7 @@ object WindowsNotificationCenter {
      *   [ShortcutPolicy.REQUIRE_NO_CREATE] for dev mode.
      * @return true if initialization succeeded.
      */
-    fun initialize(
+    public fun initialize(
         aumid: String? = null,
         appName: String? = null,
         shortcutPolicy: ShortcutPolicy = defaultShortcutPolicy(),
@@ -126,7 +126,7 @@ object WindowsNotificationCenter {
      * @param suppressPopup Send directly to Action Center without popup.
      * @param callback Optional callback with error string (null on success).
      */
-    fun show(
+    public fun show(
         content: ToastContent,
         tag: String = "",
         group: String = "",
@@ -160,7 +160,7 @@ object WindowsNotificationCenter {
      *
      * Use this for advanced scenarios where you build the XML manually.
      */
-    fun showFromXml(
+    public fun showFromXml(
         xml: String,
         tag: String = "",
         group: String = "",
@@ -198,7 +198,7 @@ object WindowsNotificationCenter {
      * @param group Notification group.
      * @param callback Optional callback with error string (null on success).
      */
-    fun showSimple(
+    public fun showSimple(
         title: String,
         body: String = "",
         body2: String = "",
@@ -233,7 +233,7 @@ object WindowsNotificationCenter {
      * @param data The new data values.
      * @param callback Optional callback with error string (null on success).
      */
-    fun update(
+    public fun update(
         tag: String,
         group: String = "",
         data: ToastNotificationData,
@@ -256,7 +256,7 @@ object WindowsNotificationCenter {
     // -- Remove --
 
     /** Remove a specific toast from Action Center. */
-    fun remove(
+    public fun remove(
         tag: String,
         group: String = "",
     ) {
@@ -265,13 +265,13 @@ object WindowsNotificationCenter {
     }
 
     /** Remove all toasts in a group from Action Center. */
-    fun removeGroup(group: String) {
+    public fun removeGroup(group: String) {
         if (!ensureReady(null)) return
         NativeWindowsNotificationBridge.removeGroupToasts(group)
     }
 
     /** Remove all toasts from Action Center for this app. */
-    fun clearAll() {
+    public fun clearAll() {
         if (!ensureReady(null)) return
         NativeWindowsNotificationBridge.clearAllToasts()
     }
@@ -283,7 +283,7 @@ object WindowsNotificationCenter {
      *
      * @param callback Receives the list of history entries and an optional error.
      */
-    fun getHistory(callback: (List<HistoryEntry>, String?) -> Unit) {
+    public fun getHistory(callback: (List<HistoryEntry>, String?) -> Unit) {
         if (!ensureReady(null)) {
             callback(emptyList(), "Not available")
             return
@@ -295,12 +295,12 @@ object WindowsNotificationCenter {
     // -- Listeners --
 
     /** Register a listener for toast lifecycle events (activated, dismissed, failed). */
-    fun addListener(listener: ToastNotificationListener) {
+    public fun addListener(listener: ToastNotificationListener) {
         NativeWindowsNotificationBridge.addListener(listener)
     }
 
     /** Unregister a toast lifecycle listener. */
-    fun removeListener(listener: ToastNotificationListener) {
+    public fun removeListener(listener: ToastNotificationListener) {
         NativeWindowsNotificationBridge.removeListener(listener)
     }
 
@@ -310,7 +310,7 @@ object WindowsNotificationCenter {
      * Clean up native resources.
      * Call on app shutdown or when notifications are no longer needed.
      */
-    fun uninitialize() {
+    public fun uninitialize() {
         if (!isAvailable || !initialized) return
         NativeWindowsNotificationBridge.uninitialize()
         initialized = false

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -43,7 +44,8 @@ import kotlinx.coroutines.isActive
 
 private const val GRADIENT_MIDPOINT = 0.5f
 
-val LocalContentColor = staticCompositionLocalOf { Color.Black }
+public val LocalContentColor: ProvidableCompositionLocal<Color> =
+    staticCompositionLocalOf { Color.Black }
 
 /**
  * The resolved layout direction for window control buttons.
@@ -51,11 +53,12 @@ val LocalContentColor = staticCompositionLocalOf { Color.Black }
  * can apply this as [LocalLayoutDirection] around their content,
  * independently of the app's content direction.
  */
-val LocalControlButtonsDirection = staticCompositionLocalOf { LayoutDirection.Ltr }
+public val LocalControlButtonsDirection: ProvidableCompositionLocal<LayoutDirection> =
+    staticCompositionLocalOf { LayoutDirection.Ltr }
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun GenericTitleBarImpl(
+public fun GenericTitleBarImpl(
     state: DecoratedWindowState,
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
@@ -139,12 +142,12 @@ fun GenericTitleBarImpl(
 }
 
 @Stable
-interface TitleBarScope {
-    val title: String
+public interface TitleBarScope {
+    public val title: String
 
-    val icon: Painter?
+    public val icon: Painter?
 
-    fun Modifier.align(alignment: Alignment.Horizontal): Modifier
+    public fun Modifier.align(alignment: Alignment.Horizontal): Modifier
 
     /**
      * Click handler for title bar elements that works reliably in macOS
@@ -160,10 +163,10 @@ interface TitleBarScope {
      * immune to phantom exit events. It is the recommended replacement for
      * `clickable` on interactive elements placed inside a title bar.
      */
-    fun Modifier.titleBarClickable(onClick: () -> Unit): Modifier
+    public fun Modifier.titleBarClickable(onClick: () -> Unit): Modifier
 }
 
-class TitleBarScopeImpl(
+public class TitleBarScopeImpl(
     override val title: String,
     override val icon: Painter?,
 ) : TitleBarScope {
@@ -189,8 +192,8 @@ class TitleBarScopeImpl(
         }
 }
 
-class TitleBarChildDataElement(
-    val horizontalAlignment: Alignment.Horizontal,
+public class TitleBarChildDataElement(
+    public val horizontalAlignment: Alignment.Horizontal,
 ) : ModifierNodeElement<TitleBarChildDataNode>() {
     override fun create(): TitleBarChildDataNode = TitleBarChildDataNode(horizontalAlignment)
 
@@ -212,9 +215,10 @@ class TitleBarChildDataElement(
     }
 }
 
-class TitleBarChildDataNode(
-    var horizontalAlignment: Alignment.Horizontal,
+public class TitleBarChildDataNode(
+    public var horizontalAlignment: Alignment.Horizontal,
 ) : Modifier.Node(),
     ParentDataModifierNode {
-    override fun Density.modifyParentData(parentData: Any?) = this@TitleBarChildDataNode
+    override fun Density.modifyParentData(parentData: Any?): TitleBarChildDataNode =
+        this@TitleBarChildDataNode
 }

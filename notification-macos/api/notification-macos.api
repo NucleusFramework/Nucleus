@@ -1,0 +1,514 @@
+public final class dev/nucleusframework/notification/ActionOption : java/lang/Enum {
+	public static final field AUTHENTICATION_REQUIRED Ldev/nucleusframework/notification/ActionOption;
+	public static final field DESTRUCTIVE Ldev/nucleusframework/notification/ActionOption;
+	public static final field FOREGROUND Ldev/nucleusframework/notification/ActionOption;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/ActionOption;
+	public static fun values ()[Ldev/nucleusframework/notification/ActionOption;
+}
+
+public final class dev/nucleusframework/notification/AlertStyle : java/lang/Enum {
+	public static final field ALERT Ldev/nucleusframework/notification/AlertStyle;
+	public static final field BANNER Ldev/nucleusframework/notification/AlertStyle;
+	public static final field Companion Ldev/nucleusframework/notification/AlertStyle$Companion;
+	public static final field NONE Ldev/nucleusframework/notification/AlertStyle;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/AlertStyle;
+	public static fun values ()[Ldev/nucleusframework/notification/AlertStyle;
+}
+
+public final class dev/nucleusframework/notification/AlertStyle$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/AlertStyle;
+}
+
+public final class dev/nucleusframework/notification/AuthorizationOption : java/lang/Enum {
+	public static final field ALERT Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field BADGE Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field CRITICAL_ALERT Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field PROVIDES_APP_NOTIFICATION_SETTINGS Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field PROVISIONAL Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field SOUND Ldev/nucleusframework/notification/AuthorizationOption;
+	public static final field TIME_SENSITIVE Ldev/nucleusframework/notification/AuthorizationOption;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/AuthorizationOption;
+	public static fun values ()[Ldev/nucleusframework/notification/AuthorizationOption;
+}
+
+public final class dev/nucleusframework/notification/AuthorizationStatus : java/lang/Enum {
+	public static final field AUTHORIZED Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static final field Companion Ldev/nucleusframework/notification/AuthorizationStatus$Companion;
+	public static final field DENIED Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static final field EPHEMERAL Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static final field NOT_DETERMINED Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static final field PROVISIONAL Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/AuthorizationStatus;
+	public static fun values ()[Ldev/nucleusframework/notification/AuthorizationStatus;
+}
+
+public final class dev/nucleusframework/notification/AuthorizationStatus$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/AuthorizationStatus;
+}
+
+public final class dev/nucleusframework/notification/CategoryOption : java/lang/Enum {
+	public static final field ALLOW_ANNOUNCEMENT Ldev/nucleusframework/notification/CategoryOption;
+	public static final field ALLOW_IN_CAR_PLAY Ldev/nucleusframework/notification/CategoryOption;
+	public static final field CUSTOM_DISMISS_ACTION Ldev/nucleusframework/notification/CategoryOption;
+	public static final field HIDDEN_PREVIEWS_SHOW_SUBTITLE Ldev/nucleusframework/notification/CategoryOption;
+	public static final field HIDDEN_PREVIEWS_SHOW_TITLE Ldev/nucleusframework/notification/CategoryOption;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/CategoryOption;
+	public static fun values ()[Ldev/nucleusframework/notification/CategoryOption;
+}
+
+public final class dev/nucleusframework/notification/DateComponents {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;)V
+	public synthetic fun <init> (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/Integer;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun component3 ()Ljava/lang/Integer;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Ljava/lang/Integer;
+	public final fun component7 ()Ljava/lang/Integer;
+	public final fun copy (Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;)Ldev/nucleusframework/notification/DateComponents;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/DateComponents;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;Ljava/lang/Integer;ILjava/lang/Object;)Ldev/nucleusframework/notification/DateComponents;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDay ()Ljava/lang/Integer;
+	public final fun getHour ()Ljava/lang/Integer;
+	public final fun getMinute ()Ljava/lang/Integer;
+	public final fun getMonth ()Ljava/lang/Integer;
+	public final fun getSecond ()Ljava/lang/Integer;
+	public final fun getWeekday ()Ljava/lang/Integer;
+	public final fun getYear ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/DeliveredNotification {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()J
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/DeliveredNotification;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/DeliveredNotification;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;JLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/DeliveredNotification;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Ljava/lang/String;
+	public final fun getCategoryIdentifier ()Ljava/lang/String;
+	public final fun getDate ()J
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun getThreadIdentifier ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/InterruptionLevel : java/lang/Enum {
+	public static final field ACTIVE Ldev/nucleusframework/notification/InterruptionLevel;
+	public static final field CRITICAL Ldev/nucleusframework/notification/InterruptionLevel;
+	public static final field Companion Ldev/nucleusframework/notification/InterruptionLevel$Companion;
+	public static final field PASSIVE Ldev/nucleusframework/notification/InterruptionLevel;
+	public static final field TIME_SENSITIVE Ldev/nucleusframework/notification/InterruptionLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/InterruptionLevel;
+	public static fun values ()[Ldev/nucleusframework/notification/InterruptionLevel;
+}
+
+public final class dev/nucleusframework/notification/InterruptionLevel$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/InterruptionLevel;
+}
+
+public class dev/nucleusframework/notification/NotificationAction {
+	public static final field Companion Ldev/nucleusframework/notification/NotificationAction$Companion;
+	public static final field DEFAULT_ACTION_IDENTIFIER Ljava/lang/String;
+	public static final field DISMISS_ACTION_IDENTIFIER Ljava/lang/String;
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getOptions ()Ljava/util/Set;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationAction$Companion {
+}
+
+public final class dev/nucleusframework/notification/NotificationAttachment {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/NotificationAttachment;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationAttachment;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationAttachment;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationCategory {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ljava/util/Set;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;)Ldev/nucleusframework/notification/NotificationCategory;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationCategory;Ljava/lang/String;Ljava/util/List;Ljava/util/List;Ljava/util/Set;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationCategory;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActions ()Ljava/util/List;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getIntentIdentifiers ()Ljava/util/List;
+	public final fun getOptions ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationCenter {
+	public static final field INSTANCE Ldev/nucleusframework/notification/NotificationCenter;
+	public final fun add (Ldev/nucleusframework/notification/NotificationRequest;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun add$default (Ldev/nucleusframework/notification/NotificationCenter;Ldev/nucleusframework/notification/NotificationRequest;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun getBadgeCount (Lkotlin/jvm/functions/Function1;)V
+	public final fun getDeliveredNotifications (Lkotlin/jvm/functions/Function1;)V
+	public final fun getNotificationCategories (Lkotlin/jvm/functions/Function1;)V
+	public final fun getNotificationSettings (Lkotlin/jvm/functions/Function1;)V
+	public final fun getPendingNotifications (Lkotlin/jvm/functions/Function1;)V
+	public final fun isAvailable ()Z
+	public final fun removeAllDeliveredNotifications ()V
+	public final fun removeAllPendingNotifications ()V
+	public final fun removeDeliveredNotifications (Ljava/util/List;)V
+	public final fun removePendingNotifications (Ljava/util/List;)V
+	public final fun requestAuthorization (Ljava/util/Set;Lkotlin/jvm/functions/Function2;)V
+	public final fun setBadgeCount (ILkotlin/jvm/functions/Function1;)V
+	public static synthetic fun setBadgeCount$default (Ldev/nucleusframework/notification/NotificationCenter;ILkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun setDelegate (Ldev/nucleusframework/notification/NotificationCenterDelegate;)V
+	public final fun setNotificationCategories (Ljava/util/Set;)V
+}
+
+public abstract interface class dev/nucleusframework/notification/NotificationCenterDelegate {
+	public abstract fun didReceive (Ldev/nucleusframework/notification/NotificationResponse;)V
+	public fun openSettings (Ldev/nucleusframework/notification/DeliveredNotification;)V
+	public abstract fun willPresent (Ldev/nucleusframework/notification/DeliveredNotification;)Ljava/util/Set;
+}
+
+public final class dev/nucleusframework/notification/NotificationCenterDelegate$DefaultImpls {
+	public static fun openSettings (Ldev/nucleusframework/notification/NotificationCenterDelegate;Ldev/nucleusframework/notification/DeliveredNotification;)V
+}
+
+public final class dev/nucleusframework/notification/NotificationContent {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ldev/nucleusframework/notification/NotificationSound;Ljava/util/Map;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/InterruptionLevel;D)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ldev/nucleusframework/notification/NotificationSound;Ljava/util/Map;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/InterruptionLevel;DILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()Ldev/nucleusframework/notification/InterruptionLevel;
+	public final fun component12 ()D
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ldev/nucleusframework/notification/NotificationSound;
+	public final fun component6 ()Ljava/util/Map;
+	public final fun component7 ()Ljava/util/List;
+	public final fun component8 ()Ljava/lang/String;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ldev/nucleusframework/notification/NotificationSound;Ljava/util/Map;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/InterruptionLevel;D)Ldev/nucleusframework/notification/NotificationContent;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationContent;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Integer;Ldev/nucleusframework/notification/NotificationSound;Ljava/util/Map;Ljava/util/List;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/InterruptionLevel;DILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationContent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAttachments ()Ljava/util/List;
+	public final fun getBadge ()Ljava/lang/Integer;
+	public final fun getBody ()Ljava/lang/String;
+	public final fun getCategoryIdentifier ()Ljava/lang/String;
+	public final fun getInterruptionLevel ()Ldev/nucleusframework/notification/InterruptionLevel;
+	public final fun getRelevanceScore ()D
+	public final fun getSound ()Ldev/nucleusframework/notification/NotificationSound;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun getTargetContentIdentifier ()Ljava/lang/String;
+	public final fun getThreadIdentifier ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getUserInfo ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationRequest {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/NotificationContent;Ldev/nucleusframework/notification/NotificationTrigger;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/NotificationContent;Ldev/nucleusframework/notification/NotificationTrigger;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/notification/NotificationContent;
+	public final fun component3 ()Ldev/nucleusframework/notification/NotificationTrigger;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/notification/NotificationContent;Ldev/nucleusframework/notification/NotificationTrigger;)Ldev/nucleusframework/notification/NotificationRequest;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationRequest;Ljava/lang/String;Ldev/nucleusframework/notification/NotificationContent;Ldev/nucleusframework/notification/NotificationTrigger;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationRequest;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ldev/nucleusframework/notification/NotificationContent;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getTrigger ()Ldev/nucleusframework/notification/NotificationTrigger;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationResponse {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/DeliveredNotification;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/notification/DeliveredNotification;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/notification/DeliveredNotification;Ljava/lang/String;)Ldev/nucleusframework/notification/NotificationResponse;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationResponse;Ljava/lang/String;Ldev/nucleusframework/notification/DeliveredNotification;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationResponse;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActionIdentifier ()Ljava/lang/String;
+	public final fun getNotification ()Ldev/nucleusframework/notification/DeliveredNotification;
+	public final fun getUserText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationSetting : java/lang/Enum {
+	public static final field Companion Ldev/nucleusframework/notification/NotificationSetting$Companion;
+	public static final field DISABLED Ldev/nucleusframework/notification/NotificationSetting;
+	public static final field ENABLED Ldev/nucleusframework/notification/NotificationSetting;
+	public static final field NOT_SUPPORTED Ldev/nucleusframework/notification/NotificationSetting;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/NotificationSetting;
+	public static fun values ()[Ldev/nucleusframework/notification/NotificationSetting;
+}
+
+public final class dev/nucleusframework/notification/NotificationSetting$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/NotificationSetting;
+}
+
+public final class dev/nucleusframework/notification/NotificationSettings {
+	public fun <init> (Ldev/nucleusframework/notification/AuthorizationStatus;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/AlertStyle;Ldev/nucleusframework/notification/ShowPreviewsSetting;Ldev/nucleusframework/notification/NotificationSetting;ZLdev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/AuthorizationStatus;
+	public final fun component10 ()Z
+	public final fun component11 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component12 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component13 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component2 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component3 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component4 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component5 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component6 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun component7 ()Ldev/nucleusframework/notification/AlertStyle;
+	public final fun component8 ()Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public final fun component9 ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun copy (Ldev/nucleusframework/notification/AuthorizationStatus;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/AlertStyle;Ldev/nucleusframework/notification/ShowPreviewsSetting;Ldev/nucleusframework/notification/NotificationSetting;ZLdev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;)Ldev/nucleusframework/notification/NotificationSettings;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationSettings;Ldev/nucleusframework/notification/AuthorizationStatus;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/AlertStyle;Ldev/nucleusframework/notification/ShowPreviewsSetting;Ldev/nucleusframework/notification/NotificationSetting;ZLdev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;Ldev/nucleusframework/notification/NotificationSetting;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationSettings;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlertSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getAlertStyle ()Ldev/nucleusframework/notification/AlertStyle;
+	public final fun getAuthorizationStatus ()Ldev/nucleusframework/notification/AuthorizationStatus;
+	public final fun getBadgeSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getCriticalAlertSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getDirectMessagesSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getLockScreenSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getNotificationCenterSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getProvidesAppNotificationSettings ()Z
+	public final fun getScheduledDeliverySetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getShowPreviewsSetting ()Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public final fun getSoundSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public final fun getTimeSensitiveSetting ()Ldev/nucleusframework/notification/NotificationSetting;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/notification/NotificationSound {
+	public static final field SOUND_TYPE_CRITICAL_NAMED I
+	public static final field SOUND_TYPE_DEFAULT I
+	public static final field SOUND_TYPE_DEFAULT_CRITICAL I
+	public static final field SOUND_TYPE_DEFAULT_CRITICAL_VOLUME I
+	public static final field SOUND_TYPE_NAMED I
+	public static final field SOUND_TYPE_NONE I
+}
+
+public final class dev/nucleusframework/notification/NotificationSound$CriticalNamed : dev/nucleusframework/notification/NotificationSound {
+	public fun <init> (Ljava/lang/String;F)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()F
+	public final fun copy (Ljava/lang/String;F)Ldev/nucleusframework/notification/NotificationSound$CriticalNamed;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationSound$CriticalNamed;Ljava/lang/String;FILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationSound$CriticalNamed;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public final fun getVolume ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationSound$Default : dev/nucleusframework/notification/NotificationSound {
+	public static final field INSTANCE Ldev/nucleusframework/notification/NotificationSound$Default;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationSound$DefaultCritical : dev/nucleusframework/notification/NotificationSound {
+	public static final field INSTANCE Ldev/nucleusframework/notification/NotificationSound$DefaultCritical;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationSound$DefaultCriticalWithVolume : dev/nucleusframework/notification/NotificationSound {
+	public fun <init> (F)V
+	public final fun component1 ()F
+	public final fun copy (F)Ldev/nucleusframework/notification/NotificationSound$DefaultCriticalWithVolume;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationSound$DefaultCriticalWithVolume;FILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationSound$DefaultCriticalWithVolume;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVolume ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationSound$Named : dev/nucleusframework/notification/NotificationSound {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/notification/NotificationSound$Named;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationSound$Named;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationSound$Named;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/notification/NotificationTrigger {
+	public static final field TRIGGER_TYPE_CALENDAR I
+	public static final field TRIGGER_TYPE_NONE I
+	public static final field TRIGGER_TYPE_TIME_INTERVAL I
+	public abstract fun getRepeats ()Z
+}
+
+public final class dev/nucleusframework/notification/NotificationTrigger$Calendar : dev/nucleusframework/notification/NotificationTrigger {
+	public fun <init> (Ldev/nucleusframework/notification/DateComponents;Z)V
+	public synthetic fun <init> (Ldev/nucleusframework/notification/DateComponents;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/DateComponents;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/nucleusframework/notification/DateComponents;Z)Ldev/nucleusframework/notification/NotificationTrigger$Calendar;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationTrigger$Calendar;Ldev/nucleusframework/notification/DateComponents;ZILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationTrigger$Calendar;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDateComponents ()Ldev/nucleusframework/notification/DateComponents;
+	public fun getRepeats ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/NotificationTrigger$TimeInterval : dev/nucleusframework/notification/NotificationTrigger {
+	public fun <init> (DZ)V
+	public synthetic fun <init> (DZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()D
+	public final fun component2 ()Z
+	public final fun copy (DZ)Ldev/nucleusframework/notification/NotificationTrigger$TimeInterval;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/NotificationTrigger$TimeInterval;DZILjava/lang/Object;)Ldev/nucleusframework/notification/NotificationTrigger$TimeInterval;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInterval ()D
+	public fun getRepeats ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/PendingNotificationInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZD)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun component7 ()I
+	public final fun component8 ()Z
+	public final fun component9 ()D
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZD)Ldev/nucleusframework/notification/PendingNotificationInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/PendingNotificationInfo;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;IZDILjava/lang/Object;)Ldev/nucleusframework/notification/PendingNotificationInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBody ()Ljava/lang/String;
+	public final fun getCategoryIdentifier ()Ljava/lang/String;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun getThreadIdentifier ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getTriggerInterval ()D
+	public final fun getTriggerRepeats ()Z
+	public final fun getTriggerType ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/PresentationOption : java/lang/Enum {
+	public static final field ALERT Ldev/nucleusframework/notification/PresentationOption;
+	public static final field BADGE Ldev/nucleusframework/notification/PresentationOption;
+	public static final field BANNER Ldev/nucleusframework/notification/PresentationOption;
+	public static final field LIST Ldev/nucleusframework/notification/PresentationOption;
+	public static final field SOUND Ldev/nucleusframework/notification/PresentationOption;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/PresentationOption;
+	public static fun values ()[Ldev/nucleusframework/notification/PresentationOption;
+}
+
+public final class dev/nucleusframework/notification/RegisteredActionInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;IZLjava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()I
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;IZLjava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/RegisteredActionInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/RegisteredActionInfo;Ljava/lang/String;Ljava/lang/String;IZLjava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/RegisteredActionInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getOptionsMask ()I
+	public final fun getTextInputButtonTitle ()Ljava/lang/String;
+	public final fun getTextInputPlaceholder ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isTextInput ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/RegisteredCategoryInfo {
+	public fun <init> (Ljava/lang/String;ILjava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;ILjava/util/List;)Ldev/nucleusframework/notification/RegisteredCategoryInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/RegisteredCategoryInfo;Ljava/lang/String;ILjava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/notification/RegisteredCategoryInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActions ()Ljava/util/List;
+	public final fun getIdentifier ()Ljava/lang/String;
+	public final fun getOptionsMask ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/ShowPreviewsSetting : java/lang/Enum {
+	public static final field ALWAYS Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public static final field Companion Ldev/nucleusframework/notification/ShowPreviewsSetting$Companion;
+	public static final field NEVER Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public static final field WHEN_AUTHENTICATED Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/ShowPreviewsSetting;
+	public static fun values ()[Ldev/nucleusframework/notification/ShowPreviewsSetting;
+}
+
+public final class dev/nucleusframework/notification/ShowPreviewsSetting$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/ShowPreviewsSetting;
+}
+
+public final class dev/nucleusframework/notification/TextInputNotificationAction : dev/nucleusframework/notification/NotificationAction {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/Set;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getTextInputButtonTitle ()Ljava/lang/String;
+	public final fun getTextInputPlaceholder ()Ljava/lang/String;
+}
+

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.CloseHover: ImageVector
+public val KdeControlButtonsIcons.CloseHover: ImageVector
     get() {
         if (_CloseHover != null) {
             return _CloseHover!!

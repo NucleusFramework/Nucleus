@@ -1,0 +1,199 @@
+public final class dev/nucleusframework/core/runtime/AppRestarter {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/AppRestarter;
+	public static final fun getApplicationExecutablePath ()Ljava/lang/String;
+	public static final fun restartApplication ()V
+}
+
+public final class dev/nucleusframework/core/runtime/DeepLinkHandler {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/DeepLinkHandler;
+	public final fun captureFromArgs ([Ljava/lang/String;)V
+	public final fun deliver (Ljava/net/URI;)V
+	public final fun getUri ()Ljava/net/URI;
+	public final fun installAwtAppleEventHandler ()V
+	public final fun readUriFrom (Ljava/nio/file/Path;)V
+	public final fun register ([Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun setHandler ([Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public final fun writeUriTo (Ljava/nio/file/Path;)V
+}
+
+public final class dev/nucleusframework/core/runtime/ExecutableRuntime {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/ExecutableRuntime;
+	public static final field TYPE_PROPERTY Ljava/lang/String;
+	public static final fun isAppImage ()Z
+	public static final fun isAppX ()Z
+	public static final fun isDeb ()Z
+	public static final fun isDev ()Z
+	public static final fun isDmg ()Z
+	public static final fun isExe ()Z
+	public static final fun isFlatpak ()Z
+	public static final fun isGraalVmNativeImage ()Z
+	public static final fun isMsi ()Z
+	public static final fun isNsis ()Z
+	public static final fun isNsisWeb ()Z
+	public static final fun isPacman ()Z
+	public static final fun isPkg ()Z
+	public static final fun isPortable ()Z
+	public static final fun isRpm ()Z
+	public static final fun isSevenZ ()Z
+	public static final fun isSnap ()Z
+	public static final fun isTar ()Z
+	public static final fun isZip ()Z
+	public static final fun markerVersion ()Ljava/lang/String;
+	public final fun parseType (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final fun type ()Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final fun type (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/ExecutableType;
+}
+
+public final class dev/nucleusframework/core/runtime/ExecutableType : java/lang/Enum {
+	public static final field APPIMAGE Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field APPX Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field DEB Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field DEV Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field DMG Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field EXE Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field FLATPAK Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field MSI Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field NSIS Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field NSIS_WEB Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field PACMAN Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field PKG Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field PORTABLE Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field RPM Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field SEVEN_Z Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field SNAP Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field TAR Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static final field ZIP Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/ExecutableType;
+	public static fun values ()[Ldev/nucleusframework/core/runtime/ExecutableType;
+}
+
+public final class dev/nucleusframework/core/runtime/LinuxDesktopEnvironment : java/lang/Enum {
+	public static final field Cinnamon Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static final field Companion Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment$Companion;
+	public static final field Gnome Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static final field KDE Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static final field Mate Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static final field Unknown Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static final field XFCE Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+	public static fun values ()[Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+}
+
+public final class dev/nucleusframework/core/runtime/LinuxDesktopEnvironment$Companion {
+	public final fun getCurrent ()Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
+}
+
+public final class dev/nucleusframework/core/runtime/NativeLibraryLoader {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NativeLibraryLoader;
+	public final fun load (Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;)Z
+	public static synthetic fun load$default (Ldev/nucleusframework/core/runtime/NativeLibraryLoader;Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Z
+}
+
+public final class dev/nucleusframework/core/runtime/NucleusApp {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NucleusApp;
+	public static final fun getAppId ()Ljava/lang/String;
+	public static final fun getAppName ()Ljava/lang/String;
+	public static final fun getAumid ()Ljava/lang/String;
+	public static final fun getDescription ()Ljava/lang/String;
+	public static final fun getStartupTaskId ()Ljava/lang/String;
+	public static final fun getVendor ()Ljava/lang/String;
+	public static final fun getVersion ()Ljava/lang/String;
+	public static final fun isConfigured ()Z
+}
+
+public final class dev/nucleusframework/core/runtime/Platform : java/lang/Enum {
+	public static final field Companion Ldev/nucleusframework/core/runtime/Platform$Companion;
+	public static final field Linux Ldev/nucleusframework/core/runtime/Platform;
+	public static final field MacOS Ldev/nucleusframework/core/runtime/Platform;
+	public static final field Unknown Ldev/nucleusframework/core/runtime/Platform;
+	public static final field Windows Ldev/nucleusframework/core/runtime/Platform;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/Platform;
+	public static fun values ()[Ldev/nucleusframework/core/runtime/Platform;
+}
+
+public final class dev/nucleusframework/core/runtime/Platform$Companion {
+	public final fun getCurrent ()Ldev/nucleusframework/core/runtime/Platform;
+	public final fun isWayland ()Z
+}
+
+public final class dev/nucleusframework/core/runtime/SingleInstanceManager {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/SingleInstanceManager;
+	public final fun getConfiguration ()Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;
+	public final fun isSingleInstance (Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;)Z
+	public static synthetic fun isSingleInstance$default (Ldev/nucleusframework/core/runtime/SingleInstanceManager;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Z
+	public final fun setConfiguration (Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;)V
+}
+
+public final class dev/nucleusframework/core/runtime/SingleInstanceManager$Configuration {
+	public fun <init> ()V
+	public fun <init> (Ljava/nio/file/Path;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/nio/file/Path;Ljava/lang/String;)Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;
+	public static synthetic fun copy$default (Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;Ljava/nio/file/Path;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/core/runtime/SingleInstanceManager$Configuration;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLockFileName ()Ljava/lang/String;
+	public final fun getLockFilePath ()Ljava/nio/file/Path;
+	public final fun getLockFilesDir ()Ljava/nio/file/Path;
+	public final fun getLockIdentifier ()Ljava/lang/String;
+	public final fun getRestoreRequestFileName ()Ljava/lang/String;
+	public final fun getRestoreRequestFilePath ()Ljava/nio/file/Path;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/WindowBackend : java/lang/Enum {
+	public static final field Awt Ldev/nucleusframework/core/runtime/WindowBackend;
+	public static final field Companion Ldev/nucleusframework/core/runtime/WindowBackend$Companion;
+	public static final field Tao Ldev/nucleusframework/core/runtime/WindowBackend;
+	public static final fun getCurrent ()Ldev/nucleusframework/core/runtime/WindowBackend;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static final fun isNucleusManaged ()Z
+	public static final fun setActive (Ldev/nucleusframework/core/runtime/WindowBackend;)V
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/WindowBackend;
+	public static fun values ()[Ldev/nucleusframework/core/runtime/WindowBackend;
+}
+
+public final class dev/nucleusframework/core/runtime/WindowBackend$Companion {
+	public final fun getCurrent ()Ldev/nucleusframework/core/runtime/WindowBackend;
+	public final fun isNucleusManaged ()Z
+	public final fun setActive (Ldev/nucleusframework/core/runtime/WindowBackend;)V
+}
+
+public final class dev/nucleusframework/core/runtime/tools/AppIdProvider {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/tools/AppIdProvider;
+	public final fun appId ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel : java/lang/Comparable {
+	public static final field Companion Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel$Companion;
+	public static final field DEBUG Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final field ERROR Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final field INFO Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final field VERBOSE Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final field WARN Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public fun compareTo (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)I
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+}
+
+public final class dev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel$Companion {
+}
+
+public final class dev/nucleusframework/core/runtime/tools/LinuxDesktopFileDetector {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/tools/LinuxDesktopFileDetector;
+	public final fun getDesktopFilename ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/tools/LoggerKt {
+	public static final fun getAllowNucleusRuntimeLogging ()Z
+	public static final fun getComposeNativeTrayLoggingLevel ()Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final fun getComposeNativeTrayloggingLevel ()Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final fun setAllowNucleusRuntimeLogging (Z)V
+	public static final fun setComposeNativeTrayLoggingLevel (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)V
+	public static final fun setComposeNativeTrayloggingLevel (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)V
+}
+

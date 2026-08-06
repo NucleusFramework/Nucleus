@@ -2,7 +2,7 @@ package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Numbers (301 symbols). */
 @Suppress("EnumNaming")
-enum class SFSymbolNumbers(
+public enum class SFSymbolNumbers(
     override val symbolName: String,
 ) : SFSymbol {
     _0_CIRCLE("0.circle"),

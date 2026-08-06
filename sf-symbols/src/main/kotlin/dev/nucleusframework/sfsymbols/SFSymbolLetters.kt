@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Letters (142 symbols). */
-enum class SFSymbolLetters(
+public enum class SFSymbolLetters(
     override val symbolName: String,
 ) : SFSymbol {
     A_CIRCLE("a.circle"),

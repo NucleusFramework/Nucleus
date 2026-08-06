@@ -9,7 +9,7 @@ import java.io.File
  * download ([isDifferential]) is only the changed part of the artifact — so [percent] stays a
  * faithful measure of the wait, and [totalBytes] is then smaller than the artifact itself.
  */
-data class DownloadProgress(
+public data class DownloadProgress(
     val bytesDownloaded: Long,
     val totalBytes: Long,
     val percent: Double,

@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-enum class BatteryState {
+public enum class BatteryState {
     Charging,
     Discharging,
     Full,

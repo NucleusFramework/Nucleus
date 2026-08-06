@@ -2,8 +2,8 @@ package dev.nucleusframework.updater.provider
 
 import dev.nucleusframework.core.runtime.Platform
 
-class GenericProvider(
-    val baseUrl: String,
+public class GenericProvider(
+    public val baseUrl: String,
 ) : UpdateProvider {
     private val normalizedBaseUrl = baseUrl.trimEnd('/')
 

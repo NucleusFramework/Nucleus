@@ -1,0 +1,51 @@
+public final class dev/nucleusframework/autolaunch/AutoLaunch {
+	public static final field INSTANCE Ldev/nucleusframework/autolaunch/AutoLaunch;
+	public static final fun diagnostic ()Ljava/lang/String;
+	public static final fun disable ()Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final fun enable ()Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final fun isEnabled ()Z
+	public static final fun isUserLocked ()Z
+	public static final fun openSystemSettings ()Z
+	public static final fun preload ()V
+	public static final fun state ()Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final fun wasStartedAtLogin ([Ljava/lang/String;)Z
+}
+
+public final class dev/nucleusframework/autolaunch/AutoLaunchConfig {
+	public static final field INSTANCE Ldev/nucleusframework/autolaunch/AutoLaunchConfig;
+	public static final fun getAutostartArgument ()Ljava/lang/String;
+	public static final fun getBackgroundReason ()Ljava/lang/String;
+	public static final fun getExecutablePath ()Ljava/lang/String;
+	public static final fun getRegistryValueName ()Ljava/lang/String;
+	public static final fun getTaskId ()Ljava/lang/String;
+	public static final fun setAutostartArgument (Ljava/lang/String;)V
+	public static final fun setBackgroundReason (Ljava/lang/String;)V
+	public static final fun setExecutablePath (Ljava/lang/String;)V
+	public static final fun setRegistryValueName (Ljava/lang/String;)V
+	public static final fun setTaskId (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/autolaunch/AutoLaunchResult : java/lang/Enum {
+	public static final field BLOCKED_BY_POLICY Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final field BLOCKED_BY_USER Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final field ERROR Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final field OK Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final field UNCHANGED Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static final field UNSUPPORTED Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+	public static fun values ()[Ldev/nucleusframework/autolaunch/AutoLaunchResult;
+}
+
+public final class dev/nucleusframework/autolaunch/AutoLaunchState : java/lang/Enum {
+	public static final field DISABLED Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final field DISABLED_BY_POLICY Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final field DISABLED_BY_USER Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final field ENABLED Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final field ENABLED_BY_POLICY Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static final field UNSUPPORTED Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/autolaunch/AutoLaunchState;
+	public static fun values ()[Ldev/nucleusframework/autolaunch/AutoLaunchState;
+}
+

@@ -32,10 +32,10 @@ import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.cancellation.CancellationException
 
-class NucleusUpdater(
+public class NucleusUpdater(
     private val config: UpdaterConfig,
 ) {
-    val currentVersion: String get() = config.currentVersion
+    public val currentVersion: String get() = config.currentVersion
 
     private var pendingUpdateVersion: String? = null
 
@@ -51,12 +51,12 @@ class NucleusUpdater(
         config.cacheDir?.let(::UpdateCache) ?: UpdateCache.default()
     }
 
-    fun isUpdateSupported(): Boolean {
+    public fun isUpdateSupported(): Boolean {
         val type = resolveExecutableType()
         return type in SELF_UPDATABLE_TYPES
     }
 
-    suspend fun checkForUpdates(): UpdateResult {
+    public suspend fun checkForUpdates(): UpdateResult {
         if (config.isDevMode()) return UpdateResult.NotAvailable
         if (!isUpdateSupported()) return UpdateResult.NotAvailable
         return withContext(Dispatchers.IO) {
@@ -74,7 +74,7 @@ class NucleusUpdater(
         }
     }
 
-    fun downloadUpdate(info: UpdateInfo): Flow<DownloadProgress> =
+    public fun downloadUpdate(info: UpdateInfo): Flow<DownloadProgress> =
         flow {
             pendingUpdateVersion = info.version
             val targetFile = info.currentFile
@@ -288,13 +288,13 @@ class NucleusUpdater(
         }
     }
 
-    fun installAndRestart(installerFile: File) {
+    public fun installAndRestart(installerFile: File) {
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
         PlatformInstaller.install(installerFile, platform, restart = true)
     }
 
-    fun installAndQuit(installerFile: File) {
+    public fun installAndQuit(installerFile: File) {
         writeUpdateMarker()
         val platform = PlatformInfo.currentPlatform()
         PlatformInstaller.install(installerFile, platform, restart = false)
@@ -305,7 +305,7 @@ class NucleusUpdater(
      * so that subsequent calls return `null`. Use this on startup to detect a
      * post-update launch (e.g. to show a "What's new" dialog or run migrations).
      */
-    fun consumeUpdateEvent(): UpdateEvent? {
+    public fun consumeUpdateEvent(): UpdateEvent? {
         val event = peekUpdateEvent() ?: return null
         UpdateMarker.delete()
         return event
@@ -315,7 +315,7 @@ class NucleusUpdater(
      * Returns `true` if the application was launched after an update.
      * Does **not** consume the event — call [consumeUpdateEvent] to clear it.
      */
-    fun wasJustUpdated(): Boolean = UpdateMarker.exists()
+    public fun wasJustUpdated(): Boolean = UpdateMarker.exists()
 
     private fun peekUpdateEvent(): UpdateEvent? {
         val (previousVersion, newVersion) = UpdateMarker.read() ?: return null
@@ -432,7 +432,7 @@ class NucleusUpdater(
         }
     }
 
-    companion object {
+    public companion object {
         private const val HTTP_OK = 200
         private const val PERCENT_MAX = 100.0
 

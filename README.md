@@ -26,11 +26,14 @@ Electron and Tauri.
 
 ## Project status
 
-Nucleus is under active development and moves fast. The `decorated-window-tao` backend runs
-in explicit-API mode with its public surface locked by a binary-compatibility dump; the other
-runtime modules are not API-frozen yet and can change between minor releases, so pin exact
-versions. The Tao backend is the recommended one for new projects — `decorated-window-jni`
-and `decorated-window-jbr` are kept for existing users and receive fixes only.
+Nucleus is under active development and moves fast. All published runtime modules run in
+Kotlin `explicitApi()` mode with their public surface locked by a binary-compatibility dump
+(`api/*.api`, checked by `apiCheck` via kotlinx binary-compatibility-validator). Breaking
+changes to a public FQN or signature fail CI. The one exception is `decorated-window-jewel`
+(JVM 25 bytecode), which still uses `explicitApi()` but is not dumped until BCV can read
+class-file major version 69. The Tao backend is the recommended one for new projects —
+`decorated-window-jni` and `decorated-window-jbr` are kept for existing users and receive
+fixes only.
 
 ## Installation
 

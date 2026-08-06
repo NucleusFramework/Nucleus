@@ -23,7 +23,7 @@ package dev.nucleusframework.hidpi
  * ```
  * This function is a no-op on non-Linux platforms and returns `0.0`.
  */
-fun getLinuxNativeScaleFactor(): Double {
+public fun getLinuxNativeScaleFactor(): Double {
     if (!System.getProperty("os.name").contains("Linux", ignoreCase = true)) return 0.0
     return try {
         HiDpiLinuxBridge.nativeGetScaleFactor()
@@ -56,7 +56,7 @@ fun getLinuxNativeScaleFactor(): Double {
  *
  * **Call this before AWT initialises** (i.e. before `application {}`).
  */
-fun applyLinuxHiDpiScale() {
+public fun applyLinuxHiDpiScale() {
     if (!System.getProperty("os.name").contains("Linux", ignoreCase = true)) return
     if (System.getProperty("sun.java2d.uiScale") != null) return // already configured
 

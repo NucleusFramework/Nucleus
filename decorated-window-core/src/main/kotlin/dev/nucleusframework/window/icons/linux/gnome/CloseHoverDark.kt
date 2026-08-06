@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.CloseHoverDark: ImageVector
+public val GnomeControlButtonsIcons.CloseHoverDark: ImageVector
     get() {
         if (_CloseHoverDark != null) {
             return _CloseHoverDark!!

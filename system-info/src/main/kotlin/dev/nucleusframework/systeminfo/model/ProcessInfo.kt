@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class ProcessInfo(
+public data class ProcessInfo(
     val pid: Long,
     val name: String,
     val exe: String?,

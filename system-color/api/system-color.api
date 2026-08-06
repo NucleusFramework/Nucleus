@@ -1,0 +1,6 @@
+public final class dev/nucleusframework/systemcolor/SystemColorKt {
+	public static final fun isSystemAccentColorSupported ()Z
+	public static final fun isSystemInHighContrast (Landroidx/compose/runtime/Composer;I)Z
+	public static final fun systemAccentColor (Landroidx/compose/runtime/Composer;I)Landroidx/compose/ui/graphics/Color;
+}
+

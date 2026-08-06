@@ -6,16 +6,16 @@ package dev.nucleusframework.notification.linux
  * Servers may display low urgency notifications differently, and critical
  * notifications should not auto-expire.
  */
-enum class Urgency(
-    val value: Int,
+public enum class Urgency(
+    public val value: Int,
 ) {
     LOW(0),
     NORMAL(1),
     CRITICAL(2),
     ;
 
-    companion object {
-        fun fromValue(value: Int): Urgency = entries.firstOrNull { it.value == value } ?: NORMAL
+    public companion object {
+        public fun fromValue(value: Int): Urgency = entries.firstOrNull { it.value == value } ?: NORMAL
     }
 }
 
@@ -23,8 +23,8 @@ enum class Urgency(
  * Reason a notification was closed, as reported by the [NotificationClosed] signal.
  */
 @Suppress("MagicNumber")
-enum class CloseReason(
-    val value: Int,
+public enum class CloseReason(
+    public val value: Int,
 ) {
     /** The notification expired (timeout). */
     EXPIRED(1),
@@ -39,7 +39,7 @@ enum class CloseReason(
     UNDEFINED(4),
     ;
 
-    companion object {
-        fun fromValue(value: Int): CloseReason = entries.firstOrNull { it.value == value } ?: UNDEFINED
+    public companion object {
+        public fun fromValue(value: Int): CloseReason = entries.firstOrNull { it.value == value } ?: UNDEFINED
     }
 }

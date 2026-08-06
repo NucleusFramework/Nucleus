@@ -2,38 +2,38 @@ package dev.nucleusframework.fswatcher
 
 import java.nio.file.Path
 
-data class FsWatchSource(
+public data class FsWatchSource(
     val root: Path,
     val recursive: Boolean,
     val name: String? = null,
 )
 
-sealed interface FsWatchEvent {
-    val source: FsWatchSource?
-    val needsRescan: Boolean
+public sealed interface FsWatchEvent {
+    public val source: FsWatchSource?
+    public val needsRescan: Boolean
 
-    data class Created(
+    public data class Created(
         val path: Path,
         override val source: FsWatchSource? = null,
         val isDirectory: Boolean? = null,
         override val needsRescan: Boolean = false,
     ) : FsWatchEvent
 
-    data class Modified(
+    public data class Modified(
         val path: Path,
         override val source: FsWatchSource? = null,
         val isDirectory: Boolean? = null,
         override val needsRescan: Boolean = false,
     ) : FsWatchEvent
 
-    data class Removed(
+    public data class Removed(
         val path: Path,
         override val source: FsWatchSource? = null,
         val isDirectory: Boolean? = null,
         override val needsRescan: Boolean = false,
     ) : FsWatchEvent
 
-    data class Moved(
+    public data class Moved(
         val from: Path,
         val to: Path,
         override val source: FsWatchSource? = null,
@@ -41,12 +41,12 @@ sealed interface FsWatchEvent {
         override val needsRescan: Boolean = false,
     ) : FsWatchEvent
 
-    data class Overflow(
+    public data class Overflow(
         override val source: FsWatchSource? = null,
         override val needsRescan: Boolean = true,
     ) : FsWatchEvent
 
-    data class Other(
+    public data class Other(
         val paths: List<Path> = emptyList(),
         override val source: FsWatchSource? = null,
         val isDirectory: Boolean? = null,

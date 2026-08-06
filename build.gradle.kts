@@ -3,6 +3,7 @@ import dev.detekt.gradle.Detekt
 import org.apache.tools.ant.taskdefs.condition.Os
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.PathSensitivity
+import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 
 plugins {
     alias(libs.plugins.kotlin) apply false
@@ -10,9 +11,50 @@ plugins {
     alias(libs.plugins.androidApplication) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
+    // Freezes public ABI for every published library module: `apiCheck` fails on
+    // any change to public FQNs/signatures vs the checked-in `api/*.api` dumps
+    // (same harness as decorated-window-tao — see README project status).
+    alias(libs.plugins.binaryCompatibilityValidator)
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
     alias(libs.plugins.versionCheck)
+}
+
+apiValidation {
+    // Demo / sample apps are not published; skip ABI dumps for them.
+    // Names match the last segment of include(":examples:...") in settings.
+    ignoredProjects.addAll(
+        listOf(
+            "nucleus-demo",
+            "compose-demo",
+            "tao-demo",
+            "swing-tao-demo",
+            "zstd-demo",
+            "jni-demo",
+            "shared",
+            "jewel-demo",
+            "cmp-demo",
+            "scheduler-demo",
+            "service-management-demo",
+            "system-info-demo",
+            "fs-watcher-smoke",
+            "orphan-reflect-smoke",
+            "extra-launcher-demo",
+            "benchmark-demo",
+            "gstreamer-demo",
+            "mediafoundation-demo",
+            "avfoundation-demo",
+            "tao-native-test",
+            "window-scaffold-demo",
+            // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
+            // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
+            "decorated-window-jewel",
+        ),
+    )
+    // TaoTransferableAccess lives in androidx.compose.ui.draganddrop purely to
+    // reach Compose's internal AwtDragAndDropTransferable (Java friend-package
+    // access). Implementation detail of decorated-window-tao, not public ABI.
+    ignoredPackages.add("androidx.compose.ui.draganddrop")
 }
 
 val nativeBuildTaskPrefix = "buildNative"
@@ -45,6 +87,19 @@ subprojects {
                     .get()
                     .pluginId,
             )
+        }
+        // JetBrains convention: every public declaration must state its
+        // visibility (and return type) explicitly so the public surface can
+        // only change deliberately — enforced together with BCV apiCheck.
+        pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+            extensions.configure<KotlinProjectExtension>("kotlin") {
+                explicitApi()
+            }
+        }
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            extensions.configure<KotlinProjectExtension>("kotlin") {
+                explicitApi()
+            }
         }
     }
     apply {
@@ -204,6 +259,8 @@ tasks.register<Exec>("publishDevToMavenLocal") {
 tasks.register("preMerge") {
     description = "Runs all the tests/verification tasks on both top level and included build."
 
+    // Binary-compatibility freeze for every published library module (api/*.api).
+    dependsOn("apiCheck")
     dependsOn(":core-runtime:check")
     dependsOn(":aot-runtime:check")
     dependsOn(":updater-runtime:check")

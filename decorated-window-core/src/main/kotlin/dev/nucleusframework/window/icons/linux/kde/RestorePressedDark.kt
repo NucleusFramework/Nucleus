@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.RestorePressedDark: ImageVector
+public val KdeControlButtonsIcons.RestorePressedDark: ImageVector
     get() {
         if (_RestorePressedDark != null) {
             return _RestorePressedDark!!

@@ -14,7 +14,7 @@ import dev.nucleusframework.core.runtime.Platform
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedDialog(
+public fun DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

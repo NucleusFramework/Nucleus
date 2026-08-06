@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Arrows (535 symbols). */
-enum class SFSymbolArrows(
+public enum class SFSymbolArrows(
     override val symbolName: String,
 ) : SFSymbol {
     ARROW_2_SQUAREPATH("arrow.2.squarepath"),

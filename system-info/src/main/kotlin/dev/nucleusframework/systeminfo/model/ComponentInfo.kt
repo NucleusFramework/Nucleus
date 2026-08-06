@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class ComponentInfo(
+public data class ComponentInfo(
     val label: String,
     val temperature: Float?,
     val max: Float?,

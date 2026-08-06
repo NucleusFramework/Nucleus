@@ -12,7 +12,7 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun AwtDecoratedDialogScope.DialogTitleBarImpl(
+public fun AwtDecoratedDialogScope.DialogTitleBarImpl(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

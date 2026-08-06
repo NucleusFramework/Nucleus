@@ -15,7 +15,7 @@ import dev.nucleusframework.window.internal.inflateToMinimumSize
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedWindow(
+public fun DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

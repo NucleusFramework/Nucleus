@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Weather (286 symbols). */
-enum class SFSymbolWeather(
+public enum class SFSymbolWeather(
     override val symbolName: String,
 ) : SFSymbol {
     BOLT("bolt"),

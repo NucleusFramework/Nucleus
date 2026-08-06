@@ -16,7 +16,7 @@ import dev.nucleusframework.application.DecoratedDialog as NucleusDecoratedDialo
 /** AWT-backed (JBR / JNI) Jewel-styled wrapper for [DecoratedDialog]. */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun JewelDecoratedDialog(
+public fun JewelDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,
@@ -59,7 +59,7 @@ fun JewelDecoratedDialog(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.JewelDecoratedDialog(
+public fun NucleusApplicationScope.JewelDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

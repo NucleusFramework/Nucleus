@@ -1,0 +1,339 @@
+public final class dev/nucleusframework/menu/macos/MenuBarEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZLjava/util/List;Ldev/nucleusframework/menu/macos/MenuRole;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLjava/util/List;Ldev/nucleusframework/menu/macos/MenuRole;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ldev/nucleusframework/menu/macos/MenuRole;
+	public final fun copy (Ljava/lang/String;ZLjava/util/List;Ldev/nucleusframework/menu/macos/MenuRole;)Ldev/nucleusframework/menu/macos/MenuBarEntry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/MenuBarEntry;Ljava/lang/String;ZLjava/util/List;Ldev/nucleusframework/menu/macos/MenuRole;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/MenuBarEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getRole ()Ldev/nucleusframework/menu/macos/MenuRole;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+}
+
+public final class dev/nucleusframework/menu/macos/MenuItemEntry$Regular : dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function0;ZLdev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemState;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IZZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component10 ()Ljava/lang/String;
+	public final fun component11 ()I
+	public final fun component12 ()Z
+	public final fun component13 ()Z
+	public final fun component14 ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun component15 ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun component16 ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun component2 ()Lkotlin/jvm/functions/Function0;
+	public final fun component3 ()Z
+	public final fun component4 ()Ldev/nucleusframework/menu/macos/NativeKeyShortcut;
+	public final fun component5 ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun component6 ()Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public final fun component7 ()I
+	public final fun component8 ()Ldev/nucleusframework/menu/macos/NsMenuItemBadge;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Lkotlin/jvm/functions/Function0;ZLdev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemState;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IZZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;)Ldev/nucleusframework/menu/macos/MenuItemEntry$Regular;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/MenuItemEntry$Regular;Ljava/lang/String;Lkotlin/jvm/functions/Function0;ZLdev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemState;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IZZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/MenuItemEntry$Regular;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBadge ()Ldev/nucleusframework/menu/macos/NsMenuItemBadge;
+	public final fun getEnabled ()Z
+	public final fun getIcon ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getIndentationLevel ()I
+	public final fun getMixedStateImage ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getOffStateImage ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function0;
+	public final fun getOnStateImage ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getShortcut ()Ldev/nucleusframework/menu/macos/NativeKeyShortcut;
+	public final fun getState ()Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun getTag ()I
+	public final fun getText ()Ljava/lang/String;
+	public final fun getToolTip ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isAlternate ()Z
+	public final fun isHidden ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/MenuItemEntry$SearchFieldEntry : dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;D)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()D
+	public final fun copy (Ljava/lang/String;D)Ldev/nucleusframework/menu/macos/MenuItemEntry$SearchFieldEntry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/MenuItemEntry$SearchFieldEntry;Ljava/lang/String;DILjava/lang/Object;)Ldev/nucleusframework/menu/macos/MenuItemEntry$SearchFieldEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPlaceholder ()Ljava/lang/String;
+	public final fun getWidth ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/MenuItemEntry$SectionHeaderEntry : dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/MenuItemEntry$SectionHeaderEntry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/MenuItemEntry$SectionHeaderEntry;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/MenuItemEntry$SectionHeaderEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/MenuItemEntry$SeparatorEntry : dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/menu/macos/MenuItemEntry$SeparatorEntry;
+}
+
+public final class dev/nucleusframework/menu/macos/MenuItemEntry$SubmenuEntry : dev/nucleusframework/menu/macos/MenuItemEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;ZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ljava/util/List;)Ldev/nucleusframework/menu/macos/MenuItemEntry$SubmenuEntry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/MenuItemEntry$SubmenuEntry;Ljava/lang/String;ZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ljava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/MenuItemEntry$SubmenuEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getEnabled ()Z
+	public final fun getIcon ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getItems ()Ljava/util/List;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/MenuRole : java/lang/Enum {
+	public static final field Help Ldev/nucleusframework/menu/macos/MenuRole;
+	public static final field None Ldev/nucleusframework/menu/macos/MenuRole;
+	public static final field Window Ldev/nucleusframework/menu/macos/MenuRole;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/MenuRole;
+	public static fun values ()[Ldev/nucleusframework/menu/macos/MenuRole;
+}
+
+public final class dev/nucleusframework/menu/macos/NativeKey {
+	public static final field $stable I
+	public static final field BACKSPACE Ljava/lang/String;
+	public static final field DELETE Ljava/lang/String;
+	public static final field DOWN Ljava/lang/String;
+	public static final field END Ljava/lang/String;
+	public static final field ESCAPE Ljava/lang/String;
+	public static final field F1 Ljava/lang/String;
+	public static final field F10 Ljava/lang/String;
+	public static final field F11 Ljava/lang/String;
+	public static final field F12 Ljava/lang/String;
+	public static final field F2 Ljava/lang/String;
+	public static final field F3 Ljava/lang/String;
+	public static final field F4 Ljava/lang/String;
+	public static final field F5 Ljava/lang/String;
+	public static final field F6 Ljava/lang/String;
+	public static final field F7 Ljava/lang/String;
+	public static final field F8 Ljava/lang/String;
+	public static final field F9 Ljava/lang/String;
+	public static final field HOME Ljava/lang/String;
+	public static final field INSTANCE Ldev/nucleusframework/menu/macos/NativeKey;
+	public static final field LEFT Ljava/lang/String;
+	public static final field PAGE_DOWN Ljava/lang/String;
+	public static final field PAGE_UP Ljava/lang/String;
+	public static final field RETURN Ljava/lang/String;
+	public static final field RIGHT Ljava/lang/String;
+	public static final field TAB Ljava/lang/String;
+	public static final field UP Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NativeKeyShortcut {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZZZZZ)V
+	public synthetic fun <init> (Ljava/lang/String;ZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun copy (Ljava/lang/String;ZZZZZ)Ldev/nucleusframework/menu/macos/NativeKeyShortcut;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ljava/lang/String;ZZZZZILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NativeKeyShortcut;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCommand ()Z
+	public final fun getControl ()Z
+	public final fun getFunction ()Z
+	public final fun getKey ()Ljava/lang/String;
+	public final fun getOption ()Z
+	public final fun getShift ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NativeMenuBarKt {
+	public static final fun NativeMenuBar (Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/menu/macos/NativeMenuBarScope {
+	public static final field $stable I
+	public final fun Menu (Ljava/lang/String;ZLjava/lang/Character;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun Menu$default (Ldev/nucleusframework/menu/macos/NativeMenuBarScope;Ljava/lang/String;ZLjava/lang/Character;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun MenuHelp (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun MenuHelp$default (Ldev/nucleusframework/menu/macos/NativeMenuBarScope;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun MenuWindow (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun MenuWindow$default (Ldev/nucleusframework/menu/macos/NativeMenuBarScope;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun getEntries ()Ljava/util/List;
+}
+
+public final class dev/nucleusframework/menu/macos/NativeMenuScope {
+	public static final field $stable I
+	public final fun CheckboxItem (Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;I)V
+	public static synthetic fun CheckboxItem$default (Ldev/nucleusframework/menu/macos/NativeMenuScope;Ljava/lang/String;ZLkotlin/jvm/functions/Function1;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IILjava/lang/Object;)V
+	public final fun Item (Ljava/lang/String;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemState;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IZZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function0;)V
+	public static synthetic fun Item$default (Ldev/nucleusframework/menu/macos/NativeMenuScope;Ljava/lang/String;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemState;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IZZLdev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)V
+	public final fun Menu (Ljava/lang/String;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun Menu$default (Ldev/nucleusframework/menu/macos/NativeMenuScope;Ljava/lang/String;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun RadioButtonItem (Ljava/lang/String;ZLkotlin/jvm/functions/Function0;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;I)V
+	public static synthetic fun RadioButtonItem$default (Ldev/nucleusframework/menu/macos/NativeMenuScope;Ljava/lang/String;ZLkotlin/jvm/functions/Function0;ZLjava/lang/Character;Ldev/nucleusframework/menu/macos/NativeKeyShortcut;Ldev/nucleusframework/menu/macos/NsMenuItemImage;ILdev/nucleusframework/menu/macos/NsMenuItemBadge;Ljava/lang/String;Ljava/lang/String;IILjava/lang/Object;)V
+	public final fun SearchField (Ljava/lang/String;D)V
+	public static synthetic fun SearchField$default (Ldev/nucleusframework/menu/macos/NativeMenuScope;Ljava/lang/String;DILjava/lang/Object;)V
+	public final fun SectionHeader (Ljava/lang/String;)V
+	public final fun Separator ()V
+	public final fun getEntries ()Ljava/util/List;
+}
+
+public abstract class dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Companion;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$Alerts : dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Alerts;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Alerts;IILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Alerts;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCount ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$Companion {
+	public final fun alerts (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge;
+	public final fun newItems (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge;
+	public final fun updates (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$Count : dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Count;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Count;IILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Count;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCount ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$NewItems : dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$NewItems;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemBadge$NewItems;IILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$NewItems;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCount ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$Text : dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Text;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Text;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Text;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getString ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemBadge$Updates : dev/nucleusframework/menu/macos/NsMenuItemBadge {
+	public static final field $stable I
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Updates;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Updates;IILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Updates;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCount ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract class dev/nucleusframework/menu/macos/NsMenuItemImage {
+	public static final field $stable I
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemImage$File : dev/nucleusframework/menu/macos/NsMenuItemImage {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$File;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemImage$File;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$File;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemImage$Named : dev/nucleusframework/menu/macos/NsMenuItemImage {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$Named;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemImage$Named;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$Named;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemImage$SystemSymbol : dev/nucleusframework/menu/macos/NsMenuItemImage {
+	public static final field $stable I
+	public fun <init> (Ldev/nucleusframework/sfsymbols/SFSymbol;Ljava/lang/String;)V
+	public synthetic fun <init> (Ldev/nucleusframework/sfsymbols/SFSymbol;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$SystemSymbol;
+	public static synthetic fun copy$default (Ldev/nucleusframework/menu/macos/NsMenuItemImage$SystemSymbol;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/menu/macos/NsMenuItemImage$SystemSymbol;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAccessibilityDescription ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemState : java/lang/Enum {
+	public static final field Companion Ldev/nucleusframework/menu/macos/NsMenuItemState$Companion;
+	public static final field MIXED Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public static final field OFF Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public static final field ON Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getNativeValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/menu/macos/NsMenuItemState;
+	public static fun values ()[Ldev/nucleusframework/menu/macos/NsMenuItemState;
+}
+
+public final class dev/nucleusframework/menu/macos/NsMenuItemState$Companion {
+	public final fun fromNative (I)Ldev/nucleusframework/menu/macos/NsMenuItemState;
+}
+

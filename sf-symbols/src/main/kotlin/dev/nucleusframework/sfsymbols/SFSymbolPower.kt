@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Power (76 symbols). */
-enum class SFSymbolPower(
+public enum class SFSymbolPower(
     override val symbolName: String,
 ) : SFSymbol {
     POWER("power"),

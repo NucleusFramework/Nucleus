@@ -23,5 +23,5 @@ public data class ConstraintResult(
  */
 @InternalSchedulerApi
 public interface ConstraintChecker {
-    fun check(constraints: Constraints): ConstraintResult
+    public fun check(constraints: Constraints): ConstraintResult
 }
