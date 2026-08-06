@@ -4,75 +4,133 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import dev.nucleusframework.darkmodedetector.getPlatformDarkModeDetector
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
-import org.jetbrains.skiko.SystemTheme as SkikoSystemTheme
-import org.jetbrains.skiko.currentSystemTheme
 import java.io.File
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.system.exitProcess
 
+
 /**
- * Process-level E2E: boots a real Compose `application` + `Window` under
- * [ProvideNucleusSystemTheme] (same bridge as `nucleusApplication`) and writes
- * a PASS/FAIL report. Exit code 0 = PASS, 1 = FAIL.
+ * Process-level E2E that **actually flips** the OS color-scheme and checks that
+ * under [ProvideNucleusSystemTheme] both [isSystemInDarkMode] and official
+ * [isSystemInDarkTheme] track each transition.
  *
  * Run: `./gradlew :nucleus-application:systemThemeE2E`
- *
- * Note: Compose's `application` defaults to `exitProcessOnExit = true`, so we
- * must write the report *before* [exitApplication] — nothing after `application { }`
- * runs on success.
  */
 fun main() {
+    if (!LinuxColorSchemeToggle.isAvailable) {
+        failReport("gsettings/session bus unavailable — cannot toggle OS theme")
+    }
+
     val reportFile =
         File(System.getProperty("systemThemeE2E.report", "system-theme-e2e.report"))
     reportFile.parentFile?.mkdirs()
 
-    // exitProcessOnExit = false so we control the process exit code after sampling.
+    val original = LinuxColorSchemeToggle.read()
+    val log = StringBuilder().appendLine("originalScheme=$original")
+    val processExit = AtomicInteger(1)
+
     application(exitProcessOnExit = false) {
         ProvideNucleusSystemTheme {
+            // visible=true so the scene keeps producing frames; otherwise
+            // snapshot applies from the D-Bus JNI thread may never recompose.
             Window(
                 onCloseRequest = ::exitApplication,
                 title = "system-theme-e2e",
-                visible = false,
+                visible = true,
             ) {
-                val detector = getPlatformDarkModeDetector().isDark()
                 val nucleus = isSystemInDarkMode()
                 val compose = isSystemInDarkTheme()
-                val skikoDark = currentSystemTheme == SkikoSystemTheme.DARK
+                var lastNucleus by remember { mutableStateOf(nucleus) }
+                var lastCompose by remember { mutableStateOf(compose) }
+                lastNucleus = nucleus
+                lastCompose = compose
 
-                Box(Modifier.size(1.dp))
+                Box(Modifier.size(8.dp))
 
-                LaunchedEffect(detector, nucleus, compose, skikoDark) {
-                    val pass = detector == nucleus && nucleus == compose
-                    val text =
-                        buildString {
-                            appendLine("detector=$detector")
-                            appendLine("isSystemInDarkMode=$nucleus")
-                            appendLine("isSystemInDarkTheme=$compose")
-                            appendLine("skikoDark=$skikoDark")
-                            appendLine(if (pass) "RESULT=PASS" else "RESULT=FAIL")
+                LaunchedEffect(Unit) {
+                    try {
+                        for (scheme in listOf("prefer-light", "prefer-dark", "prefer-light")) {
+                            val expectDark = LinuxColorSchemeToggle.isDarkScheme(scheme)
+                            LinuxColorSchemeToggle.write(scheme)
+                            log.appendLine("set scheme=$scheme expectDark=$expectDark")
+
+                            val ok =
+                                awaitFrames(timeoutMs = 15_000) {
+                                    val d = getPlatformDarkModeDetector().isDark()
+                                    lastNucleus == expectDark &&
+                                        lastCompose == expectDark &&
+                                        d == expectDark
+                                }
+                            log.appendLine(
+                                "  after: detector=${getPlatformDarkModeDetector().isDark()} " +
+                                    "nucleus=$lastNucleus compose=$lastCompose ok=$ok",
+                            )
+                            if (!ok || lastNucleus != lastCompose) {
+                                log.appendLine("RESULT=FAIL")
+                                reportFile.writeText(log.toString())
+                                print(log.toString())
+                                exitApplication()
+                                return@LaunchedEffect
+                            }
                         }
-                    reportFile.writeText(text)
-                    print(text)
-                    exitApplication()
+                        log.appendLine("RESULT=PASS")
+                        processExit.set(0)
+                        reportFile.writeText(log.toString())
+                        print(log.toString())
+                        exitApplication()
+                    } catch (t: Throwable) {
+                        log.appendLine("exception=${t.stackTraceToString()}")
+                        log.appendLine("RESULT=FAIL")
+                        reportFile.writeText(log.toString())
+                        System.err.print(log.toString())
+                        exitApplication()
+                    } finally {
+                        runCatching { LinuxColorSchemeToggle.write(original) }
+                    }
                 }
             }
         }
     }
 
-    val text =
-        if (reportFile.exists()) {
-            reportFile.readText()
-        } else {
-            "RESULT=FAIL\n(no report — composition did not run)\n"
-                .also { reportFile.writeText(it) }
-        }
-    if (!text.contains("RESULT=PASS")) {
-        System.err.print(text)
-        exitProcess(1)
+    if (!reportFile.exists()) {
+        failReport("composition did not finish\n$log", reportFile)
     }
+    exitProcess(processExit.get())
+}
+
+/** Pump Compose frames while waiting for JNI → Snapshot recomposition. */
+private suspend fun awaitFrames(
+    timeoutMs: Long,
+    predicate: () -> Boolean,
+): Boolean {
+    val deadline = System.nanoTime() + timeoutMs * 1_000_000L
+    while (System.nanoTime() < deadline) {
+        withFrameNanos { }
+        if (predicate()) return true
+    }
+    withFrameNanos { }
+    return predicate()
+}
+
+private fun failReport(
+    message: String,
+    reportFile: File =
+        File(System.getProperty("systemThemeE2E.report", "system-theme-e2e.report")),
+): Nothing {
+    reportFile.parentFile?.mkdirs()
+    val text = "RESULT=FAIL\n$message\n"
+    reportFile.writeText(text)
+    System.err.print(text)
+    exitProcess(1)
 }
