@@ -107,9 +107,9 @@ cl /LD /O1 /GS- /nologo ^
     /Fe:"%OUT_DIR_ARM64%\%LIB_NAME%" ^
     /link /NODEFAULTLIB /ENTRY:DllMain winhttp.lib advapi32.lib kernel32.lib
 if errorlevel 1 (
-    echo WARNING: ARM64 compilation failed. >&2
+    echo ERROR: ARM64 compilation failed. >&2
     endlocal
-    goto :done
+    exit /b 1
 )
 endlocal
 
