@@ -6,9 +6,10 @@
 //
 // Common responsibilities:
 //   - Owns the Tao event loop on the platform main thread.
-//   - Exposes the underlying native window handle (NSView on macOS, HWND on
-//     Windows, X11 / Wayland handles on Linux) so the JVM can attach a render
-//     surface and drive a Skiko/Compose render pipeline outside AWT.
+//   - Exposes the underlying native window handles (NSView + NSWindow on
+//     macOS, HWND on Windows, X11 / Wayland / xdg_foreign on Linux) so the JVM
+//     can attach a render surface, parent native dialogs, and drive a
+//     Skiko/Compose render pipeline outside AWT.
 //   - Dispatches pointer / mouse-button / keyboard events to Kotlin.
 //
 // Module layout (Rust idiomatic split):

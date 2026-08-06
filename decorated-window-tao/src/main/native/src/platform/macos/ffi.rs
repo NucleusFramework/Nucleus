@@ -41,6 +41,8 @@ extern "C" {
     pub(crate) fn nucleus_tao_a11y_note_pushed();
     pub(crate) fn nucleus_tao_install_drag_monitor();
     pub(crate) fn nucleus_tao_start_window_drag(ns_window_ptr: i64);
+    /// Headful e2e: beginSheetModalForWindow on [ns_window_ptr], cancel, report status.
+    pub(crate) fn nucleus_tao_probe_sheet_parent(ns_window_ptr: i64, ns_view_ptr: i64) -> i32;
     pub(crate) fn nucleus_tao_register_trackpad_gesture_callback(
         cb: extern "C" fn(
             ns_window_ptr: i64,

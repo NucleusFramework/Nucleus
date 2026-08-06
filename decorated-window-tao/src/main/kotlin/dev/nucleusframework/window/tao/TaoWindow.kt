@@ -390,9 +390,11 @@ public class TaoWindow internal constructor(
 
     /**
      * Returns the underlying native window handle for the current platform:
-     *  - Windows: HWND as a `Long` (0 if unavailable).
+     *  - Windows: HWND as a `Long` (0 if unavailable). Suitable for
+     *    `FileKitDialogParent.windows`.
      *  - macOS: NSView pointer as a `Long` — the AppKit subview hosting the
-     *    Compose surface. The owning NSWindow can be obtained via `[view window]`.
+     *    Compose surface. For dialog/sheet parenting use [nsWindowHandle]
+     *    instead; an NSView is not a valid `beginSheetModalForWindow:` parent.
      *  - Linux: returns 0. Prefer [x11WindowId] (X11 portal parent) or
      *    [exportXdgForeignHandle] (Wayland portal parent) — a raw `wl_surface*`
      *    is not a valid XDG Desktop Portal parent.
@@ -407,6 +409,28 @@ public class TaoWindow internal constructor(
                 Platform.MacOS -> NativeTaoBridge.nativeNsViewHandle(handle)
                 else -> 0L
             }
+
+    /**
+     * macOS only: the owning `NSWindow*` for native dialog parenting
+     * (`beginSheetModalForWindow:`, future FileKit sheet parents).
+     * `null` when not on macOS, not yet realized, or the native bridge is
+     * unavailable.
+     *
+     * Distinct from [nativeHandle], which is the Compose host `NSView*` on
+     * macOS. Borrow the pointer for the duration of the picker call only —
+     * FileKit-style adapters do not extend its lifetime.
+     *
+     * ### Adapter sketch
+     * ```kotlin
+     * // Once FileKit accepts an NSWindow parent:
+     * // window.nsWindowHandle?.let { FileKitDialogParent.macos(it) }
+     * ```
+     */
+    public val nsWindowHandle: Long?
+        get() {
+            if (Platform.Current != Platform.MacOS || !NativeTaoBridge.isLoaded) return null
+            return NativeTaoBridge.nativeNsWindowHandle(handle).takeIf { it != 0L }
+        }
 
     /**
      * Linux/X11 only: the window's XID for XDG Desktop Portal parenting

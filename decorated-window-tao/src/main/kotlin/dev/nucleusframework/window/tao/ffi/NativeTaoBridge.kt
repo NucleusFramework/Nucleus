@@ -191,9 +191,36 @@ internal object NativeTaoBridge {
      * be called on the macOS main thread. Returns 0 if the window does not
      * exist (yet) or has been closed. Only resolvable on macOS — calling on
      * other platforms throws `UnsatisfiedLinkError`.
+     *
+     * Prefer [nativeNsWindowHandle] / [TaoWindow.nsWindowHandle] when the goal
+     * is dialog parenting (sheets) rather than rendering into the view.
      */
     @JvmStatic
     external fun nativeNsViewHandle(handle: Long): Long
+
+    /**
+     * macOS only: returns the owning `NSWindow*` for [handle] (cast to
+     * `Long`), or 0 if the window is unknown / not yet realized.
+     *
+     * Intended for native dialog parenting (`beginSheetModalForWindow:`,
+     * future FileKit `FileKitDialogParent.macos`). Distinct from
+     * [nativeNsViewHandle] — an NSView is not a valid sheet parent.
+     */
+    @JvmStatic
+    external fun nativeNsWindowHandle(handle: Long): Long
+
+    /**
+     * macOS only, headful e2e: present a real `NSOpenPanel` as a sheet on
+     * [nsWindow], confirm attachment (and that [nsView] is in that window's
+     * hierarchy), then cancel. Return codes:
+     * `1` ok, `0` window not found, `-1` view not in hierarchy,
+     * `-2` sheet did not attach, `-3` sheet did not dismiss cleanly.
+     */
+    @JvmStatic
+    external fun nativeMacOsProbeSheetParent(
+        nsWindow: Long,
+        nsView: Long,
+    ): Int
 
     /**
      * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM
