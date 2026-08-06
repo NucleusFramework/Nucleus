@@ -7,6 +7,7 @@ import dev.nucleusframework.application.LocalNucleusApplicationScope
 import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.NucleusApplicationScope
 import dev.nucleusframework.application.NucleusBackend
+import dev.nucleusframework.application.ProvideNucleusSystemTheme
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.window.tao.TaoDockPolicy
 import dev.nucleusframework.window.tao.taoApplication
@@ -28,17 +29,21 @@ internal object TaoLauncher {
         // URIs received before then are buffered and replayed by `TaoDeepLinkBridge`.
         taoApplication {
             val scope = TaoNucleusApplicationScope(this, args)
-            CompositionLocalProvider(
-                LocalNucleusBackend provides NucleusBackend.Tao,
-                LocalNucleusApplicationScope provides scope,
-            ) {
-                // Apply the Dock-follows-windows opt-in on the Tao main thread
-                // (this composition) so a tray-only app drops out of the Dock at
-                // startup; visible DecoratedWindows then promote it as needed.
-                LaunchedEffect(dockIconFollowsWindows) {
-                    TaoDockPolicy.setEnabled(dockIconFollowsWindows)
+            // Provide before other locals so Tao's per-window outerLocals bridge
+            // carries LocalSystemTheme into each scene (see TaoDecoratedWindowAdapter).
+            ProvideNucleusSystemTheme {
+                CompositionLocalProvider(
+                    LocalNucleusBackend provides NucleusBackend.Tao,
+                    LocalNucleusApplicationScope provides scope,
+                ) {
+                    // Apply the Dock-follows-windows opt-in on the Tao main thread
+                    // (this composition) so a tray-only app drops out of the Dock at
+                    // startup; visible DecoratedWindows then promote it as needed.
+                    LaunchedEffect(dockIconFollowsWindows) {
+                        TaoDockPolicy.setEnabled(dockIconFollowsWindows)
+                    }
+                    scope.content()
                 }
-                scope.content()
             }
         }
     }

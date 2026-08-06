@@ -18,6 +18,10 @@ dependencies {
     api(project(":decorated-window-core"))
     api(project(":decorated-window-awt"))
     api(project(":aot-runtime"))
+    // api: nucleusApplication bridges Compose's isSystemInDarkTheme() to the
+    // reactive OS detector, so consumers always get darkmode-detector on the
+    // compile + runtime classpath (and may call isSystemInDarkMode() directly).
+    api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
     // api: NucleusApplicationScope extends Compose's ApplicationScope, so the
