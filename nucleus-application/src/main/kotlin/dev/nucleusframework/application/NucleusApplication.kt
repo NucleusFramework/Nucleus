@@ -13,8 +13,10 @@ import java.util.Locale
  *
  * Picks the window backend (AWT-based JBR/JNI or no-AWT Tao) and dispatches to
  * Compose Desktop's `application { … }` or Tao's `taoApplication { … }`.
- * Inside [content], use [DecoratedWindow] / [DecoratedDialog] — both work
- * uniformly across backends and expose a [NucleusWindow] handle.
+ * Inside [content], use [DecoratedWindow] / [DecoratedDialog], or
+ * [HostedWindow] / [HostedDialog] when libraries must not hard-code chrome.
+ * All open secondary windows/dialogs on the active backend (Tao or AWT) and
+ * expose a [NucleusWindow] handle.
  *
  * Compose's [androidx.compose.foundation.isSystemInDarkTheme] is bridged to
  * Nucleus's reactive OS detector (`darkmode-detector`), so official and library
@@ -97,6 +99,8 @@ fun nucleusApplication(
                     CompositionLocalProvider(
                         LocalNucleusBackend provides NucleusBackend.Awt,
                         LocalNucleusApplicationScope provides nucleusScope,
+                        LocalNucleusWindowHost provides DefaultNucleusWindowHost,
+                        LocalNucleusDialogHost provides DefaultNucleusDialogHost,
                     ) {
                         nucleusScope.content()
                     }
