@@ -34,6 +34,12 @@ public class TaoWindow internal constructor(
      * "Commit already has timestamp" protocol error.
      */
     public val isPopup: Boolean = false,
+    /**
+     * Handle of the [popupOf] parent when [isPopup] is true (Linux only).
+     * Used to resolve the parent's CSD content origin when positioning this
+     * window as a Wayland `wl_subsurface`.
+     */
+    internal val popupParentHandle: Long = 0L,
 ) {
     // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
     // gating) recompose when resizability changes at runtime — the AWT
@@ -658,13 +664,50 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetInnerSize(handle, widthDp, heightDp)
     }
 
-    /** Logical pixels. Top-left of the outer (decoration-inclusive) window. */
+    /**
+     * Logical pixels. Top-left of the outer (decoration-inclusive) window.
+     *
+     * **Linux popup overlays** (`isPopup`, `openWindow(popupOf = …)`):
+     * - On **X11** the coordinates are root/screen space (override-redirect).
+     * - On **native Wayland** they are **parent content-area** coordinates.
+     *   The hidden-titlebar CSD puts the parent surface origin at the theme
+     *   shadow margin while Compose's content (and content-relative pointer
+     *   samples) live at GTK's content origin. This method adds that content
+     *   origin before `wl_subsurface.set_position`, so callers — drag ghosts,
+     *   in-scene popup layers — can keep working in content space. Zero once
+     *   GTK collapses the margins (maximized / fullscreen / tiled).
+     */
     public fun setOuterPosition(
         xDp: Double,
         yDp: Double,
     ) {
-        NativeTaoBridge.nativeSetOuterPosition(handle, xDp, yDp)
+        var x = xDp
+        var y = yDp
+        // Wayland popup subsurface: content-area → parent-surface coords.
+        // Detect the parent's backend (not env vars) so XWayland stays clean.
+        if (isPopup && popupParentHandle != 0L && parentIsNativeWayland()) {
+            val packed = NativeTaoBridge.nativeLinuxContentOrigin(popupParentHandle)
+            // Packed as (x << 32) | (y & 0xffff_ffff) in logical GTK units.
+            x += (packed shr 32).toInt()
+            y += packed.toInt()
+        }
+        NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
     }
+
+    /** `true` when the popup parent is a native Wayland surface (kind == 2). */
+    private fun parentIsNativeWayland(): Boolean {
+        val handles = NativeTaoBridge.nativeLinuxHandles(popupParentHandle) ?: return false
+        return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
+    }
+
+    /**
+     * Parent window when this is a Linux popup overlay, or `null`. Used by
+     * [DecoratedWindow] Absolute positioning to convert screen-style coords
+     * (parent outer + content-relative) into the content-area space
+     * [setOuterPosition] expects on Wayland.
+     */
+    internal val popupParent: TaoWindow?
+        get() = if (popupParentHandle != 0L) TaoApplication.lookup(popupParentHandle) else null
 
     /** Multi-cast: fires on every native window move. [xPx]/[yPx] are physical pixels. */
     public fun onMoved(block: (xPx: Int, yPx: Int) -> Unit) {
@@ -966,6 +1009,9 @@ public class TaoWindow internal constructor(
                     Platform.Linux -> LINUX_AWT_SCROLL_AMOUNT_DEFAULT
                     else -> MACOS_AWT_SCROLL_AMOUNT
                 }
+
+        /** `nativeLinuxHandles` slot 0: 1 = Xlib, 2 = Wayland. */
+        const val WAYLAND_HANDLE_KIND: Long = 2L
     }
 }
 

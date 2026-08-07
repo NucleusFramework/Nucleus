@@ -385,8 +385,10 @@ internal class TaoPopupSceneLayerLinux(
      * Pushes `boundsInWindow` to the popup window. GTK positions in
      * *logical* pixels: X11 popups in root coordinates (parent screen
      * origin + window-relative bounds), Wayland subsurfaces relative to
-     * the parent surface ([TaoPopupHostLinux.parentScreenOriginPx] is
-     * zero there).
+     * the parent **content** area — [TaoWindow.setOuterPosition] adds the
+     * CSD content origin for `popupOf` windows, so we pass content-space
+     * coords here ([TaoPopupHostLinux.parentScreenOriginPx] is zero on
+     * Wayland).
      */
     private fun updateNativeFrame() {
         if (_bounds == IntRect.Zero || released) return

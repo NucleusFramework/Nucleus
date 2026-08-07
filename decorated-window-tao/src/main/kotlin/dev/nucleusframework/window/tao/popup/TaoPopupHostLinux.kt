@@ -56,6 +56,10 @@ internal interface TaoPopupHostLinux {
      * Offset added to a popup's `boundsInWindow` before positioning the
      * popup window. Non-zero when the popup originates from a nested
      * scene whose origin is not at the host window's top-left.
+     *
+     * The hidden-titlebar CSD content origin is **not** reported here —
+     * [TaoWindow.setOuterPosition] applies it for every Linux `popupOf`
+     * window so drag ghosts and in-scene layers share one code path.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
 

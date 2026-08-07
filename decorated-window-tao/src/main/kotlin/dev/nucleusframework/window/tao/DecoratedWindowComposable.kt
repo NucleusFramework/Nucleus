@@ -314,7 +314,14 @@ public fun ApplicationScope.DecoratedWindow(
         if (pos == applied.position) return@LaunchedEffect
         when (pos) {
             is WindowPosition.Absolute -> {
-                window.setOuterPosition(pos.x.value.toDouble(), pos.y.value.toDouble())
+                // Drag ghosts (and similar Absolute-driven popup overlays) build
+                // their position as parentOuter + content-relative pointer. On
+                // native Wayland setOuterPosition expects content-area coords
+                // (it adds the CSD content origin itself) — strip the parent
+                // outer origin so the ghost tracks the cursor instead of
+                // landing up/left by the decoration inset + outer offset.
+                val (xDp, yDp) = absolutePositionForPopup(window, pos)
+                window.setOuterPosition(xDp, yDp)
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
@@ -548,6 +555,43 @@ private fun WindowState.inflateToMinimumSize(minimumSize: DpSize?) {
             }
         }
     }
+}
+
+/**
+ * Converts an Absolute position for a Linux popup overlay into the coordinate
+ * space [TaoWindow.setOuterPosition] expects on native Wayland: parent
+ * **content-area** logical pixels. Apps (tab-drag ghosts) typically build
+ * Absolute as `parent.boundsOnScreen + contentPointer`; strip the parent outer
+ * origin so only the content-relative part remains. No-op on X11 (screen
+ * coords) and for non-popup windows.
+ */
+private fun absolutePositionForPopup(
+    window: TaoWindow,
+    pos: WindowPosition.Absolute,
+): Pair<Double, Double> {
+    var x = pos.x.value.toDouble()
+    var y = pos.y.value.toDouble()
+    // Only native Wayland maps popups as subsurfaces of the parent; X11 uses
+    // override-redirect root coordinates and must keep Absolute as-is.
+    // Prefer the parent surface's backend: the popup may not be realised yet
+    // on the first Absolute write, while the parent already has handles.
+    val parent = if (window.isPopup) window.popupParent else null
+    val offset = parent?.let { parentOuterOriginLogical(it) }
+    if (offset != null) {
+        x -= offset.first
+        y -= offset.second
+    }
+    return x to y
+}
+
+/** Parent outer origin in logical dp when [parent] is a native Wayland surface. */
+private fun parentOuterOriginLogical(parent: TaoWindow): Pair<Double, Double>? {
+    val handles = NativeTaoBridge.nativeLinuxHandles(parent.handle) ?: return null
+    if (handles.isEmpty() || handles[0] != 2L) return null
+    val rect = parent.outerBoundsPx() ?: return null
+    if (rect.size < 2) return null
+    val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
+    return (rect[0] / scale).toDouble() to (rect[1] / scale).toDouble()
 }
 
 /**
