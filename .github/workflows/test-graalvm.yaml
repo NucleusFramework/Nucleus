@@ -1,26 +1,23 @@
 name: Test GraalVM Native Image
 
+# Invoked from pre-merge after cheap JVM gates succeed. Does not rebuild
+# natives — the caller must have already uploaded natives-* artifacts.
 on:
-  pull_request:
-    branches:
-      # '**' (not '*'): base branches with a '/' must trigger too.
-      - '**'
-
-concurrency:
-  group: test-graalvm-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
-  build-natives:
-    uses: ./.github/workflows/build-natives.yaml
-
+  # One job per OS. Order matters: e2e first (the only place we actually RUN a
+  # native image), then package nucleus-demo. If the test image fails to build
+  # or run, we skip the demo package and save a second native-image compile.
+  # fail-fast cancels the other OSes when one is broken (typical: shared plugin
+  # / reachability / Kotlin regression), so we don't burn three runners for the
+  # same root cause.
   graalvm:
-    needs: build-natives
     name: GraalVM - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         include:
           - name: Linux x64
@@ -47,53 +44,11 @@ jobs:
           setup-gradle: 'true'
           setup-node: 'false'
 
-      - name: Build GraalVM native image
-        shell: bash
-        # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
-        # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: ./gradlew :examples:nucleus-demo:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
-
-      - name: Upload GraalVM artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: graalvm-${{ runner.os }}
-          path: |
-            examples/nucleus-demo/build/compose/binaries/**/graalvm-app/**
-          if-no-files-found: warn
-
-  # Runs the Tao test pyramid inside a GraalVM native image on all three OSes:
-  # compiles examples/tao-native-test once per OS, then executes the binary
-  # twice — `battery` (stage-1 offscreen, headless) and `headful` (stage-2 real
-  # windows). This is the only place the produced native binaries are actually
-  # RUN in CI, so it also catches missing reachability metadata at runtime.
-  tao-native-tests:
-    needs: build-natives
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Download native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: 'natives-*'
-          merge-multiple: true
-
-      - name: Setup Nucleus (GraalVM)
-        uses: ./.github/actions/setup-nucleus
-        with:
-          graalvm: 'true'
-          setup-gradle: 'true'
-          setup-node: 'false'
-
+      # ── Stage 1: build + run the Tao native test pyramid ────────────────
+      # Compiles examples/tao-native-test, then executes the packaged binary
+      # twice — `battery` (stage-1 offscreen, headless) and `headful` (stage-2
+      # real windows). This is the only place produced native binaries are
+      # actually RUN in CI, so it also catches missing reachability metadata.
       - name: Build native test runner
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -134,3 +89,21 @@ jobs:
           test -n "$BIN"
           "$BIN" battery
           "$BIN" headful
+
+      # ── Stage 2: package nucleus-demo (only if e2e passed) ──────────────
+      - name: Build GraalVM native image (nucleus-demo)
+        shell: bash
+        # GraalVM CE is resolved through the GitHub releases API. Hosted runners share an IP,
+        # so the 60/hour anonymous limit is routinely exhausted — authenticate the call.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: ./gradlew :examples:nucleus-demo:packageGraalvmNative -PnativeMarch=compatibility --no-daemon --stacktrace
+
+      - name: Upload GraalVM artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: graalvm-${{ runner.os }}
+          path: |
+            examples/nucleus-demo/build/compose/binaries/**/graalvm-app/**
+          if-no-files-found: warn

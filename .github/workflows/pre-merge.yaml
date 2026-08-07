@@ -195,6 +195,9 @@ jobs:
   # headless (CPU-recorded ComposeScene, no display), so plain runners work on
   # all three platforms; the native artifacts are downloaded for the
   # native-load smoke tests, which self-skip when their platform libs are absent.
+  # Runs in parallel with `gradle` — both are the cheap gate for everything else.
+  # fail-fast stays false here: these are cheap (~2–3 min) and platform-specific
+  # native-load failures are common, so we want all three OS results.
   tao-tests:
     needs: build-natives
     strategy:
@@ -228,8 +231,10 @@ jobs:
   # (taoHeadfulTest JavaExec). macOS/Windows runners have a real graphical
   # session; Linux gets Xvfb + openbox (floating WM, so move/resize/maximize
   # requests behave — the suite still skips the WM-owned-geometry cases there).
+  # Gated on gradle + tao-tests so a compile/unit-test failure never burns
+  # three display-stack runners for nothing.
   tao-headful:
-    needs: build-natives
+    needs: [build-natives, gradle, tao-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -295,8 +300,9 @@ jobs:
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi
   # on Linux (hard gate), the AX client API on macOS (self-skips on runners:
   # AX clients need the TCC Accessibility permission, which CI cannot grant).
+  # Gated on gradle + tao-tests — same rationale as tao-headful.
   tao-a11y:
-    needs: build-natives
+    needs: [build-natives, gradle, tao-tests]
     strategy:
       fail-fast: false
       matrix:
@@ -414,3 +420,21 @@ jobs:
           swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
+
+  # ── Expensive PR-only stages ───────────────────────────────────────────
+  # Packaging and GraalVM used to be independent workflows that each re-ran
+  # build-natives and started immediately on every PR push. They now reuse
+  # this run's natives artifacts and only start after the cheap JVM gates
+  # (gradle + tao-tests) succeed — so a unit-test failure never burns 6
+  # packaging runners + 3 GraalVM runners for nothing.
+  test-packaging:
+    if: github.event_name == 'pull_request'
+    needs: [build-natives, gradle, tao-tests]
+    uses: ./.github/workflows/test-packaging.yaml
+    secrets: inherit
+
+  test-graalvm:
+    if: github.event_name == 'pull_request'
+    needs: [build-natives, gradle, tao-tests]
+    uses: ./.github/workflows/test-graalvm.yaml
+    secrets: inherit

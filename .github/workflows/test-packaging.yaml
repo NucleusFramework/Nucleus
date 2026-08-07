@@ -1,26 +1,19 @@
 name: Test Packaging (All Platforms)
 
+# Invoked from pre-merge after cheap JVM gates succeed. Does not rebuild
+# natives — the caller must have already uploaded natives-* artifacts.
 on:
-  pull_request:
-    branches:
-      # '**' (not '*'): base branches with a '/' must trigger too.
-      - '**'
-
-concurrency:
-  group: test-packaging-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  workflow_call:
 
 jobs:
-  build-natives:
-    uses: ./.github/workflows/build-natives.yaml
-
   build:
-    needs: build-natives
     name: Package - ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
-      fail-fast: false
+      # Cancel remaining platforms when one fails — packaging is expensive and
+      # a shared Gradle/plugin regression usually hits every OS the same way.
+      fail-fast: true
       matrix:
         include:
           - name: Linux x64
