@@ -15,7 +15,7 @@ import java.util.logging.Logger
  * Use your application dispatcher before touching UI state.
  */
 @Suppress("TooManyFunctions")
-object NotificationCenter {
+public object NotificationCenter {
     private val logger = Logger.getLogger(NotificationCenter::class.java.simpleName)
 
     private const val NO_BUNDLE_ERROR =
@@ -38,7 +38,7 @@ object NotificationCenter {
     }
 
     /** Whether notifications are functional (native lib loaded AND inside an app bundle) */
-    val isAvailable: Boolean by lazy {
+    public val isAvailable: Boolean by lazy {
         when {
             !NativeMacNotificationBridge.isLoaded -> false
             !hasAppBundle -> {
@@ -59,7 +59,7 @@ object NotificationCenter {
 
     // -- Authorization --
 
-    fun requestAuthorization(
+    public fun requestAuthorization(
         options: Set<AuthorizationOption>,
         callback: (granted: Boolean, error: String?) -> Unit,
     ) {
@@ -72,7 +72,7 @@ object NotificationCenter {
         NativeMacNotificationBridge.nativeRequestAuthorization(mask, id)
     }
 
-    fun getNotificationSettings(callback: (NotificationSettings) -> Unit) {
+    public fun getNotificationSettings(callback: (NotificationSettings) -> Unit) {
         if (!isAvailable) return
         val id = NativeMacNotificationBridge.registerCallback(callback)
         NativeMacNotificationBridge.nativeGetNotificationSettings(id)
@@ -80,7 +80,7 @@ object NotificationCenter {
 
     // -- Notification Requests --
 
-    fun add(
+    public fun add(
         request: NotificationRequest,
         callback: ((error: String?) -> Unit)? = null,
     ) {
@@ -141,17 +141,17 @@ object NotificationCenter {
         )
     }
 
-    fun removePendingNotifications(identifiers: List<String>) {
+    public fun removePendingNotifications(identifiers: List<String>) {
         if (!isAvailable) return
         NativeMacNotificationBridge.nativeRemovePendingNotifications(identifiers.toTypedArray())
     }
 
-    fun removeAllPendingNotifications() {
+    public fun removeAllPendingNotifications() {
         if (!isAvailable) return
         NativeMacNotificationBridge.nativeRemoveAllPendingNotifications()
     }
 
-    fun getPendingNotifications(callback: (List<PendingNotificationInfo>) -> Unit) {
+    public fun getPendingNotifications(callback: (List<PendingNotificationInfo>) -> Unit) {
         if (!isAvailable) {
             callback(emptyList())
             return
@@ -160,17 +160,17 @@ object NotificationCenter {
         NativeMacNotificationBridge.nativeGetPendingNotifications(id)
     }
 
-    fun removeDeliveredNotifications(identifiers: List<String>) {
+    public fun removeDeliveredNotifications(identifiers: List<String>) {
         if (!isAvailable) return
         NativeMacNotificationBridge.nativeRemoveDeliveredNotifications(identifiers.toTypedArray())
     }
 
-    fun removeAllDeliveredNotifications() {
+    public fun removeAllDeliveredNotifications() {
         if (!isAvailable) return
         NativeMacNotificationBridge.nativeRemoveAllDeliveredNotifications()
     }
 
-    fun getDeliveredNotifications(callback: (List<DeliveredNotification>) -> Unit) {
+    public fun getDeliveredNotifications(callback: (List<DeliveredNotification>) -> Unit) {
         if (!isAvailable) {
             callback(emptyList())
             return
@@ -181,7 +181,7 @@ object NotificationCenter {
 
     // -- Categories --
 
-    fun setNotificationCategories(categories: Set<NotificationCategory>) {
+    public fun setNotificationCategories(categories: Set<NotificationCategory>) {
         if (!isAvailable) return
         val categoryIdentifiers = categories.map { it.identifier }.toTypedArray()
         val categoryOptionMasks = categories.map { cat -> cat.options.toMask { it.rawValue } }.toIntArray()
@@ -220,7 +220,7 @@ object NotificationCenter {
         )
     }
 
-    fun getNotificationCategories(callback: (List<RegisteredCategoryInfo>) -> Unit) {
+    public fun getNotificationCategories(callback: (List<RegisteredCategoryInfo>) -> Unit) {
         if (!isAvailable) {
             callback(emptyList())
             return
@@ -231,7 +231,7 @@ object NotificationCenter {
 
     // -- Badge --
 
-    fun setBadgeCount(
+    public fun setBadgeCount(
         count: Int,
         callback: ((error: String?) -> Unit)? = null,
     ) {
@@ -244,7 +244,7 @@ object NotificationCenter {
         NativeMacNotificationBridge.nativeSetBadgeCount(count, id)
     }
 
-    fun getBadgeCount(callback: (Int) -> Unit) {
+    public fun getBadgeCount(callback: (Int) -> Unit) {
         if (!isAvailable) {
             callback(0)
             return
@@ -255,7 +255,7 @@ object NotificationCenter {
 
     // -- Delegate --
 
-    fun setDelegate(delegate: NotificationCenterDelegate?) {
+    public fun setDelegate(delegate: NotificationCenterDelegate?) {
         if (!isAvailable) return
         NativeMacNotificationBridge.delegate = delegate
         NativeMacNotificationBridge.nativeSetDelegate(delegate != null)

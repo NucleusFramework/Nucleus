@@ -9,13 +9,13 @@ package dev.nucleusframework.launcher.macos
  *
  * All methods are no-op on non-macOS platforms (check [isAvailable]).
  */
-object MacOsDockMenu {
+public object MacOsDockMenu {
     /** Whether the native library is loaded and the module is functional. */
-    val isAvailable: Boolean
+    public val isAvailable: Boolean
         get() = NativeMacOsDockMenuBridge.isLoaded
 
     /** Listener for dock menu item clicks. Callbacks are dispatched on the Swing EDT. */
-    var listener: DockMenuListener? = null
+    public var listener: DockMenuListener? = null
 
     /**
      * Sets the dock context menu items.
@@ -27,7 +27,7 @@ object MacOsDockMenu {
      *
      * @param items The menu items to display. Supports hierarchical menus via [DockMenuItem.children].
      */
-    fun setDockMenu(items: List<DockMenuItem>) {
+    public fun setDockMenu(items: List<DockMenuItem>) {
         if (!isAvailable) return
 
         val flatIds = mutableListOf<Int>()
@@ -65,7 +65,7 @@ object MacOsDockMenu {
     }
 
     /** Removes the dock context menu. */
-    fun clearDockMenu() {
+    public fun clearDockMenu() {
         if (!isAvailable) return
         NativeMacOsDockMenuBridge.nativeClearDockMenu()
     }

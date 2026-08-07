@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.Minimize: ImageVector
+public val WindowsControlButtonIcons.Minimize: ImageVector
     get() {
         if (_Minimize != null) {
             return _Minimize!!

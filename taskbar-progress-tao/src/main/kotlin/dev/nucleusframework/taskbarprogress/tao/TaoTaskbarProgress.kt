@@ -13,44 +13,44 @@ import dev.nucleusframework.window.tao.TaoWindow
  * (NSDockTile is app-wide; Linux uses the `.desktop` filename) and the call
  * delegates straight to the corresponding platform branch.
  */
-object TaoTaskbarProgress {
-    fun isAvailable(): Boolean = TaskbarProgress.isAvailable()
+public object TaoTaskbarProgress {
+    public fun isAvailable(): Boolean = TaskbarProgress.isAvailable()
 
-    fun setProgress(
+    public fun setProgress(
         window: TaoWindow,
         value: Double,
     ): Boolean = TaskbarProgress.setProgressForHwnd(resolveHwnd(window) ?: return false, value)
 
-    fun setState(
+    public fun setState(
         window: TaoWindow,
         state: TaskbarProgress.State,
     ): Boolean = TaskbarProgress.setStateForHwnd(resolveHwnd(window) ?: return false, state)
 
-    fun showProgress(
+    public fun showProgress(
         window: TaoWindow,
         value: Double,
     ): Boolean = setState(window, TaskbarProgress.State.NORMAL) && setProgress(window, value)
 
-    fun showError(
+    public fun showError(
         window: TaoWindow,
         value: Double = 1.0,
     ): Boolean = setState(window, TaskbarProgress.State.ERROR) && setProgress(window, value)
 
-    fun showIndeterminate(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.INDETERMINATE)
+    public fun showIndeterminate(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.INDETERMINATE)
 
-    fun showPaused(
+    public fun showPaused(
         window: TaoWindow,
         value: Double = 1.0,
     ): Boolean = setState(window, TaskbarProgress.State.PAUSED) && setProgress(window, value)
 
-    fun hideProgress(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.NO_PROGRESS)
+    public fun hideProgress(window: TaoWindow): Boolean = setState(window, TaskbarProgress.State.NO_PROGRESS)
 
-    fun requestAttention(
+    public fun requestAttention(
         window: TaoWindow,
         type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL,
     ): Boolean = TaskbarProgress.requestAttentionForHwnd(resolveHwnd(window) ?: return false, type)
 
-    fun stopAttention(window: TaoWindow): Boolean =
+    public fun stopAttention(window: TaoWindow): Boolean =
         TaskbarProgress.stopAttentionForHwnd(resolveHwnd(window) ?: return false)
 
     /**
@@ -70,30 +70,31 @@ object TaoTaskbarProgress {
  * when called outside of a Tao `DecoratedWindow` content lambda.
  */
 @Composable
-fun rememberTaoTaskbarProgress(): TaoTaskbarProgressScope? {
+public fun rememberTaoTaskbarProgress(): TaoTaskbarProgressScope? {
     val window = LocalTaoWindow.current ?: return null
     return remember(window) { TaoTaskbarProgressScope(window) }
 }
 
-class TaoTaskbarProgressScope internal constructor(
-    val window: TaoWindow,
+public class TaoTaskbarProgressScope internal constructor(
+    public val window: TaoWindow,
 ) {
-    fun setProgress(value: Double) = TaoTaskbarProgress.setProgress(window, value)
+    public fun setProgress(value: Double): Boolean = TaoTaskbarProgress.setProgress(window, value)
 
-    fun setState(state: TaskbarProgress.State) = TaoTaskbarProgress.setState(window, state)
+    public fun setState(state: TaskbarProgress.State): Boolean = TaoTaskbarProgress.setState(window, state)
 
-    fun showProgress(value: Double) = TaoTaskbarProgress.showProgress(window, value)
+    public fun showProgress(value: Double): Boolean = TaoTaskbarProgress.showProgress(window, value)
 
-    fun showError(value: Double = 1.0) = TaoTaskbarProgress.showError(window, value)
+    public fun showError(value: Double = 1.0): Boolean = TaoTaskbarProgress.showError(window, value)
 
-    fun showIndeterminate() = TaoTaskbarProgress.showIndeterminate(window)
+    public fun showIndeterminate(): Boolean = TaoTaskbarProgress.showIndeterminate(window)
 
-    fun showPaused(value: Double = 1.0) = TaoTaskbarProgress.showPaused(window, value)
+    public fun showPaused(value: Double = 1.0): Boolean = TaoTaskbarProgress.showPaused(window, value)
 
-    fun hideProgress() = TaoTaskbarProgress.hideProgress(window)
+    public fun hideProgress(): Boolean = TaoTaskbarProgress.hideProgress(window)
 
-    fun requestAttention(type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL) =
-        TaoTaskbarProgress.requestAttention(window, type)
+    public fun requestAttention(
+        type: TaskbarProgress.AttentionType = TaskbarProgress.AttentionType.INFORMATIONAL,
+    ): Boolean = TaoTaskbarProgress.requestAttention(window, type)
 
-    fun stopAttention() = TaoTaskbarProgress.stopAttention(window)
+    public fun stopAttention(): Boolean = TaoTaskbarProgress.stopAttention(window)
 }

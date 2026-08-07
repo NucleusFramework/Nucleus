@@ -1,7 +1,7 @@
 package dev.nucleusframework.notification.common
 
 /** Unified reason why a notification was dismissed, mapped from platform-specific reasons. */
-enum class DismissReason {
+public enum class DismissReason {
     /** The user explicitly dismissed the notification. */
     USER_DISMISSED,
 

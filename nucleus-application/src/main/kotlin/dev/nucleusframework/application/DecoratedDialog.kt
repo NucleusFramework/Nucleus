@@ -18,7 +18,7 @@ import dev.nucleusframework.window.DecoratedDialog as AwtDecoratedDialog
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.DecoratedDialog(
+public fun NucleusApplicationScope.DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,
@@ -88,7 +88,7 @@ fun NucleusApplicationScope.DecoratedDialog(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedDialog(
+public fun DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

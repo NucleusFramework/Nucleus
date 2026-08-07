@@ -2,7 +2,7 @@ package dev.nucleusframework.core.runtime
 
 import java.util.Locale
 
-enum class LinuxDesktopEnvironment {
+public enum class LinuxDesktopEnvironment {
     Gnome,
     KDE,
     XFCE,
@@ -11,8 +11,8 @@ enum class LinuxDesktopEnvironment {
     Unknown,
     ;
 
-    companion object {
-        val Current: LinuxDesktopEnvironment by lazy {
+    public companion object {
+        public val Current: LinuxDesktopEnvironment by lazy {
             val desktop = System.getenv("XDG_CURRENT_DESKTOP")?.lowercase(Locale.ENGLISH) ?: ""
             val session = System.getenv("DESKTOP_SESSION")?.lowercase(Locale.ENGLISH) ?: ""
             when {

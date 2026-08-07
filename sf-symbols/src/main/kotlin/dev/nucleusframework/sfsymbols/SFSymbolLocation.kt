@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Location (47 symbols). */
-enum class SFSymbolLocation(
+public enum class SFSymbolLocation(
     override val symbolName: String,
 ) : SFSymbol {
     COMPASS_DRAWING("compass.drawing"),

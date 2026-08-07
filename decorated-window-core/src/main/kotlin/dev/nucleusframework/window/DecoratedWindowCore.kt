@@ -18,11 +18,11 @@ import androidx.compose.ui.layout.layoutId
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.offset
 
-const val TITLE_BAR_COMPONENT_LAYOUT_ID_PREFIX = "__TITLE_BAR_"
+public const val TITLE_BAR_COMPONENT_LAYOUT_ID_PREFIX: String = "__TITLE_BAR_"
 
-const val TITLE_BAR_LAYOUT_ID = "__TITLE_BAR_CONTENT__"
+public const val TITLE_BAR_LAYOUT_ID: String = "__TITLE_BAR_CONTENT__"
 
-const val TITLE_BAR_BORDER_LAYOUT_ID = "__TITLE_BAR_BORDER__"
+public const val TITLE_BAR_BORDER_LAYOUT_ID: String = "__TITLE_BAR_BORDER__"
 
 /**
  * Backend-agnostic scope exposed inside a decorated window.
@@ -30,11 +30,11 @@ const val TITLE_BAR_BORDER_LAYOUT_ID = "__TITLE_BAR_BORDER__"
  * sub-interface adding a backend-specific window handle.
  */
 @Stable
-interface DecoratedWindowScope {
-    val state: DecoratedWindowState
+public interface DecoratedWindowScope {
+    public val state: DecoratedWindowState
 }
 
-object DecoratedWindowMeasurePolicy : MeasurePolicy {
+public object DecoratedWindowMeasurePolicy : MeasurePolicy {
     override fun MeasureScope.measure(
         measurables: List<Measurable>,
         constraints: Constraints,
@@ -78,19 +78,19 @@ object DecoratedWindowMeasurePolicy : MeasurePolicy {
 
 @Immutable
 @JvmInline
-value class DecoratedWindowState(
-    val state: ULong,
+public value class DecoratedWindowState(
+    public val state: ULong,
 ) {
-    val isActive: Boolean
+    public val isActive: Boolean
         get() = state and Active != 0UL
 
-    val isFullscreen: Boolean
+    public val isFullscreen: Boolean
         get() = state and Fullscreen != 0UL
 
-    val isMinimized: Boolean
+    public val isMinimized: Boolean
         get() = state and Minimize != 0UL
 
-    val isMaximized: Boolean
+    public val isMaximized: Boolean
         get() = state and Maximize != 0UL
 
     /**
@@ -98,7 +98,7 @@ value class DecoratedWindowState(
      * Currently only reported by the Tao Linux backend; other backends leave it
      * `false`.
      */
-    val isTiled: Boolean
+    public val isTiled: Boolean
         get() = state and Tiled != 0UL
 
     /**
@@ -107,10 +107,10 @@ value class DecoratedWindowState(
      * Kept in sync with runtime resizability changes
      * (`Frame.setResizable`, `TaoWindow.setResizable`).
      */
-    val isResizable: Boolean
+    public val isResizable: Boolean
         get() = state and Resizable != 0UL
 
-    fun copy(
+    public fun copy(
         fullscreen: Boolean = isFullscreen,
         minimized: Boolean = isMinimized,
         maximized: Boolean = isMaximized,
@@ -129,15 +129,15 @@ value class DecoratedWindowState(
 
     override fun toString(): String = "${javaClass.simpleName}(isFullscreen=$isFullscreen, isActive=$isActive)"
 
-    companion object {
-        val Active: ULong = 1UL shl 0
-        val Fullscreen: ULong = 1UL shl 1
-        val Minimize: ULong = 1UL shl 2
-        val Maximize: ULong = 1UL shl 3
-        val Tiled: ULong = 1UL shl 4
-        val Resizable: ULong = 1UL shl 5
+    public companion object {
+        public val Active: ULong = 1UL shl 0
+        public val Fullscreen: ULong = 1UL shl 1
+        public val Minimize: ULong = 1UL shl 2
+        public val Maximize: ULong = 1UL shl 3
+        public val Tiled: ULong = 1UL shl 4
+        public val Resizable: ULong = 1UL shl 5
 
-        fun of(
+        public fun of(
             fullscreen: Boolean = false,
             minimized: Boolean = false,
             maximized: Boolean = false,
@@ -157,16 +157,16 @@ value class DecoratedWindowState(
 }
 
 @Stable
-class TitleBarInfo(
+public class TitleBarInfo(
     title: String,
     icon: Painter?,
 ) {
-    var title by mutableStateOf(title)
-    var icon by mutableStateOf(icon)
-    val clientRegions: MutableMap<String, Rect> = mutableMapOf()
+    public var title: String by mutableStateOf(title)
+    public var icon: Painter? by mutableStateOf(icon)
+    public val clientRegions: MutableMap<String, Rect> = mutableMapOf()
 }
 
-val LocalTitleBarInfo: ProvidableCompositionLocal<TitleBarInfo> =
+public val LocalTitleBarInfo: ProvidableCompositionLocal<TitleBarInfo> =
     compositionLocalOf {
         error("LocalTitleBarInfo not provided, TitleBar must be used in DecoratedWindow")
     }

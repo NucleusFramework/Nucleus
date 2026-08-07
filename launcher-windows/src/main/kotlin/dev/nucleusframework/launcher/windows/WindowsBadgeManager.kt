@@ -18,16 +18,16 @@ import java.util.logging.Logger
  *
  * Thread-safe singleton.
  */
-object WindowsBadgeManager {
+public object WindowsBadgeManager {
     private val logger = Logger.getLogger(WindowsBadgeManager::class.java.simpleName)
     private var initialized = false
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
-    var lastError: String? = null
+    public var lastError: String? = null
         private set
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean get() = NativeWindowsBadgeBridge.isLoaded
+    public val isAvailable: Boolean get() = NativeWindowsBadgeBridge.isLoaded
 
     /**
      * Initialize the badge subsystem.
@@ -35,7 +35,7 @@ object WindowsBadgeManager {
      * @param aumid Explicit AUMID override, or `null` to auto-resolve.
      * @return true if initialization succeeded.
      */
-    fun initialize(aumid: String? = null): Boolean {
+    public fun initialize(aumid: String? = null): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             logger.warning(lastError)
@@ -70,7 +70,7 @@ object WindowsBadgeManager {
      * @param count The badge count (0 to clear).
      * @return true if the badge was set successfully.
      */
-    fun setCount(count: Int): Boolean {
+    public fun setCount(count: Int): Boolean {
         if (!ensureReady()) return false
         val error = NativeWindowsBadgeBridge.nativeSetBadgeNumber(count)
         lastError = error
@@ -87,7 +87,7 @@ object WindowsBadgeManager {
      * @param glyph The badge glyph to display.
      * @return true if the badge was set successfully.
      */
-    fun setGlyph(glyph: BadgeGlyph): Boolean {
+    public fun setGlyph(glyph: BadgeGlyph): Boolean {
         if (!ensureReady()) return false
         val error = NativeWindowsBadgeBridge.nativeSetBadgeGlyph(glyph.value)
         lastError = error
@@ -100,7 +100,7 @@ object WindowsBadgeManager {
      *
      * @return true if the badge was cleared successfully.
      */
-    fun clear(): Boolean {
+    public fun clear(): Boolean {
         if (!ensureReady()) return false
         val error = NativeWindowsBadgeBridge.nativeClearBadge()
         lastError = error
@@ -112,7 +112,7 @@ object WindowsBadgeManager {
      * Clean up native resources.
      * Call on app shutdown or when badges are no longer needed.
      */
-    fun uninitialize() {
+    public fun uninitialize() {
         if (!isAvailable || !initialized) return
         NativeWindowsBadgeBridge.nativeUninitialize()
         initialized = false

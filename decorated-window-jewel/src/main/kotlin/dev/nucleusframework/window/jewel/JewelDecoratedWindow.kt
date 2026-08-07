@@ -29,7 +29,7 @@ private const val LUMINANCE_THRESHOLD = 0.5f
 // nucleusApplication both overloads are applicable — the Nucleus one must win.
 @LowPriorityInOverloadResolution
 @Composable
-fun ApplicationScope.JewelDecoratedWindow(
+public fun ApplicationScope.JewelDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -82,7 +82,7 @@ fun ApplicationScope.JewelDecoratedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.JewelDecoratedWindow(
+public fun NucleusApplicationScope.JewelDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

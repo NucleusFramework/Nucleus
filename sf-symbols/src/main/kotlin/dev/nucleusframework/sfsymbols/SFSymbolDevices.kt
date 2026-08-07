@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Devices (349 symbols). */
-enum class SFSymbolDevices(
+public enum class SFSymbolDevices(
     override val symbolName: String,
 ) : SFSymbol {
     AIRPOD_GEN3_LEFT("airpod.gen3.left"),

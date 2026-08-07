@@ -28,7 +28,7 @@ import kotlin.time.Duration.Companion.seconds
  * }
  * ```
  */
-fun NucleusApplicationScope.aotTraining(
+public fun NucleusApplicationScope.aotTraining(
     duration: Duration = 15.seconds,
     onTimeout: NucleusApplicationScope.() -> Unit = { exitApplication() },
 ) {

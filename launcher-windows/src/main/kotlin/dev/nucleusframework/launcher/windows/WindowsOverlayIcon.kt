@@ -18,15 +18,15 @@ import java.util.logging.Logger
  *
  * Thread-safe singleton.
  */
-object WindowsOverlayIcon {
+public object WindowsOverlayIcon {
     private val logger = Logger.getLogger(WindowsOverlayIcon::class.java.simpleName)
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
-    var lastError: String? = null
+    public var lastError: String? = null
         private set
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean get() = NativeWindowsTaskbarBridge.isLoaded
+    public val isAvailable: Boolean get() = NativeWindowsTaskbarBridge.isLoaded
 
     /**
      * Set an overlay icon on the taskbar button.
@@ -36,7 +36,7 @@ object WindowsOverlayIcon {
      * @param description Accessibility text describing the overlay.
      * @return true if the overlay was set successfully.
      */
-    fun setIcon(
+    public fun setIcon(
         hwnd: Long,
         icon: TaskbarIconSource,
         description: String = "",
@@ -68,7 +68,7 @@ object WindowsOverlayIcon {
      * @param description Accessibility text describing the overlay.
      * @return true if the overlay was set successfully.
      */
-    fun setIcon(
+    public fun setIcon(
         window: Window,
         icon: TaskbarIconSource,
         description: String = "",
@@ -80,7 +80,7 @@ object WindowsOverlayIcon {
      * @param hwnd The `HWND` of the window.
      * @return true if the overlay was cleared successfully.
      */
-    fun clearIcon(hwnd: Long): Boolean {
+    public fun clearIcon(hwnd: Long): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             return false
@@ -99,7 +99,7 @@ object WindowsOverlayIcon {
      * @param window The AWT window.
      * @return true if the overlay was cleared successfully.
      */
-    fun clearIcon(window: Window): Boolean = clearIcon(WindowsWindowHandle.of(window))
+    public fun clearIcon(window: Window): Boolean = clearIcon(WindowsWindowHandle.of(window))
 }
 
 @Suppress("MagicNumber")

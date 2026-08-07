@@ -19,7 +19,7 @@ package dev.nucleusframework.core.runtime
  * }
  * ```
  */
-enum class WindowBackend {
+public enum class WindowBackend {
     /** AWT-bound backend (`decorated-window-jbr` / `decorated-window-jni`, or a non-Nucleus AWT app). */
     Awt,
 
@@ -27,7 +27,7 @@ enum class WindowBackend {
     Tao,
     ;
 
-    companion object {
+    public companion object {
         @Volatile
         private var active: WindowBackend? = null
 
@@ -36,7 +36,7 @@ enum class WindowBackend {
          * not use Nucleus (nothing has called [setActive]).
          */
         @JvmStatic
-        val Current: WindowBackend
+        public val Current: WindowBackend
             get() = active ?: Awt
 
         /**
@@ -45,7 +45,7 @@ enum class WindowBackend {
          * is the [Awt] fallback rather than an explicitly resolved value.
          */
         @JvmStatic
-        val isNucleusManaged: Boolean
+        public val isNucleusManaged: Boolean
             get() = active != null
 
         /**
@@ -53,7 +53,7 @@ enum class WindowBackend {
          * launch; not intended for application or library code.
          */
         @JvmStatic
-        fun setActive(backend: WindowBackend) {
+        public fun setActive(backend: WindowBackend) {
             active = backend
         }
     }

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.RestoreInactive: ImageVector
+public val GnomeControlButtonsIcons.RestoreInactive: ImageVector
     get() {
         if (_RestoreInactive != null) {
             return _RestoreInactive!!

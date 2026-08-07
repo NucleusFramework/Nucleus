@@ -22,7 +22,7 @@ import java.util.logging.Logger
  * application using another version can never swap the library between
  * validation and load (issue #304).
  */
-object NativeLibraryLoader {
+public object NativeLibraryLoader {
     private val logger = Logger.getLogger(NativeLibraryLoader::class.java.simpleName)
     private val loadedLibraries = mutableSetOf<String>()
     private val lock = Any()
@@ -40,7 +40,7 @@ object NativeLibraryLoader {
      *     WebView2-using sample DLL on Windows).
      * @return true if the library was loaded successfully
      */
-    fun load(
+    public fun load(
         libraryName: String,
         callerClass: Class<*>,
         resourcePrefix: String = "/nucleus/native",

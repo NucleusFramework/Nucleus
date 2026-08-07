@@ -1,0 +1,7 @@
+public final class dev/nucleusframework/nativessl/NativeTrustManager {
+	public static final field INSTANCE Ldev/nucleusframework/nativessl/NativeTrustManager;
+	public final fun getSslContext ()Ljavax/net/ssl/SSLContext;
+	public final fun getSslSocketFactory ()Ljavax/net/ssl/SSLSocketFactory;
+	public final fun getTrustManager ()Ljavax/net/ssl/X509TrustManager;
+}
+

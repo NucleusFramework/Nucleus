@@ -6,6 +6,6 @@ package dev.nucleusframework.launcher.windows
  * Called on the AWT Event Dispatch Thread when a thumbnail toolbar button is clicked.
  * The native WndProc invokes [onThumbButtonClick] via JNI.
  */
-fun interface ThumbBarClickListener {
-    fun onThumbButtonClick(buttonId: Int)
+public fun interface ThumbBarClickListener {
+    public fun onThumbButtonClick(buttonId: Int)
 }

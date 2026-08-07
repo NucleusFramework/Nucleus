@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.CloseFullscreenInactiveDark: ImageVector
+public val WindowsControlButtonIcons.CloseFullscreenInactiveDark: ImageVector
     get() {
         if (_CloseFullscreenInactiveDark != null) {
             return _CloseFullscreenInactiveDark!!

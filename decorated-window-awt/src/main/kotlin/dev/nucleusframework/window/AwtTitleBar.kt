@@ -18,7 +18,7 @@ import java.awt.Window
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun AwtDecoratedWindowScope.TitleBarImpl(
+public fun AwtDecoratedWindowScope.TitleBarImpl(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -46,7 +46,7 @@ fun AwtDecoratedWindowScope.TitleBarImpl(
 // Handles window dragging via Compose pointer events.
 // Drag starts only when the press is not consumed by a child composable (e.g. a button),
 // so interactive elements in the title bar keep working correctly.
-fun Modifier.windowDragHandler(window: Window): Modifier =
+public fun Modifier.windowDragHandler(window: Window): Modifier =
     pointerInput(window) {
         val ctx = currentCoroutineContext()
         awaitPointerEventScope {

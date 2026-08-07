@@ -20,7 +20,7 @@ import dev.nucleusframework.window.DecoratedWindow as AwtDecoratedWindow
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.DecoratedWindow(
+public fun NucleusApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -124,7 +124,7 @@ fun NucleusApplicationScope.DecoratedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedWindow(
+public fun DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

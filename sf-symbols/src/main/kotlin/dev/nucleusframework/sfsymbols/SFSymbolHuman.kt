@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Human (596 symbols). */
-enum class SFSymbolHuman(
+public enum class SFSymbolHuman(
     override val symbolName: String,
 ) : SFSymbol {
     ACCESSIBILITY("accessibility"),

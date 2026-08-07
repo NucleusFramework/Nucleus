@@ -113,7 +113,12 @@ class SystemInfoTest {
     @Test
     fun `gpu info returns valid data`() {
         val gpus = SystemInfo.gpus()
-        assertTrue(gpus.isNotEmpty(), "Should have at least one GPU")
+        // Headless CI runners often expose no GPU; empty list is fine so long
+        // as enumeration does not throw.
+        if (gpus.isEmpty()) {
+            println("No GPUs enumerated (acceptable on headless CI runners)")
+            return
+        }
         gpus.forEach { g ->
             println(
                 "GPU: ${g.name} vendor=0x${g.vendorId.toString(

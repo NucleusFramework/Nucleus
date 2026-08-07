@@ -17,7 +17,7 @@ import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindo
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun MaterialDecoratedWindow(
+public fun MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -67,7 +67,7 @@ fun MaterialDecoratedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun NucleusApplicationScope.MaterialDecoratedWindow(
+public fun NucleusApplicationScope.MaterialDecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

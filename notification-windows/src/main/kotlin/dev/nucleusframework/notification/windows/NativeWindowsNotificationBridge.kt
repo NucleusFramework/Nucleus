@@ -309,7 +309,7 @@ internal object NativeWindowsNotificationBridge {
 }
 
 /** A notification entry in the Action Center history. */
-data class HistoryEntry(
+public data class HistoryEntry(
     val tag: String,
     val group: String,
 )

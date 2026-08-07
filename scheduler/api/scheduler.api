@@ -1,0 +1,435 @@
+public final class dev/nucleusframework/scheduler/Constraints {
+	public static final field Companion Ldev/nucleusframework/scheduler/Constraints$Companion;
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/scheduler/NetworkType;ZZZLjava/lang/Long;)V
+	public synthetic fun <init> (Ldev/nucleusframework/scheduler/NetworkType;ZZZLjava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/scheduler/NetworkType;
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Ljava/lang/Long;
+	public final fun copy (Ldev/nucleusframework/scheduler/NetworkType;ZZZLjava/lang/Long;)Ldev/nucleusframework/scheduler/Constraints;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/Constraints;Ldev/nucleusframework/scheduler/NetworkType;ZZZLjava/lang/Long;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/Constraints;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMinimumStorageBytes ()Ljava/lang/Long;
+	public final fun getRequiredNetworkType ()Ldev/nucleusframework/scheduler/NetworkType;
+	public final fun getRequiresBatteryNotLow ()Z
+	public final fun getRequiresCharging ()Z
+	public final fun getRequiresDeviceIdle ()Z
+	public final fun hasConstraints ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/Constraints$Companion {
+	public final fun getNONE ()Ldev/nucleusframework/scheduler/Constraints;
+}
+
+public final class dev/nucleusframework/scheduler/ConstraintsBuilder {
+	public final fun getMinimumStorageBytes ()Ljava/lang/Long;
+	public final fun getRequiredNetworkType ()Ldev/nucleusframework/scheduler/NetworkType;
+	public final fun getRequiresBatteryNotLow ()Z
+	public final fun getRequiresCharging ()Z
+	public final fun getRequiresDeviceIdle ()Z
+	public final fun setMinimumStorageBytes (Ljava/lang/Long;)V
+	public final fun setRequiredNetworkType (Ldev/nucleusframework/scheduler/NetworkType;)V
+	public final fun setRequiresBatteryNotLow (Z)V
+	public final fun setRequiresCharging (Z)V
+	public final fun setRequiresDeviceIdle (Z)V
+}
+
+public final class dev/nucleusframework/scheduler/CronExpression {
+	public static final field Companion Ldev/nucleusframework/scheduler/CronExpression$Companion;
+	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getExpression ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/CronExpression$Companion {
+	public final fun everyDayAt (Ljava/time/LocalTime;)Ldev/nucleusframework/scheduler/CronExpression;
+	public final fun everyHour ()Ldev/nucleusframework/scheduler/CronExpression;
+	public final fun everyWeekdayAt (Ljava/time/DayOfWeek;Ljava/time/LocalTime;)Ldev/nucleusframework/scheduler/CronExpression;
+	public final fun everyWeekdayAt (Ljava/time/LocalTime;)Ldev/nucleusframework/scheduler/CronExpression;
+}
+
+public final class dev/nucleusframework/scheduler/DesktopBootReceiver {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/DesktopBootReceiver;
+	public final fun handle ([Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskRegistry;)V
+	public final fun isSchedulerInvocation ([Ljava/lang/String;)Z
+	public final fun resetConstraintChecker ()V
+	public final fun setTestConstraintChecker (Ldev/nucleusframework/scheduler/internal/ConstraintChecker;)V
+}
+
+public abstract interface class dev/nucleusframework/scheduler/DesktopTask {
+	public abstract fun doWork (Ldev/nucleusframework/scheduler/TaskContext;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/scheduler/DesktopTaskScheduler {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/DesktopTaskScheduler;
+	public static final fun cancel-dGNPp5w (Ljava/lang/String;)Z
+	public static final fun cancelAll ()V
+	public static final fun enqueue (Ldev/nucleusframework/scheduler/TaskRequest;)Z
+	public static final fun getAllTasks ()Ljava/util/List;
+	public static final fun getInstance ()Ldev/nucleusframework/scheduler/DesktopTaskScheduler;
+	public static final fun getTaskInfo-dGNPp5w (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskInfo;
+	public static final fun isAvailable ()Z
+	public static final fun isScheduled-dGNPp5w (Ljava/lang/String;)Z
+	public final fun resetDelegate ()V
+	public final fun setTestDelegate (Ldev/nucleusframework/scheduler/internal/PlatformScheduler;)V
+}
+
+public final class dev/nucleusframework/scheduler/ExistingTaskPolicy : java/lang/Enum {
+	public static final field KEEP Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+	public static final field REPLACE Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+	public static final field UPDATE_DATA Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+	public static fun values ()[Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+}
+
+public abstract interface annotation class dev/nucleusframework/scheduler/InternalSchedulerApi : java/lang/annotation/Annotation {
+}
+
+public abstract interface class dev/nucleusframework/scheduler/LastTaskResult {
+	public static final field Companion Ldev/nucleusframework/scheduler/LastTaskResult$Companion;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet : dev/nucleusframework/scheduler/LastTaskResult {
+	public static final field Companion Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet$Companion;
+	public fun <init> (Ljava/util/Set;)V
+	public final fun component1 ()Ljava/util/Set;
+	public final fun copy (Ljava/util/Set;)Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet;Ljava/util/Set;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUnsatisfied ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$ConstraintsNotMet$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Failure : dev/nucleusframework/scheduler/LastTaskResult {
+	public static final field Companion Ldev/nucleusframework/scheduler/LastTaskResult$Failure$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/scheduler/LastTaskResult$Failure;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/LastTaskResult$Failure;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/LastTaskResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/nucleusframework/scheduler/LastTaskResult$Failure$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/LastTaskResult$Failure$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/nucleusframework/scheduler/LastTaskResult$Failure;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/nucleusframework/scheduler/LastTaskResult$Failure;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Failure$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Retry : dev/nucleusframework/scheduler/LastTaskResult {
+	public static final field Companion Ldev/nucleusframework/scheduler/LastTaskResult$Retry$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/scheduler/LastTaskResult$Retry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/LastTaskResult$Retry;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/LastTaskResult$Retry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final synthetic class dev/nucleusframework/scheduler/LastTaskResult$Retry$$serializer : kotlinx/serialization/internal/GeneratedSerializer {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/LastTaskResult$Retry$$serializer;
+	public final fun childSerializers ()[Lkotlinx/serialization/KSerializer;
+	public final fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ldev/nucleusframework/scheduler/LastTaskResult$Retry;
+	public synthetic fun deserialize (Lkotlinx/serialization/encoding/Decoder;)Ljava/lang/Object;
+	public final fun getDescriptor ()Lkotlinx/serialization/descriptors/SerialDescriptor;
+	public final fun serialize (Lkotlinx/serialization/encoding/Encoder;Ldev/nucleusframework/scheduler/LastTaskResult$Retry;)V
+	public synthetic fun serialize (Lkotlinx/serialization/encoding/Encoder;Ljava/lang/Object;)V
+	public fun typeParametersSerializers ()[Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Retry$Companion {
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+}
+
+public final class dev/nucleusframework/scheduler/LastTaskResult$Success : dev/nucleusframework/scheduler/LastTaskResult {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/LastTaskResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public final fun serializer ()Lkotlinx/serialization/KSerializer;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/NetworkType : java/lang/Enum {
+	public static final field CONNECTED Ldev/nucleusframework/scheduler/NetworkType;
+	public static final field NOT_REQUIRED Ldev/nucleusframework/scheduler/NetworkType;
+	public static final field UNMETERED Ldev/nucleusframework/scheduler/NetworkType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/scheduler/NetworkType;
+	public static fun values ()[Ldev/nucleusframework/scheduler/NetworkType;
+}
+
+public abstract class dev/nucleusframework/scheduler/RetryPolicy {
+	public abstract fun getMaxAttempts ()I
+}
+
+public final class dev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff : dev/nucleusframework/scheduler/RetryPolicy {
+	public static final field MAX_SHIFT I
+	public synthetic fun <init> (JIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UwyO8pc ()J
+	public final fun component2 ()I
+	public final fun copy-VtjQ1oo (JI)Ldev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff;
+	public static synthetic fun copy-VtjQ1oo$default (Ldev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff;JIILjava/lang/Object;)Ldev/nucleusframework/scheduler/RetryPolicy$ExponentialBackoff;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInitialDelay-UwyO8pc ()J
+	public fun getMaxAttempts ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/RetryPolicy$Linear : dev/nucleusframework/scheduler/RetryPolicy {
+	public synthetic fun <init> (JIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-UwyO8pc ()J
+	public final fun component2 ()I
+	public final fun copy-VtjQ1oo (JI)Ldev/nucleusframework/scheduler/RetryPolicy$Linear;
+	public static synthetic fun copy-VtjQ1oo$default (Ldev/nucleusframework/scheduler/RetryPolicy$Linear;JIILjava/lang/Object;)Ldev/nucleusframework/scheduler/RetryPolicy$Linear;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDelay-UwyO8pc ()J
+	public fun getMaxAttempts ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskContext {
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-637zNrU ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/scheduler/TaskData;
+	public final fun component3 ()I
+	public final fun copy-hkJBKmQ (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;I)Ldev/nucleusframework/scheduler/TaskContext;
+	public static synthetic fun copy-hkJBKmQ$default (Ldev/nucleusframework/scheduler/TaskContext;Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;IILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskContext;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getRawInputData ()Ldev/nucleusframework/scheduler/TaskData;
+	public final fun getRunAttemptCount ()I
+	public final fun getTaskId-637zNrU ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskContextKt {
+	public static final fun inputData (Ldev/nucleusframework/scheduler/TaskContext;Lkotlinx/serialization/KSerializer;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/scheduler/TaskData {
+	public static final field Companion Ldev/nucleusframework/scheduler/TaskData$Companion;
+	public fun <init> (Ljava/lang/String;)V
+	public final fun decode (Lkotlinx/serialization/KSerializer;)Ljava/lang/Object;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getJson ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isEmpty ()Z
+	public final fun isNotEmpty ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskData$Companion {
+	public final fun getEMPTY ()Ldev/nucleusframework/scheduler/TaskData;
+	public final fun getJSON ()Lkotlinx/serialization/json/Json;
+	public final fun of (Ljava/lang/Object;Lkotlinx/serialization/KSerializer;)Ldev/nucleusframework/scheduler/TaskData;
+}
+
+public final class dev/nucleusframework/scheduler/TaskId {
+	public static final field Companion Ldev/nucleusframework/scheduler/TaskId$Companion;
+	public static final synthetic fun box-impl (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskId;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public final fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskId$Companion {
+}
+
+public final class dev/nucleusframework/scheduler/TaskInfo {
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskState;Ljava/lang/Long;Ljava/lang/Long;ILdev/nucleusframework/scheduler/LastTaskResult;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskState;Ljava/lang/Long;Ljava/lang/Long;ILdev/nucleusframework/scheduler/LastTaskResult;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-637zNrU ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/scheduler/TaskState;
+	public final fun component3 ()Ljava/lang/Long;
+	public final fun component4 ()Ljava/lang/Long;
+	public final fun component5 ()I
+	public final fun component6 ()Ldev/nucleusframework/scheduler/LastTaskResult;
+	public final fun copy--e9YF4A (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskState;Ljava/lang/Long;Ljava/lang/Long;ILdev/nucleusframework/scheduler/LastTaskResult;)Ldev/nucleusframework/scheduler/TaskInfo;
+	public static synthetic fun copy--e9YF4A$default (Ldev/nucleusframework/scheduler/TaskInfo;Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskState;Ljava/lang/Long;Ljava/lang/Long;ILdev/nucleusframework/scheduler/LastTaskResult;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLastResult ()Ldev/nucleusframework/scheduler/LastTaskResult;
+	public final fun getLastRunMs ()Ljava/lang/Long;
+	public final fun getNextRunMs ()Ljava/lang/Long;
+	public final fun getRunCount ()I
+	public final fun getState ()Ldev/nucleusframework/scheduler/TaskState;
+	public final fun getTaskId-637zNrU ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskNotFoundException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/scheduler/TaskRegistry {
+	public final fun create-dGNPp5w (Ljava/lang/String;)Ldev/nucleusframework/scheduler/DesktopTask;
+	public final fun registeredIds ()Ljava/util/Set;
+}
+
+public final class dev/nucleusframework/scheduler/TaskRegistry$Builder {
+	public fun <init> ()V
+	public final fun build ()Ldev/nucleusframework/scheduler/TaskRegistry;
+	public final fun register-RVVbH1o (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)Ldev/nucleusframework/scheduler/TaskRegistry$Builder;
+}
+
+public final class dev/nucleusframework/scheduler/TaskRequest {
+	public static final field Companion Ldev/nucleusframework/scheduler/TaskRequest$Companion;
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskRequest$Type;Lkotlin/time/Duration;Ldev/nucleusframework/scheduler/CronExpression;Ldev/nucleusframework/scheduler/TaskData;Ldev/nucleusframework/scheduler/RetryPolicy;Ldev/nucleusframework/scheduler/ExistingTaskPolicy;ZLdev/nucleusframework/scheduler/Constraints;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getConstraints ()Ldev/nucleusframework/scheduler/Constraints;
+	public final fun getCronExpression ()Ldev/nucleusframework/scheduler/CronExpression;
+	public final fun getExistingTaskPolicy ()Ldev/nucleusframework/scheduler/ExistingTaskPolicy;
+	public final fun getInputData ()Ldev/nucleusframework/scheduler/TaskData;
+	public final fun getInterval-FghU774 ()Lkotlin/time/Duration;
+	public final fun getTaskId-637zNrU ()Ljava/lang/String;
+	public final fun getType ()Ldev/nucleusframework/scheduler/TaskRequest$Type;
+}
+
+public final class dev/nucleusframework/scheduler/TaskRequest$Builder {
+	public final fun constraints (Ldev/nucleusframework/scheduler/Constraints;)V
+	public final fun constraints (Lkotlin/jvm/functions/Function1;)V
+	public final fun existingTaskPolicy (Ldev/nucleusframework/scheduler/ExistingTaskPolicy;)V
+	public final fun getTaskData ()Ldev/nucleusframework/scheduler/TaskData;
+	public final fun inputData (Ljava/lang/Object;Lkotlinx/serialization/KSerializer;)V
+	public final fun retryPolicy (Ldev/nucleusframework/scheduler/RetryPolicy;)V
+	public final fun runImmediately (Z)V
+	public static synthetic fun runImmediately$default (Ldev/nucleusframework/scheduler/TaskRequest$Builder;ZILjava/lang/Object;)V
+	public final fun setTaskData (Ldev/nucleusframework/scheduler/TaskData;)V
+}
+
+public final class dev/nucleusframework/scheduler/TaskRequest$Companion {
+	public final fun calendar-hkJBKmQ (Ljava/lang/String;Ldev/nucleusframework/scheduler/CronExpression;Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public static synthetic fun calendar-hkJBKmQ$default (Ldev/nucleusframework/scheduler/TaskRequest$Companion;Ljava/lang/String;Ldev/nucleusframework/scheduler/CronExpression;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public final fun onBoot-RVVbH1o (Ljava/lang/String;Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public static synthetic fun onBoot-RVVbH1o$default (Ldev/nucleusframework/scheduler/TaskRequest$Companion;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public final fun periodic-H7JZAnQ (Ljava/lang/String;JLkotlin/jvm/functions/Function1;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public static synthetic fun periodic-H7JZAnQ$default (Ldev/nucleusframework/scheduler/TaskRequest$Companion;Ljava/lang/String;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskRequest;
+}
+
+public final class dev/nucleusframework/scheduler/TaskRequest$Type : java/lang/Enum {
+	public static final field CALENDAR Ldev/nucleusframework/scheduler/TaskRequest$Type;
+	public static final field ON_BOOT Ldev/nucleusframework/scheduler/TaskRequest$Type;
+	public static final field PERIODIC Ldev/nucleusframework/scheduler/TaskRequest$Type;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskRequest$Type;
+	public static fun values ()[Ldev/nucleusframework/scheduler/TaskRequest$Type;
+}
+
+public abstract class dev/nucleusframework/scheduler/TaskResult {
+}
+
+public final class dev/nucleusframework/scheduler/TaskResult$Failure : dev/nucleusframework/scheduler/TaskResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskResult$Failure;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/TaskResult$Failure;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskResult$Retry : dev/nucleusframework/scheduler/TaskResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskResult$Retry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/TaskResult$Retry;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/TaskResult$Retry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskResult$Success : dev/nucleusframework/scheduler/TaskResult {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/TaskResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/TaskState : java/lang/Enum {
+	public static final field INACTIVE Ldev/nucleusframework/scheduler/TaskState;
+	public static final field RUNNING Ldev/nucleusframework/scheduler/TaskState;
+	public static final field SCHEDULED Ldev/nucleusframework/scheduler/TaskState;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskState;
+	public static fun values ()[Ldev/nucleusframework/scheduler/TaskState;
+}
+
+public abstract interface class dev/nucleusframework/scheduler/internal/ConstraintChecker {
+	public abstract fun check (Ldev/nucleusframework/scheduler/Constraints;)Ldev/nucleusframework/scheduler/internal/ConstraintResult;
+}
+
+public final class dev/nucleusframework/scheduler/internal/ConstraintResult {
+	public fun <init> (ZLjava/util/Set;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ljava/util/Set;
+	public final fun copy (ZLjava/util/Set;)Ldev/nucleusframework/scheduler/internal/ConstraintResult;
+	public static synthetic fun copy$default (Ldev/nucleusframework/scheduler/internal/ConstraintResult;ZLjava/util/Set;ILjava/lang/Object;)Ldev/nucleusframework/scheduler/internal/ConstraintResult;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSatisfied ()Z
+	public final fun getUnsatisfied ()Ljava/util/Set;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/scheduler/internal/PlatformScheduler {
+	public abstract fun cancel-dGNPp5w (Ljava/lang/String;)Z
+	public abstract fun cancelAll ()V
+	public abstract fun enqueue (Ldev/nucleusframework/scheduler/TaskRequest;)Z
+	public abstract fun getAllTasks ()Ljava/util/List;
+	public abstract fun getTaskInfo-dGNPp5w (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskInfo;
+	public abstract fun isScheduled-dGNPp5w (Ljava/lang/String;)Z
+}
+

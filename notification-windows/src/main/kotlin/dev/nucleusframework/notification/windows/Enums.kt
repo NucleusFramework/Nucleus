@@ -5,8 +5,8 @@ package dev.nucleusframework.notification.windows
 // -- Activation --
 
 /** How the app is activated when the user interacts with a toast. */
-enum class ActivationType(
-    val xmlValue: String,
+public enum class ActivationType(
+    public val xmlValue: String,
 ) {
     /** Launch the app in the foreground (default). */
     FOREGROUND("foreground"),
@@ -19,8 +19,8 @@ enum class ActivationType(
 }
 
 /** What happens to the toast after it is activated. */
-enum class AfterActivationBehavior(
-    val xmlValue: String,
+public enum class AfterActivationBehavior(
+    public val xmlValue: String,
 ) {
     /** Toast is dismissed after activation (default). */
     DEFAULT("default"),
@@ -32,8 +32,8 @@ enum class AfterActivationBehavior(
 // -- Scenarios --
 
 /** Pre-defined toast display/audio behavior scenarios. */
-enum class ToastScenario(
-    val xmlValue: String,
+public enum class ToastScenario(
+    public val xmlValue: String,
 ) {
     /** Normal toast behavior. */
     DEFAULT("default"),
@@ -56,8 +56,8 @@ enum class ToastScenario(
 }
 
 /** How long a toast stays on screen before moving to the Action Center. */
-enum class ToastDuration(
-    val xmlValue: String,
+public enum class ToastDuration(
+    public val xmlValue: String,
 ) {
     /** System default (roughly 7 seconds). */
     DEFAULT(""),
@@ -72,8 +72,8 @@ enum class ToastDuration(
 // -- Dismissal --
 
 /** Reason a toast was dismissed. */
-enum class DismissalReason(
-    val rawValue: Int,
+public enum class DismissalReason(
+    public val rawValue: Int,
 ) {
     /** User explicitly dismissed the toast. */
     USER_CANCELED(0),
@@ -85,16 +85,16 @@ enum class DismissalReason(
     TIMED_OUT(2),
     ;
 
-    companion object {
-        fun fromRawValue(value: Int): DismissalReason = entries.firstOrNull { it.rawValue == value } ?: TIMED_OUT
+    public companion object {
+        public fun fromRawValue(value: Int): DismissalReason = entries.firstOrNull { it.rawValue == value } ?: TIMED_OUT
     }
 }
 
 // -- Text styles --
 
 /** Adaptive text styles for toast content. */
-enum class AdaptiveTextStyle(
-    val xmlValue: String,
+public enum class AdaptiveTextStyle(
+    public val xmlValue: String,
 ) {
     DEFAULT(""),
     CAPTION("caption"),
@@ -119,8 +119,8 @@ enum class AdaptiveTextStyle(
 // -- Text alignment --
 
 /** Horizontal alignment for text within groups. */
-enum class AdaptiveTextAlign(
-    val xmlValue: String,
+public enum class AdaptiveTextAlign(
+    public val xmlValue: String,
 ) {
     DEFAULT(""),
     AUTO("auto"),
@@ -132,8 +132,8 @@ enum class AdaptiveTextAlign(
 // -- Image crop --
 
 /** How to crop an image in a toast. */
-enum class AdaptiveImageCrop(
-    val xmlValue: String,
+public enum class AdaptiveImageCrop(
+    public val xmlValue: String,
 ) {
     /** Default square/rectangular crop. */
     DEFAULT(""),
@@ -148,8 +148,8 @@ enum class AdaptiveImageCrop(
 // -- Image alignment --
 
 /** Horizontal alignment for images within groups. */
-enum class AdaptiveImageAlign(
-    val xmlValue: String,
+public enum class AdaptiveImageAlign(
+    public val xmlValue: String,
 ) {
     DEFAULT(""),
     STRETCH("stretch"),
@@ -161,8 +161,8 @@ enum class AdaptiveImageAlign(
 // -- Image placement --
 
 /** Where to place an image in the toast. */
-enum class ImagePlacement(
-    val xmlValue: String,
+public enum class ImagePlacement(
+    public val xmlValue: String,
 ) {
     /** Inline within the toast body. */
     INLINE(""),
@@ -177,8 +177,8 @@ enum class ImagePlacement(
 // -- Subgroup text stacking --
 
 /** Vertical alignment of text content within a subgroup column. */
-enum class AdaptiveSubgroupTextStacking(
-    val xmlValue: String,
+public enum class AdaptiveSubgroupTextStacking(
+    public val xmlValue: String,
 ) {
     DEFAULT(""),
     TOP("top"),
@@ -189,8 +189,8 @@ enum class AdaptiveSubgroupTextStacking(
 // -- Audio --
 
 /** Pre-defined Windows notification sounds. */
-enum class ToastAudioSource(
-    val uri: String,
+public enum class ToastAudioSource(
+    public val uri: String,
 ) {
     DEFAULT("ms-winsoundevent:Notification.Default"),
     IM("ms-winsoundevent:Notification.IM"),

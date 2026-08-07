@@ -12,7 +12,7 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedDialogScope.DialogTitleBar(
+public fun DecoratedDialogScope.DialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
@@ -31,7 +31,7 @@ fun DecoratedDialogScope.DialogTitleBar(
 
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedDialogScope.BasicDialogTitleBar(
+public fun DecoratedDialogScope.BasicDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

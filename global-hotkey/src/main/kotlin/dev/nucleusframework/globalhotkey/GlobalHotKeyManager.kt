@@ -49,14 +49,14 @@ private const val PORTAL_BIND_DEBOUNCE_MS = 50L
  * ```
  */
 @Suppress("TooManyFunctions")
-object GlobalHotKeyManager {
+public object GlobalHotKeyManager {
     private val logger = Logger.getLogger(GlobalHotKeyManager::class.java.simpleName)
 
     @Volatile
     private var initialized = false
 
     /** The last error from a native operation, or null if the last operation succeeded. */
-    var lastError: String? = null
+    public var lastError: String? = null
         private set
 
     private val portalBindExecutor =
@@ -68,7 +68,7 @@ object GlobalHotKeyManager {
     private val portalBindPending = AtomicBoolean(false)
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean
+    public val isAvailable: Boolean
         get() =
             when (Platform.Current) {
                 Platform.Windows -> NativeWindowsHotKeyBridge.isLoaded
@@ -84,7 +84,7 @@ object GlobalHotKeyManager {
      * @return true if initialization succeeded.
      */
     @Synchronized
-    fun initialize(): Boolean {
+    public fun initialize(): Boolean {
         if (initialized) return true
         if (!isAvailable) {
             lastError = "Global hotkeys not available on this platform"
@@ -124,7 +124,7 @@ object GlobalHotKeyManager {
      * @param listener callback invoked when the hotkey is pressed.
      * @return a registration handle for [unregister], or -1 on failure.
      */
-    fun register(
+    public fun register(
         keyCode: Int,
         modifiers: Int = 0,
         description: String? = null,
@@ -147,7 +147,7 @@ object GlobalHotKeyManager {
      * @param listener callback invoked when the key is pressed.
      * @return a registration handle for [unregister], or -1 on failure.
      */
-    fun register(
+    public fun register(
         mediaKey: MediaKey,
         listener: HotKeyListener,
     ): Long {
@@ -171,7 +171,7 @@ object GlobalHotKeyManager {
      * @param handle the registration handle returned by [register].
      * @return true if the hotkey was successfully unregistered.
      */
-    fun unregister(handle: Long): Boolean {
+    public fun unregister(handle: Long): Boolean {
         if (!ensureReady()) return false
 
         return when (Platform.Current) {
@@ -194,7 +194,7 @@ object GlobalHotKeyManager {
      * @return true if the flush succeeded (or was a no-op).
      */
     @Synchronized
-    fun commitRegistrations(): Boolean {
+    public fun commitRegistrations(): Boolean {
         if (!ensureReady()) return false
         if (Platform.Current != Platform.Linux) {
             lastError = null
@@ -210,7 +210,7 @@ object GlobalHotKeyManager {
      * Stable across process launches for a given key+modifiers pair
      * (`nucleus_m{mods}_k{keyCode}`), independent of registration order.
      */
-    fun portalShortcutId(handle: Long): String? {
+    public fun portalShortcutId(handle: Long): String? {
         if (Platform.Current != Platform.Linux || !initialized) return null
         return NativeLinuxHotKeyBridge.nativeShortcutId(handle)
     }
@@ -220,7 +220,7 @@ object GlobalHotKeyManager {
      * Unregisters all hotkeys and stops the native message loop.
      */
     @Synchronized
-    fun shutdown() {
+    public fun shutdown() {
         if (!initialized) return
 
         cancelScheduledPortalBind()

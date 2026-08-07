@@ -73,7 +73,7 @@ internal val LocalFullscreenTitleBarHolder = compositionLocalOf<FullscreenTitleB
 
 @Suppress("FunctionNaming", "LongParameterList", "CyclomaticComplexMethod", "LongMethod")
 @Composable
-fun DecoratedWindow(
+public fun DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,

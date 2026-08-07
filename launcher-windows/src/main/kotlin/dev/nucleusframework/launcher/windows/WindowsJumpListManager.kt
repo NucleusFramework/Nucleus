@@ -23,15 +23,15 @@ import java.util.logging.Logger
  *
  * Thread-safe singleton.
  */
-object WindowsJumpListManager {
+public object WindowsJumpListManager {
     private val logger = Logger.getLogger(WindowsJumpListManager::class.java.simpleName)
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
-    var lastError: String? = null
+    public var lastError: String? = null
         private set
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean get() = NativeWindowsJumpListBridge.isLoaded
+    public val isAvailable: Boolean get() = NativeWindowsJumpListBridge.isLoaded
 
     /**
      * Set the process AppUserModelID. **Must be called before any window is created**
@@ -42,7 +42,7 @@ object WindowsJumpListManager {
      * @param aumid Explicit AUMID, or `null` to use [NucleusApp.appId].
      * @return true if the AUMID was set successfully.
      */
-    fun setProcessAppId(aumid: String? = null): Boolean {
+    public fun setProcessAppId(aumid: String? = null): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             return false
@@ -68,7 +68,7 @@ object WindowsJumpListManager {
      * @param knownCategories Shell-managed categories (Recent/Frequent).
      * @return true if the jump list was set successfully.
      */
-    fun setJumpList(
+    public fun setJumpList(
         categories: List<JumpListCategory> = emptyList(),
         tasks: List<JumpListItem> = emptyList(),
         knownCategories: List<KnownCategory> = emptyList(),
@@ -148,7 +148,7 @@ object WindowsJumpListManager {
      *
      * @return true if the jump list was cleared successfully.
      */
-    fun clearJumpList(): Boolean {
+    public fun clearJumpList(): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             return false

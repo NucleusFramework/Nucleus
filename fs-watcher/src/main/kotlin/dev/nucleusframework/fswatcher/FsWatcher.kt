@@ -11,13 +11,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 
-sealed interface FsWatchBackendStrategy {
-    data object Auto : FsWatchBackendStrategy
+public sealed interface FsWatchBackendStrategy {
+    public data object Auto : FsWatchBackendStrategy
 
-    data object NativeOnly : FsWatchBackendStrategy
+    public data object NativeOnly : FsWatchBackendStrategy
 
     // Polling backend for environments where native notifications are unavailable or undesirable.
-    data class Polling(
+    public data class Polling(
         val interval: Duration = Duration.ofSeconds(2),
         val compareContents: Boolean = false,
     ) : FsWatchBackendStrategy
@@ -26,10 +26,10 @@ sealed interface FsWatchBackendStrategy {
 private const val DEFAULT_DEBOUNCE_WINDOW_MILLIS = 150L
 private val DEFAULT_DEBOUNCE_WINDOW: Duration = Duration.ofMillis(DEFAULT_DEBOUNCE_WINDOW_MILLIS)
 
-sealed interface FsWatchDeliveryMode {
-    data object Raw : FsWatchDeliveryMode
+public sealed interface FsWatchDeliveryMode {
+    public data object Raw : FsWatchDeliveryMode
 
-    data class Debounced(
+    public data class Debounced(
         val window: Duration = DEFAULT_DEBOUNCE_WINDOW,
     ) : FsWatchDeliveryMode {
         init {
@@ -41,7 +41,7 @@ sealed interface FsWatchDeliveryMode {
     }
 }
 
-data class FsWatcherConfig(
+public data class FsWatcherConfig(
     /**
      * Whether the backend descends into symlinks it meets inside a watched tree, and whether a
      * watch root that *is itself* a symlink reports its target's events under the root's own path.
@@ -62,29 +62,29 @@ data class FsWatcherConfig(
     }
 }
 
-data class FsWatchError(
+public data class FsWatchError(
     val message: String,
     val source: FsWatchSource? = null,
     val recoverable: Boolean = false,
     val cause: Throwable? = null,
 )
 
-class FsWatchException(
+public class FsWatchException(
     message: String,
     cause: Throwable? = null,
 ) : RuntimeException(message, cause)
 
-interface FsWatchRegistration : AutoCloseable {
-    val source: FsWatchSource
-    val active: Boolean
+public interface FsWatchRegistration : AutoCloseable {
+    public val source: FsWatchSource
+    public val active: Boolean
 
     override fun close()
 }
 
-interface FsWatcher : AutoCloseable {
-    val registrations: Set<FsWatchSource>
-    val events: Flow<FsWatchEvent>
-    val errors: Flow<FsWatchError>
+public interface FsWatcher : AutoCloseable {
+    public val registrations: Set<FsWatchSource>
+    public val events: Flow<FsWatchEvent>
+    public val errors: Flow<FsWatchError>
 
     /**
      * Watches [path], optionally [recursive]ly, under an optional [name] used to tell registrations
@@ -97,7 +97,7 @@ interface FsWatcher : AutoCloseable {
      *
      * @throws FsWatchException if the root cannot be watched.
      */
-    fun watch(
+    public fun watch(
         path: Path,
         recursive: Boolean = true,
         name: String? = null,
@@ -106,8 +106,8 @@ interface FsWatcher : AutoCloseable {
     override fun close()
 }
 
-object FsWatchers {
-    fun create(config: FsWatcherConfig = FsWatcherConfig()): FsWatcher {
+public object FsWatchers {
+    public fun create(config: FsWatcherConfig = FsWatcherConfig()): FsWatcher {
         if (!isSupportedForCreate(config)) {
             val message =
                 "fs-watcher backend is not available for config: $config"
@@ -129,7 +129,7 @@ object FsWatchers {
         return NativeBackedFsWatcher(config, watcherHandle)
     }
 
-    fun isSupported(config: FsWatcherConfig = FsWatcherConfig()): Boolean {
+    public fun isSupported(config: FsWatcherConfig = FsWatcherConfig()): Boolean {
         if (!NativeFsWatcherBridge.isLoaded) return false
         return when (config.backend) {
             FsWatchBackendStrategy.Auto,

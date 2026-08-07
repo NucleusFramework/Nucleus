@@ -1,0 +1,43 @@
+public final class dev/nucleusframework/globalhotkey/GlobalHotKeyManager {
+	public static final field INSTANCE Ldev/nucleusframework/globalhotkey/GlobalHotKeyManager;
+	public final fun commitRegistrations ()Z
+	public final fun getLastError ()Ljava/lang/String;
+	public final fun initialize ()Z
+	public final fun isAvailable ()Z
+	public final fun portalShortcutId (J)Ljava/lang/String;
+	public final fun register (IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyListener;)J
+	public final fun register (Ldev/nucleusframework/globalhotkey/MediaKey;Ldev/nucleusframework/globalhotkey/HotKeyListener;)J
+	public static synthetic fun register$default (Ldev/nucleusframework/globalhotkey/GlobalHotKeyManager;IILjava/lang/String;Ldev/nucleusframework/globalhotkey/HotKeyListener;ILjava/lang/Object;)J
+	public final fun shutdown ()V
+	public final fun unregister (J)Z
+}
+
+public abstract interface class dev/nucleusframework/globalhotkey/HotKeyListener {
+	public abstract fun onHotKey (II)V
+}
+
+public final class dev/nucleusframework/globalhotkey/HotKeyModifier : java/lang/Enum {
+	public static final field ALT Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+	public static final field CONTROL Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+	public static final field META Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+	public static final field SHIFT Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun plus (Ldev/nucleusframework/globalhotkey/HotKeyModifier;)I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+	public static fun values ()[Ldev/nucleusframework/globalhotkey/HotKeyModifier;
+}
+
+public final class dev/nucleusframework/globalhotkey/HotKeyModifierKt {
+	public static final fun plus (ILdev/nucleusframework/globalhotkey/HotKeyModifier;)I
+}
+
+public final class dev/nucleusframework/globalhotkey/MediaKey : java/lang/Enum {
+	public static final field NEXT_TRACK Ldev/nucleusframework/globalhotkey/MediaKey;
+	public static final field PLAY_PAUSE Ldev/nucleusframework/globalhotkey/MediaKey;
+	public static final field PREV_TRACK Ldev/nucleusframework/globalhotkey/MediaKey;
+	public static final field STOP Ldev/nucleusframework/globalhotkey/MediaKey;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/globalhotkey/MediaKey;
+	public static fun values ()[Ldev/nucleusframework/globalhotkey/MediaKey;
+}
+

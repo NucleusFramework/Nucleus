@@ -1,0 +1,36 @@
+public final class dev/nucleusframework/launcher/macos/DockMenuItem {
+	public static final field Companion Ldev/nucleusframework/launcher/macos/DockMenuItem$Companion;
+	public fun <init> (ILjava/lang/String;ZLjava/util/List;)V
+	public synthetic fun <init> (ILjava/lang/String;ZLjava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (ILjava/lang/String;ZLjava/util/List;)Ldev/nucleusframework/launcher/macos/DockMenuItem;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/macos/DockMenuItem;ILjava/lang/String;ZLjava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/launcher/macos/DockMenuItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChildren ()Ljava/util/List;
+	public final fun getEnabled ()Z
+	public final fun getId ()I
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/macos/DockMenuItem$Companion {
+	public final fun separator (I)Ldev/nucleusframework/launcher/macos/DockMenuItem;
+}
+
+public abstract interface class dev/nucleusframework/launcher/macos/DockMenuListener {
+	public abstract fun onItemClicked (I)V
+}
+
+public final class dev/nucleusframework/launcher/macos/MacOsDockMenu {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/macos/MacOsDockMenu;
+	public final fun clearDockMenu ()V
+	public final fun getListener ()Ldev/nucleusframework/launcher/macos/DockMenuListener;
+	public final fun isAvailable ()Z
+	public final fun setDockMenu (Ljava/util/List;)V
+	public final fun setListener (Ldev/nucleusframework/launcher/macos/DockMenuListener;)V
+}
+

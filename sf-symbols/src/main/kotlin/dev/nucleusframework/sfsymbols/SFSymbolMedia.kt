@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Media (238 symbols). */
-enum class SFSymbolMedia(
+public enum class SFSymbolMedia(
     override val symbolName: String,
 ) : SFSymbol {
     AIRPLAY_AUDIO("airplay.audio"),

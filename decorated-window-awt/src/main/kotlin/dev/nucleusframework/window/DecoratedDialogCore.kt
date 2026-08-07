@@ -39,13 +39,13 @@ import java.awt.geom.Rectangle2D
 import java.awt.geom.RoundRectangle2D
 
 @Stable
-interface AwtDecoratedDialogScope :
+public interface AwtDecoratedDialogScope :
     DecoratedDialogScope,
     DialogWindowScope {
     override val window: ComposeDialog
 }
 
-object DecoratedDialogMeasurePolicy : MeasurePolicy {
+public object DecoratedDialogMeasurePolicy : MeasurePolicy {
     override fun MeasureScope.measure(
         measurables: List<Measurable>,
         constraints: Constraints,
@@ -89,7 +89,7 @@ object DecoratedDialogMeasurePolicy : MeasurePolicy {
 
 /** AWT-bound factory for [DecoratedDialogState]. Defined as an extension so
  *  the value class itself can stay in `decorated-window-core` (no AWT). */
-fun DecoratedDialogState.Companion.of(window: ComposeDialog): DecoratedDialogState = of(active = window.isActive)
+public fun DecoratedDialogState.Companion.of(window: ComposeDialog): DecoratedDialogState = of(active = window.isActive)
 
 /**
  * Shared body for DecoratedDialog, used by both JBR and JNI variants.
@@ -97,7 +97,7 @@ fun DecoratedDialogState.Companion.of(window: ComposeDialog): DecoratedDialogSta
  */
 @Suppress("FunctionNaming", "MagicNumber")
 @Composable
-fun DialogWindowScope.DecoratedDialogBody(
+public fun DialogWindowScope.DecoratedDialogBody(
     title: String,
     icon: Painter?,
     undecorated: Boolean,

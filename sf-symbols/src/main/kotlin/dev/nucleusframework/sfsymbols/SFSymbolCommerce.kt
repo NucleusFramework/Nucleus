@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Commerce (264 symbols). */
-enum class SFSymbolCommerce(
+public enum class SFSymbolCommerce(
     override val symbolName: String,
 ) : SFSymbol {
     BAG("bag"),

@@ -1,0 +1,16 @@
+public final class dev/nucleusframework/aot/runtime/AotRuntime {
+	public static final field INSTANCE Ldev/nucleusframework/aot/runtime/AotRuntime;
+	public static final fun isRuntime ()Z
+	public static final fun isTraining ()Z
+	public static final fun mode ()Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+}
+
+public final class dev/nucleusframework/aot/runtime/AotRuntimeMode : java/lang/Enum {
+	public static final field OFF Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public static final field RUNTIME Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public static final field TRAINING Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public static fun values ()[Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+}
+

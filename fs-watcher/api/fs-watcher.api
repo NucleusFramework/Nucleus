@@ -1,0 +1,255 @@
+public abstract interface class dev/nucleusframework/fswatcher/FsWatchBackendStrategy {
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchBackendStrategy$Auto : dev/nucleusframework/fswatcher/FsWatchBackendStrategy {
+	public static final field INSTANCE Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy$Auto;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchBackendStrategy$NativeOnly : dev/nucleusframework/fswatcher/FsWatchBackendStrategy {
+	public static final field INSTANCE Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy$NativeOnly;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchBackendStrategy$Polling : dev/nucleusframework/fswatcher/FsWatchBackendStrategy {
+	public fun <init> ()V
+	public fun <init> (Ljava/time/Duration;Z)V
+	public synthetic fun <init> (Ljava/time/Duration;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/time/Duration;
+	public final fun component2 ()Z
+	public final fun copy (Ljava/time/Duration;Z)Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy$Polling;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy$Polling;Ljava/time/Duration;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy$Polling;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCompareContents ()Z
+	public final fun getInterval ()Ljava/time/Duration;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/fswatcher/FsWatchDeliveryMode {
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchDeliveryMode$Debounced : dev/nucleusframework/fswatcher/FsWatchDeliveryMode {
+	public fun <init> ()V
+	public fun <init> (Ljava/time/Duration;)V
+	public synthetic fun <init> (Ljava/time/Duration;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/time/Duration;
+	public final fun copy (Ljava/time/Duration;)Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode$Debounced;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode$Debounced;Ljava/time/Duration;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode$Debounced;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getWindow ()Ljava/time/Duration;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchDeliveryMode$Raw : dev/nucleusframework/fswatcher/FsWatchDeliveryMode {
+	public static final field INSTANCE Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode$Raw;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchError {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/fswatcher/FsWatchSource;ZLjava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/fswatcher/FsWatchSource;ZLjava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component3 ()Z
+	public final fun component4 ()Ljava/lang/Throwable;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/fswatcher/FsWatchSource;ZLjava/lang/Throwable;)Ldev/nucleusframework/fswatcher/FsWatchError;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchError;Ljava/lang/String;Ldev/nucleusframework/fswatcher/FsWatchSource;ZLjava/lang/Throwable;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchError;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCause ()Ljava/lang/Throwable;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getRecoverable ()Z
+	public final fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/fswatcher/FsWatchEvent {
+	public abstract fun getNeedsRescan ()Z
+	public abstract fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Created : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Created;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Created;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Created;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNeedsRescan ()Z
+	public final fun getPath ()Ljava/nio/file/Path;
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public final fun isDirectory ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Modified : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Modified;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Modified;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Modified;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNeedsRescan ()Z
+	public final fun getPath ()Ljava/nio/file/Path;
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public final fun isDirectory ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Moved : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Ljava/nio/file/Path;
+	public final fun component3 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component4 ()Ljava/lang/Boolean;
+	public final fun component5 ()Z
+	public final fun copy (Ljava/nio/file/Path;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Moved;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Moved;Ljava/nio/file/Path;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Moved;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFrom ()Ljava/nio/file/Path;
+	public fun getNeedsRescan ()Z
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun getTo ()Ljava/nio/file/Path;
+	public fun hashCode ()I
+	public final fun isDirectory ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Other : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)V
+	public synthetic fun <init> (Ljava/util/List;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/util/List;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Other;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Other;Ljava/util/List;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Other;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNeedsRescan ()Z
+	public final fun getPaths ()Ljava/util/List;
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public final fun isDirectory ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Overflow : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/fswatcher/FsWatchSource;Z)V
+	public synthetic fun <init> (Ldev/nucleusframework/fswatcher/FsWatchSource;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component2 ()Z
+	public final fun copy (Ldev/nucleusframework/fswatcher/FsWatchSource;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Overflow;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Overflow;Ldev/nucleusframework/fswatcher/FsWatchSource;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Overflow;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNeedsRescan ()Z
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchEvent$Removed : dev/nucleusframework/fswatcher/FsWatchEvent {
+	public fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)V
+	public synthetic fun <init> (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Z
+	public final fun copy (Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;Z)Ldev/nucleusframework/fswatcher/FsWatchEvent$Removed;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchEvent$Removed;Ljava/nio/file/Path;Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/lang/Boolean;ZILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchEvent$Removed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun getNeedsRescan ()Z
+	public final fun getPath ()Ljava/nio/file/Path;
+	public fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun hashCode ()I
+	public final fun isDirectory ()Ljava/lang/Boolean;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchException : java/lang/RuntimeException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public abstract interface class dev/nucleusframework/fswatcher/FsWatchRegistration : java/lang/AutoCloseable {
+	public abstract fun close ()V
+	public abstract fun getActive ()Z
+	public abstract fun getSource ()Ldev/nucleusframework/fswatcher/FsWatchSource;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchSource {
+	public fun <init> (Ljava/nio/file/Path;ZLjava/lang/String;)V
+	public synthetic fun <init> (Ljava/nio/file/Path;ZLjava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/nio/file/Path;
+	public final fun component2 ()Z
+	public final fun component3 ()Ljava/lang/String;
+	public final fun copy (Ljava/nio/file/Path;ZLjava/lang/String;)Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatchSource;Ljava/nio/file/Path;ZLjava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchSource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public final fun getRecursive ()Z
+	public final fun getRoot ()Ljava/nio/file/Path;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/fswatcher/FsWatcher : java/lang/AutoCloseable {
+	public abstract fun close ()V
+	public abstract fun getErrors ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun getEvents ()Lkotlinx/coroutines/flow/Flow;
+	public abstract fun getRegistrations ()Ljava/util/Set;
+	public abstract fun watch (Ljava/nio/file/Path;ZLjava/lang/String;)Ldev/nucleusframework/fswatcher/FsWatchRegistration;
+	public static synthetic fun watch$default (Ldev/nucleusframework/fswatcher/FsWatcher;Ljava/nio/file/Path;ZLjava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchRegistration;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatcher$DefaultImpls {
+	public static synthetic fun watch$default (Ldev/nucleusframework/fswatcher/FsWatcher;Ljava/nio/file/Path;ZLjava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatchRegistration;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatcherConfig {
+	public fun <init> ()V
+	public fun <init> (ZLdev/nucleusframework/fswatcher/FsWatchBackendStrategy;IILdev/nucleusframework/fswatcher/FsWatchDeliveryMode;)V
+	public synthetic fun <init> (ZLdev/nucleusframework/fswatcher/FsWatchBackendStrategy;IILdev/nucleusframework/fswatcher/FsWatchDeliveryMode;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy;
+	public final fun component3 ()I
+	public final fun component4 ()I
+	public final fun component5 ()Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode;
+	public final fun copy (ZLdev/nucleusframework/fswatcher/FsWatchBackendStrategy;IILdev/nucleusframework/fswatcher/FsWatchDeliveryMode;)Ldev/nucleusframework/fswatcher/FsWatcherConfig;
+	public static synthetic fun copy$default (Ldev/nucleusframework/fswatcher/FsWatcherConfig;ZLdev/nucleusframework/fswatcher/FsWatchBackendStrategy;IILdev/nucleusframework/fswatcher/FsWatchDeliveryMode;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatcherConfig;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBackend ()Ldev/nucleusframework/fswatcher/FsWatchBackendStrategy;
+	public final fun getDeliveryMode ()Ldev/nucleusframework/fswatcher/FsWatchDeliveryMode;
+	public final fun getErrorBufferCapacity ()I
+	public final fun getEventBufferCapacity ()I
+	public final fun getFollowSymlinks ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/fswatcher/FsWatchers {
+	public static final field INSTANCE Ldev/nucleusframework/fswatcher/FsWatchers;
+	public final fun create (Ldev/nucleusframework/fswatcher/FsWatcherConfig;)Ldev/nucleusframework/fswatcher/FsWatcher;
+	public static synthetic fun create$default (Ldev/nucleusframework/fswatcher/FsWatchers;Ldev/nucleusframework/fswatcher/FsWatcherConfig;ILjava/lang/Object;)Ldev/nucleusframework/fswatcher/FsWatcher;
+	public final fun isSupported (Ldev/nucleusframework/fswatcher/FsWatcherConfig;)Z
+	public static synthetic fun isSupported$default (Ldev/nucleusframework/fswatcher/FsWatchers;Ldev/nucleusframework/fswatcher/FsWatcherConfig;ILjava/lang/Object;)Z
+}
+

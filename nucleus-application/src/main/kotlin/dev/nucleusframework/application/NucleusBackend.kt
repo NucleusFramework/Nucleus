@@ -1,5 +1,6 @@
 package dev.nucleusframework.application
 
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
@@ -10,7 +11,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
  * runtime modules — their imports overlap by design. [Auto] detects which one
  * is on the classpath at runtime.
  */
-enum class NucleusBackend {
+public enum class NucleusBackend {
     /** Detect at runtime: prefer Tao when present, else AWT (JBR/JNI). */
     Auto,
 
@@ -28,4 +29,5 @@ enum class NucleusBackend {
  *
  * Resolves to [NucleusBackend.Auto] outside of a [nucleusApplication] block.
  */
-val LocalNucleusBackend = staticCompositionLocalOf { NucleusBackend.Auto }
+public val LocalNucleusBackend: ProvidableCompositionLocal<NucleusBackend> =
+    staticCompositionLocalOf { NucleusBackend.Auto }

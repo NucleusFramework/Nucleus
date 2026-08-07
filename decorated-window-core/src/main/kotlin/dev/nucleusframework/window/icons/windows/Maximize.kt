@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.Maximize: ImageVector
+public val WindowsControlButtonIcons.Maximize: ImageVector
     get() {
         if (_Maximize != null) {
             return _Maximize!!

@@ -15,7 +15,7 @@ package dev.nucleusframework.launcher.windows
  * @param dismissOnClick Whether clicking the button closes the thumbnail preview.
  * @param nonInteractive Whether the button is visible but not clickable (no hover/pressed state).
  */
-data class ThumbnailToolbarButton(
+public data class ThumbnailToolbarButton(
     val id: Int,
     val tooltip: String = "",
     val icon: TaskbarIconSource? = null,
@@ -30,8 +30,8 @@ data class ThumbnailToolbarButton(
         require(tooltip.length <= MAX_TOOLTIP_LENGTH) { "Tooltip exceeds $MAX_TOOLTIP_LENGTH characters" }
     }
 
-    companion object {
-        const val MAX_BUTTONS = 7
+    public companion object {
+        public const val MAX_BUTTONS: Int = 7
         private const val MAX_BUTTON_INDEX = 6
         private const val MAX_TOOLTIP_LENGTH = 259
     }

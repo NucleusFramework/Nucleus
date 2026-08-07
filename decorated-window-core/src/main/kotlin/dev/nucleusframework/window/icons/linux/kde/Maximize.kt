@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.Maximize: ImageVector
+public val KdeControlButtonsIcons.Maximize: ImageVector
     get() {
         if (_Maximize != null) {
             return _Maximize!!

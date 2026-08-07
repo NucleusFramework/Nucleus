@@ -3,18 +3,18 @@ package dev.nucleusframework.updater.provider
 import dev.nucleusframework.core.runtime.Platform
 import java.net.http.HttpClient
 
-interface UpdateProvider {
-    fun getUpdateMetadataUrl(
+public interface UpdateProvider {
+    public fun getUpdateMetadataUrl(
         channel: String,
         platform: Platform,
     ): String
 
-    fun getDownloadUrl(
+    public fun getDownloadUrl(
         fileName: String,
         version: String,
     ): String
 
-    fun authHeaders(): Map<String, String> = emptyMap()
+    public fun authHeaders(): Map<String, String> = emptyMap()
 
     /**
      * Returns the URL of the block map that describes [fileUrl], used to compute a differential
@@ -25,7 +25,7 @@ interface UpdateProvider {
      * signed-URL gateway, where the query string must be re-signed for the block map too. A block
      * map that cannot be fetched is not an error: the updater falls back to a full download.
      */
-    fun getBlockMapUrl(fileUrl: String): String = "$fileUrl.blockmap"
+    public fun getBlockMapUrl(fileUrl: String): String = "$fileUrl.blockmap"
 
     /**
      * Returns the URL of the metadata (YAML) file for the given [channel] and [platform],
@@ -53,7 +53,7 @@ interface UpdateProvider {
      * the conventional choice for "no release matches this channel". The updater surfaces
      * such failures as [dev.nucleusframework.updater.UpdateResult.Error].
      */
-    fun resolveMetadataUrl(
+    public fun resolveMetadataUrl(
         channel: String,
         platform: Platform,
         httpClient: HttpClient,

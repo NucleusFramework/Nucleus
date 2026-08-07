@@ -20,7 +20,7 @@ import javax.swing.SwingUtilities
  *
  * Events dispatched to the callback are delivered on the Swing EDT.
  */
-object MediaControlService {
+public object MediaControlService {
     private val json = Json { ignoreUnknownKeys = true }
 
     private val backend: Backend =
@@ -35,7 +35,7 @@ object MediaControlService {
      * Returns `true` if the native backend loaded successfully on the current OS.
      * Always returns `false` on Windows and unsupported platforms.
      */
-    fun isAvailable(): Boolean = backend !== NoopBackend
+    public fun isAvailable(): Boolean = backend !== NoopBackend
 
     /**
      * Configure the media player identity.
@@ -47,7 +47,7 @@ object MediaControlService {
      * @param displayName The human-readable name shown in the system media center.
      *                    Defaults to [NucleusApp.appName] or `"Nucleus App"`.
      */
-    fun configure(
+    public fun configure(
         dbusName: String = "org.mpris.MediaPlayer2.${NucleusApp.appId}",
         displayName: String = NucleusApp.appName ?: "Nucleus App",
     ) {
@@ -58,7 +58,7 @@ object MediaControlService {
      * Update the metadata shown in the system media center.
      * Call whenever the track changes.
      */
-    fun setMetadata(metadata: MediaMetadata) {
+    public fun setMetadata(metadata: MediaMetadata) {
         backend.setMetadata(
             title = metadata.title,
             artist = metadata.artist,
@@ -72,7 +72,7 @@ object MediaControlService {
      * Update the playback state shown in the system media center.
      * Call on play/pause/stop and periodically during playback to update position.
      */
-    fun setPlaybackState(state: MediaPlaybackState) {
+    public fun setPlaybackState(state: MediaPlaybackState) {
         backend.setPlaybackState(
             status = state.status.ordinal,
             positionMs = state.positionMs ?: -1L,
@@ -86,7 +86,7 @@ object MediaControlService {
      *
      * Note: on macOS this is a no-op (no per-app volume channel in Now Playing).
      */
-    fun setVolume(volume: Double) {
+    public fun setVolume(volume: Double) {
         backend.setVolume(volume.coerceIn(0.0, 1.0))
     }
 
@@ -101,7 +101,7 @@ object MediaControlService {
      *  - macOS (Remote Command Center): Play, Pause, Toggle, Next, Previous, Stop, SetPosition
      *  - Windows (SMTC): Play, Pause, Next, Previous, Stop, SeekBy, SetPosition
      */
-    fun attach(callback: (MediaControlEvent) -> Unit) {
+    public fun attach(callback: (MediaControlEvent) -> Unit) {
         backend.attach { raw ->
             val event = parseEvent(raw) ?: return@attach
             SwingUtilities.invokeLater { callback(event) }
@@ -112,7 +112,7 @@ object MediaControlService {
      * Detach the listener and unregister from the platform media center.
      * No further events will be dispatched.
      */
-    fun detach() {
+    public fun detach() {
         backend.detach()
     }
 

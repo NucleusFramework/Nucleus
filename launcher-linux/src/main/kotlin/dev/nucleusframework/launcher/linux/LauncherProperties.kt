@@ -15,7 +15,7 @@ package dev.nucleusframework.launcher.linux
  *   or an empty string to unset the quicklist.
  * @property updating Whether the application is currently being updated.
  */
-data class LauncherProperties(
+public data class LauncherProperties(
     val count: Long? = null,
     val countVisible: Boolean? = null,
     val progress: Double? = null,

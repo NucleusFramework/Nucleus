@@ -15,7 +15,7 @@ import java.util.logging.Logger
  * - `nucleus.notification-windows` on Windows
  * - `nucleus.notification-macos` on macOS
  */
-object NotificationManager {
+public object NotificationManager {
     private val logger = Logger.getLogger(NotificationManager::class.java.simpleName)
     private val dispatcher: PlatformDispatcher? by lazy {
         DispatcherFactory.create().also {
@@ -24,7 +24,7 @@ object NotificationManager {
     }
 
     /** Whether the notification system is available on the current platform. */
-    fun isAvailable(): Boolean = dispatcher?.isAvailable() == true
+    public fun isAvailable(): Boolean = dispatcher?.isAvailable() == true
 
     /**
      * Eagerly initializes the notification subsystem.
@@ -33,12 +33,12 @@ object NotificationManager {
      * On other platforms this is a no-op. Initialization also happens
      * lazily on first [send] if not called explicitly.
      */
-    fun initialize() {
+    public fun initialize() {
         dispatcher?.initialize()
     }
 
     /** Sends a notification and returns a [NotificationResult]. */
-    fun send(notification: Notification): NotificationResult {
+    public fun send(notification: Notification): NotificationResult {
         val d =
             dispatcher
                 ?: return NotificationResult.Failure("No notification support on this platform")

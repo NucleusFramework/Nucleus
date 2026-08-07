@@ -21,7 +21,7 @@ package dev.nucleusframework.notification.windows
  * @param duration How long the toast stays on screen before moving to the Action Center.
  * @param displayTimestamp Custom timestamp override (ISO 8601 string).
  */
-data class ToastContent(
+public data class ToastContent(
     val visual: ToastVisual,
     val actions: ToastActions? = null,
     val audio: ToastAudio? = null,
@@ -42,7 +42,7 @@ data class ToastContent(
  *
  * @param binding The generic toast binding containing text, images, groups, etc.
  */
-data class ToastVisual(
+public data class ToastVisual(
     val binding: ToastBindingGeneric,
 )
 
@@ -54,7 +54,7 @@ data class ToastVisual(
  * @param heroImage Optional large hero image displayed at the top.
  * @param attribution Optional attribution text at the bottom.
  */
-data class ToastBindingGeneric(
+public data class ToastBindingGeneric(
     val children: List<ToastVisualChild> = emptyList(),
     val appLogoOverride: ToastGenericAppLogo? = null,
     val heroImage: ToastGenericHeroImage? = null,
@@ -62,7 +62,7 @@ data class ToastBindingGeneric(
 )
 
 /** Marker interface for elements that can appear in a binding's children list. */
-sealed interface ToastVisualChild
+public sealed interface ToastVisualChild
 
 // -- Text --
 
@@ -84,7 +84,7 @@ sealed interface ToastVisualChild
  * @param hintAlign Text alignment (only in groups).
  * @param language BCP-47 locale override.
  */
-data class AdaptiveText(
+public data class AdaptiveText(
     val text: String,
     val hintStyle: AdaptiveTextStyle = AdaptiveTextStyle.DEFAULT,
     val hintWrap: Boolean? = null,
@@ -107,7 +107,7 @@ data class AdaptiveText(
  * @param alternateText Accessibility description.
  * @param addImageQuery Append system query string for scale/contrast/language.
  */
-data class AdaptiveImage(
+public data class AdaptiveImage(
     val source: String,
     val hintCrop: AdaptiveImageCrop = AdaptiveImageCrop.DEFAULT,
     val hintRemoveMargin: Boolean? = null,
@@ -118,7 +118,7 @@ data class AdaptiveImage(
     AdaptiveSubgroupChild
 
 /** App logo override image (displayed left of the text). */
-data class ToastGenericAppLogo(
+public data class ToastGenericAppLogo(
     val source: String,
     val hintCrop: AdaptiveImageCrop = AdaptiveImageCrop.DEFAULT,
     val alternateText: String? = null,
@@ -126,14 +126,14 @@ data class ToastGenericAppLogo(
 )
 
 /** Hero image displayed at the top of the toast. */
-data class ToastGenericHeroImage(
+public data class ToastGenericHeroImage(
     val source: String,
     val alternateText: String? = null,
     val addImageQuery: Boolean? = null,
 )
 
 /** Attribution text displayed at the bottom of the toast. */
-data class ToastGenericAttributionText(
+public data class ToastGenericAttributionText(
     val text: String,
     val language: String? = null,
 )
@@ -149,7 +149,7 @@ data class ToastGenericAttributionText(
  *
  * @param subgroups The column definitions.
  */
-data class AdaptiveGroup(
+public data class AdaptiveGroup(
     val subgroups: List<AdaptiveSubgroup>,
 ) : ToastVisualChild
 
@@ -160,14 +160,14 @@ data class AdaptiveGroup(
  * @param hintWeight Relative column width (integer weight).
  * @param hintTextStacking Vertical alignment of content.
  */
-data class AdaptiveSubgroup(
+public data class AdaptiveSubgroup(
     val children: List<AdaptiveSubgroupChild> = emptyList(),
     val hintWeight: Int? = null,
     val hintTextStacking: AdaptiveSubgroupTextStacking = AdaptiveSubgroupTextStacking.DEFAULT,
 )
 
 /** Marker interface for elements that can appear in a subgroup. */
-sealed interface AdaptiveSubgroupChild
+public sealed interface AdaptiveSubgroupChild
 
 // =============================================================================
 // Progress bar
@@ -188,7 +188,7 @@ sealed interface AdaptiveSubgroupChild
  * @param valueStringOverride Custom string instead of default percentage. Supports `{key}` binding.
  * @param status Required status text. Supports `{key}` binding.
  */
-data class AdaptiveProgressBar(
+public data class AdaptiveProgressBar(
     val title: String? = null,
     val value: Double? = null,
     val valueBind: String? = null,
@@ -207,7 +207,7 @@ data class AdaptiveProgressBar(
  * @param buttons Action buttons. Max 5 total (shared with context menu items).
  * @param contextMenuItems Right-click context menu items.
  */
-data class ToastActions(
+public data class ToastActions(
     val inputs: List<ToastInput> = emptyList(),
     val buttons: List<ToastButton> = emptyList(),
     val contextMenuItems: List<ToastContextMenuItem> = emptyList(),
@@ -216,8 +216,8 @@ data class ToastActions(
 // -- Inputs --
 
 /** Marker interface for toast input elements. */
-sealed interface ToastInput {
-    val id: String
+public sealed interface ToastInput {
+    public val id: String
 }
 
 /**
@@ -228,7 +228,7 @@ sealed interface ToastInput {
  * @param placeholderContent Hint text when empty.
  * @param defaultInput Initial value.
  */
-data class ToastTextBox(
+public data class ToastTextBox(
     override val id: String,
     val title: String? = null,
     val placeholderContent: String? = null,
@@ -243,7 +243,7 @@ data class ToastTextBox(
  * @param defaultSelectionBoxItemId ID of the pre-selected item.
  * @param items Available selection items.
  */
-data class ToastSelectionBox(
+public data class ToastSelectionBox(
     override val id: String,
     val title: String? = null,
     val defaultSelectionBoxItemId: String? = null,
@@ -256,7 +256,7 @@ data class ToastSelectionBox(
  * @param id Unique identifier for this item.
  * @param content Display text.
  */
-data class ToastSelectionBoxItem(
+public data class ToastSelectionBoxItem(
     val id: String,
     val content: String,
 )
@@ -274,7 +274,7 @@ data class ToastSelectionBoxItem(
  * @param afterActivationBehavior What happens to the toast after activation.
  * @param tooltipText Tooltip shown on hover.
  */
-data class ToastButton(
+public data class ToastButton(
     val content: String,
     val arguments: String,
     val activationType: ActivationType = ActivationType.FOREGROUND,
@@ -290,7 +290,7 @@ data class ToastButton(
  * @param customContent Override the default "Snooze" label.
  * @param selectionBoxId ID of a selection box containing snooze intervals.
  */
-data class ToastButtonSnooze(
+public data class ToastButtonSnooze(
     val customContent: String? = null,
     val selectionBoxId: String? = null,
 )
@@ -300,7 +300,7 @@ data class ToastButtonSnooze(
  *
  * @param customContent Override the default "Dismiss" label.
  */
-data class ToastButtonDismiss(
+public data class ToastButtonDismiss(
     val customContent: String? = null,
 )
 
@@ -313,7 +313,7 @@ data class ToastButtonDismiss(
  * @param arguments App-defined arguments passed on activation.
  * @param activationType How the app is activated.
  */
-data class ToastContextMenuItem(
+public data class ToastContextMenuItem(
     val content: String,
     val arguments: String,
     val activationType: ActivationType = ActivationType.FOREGROUND,
@@ -330,7 +330,7 @@ data class ToastContextMenuItem(
  * @param loop Whether to loop the sound while the toast is visible.
  * @param silent Whether to mute the sound entirely.
  */
-data class ToastAudio(
+public data class ToastAudio(
     val source: ToastAudioSource? = null,
     val customSource: String? = null,
     val loop: Boolean = false,
@@ -351,7 +351,7 @@ data class ToastAudio(
  * @param arguments App-defined arguments when the header is clicked.
  * @param activationType How the app is activated when the header is clicked.
  */
-data class ToastHeader(
+public data class ToastHeader(
     val id: String,
     val title: String,
     val arguments: String,
@@ -369,7 +369,7 @@ data class ToastHeader(
  * @param sequenceNumber Monotonically increasing number to avoid race conditions.
  * @param values Key-value pairs mapping `{key}` bindings to their values.
  */
-data class ToastNotificationData(
+public data class ToastNotificationData(
     val sequenceNumber: Int = 0,
     val values: Map<String, String> = emptyMap(),
 )
@@ -384,7 +384,7 @@ data class ToastNotificationData(
  * @param arguments The app-defined launch string.
  * @param userInputs Map of input ID → user-provided value.
  */
-data class ToastActivatedEventArgs(
+public data class ToastActivatedEventArgs(
     val arguments: String,
     val userInputs: Map<String, String> = emptyMap(),
 )
@@ -394,7 +394,7 @@ data class ToastActivatedEventArgs(
  *
  * @param reason Why the toast was dismissed.
  */
-data class ToastDismissedEventArgs(
+public data class ToastDismissedEventArgs(
     val reason: DismissalReason,
 )
 
@@ -403,6 +403,6 @@ data class ToastDismissedEventArgs(
  *
  * @param errorCode The HRESULT error code.
  */
-data class ToastFailedEventArgs(
+public data class ToastFailedEventArgs(
     val errorCode: Int,
 )

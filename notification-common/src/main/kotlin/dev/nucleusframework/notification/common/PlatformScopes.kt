@@ -22,12 +22,12 @@ import dev.nucleusframework.notification.windows.ToastScenario
  *   `0` = never expires, positive = auto-close after that many milliseconds.
  */
 @NotificationDsl
-class LinuxNotificationScope internal constructor() {
-    var urgency: Urgency? = null
-    var category: String? = null
-    var transient: Boolean? = null
-    var resident: Boolean? = null
-    var expireTimeout: Int? = null
+public class LinuxNotificationScope internal constructor() {
+    public var urgency: Urgency? = null
+    public var category: String? = null
+    public var transient: Boolean? = null
+    public var resident: Boolean? = null
+    public var expireTimeout: Int? = null
 }
 
 /**
@@ -41,10 +41,10 @@ class LinuxNotificationScope internal constructor() {
  * @property subtitle Subtitle shown between the title and the body.
  */
 @NotificationDsl
-class MacNotificationScope internal constructor() {
-    var interruptionLevel: InterruptionLevel? = null
-    var relevanceScore: Double? = null
-    var subtitle: String? = null
+public class MacNotificationScope internal constructor() {
+    public var interruptionLevel: InterruptionLevel? = null
+    public var relevanceScore: Double? = null
+    public var subtitle: String? = null
 }
 
 /**
@@ -56,7 +56,7 @@ class MacNotificationScope internal constructor() {
  * @property duration How long the toast stays on screen before moving to the Action Center.
  */
 @NotificationDsl
-class WindowsNotificationScope internal constructor() {
-    var scenario: ToastScenario? = null
-    var duration: ToastDuration? = null
+public class WindowsNotificationScope internal constructor() {
+    public var scenario: ToastScenario? = null
+    public var duration: ToastDuration? = null
 }

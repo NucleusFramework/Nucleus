@@ -23,7 +23,7 @@ import java.nio.file.StandardWatchEventKinds
  * and provides a mechanism to notify the running instance when another instance attempts to start.
  */
 @Suppress("TooManyFunctions")
-object SingleInstanceManager {
+public object SingleInstanceManager {
     private const val TAG = "SingleInstanceChecker"
 
     /**
@@ -38,7 +38,7 @@ object SingleInstanceManager {
      *   Defaults to the system's temporary directory.
      * @property lockIdentifier The lock identifier that will be used for generating lock files names.
      */
-    data class Configuration(
+    public data class Configuration(
         val lockFilesDir: Path = Paths.get(System.getProperty("java.io.tmpdir")),
         val lockIdentifier: String = APP_IDENTIFIER,
     ) {
@@ -49,7 +49,7 @@ object SingleInstanceManager {
         val restoreRequestFilePath: Path = lockFilesDir.resolve(restoreRequestFileName)
     }
 
-    var configuration: Configuration = Configuration()
+    public var configuration: Configuration = Configuration()
         set(value) {
             check(fileChannel == null) { "Configuration can be changed only before first call to isSingleInstance()!" }
             field = value
@@ -64,7 +64,7 @@ object SingleInstanceManager {
      *
      * @param onRestoreRequest A function to be executed if a restore request is received from another instance.
      */
-    fun isSingleInstance(
+    public fun isSingleInstance(
         onRestoreFileCreated: (Path.() -> Unit)? = null,
         onRestoreRequest: Path.() -> Unit,
     ): Boolean {

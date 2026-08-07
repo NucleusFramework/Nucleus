@@ -6,17 +6,17 @@ import dev.nucleusframework.updater.provider.UpdateProvider
 import java.io.File
 import java.net.http.HttpClient
 
-class UpdaterConfig {
-    var currentVersion: String =
+public class UpdaterConfig {
+    public var currentVersion: String =
         NucleusApp.version
             ?: System.getProperty("jpackage.app-version")
             ?: ExecutableRuntime.markerVersion()
             ?: DEV_VERSION
-    lateinit var provider: UpdateProvider
-    var channel: String = "latest"
-    var allowDowngrade: Boolean = false
-    var allowPrerelease: Boolean = false
-    var executableType: String? = null
+    public lateinit var provider: UpdateProvider
+    public var channel: String = "latest"
+    public var allowDowngrade: Boolean = false
+    public var allowPrerelease: Boolean = false
+    public var executableType: String? = null
 
     /**
      * Custom HTTP client used for all update checks and downloads.
@@ -24,7 +24,7 @@ class UpdaterConfig {
      * Override with [dev.nucleusframework.nativehttp.NativeHttpClient.create] to
      * trust enterprise or user-installed certificates.
      */
-    var httpClient: HttpClient? = null
+    public var httpClient: HttpClient? = null
 
     /**
      * Whether an update may be assembled from the copy already on this machine, downloading only the
@@ -38,25 +38,25 @@ class UpdaterConfig {
      * the previous artifact. Other formats need the previous artifact in the update cache, which the
      * updater fills on every download, so they benefit from the second update on.
      */
-    var differentialDownload: Boolean = true
+    public var differentialDownload: Boolean = true
 
     /**
      * Directory holding the previously downloaded artifact and its block map, used as the basis for
      * the next differential download. Defaults to `%LOCALAPPDATA%/nucleus/updates/<appId>` on
      * Windows and `~/.cache/nucleus/updates/<appId>` elsewhere.
      */
-    var cacheDir: File? = null
+    public var cacheDir: File? = null
 
     internal fun resolvedAllowPrerelease(): Boolean = allowPrerelease || currentVersion.contains("-")
 
     internal fun isDevMode(): Boolean = currentVersion == DEV_VERSION
 
-    companion object {
-        const val DEV_VERSION = "0.0.0-dev"
+    public companion object {
+        public const val DEV_VERSION: String = "0.0.0-dev"
     }
 }
 
-fun NucleusUpdater(block: UpdaterConfig.() -> Unit): NucleusUpdater {
+public fun NucleusUpdater(block: UpdaterConfig.() -> Unit): NucleusUpdater {
     val config = UpdaterConfig().apply(block)
     return NucleusUpdater(config)
 }

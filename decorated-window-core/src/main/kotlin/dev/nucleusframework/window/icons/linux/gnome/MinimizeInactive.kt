@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.MinimizeInactive: ImageVector
+public val GnomeControlButtonsIcons.MinimizeInactive: ImageVector
     get() {
         if (_MinimizeInactive != null) {
             return _MinimizeInactive!!

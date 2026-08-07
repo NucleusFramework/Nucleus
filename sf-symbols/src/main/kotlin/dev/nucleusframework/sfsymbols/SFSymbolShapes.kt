@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Shapes (542 symbols). */
-enum class SFSymbolShapes(
+public enum class SFSymbolShapes(
     override val symbolName: String,
 ) : SFSymbol {
     APP("app"),

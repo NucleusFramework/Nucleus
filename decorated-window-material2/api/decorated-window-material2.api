@@ -1,0 +1,30 @@
+public final class dev/nucleusframework/window/material2/ComposableSingletons$MaterialDialogTitleBarKt {
+	public static final field INSTANCE Ldev/nucleusframework/window/material2/ComposableSingletons$MaterialDialogTitleBarKt;
+	public fun <init> ()V
+	public final fun getLambda$668256364$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
+}
+
+public final class dev/nucleusframework/window/material2/ComposableSingletons$MaterialTitleBarKt {
+	public static final field INSTANCE Ldev/nucleusframework/window/material2/ComposableSingletons$MaterialTitleBarKt;
+	public fun <init> ()V
+	public final fun getLambda$-590117222$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function2;
+	public final fun getLambda$-694589845$Nucleus_decorated_window_material2 ()Lkotlin/jvm/functions/Function4;
+}
+
+public final class dev/nucleusframework/window/material2/MaterialDecoratedDialogKt {
+	public static final fun MaterialDecoratedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/window/material2/MaterialDecoratedWindowKt {
+	public static final fun MaterialDecoratedWindow-CL87EUo (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/window/styling/TitleBarStyle;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun MaterialDecoratedWindow-ZKw2RcA (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/window/styling/TitleBarStyle;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/window/material2/MaterialDialogTitleBarKt {
+	public static final fun MaterialDialogTitleBar-FU0evQE (Ldev/nucleusframework/window/DecoratedDialogScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/window/material2/MaterialTitleBarKt {
+	public static final fun MaterialTitleBar-TgFrcIs (Ldev/nucleusframework/window/DecoratedWindowScope;Landroidx/compose/ui/Modifier;JLdev/nucleusframework/window/styling/TitleBarStyle;Ldev/nucleusframework/window/ControlButtonsDirection;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Landroidx/compose/runtime/Composer;II)V
+}
+

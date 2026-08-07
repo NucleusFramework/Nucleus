@@ -23,18 +23,18 @@ import java.util.logging.Logger
  *
  * Thread-safe singleton.
  */
-object WindowsThumbnailToolbar {
+public object WindowsThumbnailToolbar {
     private val logger = Logger.getLogger(WindowsThumbnailToolbar::class.java.simpleName)
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
-    var lastError: String? = null
+    public var lastError: String? = null
         private set
 
     // Cache HWND per AWT window so we can unregister even after the peer is disposed
     private val hwndCache = ConcurrentHashMap<Window, Long>()
 
     /** Whether the native library is loaded and functional on this platform. */
-    val isAvailable: Boolean get() = NativeWindowsTaskbarBridge.isLoaded
+    public val isAvailable: Boolean get() = NativeWindowsTaskbarBridge.isLoaded
 
     /**
      * Register thumbnail toolbar buttons for a window.
@@ -47,7 +47,7 @@ object WindowsThumbnailToolbar {
      * @param onClick Callback invoked on the window's owning thread when any button is clicked.
      * @return true if the buttons were added successfully.
      */
-    fun setButtons(
+    public fun setButtons(
         hwnd: Long,
         buttons: List<ThumbnailToolbarButton>,
         onClick: ThumbBarClickListener? = null,
@@ -82,7 +82,7 @@ object WindowsThumbnailToolbar {
     /**
      * Register thumbnail toolbar buttons for an AWT window. See [setButtons].
      */
-    fun setButtons(
+    public fun setButtons(
         window: Window,
         buttons: List<ThumbnailToolbarButton>,
         onClick: ThumbBarClickListener? = null,
@@ -105,7 +105,7 @@ object WindowsThumbnailToolbar {
      * @param buttons Updated button definitions (same IDs as originally registered).
      * @return true if the buttons were updated successfully.
      */
-    fun updateButtons(
+    public fun updateButtons(
         hwnd: Long,
         buttons: List<ThumbnailToolbarButton>,
     ): Boolean {
@@ -135,7 +135,7 @@ object WindowsThumbnailToolbar {
     /**
      * Update the state of previously registered buttons of an AWT window. See [updateButtons].
      */
-    fun updateButtons(
+    public fun updateButtons(
         window: Window,
         buttons: List<ThumbnailToolbarButton>,
     ): Boolean = updateButtons(hwndCache[window] ?: WindowsWindowHandle.of(window), buttons)
@@ -148,7 +148,7 @@ object WindowsThumbnailToolbar {
      * @param hwnd The `HWND` of the window.
      * @return true if cleanup succeeded.
      */
-    fun unregister(hwnd: Long): Boolean {
+    public fun unregister(hwnd: Long): Boolean {
         if (!isAvailable) {
             lastError = "Native library not available"
             return false
@@ -165,7 +165,7 @@ object WindowsThumbnailToolbar {
      * Unregister the thumbnail toolbar of an AWT window. Uses the `HWND` cached
      * at [setButtons] time, so it works even after the AWT peer is disposed.
      */
-    fun unregister(window: Window): Boolean {
+    public fun unregister(window: Window): Boolean {
         val hwnd = hwndCache.remove(window) ?: WindowsWindowHandle.of(window)
         return unregister(hwnd)
     }

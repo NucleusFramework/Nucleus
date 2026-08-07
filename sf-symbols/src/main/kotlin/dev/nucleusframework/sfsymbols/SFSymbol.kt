@@ -8,9 +8,9 @@ package dev.nucleusframework.sfsymbols
  *
  * @see <a href="https://developer.apple.com/sf-symbols/">Apple SF Symbols</a>
  */
-sealed interface SFSymbol {
+public sealed interface SFSymbol {
     /** The symbol name string passed to `NSImage.imageWithSystemSymbolName`. */
-    val symbolName: String
+    public val symbolName: String
 
     /**
      * A custom symbol name for symbols not covered by the predefined constants.
@@ -20,7 +20,7 @@ sealed interface SFSymbol {
      * ```
      */
     @JvmInline
-    value class Custom(
+    public value class Custom(
         override val symbolName: String,
     ) : SFSymbol
 }

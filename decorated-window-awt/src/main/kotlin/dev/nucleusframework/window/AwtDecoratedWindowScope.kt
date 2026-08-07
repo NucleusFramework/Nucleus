@@ -41,7 +41,7 @@ import java.awt.geom.RoundRectangle2D
  * to the backing [ComposeWindow]. Returned to consumers of the JBR/JNI backends.
  */
 @Stable
-interface AwtDecoratedWindowScope :
+public interface AwtDecoratedWindowScope :
     DecoratedWindowScope,
     FrameWindowScope {
     override val window: ComposeWindow
@@ -50,7 +50,7 @@ interface AwtDecoratedWindowScope :
 /**
  * Builds a [DecoratedWindowState] from a Compose Desktop [ComposeWindow].
  */
-fun DecoratedWindowState.Companion.of(window: ComposeWindow): DecoratedWindowState =
+public fun DecoratedWindowState.Companion.of(window: ComposeWindow): DecoratedWindowState =
     of(
         fullscreen = window.placement == WindowPlacement.Fullscreen,
         minimized = window.isMinimized,
@@ -65,7 +65,7 @@ fun DecoratedWindowState.Companion.of(window: ComposeWindow): DecoratedWindowSta
  */
 @Suppress("FunctionNaming", "MagicNumber", "CyclomaticComplexMethod")
 @Composable
-fun FrameWindowScope.DecoratedWindowBody(
+public fun FrameWindowScope.DecoratedWindowBody(
     title: String,
     icon: Painter?,
     undecorated: Boolean,

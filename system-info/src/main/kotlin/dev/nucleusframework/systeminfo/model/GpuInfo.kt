@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class GpuInfo(
+public data class GpuInfo(
     val name: String,
     val vendorId: Long,
     val deviceId: Long,

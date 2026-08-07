@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Status (273 symbols). */
-enum class SFSymbolStatus(
+public enum class SFSymbolStatus(
     override val symbolName: String,
 ) : SFSymbol {
     BADGE_PLUS_RADIOWAVES_FORWARD("badge.plus.radiowaves.forward"),

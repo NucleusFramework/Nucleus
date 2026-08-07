@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class ProductInfo(
+public data class ProductInfo(
     val name: String?,
     val family: String?,
     val serialNumber: String?,

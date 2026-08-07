@@ -6,7 +6,7 @@ package dev.nucleusframework.globalhotkey
  * @param nativeCode platform-specific virtual key code used by the native bridge.
  */
 @Suppress("MagicNumber")
-enum class MediaKey(
+public enum class MediaKey(
     internal val nativeCode: Int,
 ) {
     /** Play/Pause toggle. */

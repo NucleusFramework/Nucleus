@@ -1,6 +1,7 @@
 package dev.nucleusframework.window
 
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateOf
 
@@ -16,7 +17,7 @@ import androidx.compose.runtime.mutableStateOf
  * application-modal: all open windows (including ones created while the
  * dialog is up) render their input blocker.
  */
-val GlobalModalDialogCount: MutableState<Int> = mutableStateOf(0)
+public val GlobalModalDialogCount: MutableState<Int> = mutableStateOf(0)
 
 /**
  * Counts the number of modal dialogs currently open above a decorated window.
@@ -33,7 +34,7 @@ val GlobalModalDialogCount: MutableState<Int> = mutableStateOf(0)
  * the content underneath is not interactive while the dialog is visible.
  * The counter decrements on dialog dispose, restoring interactivity.
  */
-val LocalModalDialogCount =
+public val LocalModalDialogCount: ProvidableCompositionLocal<MutableState<Int>> =
     compositionLocalOf<MutableState<Int>> {
         GlobalModalDialogCount
     }

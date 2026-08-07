@@ -1,0 +1,727 @@
+public final class dev/nucleusframework/notification/windows/ActivationType : java/lang/Enum {
+	public static final field BACKGROUND Ldev/nucleusframework/notification/windows/ActivationType;
+	public static final field FOREGROUND Ldev/nucleusframework/notification/windows/ActivationType;
+	public static final field PROTOCOL Ldev/nucleusframework/notification/windows/ActivationType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ActivationType;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ActivationType;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveGroup : dev/nucleusframework/notification/windows/ToastVisualChild {
+	public fun <init> (Ljava/util/List;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;)Ldev/nucleusframework/notification/windows/AdaptiveGroup;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/AdaptiveGroup;Ljava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/AdaptiveGroup;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSubgroups ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveGroupBuilder {
+	public fun <init> ()V
+	public final fun subgroup (Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun subgroup$default (Ldev/nucleusframework/notification/windows/AdaptiveGroupBuilder;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveImage : dev/nucleusframework/notification/windows/AdaptiveSubgroupChild, dev/nucleusframework/notification/windows/ToastVisualChild {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ljava/lang/Boolean;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;)Ldev/nucleusframework/notification/windows/AdaptiveImage;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/AdaptiveImage;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/AdaptiveImage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddImageQuery ()Ljava/lang/Boolean;
+	public final fun getAlternateText ()Ljava/lang/String;
+	public final fun getHintAlign ()Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public final fun getHintCrop ()Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public final fun getHintRemoveMargin ()Ljava/lang/Boolean;
+	public final fun getSource ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveImageAlign : java/lang/Enum {
+	public static final field CENTER Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static final field LEFT Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static final field RIGHT Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static final field STRETCH Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveImageCrop : java/lang/Enum {
+	public static final field CIRCLE Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public static final field NONE Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveProgressBar : dev/nucleusframework/notification/windows/ToastVisualChild {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/Double;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveProgressBar;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/AdaptiveProgressBar;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/AdaptiveProgressBar;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStatus ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun getValue ()Ljava/lang/Double;
+	public final fun getValueBind ()Ljava/lang/String;
+	public final fun getValueStringOverride ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveSubgroup {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/lang/Integer;
+	public final fun component3 ()Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public final fun copy (Ljava/util/List;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;)Ldev/nucleusframework/notification/windows/AdaptiveSubgroup;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/AdaptiveSubgroup;Ljava/util/List;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/AdaptiveSubgroup;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChildren ()Ljava/util/List;
+	public final fun getHintTextStacking ()Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public final fun getHintWeight ()Ljava/lang/Integer;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveSubgroupBuilder {
+	public fun <init> (Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;)V
+	public final fun image (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public static synthetic fun image$default (Ldev/nucleusframework/notification/windows/AdaptiveSubgroupBuilder;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/Boolean;Ldev/nucleusframework/notification/windows/AdaptiveImageAlign;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun text (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;)V
+	public static synthetic fun text$default (Ldev/nucleusframework/notification/windows/AdaptiveSubgroupBuilder;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;ILjava/lang/Object;)V
+}
+
+public abstract interface class dev/nucleusframework/notification/windows/AdaptiveSubgroupChild {
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking : java/lang/Enum {
+	public static final field BOTTOM Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public static final field CENTER Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public static final field TOP Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AdaptiveSubgroupTextStacking;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveText : dev/nucleusframework/notification/windows/AdaptiveSubgroupChild, dev/nucleusframework/notification/windows/ToastVisualChild {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun component4 ()Ljava/lang/Integer;
+	public final fun component5 ()Ljava/lang/Integer;
+	public final fun component6 ()Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveText;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/AdaptiveText;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/AdaptiveText;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHintAlign ()Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public final fun getHintMaxLines ()Ljava/lang/Integer;
+	public final fun getHintMinLines ()Ljava/lang/Integer;
+	public final fun getHintStyle ()Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public final fun getHintWrap ()Ljava/lang/Boolean;
+	public final fun getLanguage ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveTextAlign : java/lang/Enum {
+	public static final field AUTO Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static final field CENTER Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static final field LEFT Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static final field RIGHT Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;
+}
+
+public final class dev/nucleusframework/notification/windows/AdaptiveTextStyle : java/lang/Enum {
+	public static final field BASE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field BASE_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field BODY Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field BODY_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field CAPTION Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field CAPTION_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field HEADER Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field HEADER_NUMERAL Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field HEADER_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field SUBHEADER Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field SUBHEADER_NUMERAL Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field SUBHEADER_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field SUBTITLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field SUBTITLE_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field TITLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field TITLE_NUMERAL Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static final field TITLE_SUBTLE Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;
+}
+
+public final class dev/nucleusframework/notification/windows/AfterActivationBehavior : java/lang/Enum {
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+	public static final field PENDING_UPDATE Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+}
+
+public final class dev/nucleusframework/notification/windows/DismissalReason : java/lang/Enum {
+	public static final field APPLICATION_HIDDEN Ldev/nucleusframework/notification/windows/DismissalReason;
+	public static final field Companion Ldev/nucleusframework/notification/windows/DismissalReason$Companion;
+	public static final field TIMED_OUT Ldev/nucleusframework/notification/windows/DismissalReason;
+	public static final field USER_CANCELED Ldev/nucleusframework/notification/windows/DismissalReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getRawValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/DismissalReason;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/DismissalReason;
+}
+
+public final class dev/nucleusframework/notification/windows/DismissalReason$Companion {
+	public final fun fromRawValue (I)Ldev/nucleusframework/notification/windows/DismissalReason;
+}
+
+public final class dev/nucleusframework/notification/windows/HistoryEntry {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/HistoryEntry;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/HistoryEntry;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/HistoryEntry;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getGroup ()Ljava/lang/String;
+	public final fun getTag ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ImagePlacement : java/lang/Enum {
+	public static final field APP_LOGO_OVERRIDE Ldev/nucleusframework/notification/windows/ImagePlacement;
+	public static final field HERO Ldev/nucleusframework/notification/windows/ImagePlacement;
+	public static final field INLINE Ldev/nucleusframework/notification/windows/ImagePlacement;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ImagePlacement;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ImagePlacement;
+}
+
+public final class dev/nucleusframework/notification/windows/SelectionBoxBuilder {
+	public fun <init> ()V
+	public final fun item (Ljava/lang/String;Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/notification/windows/ShortcutPolicy : java/lang/Enum {
+	public static final field IGNORE Ldev/nucleusframework/notification/windows/ShortcutPolicy;
+	public static final field REQUIRE_CREATE Ldev/nucleusframework/notification/windows/ShortcutPolicy;
+	public static final field REQUIRE_NO_CREATE Ldev/nucleusframework/notification/windows/ShortcutPolicy;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ShortcutPolicy;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ShortcutPolicy;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastActions {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/util/List;Ljava/util/List;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ljava/util/List;
+	public final fun component3 ()Ljava/util/List;
+	public final fun copy (Ljava/util/List;Ljava/util/List;Ljava/util/List;)Ldev/nucleusframework/notification/windows/ToastActions;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastActions;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastActions;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getButtons ()Ljava/util/List;
+	public final fun getContextMenuItems ()Ljava/util/List;
+	public final fun getInputs ()Ljava/util/List;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastActionsBuilder {
+	public fun <init> ()V
+	public final fun button (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;)V
+	public static synthetic fun button$default (Ldev/nucleusframework/notification/windows/ToastActionsBuilder;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun contextMenuItem (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)V
+	public static synthetic fun contextMenuItem$default (Ldev/nucleusframework/notification/windows/ToastActionsBuilder;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILjava/lang/Object;)V
+	public final fun selectionBox (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun selectionBox$default (Ldev/nucleusframework/notification/windows/ToastActionsBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun textBox (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun textBox$default (Ldev/nucleusframework/notification/windows/ToastActionsBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+}
+
+public final class dev/nucleusframework/notification/windows/ToastActivatedEventArgs {
+	public fun <init> (Ljava/lang/String;Ljava/util/Map;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/Map;
+	public final fun copy (Ljava/lang/String;Ljava/util/Map;)Ldev/nucleusframework/notification/windows/ToastActivatedEventArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastActivatedEventArgs;Ljava/lang/String;Ljava/util/Map;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastActivatedEventArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Ljava/lang/String;
+	public final fun getUserInputs ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastAudio {
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZ)V
+	public synthetic fun <init> (Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun copy (Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZ)Ldev/nucleusframework/notification/windows/ToastAudio;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastAudio;Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastAudio;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomSource ()Ljava/lang/String;
+	public final fun getLoop ()Z
+	public final fun getSilent ()Z
+	public final fun getSource ()Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastAudioSource : java/lang/Enum {
+	public static final field ALARM10 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM2 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM3 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM4 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM5 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM6 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM7 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM8 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM9 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field ALARM_DEFAULT Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL10 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL2 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL3 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL4 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL5 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL6 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL7 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL8 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL9 Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field CALL_DEFAULT Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field IM Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field MAIL Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field REMINDER Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static final field SMS Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getUri ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastAudioSource;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ToastAudioSource;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastBindingGeneric {
+	public fun <init> ()V
+	public fun <init> (Ljava/util/List;Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;)V
+	public synthetic fun <init> (Ljava/util/List;Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/util/List;
+	public final fun component2 ()Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;
+	public final fun component3 ()Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;
+	public final fun component4 ()Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;
+	public final fun copy (Ljava/util/List;Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;)Ldev/nucleusframework/notification/windows/ToastBindingGeneric;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastBindingGeneric;Ljava/util/List;Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastBindingGeneric;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAppLogoOverride ()Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;
+	public final fun getAttribution ()Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;
+	public final fun getChildren ()Ljava/util/List;
+	public final fun getHeroImage ()Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastButton {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+	public final fun component7 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastButton;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastButton;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AfterActivationBehavior;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastButton;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActivationType ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun getAfterActivationBehavior ()Ldev/nucleusframework/notification/windows/AfterActivationBehavior;
+	public final fun getArguments ()Ljava/lang/String;
+	public final fun getContent ()Ljava/lang/String;
+	public final fun getImageUri ()Ljava/lang/String;
+	public final fun getInputId ()Ljava/lang/String;
+	public final fun getTooltipText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastButtonDismiss {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastButtonDismiss;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastButtonDismiss;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastButtonDismiss;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomContent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastButtonSnooze {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastButtonSnooze;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastButtonSnooze;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastButtonSnooze;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCustomContent ()Ljava/lang/String;
+	public final fun getSelectionBoxId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastContent {
+	public fun <init> (Ldev/nucleusframework/notification/windows/ToastVisual;Ldev/nucleusframework/notification/windows/ToastActions;Ldev/nucleusframework/notification/windows/ToastAudio;Ldev/nucleusframework/notification/windows/ToastHeader;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ldev/nucleusframework/notification/windows/ToastScenario;Ldev/nucleusframework/notification/windows/ToastDuration;Ljava/lang/String;)V
+	public synthetic fun <init> (Ldev/nucleusframework/notification/windows/ToastVisual;Ldev/nucleusframework/notification/windows/ToastActions;Ldev/nucleusframework/notification/windows/ToastAudio;Ldev/nucleusframework/notification/windows/ToastHeader;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ldev/nucleusframework/notification/windows/ToastScenario;Ldev/nucleusframework/notification/windows/ToastDuration;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/windows/ToastVisual;
+	public final fun component2 ()Ldev/nucleusframework/notification/windows/ToastActions;
+	public final fun component3 ()Ldev/nucleusframework/notification/windows/ToastAudio;
+	public final fun component4 ()Ldev/nucleusframework/notification/windows/ToastHeader;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun component6 ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun component7 ()Ldev/nucleusframework/notification/windows/ToastScenario;
+	public final fun component8 ()Ldev/nucleusframework/notification/windows/ToastDuration;
+	public final fun component9 ()Ljava/lang/String;
+	public final fun copy (Ldev/nucleusframework/notification/windows/ToastVisual;Ldev/nucleusframework/notification/windows/ToastActions;Ldev/nucleusframework/notification/windows/ToastAudio;Ldev/nucleusframework/notification/windows/ToastHeader;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ldev/nucleusframework/notification/windows/ToastScenario;Ldev/nucleusframework/notification/windows/ToastDuration;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastContent;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastContent;Ldev/nucleusframework/notification/windows/ToastVisual;Ldev/nucleusframework/notification/windows/ToastActions;Ldev/nucleusframework/notification/windows/ToastAudio;Ldev/nucleusframework/notification/windows/ToastHeader;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;Ldev/nucleusframework/notification/windows/ToastScenario;Ldev/nucleusframework/notification/windows/ToastDuration;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastContent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActions ()Ldev/nucleusframework/notification/windows/ToastActions;
+	public final fun getActivationType ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun getAudio ()Ldev/nucleusframework/notification/windows/ToastAudio;
+	public final fun getDisplayTimestamp ()Ljava/lang/String;
+	public final fun getDuration ()Ldev/nucleusframework/notification/windows/ToastDuration;
+	public final fun getHeader ()Ldev/nucleusframework/notification/windows/ToastHeader;
+	public final fun getLaunch ()Ljava/lang/String;
+	public final fun getScenario ()Ldev/nucleusframework/notification/windows/ToastScenario;
+	public final fun getVisual ()Ldev/nucleusframework/notification/windows/ToastVisual;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastContentBuilder {
+	public fun <init> ()V
+	public final fun actions (Lkotlin/jvm/functions/Function1;)V
+	public final fun audio (Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZ)V
+	public static synthetic fun audio$default (Ldev/nucleusframework/notification/windows/ToastContentBuilder;Ldev/nucleusframework/notification/windows/ToastAudioSource;Ljava/lang/String;ZZILjava/lang/Object;)V
+	public final fun getActivationType ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun getDisplayTimestamp ()Ljava/lang/String;
+	public final fun getDuration ()Ldev/nucleusframework/notification/windows/ToastDuration;
+	public final fun getLaunch ()Ljava/lang/String;
+	public final fun getScenario ()Ldev/nucleusframework/notification/windows/ToastScenario;
+	public final fun header (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)V
+	public static synthetic fun header$default (Ldev/nucleusframework/notification/windows/ToastContentBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILjava/lang/Object;)V
+	public final fun setActivationType (Ldev/nucleusframework/notification/windows/ActivationType;)V
+	public final fun setDisplayTimestamp (Ljava/lang/String;)V
+	public final fun setDuration (Ldev/nucleusframework/notification/windows/ToastDuration;)V
+	public final fun setLaunch (Ljava/lang/String;)V
+	public final fun setScenario (Ldev/nucleusframework/notification/windows/ToastScenario;)V
+	public final fun silentAudio ()V
+	public final fun visual (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/notification/windows/ToastContentDslKt {
+	public static final fun toast (Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/notification/windows/ToastContent;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastContextMenuItem {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)Ldev/nucleusframework/notification/windows/ToastContextMenuItem;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastContextMenuItem;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastContextMenuItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActivationType ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun getArguments ()Ljava/lang/String;
+	public final fun getContent ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastDismissedEventArgs {
+	public fun <init> (Ldev/nucleusframework/notification/windows/DismissalReason;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/windows/DismissalReason;
+	public final fun copy (Ldev/nucleusframework/notification/windows/DismissalReason;)Ldev/nucleusframework/notification/windows/ToastDismissedEventArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastDismissedEventArgs;Ldev/nucleusframework/notification/windows/DismissalReason;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastDismissedEventArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ldev/nucleusframework/notification/windows/DismissalReason;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface annotation class dev/nucleusframework/notification/windows/ToastDsl : java/lang/annotation/Annotation {
+}
+
+public final class dev/nucleusframework/notification/windows/ToastDuration : java/lang/Enum {
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/ToastDuration;
+	public static final field LONG Ldev/nucleusframework/notification/windows/ToastDuration;
+	public static final field SHORT Ldev/nucleusframework/notification/windows/ToastDuration;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastDuration;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ToastDuration;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastFailedEventArgs {
+	public fun <init> (I)V
+	public final fun component1 ()I
+	public final fun copy (I)Ldev/nucleusframework/notification/windows/ToastFailedEventArgs;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastFailedEventArgs;IILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastFailedEventArgs;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getErrorCode ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastGenericAppLogo {
+	public fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/Boolean;
+	public final fun copy (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;)Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastGenericAppLogo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddImageQuery ()Ljava/lang/Boolean;
+	public final fun getAlternateText ()Ljava/lang/String;
+	public final fun getHintCrop ()Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;
+	public final fun getSource ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastGenericAttributionText {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastGenericAttributionText;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getLanguage ()Ljava/lang/String;
+	public final fun getText ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastGenericHeroImage {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/Boolean;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;)Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastGenericHeroImage;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAddImageQuery ()Ljava/lang/Boolean;
+	public final fun getAlternateText ()Ljava/lang/String;
+	public final fun getSource ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastHeader {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;)Ldev/nucleusframework/notification/windows/ToastHeader;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastHeader;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ActivationType;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastHeader;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActivationType ()Ldev/nucleusframework/notification/windows/ActivationType;
+	public final fun getArguments ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/notification/windows/ToastInput {
+	public abstract fun getId ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastNotificationData {
+	public fun <init> ()V
+	public fun <init> (ILjava/util/Map;)V
+	public synthetic fun <init> (ILjava/util/Map;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/util/Map;
+	public final fun copy (ILjava/util/Map;)Ldev/nucleusframework/notification/windows/ToastNotificationData;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastNotificationData;ILjava/util/Map;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastNotificationData;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getSequenceNumber ()I
+	public final fun getValues ()Ljava/util/Map;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/notification/windows/ToastNotificationListener {
+	public abstract fun onActivated (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/Map;)V
+	public abstract fun onDismissed (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/DismissalReason;)V
+	public abstract fun onFailed (Ljava/lang/String;Ljava/lang/String;I)V
+}
+
+public final class dev/nucleusframework/notification/windows/ToastScenario : java/lang/Enum {
+	public static final field ALARM Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static final field DEFAULT Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static final field INCOMING_CALL Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static final field REMINDER Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static final field URGENT Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getXmlValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastScenario;
+	public static fun values ()[Ldev/nucleusframework/notification/windows/ToastScenario;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastSelectionBox : dev/nucleusframework/notification/windows/ToastInput {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)Ldev/nucleusframework/notification/windows/ToastSelectionBox;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastSelectionBox;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastSelectionBox;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultSelectionBoxItemId ()Ljava/lang/String;
+	public fun getId ()Ljava/lang/String;
+	public final fun getItems ()Ljava/util/List;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastSelectionBoxItem {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastSelectionBoxItem;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastSelectionBoxItem;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastSelectionBoxItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getContent ()Ljava/lang/String;
+	public final fun getId ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastTextBox : dev/nucleusframework/notification/windows/ToastInput {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)Ldev/nucleusframework/notification/windows/ToastTextBox;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastTextBox;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastTextBox;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDefaultInput ()Ljava/lang/String;
+	public fun getId ()Ljava/lang/String;
+	public final fun getPlaceholderContent ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastVisual {
+	public fun <init> (Ldev/nucleusframework/notification/windows/ToastBindingGeneric;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/windows/ToastBindingGeneric;
+	public final fun copy (Ldev/nucleusframework/notification/windows/ToastBindingGeneric;)Ldev/nucleusframework/notification/windows/ToastVisual;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/windows/ToastVisual;Ldev/nucleusframework/notification/windows/ToastBindingGeneric;ILjava/lang/Object;)Ldev/nucleusframework/notification/windows/ToastVisual;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBinding ()Ldev/nucleusframework/notification/windows/ToastBindingGeneric;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/windows/ToastVisualBuilder {
+	public fun <init> ()V
+	public final fun appLogo (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public static synthetic fun appLogo$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun attribution (Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun attribution$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun group (Lkotlin/jvm/functions/Function1;)V
+	public final fun heroImage (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public static synthetic fun heroImage$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun image (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;)V
+	public static synthetic fun image$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveImageCrop;Ljava/lang/String;Ljava/lang/Boolean;ILjava/lang/Object;)V
+	public final fun progressBar (Ljava/lang/String;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;)V
+	public static synthetic fun progressBar$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Double;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun text (Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;)V
+	public static synthetic fun text$default (Ldev/nucleusframework/notification/windows/ToastVisualBuilder;Ljava/lang/String;Ldev/nucleusframework/notification/windows/AdaptiveTextStyle;Ljava/lang/Boolean;Ljava/lang/Integer;Ljava/lang/Integer;Ldev/nucleusframework/notification/windows/AdaptiveTextAlign;Ljava/lang/String;ILjava/lang/Object;)V
+}
+
+public abstract interface class dev/nucleusframework/notification/windows/ToastVisualChild {
+}
+
+public final class dev/nucleusframework/notification/windows/WindowsNotificationCenter {
+	public static final field INSTANCE Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;
+	public final fun addListener (Ldev/nucleusframework/notification/windows/ToastNotificationListener;)V
+	public final fun clearAll ()V
+	public final fun getHistory (Lkotlin/jvm/functions/Function2;)V
+	public final fun initialize (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ShortcutPolicy;)Z
+	public static synthetic fun initialize$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ShortcutPolicy;ILjava/lang/Object;)Z
+	public final fun isAvailable ()Z
+	public final fun remove (Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun remove$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun removeGroup (Ljava/lang/String;)V
+	public final fun removeListener (Ldev/nucleusframework/notification/windows/ToastNotificationListener;)V
+	public final fun show (Ldev/nucleusframework/notification/windows/ToastContent;Ljava/lang/String;Ljava/lang/String;ZJZLdev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun show$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ldev/nucleusframework/notification/windows/ToastContent;Ljava/lang/String;Ljava/lang/String;ZJZLdev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun showFromXml (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJZLdev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun showFromXml$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ZJZLdev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun showSimple (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun showSimple$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+	public final fun uninitialize ()V
+	public final fun update (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;)V
+	public static synthetic fun update$default (Ldev/nucleusframework/notification/windows/WindowsNotificationCenter;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/notification/windows/ToastNotificationData;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+

@@ -12,8 +12,8 @@ import androidx.compose.ui.graphics.painter.Painter
  * backend-specific window handle.
  */
 @Stable
-interface DecoratedDialogScope {
-    val state: DecoratedDialogState
+public interface DecoratedDialogScope {
+    public val state: DecoratedDialogState
 }
 
 /**
@@ -22,15 +22,15 @@ interface DecoratedDialogScope {
  */
 @Immutable
 @JvmInline
-value class DecoratedDialogState(
-    val state: ULong,
+public value class DecoratedDialogState(
+    public val state: ULong,
 ) {
-    val isActive: Boolean
+    public val isActive: Boolean
         get() = state and Active != 0UL
 
-    fun copy(active: Boolean = isActive): DecoratedDialogState = of(active = active)
+    public fun copy(active: Boolean = isActive): DecoratedDialogState = of(active = active)
 
-    fun toDecoratedWindowState(): DecoratedWindowState =
+    public fun toDecoratedWindowState(): DecoratedWindowState =
         DecoratedWindowState.of(
             fullscreen = false,
             minimized = false,
@@ -40,22 +40,22 @@ value class DecoratedDialogState(
 
     override fun toString(): String = "${javaClass.simpleName}(isActive=$isActive)"
 
-    companion object {
-        val Active: ULong = 1UL shl 0
+    public companion object {
+        public val Active: ULong = 1UL shl 0
 
-        fun of(active: Boolean = true): DecoratedDialogState =
+        public fun of(active: Boolean = true): DecoratedDialogState =
             DecoratedDialogState(
                 if (active) Active else 0UL,
             )
     }
 }
 
-data class DialogTitleBarInfo(
+public data class DialogTitleBarInfo(
     val title: String,
     val icon: Painter?,
 )
 
-val LocalDialogTitleBarInfo: ProvidableCompositionLocal<DialogTitleBarInfo> =
+public val LocalDialogTitleBarInfo: ProvidableCompositionLocal<DialogTitleBarInfo> =
     compositionLocalOf {
         error("LocalDialogTitleBarInfo not provided, DialogTitleBar must be used in DecoratedDialog")
     }

@@ -11,7 +11,7 @@ import dev.nucleusframework.window.LocalIsDarkTheme
 import dev.nucleusframework.window.icons.linux.gnome.*
 import dev.nucleusframework.window.icons.linux.kde.*
 
-data class LinuxTitleBarIconSet(
+public data class LinuxTitleBarIconSet(
     val close: Painter,
     val closeHover: Painter,
     val closePressed: Painter,
@@ -33,7 +33,7 @@ data class LinuxTitleBarIconSet(
 )
 
 @Composable
-fun linuxTitleBarIcons(
+public fun linuxTitleBarIcons(
     de: LinuxDesktopEnvironment = LinuxDesktopEnvironment.Current,
     isDark: Boolean = LocalIsDarkTheme.current,
 ): LinuxTitleBarIconSet {

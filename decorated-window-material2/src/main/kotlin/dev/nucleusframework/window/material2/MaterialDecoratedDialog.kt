@@ -12,7 +12,7 @@ import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun MaterialDecoratedDialog(
+public fun MaterialDecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,

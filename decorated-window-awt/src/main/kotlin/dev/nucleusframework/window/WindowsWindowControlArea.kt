@@ -52,7 +52,7 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
 
 @Suppress("FunctionNaming")
 @Composable
-fun TitleBarScope.WindowsWindowControlArea(
+public fun TitleBarScope.WindowsWindowControlArea(
     window: java.awt.Window,
     state: DecoratedWindowState,
     style: TitleBarStyle,
@@ -128,7 +128,7 @@ fun TitleBarScope.WindowsWindowControlArea(
  */
 @Suppress("FunctionNaming")
 @Composable
-fun TitleBarScope.WindowsDialogCloseButton(
+public fun TitleBarScope.WindowsDialogCloseButton(
     window: java.awt.Window,
     state: DecoratedDialogState,
     style: TitleBarStyle,

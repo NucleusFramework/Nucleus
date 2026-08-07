@@ -35,7 +35,7 @@ private val isKde = LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.K
 
 @Suppress("FunctionNaming")
 @Composable
-fun TitleBarScope.WindowControlArea(
+public fun TitleBarScope.WindowControlArea(
     window: java.awt.Window,
     state: DecoratedWindowState,
     style: TitleBarStyle,
@@ -136,7 +136,7 @@ fun TitleBarScope.WindowControlArea(
  */
 @Suppress("FunctionNaming")
 @Composable
-fun TitleBarScope.DialogCloseButton(
+public fun TitleBarScope.DialogCloseButton(
     window: java.awt.Window,
     state: DecoratedDialogState,
     style: TitleBarStyle,

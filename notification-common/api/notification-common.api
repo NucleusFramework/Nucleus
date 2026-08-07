@@ -1,0 +1,113 @@
+public final class dev/nucleusframework/notification/common/DismissReason : java/lang/Enum {
+	public static final field APPLICATION Ldev/nucleusframework/notification/common/DismissReason;
+	public static final field TIMED_OUT Ldev/nucleusframework/notification/common/DismissReason;
+	public static final field UNKNOWN Ldev/nucleusframework/notification/common/DismissReason;
+	public static final field USER_DISMISSED Ldev/nucleusframework/notification/common/DismissReason;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/notification/common/DismissReason;
+	public static fun values ()[Ldev/nucleusframework/notification/common/DismissReason;
+}
+
+public final class dev/nucleusframework/notification/common/LinuxNotificationScope {
+	public final fun getCategory ()Ljava/lang/String;
+	public final fun getExpireTimeout ()Ljava/lang/Integer;
+	public final fun getResident ()Ljava/lang/Boolean;
+	public final fun getTransient ()Ljava/lang/Boolean;
+	public final fun getUrgency ()Ldev/nucleusframework/notification/linux/Urgency;
+	public final fun setCategory (Ljava/lang/String;)V
+	public final fun setExpireTimeout (Ljava/lang/Integer;)V
+	public final fun setResident (Ljava/lang/Boolean;)V
+	public final fun setTransient (Ljava/lang/Boolean;)V
+	public final fun setUrgency (Ldev/nucleusframework/notification/linux/Urgency;)V
+}
+
+public final class dev/nucleusframework/notification/common/MacNotificationScope {
+	public final fun getInterruptionLevel ()Ldev/nucleusframework/notification/InterruptionLevel;
+	public final fun getRelevanceScore ()Ljava/lang/Double;
+	public final fun getSubtitle ()Ljava/lang/String;
+	public final fun setInterruptionLevel (Ldev/nucleusframework/notification/InterruptionLevel;)V
+	public final fun setRelevanceScore (Ljava/lang/Double;)V
+	public final fun setSubtitle (Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/notification/common/Notification {
+	public final fun getButtons ()Ljava/util/List;
+	public final fun getLargeImage ()Ljava/lang/String;
+	public final fun getMessage ()Ljava/lang/String;
+	public final fun getOnActivated ()Lkotlin/jvm/functions/Function0;
+	public final fun getOnDismissed ()Lkotlin/jvm/functions/Function1;
+	public final fun getOnFailed ()Lkotlin/jvm/functions/Function0;
+	public final fun getSmallIcon ()Ljava/lang/String;
+	public final fun getTitle ()Ljava/lang/String;
+	public final fun send ()Ldev/nucleusframework/notification/common/NotificationResult;
+}
+
+public final class dev/nucleusframework/notification/common/NotificationBuilder {
+	public final fun button (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+	public final fun linux (Lkotlin/jvm/functions/Function1;)V
+	public final fun macos (Lkotlin/jvm/functions/Function1;)V
+	public final fun windows (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/notification/common/NotificationButton {
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Lkotlin/jvm/functions/Function0;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function0;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface annotation class dev/nucleusframework/notification/common/NotificationDsl : java/lang/annotation/Annotation {
+}
+
+public final class dev/nucleusframework/notification/common/NotificationHandle {
+	public final fun dismiss ()V
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/common/NotificationKt {
+	public static final fun notification (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/notification/common/Notification;
+	public static synthetic fun notification$default (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function1;ILjava/lang/Object;)Ldev/nucleusframework/notification/common/Notification;
+}
+
+public final class dev/nucleusframework/notification/common/NotificationManager {
+	public static final field INSTANCE Ldev/nucleusframework/notification/common/NotificationManager;
+	public final fun initialize ()V
+	public final fun isAvailable ()Z
+	public final fun send (Ldev/nucleusframework/notification/common/Notification;)Ldev/nucleusframework/notification/common/NotificationResult;
+}
+
+public abstract class dev/nucleusframework/notification/common/NotificationResult {
+}
+
+public final class dev/nucleusframework/notification/common/NotificationResult$Failure : dev/nucleusframework/notification/common/NotificationResult {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/notification/common/NotificationResult$Failure;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/common/NotificationResult$Failure;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/notification/common/NotificationResult$Failure;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getReason ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/common/NotificationResult$Success : dev/nucleusframework/notification/common/NotificationResult {
+	public fun <init> (Ldev/nucleusframework/notification/common/NotificationHandle;)V
+	public final fun component1 ()Ldev/nucleusframework/notification/common/NotificationHandle;
+	public final fun copy (Ldev/nucleusframework/notification/common/NotificationHandle;)Ldev/nucleusframework/notification/common/NotificationResult$Success;
+	public static synthetic fun copy$default (Ldev/nucleusframework/notification/common/NotificationResult$Success;Ldev/nucleusframework/notification/common/NotificationHandle;ILjava/lang/Object;)Ldev/nucleusframework/notification/common/NotificationResult$Success;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHandle ()Ldev/nucleusframework/notification/common/NotificationHandle;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/notification/common/WindowsNotificationScope {
+	public final fun getDuration ()Ldev/nucleusframework/notification/windows/ToastDuration;
+	public final fun getScenario ()Ldev/nucleusframework/notification/windows/ToastScenario;
+	public final fun setDuration (Ldev/nucleusframework/notification/windows/ToastDuration;)V
+	public final fun setScenario (Ldev/nucleusframework/notification/windows/ToastScenario;)V
+}
+
