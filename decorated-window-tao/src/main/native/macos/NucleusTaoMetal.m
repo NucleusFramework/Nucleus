@@ -22,6 +22,7 @@
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
+#include <math.h>
 #import <jni.h>
 
 // Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
@@ -293,6 +294,13 @@ typedef struct {
     // (see willExitFS / #327). Zero until the first fullscreen entry.
     double windowed_w_points;
     double windowed_h_points;
+    // Previous NSWindow frame origin (bottom-left screen coords), used by
+    // nativeResize to pick a live-resize contentsGravity that anchors the
+    // stale drawable to the window's *fixed* corner instead of letting
+    // Core Animation rubber-band it around the layer centre. NAN until the
+    // first resize.
+    double prev_origin_x;
+    double prev_origin_y;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -1143,6 +1151,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttach(
     att->device = device;
     att->queue  = [device newCommandQueue];
     att->view   = view;
+    att->prev_origin_x = NAN;
+    att->prev_origin_y = NAN;
 
     // Install fullscreen observer so the CAMetalLayer wiring survives an
     // AppKit toggleFullScreen: transition. We hang the attachment pointer
@@ -1225,6 +1235,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttachOverlay(
     att->device = device;
     att->queue  = [device newCommandQueue];
     att->view   = view;
+    att->prev_origin_x = NAN;
+    att->prev_origin_y = NAN;
     return (jlong)(uintptr_t)att;
 }
 
@@ -1991,6 +2003,43 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
+        // During an interactive live-resize the present always lags the
+        // bounds by one frame (the Resized event is queued and processed on
+        // a later runloop turn than the AppKit layout commit). With the
+        // default `kCAGravityResize`, Core Animation stretches the stale
+        // last drawable to the new — oscillating — bounds, which reads as
+        // the whole window trembling when the pointer circles a corner.
+        // Instead anchor the stale drawable to the window's *fixed* corner
+        // for the duration of the drag so it stops rubber-banding around
+        // the layer centre; the render thread still presents crisp frames
+        // at the new size, and `kCAGravityResize` is restored on drag end.
+        // The fixed corner is inferred from the NSWindow frame origin delta
+        // (macOS reports the origin at the bottom-left corner):
+        //   origin.x unchanged -> left edge fixed   (else right edge fixed)
+        //   origin.y unchanged -> bottom edge fixed (else top edge fixed)
+        NSString *gravity = kCAGravityResize;
+        NSWindow *win = att->view.window;
+        if (att->view.inLiveResize && win != nil &&
+            !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
+            NSRect fr = win.frame;
+            BOOL leftFixed   = fabs(fr.origin.x - att->prev_origin_x) < 0.5;
+            BOOL bottomFixed = fabs(fr.origin.y - att->prev_origin_y) < 0.5;
+            if (leftFixed) {
+                gravity = bottomFixed ? kCAGravityBottomLeft : kCAGravityTopLeft;
+            } else {
+                gravity = bottomFixed ? kCAGravityBottomRight : kCAGravityTopRight;
+            }
+        } else if (att->view.inLiveResize) {
+            // First tick of the drag: no prior origin to diff against. Pin
+            // top-left — the common bottom/right case — and let the next
+            // tick self-correct to the proper fixed corner.
+            gravity = kCAGravityTopLeft;
+        }
+        att->layer.contentsGravity = gravity;
+        if (win != nil) {
+            att->prev_origin_x = win.frame.origin.x;
+            att->prev_origin_y = win.frame.origin.y;
+        }
         [CATransaction commit];
     };
     if ([NSThread isMainThread]) resize();
