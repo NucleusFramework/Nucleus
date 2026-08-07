@@ -3,8 +3,12 @@ package dev.nucleusframework.application.internal
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import dev.nucleusframework.application.DefaultNucleusDialogHost
+import dev.nucleusframework.application.DefaultNucleusWindowHost
 import dev.nucleusframework.application.LocalNucleusApplicationScope
 import dev.nucleusframework.application.LocalNucleusBackend
+import dev.nucleusframework.application.LocalNucleusDialogHost
+import dev.nucleusframework.application.LocalNucleusWindowHost
 import dev.nucleusframework.application.NucleusApplicationScope
 import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.ProvideNucleusSystemTheme
@@ -35,6 +39,8 @@ internal object TaoLauncher {
                 CompositionLocalProvider(
                     LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusApplicationScope provides scope,
+                    LocalNucleusWindowHost provides DefaultNucleusWindowHost,
+                    LocalNucleusDialogHost provides DefaultNucleusDialogHost,
                 ) {
                     // Apply the Dock-follows-windows opt-in on the Tao main thread
                     // (this composition) so a tray-only app drops out of the Dock at

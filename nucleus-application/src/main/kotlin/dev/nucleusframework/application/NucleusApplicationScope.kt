@@ -76,9 +76,16 @@ sealed interface NucleusApplicationScope : AwtApplicationScope {
  * For plain [DecoratedWindow] / [DecoratedDialog] the receiver-less overloads
  * already read this local, so no `with` is needed.
  *
+ * Libraries and navigation that must open a secondary window or dialog without
+ * hard-coding Material/Jewel chrome should use [LocalNucleusWindowHost] /
+ * [HostedWindow] and [LocalNucleusDialogHost] / [HostedDialog] instead of
+ * Compose Desktop's AWT `Window` / `Dialog` (unsupported on Tao). Apps may
+ * override either host to inject themed wrappers.
+ *
  * Provided by [nucleusApplication] on both backends. On Tao each window owns
  * its own `ComposeScene`, but the whole parent local context is bridged into
- * it, so the scope stays reachable from nested window content too.
+ * it, so the scope (and the window/dialog hosts) stay reachable from nested
+ * window content too.
  */
 val LocalNucleusApplicationScope =
     staticCompositionLocalOf<NucleusApplicationScope> {
