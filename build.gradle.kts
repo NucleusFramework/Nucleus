@@ -259,7 +259,7 @@ tasks.register<Exec>("publishDevToMavenLocal") {
 tasks.register("preMerge") {
     description =
         "Runs verification for every published library module plus the flagship demo " +
-            "and the included Gradle plugin. New library modules are picked up automatically."
+        "and the included Gradle plugin. New library modules are picked up automatically."
 
     // Every non-example subproject: compile + unit tests + detekt/ktlint + apiCheck
     // (BCV wires apiCheck into each library module's `check`). Provider so the

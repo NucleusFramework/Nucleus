@@ -1,6 +1,7 @@
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
@@ -44,9 +45,9 @@ import androidx.compose.ui.window.rememberWindowState
  * Parameter surface matches [DecoratedWindow] (including Tao-only knobs such
  * as [popupFor], [nativePopupLayers], [hiddenFromDock]).
  */
-fun interface NucleusWindowHost {
+public fun interface NucleusWindowHost {
     @Composable
-    fun Window(
+    public fun Window(
         onCloseRequest: () -> Unit,
         state: WindowState,
         visible: Boolean,
@@ -76,9 +77,9 @@ fun interface NucleusWindowHost {
  *
  * Parameter surface matches [DecoratedDialog].
  */
-fun interface NucleusDialogHost {
+public fun interface NucleusDialogHost {
     @Composable
-    fun Dialog(
+    public fun Dialog(
         onCloseRequest: () -> Unit,
         state: DialogState,
         visible: Boolean,
@@ -100,8 +101,8 @@ fun interface NucleusDialogHost {
  * Material / Jewel / app chrome without teaching every call site about the
  * concrete window type.
  */
-val LocalNucleusWindowHost =
-    staticCompositionLocalOf<NucleusWindowHost> {
+public val LocalNucleusWindowHost: ProvidableCompositionLocal<NucleusWindowHost> =
+    staticCompositionLocalOf {
         error(
             "LocalNucleusWindowHost not provided — use it inside a nucleusApplication { … } block, " +
                 "or call DecoratedWindow { … } directly.",
@@ -113,8 +114,8 @@ val LocalNucleusWindowHost =
  *
  * Default: [DefaultNucleusDialogHost] ([DecoratedDialog]).
  */
-val LocalNucleusDialogHost =
-    staticCompositionLocalOf<NucleusDialogHost> {
+public val LocalNucleusDialogHost: ProvidableCompositionLocal<NucleusDialogHost> =
+    staticCompositionLocalOf {
         error(
             "LocalNucleusDialogHost not provided — use it inside a nucleusApplication { … } block, " +
                 "or call DecoratedDialog { … } directly.",
@@ -127,7 +128,7 @@ val LocalNucleusDialogHost =
  * [dev.nucleusframework.window.TitleBar] (or a Material/Jewel title bar)
  * inside [content], same as a top-level [DecoratedWindow].
  */
-object DefaultNucleusWindowHost : NucleusWindowHost {
+public object DefaultNucleusWindowHost : NucleusWindowHost {
     @Composable
     override fun Window(
         onCloseRequest: () -> Unit,
@@ -174,7 +175,7 @@ object DefaultNucleusWindowHost : NucleusWindowHost {
  * Default [NucleusDialogHost]: opens a backend-agnostic [DecoratedDialog].
  * Does not draw a title bar — same contract as [DefaultNucleusWindowHost].
  */
-object DefaultNucleusDialogHost : NucleusDialogHost {
+public object DefaultNucleusDialogHost : NucleusDialogHost {
     @Composable
     override fun Dialog(
         onCloseRequest: () -> Unit,
@@ -216,7 +217,7 @@ object DefaultNucleusDialogHost : NucleusDialogHost {
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun HostedWindow(
+public fun HostedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
     visible: Boolean = true,
@@ -266,7 +267,7 @@ fun HostedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun HostedDialog(
+public fun HostedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
     visible: Boolean = true,
