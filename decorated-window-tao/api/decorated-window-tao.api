@@ -118,7 +118,9 @@ public final class dev/nucleusframework/window/WindowDoubleClickAction : java/la
 
 public final class dev/nucleusframework/window/WindowDragAreaKt {
 	public static final fun noWindowDrag (Landroidx/compose/ui/Modifier;)Landroidx/compose/ui/Modifier;
+	public static final fun windowDragArea (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/window/WindowDoubleClickAction;)Landroidx/compose/ui/Modifier;
 	public static final fun windowDragArea (Landroidx/compose/ui/Modifier;ZLdev/nucleusframework/window/WindowDoubleClickAction;)Landroidx/compose/ui/Modifier;
+	public static synthetic fun windowDragArea$default (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/window/WindowDoubleClickAction;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
 	public static synthetic fun windowDragArea$default (Landroidx/compose/ui/Modifier;ZLdev/nucleusframework/window/WindowDoubleClickAction;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
 }
 
