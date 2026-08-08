@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager
 
+import dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge
 import dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
@@ -269,15 +270,63 @@ class EnergyManagerTest {
         }
 
     @Test
-    fun `macOS keepAwake system only reports unsupported`() {
+    fun `macOS keepAwake system only round trips`() {
         assumeMacOs()
         assertTrue(EnergyManager.isAvailable())
 
-        // SYSTEM_ONLY is Windows-only for now — it must fail loudly instead of
-        // silently keeping the display awake too.
-        val result = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
-        assertTrue(!result.success, "SYSTEM_ONLY should not be reported as supported on macOS")
-        assertTrue(!EnergyManager.isAwakeActive(), "No awake request should be held")
+        val enableResult = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        println("macOS keepAwake(SYSTEM_ONLY) result: $enableResult")
+        assertTrue(enableResult.success, "keepAwake failed: ${enableResult.message}")
+        assertTrue(EnergyManager.isAwakeActive(), "Awake request should be active")
+
+        val releaseResult = EnergyManager.releaseAwake()
+        assertTrue(releaseResult.success, "releaseAwake failed: ${releaseResult.message}")
+        assertTrue(!EnergyManager.isAwakeActive(), "Awake request should be released")
+    }
+
+    @Test
+    fun `macOS keepAwake takes the expected IOKit assertion type`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        // The mode is read back from the assertion powerd holds, not from the
+        // value the bridge remembers requesting.
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
+        val bothMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        val systemOnlyMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        EnergyManager.releaseAwake()
+        val releasedMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        println("Assertion modes: both=$bothMode systemOnly=$systemOnlyMode released=$releasedMode")
+
+        assertEquals(
+            AWAKE_SYSTEM_AND_DISPLAY,
+            bothMode,
+            "SYSTEM_AND_DISPLAY must map to kIOPMAssertPreventUserIdleDisplaySleep",
+        )
+        assertEquals(
+            AWAKE_SYSTEM_ONLY,
+            systemOnlyMode,
+            "SYSTEM_ONLY must map to kIOPMAssertPreventUserIdleSystemSleep, leaving display sleep alone",
+        )
+        assertEquals(AWAKE_NONE, releasedMode, "releaseAwake must drop the assertion")
+    }
+
+    @Test
+    fun `macOS keepAwake switches between modes without releasing`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        // An assertion's type is immutable, so each switch swaps in a fresh one.
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.isAwakeActive())
+        assertTrue(EnergyManager.releaseAwake().success)
+        assertTrue(!EnergyManager.isAwakeActive())
     }
 
     @Test
@@ -506,6 +555,11 @@ class EnergyManagerTest {
     companion object {
         private const val ES_SYSTEM_REQUIRED = 0x00000001
         private const val ES_DISPLAY_REQUIRED = 0x00000002
+
+        /** Mirrors the AWAKE_* codes of the macOS native bridge. */
+        private const val AWAKE_NONE = -1
+        private const val AWAKE_SYSTEM_AND_DISPLAY = 0
+        private const val AWAKE_SYSTEM_ONLY = 1
 
         /**
          * Reads the nice value of the calling thread via /proc/thread-self/stat.

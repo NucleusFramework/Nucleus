@@ -21,8 +21,8 @@ import java.util.concurrent.Executors
  * Awake (caffeine):
  *   Windows: SetThreadExecutionState — ES_SYSTEM_REQUIRED, plus ES_DISPLAY_REQUIRED
  *            unless [AwakeMode.SYSTEM_ONLY] is requested.
- *   macOS:   IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep);
- *            [AwakeMode.SYSTEM_ONLY] is not implemented yet.
+ *   macOS:   IOPMAssertionCreateWithName — kIOPMAssertPreventUserIdleDisplaySleep,
+ *            or kIOPMAssertPreventUserIdleSystemSleep for [AwakeMode.SYSTEM_ONLY].
  *   Linux:   GNOME SessionManager / systemd-logind / X11 inhibitors;
  *            [AwakeMode.SYSTEM_ONLY] is not implemented yet.
  */
@@ -99,9 +99,9 @@ public object EnergyManager {
      * from entering sleep until [releaseAwake] is called.
      *
      * [AwakeMode.SYSTEM_ONLY] lets the screen saver and display sleep behave normally
-     * while long background work keeps running. It is implemented on Windows only;
-     * macOS and Linux return an unsuccessful [Result] instead of silently downgrading
-     * to [AwakeMode.SYSTEM_AND_DISPLAY].
+     * while long background work keeps running. It is implemented on Windows and macOS;
+     * Linux returns an unsuccessful [Result] instead of silently downgrading to
+     * [AwakeMode.SYSTEM_AND_DISPLAY].
      *
      * Calling this while a request is already active replaces it with [mode].
      */

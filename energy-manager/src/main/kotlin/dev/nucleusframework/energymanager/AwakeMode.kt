@@ -15,8 +15,9 @@ public enum class AwakeMode {
      * saver / lock screen behave as usual — suited to long background work that
      * must survive the user walking away from the machine.
      *
-     * Currently implemented on Windows only; macOS and Linux report the request
-     * as unsupported.
+     * Implemented on Windows and macOS; Linux reports the request as unsupported.
+     * On macOS this is what `caffeinate -i` holds, and — like every idle-sleep
+     * assertion — it does not keep the machine running once the lid is closed.
      */
     SYSTEM_ONLY,
 }
