@@ -39,15 +39,29 @@ internal class TaoDragAndDropManager(
     /**
      * Per-platform implementation of the actual OS drag session. Receives the
      * extracted payload (already coerced from the user's [Transferable] into
-     * the cross-platform shape `files + text`) and returns the [DROPEFFECT]
-     * the destination accepted, or `null` if cancelled.
+     * the cross-platform shape `files + text`).
      *
-     * On Windows this maps to `DoDragDrop`. On macOS it will map to
-     * `[NSView beginDraggingSessionWithItems:event:source:]`. On Linux to
-     * `gtk_drag_begin_with_coordinates`.
+     * The contract is asynchronous because this is called from inside
+     * Compose's `sendPointerEvent` dispatch, and [startDragAndDropTransfer]
+     * must answer Compose before the OS session necessarily exists (#435):
+     * returns `true` if the session was — or will be — started, in which case
+     * [onCompleted] is invoked exactly once when the session ends, with the
+     * action the destination accepted or `null` if cancelled. Returns `false`
+     * without ever calling [onCompleted] when the session cannot start
+     * (native library missing, window gone).
+     *
+     * macOS (`beginDraggingSession`) and Linux (`gtk_drag_begin_with_coordinates`)
+     * run the session synchronously — their native calls cooperatively pump the
+     * platform run loop — and call [onCompleted] before returning. Windows
+     * defers `DoDragDrop` onto the main dispatcher so the modal session starts
+     * with no Compose dispatch below it, and calls [onCompleted] one event-loop
+     * iteration later, when `DoDragDrop` returns.
      */
     fun interface OutboundLauncher {
-        fun launch(request: OutboundRequest): DragAndDropTransferAction?
+        fun launch(
+            request: OutboundRequest,
+            onCompleted: (DragAndDropTransferAction?) -> Unit,
+        ): Boolean
     }
 
     class OutboundRequest internal constructor(
@@ -75,7 +89,7 @@ internal class TaoDragAndDropManager(
         TaoDnDDiagnostics.requests.intValue++
         TaoDnDDiagnostics.log("requestDragAndDropTransfer offset=$offset")
 
-        var started = false
+        var inProgress = false
         val scope =
             object : PlatformDragAndDropSource.StartTransferScope {
                 override fun startDragAndDropTransfer(
@@ -111,14 +125,22 @@ internal class TaoDragAndDropManager(
                             drawDragDecoration = drawDragDecoration,
                         )
                     TaoDnDDiagnostics.log("starting OS drag files=${files.size} text=${text != null}")
-                    val result = launcher.launch(request)
-                    TaoDnDDiagnostics.log("OS drag completed action=$result")
-                    transferData.onTransferCompleted?.invoke(result)
-                    started = result != null
+                    inProgress = true
+                    val launched =
+                        launcher.launch(request) { result ->
+                            TaoDnDDiagnostics.log("OS drag completed action=$result")
+                            inProgress = false
+                            transferData.onTransferCompleted?.invoke(result)
+                        }
+                    if (!launched) {
+                        inProgress = false
+                        TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — launcher refused")
+                        return false
+                    }
                     return true
                 }
             }
-        with(source) { scope.startDragAndDropTransfer(offset) { started } }
+        with(source) { scope.startDragAndDropTransfer(offset) { inProgress } }
     }
 
     /**
