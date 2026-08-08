@@ -2019,7 +2019,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         //   origin.y unchanged -> bottom edge fixed (else top edge fixed)
         NSString *gravity = kCAGravityResize;
         NSWindow *win = att->view.window;
-        if (att->view.inLiveResize && win != nil &&
+        // Never anchor during an AppKit fullscreen transition: the #327
+        // snapshot ramp depends on Resize gravity for the whole animation,
+        // and AppKit may report inLiveResize while it animates the frame.
+        BOOL liveResize = att->view.inLiveResize &&
+                          atomic_load(&att->in_transition) == 0;
+        if (liveResize && win != nil &&
             !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
             NSRect fr = win.frame;
             BOOL leftFixed   = fabs(fr.origin.x - att->prev_origin_x) < 0.5;
@@ -2029,7 +2034,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
             } else {
                 gravity = bottomFixed ? kCAGravityBottomRight : kCAGravityTopRight;
             }
-        } else if (att->view.inLiveResize) {
+        } else if (liveResize) {
             // First tick of the drag: no prior origin to diff against. Pin
             // top-left — the common bottom/right case — and let the next
             // tick self-correct to the proper fixed corner.
