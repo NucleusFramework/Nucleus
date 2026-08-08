@@ -599,6 +599,16 @@ public final class dev/nucleusframework/window/tao/TaoEventCode {
 	public static final field WINDOW_READY I
 }
 
+public abstract interface class dev/nucleusframework/window/tao/TaoGpuRenderContext {
+	public abstract fun getBackend ()Ldev/nucleusframework/window/tao/TaoRenderBackend;
+	public abstract fun getSkiaContext ()Lorg/jetbrains/skia/DirectContext;
+	public abstract fun runOnGpuThread (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/window/tao/TaoGpuRenderContextKt {
+	public static final fun rememberTaoGpuRenderContext (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/window/tao/TaoGpuRenderContext;
+}
+
 public final class dev/nucleusframework/window/tao/TaoKeyLocation {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoKeyLocation;
@@ -606,6 +616,10 @@ public final class dev/nucleusframework/window/tao/TaoKeyLocation {
 	public static final field NUMPAD I
 	public static final field RIGHT I
 	public static final field STANDARD I
+}
+
+public abstract interface class dev/nucleusframework/window/tao/TaoMetalRenderContext : dev/nucleusframework/window/tao/TaoGpuRenderContext {
+	public abstract fun getMetalDevicePtr ()J
 }
 
 public final class dev/nucleusframework/window/tao/TaoModifierMask {
@@ -624,6 +638,18 @@ public final class dev/nucleusframework/window/tao/TaoMouseButton {
 	public static final field MIDDLE I
 	public static final field OTHER I
 	public static final field RIGHT I
+}
+
+public abstract interface class dev/nucleusframework/window/tao/TaoOpenGlRenderContext : dev/nucleusframework/window/tao/TaoGpuRenderContext {
+	public abstract fun withContextCurrent (Lkotlin/jvm/functions/Function0;)Ljava/lang/Object;
+}
+
+public final class dev/nucleusframework/window/tao/TaoRenderBackend : java/lang/Enum {
+	public static final field METAL Ldev/nucleusframework/window/tao/TaoRenderBackend;
+	public static final field OPENGL Ldev/nucleusframework/window/tao/TaoRenderBackend;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/tao/TaoRenderBackend;
+	public static fun values ()[Ldev/nucleusframework/window/tao/TaoRenderBackend;
 }
 
 public final class dev/nucleusframework/window/tao/TaoScreenGeometry {

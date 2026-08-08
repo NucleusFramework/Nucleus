@@ -45,6 +45,22 @@ internal interface TaoWindowsTextureHost {
     fun requestRedraw()
 
     /**
+     * Runs [block] with this surface's ANGLE context current on the calling
+     * thread and returns its result — or null when the surface has no live
+     * context (torn down, or never came up). The Windows face of
+     * [TaoGlTextureHost.withContextCurrent], backing the public
+     * `TaoOpenGlRenderContext`; `TextureView` itself never needs it (the
+     * native import resolves the right EGL trio from [hostHwnd]).
+     *
+     * Implementations bind through [preservingAngleBinding], so whatever was
+     * current beforehand is put back — and when a snapshot is already
+     * outstanding on this thread (a tray panel's render pass wraps the whole
+     * frame in one), the block simply runs with the re-bound context, which
+     * the enclosing scope's restore covers.
+     */
+    fun <T> withContextCurrent(block: () -> T): T?
+
+    /**
      * Announces that GL state on *this surface's* EGL context just changed
      * behind Skia's back: importing a texture binds the producer's pbuffer
      * current and `eglBindTexImage`s onto a fresh texture id, destroying it

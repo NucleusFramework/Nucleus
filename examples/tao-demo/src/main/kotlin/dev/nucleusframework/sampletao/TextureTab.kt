@@ -297,6 +297,11 @@ fun TextureTab(modifier: Modifier = Modifier) {
             }
             BasicText("standalone panel — its own Skia context", style = label)
         }
+        // The complementary API to everything above: an in-process renderer
+        // drawing on the scene's OWN context instead of importing a foreign
+        // buffer. See GpuContextSection.
+        GpuContextSection(label)
+
         if (isTaoStandalonePopupAvailable()) {
             TaoStandalonePopup(
                 visible = panelVisible,

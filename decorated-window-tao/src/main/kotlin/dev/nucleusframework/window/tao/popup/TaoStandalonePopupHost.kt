@@ -204,6 +204,22 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                 override val directContext: DirectContext = ctx
 
                 override fun requestRedraw() = outer.scheduleRender()
+
+                override fun <T> withContextCurrent(block: () -> T): T? {
+                    // Read live: 0 after dispose, which keeps a late caller off
+                    // a freed panel. During the panel's own render pass the
+                    // enclosing preservingAngleBinding makes the inner save a
+                    // no-op and the re-make-current idempotent.
+                    val panelHandle = outer.panel
+                    if (panelHandle == 0L) return null
+                    return preservingAngleBinding {
+                        if (!PopupNativeBridgeWindows.nativeMakeCurrent(panelHandle)) {
+                            null
+                        } else {
+                            block()
+                        }
+                    }
+                }
             }
     }
 
