@@ -306,7 +306,7 @@ fun TextureTab(modifier: Modifier = Modifier) {
             TaoStandalonePopup(
                 visible = panelVisible,
                 position = WindowPosition.Absolute(40.dp, 40.dp),
-                size = DpSize(220.dp, 200.dp),
+                size = DpSize(220.dp, 380.dp),
                 focusable = false,
                 onOutsideClick = { panelVisible = false },
             ) {
@@ -324,6 +324,11 @@ fun TextureTab(modifier: Modifier = Modifier) {
                         modifier = demoBox(160.dp, 120.dp),
                         contentScale = ContentScale.FillBounds,
                     )
+                    // Same in-process-renderer demo, resolved against THIS
+                    // surface: on macOS/Linux the panel owns a private Skia
+                    // context (different skiaContext@ id than the window's),
+                    // on Windows it shares the headless one.
+                    GpuContextSection(label, compact = true)
                 }
             }
         }

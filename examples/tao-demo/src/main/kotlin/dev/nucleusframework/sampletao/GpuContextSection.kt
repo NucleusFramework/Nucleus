@@ -47,22 +47,30 @@ private const val RT_H = 240
  */
 @Suppress("FunctionNaming", "MagicNumber")
 @Composable
-fun GpuContextSection(label: TextStyle) {
+fun GpuContextSection(
+    label: TextStyle,
+    compact: Boolean = false,
+) {
     val renderContext = rememberTaoGpuRenderContext()
 
-    BasicText(
-        text = "GPU render context — in-process renderer on the scene's own device:",
-        style = label,
-    )
+    if (!compact) {
+        BasicText(
+            text = "GPU render context — in-process renderer on the scene's own device:",
+            style = label,
+        )
+    }
     if (renderContext == null) {
         BasicText("rememberTaoGpuRenderContext() → null (surface not up)", style = label)
         return
     }
+    // The skiaContext identity is the interesting bit in compact mode: a tray
+    // panel owns a private context on macOS/Linux (different id than the
+    // window's), while Windows shares one per surface owner.
     BasicText(
         text =
             "backend=${renderContext.backend} · " +
-                "skiaContext@${Integer.toHexString(System.identityHashCode(renderContext.skiaContext))} · " +
-                "${RT_W}x$RT_H private render target, snapshot sampled zero-copy",
+                "skiaContext@${Integer.toHexString(System.identityHashCode(renderContext.skiaContext))}" +
+                if (compact) "" else " · ${RT_W}x$RT_H private render target, snapshot sampled zero-copy",
         style = label,
     )
 
@@ -87,7 +95,7 @@ fun GpuContextSection(label: TextStyle) {
 
     Canvas(
         Modifier
-            .size(320.dp, 240.dp)
+            .size(if (compact) 160.dp else 320.dp, if (compact) 120.dp else 240.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(Color(0xFF1F2630)),
     ) {
@@ -99,10 +107,12 @@ fun GpuContextSection(label: TextStyle) {
             )
         }
     }
-    BasicText(
-        text = "animated by Skia draws issued through the published context",
-        style = TextStyle(color = Color(0xFF6E7480), fontSize = 10.sp),
-    )
+    if (!compact) {
+        BasicText(
+            text = "animated by Skia draws issued through the published context",
+            style = TextStyle(color = Color(0xFF6E7480), fontSize = 10.sp),
+        )
+    }
 }
 
 /**
