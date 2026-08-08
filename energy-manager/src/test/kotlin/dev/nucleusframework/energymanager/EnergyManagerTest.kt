@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager
 
+import dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import java.io.File
@@ -156,6 +157,16 @@ class EnergyManagerTest {
         assertTrue(EnergyManager.disableLightEfficiencyMode().success)
     }
 
+    @Test
+    fun `linux keepAwake system only reports unsupported`() {
+        assumeLinux()
+        assertTrue(EnergyManager.isAvailable())
+
+        val result = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        assertTrue(!result.success, "SYSTEM_ONLY should not be reported as supported on Linux")
+        assertTrue(!EnergyManager.isAwakeActive(), "No awake request should be held")
+    }
+
     // ── macOS tests ──────────────────────────────────────────────────
 
     @Test
@@ -256,6 +267,18 @@ class EnergyManagerTest {
 
             assertEquals(42, result)
         }
+
+    @Test
+    fun `macOS keepAwake system only reports unsupported`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        // SYSTEM_ONLY is Windows-only for now — it must fail loudly instead of
+        // silently keeping the display awake too.
+        val result = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        assertTrue(!result.success, "SYSTEM_ONLY should not be reported as supported on macOS")
+        assertTrue(!EnergyManager.isAwakeActive(), "No awake request should be held")
+    }
 
     @Test
     fun `macOS enable disable cycle is idempotent`() {
@@ -417,9 +440,73 @@ class EnergyManagerTest {
         assertTrue(result, "Thread idempotent enable/disable cycle failed")
     }
 
+    @Test
+    fun `windows keepAwake system only round trips`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        val enableResult = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        println("Windows keepAwake(SYSTEM_ONLY) result: $enableResult")
+        assertTrue(enableResult.success, "keepAwake failed: ${enableResult.message}")
+        assertTrue(EnergyManager.isAwakeActive(), "Awake request should be active")
+
+        val releaseResult = EnergyManager.releaseAwake()
+        assertTrue(releaseResult.success, "releaseAwake failed: ${releaseResult.message}")
+        assertTrue(!EnergyManager.isAwakeActive(), "Awake request should be released")
+    }
+
+    @Test
+    fun `windows keepAwake sets the expected execution state flags`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // The execution state is per-thread, so query it from the very thread
+        // that issued the request.
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
+        val bothFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        val systemOnlyFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+
+        EnergyManager.releaseAwake()
+        val releasedFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+
+        println("Flags: both=0x${bothFlags.toHexString()} systemOnly=0x${systemOnlyFlags.toHexString()}")
+
+        assertTrue(bothFlags and ES_SYSTEM_REQUIRED != 0, "SYSTEM_AND_DISPLAY must keep the system awake")
+        assertTrue(bothFlags and ES_DISPLAY_REQUIRED != 0, "SYSTEM_AND_DISPLAY must keep the display awake")
+
+        assertTrue(systemOnlyFlags and ES_SYSTEM_REQUIRED != 0, "SYSTEM_ONLY must keep the system awake")
+        assertEquals(
+            0,
+            systemOnlyFlags and ES_DISPLAY_REQUIRED,
+            "SYSTEM_ONLY must leave display sleep and the screen saver alone",
+        )
+
+        assertEquals(0, releasedFlags and ES_SYSTEM_REQUIRED, "releaseAwake must drop the system request")
+        assertEquals(0, releasedFlags and ES_DISPLAY_REQUIRED, "releaseAwake must drop the display request")
+    }
+
+    @Test
+    fun `windows keepAwake switches between modes without releasing`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // SetThreadExecutionState replaces the thread's request, so switching
+        // modes back and forth must stay successful and keep the state active.
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.isAwakeActive())
+        assertTrue(EnergyManager.releaseAwake().success)
+    }
+
     // ── Linux helpers ────────────────────────────────────────────────
 
     companion object {
+        private const val ES_SYSTEM_REQUIRED = 0x00000001
+        private const val ES_DISPLAY_REQUIRED = 0x00000002
+
         /**
          * Reads the nice value of the calling thread via /proc/thread-self/stat.
          * Field layout after (comm): state ppid pgrp session tty_nr tpgid flags

@@ -190,7 +190,7 @@ fun main(args: Array<String>) =
                         )
 
                         var caffeineActive by remember {
-                            mutableStateOf(EnergyManager.isScreenAwakeActive())
+                            mutableStateOf(EnergyManager.isAwakeActive())
                         }
                         TitleBarIconButton(
                             imageVector = if (caffeineActive) TablerCoffee else TablerCoffeeOff,
@@ -198,11 +198,11 @@ fun main(args: Array<String>) =
                             modifier = Modifier.align(titleBarAlignment),
                             onClick = {
                                 if (caffeineActive) {
-                                    EnergyManager.releaseScreenAwake()
+                                    EnergyManager.releaseAwake()
                                 } else {
-                                    EnergyManager.keepScreenAwake()
+                                    EnergyManager.keepAwake()
                                 }
-                                caffeineActive = EnergyManager.isScreenAwakeActive()
+                                caffeineActive = EnergyManager.isAwakeActive()
                             },
                         )
                         val isFullscreen = state.placement == WindowPlacement.Fullscreen

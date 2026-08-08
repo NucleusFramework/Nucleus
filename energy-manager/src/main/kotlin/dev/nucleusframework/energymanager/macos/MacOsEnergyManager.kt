@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.macos
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
 
@@ -40,11 +41,21 @@ internal object MacOsEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeMacOsEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    override fun keepScreenAwake() = callNative { NativeMacOsEnergyBridge.nativeKeepScreenAwake() }
+    /**
+     * [AwakeMode.SYSTEM_ONLY] would map to kIOPMAssertPreventUserIdleSystemSleep,
+     * but that path is not implemented yet — the request is rejected rather than
+     * silently keeping the display on as well.
+     */
+    override fun keepAwake(mode: AwakeMode) =
+        if (mode == AwakeMode.SYSTEM_ONLY) {
+            EnergyManager.Result(false, -1, "AwakeMode.SYSTEM_ONLY is not implemented on macOS yet")
+        } else {
+            callNative { NativeMacOsEnergyBridge.nativeKeepScreenAwake() }
+        }
 
-    override fun releaseScreenAwake() = callNative { NativeMacOsEnergyBridge.nativeReleaseScreenAwake() }
+    override fun releaseAwake() = callNative { NativeMacOsEnergyBridge.nativeReleaseScreenAwake() }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeMacOsEnergyBridge.isLoaded &&
             runCatching { NativeMacOsEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
 }

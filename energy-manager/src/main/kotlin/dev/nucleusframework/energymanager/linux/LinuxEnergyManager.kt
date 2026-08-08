@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.linux
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
 
@@ -40,19 +41,27 @@ internal object LinuxEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeLinuxEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    @Suppress("MaxLineLength")
+    /**
+     * [AwakeMode.SYSTEM_ONLY] would need the GNOME/logind inhibitors to be split
+     * (INHIBIT_SUSPEND without INHIBIT_IDLE) and the X11 screen-saver backend to be
+     * skipped — not implemented yet, so the request is rejected rather than silently
+     * keeping the display on as well.
+     */
     @Synchronized
-    override fun keepScreenAwake(): EnergyManager.Result =
-        callNative { NativeLinuxEnergyBridge.nativeKeepScreenAwake() }
+    override fun keepAwake(mode: AwakeMode): EnergyManager.Result =
+        if (mode == AwakeMode.SYSTEM_ONLY) {
+            EnergyManager.Result(false, -1, "AwakeMode.SYSTEM_ONLY is not implemented on Linux yet")
+        } else {
+            callNative { NativeLinuxEnergyBridge.nativeKeepScreenAwake() }
+        }
 
-    @Suppress("MaxLineLength")
     @Synchronized
-    override fun releaseScreenAwake(): EnergyManager.Result =
+    override fun releaseAwake(): EnergyManager.Result =
         callNative {
             NativeLinuxEnergyBridge.nativeReleaseScreenAwake()
         }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeLinuxEnergyBridge.isLoaded &&
             runCatching { NativeLinuxEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
 }

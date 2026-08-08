@@ -18,9 +18,13 @@ import java.util.concurrent.Executors
  *   macOS:   setpriority(PRIO_DARWIN_BG) + task_policy_set(TIER_5).
  *   Linux:   nice +19, ioprio IDLE, timerslack 100ms — reversible without root.
  *
- * Screen awake:
- *   Windows: SetThreadExecutionState (ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED).
- *   macOS/Linux: not yet implemented.
+ * Awake (caffeine):
+ *   Windows: SetThreadExecutionState — ES_SYSTEM_REQUIRED, plus ES_DISPLAY_REQUIRED
+ *            unless [AwakeMode.SYSTEM_ONLY] is requested.
+ *   macOS:   IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleDisplaySleep);
+ *            [AwakeMode.SYSTEM_ONLY] is not implemented yet.
+ *   Linux:   GNOME SessionManager / systemd-logind / X11 inhibitors;
+ *            [AwakeMode.SYSTEM_ONLY] is not implemented yet.
  */
 @Suppress("TooManyFunctions")
 public object EnergyManager {
@@ -91,22 +95,40 @@ public object EnergyManager {
     public fun disableThreadEfficiencyMode(): Result = delegate?.disableThreadEfficiencyMode() ?: unsupported
 
     /**
-     * Prevents the display and system from entering sleep.
+     * Prevents the system — and, unless [mode] is [AwakeMode.SYSTEM_ONLY], the display —
+     * from entering sleep until [releaseAwake] is called.
      *
-     * Windows: uses SetThreadExecutionState with ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED.
-     * macOS/Linux: not yet implemented.
+     * [AwakeMode.SYSTEM_ONLY] lets the screen saver and display sleep behave normally
+     * while long background work keeps running. It is implemented on Windows only;
+     * macOS and Linux return an unsuccessful [Result] instead of silently downgrading
+     * to [AwakeMode.SYSTEM_AND_DISPLAY].
+     *
+     * Calling this while a request is already active replaces it with [mode].
      */
-    public fun keepScreenAwake(): Result = delegate?.keepScreenAwake() ?: unsupported
+    public fun keepAwake(mode: AwakeMode = AwakeMode.SYSTEM_AND_DISPLAY): Result =
+        delegate?.keepAwake(mode) ?: unsupported
 
     /**
-     * Releases the screen-awake state, allowing the OS to sleep normally.
+     * Releases the awake state, allowing the OS to sleep normally.
      */
-    public fun releaseScreenAwake(): Result = delegate?.releaseScreenAwake() ?: unsupported
+    public fun releaseAwake(): Result = delegate?.releaseAwake() ?: unsupported
 
     /**
-     * Returns true if screen-awake mode is currently active.
+     * Returns true if an awake request is currently held.
      */
-    public fun isScreenAwakeActive(): Boolean = delegate?.isScreenAwakeActive() ?: false
+    public fun isAwakeActive(): Boolean = delegate?.isAwakeActive() ?: false
+
+    @Deprecated(
+        "Renamed to keepAwake(), which also accepts an AwakeMode",
+        ReplaceWith("keepAwake()"),
+    )
+    public fun keepScreenAwake(): Result = keepAwake()
+
+    @Deprecated("Renamed to releaseAwake()", ReplaceWith("releaseAwake()"))
+    public fun releaseScreenAwake(): Result = releaseAwake()
+
+    @Deprecated("Renamed to isAwakeActive()", ReplaceWith("isAwakeActive()"))
+    public fun isScreenAwakeActive(): Boolean = isAwakeActive()
 
     /**
      * Executes [block] on a dedicated thread with efficiency mode enabled.

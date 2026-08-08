@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.windows
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
 
@@ -40,11 +41,19 @@ internal object WindowsEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeWindowsEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    override fun keepScreenAwake() = callNative { NativeWindowsEnergyBridge.nativeKeepScreenAwake() }
+    override fun keepAwake(mode: AwakeMode) = callNative { NativeWindowsEnergyBridge.nativeKeepAwake(mode.nativeCode) }
 
-    override fun releaseScreenAwake() = callNative { NativeWindowsEnergyBridge.nativeReleaseScreenAwake() }
+    override fun releaseAwake() = callNative { NativeWindowsEnergyBridge.nativeReleaseAwake() }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeWindowsEnergyBridge.isLoaded &&
-            runCatching { NativeWindowsEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
+            runCatching { NativeWindowsEnergyBridge.nativeIsAwakeActive() }.getOrDefault(false)
+
+    /** Mirrors the AWAKE_* constants in the native bridge. */
+    private val AwakeMode.nativeCode: Int
+        get() =
+            when (this) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> 0
+                AwakeMode.SYSTEM_ONLY -> 1
+            }
 }
