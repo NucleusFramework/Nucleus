@@ -405,29 +405,36 @@ internal class TaoComposeSceneHost(
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun launchMacOsOutboundDrag(
         request: dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager.OutboundRequest,
-    ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
-        if (!dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.isLoaded) return null
-        if (nsViewHandle == 0L) return null
-        return dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
-            request = request,
-            dropEffectCopy = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY,
-            dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE,
-            dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK,
-        ) { files, text, allowedEffects ->
-            // No VSync dance and no post-drag `window.resetRedrawLatch()`, unlike
-            // the Windows counterpart. Nothing is consumed while tao's tick is
-            // suppressed: `AppState::cleared` returns early before it drains
-            // either the user-event channel (`RequestRedraw`) or the pending
-            // redraw list, so both survive the session and the latch un-wedges
-            // itself on the first tick after it.
-            dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.nativeStartDrag(
-                nsView = nsViewHandle,
-                files = files,
-                text = text,
-                allowedEffects = allowedEffects,
-                pump = OutboundDragPump(),
-            )
-        }
+        onCompleted: (androidx.compose.ui.draganddrop.DragAndDropTransferAction?) -> Unit,
+    ): Boolean {
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.isLoaded) return false
+        if (nsViewHandle == 0L) return false
+        // Synchronous path, unlike Windows (#435): `beginDraggingSession`
+        // cooperatively pumps the AppKit run loop, so the session completes
+        // before this returns and the result is reported inline.
+        val action: androidx.compose.ui.draganddrop.DragAndDropTransferAction? =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
+                request = request,
+                dropEffectCopy = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_COPY,
+                dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_MOVE,
+                dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.DROP_EFFECT_LINK,
+            ) { files, text, allowedEffects ->
+                // No VSync dance and no post-drag `window.resetRedrawLatch()`, unlike
+                // the Windows counterpart. Nothing is consumed while tao's tick is
+                // suppressed: `AppState::cleared` returns early before it drains
+                // either the user-event channel (`RequestRedraw`) or the pending
+                // redraw list, so both survive the session and the latch un-wedges
+                // itself on the first tick after it.
+                dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.nativeStartDrag(
+                    nsView = nsViewHandle,
+                    files = files,
+                    text = text,
+                    allowedEffects = allowedEffects,
+                    pump = OutboundDragPump(),
+                )
+            }
+        onCompleted(action)
+        return true
     }
 
     /**

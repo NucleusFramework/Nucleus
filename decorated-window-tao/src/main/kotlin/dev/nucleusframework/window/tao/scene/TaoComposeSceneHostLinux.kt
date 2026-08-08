@@ -689,28 +689,35 @@ internal class TaoComposeSceneHostLinux(
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private fun launchLinuxOutboundDrag(
         request: dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager.OutboundRequest,
-    ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
-        if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded) return null
-        if (window.handle == 0L) return null
-        return dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
-            request = request,
-            dropEffectCopy = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY,
-            dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE,
-            dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK,
-        ) { files, text, allowedEffects ->
-            // No VSync dance and no post-drag `window.resetRedrawLatch()`,
-            // unlike the Windows counterpart: the session's GTK pump consumes
-            // no tao event, so the `REDRAW_REQUESTED` matching a latched
-            // `redrawPending` still sits in tao's draw channel when the drag
-            // ends and the latch un-wedges itself on delivery.
-            dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
-                handle = window.handle,
-                files = files,
-                text = text,
-                allowedEffects = allowedEffects,
-                pump = OutboundDragPump(),
-            )
-        }
+        onCompleted: (androidx.compose.ui.draganddrop.DragAndDropTransferAction?) -> Unit,
+    ): Boolean {
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded) return false
+        if (window.handle == 0L) return false
+        // Synchronous path, unlike Windows (#435): the session cooperatively
+        // pumps the GTK main loop, so it completes before this returns and
+        // the result is reported inline.
+        val action: androidx.compose.ui.draganddrop.DragAndDropTransferAction? =
+            dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
+                request = request,
+                dropEffectCopy = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_COPY,
+                dropEffectMove = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_MOVE,
+                dropEffectLink = dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.DROP_EFFECT_LINK,
+            ) { files, text, allowedEffects ->
+                // No VSync dance and no post-drag `window.resetRedrawLatch()`,
+                // unlike the Windows counterpart: the session's GTK pump consumes
+                // no tao event, so the `REDRAW_REQUESTED` matching a latched
+                // `redrawPending` still sits in tao's draw channel when the drag
+                // ends and the latch un-wedges itself on delivery.
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
+                    handle = window.handle,
+                    files = files,
+                    text = text,
+                    allowedEffects = allowedEffects,
+                    pump = OutboundDragPump(),
+                )
+            }
+        onCompleted(action)
+        return true
     }
 
     /**

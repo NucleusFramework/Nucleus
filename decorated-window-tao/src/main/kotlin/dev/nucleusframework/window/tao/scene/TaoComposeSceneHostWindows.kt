@@ -654,7 +654,34 @@ internal class TaoComposeSceneHostWindows(
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private fun launchWindowsOutboundDrag(
         request: dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager.OutboundRequest,
+        onCompleted: (androidx.compose.ui.draganddrop.DragAndDropTransferAction?) -> Unit,
+    ): Boolean {
+        if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.isLoaded) return false
+        if (hwnd == 0L) return false
+        // Defer DoDragDrop by one event-loop iteration (#435). Compose calls
+        // this launcher from inside `sendPointerEvent`; entering the modal
+        // session here would make every frame painted by [OutboundDragPump]
+        // re-enter the scene while that pointer dispatch is still on the
+        // stack — a recomposition applied mid-dispatch can detach the node
+        // whose pointer-input handler is suspended underneath. Started from
+        // the dispatcher's pump instead, the session has no Compose dispatch
+        // below it. The mouse button is still down when the block runs one
+        // iteration later, so the session starts normally. The *thread* must
+        // not change — DoDragDrop takes the mouse capture on the calling
+        // thread and only the HWND owner ever sees the mouse-up.
+        dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+            .dispatch(kotlin.coroutines.EmptyCoroutineContext) {
+                onCompleted(runWindowsOutboundDrag(request))
+            }
+        return true
+    }
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun runWindowsOutboundDrag(
+        request: dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager.OutboundRequest,
     ): androidx.compose.ui.draganddrop.DragAndDropTransferAction? {
+        // Re-checked at execution time: the window may have closed between
+        // the pointer dispatch that scheduled the session and this tick.
         if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.isLoaded) return null
         if (hwnd == 0L) return null
         return dev.nucleusframework.window.tao.dnd.TaoSceneDnD.launchOutboundDrag(
@@ -697,15 +724,11 @@ internal class TaoComposeSceneHostWindows(
      * Drives the host from inside `DoDragDrop`'s modal loop — see
      * [dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.DragPump].
      *
-     * Reentrancy, deliberately accepted: `DoDragDrop` is entered synchronously
-     * from `TaoDragAndDropManager.requestDragAndDropTransfer`, which Compose
-     * calls from inside `sendPointerEvent`. Every frame painted here therefore
-     * renders the scene while a pointer dispatch is still on the stack. There
-     * is no way to render during the drag *without* that nesting — refusing to
-     * render would just restore the freeze this exists to fix — so the scene is
-     * re-entered knowingly. If it proves unsafe, the principled fix is to defer
-     * the `DoDragDrop` call onto the main dispatcher so the session starts one
-     * loop iteration later, with no Compose dispatch below it.
+     * No Compose reentrancy (#435): `DoDragDrop` is deferred onto
+     * [dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher] by
+     * [launchWindowsOutboundDrag], so the modal session starts from a pump
+     * tick with no `sendPointerEvent` dispatch below it, and every frame
+     * painted here is a plain top-level render.
      *
      * Named class (not a lambda) for GraalVM JNI reachability, same as
      * [InboundDnDCallback].
