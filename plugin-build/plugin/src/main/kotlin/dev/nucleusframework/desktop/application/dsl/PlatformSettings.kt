@@ -215,6 +215,11 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
     var console: Boolean = false
     var dirChooser: Boolean = true
+
+    @Deprecated(
+        "Use msi { perMachine = ... } instead. Note the inverted meaning: " +
+            "perUserInstall = true is equivalent to msi.perMachine = false.",
+    )
     var perUserInstall: Boolean = false
     var shortcut: Boolean = false
     var menu: Boolean = false
@@ -228,6 +233,12 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
 
     fun nsis(fn: Action<NsisSettings>) {
         fn.execute(nsis)
+    }
+
+    val msi: MsiSettings = objects.newInstance(MsiSettings::class.java)
+
+    fun msi(fn: Action<MsiSettings>) {
+        fn.execute(msi)
     }
 
     val appx: AppXSettings = objects.newInstance(AppXSettings::class.java)
