@@ -301,6 +301,14 @@ typedef struct {
     // first resize.
     double prev_origin_x;
     double prev_origin_y;
+
+    // YES for attachments created by nativeAttachOverlay (popup NSPanels,
+    // in-window NativeView overlay subviews). Overlays never install the
+    // window-level associated objects (fullscreen observer, attachment key —
+    // see the observer-skip note on nativeAttachOverlay); nativeDetach reads
+    // this so an overlay dispose can't tear down state owned by the host
+    // window's primary attachment.
+    BOOL isOverlay;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -1237,6 +1245,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttachOverlay(
     att->view   = view;
     att->prev_origin_x = NAN;
     att->prev_origin_y = NAN;
+    att->isOverlay = YES;
     return (jlong)(uintptr_t)att;
 }
 
@@ -1959,11 +1968,20 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDetach(
         att->vsyncSem = NULL;
     }
     NSWindow *win = att->view.window;
+    BOOL isOverlay = att->isOverlay;
     att->layer  = nil;
     att->device = nil;
     att->queue  = nil;
     att->view   = nil;
-    if (win != nil) {
+    // Overlay attachments (nativeAttachOverlay) never installed the
+    // window-level state below — it belongs to the primary attachment of the
+    // window hosting the overlay's parent NSView. Tearing it down here on an
+    // overlay dispose (e.g. a NativeView unmounting from the main window)
+    // would deallocate the window's NucleusTaoFSObserver out from under its
+    // still-alive primary attachment — permanently dropping the #327
+    // fullscreen-transition handling — and leave attachmentForWindow()
+    // returning NULL for the rest of the window's life.
+    if (win != nil && !isOverlay) {
         removeMenuBarMonitor(win);
         objc_setAssociatedObject(win, &kTaoFSObserverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(win, &kTaoAttachmentKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -2406,6 +2424,55 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeUpdateFullScree
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_async(dispatch_get_main_queue(), apply);
+}
+
+// ── Window-state diagnostics (headful e2e probes) ────────────────────────
+//
+// Same role as nativeMacOsProbeSheetParent in the Tao bridge: tiny read-only
+// entry points the stage-2 headful suite uses to assert native invariants
+// that have no other JVM-visible signal. Not part of any production path.
+
+/* Bitmask of the window-level state nativeAttach installs on view.window:
+ * bit 0 = kTaoAttachmentKey (primary attachment reachable via
+ * attachmentForWindow), bit 1 = kTaoFSObserverKey (fullscreen-transition
+ * observer, #327). Returns -1 when the view or its window is gone. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowState(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jint state = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        state = 0;
+        if (objc_getAssociatedObject(w, &kTaoAttachmentKey) != nil) state |= 1;
+        if (objc_getAssociatedObject(w, &kTaoFSObserverKey) != nil) state |= 2;
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return state;
+}
+
+/* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
+ * its own references); the set_focusable leak regression compares the count
+ * before/after a burst of calls. Returns -1 when view/window is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowRetainCount(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong count = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        count = (jlong) CFGetRetainCount((__bridge CFTypeRef) w);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return count;
 }
 
 JNIEXPORT void JNICALL

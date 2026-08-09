@@ -456,6 +456,29 @@ internal object NativeMetalBridge {
     @JvmStatic
     external fun nativeUpdateFullScreenButtons(nsViewPtr: Long)
 
+    // ── Window-state diagnostics (headful e2e probes) ──────────────────
+    //
+    // Read-only probes for the stage-2 headful suite, mirroring the sheet
+    // parent probe on NativeTaoBridge: they assert native invariants that
+    // have no other JVM-visible signal. Not used by any production path.
+
+    /**
+     * Bitmask of the window-level state [nativeAttach] installs on the
+     * view's NSWindow: bit 0 = primary attachment associated object,
+     * bit 1 = fullscreen-transition observer (#327). `-1` when the view or
+     * its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagWindowState(nsViewPtr: Long): Int
+
+    /**
+     * `CFGetRetainCount` of the view's NSWindow. Only deltas are meaningful
+     * (AppKit holds its own references); the `set_focusable` leak regression
+     * compares before/after a burst of calls. `-1` when view/window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagWindowRetainCount(nsViewPtr: Long): Long
+
     /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a

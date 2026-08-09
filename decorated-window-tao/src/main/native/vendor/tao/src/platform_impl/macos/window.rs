@@ -733,8 +733,13 @@ impl UnownedWindow {
   pub fn set_focusable(&self, focusable: bool) {
     #[allow(deprecated)] // TODO: Use define_class!
     unsafe {
-      let ns_window =
-        Retained::into_raw(Retained::cast_unchecked::<Object>(self.ns_window.clone()));
+      // PATCH(nucleus): borrow the NSWindow pointer instead of leaking a
+      // retain. The previous `clone()` + `Retained::into_raw` retained the
+      // window (+1) with nothing ever releasing it — one leaked reference
+      // per call, keeping the NSWindow alive forever after close.
+      // `Retained::as_ptr` reads the pointer without touching the refcount;
+      // the ivar write does not need ownership.
+      let ns_window = Retained::as_ptr(&self.ns_window) as *const Object as *mut Object;
       *((*ns_window).get_mut_ivar::<Bool>("focusable")) = focusable.into();
     }
   }
