@@ -2238,6 +2238,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetPresentsWith
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
+/* Private run-loop mode for the interop callout below. Blocks scheduled in
+ * this mode (in addition to the common modes) can be executed by a main
+ * thread that is otherwise BLOCKED waiting on the render thread — it spins
+ * CFRunLoopRunInMode on this mode via nativeInteropPump. Tao's own run-loop
+ * observers/sources live in the default/common modes and never fire here, so
+ * pumping cannot re-enter event dispatch or Compose rendering. */
+static NSString *const kNucleusTaoInteropMode = @"NucleusTaoInteropMode";
+
 /* Atomic present-with-transaction path. See the Kotlin doc on
  * NativeMetalBridge.nativePresentWithInterop for the full sequence.
  *
@@ -2254,11 +2262,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
     // Stage 2: this is invoked from the host's background render thread (after
     // the scene's GPU encode), but CATransaction + the explicit [drawable
     // present] + the AppKit mutations in `interopActions` must run on the macOS
-    // main thread. We therefore dispatch the whole atomic block to the main
-    // queue. The render thread blocks (dispatch_sync) until it completes, which
-    // is safe: the main thread is never itself blocked on the render thread
-    // while a frame's replay is in flight (all main→render hops happen during
-    // the main-thread record pass, when the render thread is idle).
+    // main thread. This used to be a plain dispatch_sync to the main queue on
+    // the assumption that "the main thread is never itself blocked on the
+    // render thread while a frame's replay is in flight" — which the
+    // fullscreen prepare (#327: windowWillEnterFullScreen → blocking frame via
+    // runOnRenderThread) and the NativeView overlay first-attach violate,
+    // deadlocking the app the moment either coincides with an in-flight
+    // interop present. The block is therefore scheduled on the main RUN LOOP
+    // instead, registered in the common modes (normal drain) AND the private
+    // kNucleusTaoInteropMode, which a blocked main thread pumps via
+    // nativeInteropPump while it waits on the render thread.
     ensureMetalJVMCached(env);
 
     // Promote the Runnable to a global ref: the local ref `interopActions` is
@@ -2321,8 +2334,45 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
         [CATransaction commit];
     };
 
-    if ([NSThread isMainThread]) work();
-    else                          dispatch_sync(dispatch_get_main_queue(), work);
+    if ([NSThread isMainThread]) {
+        work();
+        return;
+    }
+
+    // Once-guard shared by both mode registrations (copies of the same block
+    // share the __block slot; both callouts run on the main thread, so no
+    // atomics needed).
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL ran = NO;
+    void (^once)(void) = ^{
+        if (ran) return;
+        ran = YES;
+        work();
+        dispatch_semaphore_signal(sem);
+    };
+    CFRunLoopRef mainLoop = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(mainLoop, kCFRunLoopCommonModes, once);
+    CFRunLoopPerformBlock(mainLoop, (__bridge CFStringRef) kNucleusTaoInteropMode, once);
+    CFRunLoopWakeUp(mainLoop);
+    // Generous backstop: if the main thread is wedged somewhere that neither
+    // runs its loop nor pumps, degrade to a late/skipped transaction (the
+    // queued block still presents when the loop resumes) instead of parking
+    // the render thread forever.
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) != 0) {
+        NTLOG("nativePresentWithInterop: main-thread callout timed out after 2s");
+    }
+}
+
+/* Executes any pending interop callouts while the caller (which must be the
+ * macOS main thread) is blocked waiting on the render thread — see
+ * kNucleusTaoInteropMode above and TaoComposeSceneHost.runOnRenderThread.
+ * Bounded: returns after one callout or ~4ms, whichever comes first. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInteropPump(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    if (![NSThread isMainThread]) return;
+    CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.004, true);
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────

@@ -456,6 +456,20 @@ internal object NativeMetalBridge {
     @JvmStatic
     external fun nativeUpdateFullScreenButtons(nsViewPtr: Long)
 
+    /**
+     * Executes any pending [nativePresentWithInterop] main-thread callouts
+     * while the caller — which must be the macOS main thread — is blocked
+     * waiting on the render thread. The callouts are registered on the main
+     * run loop in a private mode exactly for this: a main thread parked in
+     * `future.get()` never drains its run loop, and the render thread's
+     * present-with-transaction would otherwise wait on it forever (the
+     * fullscreen-freeze deadlock with a live NativeView). Bounded to one
+     * callout or ~4ms per call; no-op off the main thread or when no callout
+     * is pending.
+     */
+    @JvmStatic
+    external fun nativeInteropPump()
+
     // ── Window-state diagnostics (headful e2e probes) ──────────────────
     //
     // Read-only probes for the stage-2 headful suite, mirroring the sheet
