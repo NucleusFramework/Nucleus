@@ -16,7 +16,7 @@ import java.util.logging.Logger
  */
 @Suppress("TooManyFunctions")
 public object NotificationCenter {
-    private val logger = Logger.getLogger(NotificationCenter::class.java.simpleName)
+    private val logger = Logger.getLogger(NotificationCenter::class.java.name)
 
     private const val NO_BUNDLE_ERROR =
         "Notifications require a packaged .app bundle with a bundle identifier. " +

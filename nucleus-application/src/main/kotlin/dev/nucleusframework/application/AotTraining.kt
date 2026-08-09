@@ -1,6 +1,7 @@
 package dev.nucleusframework.application
 
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
 
@@ -35,11 +36,11 @@ public fun NucleusApplicationScope.aotTraining(
     if (!isAotTraining) return
     if (!aotTrainingArmed.compareAndSet(false, true)) return
 
-    println("[AOT] Training mode — will exit in $duration")
+    logger.info { "AOT training mode — will exit in $duration" }
 
     Thread({
         Thread.sleep(duration.inWholeMilliseconds)
-        println("[AOT] Time's up, exiting…")
+        logger.info { "AOT training duration elapsed, exiting…" }
         onTimeout()
     }, "nucleus-aot-training-timer").apply {
         isDaemon = false
@@ -48,3 +49,5 @@ public fun NucleusApplicationScope.aotTraining(
 }
 
 private val aotTrainingArmed = AtomicBoolean(false)
+
+private val logger = Logger.getLogger("dev.nucleusframework.application.aotTraining")

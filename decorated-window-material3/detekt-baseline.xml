@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicFunction:MaterialColorMapping.kt:@Composable public fun rememberMaterialTitleBarStyle: TitleBarStyle</ID>
+    <ID>UndocumentedPublicFunction:MaterialColorMapping.kt:@Composable public fun rememberMaterialWindowStyle: DecoratedWindowStyle</ID>
+    <ID>UndocumentedPublicFunction:MaterialDialogTitleBar.kt:@Suppress("FunctionNaming") @Composable public fun DecoratedDialogScope.MaterialDialogTitleBar</ID>
+  </CurrentIssues>
+</SmellBaseline>

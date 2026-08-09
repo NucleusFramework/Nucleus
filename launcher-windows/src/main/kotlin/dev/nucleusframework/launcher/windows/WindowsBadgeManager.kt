@@ -19,7 +19,7 @@ import java.util.logging.Logger
  * Thread-safe singleton.
  */
 public object WindowsBadgeManager {
-    private val logger = Logger.getLogger(WindowsBadgeManager::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsBadgeManager::class.java.name)
     private var initialized = false
 
     /** The last error message from a native operation, or null if the last operation succeeded. */

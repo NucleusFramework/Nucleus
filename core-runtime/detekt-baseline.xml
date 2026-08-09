@@ -1,0 +1,34 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:ExecutableRuntime.kt:ExecutableRuntime</ID>
+    <ID>UndocumentedPublicClass:ExecutableRuntime.kt:ExecutableType</ID>
+    <ID>UndocumentedPublicClass:LinuxDesktopEnvironment.kt:LinuxDesktopEnvironment</ID>
+    <ID>UndocumentedPublicClass:LinuxDesktopEnvironment.kt:LinuxDesktopEnvironment$Companion</ID>
+    <ID>UndocumentedPublicClass:Platform.kt:Platform</ID>
+    <ID>UndocumentedPublicClass:Platform.kt:Platform$Companion</ID>
+    <ID>UndocumentedPublicClass:WindowBackend.kt:WindowBackend$Companion</ID>
+    <ID>UndocumentedPublicFunction:AppIdProvider.kt:AppIdProvider$public fun appId: String</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isAppImage: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isAppX: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isDeb: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isDev: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isDmg: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isExe: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isFlatpak: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isMsi: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isNsis: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isNsisWeb: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isPacman: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isPkg: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isPortable: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isRpm: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isSevenZ: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isSnap: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isTar: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun isZip: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$@JvmStatic public fun type: ExecutableType</ID>
+    <ID>UndocumentedPublicFunction:ExecutableRuntime.kt:ExecutableRuntime$public fun parseType: ExecutableType</ID>
+  </CurrentIssues>
+</SmellBaseline>

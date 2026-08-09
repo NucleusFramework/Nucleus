@@ -1,0 +1,19 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun close</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun hide</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun requestFocus</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setAlwaysOnTop</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setFullscreen</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setIcon</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setMaximized</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setMinimized</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setMinimumSize</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun show</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun toFront</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindowHost.kt:NucleusDialogHost$@Composable public fun Dialog</ID>
+    <ID>UndocumentedPublicFunction:NucleusWindowHost.kt:NucleusWindowHost$@Composable public fun Window</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -8,7 +8,7 @@ import javax.swing.SwingUtilities
 
 @Suppress("TooGenericExceptionCaught")
 internal object MacUtil {
-    private val logger = Logger.getLogger(MacUtil::class.java.simpleName)
+    private val logger = Logger.getLogger(MacUtil::class.java.name)
 
     fun getWindowPtr(w: Window?): Long {
         if (w == null) return 0L

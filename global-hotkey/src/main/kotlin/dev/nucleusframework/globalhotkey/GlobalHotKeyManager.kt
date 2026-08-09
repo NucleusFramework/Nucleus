@@ -50,7 +50,7 @@ private const val PORTAL_BIND_DEBOUNCE_MS = 50L
  */
 @Suppress("TooManyFunctions")
 public object GlobalHotKeyManager {
-    private val logger = Logger.getLogger(GlobalHotKeyManager::class.java.simpleName)
+    private val logger = Logger.getLogger(GlobalHotKeyManager::class.java.name)
 
     @Volatile
     private var initialized = false

@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:D3D11TestTextureProducer.kt:D3D11TestTextureProducer$Companion</ID>
+    <ID>UndocumentedPublicClass:DmaBufTestTextureProducer.kt:DmaBufTestTextureProducer$Companion</ID>
+    <ID>UndocumentedPublicClass:MetalTestTextureProducer.kt:MetalTestTextureProducer$Companion</ID>
+    <ID>UndocumentedPublicClass:TaoAccessibility.kt:TaoA11yAction</ID>
+    <ID>UndocumentedPublicClass:TaoAccessibility.kt:TaoA11yFlag</ID>
+    <ID>UndocumentedPublicClass:TaoAccessibility.kt:TaoA11yRole</ID>
+    <ID>UndocumentedPublicClass:TaoEventConstants.kt:TaoMouseButton</ID>
+    <ID>UndocumentedPublicClass:TextureView.kt:TextureViewController$Companion</ID>
+    <ID>UndocumentedPublicClass:WindowControls.kt:WindowControlsRenderer$Companion</ID>
+    <ID>UndocumentedPublicFunction:TaoDnDDiagnostics.kt:TaoDnDDiagnostics$public fun log</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun hide</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun minimize</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onCloseRequested</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onKeyEvent</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onPointerButton</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onPointerExited</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onPointerMoved</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onRedrawRequested</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onScaleFactorChanged</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun requestClose</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun requestRedraw</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setAlwaysOnTop</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setFocusable</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setMaximized</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setMinimized</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setTitle</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun show</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow.KeyEventListener$public fun onKey</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow.TouchInputListener$public fun onTouch</ID>
+    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow.TrackpadGestureListener$public fun onGesture</ID>
+    <ID>UndocumentedPublicFunction:TitleBar.kt:@Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod") @Composable public fun DecoratedWindowScope.BasicTitleBar</ID>
+    <ID>UndocumentedPublicFunction:WindowControls.kt:WindowControlsRenderer$@Composable public fun Control</ID>
+  </CurrentIssues>
+</SmellBaseline>

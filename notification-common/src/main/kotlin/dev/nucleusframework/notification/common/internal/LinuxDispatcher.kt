@@ -15,7 +15,7 @@ import java.util.logging.Logger
 import dev.nucleusframework.notification.linux.Notification as LinuxNotification
 
 internal class LinuxDispatcher private constructor() : PlatformDispatcher {
-    private val logger = Logger.getLogger(LinuxDispatcher::class.java.simpleName)
+    private val logger = Logger.getLogger(LinuxDispatcher::class.java.name)
 
     @Volatile
     private var listenerRegistered = false

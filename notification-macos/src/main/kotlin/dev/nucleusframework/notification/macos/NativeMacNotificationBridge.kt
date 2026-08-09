@@ -25,7 +25,7 @@ private const val LIBRARY_NAME = "nucleus_notification"
 
 @Suppress("TooManyFunctions", "LongParameterList")
 internal object NativeMacNotificationBridge {
-    private val logger = Logger.getLogger(NativeMacNotificationBridge::class.java.simpleName)
+    private val logger = Logger.getLogger(NativeMacNotificationBridge::class.java.name)
     private val callbackCounter = AtomicLong(0)
     private val callbackThreadCounter = AtomicInteger(0)
     private val callbacks = ConcurrentHashMap<Long, Any>()

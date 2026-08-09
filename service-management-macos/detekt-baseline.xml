@@ -1,0 +1,8 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:AppServiceStatus.kt:AppServiceStatus$Companion</ID>
+    <ID>UndocumentedPublicFunction:AppServiceStatus.kt:AppServiceStatus.Companion$public fun fromRawValue: AppServiceStatus</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -24,7 +24,7 @@ import java.util.logging.Logger
  * Thread-safe singleton.
  */
 public object WindowsThumbnailToolbar {
-    private val logger = Logger.getLogger(WindowsThumbnailToolbar::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsThumbnailToolbar::class.java.name)
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
     public var lastError: String? = null

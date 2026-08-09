@@ -1,0 +1,66 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:DecoratedDialogTypes.kt:DecoratedDialogState$Companion</ID>
+    <ID>UndocumentedPublicClass:DecoratedDialogTypes.kt:DialogTitleBarInfo</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowCore.kt:DecoratedWindowMeasurePolicy : MeasurePolicy</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowCore.kt:DecoratedWindowState</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowCore.kt:DecoratedWindowState$Companion</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowCore.kt:TitleBarInfo</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowStyling.kt:DecoratedWindowColors</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowStyling.kt:DecoratedWindowMetrics</ID>
+    <ID>UndocumentedPublicClass:DecoratedWindowStyling.kt:DecoratedWindowStyle</ID>
+    <ID>UndocumentedPublicClass:GnomeControlButtonsIcons.kt:GnomeControlButtonsIcons</ID>
+    <ID>UndocumentedPublicClass:KdeControlButtonsIcons.kt:KdeControlButtonsIcons</ID>
+    <ID>UndocumentedPublicClass:LinuxButtonLayout.kt:LinuxButtonLayout$Companion</ID>
+    <ID>UndocumentedPublicClass:LinuxTitleBarIconSet.kt:LinuxTitleBarIconSet</ID>
+    <ID>UndocumentedPublicClass:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults</ID>
+    <ID>UndocumentedPublicClass:TitleBarCore.kt:TitleBarChildDataElement : ModifierNodeElement</ID>
+    <ID>UndocumentedPublicClass:TitleBarCore.kt:TitleBarChildDataNode : NodeParentDataModifierNode</ID>
+    <ID>UndocumentedPublicClass:TitleBarCore.kt:TitleBarScope</ID>
+    <ID>UndocumentedPublicClass:TitleBarCore.kt:TitleBarScopeImpl : TitleBarScope</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarLayoutChild</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarLayoutPolicy</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarLayoutPolicy$Companion</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarMeasurePolicy : MeasurePolicy</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarMeasureResult</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarMeasureScope</ID>
+    <ID>UndocumentedPublicClass:TitleBarLayoutPolicy.kt:TitleBarPlacementScope</ID>
+    <ID>UndocumentedPublicClass:TitleBarModifiers.kt:MacOSLargeCornerRadiusElement : ModifierNodeElement</ID>
+    <ID>UndocumentedPublicClass:TitleBarModifiers.kt:MacOSLargeCornerRadiusNode : Node</ID>
+    <ID>UndocumentedPublicClass:TitleBarModifiers.kt:NewFullscreenControlsElement : ModifierNodeElement</ID>
+    <ID>UndocumentedPublicClass:TitleBarModifiers.kt:NewFullscreenControlsNode : Node</ID>
+    <ID>UndocumentedPublicClass:TitleBarStyling.kt:TitleBarColors</ID>
+    <ID>UndocumentedPublicClass:TitleBarStyling.kt:TitleBarMetrics</ID>
+    <ID>UndocumentedPublicClass:TitleBarStyling.kt:TitleBarStyle</ID>
+    <ID>UndocumentedPublicClass:WindowControlsSide.kt:WindowControlsSide</ID>
+    <ID>UndocumentedPublicClass:WindowsControlButtonIcons.kt:WindowsControlButtonIcons</ID>
+    <ID>UndocumentedPublicClass:WindowsTitleBarIconSet.kt:WindowsTitleBarIconSet</ID>
+    <ID>UndocumentedPublicFunction:ColorUtils.kt:public fun Color.isDark: Boolean</ID>
+    <ID>UndocumentedPublicFunction:ControlButtonsDirection.kt:ControlButtonsDirection$@Composable public fun resolve: LayoutDirection</ID>
+    <ID>UndocumentedPublicFunction:DecoratedDialogTypes.kt:DecoratedDialogState$public fun copy: DecoratedDialogState</ID>
+    <ID>UndocumentedPublicFunction:DecoratedDialogTypes.kt:DecoratedDialogState$public fun toDecoratedWindowState: DecoratedWindowState</ID>
+    <ID>UndocumentedPublicFunction:DecoratedDialogTypes.kt:DecoratedDialogState.Companion$public fun of: DecoratedDialogState</ID>
+    <ID>UndocumentedPublicFunction:DecoratedWindowCore.kt:DecoratedWindowState$public fun copy: DecoratedWindowState</ID>
+    <ID>UndocumentedPublicFunction:DecoratedWindowCore.kt:DecoratedWindowState.Companion$public fun of: DecoratedWindowState</ID>
+    <ID>UndocumentedPublicFunction:DecoratedWindowStyling.kt:DecoratedWindowColors$@Composable public fun borderFor: State&lt;Color&gt;</ID>
+    <ID>UndocumentedPublicFunction:InsideBorderModifier.kt:public fun Modifier.insideBorder: Modifier</ID>
+    <ID>UndocumentedPublicFunction:LinuxTitleBarIconSet.kt:@Composable public fun linuxTitleBarIcons: LinuxTitleBarIconSet</ID>
+    <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:@Suppress("FunctionNaming") @Composable public fun NucleusDecoratedWindowTheme</ID>
+    <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults$public fun darkTitleBarStyle: TitleBarStyle</ID>
+    <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults$public fun darkWindowStyle: DecoratedWindowStyle</ID>
+    <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults$public fun lightTitleBarStyle: TitleBarStyle</ID>
+    <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults$public fun lightWindowStyle: DecoratedWindowStyle</ID>
+    <ID>UndocumentedPublicFunction:TitleBarCore.kt:@Suppress("FunctionNaming", "LongParameterList") @Composable public fun GenericTitleBarImpl</ID>
+    <ID>UndocumentedPublicFunction:TitleBarCore.kt:TitleBarScope$public fun Modifier.align: Modifier</ID>
+    <ID>UndocumentedPublicFunction:TitleBarLayoutPolicy.kt:@Composable public fun rememberTitleBarMeasurePolicy: MeasurePolicy</ID>
+    <ID>UndocumentedPublicFunction:TitleBarLayoutPolicy.kt:TitleBarLayoutPolicy$public fun MeasureScope.measureTitleBar: MeasureResult</ID>
+    <ID>UndocumentedPublicFunction:TitleBarLayoutPolicy.kt:TitleBarLayoutPolicy$public fun MeasureScope.prepareMeasure: TitleBarMeasureResult</ID>
+    <ID>UndocumentedPublicFunction:TitleBarLinuxCommon.kt:@Composable public fun createLinuxTitleBarStyle: TitleBarStyle</ID>
+    <ID>UndocumentedPublicFunction:TitleBarModifiers.kt:public fun Modifier.hasMacOSLargeCornerRadius: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TitleBarModifiers.kt:public fun Modifier.hasNewFullscreenControls: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TitleBarStyling.kt:TitleBarColors$@Composable public fun backgroundFor: State&lt;Color&gt;</ID>
+    <ID>UndocumentedPublicFunction:WindowsTitleBarIconSet.kt:@Composable public fun windowsTitleBarIcons: WindowsTitleBarIconSet</ID>
+  </CurrentIssues>
+</SmellBaseline>

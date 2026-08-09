@@ -1,0 +1,39 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:BatteryInfo.kt:BatteryInfo</ID>
+    <ID>UndocumentedPublicClass:BatteryState.kt:BatteryState</ID>
+    <ID>UndocumentedPublicClass:ComponentInfo.kt:ComponentInfo</ID>
+    <ID>UndocumentedPublicClass:ConnectivityInfo.kt:ConnectivityInfo</ID>
+    <ID>UndocumentedPublicClass:ConnectivityInfo.kt:MeteredStatus</ID>
+    <ID>UndocumentedPublicClass:CpuGlobalInfo.kt:CpuGlobalInfo</ID>
+    <ID>UndocumentedPublicClass:CpuInfo.kt:CpuInfo</ID>
+    <ID>UndocumentedPublicClass:DiskInfo.kt:DiskInfo</ID>
+    <ID>UndocumentedPublicClass:GpuInfo.kt:GpuInfo</ID>
+    <ID>UndocumentedPublicClass:MemoryInfo.kt:MemoryInfo</ID>
+    <ID>UndocumentedPublicClass:MotherboardInfo.kt:MotherboardInfo</ID>
+    <ID>UndocumentedPublicClass:NetworkInterfaceInfo.kt:NetworkInterfaceInfo</ID>
+    <ID>UndocumentedPublicClass:OsInfo.kt:OsInfo</ID>
+    <ID>UndocumentedPublicClass:ProcessInfo.kt:ProcessInfo</ID>
+    <ID>UndocumentedPublicClass:ProductInfo.kt:ProductInfo</ID>
+    <ID>UndocumentedPublicClass:SystemInfo.kt:SystemInfo</ID>
+    <ID>UndocumentedPublicClass:UserInfo.kt:UserInfo</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun batteryInfo: BatteryInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun components: List&lt;ComponentInfo&gt;</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun connectivityInfo: ConnectivityInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun cpuInfo: CpuGlobalInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun disks: List&lt;DiskInfo&gt;</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun gpus: List&lt;GpuInfo&gt;</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun idleTime: Long</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun isAvailable: Boolean</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun memoryInfo: MemoryInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun motherboard: MotherboardInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun networks: List&lt;NetworkInterfaceInfo&gt;</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun osInfo: OsInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun process: ProcessInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun processes: List&lt;ProcessInfo&gt;</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun product: ProductInfo?</ID>
+    <ID>UndocumentedPublicFunction:SystemInfo.kt:SystemInfo$public fun users: List&lt;UserInfo&gt;</ID>
+  </CurrentIssues>
+</SmellBaseline>

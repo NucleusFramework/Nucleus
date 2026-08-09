@@ -9,7 +9,7 @@ private const val TAG = "WindowsSslBridge"
 private const val LIBRARY_NAME = "nucleus_ssl"
 
 internal object WindowsSslBridge {
-    private val logger = Logger.getLogger(WindowsSslBridge::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsSslBridge::class.java.name)
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, WindowsSslBridge::class.java)
 
     val isLoaded: Boolean get() = loaded

@@ -1,0 +1,15 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:Constraints.kt:Constraints$Companion</ID>
+    <ID>UndocumentedPublicClass:CronExpression.kt:CronExpression$Companion</ID>
+    <ID>UndocumentedPublicClass:TaskData.kt:TaskData$Companion</ID>
+    <ID>UndocumentedPublicClass:TaskId.kt:TaskId$Companion</ID>
+    <ID>UndocumentedPublicClass:TaskRegistry.kt:TaskRegistry$Builder</ID>
+    <ID>UndocumentedPublicClass:TaskRequest.kt:TaskRequest$Companion</ID>
+    <ID>UndocumentedPublicClass:TaskRequest.kt:TaskRequest$Type</ID>
+    <ID>UndocumentedPublicFunction:ConstraintChecker.kt:ConstraintChecker$public fun check: ConstraintResult</ID>
+    <ID>UndocumentedPublicFunction:TaskRegistry.kt:TaskRegistry.Builder$public fun build: TaskRegistry</ID>
+  </CurrentIssues>
+</SmellBaseline>

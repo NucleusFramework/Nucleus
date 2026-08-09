@@ -493,7 +493,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private companion object {
         val logger: java.util.logging.Logger =
             java.util.logging.Logger
-                .getLogger(TaoStandalonePopupHostMac::class.java.simpleName)
+                .getLogger(TaoStandalonePopupHostMac::class.java.name)
 
         const val HIDDEN_X_PX: Int = -32_000
         const val HIDDEN_Y_PX: Int = -32_000

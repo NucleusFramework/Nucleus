@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:Enums.kt:AlertStyle$Companion</ID>
+    <ID>UndocumentedPublicClass:Enums.kt:AuthorizationStatus$Companion</ID>
+    <ID>UndocumentedPublicClass:Enums.kt:InterruptionLevel$Companion</ID>
+    <ID>UndocumentedPublicClass:Enums.kt:NotificationSetting$Companion</ID>
+    <ID>UndocumentedPublicClass:Enums.kt:ShowPreviewsSetting$Companion</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationSound$CriticalNamed : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationSound$Default : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationSound$DefaultCritical : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationSound$DefaultCriticalWithVolume : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationSound$Named : NotificationSound</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:AlertStyle.Companion$public fun fromRawValue: AlertStyle</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:AuthorizationStatus.Companion$public fun fromRawValue: AuthorizationStatus</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:InterruptionLevel.Companion$public fun fromRawValue: InterruptionLevel</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:NotificationSetting.Companion$public fun fromRawValue: NotificationSetting</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:ShowPreviewsSetting.Companion$public fun fromRawValue: ShowPreviewsSetting</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun add</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun getBadgeCount</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun getDeliveredNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun getNotificationCategories</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun getNotificationSettings</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun getPendingNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun removeAllDeliveredNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun removeAllPendingNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun removeDeliveredNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun removePendingNotifications</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun requestAuthorization</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun setBadgeCount</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun setDelegate</ID>
+    <ID>UndocumentedPublicFunction:NotificationCenter.kt:NotificationCenter$public fun setNotificationCategories</ID>
+  </CurrentIssues>
+</SmellBaseline>
