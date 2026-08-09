@@ -23,8 +23,9 @@ import java.util.concurrent.Executors
  *            unless [AwakeMode.SYSTEM_ONLY] is requested.
  *   macOS:   IOPMAssertionCreateWithName — kIOPMAssertPreventUserIdleDisplaySleep,
  *            or kIOPMAssertPreventUserIdleSystemSleep for [AwakeMode.SYSTEM_ONLY].
- *   Linux:   GNOME SessionManager / systemd-logind / X11 inhibitors;
- *            [AwakeMode.SYSTEM_ONLY] is not implemented yet.
+ *   Linux:   GNOME SessionManager / freedesktop PowerManagement / systemd-logind /
+ *            X11 inhibitors — [AwakeMode.SYSTEM_ONLY] drops the idle bits and skips
+ *            the X11 screen-saver backend.
  */
 @Suppress("TooManyFunctions")
 public object EnergyManager {
@@ -99,9 +100,7 @@ public object EnergyManager {
      * from entering sleep until [releaseAwake] is called.
      *
      * [AwakeMode.SYSTEM_ONLY] lets the screen saver and display sleep behave normally
-     * while long background work keeps running. It is implemented on Windows and macOS;
-     * Linux returns an unsuccessful [Result] instead of silently downgrading to
-     * [AwakeMode.SYSTEM_AND_DISPLAY].
+     * while long background work keeps running.
      *
      * Calling this while a request is already active replaces it with [mode].
      *

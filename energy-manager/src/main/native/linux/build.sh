@@ -59,3 +59,10 @@ else
     gcc "${COMMON_FLAGS[@]}" \
         -o "$RESOURCE_DIR/linux-$ARCH/libnucleus_energy_manager.so" "$SRC"
 fi
+
+# Clear NativeLibraryLoader cache to avoid serving stale cached copy
+CACHE_DIR="${HOME}/.cache/nucleus/native"
+if [ -d "$CACHE_DIR" ]; then
+    find "$CACHE_DIR" -name "libnucleus_energy_manager.so" -delete 2>/dev/null || true
+    echo "Cleared NativeLibraryLoader cache"
+fi

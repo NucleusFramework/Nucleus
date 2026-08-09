@@ -42,26 +42,31 @@ internal object LinuxEnergyManager : PlatformEnergyManager {
         callNative { NativeLinuxEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
     /**
-     * [AwakeMode.SYSTEM_ONLY] would need the GNOME/logind inhibitors to be split
-     * (INHIBIT_SUSPEND without INHIBIT_IDLE) and the X11 screen-saver backend to be
-     * skipped — not implemented yet, so the request is rejected rather than silently
-     * keeping the display on as well.
+     * The inhibitor the composite backend takes depends on [mode]: GNOME gets
+     * INHIBIT_SUSPEND alone instead of INHIBIT_SUSPEND | INHIBIT_IDLE, the X11
+     * screen-saver backend is skipped entirely (it never keeps the system awake),
+     * and org.freedesktop.PowerManagement — which inhibits automatic sleep only —
+     * joins the chain for the desktops without org.gnome.SessionManager.
      */
     @Synchronized
     override fun keepAwake(mode: AwakeMode): EnergyManager.Result =
-        if (mode == AwakeMode.SYSTEM_ONLY) {
-            EnergyManager.Result(false, -1, "AwakeMode.SYSTEM_ONLY is not implemented on Linux yet")
-        } else {
-            callNative { NativeLinuxEnergyBridge.nativeKeepScreenAwake() }
-        }
+        callNative { NativeLinuxEnergyBridge.nativeKeepAwake(mode.nativeCode) }
 
     @Synchronized
     override fun releaseAwake(): EnergyManager.Result =
         callNative {
-            NativeLinuxEnergyBridge.nativeReleaseScreenAwake()
+            NativeLinuxEnergyBridge.nativeReleaseAwake()
         }
 
     override fun isAwakeActive(): Boolean =
         NativeLinuxEnergyBridge.isLoaded &&
-            runCatching { NativeLinuxEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
+            runCatching { NativeLinuxEnergyBridge.nativeIsAwakeActive() }.getOrDefault(false)
+
+    /** Mirrors the AWAKE_* constants in the native bridge. */
+    private val AwakeMode.nativeCode: Int
+        get() =
+            when (this) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> 0
+                AwakeMode.SYSTEM_ONLY -> 1
+            }
 }
