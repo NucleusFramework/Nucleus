@@ -121,15 +121,24 @@ public object EnergyManager {
      */
     public fun isAwakeActive(): Boolean = delegate?.isAwakeActive() ?: false
 
+    /**
+     * Prevents the system and display from sleeping until [releaseAwake] is called.
+     */
     @Deprecated(
         "Renamed to keepAwake(), which also accepts an AwakeMode",
         ReplaceWith("keepAwake()"),
     )
     public fun keepScreenAwake(): Result = keepAwake()
 
+    /**
+     * Releases the awake state, allowing the OS to sleep normally.
+     */
     @Deprecated("Renamed to releaseAwake()", ReplaceWith("releaseAwake()"))
     public fun releaseScreenAwake(): Result = releaseAwake()
 
+    /**
+     * Returns true if an awake request is currently held.
+     */
     @Deprecated("Renamed to isAwakeActive()", ReplaceWith("isAwakeActive()"))
     public fun isScreenAwakeActive(): Boolean = isAwakeActive()
 
