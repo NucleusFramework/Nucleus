@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:Enums.kt:DismissalReason$Companion</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:AdaptiveGroupBuilder</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:AdaptiveSubgroupBuilder</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:SelectionBoxBuilder</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:ToastActionsBuilder</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:ToastContentBuilder</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:ToastDsl</ID>
+    <ID>UndocumentedPublicClass:ToastContentDsl.kt:ToastVisualBuilder</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:DismissalReason.Companion$public fun fromRawValue: DismissalReason</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:AdaptiveGroupBuilder$public fun subgroup</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:AdaptiveSubgroupBuilder$public fun image</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:AdaptiveSubgroupBuilder$public fun text</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:SelectionBoxBuilder$public fun item</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastActionsBuilder$public fun button</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastActionsBuilder$public fun contextMenuItem</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastActionsBuilder$public fun selectionBox</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastActionsBuilder$public fun textBox</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastContentBuilder$public fun actions</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastContentBuilder$public fun audio</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastContentBuilder$public fun header</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastContentBuilder$public fun silentAudio</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastContentBuilder$public fun visual</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun appLogo</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun attribution</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun group</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun heroImage</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun image</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun progressBar</ID>
+    <ID>UndocumentedPublicFunction:ToastContentDsl.kt:ToastVisualBuilder$public fun text</ID>
+  </CurrentIssues>
+</SmellBaseline>

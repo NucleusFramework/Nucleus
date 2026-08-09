@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:JumpListItem.kt:JumpListItem$Companion</ID>
+    <ID>UndocumentedPublicClass:ThumbnailToolbarButton.kt:ThumbnailToolbarButton$Companion</ID>
+    <ID>UndocumentedPublicFunction:ThumbBarClickListener.kt:ThumbBarClickListener$public fun onThumbButtonClick</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,13 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:DecoratedDialogCore.kt:AwtDecoratedDialogScope : DecoratedDialogScopeDialogWindowScope</ID>
+    <ID>UndocumentedPublicClass:DecoratedDialogCore.kt:DecoratedDialogMeasurePolicy : MeasurePolicy</ID>
+    <ID>UndocumentedPublicFunction:AwtTitleBar.kt:@Suppress("FunctionNaming", "LongParameterList") @Composable public fun AwtDecoratedWindowScope.TitleBarImpl</ID>
+    <ID>UndocumentedPublicFunction:AwtTitleBar.kt:public fun Modifier.windowDragHandler: Modifier</ID>
+    <ID>UndocumentedPublicFunction:DialogTitleBarImpl.kt:@Suppress("FunctionNaming", "LongParameterList") @Composable public fun AwtDecoratedDialogScope.DialogTitleBarImpl</ID>
+    <ID>UndocumentedPublicFunction:WindowControlArea.kt:@Suppress("FunctionNaming") @Composable public fun TitleBarScope.WindowControlArea</ID>
+    <ID>UndocumentedPublicFunction:WindowsWindowControlArea.kt:@Suppress("FunctionNaming") @Composable public fun TitleBarScope.WindowsWindowControlArea</ID>
+  </CurrentIssues>
+</SmellBaseline>

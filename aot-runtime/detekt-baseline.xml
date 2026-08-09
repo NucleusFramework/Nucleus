@@ -1,0 +1,11 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:AotRuntime.kt:AotRuntime</ID>
+    <ID>UndocumentedPublicClass:AotRuntime.kt:AotRuntimeMode</ID>
+    <ID>UndocumentedPublicFunction:AotRuntime.kt:AotRuntime$@JvmStatic public fun isRuntime: Boolean</ID>
+    <ID>UndocumentedPublicFunction:AotRuntime.kt:AotRuntime$@JvmStatic public fun isTraining: Boolean</ID>
+    <ID>UndocumentedPublicFunction:AotRuntime.kt:AotRuntime$@JvmStatic public fun mode: AotRuntimeMode</ID>
+  </CurrentIssues>
+</SmellBaseline>
