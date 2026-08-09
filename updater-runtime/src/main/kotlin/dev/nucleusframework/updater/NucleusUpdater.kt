@@ -28,14 +28,21 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
 import java.util.logging.Level
 import java.util.logging.Logger
 import kotlin.coroutines.cancellation.CancellationException
 
 public class NucleusUpdater(
-    private val config: UpdaterConfig,
+    config: UpdaterConfig,
 ) {
-    public val currentVersion: String get() = config.currentVersion
+    /**
+     * The config is validated and frozen here, once: a missing provider fails at construction,
+     * and mutating the [UpdaterConfig] afterwards has no effect on this updater.
+     */
+    private val config: ResolvedUpdaterConfig = config.resolve()
+
+    public val currentVersion: String get() = this.config.currentVersion
 
     private var pendingUpdateVersion: String? = null
 
@@ -78,18 +85,19 @@ public class NucleusUpdater(
         flow {
             pendingUpdateVersion = info.version
             val targetFile = info.currentFile
-            val tempDir = System.getProperty("java.io.tmpdir")
-            val tempFile = File(tempDir, "${targetFile.fileName}.download")
-            val finalFile = File(tempDir, targetFile.fileName)
+            // A fresh, owner-only (0700 on POSIX) staging directory: a predictable path in the
+            // shared temp dir would be a pre-created-file/symlink hazard on multi-user systems.
+            val stagingDir = Files.createTempDirectory("nucleus-update-").toFile()
+            val tempFile = File(stagingDir, "${targetFile.fileName}.download")
+            val finalFile = File(stagingDir, targetFile.fileName)
 
             try {
                 val outcome =
                     downloadDifferentially(targetFile, tempFile)
                         ?: downloadFully(targetFile, tempFile)
 
-                // Rename to final file
-                if (finalFile.exists()) finalFile.delete()
-                tempFile.renameTo(finalFile)
+                // Rename to final file (the staging directory is fresh, so the name is free)
+                check(tempFile.renameTo(finalFile)) { "Could not stage $finalFile" }
 
                 // Best-effort: fetch the detached signature next to the package so a signature-verified
                 // silent install (Linux passwordless update) can use it. Absent signature is not fatal —
@@ -109,15 +117,15 @@ public class NucleusUpdater(
                     ),
                 )
             } catch (e: UpdateException) {
-                tempFile.delete()
+                stagingDir.deleteRecursively()
                 throw e
             } catch (e: CancellationException) {
-                tempFile.delete()
+                stagingDir.deleteRecursively()
                 throw e
             } catch (
                 @Suppress("TooGenericExceptionCaught") e: Exception,
             ) {
-                tempFile.delete()
+                stagingDir.deleteRecursively()
                 throw NetworkException("Download failed", e)
             }
         }.flowOn(Dispatchers.IO)

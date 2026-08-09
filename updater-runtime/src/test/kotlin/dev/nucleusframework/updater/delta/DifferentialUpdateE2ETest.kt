@@ -46,11 +46,8 @@ class DifferentialUpdateE2ETest {
     @After
     fun tearDown() {
         server.close()
-        // downloadUpdate() stages artifacts in the JVM temp dir; do not leave them behind.
-        downloaded.forEach { file ->
-            file.delete()
-            File(file.parentFile, "${file.name}.asc").delete()
-        }
+        // downloadUpdate() stages artifacts in a private per-download temp directory; drop it whole.
+        downloaded.forEach { file -> file.parentFile?.deleteRecursively() }
     }
 
     @Test
