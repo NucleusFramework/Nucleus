@@ -148,6 +148,13 @@ internal fun releaseWindowsTextureImports(context: DirectContext) {
     windowsTextureImports.closeAllFor(context)
 }
 
+/**
+ * Whether [context] currently composites at least one `TextureView`. The
+ * Windows host keeps VSync on through the OS modal resize/move loop in that
+ * case — see `TaoComposeSceneHostWindows.onResizeLoopChanged` (#484).
+ */
+internal fun hasWindowsTextureImports(context: DirectContext): Boolean = windowsTextureImports.hasImportsFor(context)
+
 private fun importTexture(
     host: TaoWindowsTextureHost,
     source: D3D11SharedTextureSource,

@@ -151,14 +151,70 @@ public fun rememberTaoGpuRenderContext(): TaoGpuRenderContext? {
     val metalHost = LocalTaoMetalTextureHost.current
     val glHost = LocalTaoGlTextureHost.current
     val windowsHost = LocalTaoWindowsTextureHost.current
-    return remember(metalHost, glHost, windowsHost) {
-        when {
-            metalHost != null -> MetalRenderContext(metalHost)
-            glHost != null -> LinuxOpenGlRenderContext(glHost)
-            windowsHost != null -> WindowsOpenGlRenderContext(windowsHost)
-            else -> null
+    val context =
+        remember(metalHost, glHost, windowsHost) {
+            when {
+                metalHost != null -> MetalRenderContext(metalHost)
+                glHost != null -> LinuxOpenGlRenderContext(glHost)
+                windowsHost != null -> WindowsOpenGlRenderContext(windowsHost)
+                else -> null
+            }
         }
+    if (context != null) {
+        // Composition-lifetime consumer mark: the Windows host keeps VSync
+        // on through the OS modal resize/move loop while its DirectContext
+        // has GPU-context consumers (#484). A RememberObserver so an
+        // abandoned composition can never leak the mark.
+        remember(context) { TaoGpuRenderContextLease(context.skiaContext) }
     }
+    return context
+}
+
+/**
+ * Ledger of the [DirectContext]s whose composition currently holds a
+ * [TaoGpuRenderContext]. Such a consumer typically drives per-frame GPU work
+ * off `withFrameNanos`; the Windows host consults this (together with the
+ * `TextureView` import ledger) to keep VSync on through the OS modal
+ * resize/move loop, where an unpaced frame clock would otherwise free-run at
+ * event-pump speed (#484).
+ */
+internal object TaoGpuRenderContextConsumers {
+    private val counts = java.util.concurrent.ConcurrentHashMap<DirectContext, Int>()
+
+    fun retain(context: DirectContext) {
+        counts.merge(context, 1, Int::plus)
+    }
+
+    fun release(context: DirectContext) {
+        counts.computeIfPresent(context) { _, n -> if (n <= 1) null else n - 1 }
+    }
+
+    /** Whether [context]'s composition holds at least one live consumer. */
+    fun isActive(context: DirectContext): Boolean = counts.containsKey(context)
+}
+
+/**
+ * Marks a [DirectContext] as having a live [TaoGpuRenderContext] consumer for
+ * exactly as long as the `remember` that produced the context stays in the
+ * composition. `onAbandoned` covers compositions computed but never applied.
+ */
+private class TaoGpuRenderContextLease(
+    private val context: DirectContext,
+) : androidx.compose.runtime.RememberObserver {
+    private var retained = false
+
+    override fun onRemembered() {
+        retained = true
+        TaoGpuRenderContextConsumers.retain(context)
+    }
+
+    override fun onForgotten() {
+        if (!retained) return
+        retained = false
+        TaoGpuRenderContextConsumers.release(context)
+    }
+
+    override fun onAbandoned(): Unit = onForgotten()
 }
 
 /**
