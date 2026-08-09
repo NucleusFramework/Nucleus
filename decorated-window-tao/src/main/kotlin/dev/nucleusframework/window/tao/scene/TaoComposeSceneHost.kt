@@ -58,7 +58,6 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.skia.DirectContext
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.cos
@@ -1196,10 +1195,9 @@ internal class TaoComposeSceneHost(
     // this render thread is idle. Overlay surfaces can therefore close their
     // `DirectContext` here (blocking) and detach natively on the main thread
     // without racing an in-flight replay.
-    private val renderExecutor: ExecutorService =
-        Executors.newSingleThreadExecutor { r ->
-            Thread(r, "TaoMetalRender").apply { isDaemon = true }
-        }
+    // Every task drains its own ObjC autorelease pool — see
+    // newMetalRenderExecutor (#494).
+    private val renderExecutor: ExecutorService = newMetalRenderExecutor("TaoMetalRender")
     private val renderDispatcher = renderExecutor.asCoroutineDispatcher()
 
     /**

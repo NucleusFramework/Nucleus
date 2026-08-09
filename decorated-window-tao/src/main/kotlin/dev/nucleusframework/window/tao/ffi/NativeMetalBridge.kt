@@ -287,6 +287,29 @@ internal object NativeMetalBridge {
     )
 
     /**
+     * Pushes an ObjC autorelease pool on the calling thread and returns its
+     * opaque token, to be balanced with [nativeAutoreleasePoolPop] on the
+     * same thread (#494).
+     *
+     * The dedicated Metal render threads are plain JVM threads with no pool;
+     * without one drained per frame, the autoreleased `CAMetalDrawable` from
+     * [nativeBeginFrame] and the command buffer autoreleased inside skiko's
+     * `flushAndSubmit` leak on every rendered frame. The pool wraps the whole
+     * per-frame render-thread task so skiko's flush — which runs between our
+     * JNI calls — is covered too.
+     */
+    @JvmStatic
+    external fun nativeAutoreleasePoolPush(): Long
+
+    /**
+     * Pops the pool pushed by [nativeAutoreleasePoolPush], releasing every
+     * object autoreleased on this thread since. Must run on the pushing
+     * thread. No-op for a 0 token.
+     */
+    @JvmStatic
+    external fun nativeAutoreleasePoolPop(pool: Long)
+
+    /**
      * Acquires the next CAMetalLayer drawable. Returns null if the system
      * is not ready to render this frame (e.g. no drawable available).
      *

@@ -45,14 +45,17 @@ internal fun recordSceneToPicture(
     widthPx: Int,
     heightPx: Int,
     nanoTime: Long = System.nanoTime(),
-): Picture {
-    val recorder = PictureRecorder()
-    // The cull bounds match the drawable size (physical pixels). The scene is
-    // rendered at this size; the clear happens at replay time, not here.
-    val canvas = recorder.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()))
-    scene.render(canvas.asComposeCanvas(), nanoTime)
-    return recorder.finishRecordingAsPicture()
-}
+): Picture =
+    PictureRecorder().use { recorder ->
+        // The cull bounds match the drawable size (physical pixels). The scene is
+        // rendered at this size; the clear happens at replay time, not here.
+        val canvas = recorder.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()))
+        scene.render(canvas.asComposeCanvas(), nanoTime)
+        // Closing the recorder here frees its native memory deterministically
+        // (one recorder per frame — a GC-driven Cleaner would lag far behind);
+        // the returned Picture owns its own native ref and survives the close.
+        recorder.finishRecordingAsPicture()
+    }
 
 /**
  * Replays a [picture] recorded by [recordSceneToPicture] into the attachment's
