@@ -104,6 +104,10 @@ public object EnergyManager {
      * [AwakeMode.SYSTEM_AND_DISPLAY].
      *
      * Calling this while a request is already active replaces it with [mode].
+     *
+     * The request is held by a dedicated internal thread, so it stays active
+     * regardless of which thread calls this function — including short-lived
+     * coroutine dispatcher workers.
      */
     public fun keepAwake(mode: AwakeMode = AwakeMode.SYSTEM_AND_DISPLAY): Result =
         delegate?.keepAwake(mode) ?: unsupported

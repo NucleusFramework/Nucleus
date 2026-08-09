@@ -2,6 +2,7 @@ package dev.nucleusframework.energymanager
 
 import dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge
 import dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge
+import dev.nucleusframework.energymanager.windows.WindowsEnergyManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import java.io.File
@@ -509,16 +510,16 @@ class EnergyManagerTest {
         assumeWindows()
         assertTrue(EnergyManager.isAvailable())
 
-        // The execution state is per-thread, so query it from the very thread
-        // that issued the request.
+        // The execution state is per-thread and all awake requests are routed
+        // through the dedicated awake thread, so query it from that thread.
         EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
-        val bothFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+        val bothFlags = queryAwakeFlags()
 
         EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
-        val systemOnlyFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+        val systemOnlyFlags = queryAwakeFlags()
 
         EnergyManager.releaseAwake()
-        val releasedFlags = NativeWindowsEnergyBridge.nativeQueryAwakeFlags()
+        val releasedFlags = queryAwakeFlags()
 
         println("Flags: both=0x${bothFlags.toHexString()} systemOnly=0x${systemOnlyFlags.toHexString()}")
 
@@ -537,6 +538,30 @@ class EnergyManagerTest {
     }
 
     @Test
+    fun `windows keepAwake survives the requesting thread dying`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // Regression test: SetThreadExecutionState is per-thread, so a request
+        // issued from a short-lived thread (e.g. a Dispatchers.IO worker) used
+        // to be silently dropped when that thread exited.
+        val thread = Thread { EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY) }
+        thread.start()
+        thread.join()
+
+        try {
+            val flags = queryAwakeFlags()
+            assertTrue(
+                flags and ES_SYSTEM_REQUIRED != 0,
+                "Awake request must survive the requesting thread exiting",
+            )
+            assertTrue(EnergyManager.isAwakeActive(), "Awake request should still be reported active")
+        } finally {
+            EnergyManager.releaseAwake()
+        }
+    }
+
+    @Test
     fun `windows keepAwake switches between modes without releasing`() {
         assumeWindows()
         assertTrue(EnergyManager.isAvailable())
@@ -549,6 +574,10 @@ class EnergyManagerTest {
         assertTrue(EnergyManager.isAwakeActive())
         assertTrue(EnergyManager.releaseAwake().success)
     }
+
+    /** Reads the execution state flags from the dedicated awake thread. */
+    private fun queryAwakeFlags(): Int =
+        WindowsEnergyManager.onAwakeThread { NativeWindowsEnergyBridge.nativeQueryAwakeFlags() }
 
     // ── Linux helpers ────────────────────────────────────────────────
 
