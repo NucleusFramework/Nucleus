@@ -85,6 +85,12 @@ internal class TextureImportRegistry<H : Any, I : Any>(
             closeImport(entry.imported)
         }
     }
+
+    /**
+     * Whether any live import targets [context] — i.e. the scene composites
+     * at least one `TextureView` right now.
+     */
+    fun hasImportsFor(context: DirectContext): Boolean = entries.keys.any { it.context == context }
 }
 
 /**

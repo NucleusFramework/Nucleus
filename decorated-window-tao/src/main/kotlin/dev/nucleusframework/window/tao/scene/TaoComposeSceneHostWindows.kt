@@ -40,6 +40,7 @@ import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.hasWindowsTextureImports
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
@@ -1015,7 +1016,24 @@ internal class TaoComposeSceneHostWindows(
         if (attachmentHandle == 0L) return
         resizeLoopActive = active
         if (active) {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            // Keep VSync when the scene composites a TextureView or holds a
+            // TaoGpuRenderContext consumer (#484). With interval 0 and no
+            // other pacer, their `withFrameNanos`-driven producers re-enter
+            // the render path at event-pump speed for the whole drag
+            // (~1300 fps observed) — VSync is the only pacer available
+            // inside the modal loop, so such a window trades the #477
+            // border-drag responsiveness for a display-paced frame clock.
+            // Windows without frame-paced GPU content keep the interval-0
+            // regime and its resize behavior unchanged.
+            val framePacedContent =
+                directContext?.let {
+                    hasWindowsTextureImports(it) ||
+                        dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
+                            .isActive(it)
+                } == true
+            if (!framePacedContent) {
+                NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            }
         } else {
             NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
             // Paint the settled size once more so the first steady-state frame
