@@ -1394,6 +1394,17 @@ internal class TaoComposeSceneHostWindows(
                 override val directContext: DirectContext = ctx
 
                 override fun requestRedraw() = outer.window.requestRedraw()
+
+                override fun <T> withContextCurrent(block: () -> T): T? {
+                    // Read live: 0 once the host detached, which keeps a late
+                    // caller off a freed attachment (the Linux twin's rule).
+                    val handle = outer.attachmentHandle
+                    if (handle == 0L) return null
+                    return preservingAngleBinding {
+                        NativeTaoGlBridge.nativeMakeCurrent(handle)
+                        block()
+                    }
+                }
             }
     }
 

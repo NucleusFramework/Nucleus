@@ -297,11 +297,16 @@ fun TextureTab(modifier: Modifier = Modifier) {
             }
             BasicText("standalone panel — its own Skia context", style = label)
         }
+        // The complementary API to everything above: an in-process renderer
+        // drawing on the scene's OWN context instead of importing a foreign
+        // buffer. See GpuContextSection.
+        GpuContextSection(label)
+
         if (isTaoStandalonePopupAvailable()) {
             TaoStandalonePopup(
                 visible = panelVisible,
                 position = WindowPosition.Absolute(40.dp, 40.dp),
-                size = DpSize(220.dp, 200.dp),
+                size = DpSize(220.dp, 380.dp),
                 focusable = false,
                 onOutsideClick = { panelVisible = false },
             ) {
@@ -319,6 +324,11 @@ fun TextureTab(modifier: Modifier = Modifier) {
                         modifier = demoBox(160.dp, 120.dp),
                         contentScale = ContentScale.FillBounds,
                     )
+                    // Same in-process-renderer demo, resolved against THIS
+                    // surface: on macOS/Linux the panel owns a private Skia
+                    // context (different skiaContext@ id than the window's),
+                    // on Windows it shares the headless one.
+                    GpuContextSection(label, compact = true)
                 }
             }
         }
