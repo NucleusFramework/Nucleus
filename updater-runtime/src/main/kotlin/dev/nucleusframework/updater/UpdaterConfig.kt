@@ -47,13 +47,48 @@ public class UpdaterConfig {
      */
     public var cacheDir: File? = null
 
-    internal fun resolvedAllowPrerelease(): Boolean = allowPrerelease || currentVersion.contains("-")
-
-    internal fun isDevMode(): Boolean = currentVersion == DEV_VERSION
+    /**
+     * Validates the config and freezes it into an immutable snapshot, so a [NucleusUpdater]
+     * never observes post-construction mutation and a missing [provider] fails at
+     * construction instead of at the first network call.
+     */
+    internal fun resolve(): ResolvedUpdaterConfig {
+        require(::provider.isInitialized) {
+            "UpdaterConfig.provider must be set, e.g. NucleusUpdater { provider = GitHubProvider(\"owner/repo\") }"
+        }
+        return ResolvedUpdaterConfig(
+            currentVersion = currentVersion,
+            provider = provider,
+            channel = channel,
+            allowDowngrade = allowDowngrade,
+            allowPrerelease = allowPrerelease,
+            executableType = executableType,
+            httpClient = httpClient,
+            differentialDownload = differentialDownload,
+            cacheDir = cacheDir,
+        )
+    }
 
     public companion object {
         public const val DEV_VERSION: String = "0.0.0-dev"
     }
+}
+
+/** The immutable snapshot of an [UpdaterConfig], taken once when a [NucleusUpdater] is constructed. */
+internal data class ResolvedUpdaterConfig(
+    val currentVersion: String,
+    val provider: UpdateProvider,
+    val channel: String,
+    val allowDowngrade: Boolean,
+    val allowPrerelease: Boolean,
+    val executableType: String?,
+    val httpClient: HttpClient?,
+    val differentialDownload: Boolean,
+    val cacheDir: File?,
+) {
+    fun resolvedAllowPrerelease(): Boolean = allowPrerelease || currentVersion.contains("-")
+
+    fun isDevMode(): Boolean = currentVersion == UpdaterConfig.DEV_VERSION
 }
 
 public fun NucleusUpdater(block: UpdaterConfig.() -> Unit): NucleusUpdater {
