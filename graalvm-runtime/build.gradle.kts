@@ -1,11 +1,11 @@
 import com.vanniktech.maven.publish.JavadocJar
 import com.vanniktech.maven.publish.KotlinJvm
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     java
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -33,27 +33,8 @@ kotlin {
     }
 }
 
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the CoreFoundation locale JNI bridge into macOS dylibs (arm64 + x64)"
-    group = "build"
-    val nativeDir = file("src/main/native/macos")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "darwin-aarch64/libnucleus_locale.dylib")
-    onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs)
-    }
+nucleusNative {
+    macos("nucleus_locale", "Compiles the CoreFoundation locale JNI bridge into macOS dylibs (arm64 + x64)")
 }
 
 // All Java sources are package-private SVM substitutions (Target_* classes), so there is

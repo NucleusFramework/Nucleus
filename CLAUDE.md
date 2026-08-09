@@ -27,6 +27,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
 - `plugin-build/plugin` - Gradle plugin for packaging & distribution
+- `buildSrc` - Build-only convention plugins (`nucleus.native-module`: the shared `buildNative*` wiring for every JNI module)
 - `examples/` - Demo & sample applications (consolidated): `nucleus-demo` (flagship), `tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `extra-launcher-demo`, `benchmark-demo` (JIT-vs-GraalVM-O3 CPU benchmark suite, with SwiftUI + Tauri ports under `ports/`), `gstreamer-demo` (Linux: GStreamer video into a `TextureView`, needs its own `build.sh` and the GStreamer dev packages), `mediafoundation-demo` (Windows counterpart: Media Foundation/DXVA video into a `TextureView`, needs its own `build.bat`), `avfoundation-demo` (macOS counterpart: AVFoundation/VideoToolbox video into a `TextureView`, needs its own `build.sh`), plus `shared` (Compose helper used by tao/jni demos)
 
 ## Build & Run
@@ -63,14 +64,24 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 
 When creating a new module with platform-specific JNI libraries, all steps below are required:
 
-1. **Native source** — `<module>/src/main/native/{linux,macos,windows}/` with `build.sh`/`build.bat` + C/ObjC source. Library name: `nucleus_<feature>`. Linux: prefer `dlopen` over hard compile-time deps.
-2. **Build output** — scripts must place binaries in `<module>/src/main/resources/nucleus/native/{linux-x64,linux-aarch64,darwin-x64,darwin-aarch64,win32-x64,win32-aarch64}/`. Build scripts must also clear the `NativeLibraryLoader` cache (`~/.cache/nucleus/native/<arch>/`) after compilation, otherwise the loader serves the stale cached copy instead of the freshly built library.
-3. **Kotlin JNI bridge** — `internal object` using `NativeLibraryLoader.load()` with `@JvmStatic external` methods. Always provide a Kotlin fallback when native lib is unavailable.
-4. **GraalVM reachability metadata** — create `<module>/src/main/resources/META-INF/native-image/dev.nucleusframework/nucleus.<module>/reachability-metadata.json` declaring all JNI-accessible classes/methods. Without this, native-image silently eliminates the bridge.
-5. **CI build** (`build-natives.yaml`) — add one build step per platform job, gated with `if: steps.natives-cache.outputs.cache-hit != 'true'`, plus the library entries in that platform's `Verify ... natives` FILES list. Native outputs are cached keyed on `hashFiles('**/src/main/native/**', ...)`, so the new sources invalidate the cache automatically. Each platform job publishes a single merged artifact (`natives-windows`, `natives-macos`, `natives-linux-{x64,aarch64}`); consumer workflows fetch them all with one `pattern: 'natives-*'` download step and need **no changes** for a new module.
-6. **CI verify lists** — add the 6 arch paths to the EXPECTED arrays of the "Verify all natives present" steps in `pre-merge.yaml` and `publish-maven.yaml`.
+1. **Native source** — `<module>/src/main/native/{linux,macos,windows}/` with `build.sh`/`build.bat` + C/ObjC source. Library name: `nucleus_<feature>`. Linux: prefer `dlopen` over hard compile-time deps. Rust modules keep the crate at `src/main/native/` (`Cargo.toml` + `src/`) and only the launcher script under the per-OS directory.
+2. **Build output** — scripts must place binaries in `<module>/src/main/resources/nucleus/native/{linux-x64,linux-aarch64,darwin-x64,darwin-aarch64,win32-x64,win32-aarch64}/`.
+3. **Gradle wiring** — apply `id("nucleus.native-module")` and declare one line per platform. That is the whole build-script surface: the convention plugin (`buildSrc/src/main/kotlin/dev/nucleusframework/gradle/NativeModulePlugin.kt`) registers `buildNative{Windows,MacOs,Linux}` with the source inputs, the resources output, the host-OS and prebuilt-on-CI guards, the absolute build-script path, the `NativeLibraryLoader` cache eviction, and the `processResources` / `sourcesJar` dependencies.
+   ```kotlin
+   nucleusNative {
+       macos("nucleus_feature")    // → libnucleus_feature.dylib
+       linux("nucleus_feature")    // → libnucleus_feature.so
+       windows("nucleus_feature")  // → nucleus_feature.dll
+   }
+   ```
+4. **Kotlin JNI bridge** — `internal object` using `NativeLibraryLoader.load()` with `@JvmStatic external` methods. Always provide a Kotlin fallback when native lib is unavailable.
+5. **GraalVM reachability metadata** — create `<module>/src/main/resources/META-INF/native-image/dev.nucleusframework/nucleus.<module>/reachability-metadata.json` declaring all JNI-accessible classes/methods. Without this, native-image silently eliminates the bridge.
+6. **CI build** (`build-natives.yaml`) — add one build step per platform job, gated with `if: steps.natives-cache.outputs.cache-hit != 'true'`, plus the library entries in that platform's `Verify ... natives` FILES list. Native outputs are cached keyed on `hashFiles('**/src/main/native/**', ...)`, so the new sources invalidate the cache automatically. Each platform job publishes a single merged artifact (`natives-windows`, `natives-macos`, `natives-linux-{x64,aarch64}`); consumer workflows fetch them all with one `pattern: 'natives-*'` download step and need **no changes** for a new module.
+7. **CI verify lists** — add the 6 arch paths to the EXPECTED arrays of the "Verify all natives present" steps in `pre-merge.yaml` and `publish-maven.yaml`.
 
 Common pitfalls: forgetting Linux `.so` in verify lists, missing `reachability-metadata.json`, forgetting the `cache-hit` guard on new build steps in `build-natives.yaml`.
+
+Existing `build.sh`/`build.bat` scripts also clear the `NativeLibraryLoader` cache themselves so a bare `./build.sh` (outside Gradle) is safe; new scripts don't have to, since `nucleus.native-module` does it after every run.
 
 ## Publishing to Maven Local
 

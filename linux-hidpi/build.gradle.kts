@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -29,33 +29,8 @@ kotlin {
     }
 }
 
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into Linux shared libraries (x64 + aarch64)"
-    group = "build"
-    val nativeDir = file("src/main/native/linux")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkX64 = File(outputDir, "linux-x64/libnucleus_linux_hidpi_jni.so")
-    val checkArm = File(outputDir, "linux-aarch64/libnucleus_linux_hidpi_jni.so")
-    onlyIf {
-        Os.isFamily(Os.FAMILY_UNIX) &&
-            !Os.isFamily(Os.FAMILY_MAC) &&
-            !checkX64.exists() &&
-            !checkArm.exists()
-    }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeLinux)
-    }
+nucleusNative {
+    linux("nucleus_linux_hidpi_jni")
 }
 
 mavenPublishing {

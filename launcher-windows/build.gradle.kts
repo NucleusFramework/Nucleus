@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -28,29 +28,8 @@ kotlin {
     }
 }
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C++ JNI bridge into Windows DLLs (x64 + ARM64)"
-    group = "build"
-    val nativeDir = file("src/main/native/windows")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "win32-x64/nucleus_launcher_windows.dll")
-    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", File(nativeDir, "build.bat").absolutePath)
-}
-
-tasks.processResources {
-    dependsOn(buildNativeWindows)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows)
-    }
+nucleusNative {
+    windows("nucleus_launcher_windows")
 }
 
 mavenPublishing {
