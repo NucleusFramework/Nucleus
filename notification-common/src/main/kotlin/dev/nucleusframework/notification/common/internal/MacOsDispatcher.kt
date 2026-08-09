@@ -23,7 +23,7 @@ import java.util.logging.Level
 import java.util.logging.Logger
 
 internal class MacOsDispatcher private constructor() : PlatformDispatcher {
-    private val logger = Logger.getLogger(MacOsDispatcher::class.java.simpleName)
+    private val logger = Logger.getLogger(MacOsDispatcher::class.java.name)
 
     @Volatile
     private var delegateRegistered = false

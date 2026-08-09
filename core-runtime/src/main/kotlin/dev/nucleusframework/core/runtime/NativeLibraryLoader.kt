@@ -23,7 +23,7 @@ import java.util.logging.Logger
  * validation and load (issue #304).
  */
 public object NativeLibraryLoader {
-    private val logger = Logger.getLogger(NativeLibraryLoader::class.java.simpleName)
+    private val logger = Logger.getLogger(NativeLibraryLoader::class.java.name)
     private val loadedLibraries = mutableSetOf<String>()
     private val lock = Any()
 

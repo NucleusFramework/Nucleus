@@ -16,7 +16,7 @@ import java.util.logging.Logger
  * - `nucleus.notification-macos` on macOS
  */
 public object NotificationManager {
-    private val logger = Logger.getLogger(NotificationManager::class.java.simpleName)
+    private val logger = Logger.getLogger(NotificationManager::class.java.name)
     private val dispatcher: PlatformDispatcher? by lazy {
         DispatcherFactory.create().also {
             if (it == null) logger.fine("No notification dispatcher available for this platform")

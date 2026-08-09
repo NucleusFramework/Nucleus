@@ -38,7 +38,7 @@ public enum class ShortcutPolicy(
  * Thread-safe singleton.
  */
 public object WindowsNotificationCenter {
-    private val logger = Logger.getLogger(WindowsNotificationCenter::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsNotificationCenter::class.java.name)
     private var initialized = false
 
     /** Whether the native library is loaded and functional on this platform. */

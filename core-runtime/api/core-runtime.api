@@ -169,20 +169,6 @@ public final class dev/nucleusframework/core/runtime/tools/AppIdProvider {
 	public final fun appId ()Ljava/lang/String;
 }
 
-public final class dev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel : java/lang/Comparable {
-	public static final field Companion Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel$Companion;
-	public static final field DEBUG Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public static final field ERROR Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public static final field INFO Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public static final field VERBOSE Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public static final field WARN Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public fun compareTo (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)I
-	public synthetic fun compareTo (Ljava/lang/Object;)I
-}
-
-public final class dev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel$Companion {
-}
-
 public final class dev/nucleusframework/core/runtime/tools/LinuxDesktopFileDetector {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/tools/LinuxDesktopFileDetector;
 	public final fun getDesktopFilename ()Ljava/lang/String;
@@ -190,10 +176,27 @@ public final class dev/nucleusframework/core/runtime/tools/LinuxDesktopFileDetec
 
 public final class dev/nucleusframework/core/runtime/tools/LoggerKt {
 	public static final fun getAllowNucleusRuntimeLogging ()Z
-	public static final fun getComposeNativeTrayLoggingLevel ()Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
-	public static final fun getComposeNativeTrayloggingLevel ()Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;
+	public static final fun getComposeNativeTrayLoggingLevel ()Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final fun getComposeNativeTrayloggingLevel ()Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final fun getNucleusLoggingLevel ()Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
 	public static final fun setAllowNucleusRuntimeLogging (Z)V
-	public static final fun setComposeNativeTrayLoggingLevel (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)V
-	public static final fun setComposeNativeTrayloggingLevel (Ldev/nucleusframework/core/runtime/tools/ComposeNativeTrayLoggingLevel;)V
+	public static final fun setComposeNativeTrayLoggingLevel (Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;)V
+	public static final fun setComposeNativeTrayloggingLevel (Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;)V
+	public static final fun setNucleusLoggingLevel (Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;)V
+}
+
+public final class dev/nucleusframework/core/runtime/tools/NucleusLoggingLevel : java/lang/Comparable {
+	public static final field Companion Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel$Companion;
+	public static final field DEBUG Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final field ERROR Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final field INFO Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final field VERBOSE Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public static final field WARN Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;
+	public fun compareTo (Ldev/nucleusframework/core/runtime/tools/NucleusLoggingLevel;)I
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/core/runtime/tools/NucleusLoggingLevel$Companion {
 }
 

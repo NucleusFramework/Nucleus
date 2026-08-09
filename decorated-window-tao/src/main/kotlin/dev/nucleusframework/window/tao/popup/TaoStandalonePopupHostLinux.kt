@@ -511,7 +511,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     private companion object {
         val logger: java.util.logging.Logger =
             java.util.logging.Logger
-                .getLogger(TaoStandalonePopupHostLinux::class.java.simpleName)
+                .getLogger(TaoStandalonePopupHostLinux::class.java.name)
 
         const val HIDDEN_X_PX: Int = -32_000
         const val HIDDEN_Y_PX: Int = -32_000

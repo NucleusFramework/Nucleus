@@ -2,6 +2,7 @@ package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.core.runtime.Platform
 import java.io.File
+import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 /**
@@ -21,6 +22,8 @@ internal fun resolveUpdateHelperFromLauncher(
     }
     return null
 }
+
+private val logger: Logger = Logger.getLogger(PlatformInstaller::class.java.name)
 
 @Suppress("TooManyFunctions")
 internal object PlatformInstaller {
@@ -245,10 +248,9 @@ internal object PlatformInstaller {
                         "${signatureFile.absolutePath} (publish <pkg>.asc next to the package)"
                 else -> "unknown"
             }
-        System.err.println(
-            "NucleusUpdater: passwordless Linux update unavailable ($reason); " +
-                "falling back to interactive pkexec install",
-        )
+        logger.warning {
+            "Passwordless Linux update unavailable ($reason); falling back to interactive pkexec install"
+        }
     }
 
     /**

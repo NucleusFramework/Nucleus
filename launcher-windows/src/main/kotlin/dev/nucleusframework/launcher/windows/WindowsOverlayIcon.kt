@@ -19,7 +19,7 @@ import java.util.logging.Logger
  * Thread-safe singleton.
  */
 public object WindowsOverlayIcon {
-    private val logger = Logger.getLogger(WindowsOverlayIcon::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsOverlayIcon::class.java.name)
 
     /** The last error message from a native operation, or null if the last operation succeeded. */
     public var lastError: String? = null

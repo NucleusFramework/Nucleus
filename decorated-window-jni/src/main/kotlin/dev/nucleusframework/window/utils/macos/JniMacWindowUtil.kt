@@ -8,7 +8,7 @@ import javax.swing.RootPaneContainer
 
 @Suppress("TooGenericExceptionCaught")
 internal object JniMacWindowUtil {
-    private val logger = Logger.getLogger(JniMacWindowUtil::class.java.simpleName)
+    private val logger = Logger.getLogger(JniMacWindowUtil::class.java.name)
     private var reflectionFailed = false
 
     // Extracts the native NSWindow pointer from an AWT window.
