@@ -1,9 +1,43 @@
 package dev.nucleusframework.energymanager.windows
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
+@Suppress("TooManyFunctions")
 internal object WindowsEnergyManager : PlatformEnergyManager {
+    /**
+     * SetThreadExecutionState is per-thread state: Windows drops the request as
+     * soon as the thread that issued it exits. Routing every awake call through
+     * this single long-lived daemon thread keeps the request alive regardless
+     * of which caller thread (e.g. a recycled Dispatchers.IO worker) invoked it.
+     */
+    private val awakeExecutor: ExecutorService by lazy {
+        Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "nucleus-awake").apply { isDaemon = true }
+        }
+    }
+
+    /** Runs [block] on the dedicated awake thread and waits for its result. */
+    fun <T> onAwakeThread(block: () -> T): T = awakeExecutor.submit(block).get()
+
+    private fun callNativeOnAwakeThread(block: () -> Int): EnergyManager.Result {
+        if (!NativeWindowsEnergyBridge.isLoaded) {
+            return EnergyManager.Result(false, -1, "Native library not loaded")
+        }
+        return try {
+            onAwakeThread { callNative(block) }
+        } catch (e: ExecutionException) {
+            EnergyManager.Result(false, -1, "Exception: ${(e.cause ?: e).message}")
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            EnergyManager.Result(false, -1, "Interrupted: ${e.message}")
+        }
+    }
+
     private fun callNative(block: () -> Int): EnergyManager.Result {
         if (!NativeWindowsEnergyBridge.isLoaded) {
             return EnergyManager.Result(false, -1, "Native library not loaded")
@@ -40,11 +74,20 @@ internal object WindowsEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeWindowsEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    override fun keepScreenAwake() = callNative { NativeWindowsEnergyBridge.nativeKeepScreenAwake() }
+    override fun keepAwake(mode: AwakeMode) =
+        callNativeOnAwakeThread { NativeWindowsEnergyBridge.nativeKeepAwake(mode.nativeCode) }
 
-    override fun releaseScreenAwake() = callNative { NativeWindowsEnergyBridge.nativeReleaseScreenAwake() }
+    override fun releaseAwake() = callNativeOnAwakeThread { NativeWindowsEnergyBridge.nativeReleaseAwake() }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeWindowsEnergyBridge.isLoaded &&
-            runCatching { NativeWindowsEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
+            runCatching { NativeWindowsEnergyBridge.nativeIsAwakeActive() }.getOrDefault(false)
+
+    /** Mirrors the AWAKE_* constants in the native bridge. */
+    private val AwakeMode.nativeCode: Int
+        get() =
+            when (this) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> 0
+                AwakeMode.SYSTEM_ONLY -> 1
+            }
 }

@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.linux
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
 
@@ -40,19 +41,32 @@ internal object LinuxEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeLinuxEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    @Suppress("MaxLineLength")
+    /**
+     * The inhibitor the composite backend takes depends on [mode]: GNOME gets
+     * INHIBIT_SUSPEND alone instead of INHIBIT_SUSPEND | INHIBIT_IDLE, the X11
+     * screen-saver backend is skipped entirely (it never keeps the system awake),
+     * and org.freedesktop.PowerManagement — which inhibits automatic sleep only —
+     * joins the chain for the desktops without org.gnome.SessionManager.
+     */
     @Synchronized
-    override fun keepScreenAwake(): EnergyManager.Result =
-        callNative { NativeLinuxEnergyBridge.nativeKeepScreenAwake() }
+    override fun keepAwake(mode: AwakeMode): EnergyManager.Result =
+        callNative { NativeLinuxEnergyBridge.nativeKeepAwake(mode.nativeCode) }
 
-    @Suppress("MaxLineLength")
     @Synchronized
-    override fun releaseScreenAwake(): EnergyManager.Result =
+    override fun releaseAwake(): EnergyManager.Result =
         callNative {
-            NativeLinuxEnergyBridge.nativeReleaseScreenAwake()
+            NativeLinuxEnergyBridge.nativeReleaseAwake()
         }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeLinuxEnergyBridge.isLoaded &&
-            runCatching { NativeLinuxEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
+            runCatching { NativeLinuxEnergyBridge.nativeIsAwakeActive() }.getOrDefault(false)
+
+    /** Mirrors the AWAKE_* constants in the native bridge. */
+    private val AwakeMode.nativeCode: Int
+        get() =
+            when (this) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> 0
+                AwakeMode.SYSTEM_ONLY -> 1
+            }
 }

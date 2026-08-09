@@ -5,10 +5,11 @@
  *   - Checking if Linux energy APIs are available (compile-time check)
  *   - Enabling efficiency mode (nice +19, timer slack 100ms, ioprio IDLE)
  *   - Disabling efficiency mode (restore defaults)
- *   - Screen-awake via composite backend:
+ *   - Awake (caffeine) via composite backend:
  *       1. GNOME SessionManager DBus Inhibit (session bus)
- *       2. systemd-logind DBus Inhibit (system bus)
- *       3. X11 XScreenSaverSuspend (via libXss)
+ *       2. freedesktop PowerManagement DBus Inhibit (session bus, SYSTEM_ONLY)
+ *       3. systemd-logind DBus Inhibit (system bus)
+ *       4. X11 XScreenSaverSuspend (via libXss, SYSTEM_AND_DISPLAY only)
  *
  * All native libraries (libdbus-1, libX11, libXss) are loaded at runtime
  * via dlopen() to avoid hard dependencies.
@@ -208,27 +209,40 @@ Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeDisa
 }
 
 /* ==================================================================
- * Screen-awake (caffeine) via composite backend
+ * Awake (caffeine) via composite backend
  *
- * Three backends are tried in order:
- *   1. GNOME SessionManager DBus Inhibit  (session bus)
- *   2. systemd-logind DBus Inhibit        (system bus)
- *   3. X11 XScreenSaverSuspend            (libXss)
+ * Backends are tried in order, and which ones are eligible depends on
+ * the requested mode:
+ *
+ *   SYSTEM_AND_DISPLAY           SYSTEM_ONLY
+ *   ------------------           -----------
+ *   1. GNOME (IDLE|SUSPEND)      1. GNOME (SUSPEND)
+ *   2. logind (idle)             2. freedesktop PowerManagement
+ *   3. X11 (XScreenSaverSuspend) 3. logind (idle)
+ *
+ * X11 XScreenSaverSuspend only holds off the screen saver, so it can
+ * never satisfy a SYSTEM_ONLY request and is skipped there. Conversely
+ * org.freedesktop.PowerManagement only inhibits automatic sleep and
+ * leaves the screen saver alone, so it is only used for SYSTEM_ONLY.
  *
  * All libraries are loaded lazily via dlopen() so that the module
  * works even when some libraries are not installed.
  * ================================================================== */
 
+/* Must match AwakeMode.nativeCode in LinuxEnergyManager.kt */
+#define AWAKE_SYSTEM_AND_DISPLAY 0
+#define AWAKE_SYSTEM_ONLY        1
+#define AWAKE_NONE               (-1)
+
 /* ---- Backend type tracking ---------------------------------------- */
 
-enum screen_awake_backend {
-    BACKEND_NONE   = 0,
-    BACKEND_GNOME  = 1,
-    BACKEND_LOGIND = 2,
-    BACKEND_X11    = 3
+enum awake_backend {
+    BACKEND_NONE              = 0,
+    BACKEND_GNOME             = 1,
+    BACKEND_LOGIND            = 2,
+    BACKEND_X11               = 3,
+    BACKEND_POWER_MANAGEMENT  = 4
 };
-
-static volatile enum screen_awake_backend g_activeBackend = BACKEND_NONE;
 
 /* ---- DBus types and constants ------------------------------------- */
 
@@ -251,6 +265,38 @@ typedef struct {
 #define DBUS_TYPE_UINT32    ((int)'u')
 #define DBUS_TYPE_UNIX_FD   ((int)'h')
 #define DBUS_TIMEOUT_MS     2000
+
+/* ---- X11 types ---------------------------------------------------- */
+
+typedef void* Display;
+
+/*
+ * One held awake request. Every backend fills in only the handles it
+ * needs; the rest stay at their empty values. Keeping the whole request
+ * in one value lets nativeKeepAwake() acquire the new request before
+ * dropping the old one, so a mode switch never leaves a gap during which
+ * the machine is free to sleep.
+ *
+ * Access is single-threaded from Kotlin (@Synchronized on the manager).
+ */
+typedef struct {
+    enum awake_backend backend;
+    int                mode;      /* AWAKE_* */
+    DBusConnection    *conn;      /* GNOME, PowerManagement, logind */
+    dbus_uint32_t      cookie;    /* GNOME, PowerManagement */
+    int                fd;        /* logind */
+    Display            display;   /* X11 */
+} awake_request;
+
+#define AWAKE_REQUEST_EMPTY { BACKEND_NONE, AWAKE_NONE, NULL, 0, -1, NULL }
+
+static awake_request g_awake = AWAKE_REQUEST_EMPTY;
+
+/** Human-readable reason, visible in `systemd-inhibit --list` and friends. */
+static const char* awake_reason(int mode) {
+    return (mode == AWAKE_SYSTEM_ONLY) ? "keepAwake(SYSTEM_ONLY)"
+                                       : "keepAwake(SYSTEM_AND_DISPLAY)";
+}
 
 /* ---- DBus function pointers --------------------------------------- */
 
@@ -350,9 +396,18 @@ static void close_private_bus(DBusConnection *conn) {
     p_dbus_connection_unref(conn);
 }
 
-/* ---- X11 function pointers ---------------------------------------- */
+/* Helper: fire a method call that returns nothing we care about. */
+static void send_and_discard(DBusConnection *conn, DBusMessage *msg) {
+    DBusError err;
+    p_dbus_error_init(&err);
+    DBusMessage *reply = p_dbus_send_with_reply(conn, msg, DBUS_TIMEOUT_MS, &err);
+    p_dbus_message_unref(msg);
+    if (reply) p_dbus_message_unref(reply);
+    if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
+        p_dbus_error_free(&err);
+}
 
-typedef void* Display;
+/* ---- X11 function pointers ---------------------------------------- */
 
 static void *g_libx11 = NULL;
 static void *g_libxss = NULL;
@@ -411,14 +466,17 @@ static int load_x11(void) {
 #define GNOME_INHIBIT_IDLE    8
 #define GNOME_INHIBIT_SUSPEND 4
 
-static DBusConnection *g_gnomeConn = NULL;
-static dbus_uint32_t   g_gnomeCookie = 0;
-
-static int gnome_inhibit(void) {
+/*
+ * INHIBIT_SUSPEND stops gnome-session from suspending the machine on idle,
+ * INHIBIT_IDLE additionally stops the session from going idle at all, which
+ * is what keeps the screen saver and display sleep away. SYSTEM_ONLY takes
+ * the former only.
+ */
+static int gnome_inhibit(int mode, awake_request *out) {
     if (!load_dbus()) return -1;
 
-    g_gnomeConn = open_private_bus(DBUS_BUS_SESSION);
-    if (!g_gnomeConn) return -1;
+    DBusConnection *conn = open_private_bus(DBUS_BUS_SESSION);
+    if (!conn) return -1;
 
     DBusMessage *msg = p_dbus_message_new_method_call(
         "org.gnome.SessionManager",
@@ -426,15 +484,16 @@ static int gnome_inhibit(void) {
         "org.gnome.SessionManager",
         "Inhibit");
     if (!msg) {
-        close_private_bus(g_gnomeConn);
-        g_gnomeConn = NULL;
+        close_private_bus(conn);
         return -1;
     }
 
     const char *app_name = "Nucleus EnergyManager";
     dbus_uint32_t xid = 0;
-    const char *reason = "keepScreenAwake";
-    dbus_uint32_t flags = GNOME_INHIBIT_IDLE | GNOME_INHIBIT_SUSPEND;
+    const char *reason = awake_reason(mode);
+    dbus_uint32_t flags = (mode == AWAKE_SYSTEM_ONLY)
+        ? GNOME_INHIBIT_SUSPEND
+        : (GNOME_INHIBIT_IDLE | GNOME_INHIBIT_SUSPEND);
 
     p_dbus_message_append_args(msg,
         DBUS_TYPE_STRING, &app_name,
@@ -446,14 +505,13 @@ static int gnome_inhibit(void) {
     DBusError err;
     p_dbus_error_init(&err);
 
-    DBusMessage *reply = p_dbus_send_with_reply(g_gnomeConn, msg, DBUS_TIMEOUT_MS, &err);
+    DBusMessage *reply = p_dbus_send_with_reply(conn, msg, DBUS_TIMEOUT_MS, &err);
     p_dbus_message_unref(msg);
 
     if (!reply) {
         if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
             p_dbus_error_free(&err);
-        close_private_bus(g_gnomeConn);
-        g_gnomeConn = NULL;
+        close_private_bus(conn);
         return -1;
     }
 
@@ -463,60 +521,141 @@ static int gnome_inhibit(void) {
         DBUS_TYPE_INVALID);
     p_dbus_message_unref(reply);
 
-    if (!parsed) {
-        if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
-            p_dbus_error_free(&err);
-        close_private_bus(g_gnomeConn);
-        g_gnomeConn = NULL;
-        return -1;
-    }
-
     if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
         p_dbus_error_free(&err);
 
-    g_gnomeCookie = cookie;
+    if (!parsed) {
+        close_private_bus(conn);
+        return -1;
+    }
+
+    out->backend = BACKEND_GNOME;
+    out->mode    = mode;
+    out->conn    = conn;
+    out->cookie  = cookie;
     return 0;
 }
 
-static int gnome_uninhibit(void) {
-    if (!g_gnomeConn) return -1;
-
+static int gnome_uninhibit(awake_request *req) {
     DBusMessage *msg = p_dbus_message_new_method_call(
         "org.gnome.SessionManager",
         "/org/gnome/SessionManager",
         "org.gnome.SessionManager",
         "Uninhibit");
-    if (!msg) return -1;
+    if (!msg) {
+        close_private_bus(req->conn);
+        return -1;
+    }
 
     p_dbus_message_append_args(msg,
-        DBUS_TYPE_UINT32, &g_gnomeCookie,
+        DBUS_TYPE_UINT32, &req->cookie,
+        DBUS_TYPE_INVALID);
+
+    send_and_discard(req->conn, msg);
+    close_private_bus(req->conn);
+    return 0;
+}
+
+/* ---- freedesktop PowerManagement backend -------------------------- */
+
+/*
+ * org.freedesktop.PowerManagement.Inhibit inhibits *automatic sleep* and
+ * nothing else — the screen saver is a separate interface
+ * (org.freedesktop.ScreenSaver). That maps exactly onto SYSTEM_ONLY, and
+ * covers the desktops that do not implement org.gnome.SessionManager
+ * (KDE/powerdevil, Xfce, MATE, Cinnamon).
+ */
+static int powermanagement_inhibit(int mode, awake_request *out) {
+    if (!load_dbus()) return -1;
+
+    DBusConnection *conn = open_private_bus(DBUS_BUS_SESSION);
+    if (!conn) return -1;
+
+    DBusMessage *msg = p_dbus_message_new_method_call(
+        "org.freedesktop.PowerManagement",
+        "/org/freedesktop/PowerManagement/Inhibit",
+        "org.freedesktop.PowerManagement.Inhibit",
+        "Inhibit");
+    if (!msg) {
+        close_private_bus(conn);
+        return -1;
+    }
+
+    const char *app_name = "Nucleus EnergyManager";
+    const char *reason = awake_reason(mode);
+
+    p_dbus_message_append_args(msg,
+        DBUS_TYPE_STRING, &app_name,
+        DBUS_TYPE_STRING, &reason,
         DBUS_TYPE_INVALID);
 
     DBusError err;
     p_dbus_error_init(&err);
-    DBusMessage *reply = p_dbus_send_with_reply(g_gnomeConn, msg, DBUS_TIMEOUT_MS, &err);
+
+    DBusMessage *reply = p_dbus_send_with_reply(conn, msg, DBUS_TIMEOUT_MS, &err);
     p_dbus_message_unref(msg);
 
-    if (reply) p_dbus_message_unref(reply);
+    if (!reply) {
+        if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
+            p_dbus_error_free(&err);
+        close_private_bus(conn);
+        return -1;
+    }
+
+    dbus_uint32_t cookie = 0;
+    dbus_bool_t parsed = p_dbus_message_get_args(reply, &err,
+        DBUS_TYPE_UINT32, &cookie,
+        DBUS_TYPE_INVALID);
+    p_dbus_message_unref(reply);
+
     if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
         p_dbus_error_free(&err);
 
-    close_private_bus(g_gnomeConn);
-    g_gnomeConn = NULL;
-    g_gnomeCookie = 0;
+    if (!parsed) {
+        close_private_bus(conn);
+        return -1;
+    }
+
+    out->backend = BACKEND_POWER_MANAGEMENT;
+    out->mode    = mode;
+    out->conn    = conn;
+    out->cookie  = cookie;
+    return 0;
+}
+
+static int powermanagement_uninhibit(awake_request *req) {
+    DBusMessage *msg = p_dbus_message_new_method_call(
+        "org.freedesktop.PowerManagement",
+        "/org/freedesktop/PowerManagement/Inhibit",
+        "org.freedesktop.PowerManagement.Inhibit",
+        "UnInhibit");
+    if (!msg) {
+        close_private_bus(req->conn);
+        return -1;
+    }
+
+    p_dbus_message_append_args(msg,
+        DBUS_TYPE_UINT32, &req->cookie,
+        DBUS_TYPE_INVALID);
+
+    send_and_discard(req->conn, msg);
+    close_private_bus(req->conn);
     return 0;
 }
 
 /* ---- systemd-logind backend --------------------------------------- */
 
-static DBusConnection *g_logindConn = NULL;
-static int             g_logindFd = -1;
-
-static int logind_inhibit(void) {
+/*
+ * An "idle" inhibitor stops logind from running its IdleAction (typically
+ * suspend) and does not touch the screen saver, so it serves both modes:
+ * for SYSTEM_ONLY it is exactly right, for SYSTEM_AND_DISPLAY it is the
+ * best a session-less fallback can do before X11 is tried.
+ */
+static int logind_inhibit(int mode, awake_request *out) {
     if (!load_dbus()) return -1;
 
-    g_logindConn = open_private_bus(DBUS_BUS_SYSTEM);
-    if (!g_logindConn) return -1;
+    DBusConnection *conn = open_private_bus(DBUS_BUS_SYSTEM);
+    if (!conn) return -1;
 
     DBusMessage *msg = p_dbus_message_new_method_call(
         "org.freedesktop.login1",
@@ -524,34 +663,32 @@ static int logind_inhibit(void) {
         "org.freedesktop.login1.Manager",
         "Inhibit");
     if (!msg) {
-        close_private_bus(g_logindConn);
-        g_logindConn = NULL;
+        close_private_bus(conn);
         return -1;
     }
 
     const char *what = "idle";
     const char *who  = "Nucleus EnergyManager";
-    const char *why  = "keepScreenAwake";
-    const char *mode = "block";
+    const char *why  = awake_reason(mode);
+    const char *inhibit_mode = "block";
 
     p_dbus_message_append_args(msg,
         DBUS_TYPE_STRING, &what,
         DBUS_TYPE_STRING, &who,
         DBUS_TYPE_STRING, &why,
-        DBUS_TYPE_STRING, &mode,
+        DBUS_TYPE_STRING, &inhibit_mode,
         DBUS_TYPE_INVALID);
 
     DBusError err;
     p_dbus_error_init(&err);
 
-    DBusMessage *reply = p_dbus_send_with_reply(g_logindConn, msg, DBUS_TIMEOUT_MS, &err);
+    DBusMessage *reply = p_dbus_send_with_reply(conn, msg, DBUS_TIMEOUT_MS, &err);
     p_dbus_message_unref(msg);
 
     if (!reply) {
         if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
             p_dbus_error_free(&err);
-        close_private_bus(g_logindConn);
-        g_logindConn = NULL;
+        close_private_bus(conn);
         return -1;
     }
 
@@ -561,114 +698,148 @@ static int logind_inhibit(void) {
         DBUS_TYPE_INVALID);
     p_dbus_message_unref(reply);
 
-    if (!parsed || fd < 0) {
-        if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
-            p_dbus_error_free(&err);
-        close_private_bus(g_logindConn);
-        g_logindConn = NULL;
-        return -1;
-    }
-
     if (p_dbus_error_is_set && p_dbus_error_is_set(&err))
         p_dbus_error_free(&err);
 
-    g_logindFd = fd;
+    if (!parsed || fd < 0) {
+        close_private_bus(conn);
+        return -1;
+    }
+
+    out->backend = BACKEND_LOGIND;
+    out->mode    = mode;
+    out->conn    = conn;
+    out->fd      = fd;
     return 0;
 }
 
-static int logind_uninhibit(void) {
-    if (g_logindFd >= 0) {
-        close(g_logindFd);
-        g_logindFd = -1;
+static int logind_uninhibit(awake_request *req) {
+    if (req->fd >= 0) {
+        close(req->fd);
+        req->fd = -1;
     }
-    if (g_logindConn) {
-        close_private_bus(g_logindConn);
-        g_logindConn = NULL;
-    }
+    close_private_bus(req->conn);
     return 0;
 }
 
 /* ---- X11 XScreenSaverSuspend backend ------------------------------ */
 
-static Display g_x11Display = NULL;
-
-static int x11_inhibit(void) {
+static int x11_inhibit(int mode, awake_request *out) {
     if (!load_x11()) return -1;
 
-    g_x11Display = p_XOpenDisplay(NULL);
-    if (!g_x11Display) return -1;
+    Display display = p_XOpenDisplay(NULL);
+    if (!display) return -1;
 
-    p_XScreenSaverSuspend(g_x11Display, 1);
-    p_XFlush(g_x11Display);
+    p_XScreenSaverSuspend(display, 1);
+    p_XFlush(display);
+
+    out->backend = BACKEND_X11;
+    out->mode    = mode;
+    out->display = display;
     return 0;
 }
 
-static int x11_uninhibit(void) {
-    if (!g_x11Display) return -1;
-    p_XScreenSaverSuspend(g_x11Display, 0);
-    p_XFlush(g_x11Display);
-    p_XCloseDisplay(g_x11Display);
-    g_x11Display = NULL;
+static int x11_uninhibit(awake_request *req) {
+    p_XScreenSaverSuspend(req->display, 0);
+    p_XFlush(req->display);
+    p_XCloseDisplay(req->display);
+    req->display = NULL;
     return 0;
 }
 
-/* ---- nativeKeepScreenAwake ---------------------------------------- */
+/* ---- Acquire / release dispatch ------------------------------------ */
+
+static int awake_acquire(int mode, awake_request *out) {
+    if (gnome_inhibit(mode, out) == 0) return 0;
+    if (mode == AWAKE_SYSTEM_ONLY && powermanagement_inhibit(mode, out) == 0) return 0;
+    if (logind_inhibit(mode, out) == 0) return 0;
+    /* The screen saver alone never keeps the system awake */
+    if (mode != AWAKE_SYSTEM_ONLY && x11_inhibit(mode, out) == 0) return 0;
+    return -1;
+}
+
+static int awake_release(awake_request *req) {
+    switch (req->backend) {
+        case BACKEND_GNOME:            return gnome_uninhibit(req);
+        case BACKEND_POWER_MANAGEMENT: return powermanagement_uninhibit(req);
+        case BACKEND_LOGIND:           return logind_uninhibit(req);
+        case BACKEND_X11:              return x11_uninhibit(req);
+        case BACKEND_NONE:             return 0;
+    }
+    return 0;
+}
+
+/* ---- nativeKeepAwake ---------------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeKeepScreenAwake(
+Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeKeepAwake(
+    JNIEnv *env, jclass clazz, jint mode)
+{
+    (void)env; (void)clazz;
+
+    if (mode != AWAKE_SYSTEM_AND_DISPLAY && mode != AWAKE_SYSTEM_ONLY) {
+        return EINVAL;
+    }
+
+    /* Same mode already held — idempotent */
+    if (g_awake.backend != BACKEND_NONE && g_awake.mode == mode) {
+        return 0;
+    }
+
+    /*
+     * Acquire the new inhibitor before dropping the previous one, otherwise
+     * the machine is briefly free to sleep in between.
+     */
+    awake_request next = AWAKE_REQUEST_EMPTY;
+    if (awake_acquire(mode, &next) != 0) {
+        return -1; /* No backend available */
+    }
+
+    if (g_awake.backend != BACKEND_NONE) {
+        awake_release(&g_awake);
+    }
+    g_awake = next;
+    return 0;
+}
+
+/* ---- nativeReleaseAwake ------------------------------------------- */
+
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeReleaseAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
 
-    /* Already active — idempotent */
-    if (g_activeBackend != BACKEND_NONE) return 0;
-
-    /* Try GNOME SessionManager first */
-    if (gnome_inhibit() == 0) {
-        g_activeBackend = BACKEND_GNOME;
-        return 0;
+    if (g_awake.backend == BACKEND_NONE) {
+        return 0; /* Nothing to release */
     }
 
-    /* Try systemd-logind */
-    if (logind_inhibit() == 0) {
-        g_activeBackend = BACKEND_LOGIND;
-        return 0;
-    }
-
-    /* Try X11 XScreenSaverSuspend */
-    if (x11_inhibit() == 0) {
-        g_activeBackend = BACKEND_X11;
-        return 0;
-    }
-
-    return -1; /* No backend available */
-}
-
-/* ---- nativeReleaseScreenAwake ------------------------------------- */
-
-JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeReleaseScreenAwake(
-    JNIEnv *env, jclass clazz)
-{
-    (void)env; (void)clazz;
-
-    int rc = 0;
-    switch (g_activeBackend) {
-        case BACKEND_GNOME:  rc = gnome_uninhibit();  break;
-        case BACKEND_LOGIND: rc = logind_uninhibit();  break;
-        case BACKEND_X11:    rc = x11_uninhibit();     break;
-        case BACKEND_NONE:   return 0; /* Nothing to release */
-    }
-    g_activeBackend = BACKEND_NONE;
+    int rc = awake_release(&g_awake);
+    awake_request empty = AWAKE_REQUEST_EMPTY;
+    g_awake = empty;
     return (jint)rc;
 }
 
-/* ---- nativeIsScreenAwakeActive ------------------------------------ */
+/* ---- nativeIsAwakeActive ------------------------------------------ */
 
 JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeIsScreenAwakeActive(
+Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeIsAwakeActive(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
-    return g_activeBackend != BACKEND_NONE ? JNI_TRUE : JNI_FALSE;
+    return g_awake.backend != BACKEND_NONE ? JNI_TRUE : JNI_FALSE;
+}
+
+/* ---- nativeQueryAwakeBackend -------------------------------------- */
+
+/*
+ * Which inhibitor is holding the current request (see enum awake_backend).
+ * Exposed so that verification can query the right system service.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeQueryAwakeBackend(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    return (jint)g_awake.backend;
 }

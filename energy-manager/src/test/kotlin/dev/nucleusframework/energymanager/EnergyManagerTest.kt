@@ -1,5 +1,9 @@
 package dev.nucleusframework.energymanager
 
+import dev.nucleusframework.energymanager.linux.NativeLinuxEnergyBridge
+import dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge
+import dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge
+import dev.nucleusframework.energymanager.windows.WindowsEnergyManager
 import kotlinx.coroutines.runBlocking
 import org.junit.Assume.assumeTrue
 import java.io.File
@@ -156,6 +160,151 @@ class EnergyManagerTest {
         assertTrue(EnergyManager.disableLightEfficiencyMode().success)
     }
 
+    @Test
+    fun `linux keepAwake system only round trips`() {
+        assumeLinux()
+        assumeSystemOnlyBackend()
+
+        val enableResult = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        println("Linux keepAwake(SYSTEM_ONLY) result: $enableResult, backend=${linuxAwakeBackendName()}")
+        assertTrue(enableResult.success, "keepAwake failed: ${enableResult.message}")
+        assertTrue(EnergyManager.isAwakeActive(), "Awake request should be active")
+
+        val releaseResult = EnergyManager.releaseAwake()
+        assertTrue(releaseResult.success, "releaseAwake failed: ${releaseResult.message}")
+        assertTrue(!EnergyManager.isAwakeActive(), "Awake request should be released")
+    }
+
+    @Test
+    fun `linux keepAwake takes a suspend only GNOME inhibitor in system only mode`() {
+        assumeLinux()
+        assumeGnomeSessionManager()
+
+        // The flags are read back from gnome-session over D-Bus, not from the
+        // value the bridge remembers requesting.
+        try {
+            EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
+            val bothFlags = gnomeInhibitorFlags()
+
+            EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+            val systemOnlyFlags = gnomeInhibitorFlags()
+
+            EnergyManager.releaseAwake()
+            val releasedFlags = gnomeInhibitorFlags()
+
+            println("GNOME inhibitor flags: both=$bothFlags systemOnly=$systemOnlyFlags released=$releasedFlags")
+
+            assertEquals(
+                GNOME_INHIBIT_IDLE or GNOME_INHIBIT_SUSPEND,
+                bothFlags,
+                "SYSTEM_AND_DISPLAY must inhibit both idle and suspend",
+            )
+            assertEquals(
+                GNOME_INHIBIT_SUSPEND,
+                systemOnlyFlags,
+                "SYSTEM_ONLY must inhibit suspend only, leaving the screen saver alone",
+            )
+            assertEquals(null, releasedFlags, "releaseAwake must drop the inhibitor")
+        } finally {
+            EnergyManager.releaseAwake()
+        }
+    }
+
+    @Test
+    fun `linux keepAwake switches between modes without releasing`() {
+        assumeLinux()
+        assumeSystemOnlyBackend()
+
+        // Switching modes swaps in a fresh inhibitor, which is acquired before
+        // the previous one is dropped.
+        try {
+            assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+            assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
+            assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+            assertTrue(EnergyManager.isAwakeActive())
+        } finally {
+            assertTrue(EnergyManager.releaseAwake().success)
+        }
+        assertTrue(!EnergyManager.isAwakeActive())
+    }
+
+    // ── Linux awake helpers ──────────────────────────────────────────
+
+    /** Backend that serves an awake request here, without leaving one held. */
+    private fun linuxAwakeBackend(): Int {
+        val acquired = EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success
+        val backend =
+            if (acquired) NativeLinuxEnergyBridge.nativeQueryAwakeBackend() else AWAKE_BACKEND_NONE
+        EnergyManager.releaseAwake()
+        return backend
+    }
+
+    private fun linuxAwakeBackendName(): String =
+        when (NativeLinuxEnergyBridge.nativeQueryAwakeBackend()) {
+            AWAKE_BACKEND_GNOME -> "gnome"
+            AWAKE_BACKEND_LOGIND -> "logind"
+            AWAKE_BACKEND_X11 -> "x11"
+            AWAKE_BACKEND_POWER_MANAGEMENT -> "powermanagement"
+            else -> "none"
+        }
+
+    /** Skips the test unless an inhibitor that can serve SYSTEM_ONLY is reachable. */
+    private fun assumeSystemOnlyBackend() {
+        val backend = linuxAwakeBackend()
+        assumeTrue("No awake backend reachable in this environment", backend != AWAKE_BACKEND_NONE)
+        assumeTrue(
+            "Only the X11 screen-saver backend is reachable, which cannot serve SYSTEM_ONLY",
+            backend != AWAKE_BACKEND_X11,
+        )
+    }
+
+    private fun assumeGnomeSessionManager() {
+        assumeTrue("Test requires org.gnome.SessionManager", linuxAwakeBackend() == AWAKE_BACKEND_GNOME)
+        assumeTrue(
+            "Test requires the gdbus CLI",
+            gdbus(GNOME_SESSION_PATH, "$GNOME_SESSION_IFACE.GetInhibitors") != null,
+        )
+    }
+
+    /** Flags of the inhibitor this process holds in gnome-session, or null when it holds none. */
+    private fun gnomeInhibitorFlags(): Int? {
+        val inhibitors = gdbus(GNOME_SESSION_PATH, "$GNOME_SESSION_IFACE.GetInhibitors") ?: return null
+        return INHIBITOR_PATH
+            .findAll(inhibitors)
+            .map { it.value }
+            .firstOrNull { path -> gdbus(path, "$GNOME_INHIBITOR_IFACE.GetAppId")?.contains(AWAKE_APP_ID) == true }
+            ?.let { path -> gdbus(path, "$GNOME_INHIBITOR_IFACE.GetFlags") }
+            ?.let { flags ->
+                UINT32_VALUE
+                    .find(flags)
+                    ?.groupValues
+                    ?.get(1)
+                    ?.toInt()
+            }
+    }
+
+    /** Calls a gnome-session D-Bus method from outside the JVM; null when the call fails. */
+    private fun gdbus(
+        objectPath: String,
+        method: String,
+    ): String? =
+        runCatching {
+            val process =
+                ProcessBuilder(
+                    "gdbus",
+                    "call",
+                    "--session",
+                    "--dest",
+                    GNOME_SESSION_DEST,
+                    "--object-path",
+                    objectPath,
+                    "--method",
+                    method,
+                ).start()
+            val output = process.inputStream.bufferedReader().readText()
+            if (process.waitFor() == 0) output else null
+        }.getOrNull()
+
     // ── macOS tests ──────────────────────────────────────────────────
 
     @Test
@@ -256,6 +405,66 @@ class EnergyManagerTest {
 
             assertEquals(42, result)
         }
+
+    @Test
+    fun `macOS keepAwake system only round trips`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        val enableResult = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        println("macOS keepAwake(SYSTEM_ONLY) result: $enableResult")
+        assertTrue(enableResult.success, "keepAwake failed: ${enableResult.message}")
+        assertTrue(EnergyManager.isAwakeActive(), "Awake request should be active")
+
+        val releaseResult = EnergyManager.releaseAwake()
+        assertTrue(releaseResult.success, "releaseAwake failed: ${releaseResult.message}")
+        assertTrue(!EnergyManager.isAwakeActive(), "Awake request should be released")
+    }
+
+    @Test
+    fun `macOS keepAwake takes the expected IOKit assertion type`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        // The mode is read back from the assertion powerd holds, not from the
+        // value the bridge remembers requesting.
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
+        val bothMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        val systemOnlyMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        EnergyManager.releaseAwake()
+        val releasedMode = NativeMacOsEnergyBridge.nativeQueryAwakeMode()
+
+        println("Assertion modes: both=$bothMode systemOnly=$systemOnlyMode released=$releasedMode")
+
+        assertEquals(
+            AWAKE_SYSTEM_AND_DISPLAY,
+            bothMode,
+            "SYSTEM_AND_DISPLAY must map to kIOPMAssertPreventUserIdleDisplaySleep",
+        )
+        assertEquals(
+            AWAKE_SYSTEM_ONLY,
+            systemOnlyMode,
+            "SYSTEM_ONLY must map to kIOPMAssertPreventUserIdleSystemSleep, leaving display sleep alone",
+        )
+        assertEquals(AWAKE_NONE, releasedMode, "releaseAwake must drop the assertion")
+    }
+
+    @Test
+    fun `macOS keepAwake switches between modes without releasing`() {
+        assumeMacOs()
+        assertTrue(EnergyManager.isAvailable())
+
+        // An assertion's type is immutable, so each switch swaps in a fresh one.
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.isAwakeActive())
+        assertTrue(EnergyManager.releaseAwake().success)
+        assertTrue(!EnergyManager.isAwakeActive())
+    }
 
     @Test
     fun `macOS enable disable cycle is idempotent`() {
@@ -417,9 +626,126 @@ class EnergyManagerTest {
         assertTrue(result, "Thread idempotent enable/disable cycle failed")
     }
 
+    @Test
+    fun `windows keepAwake system only round trips`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        val enableResult = EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        println("Windows keepAwake(SYSTEM_ONLY) result: $enableResult")
+        assertTrue(enableResult.success, "keepAwake failed: ${enableResult.message}")
+        assertTrue(EnergyManager.isAwakeActive(), "Awake request should be active")
+
+        val releaseResult = EnergyManager.releaseAwake()
+        assertTrue(releaseResult.success, "releaseAwake failed: ${releaseResult.message}")
+        assertTrue(!EnergyManager.isAwakeActive(), "Awake request should be released")
+    }
+
+    @Test
+    fun `windows keepAwake sets the expected execution state flags`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // The execution state is per-thread and all awake requests are routed
+        // through the dedicated awake thread, so query it from that thread.
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY)
+        val bothFlags = queryAwakeFlags()
+
+        EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY)
+        val systemOnlyFlags = queryAwakeFlags()
+
+        EnergyManager.releaseAwake()
+        val releasedFlags = queryAwakeFlags()
+
+        println("Flags: both=0x${bothFlags.toHexString()} systemOnly=0x${systemOnlyFlags.toHexString()}")
+
+        assertTrue(bothFlags and ES_SYSTEM_REQUIRED != 0, "SYSTEM_AND_DISPLAY must keep the system awake")
+        assertTrue(bothFlags and ES_DISPLAY_REQUIRED != 0, "SYSTEM_AND_DISPLAY must keep the display awake")
+
+        assertTrue(systemOnlyFlags and ES_SYSTEM_REQUIRED != 0, "SYSTEM_ONLY must keep the system awake")
+        assertEquals(
+            0,
+            systemOnlyFlags and ES_DISPLAY_REQUIRED,
+            "SYSTEM_ONLY must leave display sleep and the screen saver alone",
+        )
+
+        assertEquals(0, releasedFlags and ES_SYSTEM_REQUIRED, "releaseAwake must drop the system request")
+        assertEquals(0, releasedFlags and ES_DISPLAY_REQUIRED, "releaseAwake must drop the display request")
+    }
+
+    @Test
+    fun `windows keepAwake survives the requesting thread dying`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // Regression test: SetThreadExecutionState is per-thread, so a request
+        // issued from a short-lived thread (e.g. a Dispatchers.IO worker) used
+        // to be silently dropped when that thread exited.
+        val thread = Thread { EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY) }
+        thread.start()
+        thread.join()
+
+        try {
+            val flags = queryAwakeFlags()
+            assertTrue(
+                flags and ES_SYSTEM_REQUIRED != 0,
+                "Awake request must survive the requesting thread exiting",
+            )
+            assertTrue(EnergyManager.isAwakeActive(), "Awake request should still be reported active")
+        } finally {
+            EnergyManager.releaseAwake()
+        }
+    }
+
+    @Test
+    fun `windows keepAwake switches between modes without releasing`() {
+        assumeWindows()
+        assertTrue(EnergyManager.isAvailable())
+
+        // SetThreadExecutionState replaces the thread's request, so switching
+        // modes back and forth must stay successful and keep the state active.
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
+        assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
+        assertTrue(EnergyManager.isAwakeActive())
+        assertTrue(EnergyManager.releaseAwake().success)
+    }
+
+    /** Reads the execution state flags from the dedicated awake thread. */
+    private fun queryAwakeFlags(): Int =
+        WindowsEnergyManager.onAwakeThread { NativeWindowsEnergyBridge.nativeQueryAwakeFlags() }
+
     // ── Linux helpers ────────────────────────────────────────────────
 
     companion object {
+        private const val ES_SYSTEM_REQUIRED = 0x00000001
+        private const val ES_DISPLAY_REQUIRED = 0x00000002
+
+        /** Mirrors the AWAKE_* codes of the macOS native bridge. */
+        private const val AWAKE_NONE = -1
+        private const val AWAKE_SYSTEM_AND_DISPLAY = 0
+        private const val AWAKE_SYSTEM_ONLY = 1
+
+        /** Mirrors enum awake_backend in the Linux native bridge. */
+        private const val AWAKE_BACKEND_NONE = 0
+        private const val AWAKE_BACKEND_GNOME = 1
+        private const val AWAKE_BACKEND_LOGIND = 2
+        private const val AWAKE_BACKEND_X11 = 3
+        private const val AWAKE_BACKEND_POWER_MANAGEMENT = 4
+
+        /** Mirrors GNOME_INHIBIT_* in the Linux native bridge. */
+        private const val GNOME_INHIBIT_SUSPEND = 4
+        private const val GNOME_INHIBIT_IDLE = 8
+
+        private const val AWAKE_APP_ID = "Nucleus EnergyManager"
+        private const val GNOME_SESSION_DEST = "org.gnome.SessionManager"
+        private const val GNOME_SESSION_PATH = "/org/gnome/SessionManager"
+        private const val GNOME_SESSION_IFACE = "org.gnome.SessionManager"
+        private const val GNOME_INHIBITOR_IFACE = "org.gnome.SessionManager.Inhibitor"
+
+        private val INHIBITOR_PATH = Regex("/org/gnome/SessionManager/Inhibitor\\d+")
+        private val UINT32_VALUE = Regex("uint32 (\\d+)")
+
         /**
          * Reads the nice value of the calling thread via /proc/thread-self/stat.
          * Field layout after (comm): state ppid pgrp session tty_nr tpgid flags

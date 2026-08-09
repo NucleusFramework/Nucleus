@@ -30,12 +30,21 @@ internal object NativeLinuxEnergyBridge {
     @JvmStatic
     external fun nativeDisableThreadEfficiencyMode(): Int
 
+    /** @param mode 0 = system + display, 1 = system only. */
     @JvmStatic
-    external fun nativeKeepScreenAwake(): Int
+    external fun nativeKeepAwake(mode: Int): Int
 
     @JvmStatic
-    external fun nativeReleaseScreenAwake(): Int
+    external fun nativeReleaseAwake(): Int
 
     @JvmStatic
-    external fun nativeIsScreenAwakeActive(): Boolean
+    external fun nativeIsAwakeActive(): Boolean
+
+    /**
+     * Returns the inhibitor backend currently holding the awake request
+     * (0 = none, 1 = GNOME SessionManager, 2 = systemd-logind, 3 = X11,
+     * 4 = freedesktop PowerManagement). Exposed for verification.
+     */
+    @JvmStatic
+    external fun nativeQueryAwakeBackend(): Int
 }
