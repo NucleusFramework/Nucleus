@@ -1222,9 +1222,10 @@ internal class TaoComposeSceneHost(
      */
     fun <T> runOnRenderThread(block: () -> T): T {
         val future = renderExecutor.submit(Callable { block() })
-        if (NativeMetalBridge.isLoaded &&
-            Thread.currentThread() === TaoMainDispatcher.taoMainThread
-        ) {
+        // nativeIsMainThread, not taoMainThread: on macOS the event loop is
+        // marshalled onto AppKit thread 0, which is a different JVM thread
+        // than the one that entered taoApplication.
+        if (NativeMetalBridge.isLoaded && NativeMetalBridge.nativeIsMainThread()) {
             while (!future.isDone) {
                 NativeMetalBridge.nativeInteropPump()
                 // The pump returns immediately when no callout is queued in the

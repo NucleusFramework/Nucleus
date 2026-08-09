@@ -224,10 +224,20 @@ internal object MacWindowChromeStateHeadfulCases {
             awaitUntil("NativeView embedding composed") { embeddingComposed.get() == 1L }
             settle(INTEROP_WARMUP_MS)
 
+            val fsRequestedAt = System.currentTimeMillis()
             window.setFullscreen(true)
             awaitUntil("entered fullscreen (bounds grew)", timeoutMillis = FS_TIMEOUT_MS) {
                 val b = bounds() ?: return@awaitUntil false
                 b[2] > before[2] + FS_GROWTH_MIN_PX
+            }
+            // Latency guard: a deadlock resolved only by the 2s present
+            // backstop (instead of the cooperative interop pump) still enters
+            // fullscreen, just ~2-3s late. The nominal entry is well under a
+            // second; anything past the backstop means the pump didn't run.
+            val fsEntryMs = System.currentTimeMillis() - fsRequestedAt
+            check(fsEntryMs < FS_ENTRY_MAX_MS) {
+                "fullscreen entry stalled for ${fsEntryMs}ms — the interop present " +
+                    "rode the 2s backstop instead of being pumped cooperatively"
             }
             // Keep animating in fullscreen for a moment — interop presents must
             // keep flowing there too.
@@ -262,6 +272,7 @@ internal object MacWindowChromeStateHeadfulCases {
     private const val EMBED_SWAY_PX = 60f
     private const val INTEROP_WARMUP_MS = 1_500L
     private const val FS_TIMEOUT_MS = 20_000L
+    private const val FS_ENTRY_MAX_MS = 2_000L
     private const val FS_GROWTH_MIN_PX = 200
     private const val FS_RESTORE_TOLERANCE_PX = 64
 }

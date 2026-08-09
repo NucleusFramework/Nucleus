@@ -2246,6 +2246,27 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetPresentsWith
  * pumping cannot re-enter event dispatch or Compose rendering. */
 static NSString *const kNucleusTaoInteropMode = @"NucleusTaoInteropMode";
 
+/* A mode that contains nothing but queued blocks is considered EMPTY by
+ * CFRunLoopRunInMode, which then returns kCFRunLoopRunFinished immediately
+ * WITHOUT executing them — the pump would spin uselessly and every blocked
+ * present would ride the 2s backstop (visible as a 2-3s freeze on fullscreen
+ * entry). This permanent no-op source keeps the mode non-empty; the
+ * scheduler signals it so a pumping main thread wakes instantly. */
+static CFRunLoopSourceRef sInteropModeSource = NULL;
+
+static void interopModeSourceNoop(void *info) { (void) info; }
+
+static void ensureInteropModeSource(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CFRunLoopSourceContext ctx = {0};
+        ctx.perform = interopModeSourceNoop;
+        sInteropModeSource = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &ctx);
+        CFRunLoopAddSource(CFRunLoopGetMain(), sInteropModeSource,
+                           (__bridge CFStringRef) kNucleusTaoInteropMode);
+    });
+}
+
 /* Atomic present-with-transaction path. See the Kotlin doc on
  * NativeMetalBridge.nativePresentWithInterop for the full sequence.
  *
@@ -2350,9 +2371,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
         work();
         dispatch_semaphore_signal(sem);
     };
+    ensureInteropModeSource();
     CFRunLoopRef mainLoop = CFRunLoopGetMain();
     CFRunLoopPerformBlock(mainLoop, kCFRunLoopCommonModes, once);
     CFRunLoopPerformBlock(mainLoop, (__bridge CFStringRef) kNucleusTaoInteropMode, once);
+    // Wake a main thread parked inside nativeInteropPump's RunInMode as well
+    // as the regular event loop.
+    CFRunLoopSourceSignal(sInteropModeSource);
     CFRunLoopWakeUp(mainLoop);
     // Generous backstop: if the main thread is wedged somewhere that neither
     // runs its loop nor pumps, degrade to a late/skipped transaction (the
@@ -2367,11 +2392,25 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
  * macOS main thread) is blocked waiting on the render thread — see
  * kNucleusTaoInteropMode above and TaoComposeSceneHost.runOnRenderThread.
  * Bounded: returns after one callout or ~4ms, whichever comes first. */
+/* True on the AppKit main thread. Kotlin cannot decide this itself: on macOS
+ * nativeRunBlocking marshals the event loop onto thread 0, so the JVM thread
+ * that entered taoApplication (TaoMainDispatcher.taoMainThread) is NOT the
+ * thread AppKit callbacks run on. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsMainThread(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    return [NSThread isMainThread] ? JNI_TRUE : JNI_FALSE;
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInteropPump(
         JNIEnv *env, jclass clazz) {
     (void) env; (void) clazz;
     if (![NSThread isMainThread]) return;
+    // The permanent source keeps the mode non-empty — without it RunInMode
+    // returns kCFRunLoopRunFinished at once and never executes queued blocks.
+    ensureInteropModeSource();
     CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.004, true);
 }
 

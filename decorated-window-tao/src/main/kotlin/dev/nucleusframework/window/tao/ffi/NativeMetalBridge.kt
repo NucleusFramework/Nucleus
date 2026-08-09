@@ -470,6 +470,15 @@ internal object NativeMetalBridge {
     @JvmStatic
     external fun nativeInteropPump()
 
+    /**
+     * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
+     * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
+     * onto thread 0, so AppKit callbacks run on a different JVM thread than the
+     * one that entered `taoApplication`.
+     */
+    @JvmStatic
+    external fun nativeIsMainThread(): Boolean
+
     // ── Window-state diagnostics (headful e2e probes) ──────────────────
     //
     // Read-only probes for the stage-2 headful suite, mirroring the sheet
