@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.vanniktechMavenPublish)
@@ -23,55 +23,10 @@ dependencies {
 
 // ---------- Native JNI builds ----------
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Objective-C JNI bridge for layout direction detection (macOS)"
-    group = "build"
-    val prebuiltFile = nativeResourceDir.dir("darwin-aarch64").file("libnucleus_layout_direction.dylib").asFile
-    enabled = Os.isFamily(Os.FAMILY_MAC) && !prebuiltFile.exists()
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/macos")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge for layout direction detection (Windows)"
-    group = "build"
-    val prebuiltFile = nativeResourceDir.dir("win32-x64").file("nucleus_layout_direction.dll").asFile
-    enabled = Os.isFamily(Os.FAMILY_WINDOWS) && !prebuiltFile.exists()
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/windows")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", nativeDir.file("build.bat").asFile.absolutePath)
-}
-
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge for layout direction detection (Linux)"
-    group = "build"
-    val prebuiltFile = nativeResourceDir.dir("linux-x64").file("libnucleus_layout_direction.so").asFile
-    enabled = Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !prebuiltFile.exists()
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/linux")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs, buildNativeWindows, buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs, buildNativeWindows, buildNativeLinux)
-    }
+nucleusNative {
+    macos("nucleus_layout_direction")
+    windows("nucleus_layout_direction")
+    linux("nucleus_layout_direction")
 }
 
 java {

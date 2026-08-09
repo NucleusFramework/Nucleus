@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.vanniktechMavenPublish)
@@ -51,67 +52,13 @@ kotlin {
 // Tao + jni crate + per-platform helpers (Metal on macOS, WGL + WndProc deco
 // on Windows). Native binaries ship in src/main/resources/nucleus/native/.
 
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Rust JNI bridge into a macOS dylib (arm64 + x86_64)"
-    group = "build"
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "darwin-aarch64/libnucleus_tao.dylib")
-    onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(file("src/main/native/src"))
-    inputs.file(file("src/main/native/Cargo.toml"))
-    outputs.dir(outputDir)
-    workingDir(file("src/main/native/macos"))
-    commandLine("bash", "build.sh")
-}
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the Rust JNI bridge + WGL/Deco helpers into Windows DLLs"
-    group = "build"
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "win32-x64/nucleus_tao.dll")
-    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) && !checkFile.exists() }
-    inputs.dir(file("src/main/native/src"))
-    inputs.file(file("src/main/native/Cargo.toml"))
-    inputs.file(file("src/main/native/windows/nucleus_tao_windows_deco.c"))
-    inputs.file(file("src/main/native/windows/nucleus_tao_gl.c"))
-    inputs.file(file("src/main/native/windows/nucleus_tao_texture.c"))
-    outputs.dir(outputDir)
-    workingDir(file("src/main/native/windows"))
-    commandLine("cmd", "/c", ".\\build.bat")
-}
-
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries"
-    group = "build"
-    val outputDir = file("src/main/resources/nucleus/native")
-    val arch = System.getProperty("os.arch").lowercase()
-    val archDir = if (arch.contains("aarch64") || arch.contains("arm64")) "linux-aarch64" else "linux-x64"
-    val checkFile = File(outputDir, "$archDir/libnucleus_tao.so")
-    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(file("src/main/native/src"))
-    inputs.file(file("src/main/native/Cargo.toml"))
-    inputs.file(file("src/main/native/linux/nucleus_tao_egl.c"))
-    inputs.file(file("src/main/native/linux/nucleus_tao_texture_linux.c"))
-    // Shared by both C translation units above: editing it alone must not leave
-    // the task UP-TO-DATE with a stale .so in the resources.
-    inputs.file(file("src/main/native/linux/nucleus_tao_egl_internal.h"))
-    outputs.dir(outputDir)
-    workingDir(file("src/main/native/linux"))
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs)
-    dependsOn(buildNativeWindows)
-    dependsOn(buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs)
-        dependsOn(buildNativeWindows)
-        dependsOn(buildNativeLinux)
-    }
+// The whole crate (src/main/native/{Cargo.toml,src}) plus the per-OS C helpers
+// under src/main/native/<os> are tracked as inputs by the convention plugin, so
+// touching a shared header alone still invalidates the task.
+nucleusNative {
+    macos("nucleus_tao", "Compiles the Rust JNI bridge into a macOS dylib (arm64 + x86_64)")
+    windows("nucleus_tao", "Compiles the Rust JNI bridge + WGL/Deco helpers into Windows DLLs")
+    linux("nucleus_tao", "Compiles the Rust JNI bridge + EGL helper into Linux .so libraries")
 }
 
 // ── macOS standalone-popup smoke check ──────────────────────────────────────

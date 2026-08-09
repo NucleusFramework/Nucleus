@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -52,56 +52,10 @@ kotlin {
     }
 }
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C++ JNI bridge into Windows DLLs (x64 + ARM64)"
-    group = "build"
-    val nativeDir = file("src/main/native/windows")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "win32-x64/nucleus_global_hotkey.dll")
-    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", File(nativeDir, "build.bat").absolutePath)
-}
-
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into a Linux shared library"
-    group = "build"
-    val nativeDir = file("src/main/native/linux")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val arch = System.getProperty("os.arch").let { if (it == "amd64") "x64" else "aarch64" }
-    val checkFile = File(outputDir, "linux-$arch/libnucleus_global_hotkey.so")
-    onlyIf { Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", File(nativeDir, "build.sh").absolutePath)
-}
-
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Objective-C JNI bridge into macOS dylibs (arm64 + x86_64)"
-    group = "build"
-    val nativeDir = file("src/main/native/macos")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "darwin-aarch64/libnucleus_global_hotkey.dylib")
-    onlyIf { Os.isFamily(Os.FAMILY_MAC) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", File(nativeDir, "build.sh").absolutePath)
-}
-
-tasks.processResources {
-    dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
-    }
+nucleusNative {
+    windows("nucleus_global_hotkey")
+    linux("nucleus_global_hotkey")
+    macos("nucleus_global_hotkey")
 }
 
 mavenPublishing {

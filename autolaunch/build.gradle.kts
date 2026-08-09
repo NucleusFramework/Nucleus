@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -38,40 +39,9 @@ tasks.test {
     onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) }
 }
 
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C++ JNI bridge into Windows DLLs (x64 + ARM64)"
-    group = "build"
-    val nativeDir = file("src/main/native/windows")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val checkFile = File(outputDir, "win32-x64/nucleus_autolaunch.dll")
-    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) && !checkFile.exists() }
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", File(nativeDir, "build.bat").absolutePath)
-}
-
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into a Linux shared library"
-    group = "build"
-    val nativeDir = file("src/main/native/linux")
-    val outputDir = file("src/main/resources/nucleus/native")
-    val hasPrebuilt = File(outputDir, "linux-x64/libnucleus_autolaunch_linux.so").exists()
-    enabled = Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-    inputs.dir(nativeDir)
-    outputs.dir(outputDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeWindows, buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows, buildNativeLinux)
-    }
+nucleusNative {
+    windows("nucleus_autolaunch")
+    linux("nucleus_autolaunch_linux")
 }
 
 mavenPublishing {
