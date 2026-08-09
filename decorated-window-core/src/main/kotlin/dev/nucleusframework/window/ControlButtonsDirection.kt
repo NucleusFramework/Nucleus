@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.LayoutDirection
  * independently of the title bar content direction.
  *
  * - [Auto]: follows `LocalLayoutDirection` from Compose (previous default behavior).
- * - [System]: follows the native OS layout direction via JNI, with a JVM-level fallback.
+ * - [System]: follows the native OS layout direction via JNI.
  * - [SystemNative]: follows the native OS locale detected via JNI, ignoring any
  *   `Locale.setDefault()` override applied at runtime.
  * - [Ltr]: always place buttons as in a left-to-right layout (trailing = right side).
@@ -38,8 +38,12 @@ public enum class ControlButtonsDirection {
  *
  * On macOS, queries `NSApplication.userInterfaceLayoutDirection`.
  * On Windows, queries `GetLocaleInfoEx` with `LOCALE_IREADINGLAYOUT`.
- * On Linux (or if the native library is unavailable), falls back to checking
- * `user.language` system property against known RTL languages.
+ * On Linux, detects the system locale's text direction via Pango, falling back
+ * to matching the `LC_ALL`/`LC_MESSAGES`/`LANG` environment against known RTL
+ * languages when Pango is unavailable.
+ *
+ * There is no JVM-level fallback: if the native library failed to load,
+ * calling this function throws [UnsatisfiedLinkError].
  */
 public fun nativeSystemLayoutDirection(): LayoutDirection =
     if (NativeLayoutDirectionBridge.nativeIsRTL()) LayoutDirection.Rtl else LayoutDirection.Ltr
