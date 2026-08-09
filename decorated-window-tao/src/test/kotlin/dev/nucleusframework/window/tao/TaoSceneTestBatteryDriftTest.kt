@@ -64,6 +64,8 @@ class TaoSceneTestBatteryDriftTest {
             MacExternalTextureNativeSmokeTest::class.java to "drives a real Metal device + IOSurface import",
             LinuxExternalTextureNativeSmokeTest::class.java to "drives a real GBM/EGL device + DMA-BUF import",
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
+            TaoMetalMissingPoolE2ETest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",

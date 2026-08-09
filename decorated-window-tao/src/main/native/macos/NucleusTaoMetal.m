@@ -2051,6 +2051,36 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
     else                          dispatch_sync(dispatch_get_main_queue(), resize);
 }
 
+// ── Per-frame autorelease pool (#494) ────────────────────────────────────
+//
+// The JVM render thread ("TaoMetalRender") has no ObjC autorelease pool, so
+// the CAMetalDrawable returned by nextDrawable and the MTLCommandBuffer
+// autoreleased inside skiko's flushAndSubmit would "just leak" — one pair per
+// rendered frame (~20 MB/min while anything animates). The Kotlin side pushes
+// a pool before each render-thread task and pops it after, covering
+// beginFrame, skiko's flush (which runs between our JNI calls, so pools
+// inside the JNI functions alone would not reach it) and present in one
+// drain. These are the exact calls ARC emits for @autoreleasepool; exported
+// by libobjc with a stable ABI but only declared in objc-internal.h, hence
+// the local declarations.
+extern void *objc_autoreleasePoolPush(void);
+extern void objc_autoreleasePoolPop(void *pool);
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAutoreleasePoolPush(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    return (jlong)(uintptr_t) objc_autoreleasePoolPush();
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAutoreleasePoolPop(
+        JNIEnv *env, jclass clazz, jlong pool) {
+    (void) env; (void) clazz;
+    if (pool == 0) return;
+    objc_autoreleasePoolPop((void *)(uintptr_t) pool);
+}
+
 JNIEXPORT jobject JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeBeginFrame(
         JNIEnv *env, jclass clazz, jlong handle) {

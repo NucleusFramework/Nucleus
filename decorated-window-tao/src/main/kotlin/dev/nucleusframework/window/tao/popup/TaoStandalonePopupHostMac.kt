@@ -28,6 +28,7 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.newMetalRenderExecutor
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import dev.nucleusframework.window.tao.scene.replayPictureToFrame
 import org.jetbrains.skia.DirectContext
@@ -99,10 +100,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     // init blocks in declaration order — a later-declared executor would be
     // null at that point. (Skia's Metal context is thread-affine, so it is owned
     // by this single-thread executor for the lifetime of the host.)
+    // Every task drains its own ObjC autorelease pool — see
+    // newMetalRenderExecutor (#494).
     private val renderExecutor: ExecutorService =
-        Executors.newSingleThreadExecutor { r ->
-            Thread(r, "TaoStandalonePopupMetalRender").apply { isDaemon = true }
-        }
+        newMetalRenderExecutor("TaoStandalonePopupMetalRender")
 
     init {
         var valid = false
