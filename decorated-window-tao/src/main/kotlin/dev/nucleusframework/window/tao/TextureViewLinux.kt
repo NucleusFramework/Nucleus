@@ -219,6 +219,13 @@ internal fun releaseGlTextureImports(context: DirectContext) {
     glTextureImports.closeAllFor(context)
 }
 
+/**
+ * Whether the scene drawing with [context] composites at least one live
+ * `TextureView` import — the Linux counterpart of [hasWindowsTextureImports],
+ * consulted by the resize-burst pacing decision (#484).
+ */
+internal fun hasGlTextureImports(context: DirectContext): Boolean = glTextureImports.hasImportsFor(context)
+
 /** Whether an acquire fence descriptor can be owned (and closed) on this platform. */
 internal fun canOwnAcquireFence(): Boolean = Platform.Current == Platform.Linux && NativeTaoLinuxTextureBridge.isLoaded
 
