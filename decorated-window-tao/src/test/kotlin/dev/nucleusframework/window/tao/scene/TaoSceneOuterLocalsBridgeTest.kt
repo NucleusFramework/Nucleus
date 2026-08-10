@@ -11,12 +11,14 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
@@ -98,6 +100,35 @@ class TaoSceneOuterLocalsBridgeTest {
         }
     }
 
+    @Test
+    fun `bridged outer locals do not carry the outer layout direction into content`() {
+        // The flip side of the fix: because the scene property is applied ABOVE
+        // the scene's own locals, ProvideCommonCompositionLocals re-provides
+        // LocalLayoutDirection from the scene's own direction and wins over the
+        // bridged one. An app-level RTL override — or a parent window's
+        // direction, for a secondary window — therefore never reaches content
+        // through the bridge alone. Both nucleus-application adapters snapshot
+        // the outer direction and re-provide it inside content for exactly this
+        // reason; this test pins the scene behaviour that makes that necessary.
+        val outerDirection =
+            if (GlobalLayoutDirection == LayoutDirection.Rtl) LayoutDirection.Ltr else LayoutDirection.Rtl
+        val outerLocals = captureOuterLocals(outerDirection)
+        var bridged: LayoutDirection? = null
+        var reProvided: LayoutDirection? = null
+        runTaoSceneTest(width = 10, height = 10) {
+            scene.compositionLocalContext = outerLocals
+            setContent {
+                bridged = LocalLayoutDirection.current
+                CompositionLocalProvider(LocalLayoutDirection provides outerDirection) {
+                    reProvided = LocalLayoutDirection.current
+                }
+            }
+            frame()
+        }
+        assertEquals(GlobalLayoutDirection, bridged)
+        assertEquals(outerDirection, reProvided)
+    }
+
     private companion object {
         const val BLUE = 0xFF0000FF.toInt()
     }
@@ -109,8 +140,11 @@ class TaoSceneOuterLocalsBridgeTest {
  * `nucleusApplication { }`'s own body, which has no `ComposeScene` (and
  * therefore no `LocalComposeSceneContext`) of its own before any Tao window
  * has opened.
+ *
+ * [layoutDirection] is provided inside the captured composition so a caller can
+ * stand in for an app-level `LocalLayoutDirection` override.
  */
-private fun captureOuterLocals(): CompositionLocalContext {
+private fun captureOuterLocals(layoutDirection: LayoutDirection = GlobalLayoutDirection): CompositionLocalContext {
     var captured: CompositionLocalContext? = null
     val outerScene =
         CanvasLayersComposeScene(
@@ -129,7 +163,9 @@ private fun captureOuterLocals(): CompositionLocalContext {
         )
     try {
         outerScene.setContent {
-            captured = currentCompositionLocalContext
+            CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+                captured = currentCompositionLocalContext
+            }
         }
     } finally {
         outerScene.close()

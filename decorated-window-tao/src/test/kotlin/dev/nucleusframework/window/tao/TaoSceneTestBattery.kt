@@ -227,6 +227,12 @@ public object TaoSceneTestBattery {
             TaoSceneOuterLocalsBridgeTest()
                 .`bridging outer locals through the scene's own compositionLocalContext property does not break Popup`()
         }
+        run(
+            "TaoSceneOuterLocalsBridgeTest: bridged outer locals do not carry the outer layout direction into content",
+        ) {
+            TaoSceneOuterLocalsBridgeTest()
+                .`bridged outer locals do not carry the outer layout direction into content`()
+        }
         run("TaoSceneAnimationTest: tween advances exactly with virtual frames") {
             TaoSceneAnimationTest().`tween advances exactly with virtual frames`()
         }

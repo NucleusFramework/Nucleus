@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import dev.nucleusframework.application.LocalNucleusBackend
@@ -61,6 +62,17 @@ internal object TaoDecoratedWindowAdapter {
         // user-provided locals, …) flows into the new scene — matching how
         // Compose's own Dialog/Popup bridge across scene boundaries.
         val outerLocals = currentCompositionLocalContext
+
+        // Captured in the OUTER composition, for the same reason
+        // TaoDecoratedDialogAdapter captures it: the window scene is created
+        // with `GlobalLayoutDirection` and `ProvideCommonCompositionLocals`
+        // re-provides `LocalLayoutDirection` from it — ABOVE the user content
+        // but BELOW the bridged `outerLocals` — so an app-level RTL override
+        // (or a parent window's direction, for a secondary window) would
+        // otherwise be forced back to the system direction. Re-provide it
+        // inside the content below; it's not a routing local, so popups stay
+        // anchored to this window's own scene.
+        val parentLayoutDirection = LocalLayoutDirection.current
 
         with(scope.taoScope) {
             TaoDecoratedWindow(
@@ -150,6 +162,7 @@ internal object TaoDecoratedWindowAdapter {
                 val sceneTitleBarInfo = LocalTitleBarInfo.current
                 CompositionLocalProvider(
                     LocalDensity provides sceneDensity,
+                    LocalLayoutDirection provides parentLayoutDirection,
                     LocalTaoTextSelectionA11yPublisher provides scenePublisher,
                     LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusWindow provides nucleusWindow,
