@@ -2569,6 +2569,37 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewFrameSi
     return packed;
 }
 
+/* TOP-LEFT origin of an NSView within its superview, in physical pixels
+ * with a top-left coordinate system (Compose convention), packed as two
+ * signed 32-bit values (x << 32) | (y & 0xFFFFFFFF). Complements
+ * nativeDiagViewFrameSize: a subview can have the right SIZE but sit at the
+ * wrong offset after a fullscreen transition (bottom-left AppKit anchoring
+ * vs a stale parent height). Returns LLONG_MIN when the view is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeftPx(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return LLONG_MIN;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = LLONG_MIN;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSView *parent = view.superview;
+        if (view == nil || parent == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        NSRect f = view.frame;
+        CGFloat topPt = parent.isFlipped
+            ? f.origin.y
+            : parent.bounds.size.height - (f.origin.y + f.size.height);
+        int64_t x = (int64_t) lround(f.origin.x * scale);
+        int64_t y = (int64_t) lround(topPt * scale);
+        packed = (jlong)((((uint64_t)(uint32_t) x) << 32) | ((uint64_t)(uint32_t) y));
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
 /* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
  * its own references); the set_focusable leak regression compares the count
  * before/after a burst of calls. Returns -1 when view/window is gone. */

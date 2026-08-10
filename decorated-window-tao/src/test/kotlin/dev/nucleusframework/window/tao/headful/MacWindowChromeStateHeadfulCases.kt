@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.NativeView
@@ -281,12 +282,23 @@ internal object MacWindowChromeStateHeadfulCases {
         // inner scene's own layout pass — the only signal of the overlay
         // ComposeScene's real viewport.
         val overlayContentWidthPx = AtomicLong(0)
+        val expectedRect = AtomicLong(0)
         return TaoWindowTestCase(
             name = "NativeView frame tracks a fullscreen round-trip (#494 patch)",
             timeoutMillis = 90_000L,
             skip = { if (!isMac) "macOS only" else null },
+            // The suite's default DarkGray Box(fillMaxSize) is a Column
+            // sibling composed BEFORE the case content — it would eat the
+            // whole height and leave the NativeView a degenerate 1px slot.
+            paintDefaultBackground = false,
             content = {
-                FillingNativeViewProbe(window.handle, childViewPtr, embeddingComposed, overlayContentWidthPx)
+                FillingNativeViewProbe(
+                    window.handle,
+                    childViewPtr,
+                    embeddingComposed,
+                    overlayContentWidthPx,
+                    expectedRect,
+                )
             },
         ) {
             awaitUntil("window mapped") { bounds() != null }
@@ -297,6 +309,37 @@ internal object MacWindowChromeStateHeadfulCases {
             fun childSizePx(): Pair<Long, Long> {
                 val packed = NativeMetalBridge.nativeDiagViewFrameSize(childViewPtr.get())
                 return (packed ushr 32) to (packed and 0xFFFFFFFFL)
+            }
+
+            fun childTopLeftPx(): Pair<Int, Int> {
+                val packed = NativeMetalBridge.nativeDiagViewTopLeftPx(childViewPtr.get())
+                check(packed != Long.MIN_VALUE) { "embedded NSView left the hierarchy" }
+                return (packed ushr 32).toInt() to packed.toInt()
+            }
+
+            // The contract: the embed's REAL AppKit frame (top-left origin)
+            // must match the Compose slot rect, whatever the window state.
+            // Correct SIZE at the wrong offset is the stale-anchor failure
+            // mode a size-only check can't see.
+            fun checkChildMatchesSlot(stage: String) {
+                val (x, y) = childTopLeftPx()
+                val (w, h) = childSizePx()
+                val exp = unpackRect(expectedRect.get())
+                System.err.println(
+                    "[nv-diag] $stage child=($x,$y ${w}x$h) slot=(${exp[0]},${exp[1]} ${exp[2]}x${exp[3]})",
+                )
+                check(exp[2] > 1 && exp[3] > 1) {
+                    "probe slot is degenerate (${exp[2]}x${exp[3]}) — test layout broken"
+                }
+                check(
+                    abs(x - exp[0]) <= TRACK_TOLERANCE_PX &&
+                        abs(y - exp[1]) <= TRACK_TOLERANCE_PX &&
+                        abs(w - exp[2]) <= TRACK_TOLERANCE_PX &&
+                        abs(h - exp[3]) <= TRACK_TOLERANCE_PX,
+                ) {
+                    "embedded NSView diverged from its Compose slot $stage: " +
+                        "view=($x,$y ${w}x$h) slot=(${exp[0]},${exp[1]} ${exp[2]}x${exp[3]})"
+                }
             }
 
             val windowedBounds = requireNotNull(bounds())
@@ -325,6 +368,7 @@ internal object MacWindowChromeStateHeadfulCases {
                 "NativeView overlay content kept a stale viewport in fullscreen: " +
                     "content=${overlayFsWidth}px embed=${wFs}px"
             }
+            checkChildMatchesSlot("in fullscreen")
 
             window.setFullscreen(false)
             awaitUntil("exited fullscreen (bounds restored)", timeoutMillis = FS_TIMEOUT_MS) {
@@ -339,6 +383,7 @@ internal object MacWindowChromeStateHeadfulCases {
                     "view=${wBack}x$hBack window=${restoredBounds[2]}x${restoredBounds[3]} " +
                     "(fullscreen was ${wFs}x$hFs)"
             }
+            checkChildMatchesSlot("after exiting fullscreen")
 
             // A window resize AFTER the round-trip must still reach the
             // embed — catches a wedged interop pipeline that the restore
@@ -365,6 +410,7 @@ internal object MacWindowChromeStateHeadfulCases {
                 "NativeView overlay content kept a stale viewport after the " +
                     "round-trip + resize: content=${overlayResizedWidth}px embed=${wResized}px"
             }
+            checkChildMatchesSlot("after the round-trip + resize")
 
             childViewPtr.get().takeIf { it != 0L }?.let {
                 NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(it)
@@ -383,6 +429,8 @@ internal object MacWindowChromeStateHeadfulCases {
         childViewPtr: AtomicLong,
         embeddingComposed: AtomicLong,
         overlayContentWidthPx: AtomicLong,
+        /** Compose-side slot rect, packed x/y/w/h × 16 bits — the contract the native frame must match. */
+        expectedRect: AtomicLong,
     ) {
         val parentNsView = NativeTaoBridge.nativeNsViewHandle(windowHandle)
         val child =
@@ -397,23 +445,51 @@ internal object MacWindowChromeStateHeadfulCases {
             }
         if (child != 0L) {
             SideEffect { embeddingComposed.set(1) }
-            NativeView(
-                factory = {
-                    object : NucleusPlatformView.NsView {
-                        override val nsViewHandle: Long = child
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                content = {
-                    Box(
-                        Modifier.fillMaxSize().onGloballyPositioned {
-                            overlayContentWidthPx.set(it.size.width.toLong())
-                        },
+            Box(
+                Modifier.fillMaxSize().onGloballyPositioned { c ->
+                    val p = c.positionInRoot()
+                    expectedRect.set(
+                        packRect(p.x.roundToInt(), p.y.roundToInt(), c.size.width, c.size.height),
                     )
                 },
-            )
+            ) {
+                NativeView(
+                    factory = {
+                        object : NucleusPlatformView.NsView {
+                            override val nsViewHandle: Long = child
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    content = {
+                        Box(
+                            Modifier.fillMaxSize().onGloballyPositioned {
+                                overlayContentWidthPx.set(it.size.width.toLong())
+                            },
+                        )
+                    },
+                )
+            }
         }
     }
+
+    private fun packRect(
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+    ): Long =
+        ((x.toLong() and 0xFFFF) shl 48) or
+            ((y.toLong() and 0xFFFF) shl 32) or
+            ((w.toLong() and 0xFFFF) shl 16) or
+            (h.toLong() and 0xFFFF)
+
+    private fun unpackRect(packed: Long): IntArray =
+        intArrayOf(
+            ((packed ushr 48) and 0xFFFF).toInt(),
+            ((packed ushr 32) and 0xFFFF).toInt(),
+            ((packed ushr 16) and 0xFFFF).toInt(),
+            (packed and 0xFFFF).toInt(),
+        )
 
     private const val PHASE_PERIOD_MS = 500
     private const val FULL_TURN_DEGREES = 360f

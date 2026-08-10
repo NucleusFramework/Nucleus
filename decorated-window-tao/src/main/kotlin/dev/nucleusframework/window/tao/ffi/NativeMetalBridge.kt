@@ -512,6 +512,17 @@ internal object NativeMetalBridge {
     external fun nativeDiagViewFrameSize(nsViewPtr: Long): Long
 
     /**
+     * Top-left origin of an NSView within its superview, physical pixels,
+     * top-left coordinate convention, packed as two signed 32-bit values
+     * `(x shl 32) or (y and 0xFFFFFFFF)`. [Long.MIN_VALUE] when the view is
+     * gone. Complements [nativeDiagViewFrameSize]: right size at the wrong
+     * offset is the fullscreen-transition failure mode (bottom-left AppKit
+     * anchoring against a stale parent height).
+     */
+    @JvmStatic
+    external fun nativeDiagViewTopLeftPx(nsViewPtr: Long): Long
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

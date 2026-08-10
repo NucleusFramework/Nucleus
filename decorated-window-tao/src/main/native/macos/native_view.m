@@ -289,6 +289,22 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
         ? NSMakeRect(xPt, yPt, wPt, hPt)
         : NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt);
 
+    // Margin-only autoresizing: fixed size, fixed TOP-LEFT anchor. The
+    // bottom-left frame above is computed against parentH AT CALL TIME —
+    // during an AppKit fullscreen transition the interop-deferred call
+    // lands while the parent still has its pre-transition height, and a
+    // mask of 0 (all margins fixed = glued to the parent's BOTTOM-left)
+    // leaves the child offset by the full height delta once the window
+    // reaches its final size, with no Compose re-issue coming (the
+    // Compose-side rect didn't change). Flexible bottom/right margins
+    // make AppKit preserve the top-left anchor across parent resizes
+    // instead; size stays Compose-owned (no Width/HeightSizable bits, so
+    // the live-resize two-writer jitter this file guards against
+    // elsewhere cannot come back).
+    child.autoresizingMask = parent.isFlipped
+        ? (NSViewMaxXMargin | NSViewMaxYMargin)
+        : (NSViewMaxXMargin | NSViewMinYMargin);
+
     // Wrap in a CATransaction with disableActions so the layer-backed
     // subview (typically a WKWebView) doesn't kick off the default 0.25s
     // implicit position/bounds animation on every layout pass — that's
@@ -361,8 +377,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeCr
     if (parent == nil) return 0;
     NucleusTaoNativeOverlayView *overlay =
         [[NucleusTaoNativeOverlayView alloc] initWithFrame:parent.bounds];
-    // Intentionally NO autoresizingMask. We previously set
-    // `NSViewWidthSizable | NSViewHeightSizable` so the overlay would
+    // Intentionally NO SIZE bits in the autoresizingMask (margin-only
+    // anchoring is applied later by nativeSetOverlayFrame). We previously
+    // set `NSViewWidthSizable | NSViewHeightSizable` so the overlay would
     // visually track parent resizes "for free", but that creates two
     // independent frame writers competing during a window live-resize:
     //
@@ -406,6 +423,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
     NSRect newFrame = parent.isFlipped
         ? NSMakeRect(xPt, yPt, wPt, hPt)
         : NSMakeRect(xPt, parentH - yPt - hPt, wPt, hPt);
+    // Margin-only anchoring, same reasoning as nativeSetSubviewFrame: keeps
+    // the top-left corner in place when the parent's height changes between
+    // Compose frame updates (fullscreen enter/exit). Size bits stay unset —
+    // the "no autoresizingMask" rule from nativeCreateOverlay only ever
+    // concerned Width/HeightSizable (the live-resize two-writer jitter);
+    // margins have a single writer (AppKit) and Compose still owns the size.
+    overlay.autoresizingMask = parent.isFlipped
+        ? (NSViewMaxXMargin | NSViewMaxYMargin)
+        : (NSViewMaxXMargin | NSViewMinYMargin);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
     [overlay setFrame:newFrame];
