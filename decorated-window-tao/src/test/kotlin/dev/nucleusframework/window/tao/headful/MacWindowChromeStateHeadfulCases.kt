@@ -280,6 +280,7 @@ internal object MacWindowChromeStateHeadfulCases {
      * asserted against the AppKit view's REAL frame, not Compose state.
      */
     private fun nativeViewTracksFullscreenRoundTrip(): TaoWindowTestCase {
+        var showNativeView by mutableStateOf(true)
         val childViewPtr = AtomicLong(0)
         val embeddingComposed = AtomicLong(0)
         // Laid-out width of the overlay `content` slot, in px, packed by the
@@ -296,13 +297,15 @@ internal object MacWindowChromeStateHeadfulCases {
             // whole height and leave the NativeView a degenerate 1px slot.
             paintDefaultBackground = false,
             content = {
-                FillingNativeViewProbe(
-                    window.handle,
-                    childViewPtr,
-                    embeddingComposed,
-                    overlayContentWidthPx,
-                    expectedRect,
-                )
+                if (showNativeView) {
+                    FillingNativeViewProbe(
+                        window.handle,
+                        childViewPtr,
+                        embeddingComposed,
+                        overlayContentWidthPx,
+                        expectedRect,
+                    )
+                }
             },
         ) {
             awaitUntil("window mapped") { bounds() != null }
@@ -416,6 +419,14 @@ internal object MacWindowChromeStateHeadfulCases {
             }
             checkChildMatchesSlot("after the round-trip + resize")
 
+            // Unmount the NativeView FIRST: its dispose path detaches the
+            // child from the hierarchy (nativeRemoveSubview). Releasing the
+            // fabricated NSView while it is still composed is a double free —
+            // the later detach then messages a deallocated object (crashed CI
+            // as `-[AppleParavirtTexture removeFromSuperview]: unrecognized
+            // selector` once the freed memory got reused).
+            showNativeView = false
+            settle()
             childViewPtr.get().takeIf { it != 0L }?.let {
                 NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(it)
             }
