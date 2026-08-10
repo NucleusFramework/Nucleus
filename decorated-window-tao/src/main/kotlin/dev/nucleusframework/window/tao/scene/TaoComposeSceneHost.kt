@@ -1148,8 +1148,11 @@ internal class TaoComposeSceneHost(
 
     private companion object {
         // Pause between interop pumps in [runOnRenderThread]'s cooperative
-        // wait — the pump returns immediately when nothing is queued.
-        private const val PUMP_PARK_NANOS = 250_000L // 0.25 ms
+        // wait — the pump is a non-blocking single pass, so this park is the
+        // whole per-iteration cost. Kept small: the wait sits on TextureView's
+        // per-video-frame snapshot hop, where every fixed microsecond is paid
+        // once per frame.
+        private const val PUMP_PARK_NANOS = 50_000L // 50 µs
 
         // Wire scales (must match `TRACKPAD_VALUE_FIXED_SCALE` and
         // `CURSOR_FIXED_SCALE` on the Rust side).

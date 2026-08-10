@@ -27,7 +27,10 @@ import dev.nucleusframework.window.tao.NucleusPlatformView
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
+import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -48,6 +51,7 @@ internal object MacWindowChromeStateHeadfulCases {
             setFocusableDoesNotLeakWindowRetains(),
             fullscreenWithLiveNativeViewDoesNotFreeze(),
             nativeViewTracksFullscreenRoundTrip(),
+            renderThreadHopStaysCheap(),
         )
 
     /** Bit 0 = primary attachment associated object, bit 1 = FS observer. */
@@ -490,6 +494,46 @@ internal object MacWindowChromeStateHeadfulCases {
             ((packed ushr 16) and 0xFFFF).toInt(),
             (packed and 0xFFFF).toInt(),
         )
+
+    /**
+     * A main-thread `runOnRenderThread` hop must stay in the sub-millisecond
+     * range: `TextureView` performs one blocking hop per producer frame from
+     * the draw pass (`MacImportedTexture.snapshot`), so any fixed cost added
+     * to the hop is paid per video frame. The interop pump's first version
+     * parked the main thread for the pump timeout (4ms) when no callout was
+     * pending — +4ms per frame halves 90Hz video to 45fps.
+     */
+    private fun renderThreadHopStaysCheap(): TaoWindowTestCase {
+        val hostRef = AtomicReference<TaoMetalTextureHost?>()
+        return TaoWindowTestCase(
+            name = "main-thread render hop stays sub-millisecond (#494 patch)",
+            skip = { if (!isMac) "macOS only" else null },
+            content = {
+                val host = LocalTaoMetalTextureHost.current
+                SideEffect { hostRef.set(host) }
+            },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            settle()
+            awaitUntil("texture host published") { hostRef.get() != null }
+            val host = requireNotNull(hostRef.get())
+
+            repeat(HOP_WARMUP) { host.runOnRenderThread { } }
+            val start = System.nanoTime()
+            repeat(HOP_SAMPLES) { host.runOnRenderThread { } }
+            val avgMicros = (System.nanoTime() - start) / 1_000 / HOP_SAMPLES
+            System.err.println("[hop-diag] avg main->render hop = ${avgMicros}µs over $HOP_SAMPLES hops")
+            check(avgMicros < HOP_MAX_MICROS) {
+                "main-thread render hop costs ${avgMicros}µs on average — a fixed " +
+                    "stall here is paid once per TextureView producer frame " +
+                    "(4000µs ≈ the interop pump parking for its full timeout)"
+            }
+        }
+    }
+
+    private const val HOP_WARMUP = 20
+    private const val HOP_SAMPLES = 200
+    private const val HOP_MAX_MICROS = 1_000L
 
     private const val PHASE_PERIOD_MS = 500
     private const val FULL_TURN_DEGREES = 360f

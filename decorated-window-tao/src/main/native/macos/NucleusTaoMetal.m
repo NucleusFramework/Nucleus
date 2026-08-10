@@ -2411,7 +2411,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInteropPump(
     // The permanent source keeps the mode non-empty — without it RunInMode
     // returns kCFRunLoopRunFinished at once and never executes queued blocks.
     ensureInteropModeSource();
-    CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.004, true);
+    // Timeout 0: one non-blocking pass — run whatever callout is already
+    // queued and return. The caller (runOnRenderThread's cooperative wait)
+    // polls; a positive timeout here would PARK the main thread for its
+    // full duration on every pump with nothing queued, a fixed tax paid
+    // once per TextureView producer frame via the per-frame snapshot hop
+    // (measured 4.5ms/hop with 4ms — enough to halve 90Hz video to 45fps).
+    CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.0, true);
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────
