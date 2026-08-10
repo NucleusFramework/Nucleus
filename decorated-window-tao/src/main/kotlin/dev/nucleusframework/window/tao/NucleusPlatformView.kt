@@ -93,6 +93,13 @@ public sealed interface NucleusPlatformView {
      * rendered through GTK's normal cairo / GL paint pipeline. The
      * Compose surface composites on top with alpha; transparency in
      * the embedded rect lets the GTK widget show through.
+     *
+     * **Wayland only.** On the X11 backend (`NUCLEUS_TAO_LINUX_RENDERER=x11`,
+     * or an actual X session) the show-through cannot work: the surface's
+     * opaque-region carve-out is a Wayland protocol concept, and X11 never
+     * blends a child window's alpha against its parent — the embedded
+     * widget renders (and keeps running) behind the GL surface, but the
+     * punched rect shows the desktop instead of the widget.
      */
     public interface GtkWidget : NucleusPlatformView {
         /** Pointer to the user-supplied `GtkWidget*` (cast to Long). */
