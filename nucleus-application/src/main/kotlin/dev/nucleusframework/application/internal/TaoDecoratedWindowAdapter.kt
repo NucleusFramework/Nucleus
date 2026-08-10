@@ -117,46 +117,42 @@ internal object TaoDecoratedWindowAdapter {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
                 ObserveSingleInstanceRestore(nucleusWindow)
-                // outerLocals were captured in the OUTER composition. Bridging
-                // them via a plain CompositionLocalProvider(outerLocals) wrapper
-                // here — this function's own approach until this fix — clobbers
-                // two different things this scene owns:
-                //  - LocalDensity/LocalTaoWindow/LocalTitleBarInfo, overridden
-                //    with the application root's/parent window's values (handled
-                //    below exactly as before: snapshot before the bridge takes
-                //    effect, re-provide after).
-                //  - Compose's own internal LocalComposeSceneContext, captured
-                //    from whatever scene (or lack of one) outerLocals came from.
-                //    Every Popup/Dialog/DropdownMenu/Tooltip composed anywhere in
-                //    content — regardless of nativePopupLayers — resolves that
-                //    local to decide which scene it renders into; shadowed to the
-                //    wrong scene (or no scene, for an application-root capture
-                //    with no window of its own yet), it throws
-                //    "LocalComposeSceneContext not provided"/"NavigationEvent-
-                //    DispatcherOwner not found" the moment anything in content
-                //    tries to show one. TaoDecoratedDialogAdapter already solved
-                //    this exact problem correctly (see its own doc comment) via
-                //    compositionLocalContext (above, for the first composition)
-                //    plus this same bridge (for every composition after) — both
-                //    apply outerLocals as the scene's own compositionLocalContext
-                //    PROPERTY, which Compose itself
-                //    applies above (not below) the scene's own
-                //    LocalComposeSceneContext provision, rather than as a
-                //    CompositionLocalProvider wrapper nested below it. This
-                //    adapter never got the same fix; it's the one real
-                //    difference between it and the dialog adapter in how outer
-                //    locals cross the scene boundary.
+                // outerLocals were captured in the OUTER composition and cross the
+                // scene boundary as this scene's own compositionLocalContext (the
+                // parameter above for the first composition, the bridge below for
+                // every one after). Compose applies that property ABOVE the scene's
+                // own provisions (RootNodeOwner.setContent), which is the whole
+                // point: Compose's internal LocalComposeSceneContext stays the one
+                // THIS scene provided, so Popup/Dialog/DropdownMenu/Tooltip create
+                // their layers here. The previous shape — a plain
+                // CompositionLocalProvider(outerLocals) wrapper nested INSIDE the
+                // scene — re-provided the captured scene context instead, so a
+                // window opened from another window's content routed its popups
+                // back into the PARENT scene (and threw once that scene was gone).
+                // TaoDecoratedDialogAdapter always bridged its locals this way; this
+                // adapter never did.
+                //
+                // Ordering consequence: everything the scene and DecoratedWindow
+                // provide for themselves — LocalDensity, LocalTaoWindow,
+                // LocalTitleBarInfo, LocalTaoTextSelectionA11yPublisher — now sits
+                // BELOW outerLocals and wins on its own, so the snapshot-and-
+                // re-provide below is no longer load-bearing. It stays as an
+                // explicit guard: without LocalTaoWindow bound to THIS window,
+                // windowDragArea() and WindowControlsWindows drive the PARENT
+                // window and a secondary window looks immovable. LocalLayoutDirection
+                // is the one local that does not come back on its own — the scene
+                // re-provides GlobalLayoutDirection over the bridged value — hence
+                // parentLayoutDirection, captured outside.
                 val bridge = LocalTaoCompositionLocalContextBridge.current
                 SideEffect { bridge?.invoke(outerLocals) }
                 val sceneDensity = LocalDensity.current
-                // outerLocals carries the app theme's own LocalTextContextMenu
-                // (e.g. Jewel's). Applying it here shadows the scene's selection
-                // observer, which silently breaks cross-process selection reading
-                // (PopClip, AppleScript). Re-install the observer INSIDE outerLocals
-                // via the publisher, so it sits below the theme's menu and keeps it
-                // as its delegate — preserving cut/copy/paste icons & shortcuts. The
-                // publisher itself is reset by outerLocals, so snapshot + re-provide
-                // it, exactly like LocalDensity.
+                // The app theme's own LocalTextContextMenu (e.g. Jewel's) is not a
+                // scene-owned local, so it does come through outerLocals and shadows
+                // the scene's selection observer — silently breaking cross-process
+                // selection reading (PopClip, AppleScript). TaoTextSelectionAccessibility
+                // below re-installs the observer INSIDE the theme's menu, keeping it as
+                // its delegate — cut/copy/paste icons & shortcuts preserved — and reads
+                // the scene's publisher from this snapshot.
                 val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
                 val sceneTaoWindow = LocalTaoWindow.current
                 val sceneTitleBarInfo = LocalTitleBarInfo.current
