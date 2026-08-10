@@ -2,6 +2,7 @@ package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalTitleBarInfo
+import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
@@ -78,6 +80,16 @@ internal object TaoDecoratedWindowAdapter {
                 hiddenFromDock = hiddenFromDock,
                 onPreviewKeyEvent = onPreviewKeyEvent,
                 onKeyEvent = onKeyEvent,
+                // Initial bridge: present from this window's own scene's FIRST
+                // composition (the SideEffect below carries every composition
+                // after that). Mirrors TaoDecoratedDialogAdapter's identical need
+                // for the identical reason — a user local with a throwing default
+                // (e.g. LocalAppGraph) would otherwise crash before the
+                // SideEffect ever gets to run. DecoratedWindow's own doc comment
+                // on this parameter already documents it as exactly this bridge
+                // ("[DecoratedDialog] forwards its parent's locals here") — this
+                // adapter is the one top-level-window caller that never did.
+                compositionLocalContext = outerLocals,
             ) {
                 val taoScope: TaoDecoratedWindowScope = this
                 val decoratedState =
@@ -93,22 +105,37 @@ internal object TaoDecoratedWindowAdapter {
                         TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
                     }
                 ObserveSingleInstanceRestore(nucleusWindow)
-                // outerLocals were captured in the OUTER composition. Blindly
-                // applying them inside this scene would override:
-                //  - LocalDensity with the application root's Density(1f)
-                //  - LocalTaoWindow / LocalTitleBarInfo with the *parent*
-                //    window's values, when this window is opened from inside
-                //    another DecoratedWindow (secondary windows, demos, apps
-                //    that open windows from a navigation destination).
-                // Snapshot scene-owned locals BEFORE applying outerLocals and
-                // re-provide them below so title-bar drag, system controls, and
-                // title/icon state bind to *this* window on every platform
-                // (Windows / macOS / Linux). Without re-providing LocalTaoWindow,
-                // windowDragArea() and WindowControlsWindows would call
-                // dragWindow() / minimize / maximize on the parent window —
-                // the secondary window appears immovable.
-                // LocalLayoutDirection is intentionally left to outerLocals so
-                // an app-level RTL override propagates here.
+                // outerLocals were captured in the OUTER composition. Bridging
+                // them via a plain CompositionLocalProvider(outerLocals) wrapper
+                // here — this function's own approach until this fix — clobbers
+                // two different things this scene owns:
+                //  - LocalDensity/LocalTaoWindow/LocalTitleBarInfo, overridden
+                //    with the application root's/parent window's values (handled
+                //    below exactly as before: snapshot before the bridge takes
+                //    effect, re-provide after).
+                //  - Compose's own internal LocalComposeSceneContext, captured
+                //    from whatever scene (or lack of one) outerLocals came from.
+                //    Every Popup/Dialog/DropdownMenu/Tooltip composed anywhere in
+                //    content — regardless of nativePopupLayers — resolves that
+                //    local to decide which scene it renders into; shadowed to the
+                //    wrong scene (or no scene, for an application-root capture
+                //    with no window of its own yet), it throws
+                //    "LocalComposeSceneContext not provided"/"NavigationEvent-
+                //    DispatcherOwner not found" the moment anything in content
+                //    tries to show one. TaoDecoratedDialogAdapter already solved
+                //    this exact problem correctly (see its own doc comment) via
+                //    compositionLocalContext (above, for the first composition)
+                //    plus this same bridge (for every composition after) — both
+                //    apply outerLocals as the scene's own compositionLocalContext
+                //    PROPERTY, which Compose itself
+                //    applies above (not below) the scene's own
+                //    LocalComposeSceneContext provision, rather than as a
+                //    CompositionLocalProvider wrapper nested below it. This
+                //    adapter never got the same fix; it's the one real
+                //    difference between it and the dialog adapter in how outer
+                //    locals cross the scene boundary.
+                val bridge = LocalTaoCompositionLocalContextBridge.current
+                SideEffect { bridge?.invoke(outerLocals) }
                 val sceneDensity = LocalDensity.current
                 // outerLocals carries the app theme's own LocalTextContextMenu
                 // (e.g. Jewel's). Applying it here shadows the scene's selection
@@ -121,18 +148,16 @@ internal object TaoDecoratedWindowAdapter {
                 val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
                 val sceneTaoWindow = LocalTaoWindow.current
                 val sceneTitleBarInfo = LocalTitleBarInfo.current
-                CompositionLocalProvider(outerLocals) {
-                    CompositionLocalProvider(
-                        LocalDensity provides sceneDensity,
-                        LocalTaoTextSelectionA11yPublisher provides scenePublisher,
-                        LocalNucleusBackend provides NucleusBackend.Tao,
-                        LocalNucleusWindow provides nucleusWindow,
-                        LocalTaoWindow provides sceneTaoWindow,
-                        LocalTitleBarInfo provides sceneTitleBarInfo,
-                    ) {
-                        TaoTextSelectionAccessibility {
-                            nucleusScope.content()
-                        }
+                CompositionLocalProvider(
+                    LocalDensity provides sceneDensity,
+                    LocalTaoTextSelectionA11yPublisher provides scenePublisher,
+                    LocalNucleusBackend provides NucleusBackend.Tao,
+                    LocalNucleusWindow provides nucleusWindow,
+                    LocalTaoWindow provides sceneTaoWindow,
+                    LocalTitleBarInfo provides sceneTitleBarInfo,
+                ) {
+                    TaoTextSelectionAccessibility {
+                        nucleusScope.content()
                     }
                 }
             }
