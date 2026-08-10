@@ -121,6 +121,14 @@ public sealed interface TaoOpenGlRenderContext : TaoGpuRenderContext {
      * from composition, layout/draw and disposal; must be called from the
      * composition thread.
      *
+     * Frame-paced renderers must do their GPU work **inside** the
+     * `withFrameNanos` callback (or in composition/layout/draw), not in the
+     * code that follows the suspension: on Linux the context is handed to a
+     * swap thread for the blocking `eglSwapBuffers` right after every frame,
+     * so a post-frame continuation loses the race almost every vsync and gets
+     * `null` — the callback itself runs inside the render pass, while the
+     * context is bindable.
+     *
      * Whatever was current before is put back afterwards, so a disposal
      * running inside *another* surface's render pass cannot corrupt that
      * surface's frame. After [action] returns, Skia's GL state cache is

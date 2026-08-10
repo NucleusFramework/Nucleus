@@ -85,8 +85,12 @@ fun GpuContextSection(
     LaunchedEffect(renderer) {
         var tick = 0
         while (isActive) {
-            withFrameNanos { }
-            val next = renderer.renderFrame(tick) ?: continue
+            // Render inside the frame callback: it runs during the scene's
+            // render pass, when the swap thread is idle and the GL context is
+            // bindable. A post-frame continuation would race the blocking
+            // eglSwapBuffers on Linux and lose almost every frame
+            // (withContextCurrent → null → the animation crawls).
+            val next = withFrameNanos { renderer.renderFrame(tick) } ?: continue
             frame?.let(renderer::retire)
             frame = next
             tick++
