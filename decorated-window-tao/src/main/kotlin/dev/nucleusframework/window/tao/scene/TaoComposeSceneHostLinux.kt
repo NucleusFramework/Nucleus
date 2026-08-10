@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
+import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
@@ -46,6 +47,7 @@ import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
+import dev.nucleusframework.window.tao.hasGlTextureImports
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
 import dev.nucleusframework.window.tao.releaseGlTextureImports
@@ -1116,7 +1118,18 @@ internal class TaoComposeSceneHostLinux(
         // subsurface/geometry lag of this kind. All DEs (GNOME, KDE, …).
         lastResizeEventNs = System.nanoTime()
         if (attachedKind == 2 && !window.isPopup) {
-            if (!resizeBurstActive) {
+            // Keep VSync when the scene composites a TextureView or holds a
+            // TaoGpuRenderContext consumer — the Linux twin of the Windows
+            // modal-loop rule (#484). At interval 0 their withFrameNanos
+            // producers re-enter the render path at event-pump speed for the
+            // whole drag; such a window trades the burst's catch-up latency
+            // for a display-paced frame clock. Windows without frame-paced
+            // GPU content keep the interval-0 burst unchanged.
+            val framePacedContent =
+                directContext?.let {
+                    hasGlTextureImports(it) || TaoGpuRenderContextConsumers.isActive(it)
+                } == true
+            if (!resizeBurstActive && !framePacedContent) {
                 resizeBurstActive = true
                 pendingSwapInterval = 0
             }
