@@ -10,6 +10,7 @@ import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
+import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
@@ -211,6 +212,26 @@ public object TaoSceneTestBattery {
         }
         run("TaoScenePopupTest: click inside a focusable popup does not dismiss it") {
             TaoScenePopupTest().`click inside a focusable popup does not dismiss it`()
+        }
+        run(
+            "TaoSceneOuterLocalsBridgeTest: wrapping window content in outer locals with " +
+                "CompositionLocalProvider breaks Popup",
+        ) {
+            TaoSceneOuterLocalsBridgeTest()
+                .`wrapping window content in outer locals with CompositionLocalProvider breaks Popup`()
+        }
+        run(
+            "TaoSceneOuterLocalsBridgeTest: bridging outer locals through the scene's own compositionLocalContext " +
+                "property does not break Popup",
+        ) {
+            TaoSceneOuterLocalsBridgeTest()
+                .`bridging outer locals through the scene's own compositionLocalContext property does not break Popup`()
+        }
+        run(
+            "TaoSceneOuterLocalsBridgeTest: bridged outer locals do not carry the outer layout direction into content",
+        ) {
+            TaoSceneOuterLocalsBridgeTest()
+                .`bridged outer locals do not carry the outer layout direction into content`()
         }
         run("TaoSceneAnimationTest: tween advances exactly with virtual frames") {
             TaoSceneAnimationTest().`tween advances exactly with virtual frames`()

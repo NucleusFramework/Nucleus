@@ -10,6 +10,7 @@ import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
+import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
@@ -47,6 +48,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoScenePointerTest::class.java,
             TaoSceneScrollTest::class.java,
             TaoScenePopupTest::class.java,
+            TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
