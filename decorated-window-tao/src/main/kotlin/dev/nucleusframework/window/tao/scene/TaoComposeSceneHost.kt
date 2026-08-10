@@ -58,6 +58,7 @@ import kotlinx.coroutines.withContext
 import org.jetbrains.skia.DirectContext
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
+import java.util.concurrent.locks.LockSupport
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.cos
@@ -1146,6 +1147,13 @@ internal class TaoComposeSceneHost(
     }
 
     private companion object {
+        // Pause between interop pumps in [runOnRenderThread]'s cooperative
+        // wait — the pump is a non-blocking single pass, so this park is the
+        // whole per-iteration cost. Kept small: the wait sits on TextureView's
+        // per-video-frame snapshot hop, where every fixed microsecond is paid
+        // once per frame.
+        private const val PUMP_PARK_NANOS = 50_000L // 50 µs
+
         // Wire scales (must match `TRACKPAD_VALUE_FIXED_SCALE` and
         // `CURSOR_FIXED_SCALE` on the Rust side).
         private const val TRACKPAD_POSITION_SCALE: Float = 1024f
@@ -1203,11 +1211,33 @@ internal class TaoComposeSceneHost(
     /**
      * Runs [block] on the render thread and blocks until it returns. Used for
      * `DirectContext` create/use/close that must respect Skia's Metal context
-     * thread-affinity. Safe to call from the main thread during composition /
-     * disposal / lifecycle — at those points the render thread is idle (see the
-     * lifetime invariant above), so it never deadlocks against a replay.
+     * thread-affinity.
+     *
+     * The wait is cooperative when called on the Tao main thread: an in-flight
+     * or queued replay may be inside `nativePresentWithInterop`, whose
+     * CATransaction callout runs on the main thread — parking in a bare
+     * `get()` would deadlock (the fullscreen freeze with a live `NativeView`:
+     * `windowWillEnterFullScreen` → [prepareFullscreenFrame] →
+     * [renderFrameBlocking] blocks main while the render thread waits on the
+     * main run loop; same shape for the overlay first-attach). Pumping the
+     * private interop run-loop mode executes exactly those callouts — and
+     * nothing else — while we wait.
      */
-    fun <T> runOnRenderThread(block: () -> T): T = renderExecutor.submit(Callable { block() }).get()
+    fun <T> runOnRenderThread(block: () -> T): T {
+        val future = renderExecutor.submit(Callable { block() })
+        // nativeIsMainThread, not taoMainThread: on macOS the event loop is
+        // marshalled onto AppKit thread 0, which is a different JVM thread
+        // than the one that entered taoApplication.
+        if (NativeMetalBridge.isLoaded && NativeMetalBridge.nativeIsMainThread()) {
+            while (!future.isDone) {
+                NativeMetalBridge.nativeInteropPump()
+                // The pump returns immediately when no callout is queued in the
+                // private mode; park briefly so the wait isn't a hot spin.
+                if (!future.isDone) LockSupport.parkNanos(PUMP_PARK_NANOS)
+            }
+        }
+        return future.get()
+    }
 
     // ── VSync-paced render loop (AWT/skiko MetalVSyncer pattern) ──
     private var frameDispatcher: org.jetbrains.skiko.FrameDispatcher? = null

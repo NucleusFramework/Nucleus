@@ -283,7 +283,6 @@ internal class NativeViewOverlayController(
                 widthPxNew == widthPx &&
                 heightPxNew == heightPx
         if (frameUnchanged) return
-        val capturedHandle = overlayNsView
 
         // Steady-state path: defer EVERYTHING (AppKit setFrame, Metal
         // layer resize, ComposeScene size) into a single CATransaction
@@ -307,27 +306,45 @@ internal class NativeViewOverlayController(
         // values into the deferred block independent of any racing
         // bookkeeping change.
         if (firstBoundsApplied) {
-            val capturedAttachment = attachmentHandle
             val capturedScale = scale
-            val capturedScene = scene
+            // Decided NOW, against the pre-update bookkeeping: by the time the
+            // deferred block runs, `widthPx`/`heightPx` have already been set
+            // to the new values below, so comparing inside the block is always
+            // false — the inner scene's viewport would never be updated and
+            // the overlay content would keep its stale layout size (visible
+            // as the content slot not resizing across a fullscreen
+            // round-trip).
+            val sizeChanged = widthPxNew != widthPx || heightPxNew != heightPx
             host.scheduleInterop {
+                // May execute AFTER dispose(): an action queued for the next
+                // interop transaction outlives the embedding (dispose cannot
+                // reach into the host's transaction queue to cancel it), and
+                // by then nativeDetach has freed the attachment struct and
+                // nativeReleaseOverlay the NSView — captured raw handles
+                // would be use-after-free (observed SIGSEGV inside
+                // nativeSetOverlayFrame). Re-read the live fields instead:
+                // dispose zeroes them before freeing, all on the main thread.
+                if (disposed) return@scheduleInterop
+                val liveOverlay = overlayNsView
+                if (liveOverlay == 0L) return@scheduleInterop
                 NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-                    capturedHandle,
+                    liveOverlay,
                     xPx,
                     yPx,
                     widthPxNew,
                     heightPxNew,
                 )
-                if (capturedAttachment != 0L) {
+                val liveAttachment = attachmentHandle
+                if (liveAttachment != 0L) {
                     NativeMetalBridge.nativeResize(
-                        capturedAttachment,
+                        liveAttachment,
                         widthPxNew,
                         heightPxNew,
                         capturedScale,
                     )
                 }
-                if (widthPxNew != widthPx || heightPxNew != heightPx) {
-                    capturedScene?.size = IntSize(widthPxNew, heightPxNew)
+                if (sizeChanged) {
+                    scene?.size = IntSize(widthPxNew, heightPxNew)
                 }
             }
             lastFrameX = xPx
@@ -348,7 +365,7 @@ internal class NativeViewOverlayController(
         // (CALayer.frame doesn't auto-follow NSView.frame post layer
         // assignment).
         NativeTaoMacOsNativeViewBridge.nativeSetOverlayFrame(
-            capturedHandle,
+            overlayNsView,
             xPx,
             yPx,
             widthPxNew,
@@ -529,8 +546,12 @@ internal class NativeViewOverlayController(
         val handle = attachmentHandle
         attachmentHandle = 0
         if (handle != 0L) NativeMetalBridge.nativeDetach(handle)
-        NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(overlayNsView)
+        // Zero out BEFORE freeing, like attachmentHandle above: a queued
+        // interop action re-reads this field at execution time and must see 0
+        // instead of a freed NSView pointer.
+        val overlayView = overlayNsView
         overlayNsView = 0
+        if (overlayView != 0L) NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(overlayView)
     }
 
     private companion object {

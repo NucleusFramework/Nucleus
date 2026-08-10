@@ -457,6 +457,72 @@ internal object NativeMetalBridge {
     external fun nativeUpdateFullScreenButtons(nsViewPtr: Long)
 
     /**
+     * Executes any pending [nativePresentWithInterop] main-thread callouts
+     * while the caller — which must be the macOS main thread — is blocked
+     * waiting on the render thread. The callouts are registered on the main
+     * run loop in a private mode exactly for this: a main thread parked in
+     * `future.get()` never drains its run loop, and the render thread's
+     * present-with-transaction would otherwise wait on it forever (the
+     * fullscreen-freeze deadlock with a live NativeView). Bounded to one
+     * callout or ~4ms per call; no-op off the main thread or when no callout
+     * is pending.
+     */
+    @JvmStatic
+    external fun nativeInteropPump()
+
+    /**
+     * True on the AppKit main thread. [dispatch.TaoMainDispatcher.taoMainThread]
+     * cannot answer this on macOS: `nativeRunBlocking` marshals the event loop
+     * onto thread 0, so AppKit callbacks run on a different JVM thread than the
+     * one that entered `taoApplication`.
+     */
+    @JvmStatic
+    external fun nativeIsMainThread(): Boolean
+
+    // ── Window-state diagnostics (headful e2e probes) ──────────────────
+    //
+    // Read-only probes for the stage-2 headful suite, mirroring the sheet
+    // parent probe on NativeTaoBridge: they assert native invariants that
+    // have no other JVM-visible signal. Not used by any production path.
+
+    /**
+     * Bitmask of the window-level state [nativeAttach] installs on the
+     * view's NSWindow: bit 0 = primary attachment associated object,
+     * bit 1 = fullscreen-transition observer (#327). `-1` when the view or
+     * its window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagWindowState(nsViewPtr: Long): Int
+
+    /**
+     * `CFGetRetainCount` of the view's NSWindow. Only deltas are meaningful
+     * (AppKit holds its own references); the `set_focusable` leak regression
+     * compares before/after a burst of calls. `-1` when view/window is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagWindowRetainCount(nsViewPtr: Long): Long
+
+    /**
+     * Frame size of an arbitrary NSView in physical pixels, packed
+     * `(w shl 32) or h`. Lets the headful suite assert an embedded
+     * `NativeView` subview actually tracked a layout change (fullscreen
+     * round-trip). `0` when the view is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagViewFrameSize(nsViewPtr: Long): Long
+
+    /**
+     * Top-left origin of an NSView within its superview, physical pixels,
+     * top-left coordinate convention, packed as two signed 32-bit values
+     * `(x shl 32) or (y and 0xFFFFFFFF)`. [Long.MIN_VALUE] when the view is
+     * gone. Complements [nativeDiagViewFrameSize]: right size at the wrong
+     * offset is the fullscreen-transition failure mode (bottom-left AppKit
+     * anchoring against a stale parent height).
+     */
+    @JvmStatic
+    external fun nativeDiagViewTopLeftPx(nsViewPtr: Long): Long
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

@@ -301,6 +301,14 @@ typedef struct {
     // first resize.
     double prev_origin_x;
     double prev_origin_y;
+
+    // YES for attachments created by nativeAttachOverlay (popup NSPanels,
+    // in-window NativeView overlay subviews). Overlays never install the
+    // window-level associated objects (fullscreen observer, attachment key —
+    // see the observer-skip note on nativeAttachOverlay); nativeDetach reads
+    // this so an overlay dispose can't tear down state owned by the host
+    // window's primary attachment.
+    BOOL isOverlay;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -1237,6 +1245,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttachOverlay(
     att->view   = view;
     att->prev_origin_x = NAN;
     att->prev_origin_y = NAN;
+    att->isOverlay = YES;
     return (jlong)(uintptr_t)att;
 }
 
@@ -1959,11 +1968,20 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDetach(
         att->vsyncSem = NULL;
     }
     NSWindow *win = att->view.window;
+    BOOL isOverlay = att->isOverlay;
     att->layer  = nil;
     att->device = nil;
     att->queue  = nil;
     att->view   = nil;
-    if (win != nil) {
+    // Overlay attachments (nativeAttachOverlay) never installed the
+    // window-level state below — it belongs to the primary attachment of the
+    // window hosting the overlay's parent NSView. Tearing it down here on an
+    // overlay dispose (e.g. a NativeView unmounting from the main window)
+    // would deallocate the window's NucleusTaoFSObserver out from under its
+    // still-alive primary attachment — permanently dropping the #327
+    // fullscreen-transition handling — and leave attachmentForWindow()
+    // returning NULL for the rest of the window's life.
+    if (win != nil && !isOverlay) {
         removeMenuBarMonitor(win);
         objc_setAssociatedObject(win, &kTaoFSObserverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(win, &kTaoAttachmentKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -2220,6 +2238,35 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetPresentsWith
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
+/* Private run-loop mode for the interop callout below. Blocks scheduled in
+ * this mode (in addition to the common modes) can be executed by a main
+ * thread that is otherwise BLOCKED waiting on the render thread — it spins
+ * CFRunLoopRunInMode on this mode via nativeInteropPump. Tao's own run-loop
+ * observers/sources live in the default/common modes and never fire here, so
+ * pumping cannot re-enter event dispatch or Compose rendering. */
+static NSString *const kNucleusTaoInteropMode = @"NucleusTaoInteropMode";
+
+/* A mode that contains nothing but queued blocks is considered EMPTY by
+ * CFRunLoopRunInMode, which then returns kCFRunLoopRunFinished immediately
+ * WITHOUT executing them — the pump would spin uselessly and every blocked
+ * present would ride the 2s backstop (visible as a 2-3s freeze on fullscreen
+ * entry). This permanent no-op source keeps the mode non-empty; the
+ * scheduler signals it so a pumping main thread wakes instantly. */
+static CFRunLoopSourceRef sInteropModeSource = NULL;
+
+static void interopModeSourceNoop(void *info) { (void) info; }
+
+static void ensureInteropModeSource(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CFRunLoopSourceContext ctx = {0};
+        ctx.perform = interopModeSourceNoop;
+        sInteropModeSource = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &ctx);
+        CFRunLoopAddSource(CFRunLoopGetMain(), sInteropModeSource,
+                           (__bridge CFStringRef) kNucleusTaoInteropMode);
+    });
+}
+
 /* Atomic present-with-transaction path. See the Kotlin doc on
  * NativeMetalBridge.nativePresentWithInterop for the full sequence.
  *
@@ -2236,11 +2283,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
     // Stage 2: this is invoked from the host's background render thread (after
     // the scene's GPU encode), but CATransaction + the explicit [drawable
     // present] + the AppKit mutations in `interopActions` must run on the macOS
-    // main thread. We therefore dispatch the whole atomic block to the main
-    // queue. The render thread blocks (dispatch_sync) until it completes, which
-    // is safe: the main thread is never itself blocked on the render thread
-    // while a frame's replay is in flight (all main→render hops happen during
-    // the main-thread record pass, when the render thread is idle).
+    // main thread. This used to be a plain dispatch_sync to the main queue on
+    // the assumption that "the main thread is never itself blocked on the
+    // render thread while a frame's replay is in flight" — which the
+    // fullscreen prepare (#327: windowWillEnterFullScreen → blocking frame via
+    // runOnRenderThread) and the NativeView overlay first-attach violate,
+    // deadlocking the app the moment either coincides with an in-flight
+    // interop present. The block is therefore scheduled on the main RUN LOOP
+    // instead, registered in the common modes (normal drain) AND the private
+    // kNucleusTaoInteropMode, which a blocked main thread pumps via
+    // nativeInteropPump while it waits on the render thread.
     ensureMetalJVMCached(env);
 
     // Promote the Runnable to a global ref: the local ref `interopActions` is
@@ -2303,8 +2355,69 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
         [CATransaction commit];
     };
 
-    if ([NSThread isMainThread]) work();
-    else                          dispatch_sync(dispatch_get_main_queue(), work);
+    if ([NSThread isMainThread]) {
+        work();
+        return;
+    }
+
+    // Once-guard shared by both mode registrations (copies of the same block
+    // share the __block slot; both callouts run on the main thread, so no
+    // atomics needed).
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL ran = NO;
+    void (^once)(void) = ^{
+        if (ran) return;
+        ran = YES;
+        work();
+        dispatch_semaphore_signal(sem);
+    };
+    ensureInteropModeSource();
+    CFRunLoopRef mainLoop = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(mainLoop, kCFRunLoopCommonModes, once);
+    CFRunLoopPerformBlock(mainLoop, (__bridge CFStringRef) kNucleusTaoInteropMode, once);
+    // Wake a main thread parked inside nativeInteropPump's RunInMode as well
+    // as the regular event loop.
+    CFRunLoopSourceSignal(sInteropModeSource);
+    CFRunLoopWakeUp(mainLoop);
+    // Generous backstop: if the main thread is wedged somewhere that neither
+    // runs its loop nor pumps, degrade to a late/skipped transaction (the
+    // queued block still presents when the loop resumes) instead of parking
+    // the render thread forever.
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) != 0) {
+        NTLOG("nativePresentWithInterop: main-thread callout timed out after 2s");
+    }
+}
+
+/* Executes any pending interop callouts while the caller (which must be the
+ * macOS main thread) is blocked waiting on the render thread — see
+ * kNucleusTaoInteropMode above and TaoComposeSceneHost.runOnRenderThread.
+ * Bounded: returns after one callout or ~4ms, whichever comes first. */
+/* True on the AppKit main thread. Kotlin cannot decide this itself: on macOS
+ * nativeRunBlocking marshals the event loop onto thread 0, so the JVM thread
+ * that entered taoApplication (TaoMainDispatcher.taoMainThread) is NOT the
+ * thread AppKit callbacks run on. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsMainThread(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    return [NSThread isMainThread] ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInteropPump(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    if (![NSThread isMainThread]) return;
+    // The permanent source keeps the mode non-empty — without it RunInMode
+    // returns kCFRunLoopRunFinished at once and never executes queued blocks.
+    ensureInteropModeSource();
+    // Timeout 0: one non-blocking pass — run whatever callout is already
+    // queued and return. The caller (runOnRenderThread's cooperative wait)
+    // polls; a positive timeout here would PARK the main thread for its
+    // full duration on every pump with nothing queued, a fixed tax paid
+    // once per TextureView producer frame via the per-frame snapshot hop
+    // (measured 4.5ms/hop with 4ms — enough to halve 90Hz video to 45fps).
+    CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.0, true);
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────
@@ -2406,6 +2519,111 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeUpdateFullScree
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_async(dispatch_get_main_queue(), apply);
+}
+
+// ── Window-state diagnostics (headful e2e probes) ────────────────────────
+//
+// Same role as nativeMacOsProbeSheetParent in the Tao bridge: tiny read-only
+// entry points the stage-2 headful suite uses to assert native invariants
+// that have no other JVM-visible signal. Not part of any production path.
+
+/* Bitmask of the window-level state nativeAttach installs on view.window:
+ * bit 0 = kTaoAttachmentKey (primary attachment reachable via
+ * attachmentForWindow), bit 1 = kTaoFSObserverKey (fullscreen-transition
+ * observer, #327). Returns -1 when the view or its window is gone. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowState(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jint state = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        state = 0;
+        if (objc_getAssociatedObject(w, &kTaoAttachmentKey) != nil) state |= 1;
+        if (objc_getAssociatedObject(w, &kTaoFSObserverKey) != nil) state |= 2;
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return state;
+}
+
+/* Frame SIZE of an arbitrary NSView in physical pixels (points scaled by
+ * its window's backingScaleFactor), packed (w << 32) | h. Lets the headful
+ * suite assert that an embedded NativeView subview actually tracked a layout
+ * change (e.g. across a fullscreen round-trip). Returns 0 when the view is
+ * gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewFrameSize(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return 0;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = 0;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        if (view == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        jlong w = (jlong) lround(view.frame.size.width * scale);
+        jlong h = (jlong) lround(view.frame.size.height * scale);
+        packed = (w << 32) | (h & 0xFFFFFFFFLL);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
+/* TOP-LEFT origin of an NSView within its superview, in physical pixels
+ * with a top-left coordinate system (Compose convention), packed as two
+ * signed 32-bit values (x << 32) | (y & 0xFFFFFFFF). Complements
+ * nativeDiagViewFrameSize: a subview can have the right SIZE but sit at the
+ * wrong offset after a fullscreen transition (bottom-left AppKit anchoring
+ * vs a stale parent height). Returns LLONG_MIN when the view is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeftPx(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return LLONG_MIN;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = LLONG_MIN;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSView *parent = view.superview;
+        if (view == nil || parent == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        NSRect f = view.frame;
+        CGFloat topPt = parent.isFlipped
+            ? f.origin.y
+            : parent.bounds.size.height - (f.origin.y + f.size.height);
+        int64_t x = (int64_t) lround(f.origin.x * scale);
+        int64_t y = (int64_t) lround(topPt * scale);
+        packed = (jlong)((((uint64_t)(uint32_t) x) << 32) | ((uint64_t)(uint32_t) y));
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
+/* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
+ * its own references); the set_focusable leak regression compares the count
+ * before/after a burst of calls. Returns -1 when view/window is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowRetainCount(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong count = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        count = (jlong) CFGetRetainCount((__bridge CFTypeRef) w);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return count;
 }
 
 JNIEXPORT void JNICALL

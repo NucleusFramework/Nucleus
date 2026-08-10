@@ -348,7 +348,8 @@ public object TaoHeadfulTestSuiteMain {
                         "nsView=0x${nsView.toString(16)} probe=OK",
                 )
             },
-        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all()
+        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all() +
+            MacWindowChromeStateHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
