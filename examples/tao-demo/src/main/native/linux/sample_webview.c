@@ -27,7 +27,21 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeCreate(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
-    GtkWidget *web_view = webkit_web_view_new();
+    /* Ephemeral context, one per view — deliberately NOT the default
+     * WebKitWebContext. The default context is a process-global with a
+     * persistent network session; once instantiated it is finalized by
+     * a libc exit handler, and if the JVM exits while WebKit teardown
+     * state is dirty (a WebView destroyed shortly before close), that
+     * atexit dispose trips an internal RELEASE_ASSERT and aborts the
+     * whole JVM (silent SIGABRT / exit 134, seen on Wayland). An
+     * ephemeral per-view context dies with the view, on a live main
+     * loop, so nothing WebKit-related is left for exit handlers. */
+    WebKitWebContext *context = webkit_web_context_new_ephemeral();
+    if (context == NULL) return 0;
+    GtkWidget *web_view = webkit_web_view_new_with_context(context);
+    /* The view keeps its own ref on the context; drop the creation ref
+     * so both die together when the view is released. */
+    g_object_unref(context);
     if (web_view == NULL) return 0;
     /* Take a strong floating-ref so the widget survives even when not
      * yet parented (Compose calls `nativeCreate` from `factory{}` and
