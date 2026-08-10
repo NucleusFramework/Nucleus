@@ -503,6 +503,15 @@ internal object NativeMetalBridge {
     external fun nativeDiagWindowRetainCount(nsViewPtr: Long): Long
 
     /**
+     * Frame size of an arbitrary NSView in physical pixels, packed
+     * `(w shl 32) or h`. Lets the headful suite assert an embedded
+     * `NativeView` subview actually tracked a layout change (fullscreen
+     * round-trip). `0` when the view is gone.
+     */
+    @JvmStatic
+    external fun nativeDiagViewFrameSize(nsViewPtr: Long): Long
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.

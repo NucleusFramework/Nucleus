@@ -18,6 +18,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.NativeView
@@ -45,6 +46,7 @@ internal object MacWindowChromeStateHeadfulCases {
             overlayDetachKeepsWindowChromeState(),
             setFocusableDoesNotLeakWindowRetains(),
             fullscreenWithLiveNativeViewDoesNotFreeze(),
+            nativeViewTracksFullscreenRoundTrip(),
         )
 
     /** Bit 0 = primary attachment associated object, bit 1 = FS observer. */
@@ -266,6 +268,153 @@ internal object MacWindowChromeStateHeadfulCases {
         }
     }
 
+    /**
+     * The embedded NSView must track its Compose slot's size through a
+     * fullscreen round-trip: a `NativeView(Modifier.fillMaxSize())` has to
+     * grow to the fullscreen layout on enter and shrink back on exit —
+     * asserted against the AppKit view's REAL frame, not Compose state.
+     */
+    private fun nativeViewTracksFullscreenRoundTrip(): TaoWindowTestCase {
+        val childViewPtr = AtomicLong(0)
+        val embeddingComposed = AtomicLong(0)
+        // Laid-out width of the overlay `content` slot, in px, packed by the
+        // inner scene's own layout pass — the only signal of the overlay
+        // ComposeScene's real viewport.
+        val overlayContentWidthPx = AtomicLong(0)
+        return TaoWindowTestCase(
+            name = "NativeView frame tracks a fullscreen round-trip (#494 patch)",
+            timeoutMillis = 90_000L,
+            skip = { if (!isMac) "macOS only" else null },
+            content = {
+                FillingNativeViewProbe(window.handle, childViewPtr, embeddingComposed, overlayContentWidthPx)
+            },
+        ) {
+            awaitUntil("window mapped") { bounds() != null }
+            settle()
+            awaitUntil("NativeView embedding composed") { embeddingComposed.get() == 1L }
+            settle()
+
+            fun childSizePx(): Pair<Long, Long> {
+                val packed = NativeMetalBridge.nativeDiagViewFrameSize(childViewPtr.get())
+                return (packed ushr 32) to (packed and 0xFFFFFFFFL)
+            }
+
+            val windowedBounds = requireNotNull(bounds())
+            val (w0, h0) = childSizePx()
+            check(w0 > 0 && h0 > 0) { "embedded NSView never got an initial frame (${w0}x$h0)" }
+
+            window.setFullscreen(true)
+            awaitUntil("entered fullscreen (bounds grew)", timeoutMillis = FS_TIMEOUT_MS) {
+                val b = bounds() ?: return@awaitUntil false
+                b[2] > windowedBounds[2] + FS_GROWTH_MIN_PX
+            }
+            settle(FS_SETTLE_MS)
+            val fsBounds = requireNotNull(bounds())
+            val (wFs, hFs) = childSizePx()
+            // fillMaxSize minus chrome: width must match the window's client
+            // width; height is within the title-bar inset.
+            check(abs(wFs - fsBounds[2]) <= TRACK_TOLERANCE_PX) {
+                "embedded NSView did not grow to the fullscreen layout: " +
+                    "view=${wFs}x$hFs window=${fsBounds[2]}x${fsBounds[3]} (was ${w0}x$h0)"
+            }
+            // The overlay `content` slot must have relaid out to the same
+            // width — a stale inner-scene viewport keeps the Compose content
+            // (and its hit regions) at the pre-fullscreen size.
+            val overlayFsWidth = overlayContentWidthPx.get()
+            check(abs(overlayFsWidth - wFs) <= TRACK_TOLERANCE_PX) {
+                "NativeView overlay content kept a stale viewport in fullscreen: " +
+                    "content=${overlayFsWidth}px embed=${wFs}px"
+            }
+
+            window.setFullscreen(false)
+            awaitUntil("exited fullscreen (bounds restored)", timeoutMillis = FS_TIMEOUT_MS) {
+                val b = bounds() ?: return@awaitUntil false
+                abs(b[2] - windowedBounds[2]) <= FS_RESTORE_TOLERANCE_PX
+            }
+            settle(FS_SETTLE_MS)
+            val restoredBounds = requireNotNull(bounds())
+            val (wBack, hBack) = childSizePx()
+            check(abs(wBack - restoredBounds[2]) <= TRACK_TOLERANCE_PX) {
+                "embedded NSView kept stale dimensions after exiting fullscreen: " +
+                    "view=${wBack}x$hBack window=${restoredBounds[2]}x${restoredBounds[3]} " +
+                    "(fullscreen was ${wFs}x$hFs)"
+            }
+
+            // A window resize AFTER the round-trip must still reach the
+            // embed — catches a wedged interop pipeline that the restore
+            // path alone can miss (the restore size is re-applied by the
+            // fullscreen-prepare machinery, a resize is not).
+            val scale = window.scaleFactor.coerceAtLeast(1f).toDouble()
+            window.setInnerSize(
+                restoredBounds[2] / scale + POST_FS_RESIZE_DELTA_DP,
+                restoredBounds[3] / scale + POST_FS_RESIZE_DELTA_DP,
+            )
+            awaitUntil("window resized after the round-trip", timeoutMillis = FS_TIMEOUT_MS) {
+                val b = bounds() ?: return@awaitUntil false
+                b[2] > restoredBounds[2] + (POST_FS_RESIZE_DELTA_DP * scale / 2).toInt()
+            }
+            settle(FS_SETTLE_MS)
+            val resizedBounds = requireNotNull(bounds())
+            val (wResized, _) = childSizePx()
+            check(abs(wResized - resizedBounds[2]) <= TRACK_TOLERANCE_PX) {
+                "embedded NSView stopped tracking resizes after the fullscreen " +
+                    "round-trip: view width=$wResized window width=${resizedBounds[2]}"
+            }
+            val overlayResizedWidth = overlayContentWidthPx.get()
+            check(abs(overlayResizedWidth - wResized) <= TRACK_TOLERANCE_PX) {
+                "NativeView overlay content kept a stale viewport after the " +
+                    "round-trip + resize: content=${overlayResizedWidth}px embed=${wResized}px"
+            }
+
+            childViewPtr.get().takeIf { it != 0L }?.let {
+                NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(it)
+            }
+        }
+    }
+
+    /**
+     * A `NativeView(Modifier.fillMaxSize())` around a fabricated NSView, with
+     * a content slot that reports its laid-out width — the probe body of
+     * [nativeViewTracksFullscreenRoundTrip].
+     */
+    @androidx.compose.runtime.Composable
+    private fun FillingNativeViewProbe(
+        windowHandle: Long,
+        childViewPtr: AtomicLong,
+        embeddingComposed: AtomicLong,
+        overlayContentWidthPx: AtomicLong,
+    ) {
+        val parentNsView = NativeTaoBridge.nativeNsViewHandle(windowHandle)
+        val child =
+            remember(parentNsView) {
+                if (parentNsView != 0L) {
+                    NativeTaoMacOsNativeViewBridge
+                        .nativeCreateOverlay(parentNsView)
+                        .also(childViewPtr::set)
+                } else {
+                    0L
+                }
+            }
+        if (child != 0L) {
+            SideEffect { embeddingComposed.set(1) }
+            NativeView(
+                factory = {
+                    object : NucleusPlatformView.NsView {
+                        override val nsViewHandle: Long = child
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                content = {
+                    Box(
+                        Modifier.fillMaxSize().onGloballyPositioned {
+                            overlayContentWidthPx.set(it.size.width.toLong())
+                        },
+                    )
+                },
+            )
+        }
+    }
+
     private const val PHASE_PERIOD_MS = 500
     private const val FULL_TURN_DEGREES = 360f
     private const val EMBED_BASE_OFFSET_PX = 140
@@ -275,4 +424,7 @@ internal object MacWindowChromeStateHeadfulCases {
     private const val FS_ENTRY_MAX_MS = 2_000L
     private const val FS_GROWTH_MIN_PX = 200
     private const val FS_RESTORE_TOLERANCE_PX = 64
+    private const val FS_SETTLE_MS = 1_200L
+    private const val TRACK_TOLERANCE_PX = 8
+    private const val POST_FS_RESIZE_DELTA_DP = 120.0
 }

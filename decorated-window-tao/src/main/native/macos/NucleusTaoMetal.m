@@ -2544,6 +2544,31 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowState
     return state;
 }
 
+/* Frame SIZE of an arbitrary NSView in physical pixels (points scaled by
+ * its window's backingScaleFactor), packed (w << 32) | h. Lets the headful
+ * suite assert that an embedded NativeView subview actually tracked a layout
+ * change (e.g. across a fullscreen round-trip). Returns 0 when the view is
+ * gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewFrameSize(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return 0;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = 0;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        if (view == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        jlong w = (jlong) lround(view.frame.size.width * scale);
+        jlong h = (jlong) lround(view.frame.size.height * scale);
+        packed = (w << 32) | (h & 0xFFFFFFFFLL);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
 /* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
  * its own references); the set_focusable leak regression compares the count
  * before/after a burst of calls. Returns -1 when view/window is gone. */

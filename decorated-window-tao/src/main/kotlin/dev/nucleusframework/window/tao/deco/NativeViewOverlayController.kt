@@ -307,6 +307,14 @@ internal class NativeViewOverlayController(
         // bookkeeping change.
         if (firstBoundsApplied) {
             val capturedScale = scale
+            // Decided NOW, against the pre-update bookkeeping: by the time the
+            // deferred block runs, `widthPx`/`heightPx` have already been set
+            // to the new values below, so comparing inside the block is always
+            // false — the inner scene's viewport would never be updated and
+            // the overlay content would keep its stale layout size (visible
+            // as the content slot not resizing across a fullscreen
+            // round-trip).
+            val sizeChanged = widthPxNew != widthPx || heightPxNew != heightPx
             host.scheduleInterop {
                 // May execute AFTER dispose(): an action queued for the next
                 // interop transaction outlives the embedding (dispose cannot
@@ -335,7 +343,7 @@ internal class NativeViewOverlayController(
                         capturedScale,
                     )
                 }
-                if (widthPxNew != widthPx || heightPxNew != heightPx) {
+                if (sizeChanged) {
                     scene?.size = IntSize(widthPxNew, heightPxNew)
                 }
             }
