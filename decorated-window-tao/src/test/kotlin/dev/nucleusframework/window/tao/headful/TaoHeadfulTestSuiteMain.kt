@@ -349,7 +349,7 @@ public object TaoHeadfulTestSuiteMain {
                 )
             },
         ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all() +
-            MacWindowChromeStateHeadfulCases.all()
+            MacWindowChromeStateHeadfulCases.all() + PopupScaleHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
@@ -403,6 +403,7 @@ public object TaoHeadfulTestSuiteMain {
                         onCloseRequest = { /* cases drive their own lifecycle */ },
                         title = "tao-headful: ${case.name}",
                         transparent = case.transparent,
+                        nativePopupLayers = case.nativePopupLayers,
                     ) {
                         // Default chrome surface; cases may paint over it via
                         // [TaoWindowTestCase.content] (scaffold, backdrop, …).

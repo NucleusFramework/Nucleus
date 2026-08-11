@@ -1021,6 +1021,28 @@ static void wl_set_buffer_scale(EglAttachment *att, int scale) {
         p_wl_proxy_get_version(att->wl_child_surface), 0, scale);
 }
 
+/**
+ * Rounds a buffer dimension UP to the next multiple of `scale`.
+ *
+ * The buffer we attach must be an integer multiple of the `buffer_scale`
+ * announced above — the protocol says so and Mutter enforces it as a fatal
+ * `wl_surface.invalid_size` ("Buffer size (101x61) must be an integer multiple
+ * of the buffer_scale (2)"), which drops the connection and kills the client
+ * (issue #502; weston silently tolerates it, so this only ever bit real GNOME
+ * sessions). Callers are expected to pass aligned sizes already — Compose popup
+ * bounds are aligned in `TaoPopupSceneLayerLinux`, window sizes come from the
+ * compositor's own configure — so this is the backstop that keeps *any* future
+ * caller from turning a rounding slip into a crash. Rounding up (never down:
+ * a 1 px surface would collapse to 0) costs at most `scale - 1` px of
+ * transparent edge.
+ */
+static int wl_align_to_buffer_scale(int px, int scale) {
+    if (scale < 1) scale = 1;
+    if (px <= scale) return scale;
+    int remainder = px % scale;
+    return remainder == 0 ? px : px + (scale - remainder);
+}
+
 
 /**
  * Wayland-native attach.
@@ -1061,8 +1083,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
 
     wl_display *wdpy  = (wl_display *) (uintptr_t) wlDisplayPtr;
     wl_proxy   *wparent = (wl_proxy *)   (uintptr_t) wlSurfacePtr;
-    int phys_w = widthPx > 0 ? widthPx : 1;
-    int phys_h = heightPx > 0 ? heightPx : 1;
+    int bscale = bufferScale > 0 ? bufferScale : 1;
+    /* Aligned to the scale we are about to announce — see
+     * wl_align_to_buffer_scale (an unaligned first commit is fatal). */
+    int phys_w = wl_align_to_buffer_scale(widthPx  > 0 ? widthPx  : 1, bscale);
+    int phys_h = wl_align_to_buffer_scale(heightPx > 0 ? heightPx : 1, bscale);
     DBG("attachWayland: wl_display=%p parent_wl_surface=%p wxh=%dx%d\n",
         (void*)wdpy, (void*)wparent, phys_w, phys_h);
 
@@ -1351,10 +1376,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     att->wl_window        = wlwin;
     att->widthPx          = phys_w;
     att->heightPx         = phys_h;
-    att->scale            = (float) (bufferScale > 0 ? bufferScale : 1);
+    att->scale            = (float) bscale;
     /* Match GTK's integer surface scale so the `logical × scale` px buffer is
      * read as `logical` surface units (no oversize, input stays calibrated). */
-    wl_set_buffer_scale(att, bufferScale);
+    wl_set_buffer_scale(att, bscale);
     DBG("attached (Wayland subsurface): edpy=%p ctx=%p surf=%p child_surf=%p subsurf=%p scale=%d\n",
         edpy, (void*)ctx, (void*)surf, (void*)child_surface, (void*)subsurface,
         bufferScale);
@@ -1469,12 +1494,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
      * eglSwapBuffers. Without this the buffer stays at its original
      * dimensions and the compositor scales it up, blurring the result. */
     if (att->wl_window && p_wl_egl_window_resize) {
+        int bscale = (int) (scale + 0.5f);
+        if (bscale < 1) bscale = 1;
+        /* Keep the new buffer an integer multiple of the announced scale — see
+         * wl_align_to_buffer_scale. */
+        att->widthPx  = wl_align_to_buffer_scale(att->widthPx,  bscale);
+        att->heightPx = wl_align_to_buffer_scale(att->heightPx, bscale);
         p_wl_egl_window_resize(att->wl_window,
                                att->widthPx, att->heightPx, 0, 0);
         /* Track DPI changes: re-assert the integer buffer scale so the new
          * buffer is still read as `logical` surface units. Queued state, lands
          * with the next eglSwapBuffers commit. */
-        wl_set_buffer_scale(att, (int) (scale + 0.5f));
+        wl_set_buffer_scale(att, bscale);
     }
     /* If we render straight into the GTK X window, the EGL surface follows
      * automatically (GTK already issues XResizeWindow on the parent). */

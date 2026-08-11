@@ -35,6 +35,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.releaseGlTextureImports
 import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.alignToBufferScale
 import dev.nucleusframework.window.tao.scene.preservingEglBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import dev.nucleusframework.window.tao.scene.withEglContextCurrent
@@ -55,7 +56,8 @@ import kotlin.math.roundToInt
  * is the content rect in parent-window physical pixels, the inner scene is
  * laid out at screen work-area size (see the "measurement chicken-and-egg"
  * note on [TaoPopupSceneLayer]), and rendering translates by
- * `-bounds.topLeft` into a window sized exactly to the content.
+ * `-bounds.topLeft` into a window sized to the content, rounded up to a
+ * multiple of the surface scale ([alignToBufferScale]).
  *
  * Differences from Windows/macOS driven by platform reality:
  *  - Window creation is asynchronous (Tao posts a CreateWindow user event);
@@ -123,19 +125,34 @@ internal class TaoPopupSceneLayerLinux(
 
     private val scale: Float = if (host.scale > 0f) host.scale else 1f
 
+    /**
+     * Integer surface scale announced to the compositor
+     * (`wl_surface.set_buffer_scale`) — GTK3 only ever reports integer scales.
+     * Every physical size we hand to the native surface goes through
+     * [alignToBufferScale] with it: an unaligned buffer is a fatal Wayland
+     * protocol error (#502).
+     */
+    private val bufferScale: Int = scale.roundToInt().coerceAtLeast(1)
+
     // Work-area sized (not parent-window sized) so a popup larger than its
     // owner window lays out at full size — same contract as macOS/Windows.
     private val sceneLayoutSize: IntSize =
         host.workAreaSize.let {
             IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
         }
-    private var widthPx: Int = 1
-    private var heightPx: Int = 1
 
     /**
-     * The popup's Tao window. Created hidden at 1×1; the real frame is
-     * pushed by the first `boundsInWindow` write and the window is shown
-     * then. `popupOf` makes it override-redirect on X11 and a
+     * Physical size of the popup's native surface and render target. Always
+     * a multiple of [bufferScale]; the content occupies its top-left and the
+     * ≤ `bufferScale - 1` px edge stays transparent.
+     */
+    private var widthPx: Int = bufferScale
+    private var heightPx: Int = bufferScale
+
+    /**
+     * The popup's Tao window. Created hidden at one logical pixel; the real
+     * frame is pushed by the first `boundsInWindow` write and the window is
+     * shown then. `popupOf` makes it override-redirect on X11 and a
      * `wl_subsurface` on Wayland.
      */
     private val popupWindow: TaoWindow =
@@ -227,7 +244,7 @@ internal class TaoPopupSceneLayerLinux(
                         nativeWin,
                         w,
                         h,
-                        scale.roundToInt().coerceAtLeast(1),
+                        bufferScale,
                         0,
                     )
                 else -> 0L
@@ -396,8 +413,14 @@ internal class TaoPopupSceneLayerLinux(
         val offset = host.coordinateOffset
         val xPx = _bounds.left + offset.x + origin.x
         val yPx = _bounds.top + offset.y + origin.y
-        val w = _bounds.width.coerceAtLeast(1)
-        val h = _bounds.height.coerceAtLeast(1)
+        // Aligned to the surface scale: Compose bounds are arbitrary physical
+        // pixels (odd widths come out of text measurement and half-dp padding
+        // all the time), and a buffer that isn't a multiple of the announced
+        // `buffer_scale` is a fatal Wayland protocol error — the compositor
+        // drops the connection and the process dies (#502). It also keeps the
+        // logical size below an exact integer for GTK.
+        val w = alignToBufferScale(_bounds.width, bufferScale)
+        val h = alignToBufferScale(_bounds.height, bufferScale)
         popupWindow.setOuterPosition((xPx / scale).toDouble(), (yPx / scale).toDouble())
         popupWindow.setInnerSize((w / scale).toDouble(), (h / scale).toDouble())
         if (w != widthPx || h != heightPx) {

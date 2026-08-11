@@ -213,6 +213,9 @@ public object TaoSceneTestBattery {
         run("TaoScenePopupTest: click inside a focusable popup does not dismiss it") {
             TaoScenePopupTest().`click inside a focusable popup does not dismiss it`()
         }
+        run("TaoScenePopupTest: buffer scale alignment rounds up and never collapses to zero") {
+            TaoScenePopupTest().`buffer scale alignment rounds up and never collapses to zero`()
+        }
         run(
             "TaoSceneOuterLocalsBridgeTest: wrapping window content in outer locals with " +
                 "CompositionLocalProvider breaks Popup",
