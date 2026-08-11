@@ -119,6 +119,35 @@ class TaoScenePopupTest {
             assertEquals(BLUE, pixelAt(40, 40))
         }
 
+    /**
+     * #502: a popup surface whose physical size is not a multiple of the
+     * announced Wayland `buffer_scale` is a fatal protocol error, so
+     * [alignToBufferScale] must round every dimension UP — and never to zero,
+     * which is what the popup bootstrap (an unmeasured, 0-sized layer) feeds it.
+     */
+    @Test
+    fun `buffer scale alignment rounds up and never collapses to zero`() {
+        // Scale 1: identity, except that a surface always has at least one pixel.
+        assertEquals(1, alignToBufferScale(0, 1))
+        assertEquals(1, alignToBufferScale(1, 1))
+        assertEquals(101, alignToBufferScale(101, 1))
+        // Scale 2: the bootstrap 0/1 px popup and the odd sizes that crashed.
+        assertEquals(2, alignToBufferScale(0, 2))
+        assertEquals(2, alignToBufferScale(1, 2))
+        assertEquals(2, alignToBufferScale(2, 2))
+        assertEquals(102, alignToBufferScale(101, 2))
+        assertEquals(62, alignToBufferScale(61, 2))
+        assertEquals(800, alignToBufferScale(800, 2))
+        // Scale 3: alignment costs at most scale - 1 px.
+        assertEquals(3, alignToBufferScale(1, 3))
+        assertEquals(102, alignToBufferScale(100, 3))
+        assertEquals(102, alignToBufferScale(101, 3))
+        assertEquals(102, alignToBufferScale(102, 3))
+        // Degenerate scales are clamped, not divided by.
+        assertEquals(1, alignToBufferScale(0, 0))
+        assertEquals(7, alignToBufferScale(7, -1))
+    }
+
     private companion object {
         const val BLUE = 0xFF0000FF.toInt()
         const val WHITE = 0xFFFFFFFF.toInt()

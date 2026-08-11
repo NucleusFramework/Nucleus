@@ -36,6 +36,12 @@ internal class TaoWindowTestCase(
      * `transparent` parameter (#416). Creation-time only.
      */
     val transparent: Boolean = false,
+    /**
+     * Forwarded to [dev.nucleusframework.window.tao.DecoratedWindow]'s
+     * `nativePopupLayers`: Compose `Popup` content becomes a real Tao popup
+     * window instead of being drawn inline. Creation-time only.
+     */
+    val nativePopupLayers: Boolean = false,
     /** Optional extra window content composed inside the DecoratedWindow. */
     val content: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     val driver: suspend TaoWindowTestScope.() -> Unit,
