@@ -950,10 +950,24 @@ private fun initialMacOsSize(
     return if (width > 0 && height > 0) width to height else fallbackPhysicalSize()
 }
 
-internal fun initialMacOsScaleFactor(window: TaoWindow): Float {
-    val windowScale = NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1000) / 1000f
-    return maxOf(windowScale, primaryMacOsScaleFactor())
-}
+/**
+ * Scale factor the Compose scene's density is seeded with in
+ * [dev.nucleusframework.window.tao.scene.TaoComposeSceneHost.attach].
+ *
+ * A scale factor is a property of the display a window is on, so the window's
+ * own reading is the only valid answer. This used to take the *max* with the
+ * primary monitor's scale, as a guard against a not-yet-ready reading — but no
+ * other display's scale is ever a substitute: with a Retina Main display and
+ * the window on a 1x screen, the max laid the whole window out at 2x (#506).
+ *
+ * The guard was unnecessary anyway. `nativeScaleFactor` reports 1000 both for
+ * a genuine 1x window and for a handle the loop does not know, so a stale
+ * reading is not detectable here to begin with — and by `attach()` the window
+ * is registered (EVENT_WINDOW_READY precedes it) and carries its display's
+ * real scale.
+ */
+internal fun initialMacOsScaleFactor(window: TaoWindow): Float =
+    NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1000) / 1000f
 
 internal fun primaryMacOsScaleFactor(): Float {
     if (!NativeTaoMacOsDecoBridge.isLoaded) return 1f
