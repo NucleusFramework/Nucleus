@@ -1707,16 +1707,24 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetButtonLayout
                                  @((BOOL)(isRtl == JNI_TRUE)),
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSNumber *h = objc_getAssociatedObject(win, &kTaoTitleBarHeightKey);
-        if (h != nil) {
-            applyButtonConstraints(win, h.floatValue);
-        }
-        // If we're currently in fullscreen, re-install the replacement
-        // traffic-light container so the new RTL flag takes effect on the
-        // overlay buttons too (otherwise they'd stay anchored on the side
-        // matched at the moment fullscreen was entered).
-        if (([win styleMask] & NSWindowStyleMaskFullScreen) != 0 && h != nil) {
+        if (h == nil) return;
+        BOOL isFullScreen = ([win styleMask] & NSWindowStyleMaskFullScreen) != 0;
+        if (isFullScreen) {
+            // In fullscreen only re-install the replacement traffic-light
+            // container so the new RTL flag takes effect on the overlay
+            // buttons (otherwise they'd stay anchored on the side matched at
+            // the moment fullscreen was entered). Never touch the manual
+            // constraints here: willEnterFS removed them so AppKit's animated
+            // toggleFullScreen: can run, and re-activating them mid-session
+            // leaves them active during the exit animation — the exact
+            // constraint conflict removeButtonConstraints exists to prevent
+            // (issue #510). didExitFS re-applies them with the stored RTL
+            // flag, so the windowed layout picks up the new side on exit.
+            // Mirrors decorated-window-jni's nativeSetRTL.
             removeFullScreenButtons(win);
             installFullScreenButtons(win, h.floatValue);
+        } else {
+            applyButtonConstraints(win, h.floatValue);
         }
     };
     if ([NSThread isMainThread]) apply();
