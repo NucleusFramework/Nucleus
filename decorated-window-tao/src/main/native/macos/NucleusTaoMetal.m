@@ -106,6 +106,11 @@ static const char kTaoBackgroundArgbKey = 14;
 //               desktop composites through alpha-0 pixels
 // FULL is creation-time and is never demoted by glass REGIONS/OFF requests.
 static const char kTaoTransparentModeKey = 16;
+// Holds the NucleusTaoZoomButtonResponder that flips `isMovable` back on
+// while the cursor hovers the zoom button, so AppKit builds the full window
+// tiling hover menu ("Move & Resize" / "Fill & Arrange") despite the window
+// being kept non-movable at rest (issue #497).
+static const char kTaoZoomResponderKey = 19;
 
 #define TAO_TRANSPARENCY_OFF     0
 #define TAO_TRANSPARENCY_REGIONS 1
@@ -916,6 +921,13 @@ static void removeMenuBarMonitor(NSWindow *window) {
         w.titleVisibility = NSWindowTitleVisible;
     }
     w.movableByWindowBackground = NO;
+    // Keep the window movable for the whole fullscreen session: the real zoom
+    // button (carrying the hover responder) is hidden in fullscreen, and the
+    // replacement button installed by installFullScreenButtons has none — a
+    // non-movable window would build its hover menu without the tiling
+    // sections again (issue #497). Restored to NO in didExitFS. Mirrors
+    // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
+    [w setMovable:YES];
     // Drop the invisible toolbar to avoid AppKit's white-band glitch.
     if (w.toolbar != nil) {
         objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
@@ -1089,6 +1101,11 @@ static void removeMenuBarMonitor(NSWindow *window) {
     [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
     [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
     [[w standardWindowButton:NSWindowZoomButton] setHidden:NO];
+    // Back to the non-movable at-rest state (movable since willEnterFS). Also
+    // clears the latched movable=YES when fullscreen was entered by clicking
+    // the zoom button mid-hover — the button is hidden before mouseExited can
+    // deliver, so the responder never restores it (issue #497).
+    [w setMovable:NO];
     // Reinstall the invisible toolbar (corner radius) and reapply the
     // button-centering constraints for our custom title bar height.
     reinstallToolbarIfNeeded(w);
@@ -1392,6 +1409,151 @@ static NucleusTaoPassthroughView *ensureTaoPassthroughView(NSWindow *window) {
     return view;
 }
 
+// ── Zoom-button hover: window tiling menu ────────────────────────────────
+//
+// nativeConfigureChrome keeps the window `isMovable == NO` so AppKit's
+// title-bar machinery doesn't intercept clicks meant for the Compose title
+// bar. But AppKit also gates window tiling on `isMovable`: hovering the zoom
+// button of a non-movable window builds a menu with only the "Full Screen"
+// section — the "Move & Resize" / "Fill & Arrange" tiling items are omitted
+// (issue #497). Flip movable back on while the cursor is over the zoom
+// button so the hover menu is built against a movable window, and restore it
+// when the cursor leaves. Ported from decorated-window-jni's
+// NucleusZoomButtonResponder (which mirrors JBR's
+// AWTWindowZoomButtonMouseResponder).
+@interface NucleusTaoZoomButtonResponder : NSObject
+@property (nonatomic, weak) NSWindow *window;
+@property (nonatomic, strong) NSTrackingArea *trackingArea;
+@end
+
+@implementation NucleusTaoZoomButtonResponder
+
+- (instancetype)initWithWindow:(NSWindow *)window {
+    self = [super init];
+    if (self) {
+        _window = window;
+        NSView *zoomButton = [window standardWindowButton:NSWindowZoomButton];
+        if (zoomButton) {
+            // NSTrackingInVisibleRect keeps the rect in sync with the button's
+            // current bounds, so constraint updates don't leave a stale hit area.
+            _trackingArea = [[NSTrackingArea alloc]
+                initWithRect:NSZeroRect
+                     options:(NSTrackingMouseEnteredAndExited |
+                              NSTrackingActiveInKeyWindow |
+                              NSTrackingInVisibleRect)
+                       owner:self
+                    userInfo:nil];
+            [zoomButton addTrackingArea:_trackingArea];
+        }
+    }
+    return self;
+}
+
+- (void)dealloc {
+    if (_trackingArea) {
+        NSView *zoomButton = _window ? [_window standardWindowButton:NSWindowZoomButton] : nil;
+        if (zoomButton) {
+            [zoomButton removeTrackingArea:_trackingArea];
+        }
+    }
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    (void)event;
+    NSWindow *w = self.window;
+    if (w && ![w isMovable]) {
+        [w setMovable:YES];
+    }
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    (void)event;
+    NSWindow *w = self.window;
+    if (w && objc_getAssociatedObject(w, &kTaoTitleBarHeightKey)) {
+        [w setMovable:NO];
+    }
+}
+
+@end
+
+static void installTaoZoomButtonResponder(NSWindow *window) {
+    if (objc_getAssociatedObject(window, &kTaoZoomResponderKey)) return;
+    NucleusTaoZoomButtonResponder *responder =
+        [[NucleusTaoZoomButtonResponder alloc] initWithWindow:window];
+    // Don't cache a dead responder when the zoom button wasn't there yet —
+    // a later call can then install a live one (mirrors
+    // ensureTaoPassthroughView's not-materialised-yet handling).
+    if (responder.trackingArea == nil) return;
+    objc_setAssociatedObject(window, &kTaoZoomResponderKey, responder,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// ── _adjustWindowToScreen swizzle ────────────────────────────────────────
+//
+// macOS routes window snapping/tiling moves through the private
+// _adjustWindowToScreen, which no-ops on a non-movable window. Temporarily
+// re-enable movable around the original implementation so a chosen tiling
+// item (or edge snap) actually moves the window even though movable is
+// normally NO. Ported from decorated-window-jni (mirrors JBR's
+// AWTWindow_Normal._adjustWindowToScreen). The re-entrancy guard prevents
+// crashes when the original IMP or updateFullScreenButtonsPosition triggers
+// another _adjustWindowToScreen call on older macOS versions.
+static IMP  sTaoOriginalAdjustWindowToScreen = NULL;
+static BOOL sTaoInAdjustWindow = NO;
+
+static void nucleus_tao_adjustWindowToScreen(id self, SEL _cmd) {
+    if (sTaoInAdjustWindow) {
+        // Re-entrant call — just forward to the original implementation.
+        if (sTaoOriginalAdjustWindowToScreen) {
+            ((void (*)(id, SEL))sTaoOriginalAdjustWindowToScreen)(self, _cmd);
+        }
+        return;
+    }
+    sTaoInAdjustWindow = YES;
+
+    NSNumber *storedHeight = objc_getAssociatedObject(self, &kTaoTitleBarHeightKey);
+    BOOL needsRestore = storedHeight != nil && ![(NSWindow *)self isMovable];
+    if (needsRestore) {
+        [(NSWindow *)self setMovable:YES];
+    }
+
+    if (sTaoOriginalAdjustWindowToScreen) {
+        ((void (*)(id, SEL))sTaoOriginalAdjustWindowToScreen)(self, _cmd);
+    }
+
+    updateFullScreenButtonsPosition((NSWindow *)self);
+
+    if (needsRestore) {
+        [(NSWindow *)self setMovable:NO];
+    }
+
+    sTaoInAdjustWindow = NO;
+}
+
+// Called only from the main thread (applyButtonConstraints call sites), so
+// no synchronization is needed beyond the idempotency check.
+static void ensureTaoAdjustWindowSwizzle(NSWindow *window) {
+    Class cls = object_getClass(window);
+    SEL sel = NSSelectorFromString(@"_adjustWindowToScreen");
+    Method method = class_getInstanceMethod(cls, sel);
+    if (!method) {
+        // Private AppKit method gone (future macOS): the hover menu will
+        // still show the tiling items but performing one no-ops, so leave a
+        // trace for diagnosis.
+        NTLOG("_adjustWindowToScreen not found — tiling moves stay blocked");
+        return;
+    }
+    // Already swizzled (this class or an ancestor we already patched).
+    if (method_getImplementation(method) == (IMP)nucleus_tao_adjustWindowToScreen) return;
+    // Capture exactly once: re-capturing after a third party wrapped our hook
+    // would store *their* hook (which chains back to ours) as the "original"
+    // and recurse on the next snap.
+    if (sTaoOriginalAdjustWindowToScreen == NULL) {
+        sTaoOriginalAdjustWindowToScreen = method_getImplementation(method);
+    }
+    method_setImplementation(method, (IMP)nucleus_tao_adjustWindowToScreen);
+}
+
 /**
  * Repositions the standard NSWindow buttons (close / miniaturise / zoom) so
  * they are vertically centred inside a custom-height title bar drawn by
@@ -1411,6 +1573,22 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
     NSView *titlebarContainer = titlebar ? titlebar.superview : nil;
     NSView *themeFrame        = titlebarContainer ? titlebarContainer.superview : nil;
     if (themeFrame == nil) return;
+
+    // Window tiling despite `isMovable == NO`: the hover responder makes the
+    // zoom-button menu offer the tiling sections, and the swizzle lets the
+    // chosen tile actually move the window (issue #497).
+    ensureTaoAdjustWindowSwizzle(window);
+    installTaoZoomButtonResponder(window);
+
+    // Re-assert the at-rest state on every layout push: a mouseExited the
+    // responder never received (zoom button hidden mid-hover, key-window
+    // change) would otherwise leave movable=YES latched, and AppKit would
+    // start intercepting title-bar mouse-downs meant for Compose. Skipped in
+    // fullscreen, where the window stays movable for the whole session (see
+    // willEnterFS). Mirrors decorated-window-jni's nativeApplyTitleBar.
+    if ((window.styleMask & NSWindowStyleMaskFullScreen) == 0) {
+        [window setMovable:NO];
+    }
 
     // Tear down our previously-applied constraint set + restore autoresizing.
     removeButtonConstraints(window);
