@@ -989,13 +989,37 @@ internal class TaoComposeSceneHostWindows(
             val now = System.nanoTime()
             if (now - lastResizePurgeNs >= RESIZE_PURGE_INTERVAL_NS) {
                 lastResizePurgeNs = now
-                directContext?.let {
-                    it.resourceCacheLimit = 0
-                    it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
-                }
+                purgeGpuResourceCache()
             }
         }
         onRedrawRequested()
+    }
+
+    /**
+     * Frees the GPU resource cache synchronously: toggling the limit to 0 runs
+     * Skia's `purgeAsNeeded` inline, releasing every unlocked resource, and
+     * restoring the budget lets the next frame re-mint only what it needs.
+     *
+     * The purge issues `glDelete*`, so it MUST run with **this** host's ES
+     * context current. Both callers sit on the resize path, where a sibling
+     * host (a second `DecoratedWindow`, a `DecoratedDialog`) can have left its
+     * own context bound after painting a frame of its own between two of our
+     * WM_SIZEs — the modal size/move loop pumps the whole thread's messages,
+     * so the sibling's WM_PAINT is dispatched in the middle of our drag.
+     * Purging against that foreign context deletes ids in the *sibling's*
+     * namespace (the two contexts are unshared, so both number their objects
+     * from 1 and the ids collide wholesale): its live textures die while our
+     * own are merely leaked. Skia keeps believing the sibling's glyph atlas is
+     * resident, so that window goes on drawing geometry but loses every glyph
+     * and icon — the parent window blanking behind a fast child resize (#514).
+     *
+     * Same foreign-context hazard the make-current in [detach] guards against.
+     */
+    private fun purgeGpuResourceCache() {
+        val ctx = directContext ?: return
+        if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
+        ctx.resourceCacheLimit = 0
+        ctx.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
     }
 
     /**
@@ -1049,14 +1073,10 @@ internal class TaoComposeSceneHostWindows(
             pendingResizeApply = true
             onRedrawRequested()
             // Reclaim the per-size scratch (stencil/render-target attachments)
-            // accumulated across the drag. Toggling the limit to 0 runs
-            // purgeAsNeeded synchronously, freeing every unlocked resource; the
-            // next frame re-mints only what the final size needs. Without this
-            // the drag's peak footprint is released only by a later GC.
-            directContext?.let {
-                it.resourceCacheLimit = 0
-                it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
-            }
+            // accumulated across the drag; the next frame re-mints only what
+            // the final size needs. Without this the drag's peak footprint is
+            // released only by a later GC.
+            purgeGpuResourceCache()
             // The purge above only frees Skia's GPU cache. Every remeasure of
             // the drag also minted Compose layers/pictures whose native Skia
             // memory is released by the skiko Cleaner only after a GC — and a
