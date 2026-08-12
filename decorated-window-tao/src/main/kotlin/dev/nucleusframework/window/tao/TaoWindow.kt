@@ -696,6 +696,7 @@ public class TaoWindow internal constructor(
 
     /** `true` when the popup parent is a native Wayland surface (kind == 2). */
     private fun parentIsNativeWayland(): Boolean {
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
         val handles = NativeTaoBridge.nativeLinuxHandles(popupParentHandle) ?: return false
         return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
     }
