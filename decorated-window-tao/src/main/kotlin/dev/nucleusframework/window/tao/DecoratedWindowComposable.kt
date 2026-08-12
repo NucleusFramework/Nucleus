@@ -586,6 +586,7 @@ private fun absolutePositionForPopup(
 
 /** Parent outer origin in logical dp when [parent] is a native Wayland surface. */
 private fun parentOuterOriginLogical(parent: TaoWindow): Pair<Double, Double>? {
+    if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return null
     val handles = NativeTaoBridge.nativeLinuxHandles(parent.handle) ?: return null
     if (handles.isEmpty() || handles[0] != 2L) return null
     val rect = parent.outerBoundsPx() ?: return null
@@ -617,6 +618,7 @@ private val decoratedWindowLogger: java.util.logging.Logger =
 
 private fun warnIfWaylandIgnoresPosition(window: TaoWindow) {
     if (waylandPositionWarned.get()) return
+    if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return
     val handles = NativeTaoBridge.nativeLinuxHandles(window.handle) ?: return
     if (handles.isEmpty() || handles[0] != 2L) return
     if (!waylandPositionWarned.compareAndSet(false, true)) return
