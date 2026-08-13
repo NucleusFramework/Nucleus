@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.internal.insideBorder
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
@@ -64,6 +65,9 @@ internal fun rememberUndecoratedWindowBorder(
                     bottomStart = 0.dp,
                     bottomEnd = 0.dp,
                 )
+            // Win11 DWMWCP_ROUND is 8 logical px. A square stroke on a
+            // rounded HWND is clipped at the corners and reads as a box.
+            Platform.Current == Platform.Windows -> RoundedCornerShape(8.dp)
             else -> RoundedCornerShape(0.dp)
         }
     val color by style.colors.borderFor(state)
