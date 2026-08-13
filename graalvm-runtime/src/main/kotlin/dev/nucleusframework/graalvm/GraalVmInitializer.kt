@@ -32,6 +32,10 @@ public object GraalVmInitializer {
             // Resolve the executable directory
             val execDir = resolveExecDir()
             System.setProperty("java.home", execDir)
+            // Match JVM `run` / jpackage: sidecars from appResourcesRootDir live next to the exe.
+            if (System.getProperty("compose.application.resources.dir").isNullOrBlank()) {
+                System.setProperty("compose.application.resources.dir", execDir)
+            }
 
             // java.library.path → execDir + execDir/bin
             // Must be set BEFORE any System.loadLibrary() call (including HiDPI JNI below).

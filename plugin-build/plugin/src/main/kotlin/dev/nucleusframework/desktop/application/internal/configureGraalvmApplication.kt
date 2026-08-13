@@ -33,6 +33,7 @@ import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Delete
 import org.gradle.api.tasks.Exec
 import org.gradle.api.tasks.JavaExec
+import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.TaskProvider
 import org.gradle.jvm.tasks.Jar
 import org.gradle.jvm.toolchain.JavaLanguageVersion
@@ -69,6 +70,38 @@ private fun escapeNativeImageArgFileArgument(arg: String): String =
 // hiding it in the build tmp dir.
 private val JvmApplicationContext.graalvmOutputDir: Provider<Directory>
     get() = app.nativeDistributions.outputBaseDir.map { it.dir("$appDirName/graalvm-app") }
+
+/**
+ * JVM `run` / jpackage already copy [appResourcesRootDir] via `prepareAppResources` and set
+ * `compose.application.resources.dir`. GraalVM packaging did not, so sidecars such as
+ * Dawn's `dxil.dll` / `dxcompiler.dll` were missing next to the native exe.
+ */
+private fun JvmApplicationContext.prepareAppResourcesTask(): TaskProvider<Sync> =
+    project.tasks.named(
+        "prepare${buildType.classifier.uppercaseFirstChar()}AppResources",
+        Sync::class.java,
+    )
+
+private fun JvmApplicationContext.copyGraalvmAppResources(
+    into: Provider<Directory>,
+    extraDepends: List<TaskProvider<*>> = emptyList(),
+    doNotTrack: Boolean = false,
+): TaskProvider<Copy> {
+    val prepareAppResources = prepareAppResourcesTask()
+    return tasks.register<Copy>(
+        taskNameAction = "copy",
+        taskNameObject = "graalvmAppResources",
+    ) {
+        description = "Copy appResourcesRootDir contents next to the native executable"
+        dependsOn(prepareAppResources)
+        extraDepends.forEach { dependsOn(it) }
+        if (doNotTrack) {
+            doNotTrackState("Output directory is modified by downstream strip/codesign tasks")
+        }
+        from(prepareAppResources.map { it.destinationDir })
+        into(into)
+    }
+}
 
 @Suppress("LongMethod", "CyclomaticComplexMethod")
 internal fun JvmApplicationContext.configureGraalvmApplication() {
@@ -232,6 +265,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 classpath = runtimeJars
             }
 
+            val prepareAppResources = prepareAppResourcesTask()
+            dependsOn(prepareAppResources)
+
             jvmArgs =
                 buildList {
                     addAll(graalvmDefaultJvmArgs)
@@ -243,6 +279,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                                 !arg.startsWith("-D$APP_RESOURCES_DIR=")
                         },
                     )
+                    add("-D$APP_RESOURCES_DIR=${prepareAppResources.get().destinationDir.absolutePath}")
 
                     if (currentOS == OS.MacOS) {
                         val dockName =
@@ -1804,13 +1841,20 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
             null
         }
 
+    val copyAppResources =
+        copyGraalvmAppResources(
+            into = appBundleDir.map { it.dir("MacOS") },
+            extraDepends = listOf(cleanAppBundle),
+            doNotTrack = true,
+        )
+
     val codesignBundle =
         tasks.register<Exec>(
             taskNameAction = "codesign",
             taskNameObject = "graalvmBundle",
         ) {
             description = "Ad-hoc sign the entire .app bundle"
-            dependsOn(codesignDylibs, copyBinary, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
+            dependsOn(codesignDylibs, copyBinary, copyAppResources, fixRpath, stripBinary, copyInfoPlist, copyJawtToLib, copySkikoLib, copyIcon)
             copyFileAssociationIcons?.let { dependsOn(it) }
             val bundleDir = graalvmOutputDir.map { it.dir(appBundleName.get()) }
             commandLine("codesign", "--force", "--deep", "--sign", "-", bundleDir.get().asFile.absolutePath)
@@ -1823,6 +1867,7 @@ private fun JvmApplicationContext.configureMacOsGraalvmPackaging(
         description = "Build native image and package as macOS .app bundle"
         dependsOn(
             copyBinary,
+            copyAppResources,
             copyAwtDylibs,
             copyJawtToLib,
             copySkikoLib,
@@ -1986,12 +2031,14 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
             null
         }
 
+    val copyAppResources = copyGraalvmAppResources(into = outputDir)
+
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
-        dependsOn(copyBinary, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
+        dependsOn(copyBinary, copyAppResources, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
         copyCRuntime?.let { dependsOn(it) }
     }
 }
@@ -2144,12 +2191,25 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
             commandLine("strip", binary.get().asFile.absolutePath)
         }
 
+    val copyAppResources = copyGraalvmAppResources(into = outputDir)
+
     return tasks.register<DefaultTask>(
         taskNameAction = "package",
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with .so libs"
-        dependsOn(copyBinary, copyAwtSoLibs, copyJvmSo, copyJawtToLib, copySkikoLib, fixRpath, fixSoRpath, stripSoLibs, stripBinary)
+        dependsOn(
+            copyBinary,
+            copyAppResources,
+            copyAwtSoLibs,
+            copyJvmSo,
+            copyJawtToLib,
+            copySkikoLib,
+            fixRpath,
+            fixSoRpath,
+            stripSoLibs,
+            stripBinary,
+        )
     }
 }
 
