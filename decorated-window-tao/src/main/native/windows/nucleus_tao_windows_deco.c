@@ -380,24 +380,38 @@ static void revertBackdropForClose(HWND hwnd, DecoState *state) {
  * caption fill is suppressed entirely (an opaque caption is what otherwise
  * leaves the title bar as a flat band above a Mica client area), but the
  * border keeps DWM's default: COLOR_NONE on the border renders the top edge
- * as a bare black line instead of the subtle system frame. */
+ * as a bare black line instead of the subtle system frame.
+ *
+ * Windowed CSD (no backdrop) also hides that 1px DWM contour — Compose
+ * already draws `insideBorder` on the same edge pixels, and the themed DWM
+ * stroke clips it (#522). The 1px bottom DwmExtendFrame margin is unchanged:
+ * it only keeps the drop shadow. */
 static void applyCaptionColors(HWND hwnd, DecoState *state) {
     BOOL backdrop = state && state->backdropActive;
     BOOL borderless = state && state->borderlessChrome;
+    BOOL fullscreen = state && state->isFullscreen;
     COLORREF themed = state ? state->bgColor : RGB(255, 255, 255);
     COLORREF caption = backdrop ? (COLORREF)DWMWA_COLOR_NONE : themed;
     COLORREF border = backdrop ? (COLORREF)DWMWA_COLOR_DEFAULT : themed;
+    UINT thickness = 1;
     /* Fullscreen: the borderless window covers the monitor exactly, so any
      * fill DWM still draws for these attributes shows as a 1px contour of
      * the wrong colour around the content — the issue-413 white edge (worst
      * with a backdrop, where the border is otherwise the light system
-     * default). Same for borderlessChrome overlays (no system frame at all). */
-    if (state && (state->isFullscreen || borderless)) {
+     * default). Same for borderlessChrome overlays (no system frame at all).
+     * Regular CSD: hide the DWM stroke so the Compose 1dp frame is visible. */
+    if (fullscreen || borderless) {
         caption = (COLORREF)DWMWA_COLOR_NONE;
         border = (COLORREF)DWMWA_COLOR_NONE;
+        thickness = 0;
+    } else if (!backdrop) {
+        border = (COLORREF)DWMWA_COLOR_NONE;
+        thickness = 0;
     }
     DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+    DwmSetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+                          &thickness, sizeof(thickness));
 }
 
 /* The DwmExtendFrameIntoClientArea margins for the current mode. Windowed
@@ -963,6 +977,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
      * transparent pixels render as black (invisible on dark themes). */
     MARGINS margins = {0, 0, 0, 1};
     DwmExtendFrameIntoClientArea(hwnd, &margins);
+    applyCaptionColors(hwnd, state);
 
     SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
@@ -1041,10 +1056,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBor
                           &corner, sizeof(corner));
 
     if (wanted) {
-        /* Win11: zero the visible 1px non-client border thickness. */
-        UINT thickness = 0;
-        DwmSetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
-                              &thickness, sizeof(thickness));
         /* DWMSBT_NONE — no system material halo around the HWND. */
         int none = 1;
         DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
