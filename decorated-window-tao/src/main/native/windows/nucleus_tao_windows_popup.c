@@ -146,14 +146,29 @@ static JNIEnv *attachThread(void) {
     return NULL;
 }
 
+/* Look up methods on the *interface*, not the concrete sample class.
+ * Scene-layer and standalone-panel listeners are different classes
+ * implementing the same interface. A jmethodID from one used with
+ * CallVoidMethod on the other runs the wrong bytecode with the wrong
+ * `this` and crashes the JVM (observed: PopupOutsideListener.onOutsideClick
+ * invoked on a PanelOutsideClickListener). */
+static jclass globalRefNamedClass(JNIEnv *env, const char *name) {
+    jclass local = (*env)->FindClass(env, name);
+    if (!local) {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        return NULL;
+    }
+    jclass global = (*env)->NewGlobalRef(env, local);
+    (*env)->DeleteLocalRef(env, local);
+    return global;
+}
+
 static void ensureEventCallbackCache(JNIEnv *env, jobject sample) {
     if (sCacheInitedBits & 1) return;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
     if (!sample) return;
-    jclass local = (*env)->GetObjectClass(env, sample);
-    if (!local) return;
-    jclass global = (*env)->NewGlobalRef(env, local);
-    (*env)->DeleteLocalRef(env, local);
+    jclass global = globalRefNamedClass(env,
+        "dev/nucleusframework/window/tao/ffi/PopupNativeBridgeWindows$EventCallback");
     if (!global) return;
     jmethodID m1 = (*env)->GetMethodID(env, global, "onPointerEvent", "(IFFII)V");
     jmethodID m2 = (*env)->GetMethodID(env, global, "onScroll", "(FFFF)V");
@@ -163,6 +178,7 @@ static void ensureEventCallbackCache(JNIEnv *env, jobject sample) {
         sOnPointerMethod = m1; sOnScrollMethod = m2; sOnKeyMethod = m3;
         InterlockedOr(&sCacheInitedBits, 1);
     } else {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         (*env)->DeleteGlobalRef(env, global);
     }
 }
@@ -171,16 +187,15 @@ static void ensureOutsideCallbackCache(JNIEnv *env, jobject sample) {
     if (sCacheInitedBits & 2) return;
     if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
     if (!sample) return;
-    jclass local = (*env)->GetObjectClass(env, sample);
-    if (!local) return;
-    jclass global = (*env)->NewGlobalRef(env, local);
-    (*env)->DeleteLocalRef(env, local);
+    jclass global = globalRefNamedClass(env,
+        "dev/nucleusframework/window/tao/ffi/PopupNativeBridgeWindows$OutsideClickListener");
     if (!global) return;
     jmethodID m = (*env)->GetMethodID(env, global, "onOutsideClick", "(II)V");
     if (m) {
         sOutsideClass = global; sOnOutsideClickMethod = m;
         InterlockedOr(&sCacheInitedBits, 2);
     } else {
+        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
         (*env)->DeleteGlobalRef(env, global);
     }
 }

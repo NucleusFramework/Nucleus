@@ -224,13 +224,15 @@ internal class TaoPopupSceneLayerWindows(
             type: Int,
             button: Int,
         ) {
+            if (released) return
+            val handler = onOutsidePointerEvent ?: return
             val pointerButton =
                 when (button) {
                     TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
                     TaoNativeWireFormat.BUTTON_SECONDARY -> PointerButton.Secondary
                     else -> PointerButton.Tertiary
                 }
-            onOutsidePointerEvent?.invoke(PointerEventType.Press, pointerButton)
+            handler(PointerEventType.Press, pointerButton)
         }
     }
 
