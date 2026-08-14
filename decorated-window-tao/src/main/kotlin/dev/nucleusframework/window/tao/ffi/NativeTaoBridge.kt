@@ -105,6 +105,17 @@ internal object NativeTaoBridge {
             forceFixed: Int,
         ) {
         }
+
+        /**
+         * macOS PressAndHold picked an accent. The base letter is already in
+         * the field; the host must replace it via Compose `TextEditingScope`
+         * (same as `DesktopTextInputService2` / JDK-8074882). Default no-op.
+         */
+        fun onImeReplaceCommit(
+            handle: Long,
+            text: String,
+        ) {
+        }
     }
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */

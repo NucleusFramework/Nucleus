@@ -98,6 +98,19 @@ internal class TaoComposeSceneHost(
     // tao `with_transparent` so alpha-0 Skia clears show the desktop.
     private val fullyTransparent: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
+    @Volatile
+    private var activeInputRequest: androidx.compose.ui.platform.PlatformTextInputMethodRequest? = null
+
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    internal fun applyPressAndHoldCommit(text: String) {
+        if (text.isEmpty()) return
+        val request = activeInputRequest ?: return
+        request.editText {
+            deleteSurroundingTextInCodePoints(1, 0)
+            commitText(text, 1)
+        }
+    }
+
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
@@ -328,6 +341,7 @@ internal class TaoComposeSceneHost(
                 outboundLauncher = ::launchMacOsOutboundDrag,
             )
 
+        window.imeReplaceCommit = { text -> applyPressAndHoldCommit(text) }
         val taoPlatformContext =
             TaoPlatformContext(
                 windowHandle = window.handle,
@@ -350,6 +364,7 @@ internal class TaoComposeSceneHost(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
+                onInputSession = { activeInputRequest = it },
             )
 
         val hostPopupHost = if (nativePopupLayers) popupHost() else null
@@ -1410,6 +1425,8 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        window.imeReplaceCommit = null
+        activeInputRequest = null
         shutdownA11yScheduler()
         // Drop the transition hook before the scene goes: a late
         // willEnterFS would otherwise re-enter a torn-down host.
@@ -1504,6 +1521,7 @@ private class TaoPlatformContext(
     override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
+    private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit,
 ) : PlatformContext.Empty() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic
@@ -1542,24 +1560,29 @@ private class TaoPlatformContext(
         // NSTextView overlay was tried and rejected because it forced an
         // I-beam cursor for the whole window.
         NativeTaoBridge.nativeActivateInputContext(windowHandle)
-        coroutineScope {
-            launch {
-                androidx.compose.runtime
-                    .snapshotFlow {
-                        request.focusedRectInRoot()
-                    }.collect { rect ->
-                        if (rect != null) {
-                            NativeTaoBridge.nativeSetImeRect(
-                                windowHandle,
-                                rect.left.toInt(),
-                                rect.top.toInt(),
-                                rect.width.toInt().coerceAtLeast(1),
-                                rect.height.toInt().coerceAtLeast(1),
-                            )
+        onInputSession(request)
+        try {
+            coroutineScope {
+                launch {
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            request.focusedRectInRoot()
+                        }.collect { rect ->
+                            if (rect != null) {
+                                NativeTaoBridge.nativeSetImeRect(
+                                    windowHandle,
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.width.toInt().coerceAtLeast(1),
+                                    rect.height.toInt().coerceAtLeast(1),
+                                )
+                            }
                         }
-                    }
+                }
+                awaitCancellation()
             }
-            awaitCancellation()
+        } finally {
+            onInputSession(null)
         }
     }
 

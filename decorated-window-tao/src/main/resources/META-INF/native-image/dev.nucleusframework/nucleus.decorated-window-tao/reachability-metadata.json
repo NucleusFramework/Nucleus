@@ -75,6 +75,13 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "onImeReplaceCommit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
+                    ]
                 }
             ]
         },
@@ -123,6 +130,13 @@
                         "int",
                         "int",
                         "int"
+                    ]
+                },
+                {
+                    "name": "onImeReplaceCommit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
                     ]
                 }
             ]
