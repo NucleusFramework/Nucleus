@@ -134,6 +134,8 @@ static NSRect tao_view_first_rect_for_character_range(
 static BOOL g_did_insert_base = NO;
 static BOOL g_letter_key_down = NO;
 static BOOL g_press_and_hold_queried = NO;
+static NSString *g_base_text = nil;
+static unsigned short g_base_key_code = 0xFFFF;
 static IMP g_orig_insert_text = NULL;
 static IMP g_orig_key_up = NULL;
 static IMP g_orig_attributed_substring = NULL;
@@ -149,6 +151,14 @@ static BOOL nucleus_is_letter_key_event(NSEvent *event) {
     if (chars.length != 1) return NO;
     unichar c = [chars characterAtIndex:0];
     return [[NSCharacterSet letterCharacterSet] characterIsMember:c];
+}
+
+static void nucleus_clear_press_and_hold(void) {
+    g_did_insert_base = NO;
+    g_letter_key_down = NO;
+    g_press_and_hold_queried = NO;
+    g_base_text = nil;
+    g_base_key_code = 0xFFFF;
 }
 
 static void nucleus_note_press_and_hold_query(void) {
@@ -204,21 +214,43 @@ static id nucleus_attributed_substring(
 }
 
 static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement) {
-    if (g_press_and_hold_queried && g_ime_replace_commit) {
-        NSString *incoming = nucleus_string_from_ime_arg(string) ?: @"";
-        const char *utf8 = incoming.UTF8String ?: "";
-        g_ime_replace_commit((long)(__bridge void *)self, utf8);
-        g_press_and_hold_queried = NO;
-        // Skip Tao's insertText — it would also emit ReceivedImeText / KEY_TYPED
-        // and append a second copy of the accent.
+    NSString *incoming = nucleus_string_from_ime_arg(string) ?: @"";
+    NSEvent *event = NSApp.currentEvent;
+    BOOL isLetterDown = nucleus_is_letter_key_event(event);
+    BOOL isRepeat = event && event.isARepeat;
+    BOOL sameAsBase = (g_base_text != nil) && [incoming isEqualToString:g_base_text];
+
+    // First repeat / selectedRange query: PressAndHold re-inserts the base
+    // letter. Swallow it or we consume the replace flag and the accent
+    // arrives later as a second KEY_TYPED (eé).
+    if (g_did_insert_base && sameAsBase && (g_press_and_hold_queried || isRepeat)) {
+        g_press_and_hold_queried = YES;
         return;
     }
+
+    if (g_press_and_hold_queried && !sameAsBase && incoming.length > 0) {
+        if (g_ime_replace_commit) {
+            const char *utf8 = incoming.UTF8String ?: "";
+            g_ime_replace_commit((long)(__bridge void *)self, utf8);
+        }
+        nucleus_clear_press_and_hold();
+        return;
+    }
+
+    // New letter after the previous hold ended: drop a stale picker flag
+    // so typing the next character is not treated as an accent pick.
+    if (!g_letter_key_down && isLetterDown && !isRepeat) {
+        g_press_and_hold_queried = NO;
+    }
+
     if (g_orig_insert_text) {
         ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
     }
-    if (nucleus_is_letter_key_event(NSApp.currentEvent)) {
+    if (isLetterDown && !isRepeat) {
         g_did_insert_base = YES;
         g_letter_key_down = YES;
+        g_base_text = [incoming copy];
+        g_base_key_code = event.keyCode;
     }
 }
 
@@ -226,9 +258,11 @@ static void nucleus_key_up(id self, SEL sel, NSEvent *event) {
     if (g_orig_key_up) {
         ((void (*)(id, SEL, NSEvent *))g_orig_key_up)(self, sel, event);
     }
-    g_did_insert_base = NO;
-    g_letter_key_down = NO;
-    g_press_and_hold_queried = NO;
+    // Only the base letter's keyUp ends the hold. A number-key keyUp
+    // (picker shortcut) must not drop the session before insertText:é.
+    if (event && event.keyCode == g_base_key_code) {
+        g_letter_key_down = NO;
+    }
 }
 
 static void nucleus_tao_swizzle_view_methods_once(void) {

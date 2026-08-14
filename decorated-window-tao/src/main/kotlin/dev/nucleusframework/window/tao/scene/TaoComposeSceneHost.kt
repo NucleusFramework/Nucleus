@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoEventCode
+import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
@@ -104,10 +105,21 @@ internal class TaoComposeSceneHost(
     @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
     internal fun applyPressAndHoldCommit(text: String) {
         if (text.isEmpty()) return
-        val request = activeInputRequest ?: return
-        request.editText {
-            deleteSurroundingTextInCodePoints(1, 0)
-            commitText(text, 1)
+        val request = activeInputRequest
+        if (request != null) {
+            request.editText {
+                deleteSurroundingTextInCodePoints(1, 0)
+                commitText(text, 1)
+            }
+            return
+        }
+        // CoreTextField session not up yet: same gated sequence Compose AWT
+        // uses (delete one code point, then commit). Never used for ordinary
+        // typing — native only calls this after PressAndHold queried the view.
+        onKeyEvent(TaoEventCode.KEY_DOWN, 8, TaoKeyLocation.STANDARD, 0, 0)
+        onKeyEvent(TaoEventCode.KEY_UP, 8, TaoKeyLocation.STANDARD, 0, 0)
+        for (ch in text) {
+            onKeyEvent(TaoEventCode.KEY_TYPED, 0, TaoKeyLocation.STANDARD, 0, ch.code)
         }
     }
 
