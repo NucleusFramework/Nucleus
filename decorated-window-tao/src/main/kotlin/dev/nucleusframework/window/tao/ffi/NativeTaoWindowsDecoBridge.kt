@@ -226,6 +226,14 @@ internal object NativeTaoWindowsDecoBridge {
     external fun nativeGetWindowRect(hwnd: Long): LongArray?
 
     /**
+     * Returns the work area (screen minus taskbar) of the monitor hosting [hwnd]
+     * as `[x, y, width, height]` in physical pixels. If [hwnd] is 0 or invalid,
+     * falls back to the primary monitor.
+     */
+    @JvmStatic
+    external fun nativeOwnerMonitorWorkArea(hwnd: Long): LongArray?
+
+    /**
      * Returns the primary monitor's work area (full screen minus taskbar) as
      * `[x, y, width, height]` in physical pixels. Used to resolve
      * [androidx.compose.ui.window.WindowPosition.Aligned] for the initial

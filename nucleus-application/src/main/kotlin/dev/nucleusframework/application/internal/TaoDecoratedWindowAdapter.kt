@@ -145,7 +145,6 @@ internal object TaoDecoratedWindowAdapter {
                 // parentLayoutDirection, captured outside.
                 val bridge = LocalTaoCompositionLocalContextBridge.current
                 SideEffect { bridge?.invoke(outerLocals) }
-                val sceneDensity = LocalDensity.current
                 // The app theme's own LocalTextContextMenu (e.g. Jewel's) is not a
                 // scene-owned local, so it does come through outerLocals and shadows
                 // the scene's selection observer — silently breaking cross-process
@@ -157,7 +156,6 @@ internal object TaoDecoratedWindowAdapter {
                 val sceneTaoWindow = LocalTaoWindow.current
                 val sceneTitleBarInfo = LocalTitleBarInfo.current
                 CompositionLocalProvider(
-                    LocalDensity provides sceneDensity,
                     LocalLayoutDirection provides parentLayoutDirection,
                     LocalTaoTextSelectionA11yPublisher provides scenePublisher,
                     LocalNucleusBackend provides NucleusBackend.Tao,

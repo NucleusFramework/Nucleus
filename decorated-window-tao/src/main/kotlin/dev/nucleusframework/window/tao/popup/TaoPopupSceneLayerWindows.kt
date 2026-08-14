@@ -35,6 +35,17 @@ import org.jetbrains.skia.DirectContext
  * parent-window coordinates. The native popup surface is kept exactly
  * at content bounds because transparent pixels around the content are not
  * reliably alpha-composited by DWM on all Windows drivers.
+ *
+ * ### Multi-Monitor DPI Synchronization:
+ * Under Windows Per-Monitor DPI Aware v2:
+ * 1. The native panel is created at the parent window's current coordinates so
+ *    Windows associates the HWND with the target monitor's DPI immediately.
+ * 2. `WM_DPICHANGED` on the popup HWND is ignored by the native WndProc because
+ *    Compose Multiplatform layout explicitly manages physical pixel sizing via
+ *    [updateNativeFrame].
+ * 3. [densityState] reactively propagates dynamic monitor DPI changes into
+ *    [innerScene]'s [androidx.compose.ui.platform.LocalDensity], ensuring font rasterization
+ *    and container measurement stay synchronized across displays.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoPopupSceneLayerWindows(
@@ -45,7 +56,11 @@ internal class TaoPopupSceneLayerWindows(
     @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
 ) : ComposeSceneLayer {
     private var _density = initialDensity
+    private val densityState: androidx.compose.runtime.MutableState<Density> =
+        androidx.compose.runtime.mutableStateOf(initialDensity)
     private var _layoutDirection = initialLayoutDirection
+    private val layoutDirectionState: androidx.compose.runtime.MutableState<LayoutDirection> =
+        androidx.compose.runtime.mutableStateOf(initialLayoutDirection)
     private var _focusable = initialFocusable
     private var _bounds: IntRect = IntRect.Zero
     private var _scrimColor: Color? = null
@@ -106,12 +121,15 @@ internal class TaoPopupSceneLayerWindows(
     private fun ensurePanel(): Boolean {
         if (panelHandle != 0L) return true
         if (panelCreateFailed) return false
+        val offset = host.coordinateOffset
+        val initX = if (_bounds != IntRect.Zero) _bounds.left + offset.x else 0
+        val initY = if (_bounds != IntRect.Zero) _bounds.top + offset.y else 0
         val handle =
             PopupNativeBridgeWindows
                 .nativeCreatePanel(
                     parentHwnd = host.parentHwnd,
-                    xPx = -OFFSCREEN_OFFSET_PX,
-                    yPx = -OFFSCREEN_OFFSET_PX,
+                    xPx = initX,
+                    yPx = initY,
                     widthPx = widthPx,
                     heightPx = heightPx,
                 )
@@ -253,6 +271,7 @@ internal class TaoPopupSceneLayerWindows(
         get() = _density
         set(value) {
             _density = value
+            densityState.value = value
             innerScene.density = value
         }
 
@@ -260,12 +279,14 @@ internal class TaoPopupSceneLayerWindows(
         get() = _layoutDirection
         set(value) {
             _layoutDirection = value
+            layoutDirectionState.value = value
             innerScene.layoutDirection = value
         }
 
     override var boundsInWindow: IntRect
         get() = _bounds
         set(value) {
+            val oldBounds = _bounds
             _bounds = value
             updateDrawBoundsFromBounds()
             host.requestRedraw()
@@ -304,10 +325,18 @@ internal class TaoPopupSceneLayerWindows(
     override fun setContent(content: @Composable () -> Unit) {
         innerScene.setContent {
             val locals = _compositionLocalContext
+            val body: @Composable () -> Unit = {
+                CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalDensity provides densityState.value,
+                    androidx.compose.ui.platform.LocalLayoutDirection provides layoutDirectionState.value,
+                ) {
+                    content()
+                }
+            }
             if (locals != null) {
-                CompositionLocalProvider(locals) { content() }
+                CompositionLocalProvider(locals) { body() }
             } else {
-                content()
+                body()
             }
         }
         host.requestRedraw()
@@ -387,10 +416,12 @@ internal class TaoPopupSceneLayerWindows(
         if (panelHandle == 0L) return
         if (drawBounds == IntRect.Zero || _bounds == IntRect.Zero) return
         val offset = host.coordinateOffset
+        val finalX = drawBounds.left + offset.x
+        val finalY = drawBounds.top + offset.y
         PopupNativeBridgeWindows.nativeSetFrameInWindow(
             panel = panelHandle,
-            xPx = drawBounds.left + offset.x,
-            yPx = drawBounds.top + offset.y,
+            xPx = finalX,
+            yPx = finalY,
             widthPx = drawBounds.width.coerceAtLeast(1),
             heightPx = drawBounds.height.coerceAtLeast(1),
             contentXPx = _bounds.left - drawBounds.left,
