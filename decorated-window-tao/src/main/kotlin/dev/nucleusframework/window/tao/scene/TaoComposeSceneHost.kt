@@ -1536,10 +1536,11 @@ private class TaoPlatformContext(
     override suspend fun startInputMethod(
         request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
     ): Nothing {
-        // Keep TaoView as firstResponder, matching Compose AWT's single
-        // component model. Making a hidden NSTextView firstResponder causes
-        // AppKit to push an I-beam cursor for the whole window before the
-        // first pointer interaction on macOS.
+        // Keep TaoView as firstResponder. Activating its NSTextInputContext
+        // (and swizzling selectedRange / validAttributes / firstRect) is
+        // what lets AppKit's PressAndHold accent picker engage; a hidden
+        // NSTextView overlay was tried and rejected because it forced an
+        // I-beam cursor for the whole window.
         NativeTaoBridge.nativeActivateInputContext(windowHandle)
         coroutineScope {
             launch {

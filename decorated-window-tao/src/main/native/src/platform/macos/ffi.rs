@@ -13,6 +13,7 @@ extern "C" {
     pub(crate) fn nucleus_tao_is_main_thread() -> i32;
     pub(crate) fn nucleus_tao_install_cmd_q_handler();
     pub(crate) fn nucleus_tao_enable_press_and_hold();
+    pub(crate) fn nucleus_tao_register_ime_delete_callback(cb: extern "C" fn(i64, i32));
     pub(crate) fn nucleus_tao_activate_input_context(ns_view_handle: i64);
     pub(crate) fn nucleus_tao_set_ime_local_rect(
         ns_view_handle: i64,
