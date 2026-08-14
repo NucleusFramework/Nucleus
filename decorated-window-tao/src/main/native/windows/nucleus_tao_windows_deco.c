@@ -73,6 +73,12 @@ typedef struct {
     WNDPROC originalWndProc;
     int     titleBarHeightPx;
     COLORREF bgColor;
+    /* Theme CSD contour (#526). When set, windowed chrome uses this as
+     * DWMWA_BORDER_COLOR so the 1px frame follows the rounded HWND —
+     * a Compose stroke on the client is either clipped at the corners
+     * or inset into a second contour. */
+    COLORREF borderColor;
+    BOOL    hasBorderColor;
     BOOL    startupBackgroundErase;
     BOOL    isFullscreen;
     LONG    savedStyle;
@@ -383,11 +389,13 @@ static void revertBackdropForClose(HWND hwnd, DecoState *state) {
  * border keeps DWM's default: COLOR_NONE on the border renders the top edge
  * as a bare black line instead of the subtle system frame.
  *
- * Windowed CSD (no backdrop) clears only the DWM *fill* (COLOR_NONE) so
- * Compose `insideBorder` is not painted over (#522). The 1px visible-frame
- * thickness stays: zeroing it (as overlays/fullscreen do) drops Win11's
- * 8px rounded clip and the window looks squared-off. The 1px bottom
- * DwmExtendFrame margin is unchanged — it only keeps the drop shadow. */
+ * Windowed CSD (no backdrop) keeps the 1px visible-frame thickness
+ * (zeroing it drops Win11's 8px rounded clip) and, when the app has
+ * pushed a theme colour, paints that as DWMWA_BORDER_COLOR so the
+ * contour follows the rounded HWND (#526). Compose no longer strokes
+ * the client edge — that stroke was either clipped at the corners or
+ * inset into a second frame. The 1px bottom DwmExtendFrame margin is
+ * unchanged — it only keeps the drop shadow. */
 static void applyCaptionColors(HWND hwnd, DecoState *state) {
     BOOL backdrop = state && state->backdropActive;
     BOOL borderless = state && state->borderlessChrome;
@@ -409,7 +417,9 @@ static void applyCaptionColors(HWND hwnd, DecoState *state) {
         thickness = 0;
         corner = NUCLEUS_DWMWCP_DONOTROUND;
     } else if (!backdrop) {
-        border = (COLORREF)DWMWA_COLOR_NONE;
+        border = (state && state->hasBorderColor)
+            ? state->borderColor
+            : (COLORREF)DWMWA_COLOR_NONE;
     }
     DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
     DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
@@ -1118,6 +1128,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBac
     }
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
                           &dark, sizeof(dark));
+}
+
+/**
+ * Theme colour for the DWM 1px frame (Win11 rounded clip). [visible] false
+ * hides it (maximized / fullscreen — same as skipping Compose insideBorder).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBorderColor(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint argb, jboolean visible)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+
+    DecoState *state = getState(hwnd);
+    if (state) {
+        if (visible) {
+            int r = (argb >> 16) & 0xFF;
+            int g = (argb >>  8) & 0xFF;
+            int b =  argb        & 0xFF;
+            state->borderColor = RGB(r, g, b);
+            state->hasBorderColor = TRUE;
+        } else {
+            state->hasBorderColor = FALSE;
+        }
+    }
+    applyCaptionColors(hwnd, state);
 }
 
 /**

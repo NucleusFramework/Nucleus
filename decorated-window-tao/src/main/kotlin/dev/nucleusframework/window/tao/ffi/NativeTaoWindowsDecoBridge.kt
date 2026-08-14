@@ -61,6 +61,17 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     /**
+     * Sets the DWM 1px frame colour so the contour follows Win11's rounded
+     * HWND clip. [visible] false hides it (maximized / fullscreen).
+     */
+    @JvmStatic
+    external fun nativeSetBorderColor(
+        hwnd: Long,
+        argb: Int,
+        visible: Boolean,
+    )
+
+    /**
      * Applies a system backdrop, where [style] is the
      * `DWM_SYSTEMBACKDROP_TYPE` wire value — see
      * [dev.nucleusframework.window.WindowsBackdropStyle]. Degrades across

@@ -4,15 +4,22 @@ package dev.nucleusframework.window.tao.deco
 
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.internal.insideBorder
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
+import dev.nucleusframework.window.tao.LocalTaoWindow
+import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 
 // Soft elevation stroke layered under a dialog's regular border to lift it off
 // the (dimmed) parent. The window-border layer runs above where the app theme
@@ -38,6 +45,10 @@ private val DialogElevationStroke = Color(0x1F000000)
  *
  * Returns [Modifier] (no-op) when the window is maximized/fullscreen — the
  * border would otherwise overflow into the system reserved area.
+ *
+ * On Windows the contour is DWM's 1px frame (`DWMWA_BORDER_COLOR`), not a
+ * Compose stroke. A client-edge stroke is clipped by the rounded HWND or,
+ * if inset, reads as a second frame around the window (#526).
  */
 @Composable
 internal fun rememberUndecoratedWindowBorder(
@@ -47,8 +58,21 @@ internal fun rememberUndecoratedWindowBorder(
     kdeCornerArc: Float,
     isDialog: Boolean = false,
 ): Modifier {
-    if (state.isMaximized || state.isFullscreen) return Modifier
     val style = LocalDecoratedWindowStyle.current
+    val color by style.colors.borderFor(state)
+    if (Platform.Current == Platform.Windows) {
+        val window = LocalTaoWindow.current
+        val showFrame = !state.isMaximized && !state.isFullscreen
+        val frameArgb = color.compositeOver(style.colors.background).toArgb()
+        SideEffect {
+            val hwnd = window?.let { NativeTaoBridge.nativeHwndHandle(it.handle) } ?: 0L
+            if (hwnd != 0L && NativeTaoWindowsDecoBridge.isLoaded) {
+                NativeTaoWindowsDecoBridge.nativeSetBorderColor(hwnd, frameArgb, showFrame)
+            }
+        }
+        return Modifier
+    }
+    if (state.isMaximized || state.isFullscreen) return Modifier
     val borderShape =
         when {
             // Tiled/snapped windows sit flush against the screen edge with
@@ -65,18 +89,16 @@ internal fun rememberUndecoratedWindowBorder(
                     bottomStart = 0.dp,
                     bottomEnd = 0.dp,
                 )
-            // Win11 DWMWCP_ROUND is 8 logical px. A square stroke on a
-            // rounded HWND is clipped at the corners and reads as a box.
-            Platform.Current == Platform.Windows -> RoundedCornerShape(8.dp)
             else -> RoundedCornerShape(0.dp)
         }
-    val color by style.colors.borderFor(state)
     var modifier =
-        Modifier.insideBorder(
-            width = style.metrics.borderWidth,
-            color = color,
-            shape = borderShape,
-        )
+        Modifier
+            .clip(borderShape)
+            .insideBorder(
+                width = style.metrics.borderWidth,
+                color = color,
+                shape = borderShape,
+            )
     // Linux dialogs are undecorated, so the compositor draws no drop shadow —
     // lift them with an extra elevation stroke. Gated on a known Linux DE
     // (Windows passes Unknown) to keep native-shadowed platforms untouched.
