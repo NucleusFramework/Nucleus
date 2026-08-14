@@ -45,7 +45,6 @@
     <ID>UndocumentedPublicFunction:DecoratedWindowCore.kt:DecoratedWindowState$public fun copy: DecoratedWindowState</ID>
     <ID>UndocumentedPublicFunction:DecoratedWindowCore.kt:DecoratedWindowState.Companion$public fun of: DecoratedWindowState</ID>
     <ID>UndocumentedPublicFunction:DecoratedWindowStyling.kt:DecoratedWindowColors$@Composable public fun borderFor: State&lt;Color&gt;</ID>
-    <ID>UndocumentedPublicFunction:InsideBorderModifier.kt:public fun Modifier.insideBorder: Modifier</ID>
     <ID>UndocumentedPublicFunction:LinuxTitleBarIconSet.kt:@Composable public fun linuxTitleBarIcons: LinuxTitleBarIconSet</ID>
     <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:@Suppress("FunctionNaming") @Composable public fun NucleusDecoratedWindowTheme</ID>
     <ID>UndocumentedPublicFunction:NucleusDecoratedWindowTheme.kt:DecoratedWindowDefaults$public fun darkTitleBarStyle: TitleBarStyle</ID>
