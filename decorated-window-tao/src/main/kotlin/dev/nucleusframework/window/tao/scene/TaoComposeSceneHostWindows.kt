@@ -4,6 +4,7 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
@@ -194,8 +196,7 @@ internal class TaoComposeSceneHostWindows(
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
-    private val scaleState: androidx.compose.runtime.MutableState<Float> =
-        androidx.compose.runtime.mutableStateOf(1f)
+    private val scaleState: MutableState<Float> = mutableStateOf(1f)
 
     /** True while the OS modal resize/move loop is active. */
     private var resizeLoopActive: Boolean = false
@@ -871,8 +872,8 @@ internal class TaoComposeSceneHostWindows(
             // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
             ProvideTaoWindowsScrollConfig {
                 TaoTextToolbarHost(textToolbar) {
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(scaleState.value),
+                    CompositionLocalProvider(
+                        LocalDensity provides Density(scaleState.value),
                     ) {
                         content()
                     }

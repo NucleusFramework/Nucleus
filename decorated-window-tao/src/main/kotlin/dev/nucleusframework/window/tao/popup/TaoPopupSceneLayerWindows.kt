@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -12,6 +14,8 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
@@ -56,11 +60,9 @@ internal class TaoPopupSceneLayerWindows(
     @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
 ) : ComposeSceneLayer {
     private var _density = initialDensity
-    private val densityState: androidx.compose.runtime.MutableState<Density> =
-        androidx.compose.runtime.mutableStateOf(initialDensity)
+    private val densityState: MutableState<Density> = mutableStateOf(initialDensity)
     private var _layoutDirection = initialLayoutDirection
-    private val layoutDirectionState: androidx.compose.runtime.MutableState<LayoutDirection> =
-        androidx.compose.runtime.mutableStateOf(initialLayoutDirection)
+    private val layoutDirectionState: MutableState<LayoutDirection> = mutableStateOf(initialLayoutDirection)
     private var _focusable = initialFocusable
     private var _bounds: IntRect = IntRect.Zero
     private var _scrimColor: Color? = null
@@ -286,7 +288,6 @@ internal class TaoPopupSceneLayerWindows(
     override var boundsInWindow: IntRect
         get() = _bounds
         set(value) {
-            val oldBounds = _bounds
             _bounds = value
             updateDrawBoundsFromBounds()
             host.requestRedraw()
@@ -327,8 +328,8 @@ internal class TaoPopupSceneLayerWindows(
             val locals = _compositionLocalContext
             val body: @Composable () -> Unit = {
                 CompositionLocalProvider(
-                    androidx.compose.ui.platform.LocalDensity provides densityState.value,
-                    androidx.compose.ui.platform.LocalLayoutDirection provides layoutDirectionState.value,
+                    LocalDensity provides densityState.value,
+                    LocalLayoutDirection provides layoutDirectionState.value,
                 ) {
                     content()
                 }
