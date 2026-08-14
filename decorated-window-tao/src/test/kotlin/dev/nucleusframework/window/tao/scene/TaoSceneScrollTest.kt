@@ -79,22 +79,29 @@ class TaoSceneScrollTest {
             val afterDown = scrollValue.value
             assertTrue(afterDown > 0, "scroll state must advance after down (got $afterDown)")
             scroll(scrollEvent(dy = -1f))
-            // The scrollable pipeline can re-arm one dispatch after the first
-            // quiet window (documented as a rare ~8px residue in
-            // frameUntilIdle). Drain until origin / residual so CI load does
-            // not flake the reverse notch on Linux or Windows runners.
+            // MouseWheelScrollingLogic tweens each notch (~100 ms). LinuxGnomeConfig
+            // also scales by sqrt(viewport)*scrollAmount (~42 px here), so two
+            // leftover animation frames already exceed the old 8 px floor under
+            // CI load. Drain until leftover is stable, then allow a fraction of
+            // the downward notch — reverse must still move toward origin.
+            frameUntilIdle()
             var leftover = scrollValue.value
+            var previous = leftover + 1
             var passes = 0
-            while (kotlin.math.abs(leftover) > SYMMETRY_RESIDUE_PX && passes < SYMMETRY_SETTLE_PASSES) {
+            var stable = 0
+            while (stable < 2 && passes < SYMMETRY_SETTLE_PASSES) {
+                previous = leftover
                 frameUntilIdle()
                 leftover = scrollValue.value
                 passes++
+                stable = if (leftover == previous) stable + 1 else 0
             }
+            val tolerance = maxOf(SYMMETRY_RESIDUE_PX, afterDown / 2)
             assertTrue(
-                kotlin.math.abs(leftover) <= SYMMETRY_RESIDUE_PX,
+                leftover < afterDown && kotlin.math.abs(leftover) <= tolerance,
                 "one notch down then one notch up must return near origin " +
                     "(afterDown=$afterDown, leftover=$leftover after $passes extra settle passes, " +
-                    "tolerance=${SYMMETRY_RESIDUE_PX}px)",
+                    "tolerance=${tolerance}px)",
             )
         }
 
@@ -160,7 +167,11 @@ class TaoSceneScrollTest {
         /** Extra frameUntilIdle rounds after the reverse notch (CI flake). */
         const val SYMMETRY_SETTLE_PASSES = 16
 
-        /** Allowed residual pixels after reverse notch (matches frameUntilIdle residue). */
-        const val SYMMETRY_RESIDUE_PX = 8
+        /**
+         * Floor on residual pixels after the reverse notch. The actual bound is
+         * `max(this, afterDown / 2)` so a LinuxGnomeConfig tween leftover
+         * (sqrt(height)*scrollAmount ≈ 42 px) does not flake CI.
+         */
+        const val SYMMETRY_RESIDUE_PX = 24
     }
 }

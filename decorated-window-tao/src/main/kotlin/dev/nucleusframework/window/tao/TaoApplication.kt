@@ -173,5 +173,12 @@ public object TaoApplication {
         ) {
             lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed)
         }
+
+        override fun onImeReplaceCommit(
+            handle: Long,
+            text: String,
+        ) {
+            lookup(handle)?.dispatchImeReplaceCommit(text)
+        }
     }
 }

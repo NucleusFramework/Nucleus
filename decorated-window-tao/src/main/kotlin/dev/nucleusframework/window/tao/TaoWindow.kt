@@ -894,6 +894,13 @@ public class TaoWindow internal constructor(
         keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint)
     }
 
+    @Volatile
+    internal var imeReplaceCommit: ((String) -> Unit)? = null
+
+    internal fun dispatchImeReplaceCommit(text: String) {
+        imeReplaceCommit?.invoke(text)
+    }
+
     @Suppress("CyclomaticComplexMethod")
     internal fun dispatch(
         code: Int,

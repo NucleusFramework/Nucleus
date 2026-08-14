@@ -1,17 +1,18 @@
 // IME input-context activation and caret-rect plumbing.
 
-use jni::objects::JClass;
+use std::ffi::CStr;
+use std::os::raw::c_char;
+
+use jni::objects::{JClass, JValue};
 use jni::sys::{jint, jlong};
 use jni::JNIEnv;
 
 use tao::platform::macos::WindowExtMacOS;
 
-use crate::events::{dispatch_key, EVENT_KEY_DOWN, EVENT_KEY_UP};
-use crate::keymap;
 use crate::platform::macos::ffi::{
     nucleus_tao_activate_input_context, nucleus_tao_set_ime_local_rect,
 };
-use crate::state::WINDOWS;
+use crate::state::{EVENT_CALLBACK, JAVA_VM, WINDOWS};
 
 fn handle_for_ns_view(ns_view_ptr: i64) -> Option<u64> {
     if ns_view_ptr == 0 {
@@ -25,31 +26,38 @@ fn handle_for_ns_view(ns_view_ptr: i64) -> Option<u64> {
         .map(|(h, _)| *h)
 }
 
-/// Called from the ObjC `insertText:` swizzle when PressAndHold replaces a
-/// previously committed character (e → é). Emits Backspace to Compose so
-/// the next `ReceivedImeText` overwrites instead of appending.
-pub(crate) extern "C" fn ime_delete_previous_callback(ns_view: i64, count: i32) {
+/// PressAndHold picked an accent. Compose Desktop replaces the already-
+/// committed base letter via `TextEditingScope`, not a Backspace key.
+pub(crate) extern "C" fn ime_replace_commit_callback(ns_view: i64, utf8: *const c_char) {
+    if utf8.is_null() {
+        return;
+    }
     let Some(handle) = handle_for_ns_view(ns_view) else {
         return;
     };
-    let n = count.clamp(0, 16);
-    for _ in 0..n {
-        dispatch_key(
-            handle,
-            EVENT_KEY_DOWN,
-            8, // AWT VK_BACK_SPACE
-            keymap::LOC_STANDARD,
-            0,
-            0,
-        );
-        dispatch_key(
-            handle,
-            EVENT_KEY_UP,
-            8,
-            keymap::LOC_STANDARD,
-            0,
-            0,
-        );
+    let text = unsafe { CStr::from_ptr(utf8) }.to_string_lossy();
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let Ok(jstr) = env.new_string(text.as_ref()) else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onImeReplaceCommit",
+        "(JLjava/lang/String;)V",
+        &[JValue::Long(handle as jlong), JValue::Object(&jstr.into())],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
     }
 }
 
