@@ -680,38 +680,41 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
 
     update_potentially_stale_modifiers(state, event);
 
-    let pass_along = !is_repeat || !state.is_key_down;
-    if pass_along {
-      // See below for why we do this.
+    // Always feed the event to the input context — including key-repeat
+    // events. AppKit's PressAndHold (long-press a letter → accent picker)
+    // is an input method that only engages on the first *repeat* after the
+    // initial keyDown. The previous `!is_repeat` skip was a leftover from
+    // when characters were synthesized both here and in `insertText:`;
+    // Nucleus inserts solely via `ReceivedImeText`, so repeats no longer
+    // double-type. They either start PressAndHold or produce genuine
+    // key-repeat `insertText:` calls (eeee).
+    //
+    // During an active preedit (dead key or the accent picker) we must
+    // keep `hasMarkedText == YES`. Clearing the ivar made a follow-up
+    // key (e.g. "2" to pick é) look like a regular insert.
+    if !state.in_ime_preedit {
       let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
       let () = msg_send![(*marked_text_ref), release];
       *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
-      state.key_triggered_ime = false;
-
-      // Some keys (and only *some*, with no known reason) don't trigger `insertText`, while others do...
-      // So, we don't give repeats the opportunity to trigger that, since otherwise our hack will cause some
-      // keys to generate twice as many characters.
-      let array: id = msg_send![class!(NSArray), arrayWithObject: event];
-      let () = msg_send![&*this, interpretKeyEvents: array];
     }
-    // The `interpretKeyEvents` above, may invoke `set_marked_text` or `insert_text`,
-    // if the event corresponds to an IME event.
+    state.key_triggered_ime = false;
+
+    let array: id = msg_send![class!(NSArray), arrayWithObject: event];
+    let () = msg_send![&*this, interpretKeyEvents: array];
+
+    // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
     let in_ime = state.key_triggered_ime;
     let key_event = create_key_event(event, true, is_repeat, in_ime, None);
     let is_arrow_key = is_arrow_key(key_event.physical_key);
-    if pass_along {
-      // The `interpretKeyEvents` above, may invoke `set_marked_text` or `insert_text`,
-      // if the event corresponds to an IME event.
-      // If `set_marked_text` or `insert_text` were not invoked, then the IME was deactivated,
-      // and we should cancel the IME session.
-      // When using arrow keys in an IME window, the input context won't invoke the
-      // IME related methods, so in that case we shouldn't cancel the IME session.
-      let is_preediting: bool = state.in_ime_preedit;
-      if is_preediting && !state.key_triggered_ime && !is_arrow_key {
-        // In this case we should cancel the IME session.
-        let () = msg_send![this, unmarkText];
-        state.in_ime_preedit = false;
-      }
+    // If `set_marked_text` or `insert_text` were not invoked, then the IME
+    // was deactivated, and we should cancel the IME session. Arrow keys
+    // inside an IME window don't invoke those methods — don't cancel then.
+    // Repeat keyDowns while PressAndHold is showing the picker also don't
+    // re-enter those methods; cancelling on them would dismiss the picker.
+    let is_preediting: bool = state.in_ime_preedit;
+    if is_preediting && !state.key_triggered_ime && !is_arrow_key && !is_repeat {
+      let () = msg_send![this, unmarkText];
+      state.in_ime_preedit = false;
     }
     let window_event = Event::WindowEvent {
       window_id,

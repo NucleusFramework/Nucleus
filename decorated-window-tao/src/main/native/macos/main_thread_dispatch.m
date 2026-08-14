@@ -65,11 +65,12 @@ void nucleus_tao_install_cmd_q_handler(void) {
 // `ApplePressAndHoldEnabled` user default. We set it everywhere we can — App
 // domain, Argument volatile domain, CFPreferences, registration domain — both
 // from `+load` (= dyld load time, before any Compose/AWT static init) and at
-// runtime. Note: empirically this is **insufficient** for Tao's bare NSView;
-// AppKit's `_NSKeyBindingManager` has additional internal checks tied to
-// NSTextView/NSTextField subclasses that we cannot satisfy from outside.
-// The flag plumbing is kept anyway since it's harmless and required for any
-// future native-image/sub-process scenario.
+// runtime. The picker itself is an input method: it only engages when
+// `interpretKeyEvents:` sees the *repeat* keyDown after the initial press.
+// Tao used to skip those repeats (see vendored `view.rs`); that was the
+// actual blocker, not the NSView class hierarchy. These defaults stay
+// required so a user-level `defaults write -g ApplePressAndHoldEnabled -bool
+// false` cannot silently disable the picker for Nucleus apps.
 static void nucleus_tao_force_press_and_hold(void) {
     @autoreleasepool {
         [[NSUserDefaults standardUserDefaults]
@@ -145,11 +146,83 @@ static NSArray<NSAttributedStringKey> *tao_view_valid_attributes_for_marked_text
     ];
 }
 
+// PressAndHold inserts the base character first (`insertText:@"e"`), then
+// on the first repeat marks it (`setMarkedText:@"e"`) and shows the picker.
+// Picking an accent calls `insertText:@"é"`. Compose has no composition
+// range, so without a delete the field would read "eé". We remember the
+// last committed scalar count and emit that many backspaces before the
+// replacement insert.
+static NSUInteger g_last_inserted_scalars = 0;
+static BOOL g_pending_ime_replace = NO;
+static IMP g_orig_set_marked_text = NULL;
+static IMP g_orig_insert_text = NULL;
+static IMP g_orig_unmark_text = NULL;
+static void (*g_ime_delete_previous)(long ns_view, int count) = NULL;
+
+void nucleus_tao_register_ime_delete_callback(void (*cb)(long, int)) {
+    g_ime_delete_previous = cb;
+}
+
+static NSString *nucleus_string_from_ime_arg(id string) {
+    if ([string isKindOfClass:[NSAttributedString class]]) {
+        return [(NSAttributedString *)string string];
+    }
+    return (NSString *)string;
+}
+
+static NSUInteger nucleus_utf16_scalar_count(NSString *s) {
+    if (!s) return 0;
+    NSUInteger count = 0;
+    NSUInteger len = s.length;
+    for (NSUInteger i = 0; i < len; ) {
+        unichar c = [s characterAtIndex:i];
+        if (CFStringIsSurrogateHighCharacter(c) && i + 1 < len) {
+            i += 2;
+        } else {
+            i += 1;
+        }
+        count++;
+    }
+    return count;
+}
+
+static void nucleus_set_marked_text(
+    id self, SEL sel, id string, NSRange selected, NSRange replacement
+) {
+    if (g_last_inserted_scalars > 0) {
+        g_pending_ime_replace = YES;
+    }
+    if (g_orig_set_marked_text) {
+        ((void (*)(id, SEL, id, NSRange, NSRange))g_orig_set_marked_text)(
+            self, sel, string, selected, replacement
+        );
+    }
+}
+
+static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement) {
+    if (g_pending_ime_replace && g_last_inserted_scalars > 0 && g_ime_delete_previous) {
+        g_ime_delete_previous((long)(__bridge void *)self, (int)g_last_inserted_scalars);
+        g_last_inserted_scalars = 0;
+    }
+    g_pending_ime_replace = NO;
+    if (g_orig_insert_text) {
+        ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
+    }
+    g_last_inserted_scalars = nucleus_utf16_scalar_count(nucleus_string_from_ime_arg(string));
+}
+
+static void nucleus_unmark_text(id self, SEL sel) {
+    g_pending_ime_replace = NO;
+    if (g_orig_unmark_text) {
+        ((void (*)(id, SEL))g_orig_unmark_text)(self, sel);
+    }
+}
+
 static void nucleus_tao_swizzle_view_methods_once(void) {
+    Class taoViewClass = objc_getClass("TaoView");
+    if (!taoViewClass) return;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        Class taoViewClass = objc_getClass("TaoView");
-        if (!taoViewClass) return;
         class_replaceMethod(taoViewClass,
                             @selector(selectedRange),
                             (IMP)tao_view_selected_range,
@@ -162,6 +235,22 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
                             @selector(validAttributesForMarkedText),
                             (IMP)tao_view_valid_attributes_for_marked_text,
                             "@@:");
+        Method setMarked = class_getInstanceMethod(
+            taoViewClass, @selector(setMarkedText:selectedRange:replacementRange:)
+        );
+        if (setMarked) {
+            g_orig_set_marked_text = method_setImplementation(setMarked, (IMP)nucleus_set_marked_text);
+        }
+        Method insertText = class_getInstanceMethod(
+            taoViewClass, @selector(insertText:replacementRange:)
+        );
+        if (insertText) {
+            g_orig_insert_text = method_setImplementation(insertText, (IMP)nucleus_insert_text);
+        }
+        Method unmark = class_getInstanceMethod(taoViewClass, @selector(unmarkText));
+        if (unmark) {
+            g_orig_unmark_text = method_setImplementation(unmark, (IMP)nucleus_unmark_text);
+        }
     });
 }
 
