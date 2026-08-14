@@ -68,6 +68,28 @@ class TaoSceneKeyboardTest {
         }
 
     @Test
+    fun `backspace then typed accent replaces the last character`() =
+        runTaoSceneTest {
+            var value by mutableStateOf("")
+            setContent {
+                Box(Modifier.fillMaxSize()) {
+                    BasicTextField(
+                        value = value,
+                        onValueChange = { value = it },
+                        modifier = Modifier.size(200.dp, 30.dp),
+                    )
+                }
+            }
+            click(100f, 15f)
+            typeText("e")
+            pressKey(TaoSceneTestScope.NamedKey.Backspace)
+            // Same sequence the macOS PressAndHold path now emits when the
+            // user picks é: Backspace the already-committed e, then KEY_TYPED é.
+            keyDown(vkCode = 'E'.code, codePoint = 'é'.code)
+            assertEquals("é", value)
+        }
+
+    @Test
     fun `typed text lands in the semantics tree`() =
         runTaoSceneTest {
             var value by mutableStateOf("")

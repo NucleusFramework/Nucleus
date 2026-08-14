@@ -147,20 +147,44 @@ static NSArray<NSAttributedStringKey> *tao_view_valid_attributes_for_marked_text
 }
 
 // PressAndHold inserts the base character first (`insertText:@"e"`), then
-// on the first repeat marks it (`setMarkedText:@"e"`) and shows the picker.
-// Picking an accent calls `insertText:@"é"`. Compose has no composition
-// range, so without a delete the field would read "eé". We remember the
-// last committed scalar count and emit that many backspaces before the
-// replacement insert.
+// later commits the accent (`insertText:@"é"`). Compose has no marked-text
+// range, so the second insert would append ("eé") unless we delete the
+// first. AppKit often never calls `setMarkedText:` for this picker — we
+// also treat a *different* `insertText:` in the same key-hold session as a
+// replacement. Same-string repeats (`eeee` with PressAndHold off) append.
+//
+// Deletes are queued 1:1 with each `insertText:` and consumed when Rust
+// handles `ReceivedImeText`. Sending Backspace from inside
+// `interpretKeyEvents:` was ignored by Compose (reentrant key dispatch).
 static NSUInteger g_last_inserted_scalars = 0;
+static NSString *g_last_inserted = nil;
+static BOOL g_session_has_insert = NO;
 static BOOL g_pending_ime_replace = NO;
+static unsigned short g_session_key_code = 0xFFFF;
 static IMP g_orig_set_marked_text = NULL;
 static IMP g_orig_insert_text = NULL;
 static IMP g_orig_unmark_text = NULL;
-static void (*g_ime_delete_previous)(long ns_view, int count) = NULL;
+static IMP g_orig_key_up = NULL;
 
-void nucleus_tao_register_ime_delete_callback(void (*cb)(long, int)) {
-    g_ime_delete_previous = cb;
+#define IME_DELETE_Q_CAP 8
+static int g_ime_delete_q[IME_DELETE_Q_CAP];
+static unsigned g_ime_delete_head = 0;
+static unsigned g_ime_delete_tail = 0;
+
+static void nucleus_ime_enqueue_delete(int count) {
+    unsigned next = (g_ime_delete_tail + 1u) % IME_DELETE_Q_CAP;
+    if (next == g_ime_delete_head) {
+        g_ime_delete_head = (g_ime_delete_head + 1u) % IME_DELETE_Q_CAP;
+    }
+    g_ime_delete_q[g_ime_delete_tail] = count;
+    g_ime_delete_tail = next;
+}
+
+int nucleus_tao_take_ime_delete_count(void) {
+    if (g_ime_delete_head == g_ime_delete_tail) return 0;
+    int n = g_ime_delete_q[g_ime_delete_head];
+    g_ime_delete_head = (g_ime_delete_head + 1u) % IME_DELETE_Q_CAP;
+    return n;
 }
 
 static NSString *nucleus_string_from_ime_arg(id string) {
@@ -186,10 +210,18 @@ static NSUInteger nucleus_utf16_scalar_count(NSString *s) {
     return count;
 }
 
+static void nucleus_clear_ime_session(void) {
+    g_session_has_insert = NO;
+    g_pending_ime_replace = NO;
+    g_last_inserted_scalars = 0;
+    g_last_inserted = nil;
+    g_session_key_code = 0xFFFF;
+}
+
 static void nucleus_set_marked_text(
     id self, SEL sel, id string, NSRange selected, NSRange replacement
 ) {
-    if (g_last_inserted_scalars > 0) {
+    if (g_session_has_insert && g_last_inserted_scalars > 0) {
         g_pending_ime_replace = YES;
     }
     if (g_orig_set_marked_text) {
@@ -200,21 +232,46 @@ static void nucleus_set_marked_text(
 }
 
 static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement) {
-    if (g_pending_ime_replace && g_last_inserted_scalars > 0 && g_ime_delete_previous) {
-        g_ime_delete_previous((long)(__bridge void *)self, (int)g_last_inserted_scalars);
-        g_last_inserted_scalars = 0;
+    NSString *incoming = nucleus_string_from_ime_arg(string) ?: @"";
+    BOOL replace = g_pending_ime_replace;
+    if (!replace && g_session_has_insert && g_last_inserted_scalars > 0) {
+        replace = (g_last_inserted == nil) || ![incoming isEqualToString:g_last_inserted];
     }
+    int deleteCount = (replace && g_last_inserted_scalars > 0)
+        ? (int)g_last_inserted_scalars
+        : 0;
+    nucleus_ime_enqueue_delete(deleteCount);
     g_pending_ime_replace = NO;
     if (g_orig_insert_text) {
         ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
     }
-    g_last_inserted_scalars = nucleus_utf16_scalar_count(nucleus_string_from_ime_arg(string));
+    g_last_inserted_scalars = nucleus_utf16_scalar_count(incoming);
+    g_last_inserted = [incoming copy];
+    if (!g_session_has_insert) {
+        NSEvent *current = NSApp.currentEvent;
+        if (current && current.type == NSEventTypeKeyDown) {
+            g_session_key_code = current.keyCode;
+        }
+    }
+    g_session_has_insert = YES;
 }
 
 static void nucleus_unmark_text(id self, SEL sel) {
     g_pending_ime_replace = NO;
     if (g_orig_unmark_text) {
         ((void (*)(id, SEL))g_orig_unmark_text)(self, sel);
+    }
+}
+
+static void nucleus_key_up(id self, SEL sel, NSEvent *event) {
+    if (g_orig_key_up) {
+        ((void (*)(id, SEL, NSEvent *))g_orig_key_up)(self, sel, event);
+    }
+    // Only end the hold session when the key that produced the base
+    // character is released. A number-key keyUp (picker shortcut) must
+    // not drop the session before PressAndHold commits.
+    if (event && event.keyCode == g_session_key_code) {
+        nucleus_clear_ime_session();
     }
 }
 
@@ -250,6 +307,10 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
         Method unmark = class_getInstanceMethod(taoViewClass, @selector(unmarkText));
         if (unmark) {
             g_orig_unmark_text = method_setImplementation(unmark, (IMP)nucleus_unmark_text);
+        }
+        Method keyUp = class_getInstanceMethod(taoViewClass, @selector(keyUp:));
+        if (keyUp) {
+            g_orig_key_up = method_setImplementation(keyUp, (IMP)nucleus_key_up);
         }
     });
 }

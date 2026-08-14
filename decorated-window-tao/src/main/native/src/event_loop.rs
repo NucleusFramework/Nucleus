@@ -145,9 +145,6 @@ pub(crate) fn run_event_loop_blocking() {
     unsafe {
         crate::platform::macos::ffi::nucleus_tao_install_cmd_q_handler();
         crate::platform::macos::ffi::nucleus_tao_enable_press_and_hold();
-        crate::platform::macos::ffi::nucleus_tao_register_ime_delete_callback(
-            crate::platform::macos::ime::ime_delete_previous_callback,
-        );
         crate::platform::macos::ffi::nucleus_tao_install_drag_monitor();
         crate::platform::macos::ffi::nucleus_tao_register_trackpad_gesture_callback(
             crate::platform::macos::trackpad_gesture_callback,
@@ -686,6 +683,36 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     WindowEvent::ReceivedImeText(text) => {
                         let mods = current_modifier_bits();
+                        // macOS PressAndHold: a queued delete count means this
+                        // commit replaces the character already typed for the
+                        // same key-hold (e → é). Applied here, not inside
+                        // interpretKeyEvents:, so Compose sees a normal
+                        // Backspace then KEY_TYPED.
+                        #[cfg(target_os = "macos")]
+                        {
+                            let n = unsafe {
+                                crate::platform::macos::ffi::nucleus_tao_take_ime_delete_count()
+                            }
+                            .clamp(0, 16);
+                            for _ in 0..n {
+                                dispatch_key(
+                                    handle,
+                                    EVENT_KEY_DOWN,
+                                    8, // AWT VK_BACK_SPACE
+                                    keymap::LOC_STANDARD,
+                                    0,
+                                    0,
+                                );
+                                dispatch_key(
+                                    handle,
+                                    EVENT_KEY_UP,
+                                    8,
+                                    keymap::LOC_STANDARD,
+                                    0,
+                                    0,
+                                );
+                            }
+                        }
                         for ch in text.chars() {
                             dispatch_key(
                                 handle,
