@@ -128,6 +128,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneKeyboardTest: backspace removes the last character through the named-key table") {
             TaoSceneKeyboardTest().`backspace removes the last character through the named-key table`()
         }
+        run("TaoSceneKeyboardTest: backspace then typed accent replaces the last character") {
+            TaoSceneKeyboardTest().`backspace then typed accent replaces the last character`()
+        }
         run("TaoSceneKeyboardTest: typed text lands in the semantics tree") {
             TaoSceneKeyboardTest().`typed text lands in the semantics tree`()
         }
