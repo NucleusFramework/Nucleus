@@ -257,16 +257,24 @@ private fun centerOnParentWindows(
     if (hwnd == 0L) return null
     val parentRectPhys = NativeTaoWindowsDecoBridge.nativeGetWindowRect(hwnd) ?: return null
 
-    val scaleMilli = NativeTaoBridge.nativeScaleFactor(parent.handle).coerceAtLeast(1)
-    val scale = scaleMilli / 1000.0
+    val parentScaleMilli = NativeTaoBridge.nativeScaleFactor(parent.handle).coerceAtLeast(1)
+    val parentScale = parentScaleMilli / 1000.0
 
-    val parentXDp = parentRectPhys[0] / scale
-    val parentYDp = parentRectPhys[1] / scale
-    val parentWDp = parentRectPhys[2] / scale
-    val parentHDp = parentRectPhys[3] / scale
+    // Target physical center in virtual screen coordinates:
+    val dialogWidthPhys = dialogWidthDp * parentScale
+    val dialogHeightPhys = dialogHeightDp * parentScale
+    val targetCenterXPhys = parentRectPhys[0] + (parentRectPhys[2] - dialogWidthPhys) / 2.0
+    val targetCenterYPhys = parentRectPhys[1] + (parentRectPhys[3] - dialogHeightPhys) / 2.0
 
-    val cx = (parentXDp + (parentWDp - dialogWidthDp) / 2.0).toFloat()
-    val cy = (parentYDp + (parentHDp - dialogHeightDp) / 2.0).toFloat()
+    // Tao creates newly constructed windows at the primary monitor's initial scale.
+    // When Tao applies LogicalPosition(x, y), it multiplies by that initial scale.
+    // Converting target physical coordinates by the initial scale guarantees that
+    // Tao's multiplication reproduces the exact physical pixel location on the target monitor.
+    val initScaleMilli = NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorScaleMilli().coerceAtLeast(1)
+    val initScale = initScaleMilli / 1000.0
+
+    val cx = (targetCenterXPhys / initScale).toFloat()
+    val cy = (targetCenterYPhys / initScale).toFloat()
     return WindowPosition.Absolute(cx.dp, cy.dp)
 }
 

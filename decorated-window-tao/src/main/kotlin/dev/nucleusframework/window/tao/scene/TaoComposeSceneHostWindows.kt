@@ -4,6 +4,7 @@ package dev.nucleusframework.window.tao.scene
 
 import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -17,6 +18,7 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
@@ -194,6 +196,7 @@ internal class TaoComposeSceneHostWindows(
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
+    private val scaleState: MutableState<Float> = mutableStateOf(1f)
 
     /** True while the OS modal resize/move loop is active. */
     private var resizeLoopActive: Boolean = false
@@ -281,6 +284,7 @@ internal class TaoComposeSceneHostWindows(
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
         scale = NativeTaoBridge.nativeScaleFactor(window.handle) / 1000f
+        scaleState.value = scale
         // Borderless overlays have no caption chrome: keep the deco zone at 0
         // so we don't reserve a phantom 28px title-bar hit band.
         val initialTitleBarPx =
@@ -867,7 +871,13 @@ internal class TaoComposeSceneHostWindows(
             // Stock Compose Desktop Windows wheel behavior; only the
             // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
             ProvideTaoWindowsScrollConfig {
-                TaoTextToolbarHost(textToolbar, content)
+                TaoTextToolbarHost(textToolbar) {
+                    CompositionLocalProvider(
+                        LocalDensity provides Density(scaleState.value),
+                    ) {
+                        content()
+                    }
+                }
             }
         }
     }
@@ -1091,6 +1101,7 @@ internal class TaoComposeSceneHostWindows(
     fun onScaleFactorChanged(newScale: Float) {
         if (newScale == scale) return
         scale = newScale
+        scaleState.value = newScale
         scene?.density = Density(scale)
         NativeTaoGlBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         // Re-publish title-bar height in physical pixels so the deco WndProc
@@ -1463,16 +1474,10 @@ internal class TaoComposeSceneHostWindows(
             override val scale: Float get() = outer.scale
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val workAreaSize: IntSize get() {
-                // Use the primary monitor's work area resolved via the
-                // existing JNI bridge — avoids touching AWT
-                // (GraphicsEnvironment.getLocalGraphicsEnvironment) on the
-                // Tao UI thread, which on Windows can lazily initialise
-                // Java2D's D3D pipeline and conflict with the ES context
-                // bound to this thread (manifested as a hang + crash when
-                // a second host attached, e.g. on DecoratedDialog open).
                 if (!NativeTaoWindowsDecoBridge.isLoaded) return parentWindowSize
                 val area =
-                    NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()
+                    NativeTaoWindowsDecoBridge.nativeOwnerMonitorWorkArea(outer.hwnd)
+                        ?: NativeTaoWindowsDecoBridge.nativeGetPrimaryMonitorWorkArea()
                         ?: return parentWindowSize
                 if (area.size < 4) return parentWindowSize
                 val w = area[2].toInt().coerceAtLeast(1)

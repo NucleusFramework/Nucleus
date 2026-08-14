@@ -8,7 +8,6 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
@@ -145,7 +144,6 @@ internal object TaoDecoratedWindowAdapter {
                 // parentLayoutDirection, captured outside.
                 val bridge = LocalTaoCompositionLocalContextBridge.current
                 SideEffect { bridge?.invoke(outerLocals) }
-                val sceneDensity = LocalDensity.current
                 // The app theme's own LocalTextContextMenu (e.g. Jewel's) is not a
                 // scene-owned local, so it does come through outerLocals and shadows
                 // the scene's selection observer — silently breaking cross-process
@@ -157,7 +155,6 @@ internal object TaoDecoratedWindowAdapter {
                 val sceneTaoWindow = LocalTaoWindow.current
                 val sceneTitleBarInfo = LocalTitleBarInfo.current
                 CompositionLocalProvider(
-                    LocalDensity provides sceneDensity,
                     LocalLayoutDirection provides parentLayoutDirection,
                     LocalTaoTextSelectionA11yPublisher provides scenePublisher,
                     LocalNucleusBackend provides NucleusBackend.Tao,

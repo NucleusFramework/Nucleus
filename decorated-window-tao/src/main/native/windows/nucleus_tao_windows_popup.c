@@ -611,15 +611,10 @@ static LRESULT CALLBACK popupWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         return 0;
     }
 
-    case WM_DPICHANGED: {
-        const RECT *prc = (const RECT *)l;
-        if (prc) {
-            SetWindowPos(hwnd, NULL, prc->left, prc->top,
-                         prc->right - prc->left, prc->bottom - prc->top,
-                         SWP_NOZORDER | SWP_NOACTIVATE);
-        }
+    case WM_DPICHANGED:
+        /* Compose layer explicitly controls popup position and physical pixel size.
+         * Do not let OS auto-scale the HWND behind Compose's back. */
         return 0;
-    }
 
     case WM_ERASEBKGND:
         return 1;

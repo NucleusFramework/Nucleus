@@ -1663,6 +1663,53 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPri
     return (jint)((dpi * 1000) / 96);
 }
 
+/* Returns [x, y, width, height] of the work area (screen minus taskbar) of the
+ * monitor hosting hwnd in physical pixels. If hwnd is NULL or invalid, falls
+ * back to the primary monitor work area. */
+JNIEXPORT jlongArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeOwnerMonitorWorkArea(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    MONITORINFO mi;
+    memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+
+    HMONITOR mon = NULL;
+    if (hwnd && IsWindow(hwnd)) {
+        mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    }
+    if (!mon) {
+        POINT ptZero = {0, 0};
+        mon = MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+    }
+
+    if (mon && GetMonitorInfoW(mon, &mi)) {
+        jlongArray arr = (*env)->NewLongArray(env, 4);
+        if (!arr) return NULL;
+        jlong values[4];
+        values[0] = (jlong)mi.rcWork.left;
+        values[1] = (jlong)mi.rcWork.top;
+        values[2] = (jlong)(mi.rcWork.right - mi.rcWork.left);
+        values[3] = (jlong)(mi.rcWork.bottom - mi.rcWork.top);
+        (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+        return arr;
+    }
+
+    RECT r;
+    if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &r, 0)) return NULL;
+    jlongArray arr = (*env)->NewLongArray(env, 4);
+    if (!arr) return NULL;
+    jlong values[4];
+    values[0] = (jlong)r.left;
+    values[1] = (jlong)r.top;
+    values[2] = (jlong)(r.right - r.left);
+    values[3] = (jlong)(r.bottom - r.top);
+    (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}
+
 /* Returns [x, y, width, height] of the primary monitor's work area (full
  * screen minus the taskbar) in physical pixels. Used by DecoratedWindow to
  * resolve [WindowPosition.Aligned] for the initial outer position. */
@@ -1683,6 +1730,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPri
     (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
     return arr;
 }
+
+
 
 /* Converts a window-client physical pixel position to screen physical
  * pixels. Returns [screenX, screenY] or NULL on failure. Used by the

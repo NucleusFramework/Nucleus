@@ -127,14 +127,22 @@ The existing decoupling between `innerScene.size` (layout constraint, fixed) and
 1. ✅ **macOS JNI** — `nativeOwnerWorkAreaSize` in `NativeMetalBridge` + impl in `NucleusTaoMetal.m` (packs `(width<<32)|height`, returns 0 on unresolved screen).
 2. ✅ **macOS host** — `workAreaSize` added to `TaoPopupHost` (default = `parentWindowSize` fallback), implemented in `TaoComposeSceneHost.popupHost()`, forwarded in `NativeViewOverlayController.overlayPopupHost`.
 3. ✅ **macOS layer** — `TaoPopupSceneLayer` feeds `sceneLayoutSize = host.workAreaSize` to `CanvasLayersComposeScene(size = …)`. `widthPx/heightPx` (CAMetalLayer drawable + NSPanel) kept at `parentWindowSize` to avoid allocating a full-screen Metal drawable up front.
-4. ⏳ **Windows JNI** — add `nativeOwnerMonitorWorkArea` to `NativeTaoWindowsDecoBridge` + native side in `nucleus_tao_windows_deco.c`.
-5. ⏳ **Windows host** — same surface change in `TaoPopupHostWindows` + `TaoComposeSceneHostWindows` + `NativeViewOverlayControllerWindows`.
-6. ⏳ **Windows layer** — swap constant in `TaoPopupSceneLayerWindows`.
-7. ⏳ **GraalVM metadata** — outbound JNI methods don't need explicit registration (resolved by symbol lookup); revisit if a new callback class is introduced.
+4. ✅ **Windows JNI** — add `nativeOwnerMonitorWorkArea` to `NativeTaoWindowsDecoBridge` + native side in `nucleus_tao_windows_deco.c`.
+5. ✅ **Windows host** — same surface change in `TaoPopupHostWindows` + `TaoComposeSceneHostWindows` + `NativeViewOverlayControllerWindows`.
+6. ✅ **Windows layer** — swap constant in `TaoPopupSceneLayerWindows`.
+7. ✅ **GraalVM metadata** — outbound JNI methods don't need explicit registration (resolved by symbol lookup); revisit if a new callback class is introduced.
 8. **Manual verify** on each OS:
    - `nucleus-demo` app: open the title-bar tooltips at various window sizes — they should never be clipped by owner height.
    - Resize main window to 400×300 in the gallery; open the `DropdownMenu` on the gallery's color screen. Content should lay out unconstrained relative to the screen, not the owner.
    - Drag the window to the right edge; open a context menu that would extend past the owner's right edge. Expect normal layout (Compose's PositionProvider flips it, since now it knows the full space).
+
+## Multi-Monitor DPI Synchronization (Windows)
+
+Under Windows Per-Monitor DPI Aware v2 across mixed-DPI displays (e.g. 150% 4K primary + 100% 1080p secondary):
+1. **Creation Coordinates**: `TaoPopupSceneLayerWindows.ensurePanel` creates the native panel at the parent window's current coordinates (`initX, initY`) rather than off-screen (`-10000, -10000`). Off-screen coordinates were assigned to the primary display by OS default, causing a synthetic cross-monitor DPI leap when moved to the secondary display.
+2. **WM_DPICHANGED Handling**: `popupWndProc` in `nucleus_tao_windows_popup.c` ignores `WM_DPICHANGED` without calling `SetWindowPos`. Because Compose Multiplatform's layout engine already measures and positions the popup directly in physical pixels for the target monitor, letting the Win32 message loop auto-scale the HWND caused double-scaling / physical clipping (e.g. 102px window shrunk to 68px).
+3. **Reactive LocalDensity**: `TaoPopupSceneLayerWindows` provides `CompositionLocalProvider(LocalDensity provides densityState.value)` inside `innerScene.setContent`, ensuring font rasterization, `Paragraph` layout, and container measurements stay perfectly in sync with the current monitor's DPI.
+4. **Adapter Density Decoupling**: Removed static `sceneDensity` snapshot in `TaoDecoratedWindowAdapter.kt` that previously locked `LocalDensity` to startup display scale.
 
 ## Out of scope but worth noting later
 
