@@ -24,8 +24,8 @@ class WindowsCaptionButtonStyleTest {
 
     @Test
     fun fadeOutDurationsMatchTerminalCaptionButtons() {
-        assertEquals(150, WindowsCaptionButtonStyle.BackgroundFadeOutMillis)
-        assertEquals(100, WindowsCaptionButtonStyle.ForegroundFadeOutMillis)
+        assertEquals(150, WindowsCaptionButtonStyle.BACKGROUND_FADE_OUT_MILLIS)
+        assertEquals(100, WindowsCaptionButtonStyle.FOREGROUND_FADE_OUT_MILLIS)
     }
 
     @Test

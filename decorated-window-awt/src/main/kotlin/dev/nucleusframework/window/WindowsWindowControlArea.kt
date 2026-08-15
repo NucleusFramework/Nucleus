@@ -165,7 +165,7 @@ private fun TitleBarScope.WindowsCaptionButton(
         animateWindowsCaptionColor(
             targetBackground,
             appearing = appearing,
-            durationMillis = WindowsCaptionButtonStyle.BackgroundFadeOutMillis,
+            durationMillis = WindowsCaptionButtonStyle.BACKGROUND_FADE_OUT_MILLIS,
         )
 
     val isCloseHovered =

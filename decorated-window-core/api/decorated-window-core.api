@@ -670,8 +670,8 @@ public final class dev/nucleusframework/window/internal/InsideBorderModifierKt {
 
 public final class dev/nucleusframework/window/internal/WindowsCaptionButtonStyle {
 	public static final field $stable I
-	public static final field BackgroundFadeOutMillis I
-	public static final field ForegroundFadeOutMillis I
+	public static final field BACKGROUND_FADE_OUT_MILLIS I
+	public static final field FOREGROUND_FADE_OUT_MILLIS I
 	public static final field INSTANCE Ldev/nucleusframework/window/internal/WindowsCaptionButtonStyle;
 	public final fun getCloseHovered-0d7_KjU ()J
 	public final fun getCloseIdle-0d7_KjU ()J

@@ -47,10 +47,10 @@ public object WindowsCaptionButtonStyle {
     public val CloseIdle: Color = Color(0x00C42B1C)
 
     /** `MinMaxCloseControl.xaml` PointerOver → Normal background duration. */
-    public const val BackgroundFadeOutMillis: Int = 150
+    public const val BACKGROUND_FADE_OUT_MILLIS: Int = 150
 
     /** `MinMaxCloseControl.xaml` PointerOver → Normal glyph duration. */
-    public const val ForegroundFadeOutMillis: Int = 100
+    public const val FOREGROUND_FADE_OUT_MILLIS: Int = 100
 }
 
 /**

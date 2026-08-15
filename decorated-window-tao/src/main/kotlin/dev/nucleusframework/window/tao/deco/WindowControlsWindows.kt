@@ -276,7 +276,7 @@ private fun WindowsCaptionButton(
         animateWindowsCaptionColor(
             targetBackground,
             appearing = appearing,
-            durationMillis = WindowsCaptionButtonStyle.BackgroundFadeOutMillis,
+            durationMillis = WindowsCaptionButtonStyle.BACKGROUND_FADE_OUT_MILLIS,
         )
 
     // Keep the white close glyph while the red fill is still fading out so
