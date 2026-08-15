@@ -314,7 +314,6 @@ internal object NativeTaoBridge {
         y: Int,
     ): Boolean
 
-
     /**
      * Linux only: origin of the content area (the child GTK allocated inside
      * any client-side decorations) in logical toplevel coordinates, packed as
