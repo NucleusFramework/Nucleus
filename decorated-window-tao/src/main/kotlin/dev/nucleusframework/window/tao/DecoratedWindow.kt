@@ -5,7 +5,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -511,7 +510,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                         }
                     }
                 }
-                Column(modifier = Modifier.fillMaxSize()) {
+                WindowSceneColumn {
                     scopeFactory().hotReloadContent()
                 }
             }
@@ -735,7 +734,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                             isFullscreen = stateHolder.value.isFullscreen,
                             modifier = Modifier.fillMaxSize().then(border),
                         ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
+                            WindowSceneColumn {
                                 scopeFactory().content()
                             }
                         }
@@ -1178,7 +1177,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                             isFullscreen = stateHolder.value.isFullscreen,
                             modifier = Modifier.fillMaxSize().then(border),
                         ) {
-                            Column(modifier = Modifier.fillMaxSize()) {
+                            WindowSceneColumn {
                                 scopeFactory().content()
                             }
                         }

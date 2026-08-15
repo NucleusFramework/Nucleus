@@ -43,6 +43,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoWheelPinchZoomTest::class.java,
             TaoWindowScrollTest::class.java,
             TaoWindowResizableTest::class.java,
+            WindowWrapContentTest::class.java,
             TaoSceneRenderTest::class.java,
             TaoSceneKeyboardTest::class.java,
             TaoScenePointerTest::class.java,

@@ -8,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
@@ -18,6 +19,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
@@ -144,6 +146,13 @@ public fun ApplicationScope.DecoratedWindow(
     state.inflateToMinimumSize(minimumSize)
     state.applyMacOsInitialMaximizedSize()
 
+    // Compose Desktop wrap-content: an unspecified axis is measured from
+    // content and applied via setInnerSize (#532). Creating the native
+    // surface at NaN/0 makes Metal/EGL drop the drawable.
+    val wrapWidth = !state.size.width.isSpecified
+    val wrapHeight = !state.size.height.isSpecified
+    val measuredContent = remember { mutableStateOf<IntSize?>(null) }
+
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
     val applied =
@@ -153,6 +162,7 @@ public fun ApplicationScope.DecoratedWindow(
                 var position: WindowPosition? = null
                 var placement: WindowPlacement? = null
                 var isMinimized: Boolean? = null
+                var wrapSettled: Boolean = !wrapWidth && !wrapHeight
             }
         }
 
@@ -171,12 +181,8 @@ public fun ApplicationScope.DecoratedWindow(
                     onCloseRequest = { latestOnClose() },
                     title = title,
                     icon = icon,
-                    width =
-                        state.size.width.value
-                            .toDouble(),
-                    height =
-                        state.size.height.value
-                            .toDouble(),
+                    width = state.size.width.toWindowCreationDp(DEFAULT_WINDOW_WIDTH_DP),
+                    height = state.size.height.toWindowCreationDp(DEFAULT_WINDOW_HEIGHT_DP),
                     minimumSize = minimumSize,
                     visible = false,
                     resizable = resizable,
@@ -214,6 +220,16 @@ public fun ApplicationScope.DecoratedWindow(
                     },
                 )
 
+            w.installSizePolicy(
+                WindowSizePolicy(
+                    wrapWidth = wrapWidth,
+                    wrapHeight = wrapHeight,
+                    onContentMeasured = { size ->
+                        if (measuredContent.value != size) measuredContent.value = size
+                    },
+                ),
+            )
+
             // Initial placement / minimised flag are applied imperatively here
             // (Maximized is handled at builder time, above).
             // Position is handled by the LaunchedEffect on `state.position` to
@@ -237,7 +253,13 @@ public fun ApplicationScope.DecoratedWindow(
                 val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
                 if (newSize != applied.size) {
                     applied.size = newSize
-                    latestState.size = newSize
+                    // Keep Unspecified in WindowState until wrap-content
+                    // measurement writes the real size; otherwise the first
+                    // native configure (creation fallback) would freeze the
+                    // requested wrap axis at 600dp.
+                    if (applied.wrapSettled) {
+                        latestState.size = newSize
+                    }
                 }
                 // Tao doesn't emit a dedicated "placement changed" event, but
                 // every fullscreen / maximize / restore transition resizes the
@@ -276,7 +298,10 @@ public fun ApplicationScope.DecoratedWindow(
         }
 
     DisposableEffect(window) {
-        onDispose { window.requestClose() }
+        onDispose {
+            window.clearSizePolicy()
+            window.requestClose()
+        }
     }
 
     // ── State → window sync ──
@@ -287,6 +312,27 @@ public fun ApplicationScope.DecoratedWindow(
             window.setResizable(resizable)
         }
     }
+    LaunchedEffect(window, measuredContent.value) {
+        if (applied.wrapSettled) return@LaunchedEffect
+        val measured = measuredContent.value ?: return@LaunchedEffect
+        val scale = (NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1)) / 1000f
+        val resolved =
+            resolveWrapContentSize(
+                wrapWidth = wrapWidth,
+                wrapHeight = wrapHeight,
+                requested = latestState.size,
+                minimumSize = minimumSize,
+                measured = measured,
+                scale = scale,
+            ) ?: return@LaunchedEffect
+        window.setInnerSize(
+            resolved.width.value.toDouble(),
+            resolved.height.value.toDouble(),
+        )
+        applied.size = resolved
+        latestState.size = resolved
+        applied.wrapSettled = true
+    }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
         // OS-managed placement, not from `state.size`. Skip the
@@ -294,6 +340,7 @@ public fun ApplicationScope.DecoratedWindow(
         // requested logical size while Win32/Wayland think it should
         // fill the monitor.
         if (state.placement != WindowPlacement.Floating) return@LaunchedEffect
+        if (!state.size.width.isSpecified || !state.size.height.isSpecified) return@LaunchedEffect
         if (state.size != applied.size) {
             window.setInnerSize(
                 state.size.width.value

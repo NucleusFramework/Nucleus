@@ -100,11 +100,13 @@ public object TaoApplication {
                 popupParentHandle = popupOf?.handle ?: 0L,
             )
         windows[handle] = window
+        val safeWidth = if (width.isFinite() && width > 0.0) width else DEFAULT_WINDOW_WIDTH_DP
+        val safeHeight = if (height.isFinite() && height > 0.0) height else DEFAULT_WINDOW_HEIGHT_DP
         NativeTaoBridge.nativeCreateWindow(
             handle,
             title,
-            width,
-            height,
+            safeWidth,
+            safeHeight,
             decorations,
             resizable,
             visible,

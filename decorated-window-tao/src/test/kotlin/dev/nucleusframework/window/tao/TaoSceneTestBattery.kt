@@ -107,6 +107,21 @@ public object TaoSceneTestBattery {
             TaoWindowScrollTest().pixelScrollMirrorsMacOsAwtPreciseWheelRotationScale()
         }
         run("TaoWindowResizableTest: reflectsCreationFlag") { TaoWindowResizableTest().reflectsCreationFlag() }
+        run("WindowWrapContentTest: creationSizeUsesSpecifiedAxis") {
+            WindowWrapContentTest().creationSizeUsesSpecifiedAxis()
+        }
+        run("WindowWrapContentTest: wrapHeightKeepsRequestedWidth") {
+            WindowWrapContentTest().wrapHeightKeepsRequestedWidth()
+        }
+        run("WindowWrapContentTest: wrapBothUsesMeasuredPixels") {
+            WindowWrapContentTest().wrapBothUsesMeasuredPixels()
+        }
+        run("WindowWrapContentTest: wrapWaitsForPositiveMeasuredAxis") {
+            WindowWrapContentTest().wrapWaitsForPositiveMeasuredAxis()
+        }
+        run("WindowWrapContentTest: wrapHonoursMinimumSizeFloor") {
+            WindowWrapContentTest().wrapHonoursMinimumSizeFloor()
+        }
         run("TaoSceneRenderTest: solid background fills the whole frame") {
             TaoSceneRenderTest().`solid background fills the whole frame`()
         }

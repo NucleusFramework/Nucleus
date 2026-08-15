@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -11,7 +12,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.rememberDialogState
+import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.XdgPortalParent
 import dev.nucleusframework.window.tao.taoApplication
 import java.util.concurrent.atomic.AtomicBoolean
@@ -348,8 +355,13 @@ public object TaoHeadfulTestSuiteMain {
                         "nsView=0x${nsView.toString(16)} probe=OK",
                 )
             },
-        ) + ChromeReviewHeadfulCases.all() + DisplayScaleHeadfulCases.all() + FramePacingHeadfulCases.all() +
-            MacWindowChromeStateHeadfulCases.all() + PopupScaleHeadfulCases.all()
+        ) +
+            UnspecifiedSizeHeadfulCases.all() +
+            ChromeReviewHeadfulCases.all() +
+            DisplayScaleHeadfulCases.all() +
+            FramePacingHeadfulCases.all() +
+            MacWindowChromeStateHeadfulCases.all() +
+            PopupScaleHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
@@ -396,11 +408,16 @@ public object TaoHeadfulTestSuiteMain {
             // Published by the window content; the driver runs at APPLICATION
             // level so it survives the window scene's attach/re-composition.
             val windowHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
+            val dialogHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
 
             if (skipReason == null) {
                 androidx.compose.runtime.key(current) {
                     DecoratedWindow(
                         onCloseRequest = { /* cases drive their own lifecycle */ },
+                        state =
+                            rememberWindowState(
+                                size = case.size ?: DpSize(800.dp, 600.dp),
+                            ),
                         title = "tao-headful: ${case.name}",
                         transparent = case.transparent,
                         nativePopupLayers = case.nativePopupLayers,
@@ -416,6 +433,21 @@ public object TaoHeadfulTestSuiteMain {
                         val w = window
                         LaunchedEffect(w) { windowHolder.value = w }
                     }
+                    val dialogContent = case.dialogContent
+                    if (dialogContent != null) {
+                        DecoratedDialog(
+                            onCloseRequest = { /* cases drive their own lifecycle */ },
+                            state =
+                                rememberDialogState(
+                                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
+                                ),
+                            title = "tao-headful-dialog: ${case.name}",
+                        ) {
+                            dialogContent()
+                            val w = window
+                            LaunchedEffect(w) { dialogHolder.value = w }
+                        }
+                    }
                 }
             }
 
@@ -430,13 +462,13 @@ public object TaoHeadfulTestSuiteMain {
                 val start = System.currentTimeMillis()
                 val failure =
                     try {
-                        // Wait for the window content to publish its TaoWindow.
-                        val deadline = System.currentTimeMillis() + WINDOW_PUBLISH_TIMEOUT_MILLIS
-                        while (windowHolder.value == null) {
-                            check(System.currentTimeMillis() < deadline) { "window never published its handle" }
-                            kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
-                        }
-                        running.driver(TaoWindowTestScope(windowHolder.value!!))
+                        val published =
+                            awaitPublishedWindows(
+                                windowHolder = windowHolder,
+                                dialogHolder = dialogHolder,
+                                waitForDialog = running.dialogContent != null,
+                            )
+                        running.driver(published)
                         null
                     } catch (c: kotlinx.coroutines.CancellationException) {
                         throw c // app teardown — never record as a test failure
@@ -496,6 +528,28 @@ public object TaoHeadfulTestSuiteMain {
         System.getProperty("os.name", "").lowercase().let { os ->
             !os.contains("win") && !os.contains("mac") && !os.contains("darwin")
         }
+
+    private suspend fun awaitPublishedWindows(
+        windowHolder: MutableState<TaoWindow?>,
+        dialogHolder: MutableState<TaoWindow?>,
+        waitForDialog: Boolean,
+    ): TaoWindowTestScope {
+        val deadline = System.currentTimeMillis() + WINDOW_PUBLISH_TIMEOUT_MILLIS
+        while (windowHolder.value == null) {
+            check(System.currentTimeMillis() < deadline) { "window never published its handle" }
+            kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
+        }
+        if (waitForDialog) {
+            while (dialogHolder.value == null) {
+                check(System.currentTimeMillis() < deadline) { "dialog never published its handle" }
+                kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
+            }
+        }
+        return TaoWindowTestScope(
+            window = windowHolder.value!!,
+            dialogWindow = dialogHolder.value,
+        )
+    }
 
     /**
      * True when the process was launched with an X11-forcing env var. The native
