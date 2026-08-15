@@ -288,6 +288,34 @@ internal object NativeTaoBridge {
     external fun nativeLinuxGtkWindow(handle: Long): Long
 
     /**
+     * Linux only, headful e2e: synthesize a `GdkEventScroll` on [handle] and
+     * deliver it through GTK's `scroll-event` signal — the same path a real
+     * mouse wheel uses.
+     *
+     * [direction] is a `GdkScrollDirection` (`0=UP`, `1=DOWN`, `2=LEFT`,
+     * `3=RIGHT`, `4=SMOOTH`). Discrete directions force `delta_x`/`delta_y`
+     * to zero (GTK 3's mouse-wheel payload). SMOOTH uses [deltaXMilli] /
+     * [deltaYMilli] as thousandths.
+     *
+     * Coordinates are widget-local logical px. The caller should first
+     * dispatch `CURSOR_MOVED` so Compose's last pointer sits over the
+     * target — this function only delivers the scroll.
+     *
+     * Must run on the Tao / GTK main thread. Returns `false` when the handle
+     * is unknown, the window is not realized, or [direction] is out of range.
+     */
+    @JvmStatic
+    external fun nativeLinuxInjectGdkScroll(
+        handle: Long,
+        direction: Int,
+        deltaXMilli: Int,
+        deltaYMilli: Int,
+        x: Int,
+        y: Int,
+    ): Boolean
+
+
+    /**
      * Linux only: origin of the content area (the child GTK allocated inside
      * any client-side decorations) in logical toplevel coordinates, packed as
      * `(x shl 32) or (y and 0xffffffff)`. `(0, 0)` for plain undecorated

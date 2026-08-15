@@ -357,6 +357,7 @@ public object TaoHeadfulTestSuiteMain {
             },
         ) +
             UnspecifiedSizeHeadfulCases.all() +
+            LinuxDiscreteScrollHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +
             DisplayScaleHeadfulCases.all() +
             FramePacingHeadfulCases.all() +
