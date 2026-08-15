@@ -17,7 +17,7 @@ class SpellcheckMenuTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             val model = buildSpellcheckMenuModel("helo world", offset = 1, session = session)
             assertNotNull(model)
             assertEquals("helo", model.word)
@@ -42,14 +42,14 @@ class SpellcheckMenuTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             assertNull(buildSpellcheckMenuModel("hello", session))
         }
     }
 
     @Test
     fun `noop session yields no menu model`() {
-        SpellcheckSession(locale = Locale.US, osName = "Mac OS X").use { session ->
+        SpellcheckSession(locale = Locale.US, osName = "FreeBSD").use { session ->
             assertNull(buildSpellcheckMenuModel("helo", session))
         }
     }

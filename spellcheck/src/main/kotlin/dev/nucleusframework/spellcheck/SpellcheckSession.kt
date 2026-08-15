@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.spellcheck
 
-import dev.nucleusframework.spellcheck.linux.NativeSpellcheckBridge
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -11,11 +10,21 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.logging.Level
 import java.util.logging.Logger
+import dev.nucleusframework.spellcheck.linux.NativeSpellcheckBridge as LinuxBridge
+import dev.nucleusframework.spellcheck.macos.NativeSpellcheckBridge as MacBridge
 
 /**
- * Isolated Hunspell session. Linux-only; a missing native library, missing
- * dictionary, or a non-Linux [osName] makes every operation a no-op
- * (`check`/`addToDictionary` return `false`, `suggest` returns empty).
+ * Isolated spellcheck session.
+ *
+ * Linux loads Hunspell via JNI and a locale-matching system `.aff`/`.dic`.
+ * macOS uses [NSSpellChecker](https://developer.apple.com/documentation/appkit/nsspellchecker).
+ * A missing native library, missing dictionary, or an unsupported [osName]
+ * makes every operation a no-op (`check`/`addToDictionary` return `false`,
+ * `suggest` returns empty).
+ *
+ * User-added words are persisted to [userDictionaryFile] (the Nucleus file,
+ * not the OS learned-word list) so tests can isolate themselves with a temp
+ * path.
  *
  * [SpellChecker] is the process-wide instance used by `nucleusApplication`.
  */
@@ -28,14 +37,14 @@ public class SpellcheckSession public constructor(
     private val lock = Any()
     private val userFile: Path? = userDictionaryFile
     private val checkCache = ConcurrentHashMap<String, Boolean>()
-    private var handle: Long = 0L
+    private var engine: Engine = Engine.None
 
     @Volatile
     private var available: Boolean = false
 
     /**
-     * `true` when Hunspell is loaded and a matching system dictionary was found.
-     * Lock-free; safe to read from the UI thread.
+     * `true` when a native engine is loaded and a matching language/dictionary
+     * was found. Lock-free; safe to read from the UI thread.
      */
     public val isAvailable: Boolean
         get() = available
@@ -47,17 +56,16 @@ public class SpellcheckSession public constructor(
     public val dictionaryTag: String?
 
     init {
-        val linux =
-            osName.contains("Linux", ignoreCase = true) ||
-                osName.contains("nux", ignoreCase = true)
-        val files = if (linux) DictionaryLocator.find(locale, dictionaryDirectories) else null
-        dictionaryTag = files?.tag
-        if (linux && files != null) {
-            handle = openHandle(files)
-            if (handle != 0L) {
-                loadUserDictionary()
-                available = true
+        engine = openEngine(locale, osName, dictionaryDirectories)
+        dictionaryTag =
+            when (val e = engine) {
+                is Engine.Hunspell -> e.tag
+                is Engine.MacOs -> e.language
+                Engine.None -> null
             }
+        if (engine !is Engine.None) {
+            loadUserDictionary()
+            available = true
         }
     }
 
@@ -71,16 +79,18 @@ public class SpellcheckSession public constructor(
         checkCache[normalized]?.let { return it }
         return synchronized(lock) {
             checkCache[normalized]?.let { return it }
-            val h = handle
-            if (h == 0L) return@synchronized false
             val result =
                 try {
-                    NativeSpellcheckBridge.nativeSpell(h, normalized)
+                    when (val e = engine) {
+                        is Engine.Hunspell -> LinuxBridge.nativeSpell(e.handle, normalized)
+                        is Engine.MacOs -> MacBridge.nativeSpell(e.documentTag, e.language, normalized)
+                        Engine.None -> false
+                    }
                 } catch (e: Exception) {
-                    logger.log(Level.FINE, "Hunspell check failed", e)
+                    logger.log(Level.FINE, "Spellcheck check failed", e)
                     false
                 } catch (e: UnsatisfiedLinkError) {
-                    logger.log(Level.FINE, "Hunspell check failed", e)
+                    logger.log(Level.FINE, "Spellcheck check failed", e)
                     false
                 }
             checkCache[normalized] = result
@@ -95,18 +105,20 @@ public class SpellcheckSession public constructor(
     public fun suggest(word: String): List<String> {
         if (word.isEmpty()) return emptyList()
         return synchronized(lock) {
-            val h = handle
-            if (h == 0L) return@synchronized emptyList()
             try {
-                NativeSpellcheckBridge
-                    .nativeSuggest(h, normalize(word))
-                    .filter { it.isNotEmpty() }
-                    .distinct()
+                val raw =
+                    when (val e = engine) {
+                        is Engine.Hunspell -> LinuxBridge.nativeSuggest(e.handle, normalize(word))
+                        is Engine.MacOs ->
+                            MacBridge.nativeSuggest(e.documentTag, e.language, normalize(word))
+                        Engine.None -> emptyArray()
+                    }
+                raw.filter { it.isNotEmpty() }.distinct()
             } catch (e: UnsatisfiedLinkError) {
-                logger.log(Level.FINE, "Hunspell suggest failed", e)
+                logger.log(Level.FINE, "Spellcheck suggest failed", e)
                 emptyList()
             } catch (e: RuntimeException) {
-                logger.log(Level.FINE, "Hunspell suggest failed", e)
+                logger.log(Level.FINE, "Spellcheck suggest failed", e)
                 emptyList()
             }
         }
@@ -115,21 +127,27 @@ public class SpellcheckSession public constructor(
     /**
      * Adds [word] to this session and persists it to the user dictionary file.
      * Returns `false` when the session is a no-op or the add fails.
+     *
+     * On Linux the word is also injected into the Hunspell handle. On macOS it
+     * lives in the process cache + user file only — `NSSpellChecker.learnWord`
+     * is not called, so the OS learned-word list is left untouched.
      */
     public fun addToDictionary(word: String): Boolean {
         val normalized = normalize(word)
         if (normalized.isEmpty() || !available) return false
         val added =
             synchronized(lock) {
-                val h = handle
-                if (h == 0L) return@synchronized false
                 try {
-                    NativeSpellcheckBridge.nativeAdd(h, normalized)
+                    when (val e = engine) {
+                        is Engine.Hunspell -> LinuxBridge.nativeAdd(e.handle, normalized)
+                        is Engine.MacOs -> true
+                        Engine.None -> false
+                    }
                 } catch (e: UnsatisfiedLinkError) {
-                    logger.log(Level.FINE, "Hunspell add failed", e)
+                    logger.log(Level.FINE, "Spellcheck add failed", e)
                     false
                 } catch (e: RuntimeException) {
-                    logger.log(Level.FINE, "Hunspell add failed", e)
+                    logger.log(Level.FINE, "Spellcheck add failed", e)
                     false
                 }
             }
@@ -150,34 +168,69 @@ public class SpellcheckSession public constructor(
         available = false
         checkCache.clear()
         synchronized(lock) {
-            val h = handle
-            handle = 0L
-            if (h != 0L) {
-                try {
-                    NativeSpellcheckBridge.nativeDestroy(h)
-                } catch (e: UnsatisfiedLinkError) {
-                    logger.log(Level.FINE, "Hunspell destroy failed", e)
-                } catch (e: RuntimeException) {
-                    logger.log(Level.FINE, "Hunspell destroy failed", e)
+            val current = engine
+            engine = Engine.None
+            try {
+                when (current) {
+                    is Engine.Hunspell -> LinuxBridge.nativeDestroy(current.handle)
+                    is Engine.MacOs -> MacBridge.nativeDestroyDocument(current.documentTag)
+                    Engine.None -> Unit
                 }
+            } catch (e: UnsatisfiedLinkError) {
+                logger.log(Level.FINE, "Spellcheck destroy failed", e)
+            } catch (e: RuntimeException) {
+                logger.log(Level.FINE, "Spellcheck destroy failed", e)
             }
         }
     }
 
-    private fun openHandle(files: DictionaryFiles): Long {
-        if (!NativeSpellcheckBridge.isLoaded) return 0L
+    private fun openEngine(
+        locale: Locale,
+        osName: String,
+        dictionaryDirectories: List<Path>,
+    ): Engine =
+        when {
+            isLinux(osName) -> openHunspell(locale, dictionaryDirectories)
+            isMacOs(osName) -> openMacOs(locale)
+            else -> Engine.None
+        }
+
+    private fun openHunspell(
+        locale: Locale,
+        dictionaryDirectories: List<Path>,
+    ): Engine {
+        val files = DictionaryLocator.find(locale, dictionaryDirectories) ?: return Engine.None
+        if (!LinuxBridge.isLoaded) return Engine.None
         return try {
-            if (!NativeSpellcheckBridge.nativeIsHunspellPresent()) return 0L
-            NativeSpellcheckBridge.nativeCreate(
-                files.aff.toAbsolutePath().toString(),
-                files.dic.toAbsolutePath().toString(),
-            )
+            if (!LinuxBridge.nativeIsHunspellPresent()) return Engine.None
+            val handle =
+                LinuxBridge.nativeCreate(
+                    files.aff.toAbsolutePath().toString(),
+                    files.dic.toAbsolutePath().toString(),
+                )
+            if (handle == 0L) Engine.None else Engine.Hunspell(handle, files.tag)
         } catch (e: UnsatisfiedLinkError) {
             logger.log(Level.WARNING, "Failed to create Hunspell handle", e)
-            0L
+            Engine.None
         } catch (e: RuntimeException) {
             logger.log(Level.WARNING, "Failed to create Hunspell handle", e)
-            0L
+            Engine.None
+        }
+    }
+
+    private fun openMacOs(locale: Locale): Engine {
+        if (!MacBridge.isLoaded) return Engine.None
+        return try {
+            if (!MacBridge.nativeIsAvailable()) return Engine.None
+            val candidates = DictionaryLocator.localeCandidates(locale).toTypedArray()
+            val language = MacBridge.nativeResolveLanguage(candidates) ?: return Engine.None
+            Engine.MacOs(MacBridge.nativeCreateDocument(), language)
+        } catch (e: UnsatisfiedLinkError) {
+            logger.log(Level.WARNING, "Failed to create NSSpellChecker session", e)
+            Engine.None
+        } catch (e: RuntimeException) {
+            logger.log(Level.WARNING, "Failed to create NSSpellChecker session", e)
+            Engine.None
         }
     }
 
@@ -187,9 +240,12 @@ public class SpellcheckSession public constructor(
         try {
             Files.readAllLines(file).forEach { line ->
                 val word = normalize(line)
-                if (word.isNotEmpty() && handle != 0L) {
-                    NativeSpellcheckBridge.nativeAdd(handle, word)
+                if (word.isEmpty()) return@forEach
+                when (val e = engine) {
+                    is Engine.Hunspell -> LinuxBridge.nativeAdd(e.handle, word)
+                    is Engine.MacOs, Engine.None -> Unit
                 }
+                checkCache[word] = true
             }
         } catch (e: java.io.IOException) {
             logger.log(Level.FINE, "Failed to load user dictionary $file", e)
@@ -227,6 +283,20 @@ public class SpellcheckSession public constructor(
         }
     }
 
+    private sealed class Engine {
+        class Hunspell(
+            val handle: Long,
+            val tag: String,
+        ) : Engine()
+
+        class MacOs(
+            val documentTag: Long,
+            val language: String,
+        ) : Engine()
+
+        data object None : Engine()
+    }
+
     /** Factory helpers for the default user-dictionary path. */
     public companion object {
         private val logger: Logger = Logger.getLogger(SpellcheckSession::class.java.name)
@@ -253,5 +323,13 @@ public class SpellcheckSession public constructor(
         private fun localeCandidatesTag(locale: Locale): String = DictionaryLocator.localeCandidates(locale).first()
 
         private fun normalize(word: String): String = word.trim().replace('\u2019', '\'')
+
+        private fun isLinux(osName: String): Boolean =
+            osName.contains("Linux", ignoreCase = true) ||
+                osName.contains("nux", ignoreCase = true)
+
+        private fun isMacOs(osName: String): Boolean =
+            osName.contains("Mac", ignoreCase = true) ||
+                osName.contains("Darwin", ignoreCase = true)
     }
 }

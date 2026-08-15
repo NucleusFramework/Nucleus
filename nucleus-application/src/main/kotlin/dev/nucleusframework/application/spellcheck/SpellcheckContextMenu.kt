@@ -93,7 +93,7 @@ public enum class SpellcheckMenuPlacement {
  * `ProvideJewelSpellcheckMenu`. Custom representations (icons, keybindings,
  * color pickers) are left in place.
  *
- * No-op when Hunspell is unavailable.
+ * No-op when the native spellcheck engine is unavailable.
  *
  * @param menuPlacement [SpellcheckMenuPlacement.Bottom] (default) appends
  *   after existing items; [SpellcheckMenuPlacement.Top] prepends before them.

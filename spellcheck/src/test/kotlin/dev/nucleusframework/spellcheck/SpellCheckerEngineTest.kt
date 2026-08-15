@@ -11,12 +11,12 @@ import kotlin.test.assertTrue
 
 class SpellCheckerEngineTest {
     @Test
-    fun `linux hunspell checks hello and helo against en_US`() {
+    fun `engine checks hello and helo against English`() {
         SpellcheckSession(
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             assertTrue(session.check("hello"), "hello should be correct")
             assertFalse(session.check("helo"), "helo should be a misspelling")
             val suggestions = session.suggest("helo")
@@ -33,7 +33,7 @@ class SpellCheckerEngineTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             assertFalse(session.check("helo"))
             assertTrue(session.addToDictionary("helo"), "addToDictionary should succeed")
             assertTrue(session.check("helo"), "helo should check as correct after add")
@@ -46,7 +46,7 @@ class SpellCheckerEngineTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             val ranges = session.misspellings("helo world")
             assertTrue(ranges.isNotEmpty(), "expected a misspelling in 'helo world'")
             val helo = ranges.first()

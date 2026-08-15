@@ -1,16 +1,16 @@
 package dev.nucleusframework.spellcheck
 
 /**
- * Process-wide Hunspell spell checker used by `nucleusApplication` text fields.
+ * Process-wide spell checker used by `nucleusApplication` text fields.
  *
  * On Linux this loads `libhunspell` via JNI and the locale-matching system
- * `.aff`/`.dic`. On macOS/Windows — and on Linux when the native library or
- * dictionary is missing — [check], [suggest] and [addToDictionary] are no-ops
- * (`false` / empty, never thrown).
+ * `.aff`/`.dic`. On macOS this uses `NSSpellChecker`. On Windows — and when
+ * the native library or dictionary is missing — [check], [suggest] and
+ * [addToDictionary] are no-ops (`false` / empty, never thrown).
  *
  * [session] constructs the native handle on first access (dictionary load).
  * The Tao installer calls it from a background dispatcher so the UI thread
- * never waits on Hunspell.
+ * never waits on the native engine.
  */
 public object SpellChecker {
     @Volatile
@@ -18,8 +18,8 @@ public object SpellChecker {
     private val loadLock = Any()
 
     /**
-     * Process-wide session. First access loads Hunspell; prefer [sessionIfReady]
-     * on the UI thread.
+     * Process-wide session. First access loads the native engine; prefer
+     * [sessionIfReady] on the UI thread.
      */
     public val session: SpellcheckSession
         get() = ensureSession()
@@ -32,7 +32,7 @@ public object SpellChecker {
         get() = loaded
 
     /**
-     * `true` when the process-wide session is loaded and has a dictionary.
+     * `true` when the process-wide session is loaded and has an engine.
      * Never blocks and never starts a load.
      */
     public val isAvailable: Boolean

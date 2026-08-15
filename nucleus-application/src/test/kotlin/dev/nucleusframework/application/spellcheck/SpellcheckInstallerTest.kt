@@ -97,7 +97,7 @@ class SpellcheckInstallerTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             var rewritten: String? = null
             val ranges = session.misspellings("helo world")
             val items =
@@ -125,7 +125,7 @@ class SpellcheckInstallerTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             var applied: String? = null
             var added = false
             val items =
@@ -153,7 +153,7 @@ class SpellcheckInstallerTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             val model = buildSpellcheckMenuModel("helo world", offset = 0, session = session)
             assertNotNull("expected a menu model for helo", model)
             assertEquals("hello world", applySuggestion("helo world", model!!, "hello"))

@@ -11,6 +11,18 @@
         { "name": "nativeSuggest", "parameterTypes": ["long", "java.lang.String"] },
         { "name": "nativeAdd", "parameterTypes": ["long", "java.lang.String"] }
       ]
+    },
+    {
+      "type": "dev.nucleusframework.spellcheck.macos.NativeSpellcheckBridge",
+      "jniAccessible": true,
+      "methods": [
+        { "name": "nativeIsAvailable", "parameterTypes": [] },
+        { "name": "nativeResolveLanguage", "parameterTypes": ["java.lang.String[]"] },
+        { "name": "nativeCreateDocument", "parameterTypes": [] },
+        { "name": "nativeDestroyDocument", "parameterTypes": ["long"] },
+        { "name": "nativeSpell", "parameterTypes": ["long", "java.lang.String", "java.lang.String"] },
+        { "name": "nativeSuggest", "parameterTypes": ["long", "java.lang.String", "java.lang.String"] }
+      ]
     }
   ]
 }

@@ -86,10 +86,11 @@ private fun SpellcheckTabBody(
         BasicText(
             text =
                 if (available) {
-                    "Hunspell ready ($dictionary). Misspellings get a red wave; " +
+                    "Spellcheck ready ($dictionary). Misspellings get a red wave; " +
                         "right-click a bad word for suggestions / add to dictionary."
                 } else {
-                    "Hunspell not available on this machine (Linux + system .aff/.dic). " +
+                    "Spellcheck not available on this machine " +
+                        "(Linux Hunspell / macOS NSSpellChecker). " +
                         "Type anyway — the wrap is a no-op."
                 },
             style = TextStyle(color = Color(0xFFA0A4B0), fontSize = 13.sp),

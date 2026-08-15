@@ -86,7 +86,7 @@ class SpellcheckJewelTest {
             locale = Locale.US,
             userDictionaryFile = isolatedUserDict(),
         ).use { session ->
-            assumeTrue("Hunspell + en_US dictionary required", session.isAvailable)
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
             runComposeUiTest {
                 setContent {
                     IntUiTheme {
