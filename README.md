@@ -6,7 +6,7 @@
 [![Maven Central](https://img.shields.io/maven-central/v/dev.nucleusframework/nucleus.core-runtime?label=Maven%20Central)](https://central.sonatype.com/search?q=dev.nucleusframework)
 [![Pre Merge Checks](https://github.com/NucleusFramework/Nucleus/actions/workflows/pre-merge.yaml/badge.svg)](https://github.com/NucleusFramework/Nucleus/actions/workflows/pre-merge.yaml)
 [![License: MIT](https://img.shields.io/github/license/NucleusFramework/Nucleus)](https://github.com/NucleusFramework/Nucleus/blob/main/LICENSE)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.0%2B-7F52FF?logo=kotlin&logoColor=white)
+![Kotlin](https://img.shields.io/badge/Kotlin-2.4%2B-7F52FF?logo=kotlin&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux-blue)
 
 The Nucleus framework lets you write cross-platform desktop applications using
@@ -57,7 +57,7 @@ your module's `build.gradle.kts`:
 plugins {
     kotlin("jvm") version "2.4.0"
     id("org.jetbrains.compose") version "1.11.1"
-    id("dev.nucleusframework") version "2.0.0"
+    id("dev.nucleusframework") version "2.4.4"
 }
 
 repositories {
@@ -68,9 +68,9 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     // Entry point — provides nucleusApplication and DecoratedWindow
-    implementation("dev.nucleusframework:nucleus.nucleus-application:2.0.0")
+    implementation("dev.nucleusframework:nucleus.nucleus-application:2.4.4")
     // Tao backend — Rust-native windowing
-    implementation("dev.nucleusframework:nucleus.decorated-window-tao:2.0.0")
+    implementation("dev.nucleusframework:nucleus.decorated-window-tao:2.4.4")
 }
 ```
 
@@ -85,8 +85,8 @@ Nucleus builds on Compose Multiplatform and requires:
 | Requirement | Version | Note |
 |-------------|---------|------|
 | JDK | 17+ (25+ for AOT cache) | JBR 25 recommended |
-| Kotlin | 2.0+ | Compose Multiplatform requires Kotlin 2.x |
-| Gradle | 8.0+ | Bundled wrapper is sufficient |
+| Kotlin | 2.4+ | This repo builds with Kotlin 2.4.0 |
+| Gradle | 9.0+ | Bundled wrapper is Gradle 9.4.0 |
 
 ## Platform support
 
@@ -109,10 +109,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.Text
 import androidx.compose.ui.Modifier
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 
-fun main() = nucleusApplication(backend = NucleusBackend.Tao) {
+fun main(args: Array<String>) = nucleusApplication(args) {
     DecoratedWindow(
         onCloseRequest = ::exitApplication,
         title = "MyApp",
@@ -123,6 +122,15 @@ fun main() = nucleusApplication(backend = NucleusBackend.Tao) {
     }
 }
 ```
+
+`nucleusApplication` initializes GraalVM native-image support, takes the
+single-instance lock, and primes autolaunch / Windows AUMID when those
+modules are on the classpath. Pass the process `args` so deep links,
+file associations, and "started at login" see the original command line.
+The default backend is `Auto` (Tao if `decorated-window-tao` is present,
+otherwise AWT). Inside the block you can call `onDeepLink { }` and
+`aotTraining()`; plugin-injected metadata is `NucleusApp`, not a generated
+constants object.
 
 Then configure packaging in `build.gradle.kts`:
 
@@ -175,17 +183,22 @@ Each module is published independently to Maven Central — use them together or
 
 | Module | Description |
 |--------|-------------|
-| `nucleus.core-runtime` | Platform detection, single instance, deep links, executable type |
+| `nucleus.nucleus-application` | `nucleusApplication`, backend-agnostic `DecoratedWindow` / `HostedWindow` |
+| `nucleus.core-runtime` | Platform detection, single instance, deep links, `NucleusApp` metadata |
 | `nucleus.aot-runtime` | AOT cache mode detection |
-| `nucleus.updater-runtime` | Auto-update engine with GitHub/S3, progress tracking, SHA-512 |
+| `nucleus.updater-runtime` | Auto-update (GitHub/S3), SHA-512, delta/blockmap, progress |
 | `nucleus.darkmode-detector` | Reactive OS dark mode detection |
 | `nucleus.system-color` | Reactive accent color & high contrast detection |
 | `nucleus.system-info` | CPU, memory, GPU (NVIDIA/AMD/Intel), temperature, network, processes |
-| `nucleus.decorated-window-tao` | Rust-native windowing backend (Tao) |
+| `nucleus.decorated-window-tao` | Recommended windowing backend (Rust `tao`, no AWT) |
+| `nucleus.decorated-window-core` | Shared window types, layout, chrome (design-system agnostic) |
+| `nucleus.decorated-window-awt` | AWT chrome shared by the JBR/JNI backends |
+| `nucleus.decorated-window-jbr` | Legacy JBR backend (maintenance only) |
+| `nucleus.decorated-window-jni` | Legacy JNI/AWT backend (maintenance only) |
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |
 | `nucleus.decorated-window-material2` | Material 2 integration |
 | `nucleus.decorated-window-material3` | Material 3 integration |
-| `nucleus.notification-common` | Cross-platform notification DSL with per-platform (`linux`/`macos`/`windows`) option blocks |
+| `nucleus.notification-common` | Cross-platform notification DSL with per-platform option blocks |
 | `nucleus.notification-macos` | macOS User Notifications |
 | `nucleus.notification-windows` | Windows Toast Notifications |
 | `nucleus.notification-linux` | Freedesktop Desktop Notifications |
@@ -195,12 +208,20 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.media-control` | OS media controls — MPRIS (Linux), Now Playing (macOS), SMTC (Windows) |
 | `nucleus.menu-macos` | Native macOS menu bar |
 | `nucleus.freedesktop-icons` | Type-safe freedesktop icon naming constants |
+| `nucleus.sf-symbols` | Type-safe SF Symbols catalog |
 | `nucleus.taskbar-progress` | Cross-platform taskbar progress bar & attention requests |
+| `nucleus.taskbar-progress-tao` | Taskbar progress on the Tao backend |
 | `nucleus.global-hotkey` | System-wide keyboard shortcuts |
 | `nucleus.energy-manager` | Energy efficiency & screen-awake APIs |
 | `nucleus.autolaunch` | Start the app at user login across all platforms |
+| `nucleus.scheduler` | OS-scheduled background tasks (Task Scheduler / launchd / systemd) |
+| `nucleus.scheduler-testing` | Test doubles for `scheduler` |
+| `nucleus.fs-watcher` | Native filesystem watcher |
+| `nucleus.service-management-macos` | macOS `SMAppService` — login items, launch agents, daemons |
 | `nucleus.native-ssl` | OS trust store integration |
 | `nucleus.native-http` | HTTP client with native SSL |
+| `nucleus.native-http-okhttp` | OkHttp engine on `native-http` |
+| `nucleus.native-http-ktor` | Ktor engine on `native-http` |
 | `nucleus.linux-hidpi` | Native HiDPI scale detection on Linux |
 | `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion |
 

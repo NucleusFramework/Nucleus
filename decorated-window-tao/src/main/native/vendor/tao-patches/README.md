@@ -9,8 +9,8 @@ Local patch series applied on top of vendored tao (see `../tao/`).
 
 ## Patch series
 
-Patches are applied in numeric order. Each patch is paired with the removal
-of an external workaround in the parent module — see `../../../../VENDORING_PLAN.md`.
+Patches are applied in numeric order on the vendored tree at `../tao/`.
+Tao 0.35.0 is already vendored; this file is the living list of patches.
 
 | #     | File                              | Phase | Platform | Summary |
 | ----- | --------------------------------- | ----- | -------- | ------- |
@@ -36,7 +36,7 @@ done
 # 3. For each conflict: resolve by hand, then regenerate the patch
 git diff > ../tao-patches/000X-foo.patch
 
-# 4. Re-run all E2E gates from Phase 0 onward (see VENDORING_PLAN.md).
+# 4. Rebuild the native lib and run Tao scene + headful tests on the affected OS.
 ```
 
 ## Regenerating a single patch

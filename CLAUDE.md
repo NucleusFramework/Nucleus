@@ -1,26 +1,43 @@
-# ComposeDeskKit (Nucleus)
+# Nucleus
 
 A multi-module Gradle plugin and runtime library toolkit for shipping production-ready JVM desktop applications on macOS, Windows, and Linux.
 
+Published releases are `2.4.x` (latest tag `v2.4.4`). Do not treat `IDEAL_API.md` as current — that file is gone; the real entry point is `nucleusApplication(args) { }` in `nucleus-application`. Plugin-injected strings are `NucleusApp`, not a generated `NucleusGenerated` object.
+
 ## Project Structure
 
+- `nucleus-application` - `nucleusApplication`, backend-agnostic `DecoratedWindow` / `HostedWindow`, `onDeepLink`, `aotTraining`
 - `core-runtime` - Executable type detection, single instance, deep links, platform detection, app metadata (`NucleusApp`)
 - `aot-runtime` - AOT cache mode detection for JDK 25+ (Project Leyden)
-- `updater-runtime` - Auto-update engine (GitHub/S3), SHA-512 verification, progress tracking, update level detection, post-update events
+- `updater-runtime` - Auto-update engine (GitHub/S3), SHA-512, delta/blockmap, progress, update level, post-update events
 - `freedesktop-icons` - Type-safe freedesktop Icon Naming Specification constants (shared by notification-linux and launcher-linux)
+- `sf-symbols` - Type-safe SF Symbols catalog
+- `notification-common` - Cross-platform notification DSL with per-platform option blocks
+- `notification-macos` - macOS User Notifications
 - `notification-linux` - Freedesktop Desktop Notifications API via JNI (D-Bus org.freedesktop.Notifications)
 - `notification-windows` - Windows Toast Notifications API via JNI (WinRT)
+- `launcher-macos` - macOS Dock API — badge, menus
 - `launcher-windows` - Windows Launcher API via JNI (WinRT/COM) — badge notifications, jump lists (ICustomDestinationList), overlay icons, and thumbnail toolbar buttons (ITaskbarList3) on taskbar
 - `launcher-linux` - Unity Launcher API via JNI (badge, progress, urgency, quicklist via com.canonical.Unity.LauncherEntry + com.canonical.dbusmenu)
+- `menu-macos` - Native macOS menu bar
+- `media-control` - OS media controls — MPRIS (Linux), Now Playing (macOS), SMTC (Windows)
+- `global-hotkey` - System-wide keyboard shortcuts
 - `taskbar-progress` - Native taskbar/dock progress bar and attention requests (Windows ITaskbarList3, macOS NSDockTile, Linux delegates to launcher-linux)
+- `taskbar-progress-tao` - Taskbar progress on the Tao backend
 - `darkmode-detector` - Reactive OS dark mode detection via JNI
 - `system-color` - Reactive system accent color and high contrast detection via JNI
+- `system-info` - CPU, memory, GPU, temperature, network, processes
 - `energy-manager` - Energy efficiency & screen-awake APIs
+- `autolaunch` - Start at login (Win32/MSIX/SMAppService/systemd/Flatpak portal)
+- `scheduler` / `scheduler-testing` - OS-scheduled background tasks (Task Scheduler / launchd / systemd) + test doubles
+- `fs-watcher` - Native filesystem watcher
+- `service-management-macos` - macOS `SMAppService` — login items, launch agents, daemons
 - `native-ssl` / `native-http` / `native-http-okhttp` / `native-http-ktor` - OS trust store integration
 - `linux-hidpi` - Native HiDPI scale detection on Linux
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
 - `decorated-window-tao` - **Default/recommended backend** — no-AWT window shell over the Rust `tao` crate via JNI (Metal on macOS, EGL on Linux, ANGLE/GLES on Windows), single native event-loop thread as `Dispatchers.Main`
+- `decorated-window-awt` - AWT chrome shared by the JBR/JNI backends
 - `decorated-window-jbr` - JBR-based implementation (requires JetBrains Runtime) — **legacy/maintenance-only**
 - `decorated-window-jni` - JNI-based implementation (any JVM, GraalVM compatible) — **legacy/maintenance-only**
 - `decorated-window-jewel` - Jewel (IntelliJ theme) integration
@@ -28,7 +45,7 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 - `decorated-window-material3` - Material 3 color mapping
 - `plugin-build/plugin` - Gradle plugin for packaging & distribution
 - `buildSrc` - Build-only convention plugins (`nucleus.native-module`: the shared `buildNative*` wiring for every JNI module)
-- `examples/` - Demo & sample applications (consolidated): `nucleus-demo` (flagship), `tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `extra-launcher-demo`, `benchmark-demo` (JIT-vs-GraalVM-O3 CPU benchmark suite, with SwiftUI + Tauri ports under `ports/`), `gstreamer-demo` (Linux: GStreamer video into a `TextureView`, needs its own `build.sh` and the GStreamer dev packages), `mediafoundation-demo` (Windows counterpart: Media Foundation/DXVA video into a `TextureView`, needs its own `build.bat`), `avfoundation-demo` (macOS counterpart: AVFoundation/VideoToolbox video into a `TextureView`, needs its own `build.sh`), plus `shared` (Compose helper used by tao/jni demos)
+- `examples/` - Demo & sample applications: `nucleus-demo` (flagship), `compose-demo`, `tao-demo`, `swing-tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `window-scaffold-demo`, `zstd-demo`, `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `orphan-reflect-smoke`, `extra-launcher-demo`, `tao-native-test` (GraalVM + SLF4J fixture), `benchmark-demo` (JIT-vs-GraalVM-O3, ports under `ports/`), `gstreamer-demo` / `mediafoundation-demo` / `avfoundation-demo` (platform video into a `TextureView`), plus `shared` (Compose helper used by tao/jni demos). `native-proxy` and `spellcheck` directories on disk are **not** on `main` — ignore them unless the matching feature branch is checked out.
 
 ## Build & Run
 
@@ -42,10 +59,10 @@ A multi-module Gradle plugin and runtime library toolkit for shipping production
 
 ## Key Technologies
 
-- Kotlin 2.3+ with Compose Desktop 1.10+
+- Kotlin 2.4 with Compose Desktop 1.11
 - JNI for all native interop (no JNA in runtime modules)
 - JBR (JetBrains Runtime) API for decorated-window-jbr
-- Gradle 9+ with version catalog (`gradle/libs.versions.toml`)
+- Gradle 9.4 with version catalog (`gradle/libs.versions.toml`)
 - Detekt + KtLint for code quality
 
 ## Development Notes
@@ -87,7 +104,7 @@ Existing `build.sh`/`build.bat` scripts also clear the `NativeLibraryLoader` cac
 
 ## Publishing to Maven Local
 
-Version is resolved from `GITHUB_REF` env var in every `build.gradle.kts` (`refs/tags/v1.3.0-beta-07` → `1.3.0-beta-07`). Without it, defaults to `1.0.0`.
+Version is resolved from `GITHUB_REF` in every `build.gradle.kts` (`refs/tags/v2.4.4` → `2.4.4`). Without it, defaults to `1.0.0`.
 
 **Prerequisites:**
 - Use JDK 21 (`JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64`) — Kotlin DSL script compiler crashes on JDK 25
@@ -97,17 +114,17 @@ Version is resolved from `GITHUB_REF` env var in every `build.gradle.kts` (`refs
 
 **Runtime libraries (main project):**
 ```bash
-GITHUB_REF=refs/tags/v1.3.0-beta-07 JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 \
-  ./gradlew -p /absolute/path/to/ComposeDeskKit publishToMavenLocal --no-configuration-cache
+GITHUB_REF=refs/tags/v2.4.4 JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 \
+  ./gradlew -p /absolute/path/to/Nucleus publishToMavenLocal --no-configuration-cache
 ```
 
 **Plugin (plugin-build):**
 ```bash
-GITHUB_REF=refs/tags/v1.3.0-beta-07 JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 \
-  ./gradlew -p /absolute/path/to/ComposeDeskKit/plugin-build :plugin:publishToMavenLocal --no-configuration-cache
+GITHUB_REF=refs/tags/v2.4.4 JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 \
+  ./gradlew -p /absolute/path/to/Nucleus/plugin-build :plugin:publishToMavenLocal --no-configuration-cache
 ```
 
-Version format: `1.3.0-beta-XX` (hyphen before number, e.g. `1.3.0-beta-07`).
+Published tags are `v2.4.x`. The `v` prefix is stripped for the Maven version.
 
 ## GraalVM Native Image
 
@@ -120,7 +137,7 @@ Version format: `1.3.0-beta-XX` (hyphen before number, e.g. `1.3.0-beta-07`).
 - PGO (Oracle GraalVM): `runWithPgoInstrument` builds + runs an instrumented image and records `graalvm/pgo/default.iprof` on exit; later native-image builds apply the profile automatically. Opt out with `-Pnucleus.graalvm.pgo=off`; customize via `graalvm { pgo { enabled / profile } }`
 - Agent output is automatically deduplicated against library metadata on the classpath
 - Sample apps have near-empty `reachability-metadata.json` — only app-specific entries remain
-- `GraalVmInitializer.initialize()` must be the first call in `main()` for native-image builds
+- `nucleusApplication` calls `GraalVmInitializer.initialize()` first. If you write a `main` that does not go through `nucleusApplication`, call `GraalVmInitializer.initialize()` yourself before anything else (required for native-image). Do not tell users to sequence GraalVM / single-instance / autolaunch / AUMID by hand — that bootstrap is already inside `nucleusApplication`. `Dispatchers.Main` on Tao is installed via `TaoMainDispatcherFactory` (ServiceLoader), not a manual `setMain`.
 - Font substitutions (`@TargetClass`) in `graalvm-runtime` fix `InternalError: platform encoding not initialized` on Windows/Linux
 - SLF4J is **not** initialized at build time — the API and the app-selected backend both initialize at run time, so the app keeps control of its provider, levels and environment-dependent config. Forcing `--initialize-at-build-time=org.slf4j` from a shared module breaks any run-time-initialized backend (SLF4J 2.x provider discovery parks Logback's `LogbackMDCAdapter`/`LoggerContext` in the image heap → build failure; adding backend classes one by one only exposes the next object). Apps with a fixed backend can opt in via `graalvm { buildArgs.add("--initialize-at-build-time=org.slf4j") }` — it trades a frozen provider and build-machine-captured config for a cheaper first log call. `examples/tao-native-test` bundles Logback + an `MDC` round-trip as the regression fixture
 - GraalVM task surface mirrors the JVM one: `runGraalvmNative` is the fast dev loop (forces quick-build `-Ob`, ignoring the configured `optimization`), while `createGraalvmNativeDistributable` / `runGraalvmNativeDistributable` / `packageGraalvmNativeDistributionForCurrentOS` build & run the full app folder with the configured optimization (mirror `createDistributable` / `runDistributable` / `packageDistributionForCurrentOS`). Quick vs distributable is detected from the invoked task name and tracked as a compile input, so switching re-compiles
