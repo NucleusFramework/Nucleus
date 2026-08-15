@@ -22,7 +22,16 @@ public data class TitleBarColors(
     val content: Color,
     val border: Color,
     val fullscreenControlButtonsBackground: Color = Color.Unspecified,
+    /**
+     * Hover fill for Windows min/max caption buttons. [Color.Transparent]
+     * (the default) keeps the Win11 SubtleFill overlay. The close button
+     * always uses the system red — WinUI does not apply this color there.
+     */
     val iconButtonHoveredBackground: Color = Color.Transparent,
+    /**
+     * Pressed fill for Windows min/max caption buttons. [Color.Transparent]
+     * (the default) keeps the Win11 SubtleFill overlay. Close stays system red.
+     */
     val iconButtonPressedBackground: Color = Color.Transparent,
     val controlButtonIconColor: Color = Color.Unspecified,
     val controlButtonIconHoverColor: Color = Color.Unspecified,

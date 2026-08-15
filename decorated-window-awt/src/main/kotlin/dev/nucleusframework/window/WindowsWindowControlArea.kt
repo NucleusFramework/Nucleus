@@ -24,6 +24,9 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.internal.WindowsCaptionButtonStyle
+import dev.nucleusframework.window.internal.animateWindowsCaptionColor
+import dev.nucleusframework.window.internal.windowsCaptionButtonBackground
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.utils.windows.windowsTitleBarIcons
 import java.awt.Frame
@@ -31,24 +34,7 @@ import java.awt.event.WindowEvent
 
 private val WINDOWS_BUTTON_WIDTH = 46.dp
 
-// Fixed Windows-native button colors — never theme-dependent
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredLight = Color(0x1A000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredDark = Color(0x1AFFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedLight = Color(0x33000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedDark = Color(0x33FFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonHovered = Color(0xFFE81123)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonPressed = Color(0xFFF1707A)
+private const val CLOSE_HOVER_ALPHA_EPSILON = 0.02f
 
 @Suppress("FunctionNaming")
 @Composable
@@ -163,18 +149,28 @@ private fun TitleBarScope.WindowsCaptionButton(
 ) {
     var hovered by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
+    val appearing = hovered || pressed
 
     val isDark = LocalIsDarkTheme.current
-    val backgroundColor =
-        captionButtonBackground(
+    val targetBackground =
+        windowsCaptionButtonBackground(
             hovered = hovered,
             pressed = pressed,
             isCloseButton = isCloseButton,
             isDark = isDark,
-            style = style,
+            customHover = style.colors.iconButtonHoveredBackground,
+            customPressed = style.colors.iconButtonPressedBackground,
+        )
+    val backgroundColor =
+        animateWindowsCaptionColor(
+            targetBackground,
+            appearing = appearing,
+            durationMillis = WindowsCaptionButtonStyle.BackgroundFadeOutMillis,
         )
 
-    val isCloseHovered = (hovered || pressed) && isCloseButton
+    val isCloseHovered =
+        isCloseButton &&
+            (appearing || backgroundColor.alpha > CLOSE_HOVER_ALPHA_EPSILON)
     val currentIcon =
         when {
             isCloseHovered && iconHover != null -> iconHover
@@ -215,30 +211,6 @@ private fun TitleBarScope.WindowsCaptionButton(
             contentDescription = contentDescription,
             colorFilter = colorFilter,
         )
-    }
-}
-
-private fun captionButtonBackground(
-    hovered: Boolean,
-    pressed: Boolean,
-    isCloseButton: Boolean,
-    isDark: Boolean,
-    style: TitleBarStyle,
-): Color {
-    val customHover = style.colors.iconButtonHoveredBackground
-    val customPressed = style.colors.iconButtonPressedBackground
-    val pressedColor =
-        customPressed.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
-    val hoveredColor =
-        customHover.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
-    return when {
-        pressed && isCloseButton -> WindowsCloseButtonPressed
-        pressed -> pressedColor
-        hovered && isCloseButton -> WindowsCloseButtonHovered
-        hovered -> hoveredColor
-        else -> Color.Transparent
     }
 }
 

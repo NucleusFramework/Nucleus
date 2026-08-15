@@ -668,6 +668,25 @@ public final class dev/nucleusframework/window/internal/InsideBorderModifierKt {
 	public static synthetic fun insideBorder-xT4_qwU$default (Landroidx/compose/ui/Modifier;FJLandroidx/compose/ui/graphics/Shape;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
 }
 
+public final class dev/nucleusframework/window/internal/WindowsCaptionButtonStyle {
+	public static final field $stable I
+	public static final field BackgroundFadeOutMillis I
+	public static final field ForegroundFadeOutMillis I
+	public static final field INSTANCE Ldev/nucleusframework/window/internal/WindowsCaptionButtonStyle;
+	public final fun getCloseHovered-0d7_KjU ()J
+	public final fun getCloseIdle-0d7_KjU ()J
+	public final fun getClosePressed-0d7_KjU ()J
+	public final fun getHoveredDark-0d7_KjU ()J
+	public final fun getHoveredLight-0d7_KjU ()J
+	public final fun getPressedDark-0d7_KjU ()J
+	public final fun getPressedLight-0d7_KjU ()J
+}
+
+public final class dev/nucleusframework/window/internal/WindowsCaptionButtonStyleKt {
+	public static final fun animateWindowsCaptionColor-3J-VO9M (JZILandroidx/compose/runtime/Composer;I)J
+	public static final fun windowsCaptionButtonBackground-VT9Kpxs (ZZZZJJ)J
+}
+
 public final class dev/nucleusframework/window/styling/DecoratedWindowColors {
 	public static final field $stable I
 	public synthetic fun <init> (JJJILkotlin/jvm/internal/DefaultConstructorMarker;)V
