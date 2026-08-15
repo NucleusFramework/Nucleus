@@ -8,11 +8,14 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberDialogState
@@ -85,10 +88,16 @@ public fun ApplicationScope.DecoratedDialog(
     // native bridge centres atomically right before `addChildWindow:` to
     // avoid the flash, so we don't pre-compute a position here.
     val autoCenterRequested = state.position !is WindowPosition.Absolute
+    val sizeSpecified = state.size.width.isSpecified && state.size.height.isSpecified
     val initialPosition =
         remember(parent) {
             val explicit = state.position
             if (explicit is WindowPosition.Absolute) return@remember explicit
+            // Wrap-content dialogs (#532) don't know their height yet — a
+            // centre computed against Dp.Unspecified (NaN / 0) is wrong and
+            // on macOS would be locked in by addChildWindow:. Defer to the
+            // size-ready effect below.
+            if (!sizeSpecified) return@remember explicit
             val centered =
                 when (Platform.Current) {
                     Platform.Windows ->
@@ -146,11 +155,14 @@ public fun ApplicationScope.DecoratedDialog(
             // Native owner relationship. Runs inside the dialog's composition,
             // so `windowScope.window` is the dialog's TaoWindow and its HWND
             // is already resolvable via [TaoWindow.nativeHandle].
+            // Do not wait for wrap-content size: on Wayland a hidden dialog
+            // without an owner never receives a configure, so setContent
+            // never runs and wrap-content deadlocks (#532).
             DisposableEffect(windowScope.window, parent) {
                 applyDialogOwnerRelationship(
                     dialog = windowScope.window,
                     parent = parent,
-                    autoCenter = autoCenterRequested,
+                    autoCenter = autoCenterRequested && sizeSpecified,
                 )
                 onDispose { /* native handle destruction restores focus to owner */ }
             }
@@ -160,9 +172,20 @@ public fun ApplicationScope.DecoratedDialog(
     )
 
     // Bidirectional bridge between DialogState and the WindowState plumbed
-    // into the underlying DecoratedWindow.
+    // into the underlying DecoratedWindow. After wrap-content resolves, the
+    // deferred parent-centre runs once with the real size.
+    val pendingParentCenter = remember { mutableStateOf(autoCenterRequested && !sizeSpecified) }
     LaunchedEffect(windowState.size) {
         if (state.size != windowState.size) state.size = windowState.size
+        val centered =
+            takePendingParentCenter(
+                pending = pendingParentCenter.value,
+                parent = parent,
+                size = windowState.size,
+            ) ?: return@LaunchedEffect
+        pendingParentCenter.value = false
+        windowState.position = centered
+        state.position = centered
     }
     LaunchedEffect(windowState.position) {
         val p = windowState.position
@@ -200,6 +223,19 @@ public fun ApplicationScope.DecoratedDialog(
  *
  * No-op when the relevant bridge or the parent is unavailable.
  */
+private fun takePendingParentCenter(
+    pending: Boolean,
+    parent: TaoWindow?,
+    size: DpSize,
+): WindowPosition.Absolute? {
+    if (!pending || !size.width.isSpecified || !size.height.isSpecified) return null
+    return when (Platform.Current) {
+        Platform.Windows -> centerOnParentWindows(parent, size.width.value, size.height.value)
+        Platform.Linux -> centerOnParentLinux(parent, size.width.value, size.height.value)
+        else -> null
+    }
+}
+
 private fun applyDialogOwnerRelationship(
     dialog: TaoWindow,
     parent: TaoWindow?,

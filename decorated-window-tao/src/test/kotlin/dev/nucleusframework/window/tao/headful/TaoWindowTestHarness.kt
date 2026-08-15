@@ -1,6 +1,8 @@
 package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.unit.DpSize
+import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlinx.coroutines.delay
@@ -42,6 +44,21 @@ internal class TaoWindowTestCase(
      * window instead of being drawn inline. Creation-time only.
      */
     val nativePopupLayers: Boolean = false,
+    /**
+     * Initial [androidx.compose.ui.window.WindowState.size] for this case's
+     * [dev.nucleusframework.window.tao.DecoratedWindow]. `null` keeps the
+     * Compose Desktop default (800×600). Pass a [DpSize] with
+     * [androidx.compose.ui.unit.Dp.Unspecified] on one or both axes to
+     * exercise wrap-content sizing (#532).
+     */
+    val size: DpSize? = null,
+    /**
+     * When non-null, the suite also composes a [dev.nucleusframework.window.tao.DecoratedDialog]
+     * at application scope (parented to this case's window). [dialogSize]
+     * is its [androidx.compose.ui.window.DialogState.size].
+     */
+    val dialogSize: DpSize? = null,
+    val dialogContent: (@Composable TaoDecoratedDialogScope.() -> Unit)? = null,
     /** Optional extra window content composed inside the DecoratedWindow. */
     val content: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     val driver: suspend TaoWindowTestScope.() -> Unit,
@@ -53,6 +70,7 @@ internal class TaoWindowTestCase(
 
 internal class TaoWindowTestScope(
     val window: TaoWindow,
+    val dialogWindow: TaoWindow? = null,
 ) {
     /**
      * Polls [predicate] on the composition dispatcher (the Tao main thread)
@@ -75,6 +93,9 @@ internal class TaoWindowTestScope(
 
     /** Outer bounds as [x, y, w, h] physical px, or null before the window is mapped. */
     fun bounds(): LongArray? = window.outerBoundsPx()
+
+    /** [dialogWindow] outer bounds, or null if no dialog is open / not yet mapped. */
+    fun dialogBounds(): LongArray? = dialogWindow?.outerBoundsPx()
 
     private companion object {
         const val AWAIT_TIMEOUT_MILLIS = 15_000L
