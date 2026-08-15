@@ -346,6 +346,19 @@ internal object NativeTaoBridge {
     )
 
     /**
+     * Linux only: show or hide the widget installed as `gtk_window_set_titlebar`
+     * (tao's Wayland [WlHeader] or the yaru hidden header). Hiding sets
+     * `no-show-all` so a later `gtk_widget_show_all` does not bring it back.
+     * Used on KDE to drop the native frame while a Compose [TitleBar] is
+     * composed, without unlatching CSD. No-op when the handle has no titlebar.
+     */
+    @JvmStatic
+    external fun nativeLinuxSetTitlebarVisible(
+        handle: Long,
+        visible: Boolean,
+    )
+
+    /**
      * Linux only: returns `[x, y, width, height]` of the window's outer
      * (decoration-inclusive) bounds in physical pixels with a top-left origin.
      * Matches the shape returned by the Windows / macOS counterparts so the

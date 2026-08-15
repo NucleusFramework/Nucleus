@@ -39,6 +39,7 @@ import dev.nucleusframework.window.hasMacOSLargeCornerRadius
 import dev.nucleusframework.window.hasNewFullscreenControls
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.HideNativeLinuxTitlebarWhileComposed
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
@@ -122,6 +123,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     val taoScope = this as TaoDecoratedWindowScope
     val taoWindow = taoScope.window
     val currentState = taoScope.state
+    HideNativeLinuxTitlebarWhileComposed(taoWindow)
 
     // Publish the resolved height up to DecoratedWindow, which applies the
     // native button-centering constraints once the window is shown.

@@ -34,6 +34,7 @@ import dev.nucleusframework.window.LocalControlButtonsDirection
 import dev.nucleusframework.window.TitleBarScope
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.HideNativeLinuxTitlebarWhileComposed
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -71,6 +72,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
 ) {
     val taoScope = this as TaoDecoratedDialogScope
     val taoWindow = taoScope.window
+    HideNativeLinuxTitlebarWhileComposed(taoWindow)
     val dialogState = taoScope.state
     val windowState = dialogState.toDecoratedWindowState()
     val controlDir = controlButtonsDirection.resolve()

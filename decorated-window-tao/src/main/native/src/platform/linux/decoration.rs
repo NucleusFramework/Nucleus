@@ -18,7 +18,7 @@
 // `WINDOWS` map, exactly like `monitor.rs` / `handles.rs`.
 
 use jni::objects::JClass;
-use jni::sys::{jlong, jlongArray};
+use jni::sys::{jboolean, jlong, jlongArray};
 use jni::JNIEnv;
 
 use tao::platform::unix::WindowExtUnix;
@@ -103,4 +103,32 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         return std::ptr::null_mut();
     }
     arr.into_raw()
+}
+
+/// Shows or hides the GTK titlebar widget. Hiding also sets `no-show-all` so
+/// tao's `show_all()` path cannot resurrect a 44 px native header above
+/// Compose chrome. CSD stays latched because `gtk_window_set_titlebar` is
+/// not cleared — KWin still sees a client-decorated window.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxSetTitlebarVisible(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    visible: jboolean,
+) {
+    use gtk::prelude::{GtkWindowExt, WidgetExt};
+
+    let Some(window) = with_window(handle, |window| Some(window.gtk_window().clone())) else {
+        return;
+    };
+    let Some(titlebar) = window.titlebar() else {
+        return;
+    };
+    if visible != 0 {
+        titlebar.set_no_show_all(false);
+        titlebar.show();
+    } else {
+        titlebar.hide();
+        titlebar.set_no_show_all(true);
+    }
 }

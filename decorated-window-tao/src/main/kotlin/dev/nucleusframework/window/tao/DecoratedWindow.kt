@@ -263,6 +263,7 @@ internal fun ApplicationScope.openDecoratedWindow(
     initialCompositionLocalContext: CompositionLocalContext? = null,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
+    val nativeLinuxDecorations = linuxKeepsNativeWindowDecorations(undecorated)
     // hiddenFromDock rides on the GTK skip-taskbar/skip-pager hint, which
     // native Wayland does not honour: there is no client-side skip-taskbar
     // protocol on Wayland (xdg-shell, gtk_shell1 and the staging extensions all
@@ -288,13 +289,17 @@ internal fun ApplicationScope.openDecoratedWindow(
             width = width,
             height = height,
             // On macOS we keep native decorations (traffic-light buttons live there).
-            // On Windows + Linux we drop them — we draw the close/min/max buttons
-            // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
-            // the user's [TitleBar] composable, mirroring decorated-window-jni.
-            // `undecorated` opts out entirely (borderless, no traffic lights).
-            // Linux still gets the native GTK drop shadow through
-            // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
-            decorations = !undecorated && Platform.Current == Platform.MacOS,
+            // On Windows we drop them — we draw the close/min/max buttons
+            // ourselves via [WindowControlsWindows] inside the user's [TitleBar].
+            // On Linux the default is Compose chrome + (Wayland-only) yaru-style
+            // hidden-titlebar CSD for the GTK shadow ring.
+            // KDE/Plasma is the exception: hiding the GTK header latches CSD
+            // and KWin then drops server-side decorations, so the window is
+            // left with no title bar, borders, or caption buttons
+            // (ComposeNativeTray #425). Keep native decorations there instead.
+            decorations =
+                !undecorated &&
+                    (Platform.Current == Platform.MacOS || nativeLinuxDecorations),
             resizable = resizable,
             visible = false, // we show after first paint
             // Pass `maximized` to the builder so Tao sets it BEFORE the window
@@ -313,8 +318,10 @@ internal fun ApplicationScope.openDecoratedWindow(
             transparent = transparent,
             // Tao defaults borderless windows to a drop shadow (DWM on
             // Windows, NSWindow.hasShadow on macOS). Overlays must opt out
-            // or the ghost still shows a soft contour.
-            undecoratedShadow = !undecorated,
+            // or the ghost still shows a soft contour. On KDE this flag
+            // would also latch hidden-titlebar CSD and strip the native
+            // frame we just asked for above.
+            undecoratedShadow = !undecorated && !nativeLinuxDecorations,
         )
 
     // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
@@ -602,8 +609,9 @@ internal fun ApplicationScope.openDecoratedWindow(
 /**
  * Linux path for [DecoratedWindow]: EGL renderer attached to the GTK-owned
  * surface (X11 XID or wl_surface, picked at runtime by [TaoComposeSceneHostLinux]).
- * Native GTK decorations are kept; the user's [TitleBar] composable still
- * works as a sub-bar inside the content area.
+ * On KDE the native GTK/KWin frame is kept (#425). Elsewhere the yaru
+ * hidden-titlebar CSD is used; a composed [TitleBar] still hides that
+ * native header so custom chrome does not double up.
  */
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 private fun ApplicationScope.openDecoratedWindowLinux(
@@ -633,8 +641,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     // Yaru-style hidden-titlebar CSD (native GTK shadow ring): created via
     // `undecoratedShadow = !undecorated` at openWindow time; the host aligns
     // the frame radius and extends the resize band over the ring. Only
-    // effective on Wayland non-popup windows.
-    host.nativeCsdDecorations = !undecorated
+    // effective on Wayland non-popup windows. Off on KDE: native decorations
+    // keep a visible GTK/KWin titlebar instead of the hidden-header CSD.
+    host.nativeCsdDecorations = !undecorated && !linuxKeepsNativeWindowDecorations(undecorated)
     host.setSceneCompositionLocalContext(initialCompositionLocalContext)
 
     // ── Linux accessibility (AT-SPI2 via AccessKit) ────────────────────────
@@ -709,8 +718,9 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             ) {
                 // Default: CSD outline (vanilla-style frame for custom chrome).
                 // `undecorated` = fully borderless overlay — no Compose stroke.
+                // KDE keeps the native frame, so a Compose stroke would double it.
                 val border =
-                    if (undecorated) {
+                    if (undecorated || linuxKeepsNativeWindowDecorations(undecorated)) {
                         Modifier
                     } else {
                         rememberUndecoratedWindowBorder(
@@ -1425,3 +1435,18 @@ private fun resolveChromeDark(
         // Same Rec.601 luminance split the other backends use.
         dev.nucleusframework.window.WindowAppearanceMode.System -> Color(backgroundArgb).isDark()
     }
+
+/**
+ * KDE/Plasma must keep the native GTK/KWin frame when the caller asked for
+ * decorations. The yaru hidden-titlebar CSD used on GNOME latches client-side
+ * decorations; KWin then stops drawing SSD and a hidden header leaves the
+ * window with no title bar, borders, or caption buttons
+ * (ComposeNativeTray #425).
+ */
+internal fun linuxKeepsNativeWindowDecorations(
+    undecorated: Boolean,
+    desktop: LinuxDesktopEnvironment = LinuxDesktopEnvironment.Current,
+): Boolean =
+    !undecorated &&
+        Platform.Current == Platform.Linux &&
+        desktop == LinuxDesktopEnvironment.KDE

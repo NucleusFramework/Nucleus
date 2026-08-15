@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.HideNativeLinuxTitlebarWhileComposed
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -63,6 +64,9 @@ public fun DecoratedWindowScope.WindowScaffold(
     val taoScope = this as TaoDecoratedWindowScope
     val taoWindow = taoScope.window
     val currentState = taoScope.state
+    if (titleBar != null) {
+        HideNativeLinuxTitlebarWhileComposed(taoWindow)
+    }
 
     val heightHolder = LocalRequestedTitleBarHeight.current
     val density = LocalDensity.current
