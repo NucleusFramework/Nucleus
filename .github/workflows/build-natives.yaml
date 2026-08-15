@@ -107,6 +107,11 @@ jobs:
         shell: cmd
         run: call media-control\src\main\native\windows\build.bat
 
+      - name: Build spellcheck Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call spellcheck\src\main\native\windows\build.bat
+
       - name: Setup Rust (Windows)
         if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
@@ -151,6 +156,7 @@ jobs:
             "system-info/nucleus_system_info.dll"
             "scheduler/nucleus_scheduler.dll"
             "media-control/nucleus_media_control_windows.dll"
+            "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"

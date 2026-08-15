@@ -24,7 +24,7 @@ dependencies {
     api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
-    // Spellcheck (Linux Hunspell, macOS NSSpellChecker; no-op elsewhere).
+    // Spellcheck (Linux Hunspell, macOS NSSpellChecker, Windows ISpellChecker).
     // `api` because SpellcheckContextMenu / NucleusSpellcheckInstaller expose SpellcheckSession.
     api(project(":spellcheck"))
     // api: NucleusApplicationScope extends Compose's ApplicationScope, so the

@@ -33,6 +33,7 @@ kotlin {
 nucleusNative {
     linux("nucleus_spellcheck")
     macos("nucleus_spellcheck")
+    windows("nucleus_spellcheck")
 }
 
 mavenPublishing {
@@ -42,8 +43,8 @@ mavenPublishing {
         name.set("Nucleus Spellcheck")
         description.set(
             "Spell checker for Compose text fields: Linux Hunspell (system dictionaries " +
-                "via dlopen) and macOS NSSpellChecker. No-op on Windows and when the " +
-                "native engine or a dictionary is unavailable.",
+                "via dlopen), macOS NSSpellChecker, and Windows ISpellChecker. No-op " +
+                "when the native engine or a dictionary is unavailable.",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")
 

@@ -62,6 +62,8 @@ jobs:
             "spellcheck/src/main/resources/nucleus/native/linux-aarch64/libnucleus_spellcheck.so"
             "spellcheck/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_spellcheck.dylib"
             "spellcheck/src/main/resources/nucleus/native/darwin-x64/libnucleus_spellcheck.dylib"
+            "spellcheck/src/main/resources/nucleus/native/win32-x64/nucleus_spellcheck.dll"
+            "spellcheck/src/main/resources/nucleus/native/win32-aarch64/nucleus_spellcheck.dll"
             "system-color/src/main/resources/nucleus/native/linux-x64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/linux-aarch64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_systemcolor.dylib"

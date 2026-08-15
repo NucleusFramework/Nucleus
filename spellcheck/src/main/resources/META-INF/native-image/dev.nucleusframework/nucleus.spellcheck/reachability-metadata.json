@@ -23,6 +23,18 @@
         { "name": "nativeSpell", "parameterTypes": ["long", "java.lang.String", "java.lang.String"] },
         { "name": "nativeSuggest", "parameterTypes": ["long", "java.lang.String", "java.lang.String"] }
       ]
+    },
+    {
+      "type": "dev.nucleusframework.spellcheck.windows.NativeSpellcheckBridge",
+      "jniAccessible": true,
+      "methods": [
+        { "name": "nativeIsAvailable", "parameterTypes": [] },
+        { "name": "nativeResolveLanguage", "parameterTypes": ["java.lang.String[]"] },
+        { "name": "nativeCreate", "parameterTypes": ["java.lang.String"] },
+        { "name": "nativeDestroy", "parameterTypes": ["long"] },
+        { "name": "nativeSpell", "parameterTypes": ["long", "java.lang.String"] },
+        { "name": "nativeSuggest", "parameterTypes": ["long", "java.lang.String"] }
+      ]
     }
   ]
 }

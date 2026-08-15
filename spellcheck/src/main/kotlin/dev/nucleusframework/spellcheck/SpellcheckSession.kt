@@ -12,15 +12,17 @@ import java.util.logging.Level
 import java.util.logging.Logger
 import dev.nucleusframework.spellcheck.linux.NativeSpellcheckBridge as LinuxBridge
 import dev.nucleusframework.spellcheck.macos.NativeSpellcheckBridge as MacBridge
+import dev.nucleusframework.spellcheck.windows.NativeSpellcheckBridge as WindowsBridge
 
 /**
  * Isolated spellcheck session.
  *
  * Linux loads Hunspell via JNI and a locale-matching system `.aff`/`.dic`.
  * macOS uses [NSSpellChecker](https://developer.apple.com/documentation/appkit/nsspellchecker).
- * A missing native library, missing dictionary, or an unsupported [osName]
- * makes every operation a no-op (`check`/`addToDictionary` return `false`,
- * `suggest` returns empty).
+ * Windows uses the [Spell Checking API](https://learn.microsoft.com/windows/win32/intl/spell-checker-api)
+ * (`ISpellChecker`). A missing native library, missing dictionary, or an
+ * unsupported [osName] makes every operation a no-op (`check`/`addToDictionary`
+ * return `false`, `suggest` returns empty).
  *
  * User-added words are persisted to [userDictionaryFile] (the Nucleus file,
  * not the OS learned-word list) so tests can isolate themselves with a temp
@@ -61,6 +63,7 @@ public class SpellcheckSession public constructor(
             when (val e = engine) {
                 is Engine.Hunspell -> e.tag
                 is Engine.MacOs -> e.language
+                is Engine.Windows -> e.language
                 Engine.None -> null
             }
         if (engine !is Engine.None) {
@@ -84,6 +87,7 @@ public class SpellcheckSession public constructor(
                     when (val e = engine) {
                         is Engine.Hunspell -> LinuxBridge.nativeSpell(e.handle, normalized)
                         is Engine.MacOs -> MacBridge.nativeSpell(e.documentTag, e.language, normalized)
+                        is Engine.Windows -> WindowsBridge.nativeSpell(e.handle, normalized)
                         Engine.None -> false
                     }
                 } catch (e: Exception) {
@@ -111,6 +115,7 @@ public class SpellcheckSession public constructor(
                         is Engine.Hunspell -> LinuxBridge.nativeSuggest(e.handle, normalize(word))
                         is Engine.MacOs ->
                             MacBridge.nativeSuggest(e.documentTag, e.language, normalize(word))
+                        is Engine.Windows -> WindowsBridge.nativeSuggest(e.handle, normalize(word))
                         Engine.None -> emptyArray()
                     }
                 raw.filter { it.isNotEmpty() }.distinct()
@@ -128,9 +133,9 @@ public class SpellcheckSession public constructor(
      * Adds [word] to this session and persists it to the user dictionary file.
      * Returns `false` when the session is a no-op or the add fails.
      *
-     * On Linux the word is also injected into the Hunspell handle. On macOS it
-     * lives in the process cache + user file only — `NSSpellChecker.learnWord`
-     * is not called, so the OS learned-word list is left untouched.
+     * On Linux the word is also injected into the Hunspell handle. On macOS and
+     * Windows it lives in the process cache + user file only — the OS
+     * learned-word list is left untouched.
      */
     public fun addToDictionary(word: String): Boolean {
         val normalized = normalize(word)
@@ -140,7 +145,7 @@ public class SpellcheckSession public constructor(
                 try {
                     when (val e = engine) {
                         is Engine.Hunspell -> LinuxBridge.nativeAdd(e.handle, normalized)
-                        is Engine.MacOs -> true
+                        is Engine.MacOs, is Engine.Windows -> true
                         Engine.None -> false
                     }
                 } catch (e: UnsatisfiedLinkError) {
@@ -174,6 +179,7 @@ public class SpellcheckSession public constructor(
                 when (current) {
                     is Engine.Hunspell -> LinuxBridge.nativeDestroy(current.handle)
                     is Engine.MacOs -> MacBridge.nativeDestroyDocument(current.documentTag)
+                    is Engine.Windows -> WindowsBridge.nativeDestroy(current.handle)
                     Engine.None -> Unit
                 }
             } catch (e: UnsatisfiedLinkError) {
@@ -192,6 +198,7 @@ public class SpellcheckSession public constructor(
         when {
             isLinux(osName) -> openHunspell(locale, dictionaryDirectories)
             isMacOs(osName) -> openMacOs(locale)
+            isWindows(osName) -> openWindows(locale)
             else -> Engine.None
         }
 
@@ -234,6 +241,23 @@ public class SpellcheckSession public constructor(
         }
     }
 
+    private fun openWindows(locale: Locale): Engine {
+        if (!WindowsBridge.isLoaded) return Engine.None
+        return try {
+            if (!WindowsBridge.nativeIsAvailable()) return Engine.None
+            val candidates = DictionaryLocator.localeCandidates(locale).toTypedArray()
+            val language = WindowsBridge.nativeResolveLanguage(candidates) ?: return Engine.None
+            val handle = WindowsBridge.nativeCreate(language)
+            if (handle == 0L) Engine.None else Engine.Windows(handle, language)
+        } catch (e: UnsatisfiedLinkError) {
+            logger.log(Level.WARNING, "Failed to create ISpellChecker session", e)
+            Engine.None
+        } catch (e: RuntimeException) {
+            logger.log(Level.WARNING, "Failed to create ISpellChecker session", e)
+            Engine.None
+        }
+    }
+
     private fun loadUserDictionary() {
         val file = userFile ?: return
         if (!Files.isRegularFile(file)) return
@@ -243,7 +267,7 @@ public class SpellcheckSession public constructor(
                 if (word.isEmpty()) return@forEach
                 when (val e = engine) {
                     is Engine.Hunspell -> LinuxBridge.nativeAdd(e.handle, word)
-                    is Engine.MacOs, Engine.None -> Unit
+                    is Engine.MacOs, is Engine.Windows, Engine.None -> Unit
                 }
                 checkCache[word] = true
             }
@@ -294,6 +318,11 @@ public class SpellcheckSession public constructor(
             val language: String,
         ) : Engine()
 
+        class Windows(
+            val handle: Long,
+            val language: String,
+        ) : Engine()
+
         data object None : Engine()
     }
 
@@ -331,5 +360,7 @@ public class SpellcheckSession public constructor(
         private fun isMacOs(osName: String): Boolean =
             osName.contains("Mac", ignoreCase = true) ||
                 osName.contains("Darwin", ignoreCase = true)
+
+        private fun isWindows(osName: String): Boolean = osName.contains("Windows", ignoreCase = true)
     }
 }

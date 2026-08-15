@@ -4,9 +4,10 @@ package dev.nucleusframework.spellcheck
  * Process-wide spell checker used by `nucleusApplication` text fields.
  *
  * On Linux this loads `libhunspell` via JNI and the locale-matching system
- * `.aff`/`.dic`. On macOS this uses `NSSpellChecker`. On Windows — and when
- * the native library or dictionary is missing — [check], [suggest] and
- * [addToDictionary] are no-ops (`false` / empty, never thrown).
+ * `.aff`/`.dic`. On macOS this uses `NSSpellChecker`. On Windows this uses
+ * `ISpellChecker`. When the native library or dictionary is missing,
+ * [check], [suggest] and [addToDictionary] are no-ops (`false` / empty,
+ * never thrown).
  *
  * [session] constructs the native handle on first access (dictionary load).
  * The Tao installer calls it from a background dispatcher so the UI thread

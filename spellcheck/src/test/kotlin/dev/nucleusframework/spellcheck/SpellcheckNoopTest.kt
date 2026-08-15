@@ -33,7 +33,10 @@ class SpellcheckNoopTest {
     }
 
     @Test
-    fun `windows platform branch is a no-op`() {
+    fun `windows platform branch is a no-op when the native library cannot load`() {
+        val hostWindows =
+            System.getProperty("os.name", "").contains("Windows", ignoreCase = true)
+        assumeFalse("Windows host loads the real ISpellChecker engine", hostWindows)
         SpellcheckSession(locale = Locale.US, osName = "Windows 11").use { session ->
             assertFalse(session.isAvailable)
             assertFalse(session.check("hello"))
