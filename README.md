@@ -35,6 +35,19 @@ class-file major version 69. The Tao backend is the recommended one for new proj
 `decorated-window-jni` and `decorated-window-jbr` are kept for existing users and receive
 fixes only.
 
+## Used by
+
+- [AB Download Manager](https://github.com/amir1376/ab-download-manager) — packaging plugin
+- [Hammer](https://github.com/Darkrock-Studios/hammer-editor)
+- [OtakuWorld](https://github.com/jakepurple13/OtakuWorld)
+- [Husi](https://github.com/xchacha20-poly1305/husi)
+- [Zayit](https://github.com/kdroidFilter/Zayit)
+- [GitVantage](https://github.com/rocketraman/gitvantage)
+
+## Showcase
+
+- [EdgeTranslator](https://github.com/NucleusFramework/EdgeTranslator) — offline AI translator
+
 ## Installation
 
 Nucleus ships as a Gradle plugin. Apply it alongside the Kotlin and Compose plugins in
