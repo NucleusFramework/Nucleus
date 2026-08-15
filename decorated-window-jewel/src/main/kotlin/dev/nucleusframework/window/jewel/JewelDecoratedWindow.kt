@@ -69,8 +69,9 @@ public fun ApplicationScope.JewelDecoratedWindow(
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
-            content = content,
-        )
+        ) {
+            ProvideJewelSpellcheckMenu { content() }
+        }
     }
 }
 
@@ -135,7 +136,7 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
         ) {
-            content()
+            ProvideJewelSpellcheckMenu { content() }
         }
     }
 }

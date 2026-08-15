@@ -1,0 +1,16 @@
+{
+  "reflection": [
+    {
+      "type": "dev.nucleusframework.spellcheck.linux.NativeSpellcheckBridge",
+      "jniAccessible": true,
+      "methods": [
+        { "name": "nativeIsHunspellPresent", "parameterTypes": [] },
+        { "name": "nativeCreate", "parameterTypes": ["java.lang.String", "java.lang.String"] },
+        { "name": "nativeDestroy", "parameterTypes": ["long"] },
+        { "name": "nativeSpell", "parameterTypes": ["long", "java.lang.String"] },
+        { "name": "nativeSuggest", "parameterTypes": ["long", "java.lang.String"] },
+        { "name": "nativeAdd", "parameterTypes": ["long", "java.lang.String"] }
+      ]
+    }
+  ]
+}

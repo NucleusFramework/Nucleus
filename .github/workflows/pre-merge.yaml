@@ -59,6 +59,8 @@ jobs:
             "decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll"
             "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
             "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
+            "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
+            "spellcheck/src/main/resources/nucleus/native/linux-aarch64/libnucleus_spellcheck.so"
             "system-color/src/main/resources/nucleus/native/linux-x64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/linux-aarch64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_systemcolor.dylib"

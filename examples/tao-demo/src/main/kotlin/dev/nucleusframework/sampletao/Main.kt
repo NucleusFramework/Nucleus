@@ -397,6 +397,7 @@ private fun runApp() =
                             Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
                             Tab.SwiftUI -> SwiftUITab(modifier = Modifier.fillMaxSize())
                             Tab.Texture -> TextureTab(modifier = Modifier.fillMaxSize())
+                            Tab.Spellcheck -> SpellcheckTab(modifier = Modifier.fillMaxSize())
                         }
                     }
                 }

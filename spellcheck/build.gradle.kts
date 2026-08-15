@@ -2,8 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
-    alias(libs.plugins.kotlinComposePlugin)
-    alias(libs.plugins.jetbrainsCompose)
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -15,35 +14,35 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against all backends — consumer picks one at runtime:
-    //  :decorated-window-jbr (JBR), :decorated-window-jni (any JVM), or
-    //  :decorated-window-tao (no-AWT native).
-    compileOnly(project(":decorated-window-jbr"))
-    compileOnly(project(":decorated-window-tao"))
-    compileOnly(project(":nucleus-application"))
-    api(project(":core-runtime"))
-    api(libs.compose.desktop.common)
-    implementation(libs.jewel.foundation)
-    implementation(libs.jewel.ui)
+    implementation(project(":core-runtime"))
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit)
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
 }
 
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_25)
+        jvmTarget.set(JvmTarget.JVM_11)
     }
 }
 
+nucleusNative {
+    linux("nucleus_spellcheck")
+}
+
 mavenPublishing {
-    coordinates("dev.nucleusframework", "nucleus.decorated-window-jewel", publishVersion)
+    coordinates("dev.nucleusframework", "nucleus.spellcheck", publishVersion)
 
     pom {
-        name.set("Nucleus Jewel Decorated Window")
-        description.set("Jewel (IntelliJ theme) integration for Nucleus Decorated Window")
+        name.set("Nucleus Spellcheck")
+        description.set(
+            "Linux Hunspell-backed spell checker (system dictionaries via dlopen). " +
+                "No-op on macOS/Windows and when Hunspell or a dictionary is unavailable.",
+        )
         url.set("https://github.com/NucleusFramework/Nucleus")
 
         licenses {
