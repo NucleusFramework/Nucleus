@@ -94,9 +94,6 @@ internal class TaoWindowTestScope(
     /** Outer bounds as [x, y, w, h] physical px, or null before the window is mapped. */
     fun bounds(): LongArray? = window.outerBoundsPx()
 
-    /** [dialogWindow] outer bounds, or null if no dialog is open / not yet mapped. */
-    fun dialogBounds(): LongArray? = dialogWindow?.outerBoundsPx()
-
     private companion object {
         const val AWAIT_TIMEOUT_MILLIS = 15_000L
         const val POLL_MILLIS = 25L

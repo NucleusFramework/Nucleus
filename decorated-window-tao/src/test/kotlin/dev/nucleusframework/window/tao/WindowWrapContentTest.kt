@@ -2,13 +2,11 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.isSpecified
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class WindowWrapContentTest {
     @Test
@@ -26,8 +24,7 @@ class WindowWrapContentTest {
                 wrapHeight = true,
                 requested = DpSize(300.dp, Dp.Unspecified),
                 minimumSize = null,
-                widthPx = 12,
-                heightPx = 160,
+                measured = IntSize(12, 160),
                 scale = 2f,
             )
         assertEquals(DpSize(300.dp, 80.dp), size)
@@ -41,8 +38,7 @@ class WindowWrapContentTest {
                 wrapHeight = true,
                 requested = DpSize(Dp.Unspecified, Dp.Unspecified),
                 minimumSize = null,
-                widthPx = 200,
-                heightPx = 100,
+                measured = IntSize(200, 100),
                 scale = 1f,
             )
         assertEquals(DpSize(200.dp, 100.dp), size)
@@ -56,8 +52,7 @@ class WindowWrapContentTest {
                 wrapHeight = true,
                 requested = DpSize(300.dp, Dp.Unspecified),
                 minimumSize = null,
-                widthPx = 300,
-                heightPx = 0,
+                measured = IntSize(300, 0),
                 scale = 1f,
             ),
         )
@@ -71,17 +66,9 @@ class WindowWrapContentTest {
                 wrapHeight = true,
                 requested = DpSize(300.dp, Dp.Unspecified),
                 minimumSize = DpSize(200.dp, 120.dp),
-                widthPx = 300,
-                heightPx = 40,
+                measured = IntSize(300, 40),
                 scale = 1f,
             )
         assertEquals(DpSize(300.dp, 120.dp), size)
-    }
-
-    @Test
-    fun unspecifiedHeightIsDetected() {
-        val size = DpSize(300.dp, Dp.Unspecified)
-        assertTrue(size.width.isSpecified)
-        assertFalse(size.height.isSpecified)
     }
 }

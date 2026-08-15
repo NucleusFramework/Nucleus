@@ -8,16 +8,15 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
@@ -94,9 +93,8 @@ public fun ApplicationScope.DecoratedDialog(
             val explicit = state.position
             if (explicit is WindowPosition.Absolute) return@remember explicit
             // Wrap-content dialogs (#532) don't know their height yet — a
-            // centre computed against Dp.Unspecified (NaN / 0) is wrong and
-            // on macOS would be locked in by addChildWindow:. Defer to the
-            // size-ready effect below.
+            // centre computed against Dp.Unspecified is wrong. The size
+            // bridge below recentres once the measured size is specified.
             if (!sizeSpecified) return@remember explicit
             val centered =
                 when (Platform.Current) {
@@ -172,20 +170,11 @@ public fun ApplicationScope.DecoratedDialog(
     )
 
     // Bidirectional bridge between DialogState and the WindowState plumbed
-    // into the underlying DecoratedWindow. After wrap-content resolves, the
-    // deferred parent-centre runs once with the real size.
-    val pendingParentCenter = remember { mutableStateOf(autoCenterRequested && !sizeSpecified) }
+    // into the underlying DecoratedWindow. After wrap-content resolves,
+    // position is still not Absolute — centre on the parent once.
     LaunchedEffect(windowState.size) {
         if (state.size != windowState.size) state.size = windowState.size
-        val centered =
-            takePendingParentCenter(
-                pending = pendingParentCenter.value,
-                parent = parent,
-                size = windowState.size,
-            ) ?: return@LaunchedEffect
-        pendingParentCenter.value = false
-        windowState.position = centered
-        state.position = centered
+        recenterAfterWrapContent(autoCenterRequested, parent, windowState, state)
     }
     LaunchedEffect(windowState.position) {
         val p = windowState.position
@@ -223,17 +212,24 @@ public fun ApplicationScope.DecoratedDialog(
  *
  * No-op when the relevant bridge or the parent is unavailable.
  */
-private fun takePendingParentCenter(
-    pending: Boolean,
+private fun recenterAfterWrapContent(
+    autoCenterRequested: Boolean,
     parent: TaoWindow?,
-    size: DpSize,
-): WindowPosition.Absolute? {
-    if (!pending || !size.width.isSpecified || !size.height.isSpecified) return null
-    return when (Platform.Current) {
-        Platform.Windows -> centerOnParentWindows(parent, size.width.value, size.height.value)
-        Platform.Linux -> centerOnParentLinux(parent, size.width.value, size.height.value)
-        else -> null
-    }
+    windowState: WindowState,
+    state: DialogState,
+) {
+    if (!autoCenterRequested || state.position is WindowPosition.Absolute) return
+    if (!windowState.size.width.isSpecified || !windowState.size.height.isSpecified) return
+    val centered =
+        when (Platform.Current) {
+            Platform.Windows ->
+                centerOnParentWindows(parent, windowState.size.width.value, windowState.size.height.value)
+            Platform.Linux ->
+                centerOnParentLinux(parent, windowState.size.width.value, windowState.size.height.value)
+            else -> null
+        } ?: return
+    windowState.position = centered
+    state.position = centered
 }
 
 private fun applyDialogOwnerRelationship(

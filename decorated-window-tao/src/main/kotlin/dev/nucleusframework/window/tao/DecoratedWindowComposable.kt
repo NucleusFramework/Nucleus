@@ -8,6 +8,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.graphics.painter.Painter
@@ -146,11 +147,11 @@ public fun ApplicationScope.DecoratedWindow(
     state.applyMacOsInitialMaximizedSize()
 
     // Compose Desktop wrap-content: an unspecified axis is measured from
-    // the first composition, then applied as a real inner size before show
-    // (#532). Creating the native surface at NaN/0 makes Metal/EGL drop
-    // the drawable (`CAMetalLayer ignoring invalid setDrawableSize … height=0`).
+    // content and applied via setInnerSize (#532). Creating the native
+    // surface at NaN/0 makes Metal/EGL drop the drawable.
     val wrapWidth = !state.size.width.isSpecified
     val wrapHeight = !state.size.height.isSpecified
+    val measuredContent = remember { mutableStateOf<IntSize?>(null) }
 
     // Mirrors Compose Desktop's `appliedState` pattern: tracks the last value
     // we wrote to the window so the native→state listeners can ignore echoes.
@@ -161,7 +162,7 @@ public fun ApplicationScope.DecoratedWindow(
                 var position: WindowPosition? = null
                 var placement: WindowPlacement? = null
                 var isMinimized: Boolean? = null
-                var wrapApplied: Boolean = false
+                var wrapSettled: Boolean = !wrapWidth && !wrapHeight
             }
         }
 
@@ -174,44 +175,6 @@ public fun ApplicationScope.DecoratedWindow(
             // applies the initial state.position (Absolute, Aligned, …) on first
             // composition. Pre-stamping it would short-circuit Aligned positions
             // because the LaunchedEffect bails when `pos == applied.position`.
-
-            val created = arrayOfNulls<TaoWindow>(1)
-            val sizePolicy =
-                WindowSizePolicy(
-                    wrapWidth = wrapWidth,
-                    wrapHeight = wrapHeight,
-                    onContentMeasured = measure@{ wPx, hPx ->
-                        val target = created[0] ?: return@measure
-                        val scale =
-                            (NativeTaoBridge.nativeScaleFactor(target.handle).coerceAtLeast(1)) / 1000f
-                        val newSize =
-                            resolveWrapContentSize(
-                                wrapWidth = wrapWidth,
-                                wrapHeight = wrapHeight,
-                                requested = latestState.size,
-                                minimumSize = minimumSize,
-                                widthPx = wPx,
-                                heightPx = hPx,
-                                scale = scale,
-                            ) ?: return@measure
-                        if (applied.size == newSize) return@measure
-                        val previous = applied.size
-                        if (applied.wrapApplied &&
-                            previous != null &&
-                            newSize.width <= previous.width &&
-                            newSize.height <= previous.height
-                        ) {
-                            return@measure
-                        }
-                        applied.wrapApplied = true
-                        target.setInnerSize(
-                            newSize.width.value.toDouble(),
-                            newSize.height.value.toDouble(),
-                        )
-                        applied.size = newSize
-                        latestState.size = newSize
-                    },
-                )
 
             val w =
                 openDecoratedWindow(
@@ -241,7 +204,6 @@ public fun ApplicationScope.DecoratedWindow(
                     macOSStyle = macOSStyle,
                     hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
-                    sizePolicy = sizePolicy,
                     content = {
                         val backgroundArgb = latestWindowBackgroundArgb.value
                         val clearColorLayers = LocalWindowClearColorLayers.current
@@ -258,7 +220,15 @@ public fun ApplicationScope.DecoratedWindow(
                     },
                 )
 
-            created[0] = w
+            w.installSizePolicy(
+                WindowSizePolicy(
+                    wrapWidth = wrapWidth,
+                    wrapHeight = wrapHeight,
+                    onContentMeasured = { size ->
+                        if (measuredContent.value != size) measuredContent.value = size
+                    },
+                ),
+            )
 
             // Initial placement / minimised flag are applied imperatively here
             // (Maximized is handled at builder time, above).
@@ -287,7 +257,7 @@ public fun ApplicationScope.DecoratedWindow(
                     // measurement writes the real size; otherwise the first
                     // native configure (creation fallback) would freeze the
                     // requested wrap axis at 600dp.
-                    if (applied.wrapApplied || (!wrapWidth && !wrapHeight)) {
+                    if (applied.wrapSettled) {
                         latestState.size = newSize
                     }
                 }
@@ -328,7 +298,10 @@ public fun ApplicationScope.DecoratedWindow(
         }
 
     DisposableEffect(window) {
-        onDispose { window.requestClose() }
+        onDispose {
+            window.clearSizePolicy()
+            window.requestClose()
+        }
     }
 
     // ── State → window sync ──
@@ -338,6 +311,27 @@ public fun ApplicationScope.DecoratedWindow(
         if (window.isResizable != resizable) {
             window.setResizable(resizable)
         }
+    }
+    LaunchedEffect(window, measuredContent.value) {
+        if (applied.wrapSettled) return@LaunchedEffect
+        val measured = measuredContent.value ?: return@LaunchedEffect
+        val scale = (NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1)) / 1000f
+        val resolved =
+            resolveWrapContentSize(
+                wrapWidth = wrapWidth,
+                wrapHeight = wrapHeight,
+                requested = latestState.size,
+                minimumSize = minimumSize,
+                measured = measured,
+                scale = scale,
+            ) ?: return@LaunchedEffect
+        window.setInnerSize(
+            resolved.width.value.toDouble(),
+            resolved.height.value.toDouble(),
+        )
+        applied.size = resolved
+        latestState.size = resolved
+        applied.wrapSettled = true
     }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
@@ -704,45 +698,4 @@ private fun actualWindowSizeDp(
     val h = (rect[3] / scale).toInt()
     if (w <= 0 || h <= 0) return null
     return w to h
-}
-
-internal const val DEFAULT_WINDOW_WIDTH_DP = 800.0
-internal const val DEFAULT_WINDOW_HEIGHT_DP = 600.0
-
-/**
- * Builds the first real [DpSize] for a wrap-content window from the
- * content's measured pixels. Specified axes keep the requested value;
- * unspecified axes take the measured size (floored by [minimumSize]).
- * Returns `null` when the wrap axes have not produced a positive size yet.
- */
-internal fun resolveWrapContentSize(
-    wrapWidth: Boolean,
-    wrapHeight: Boolean,
-    requested: DpSize,
-    minimumSize: DpSize?,
-    widthPx: Int,
-    heightPx: Int,
-    scale: Float,
-): DpSize? {
-    if (scale <= 0f) return null
-    val measuredW = (widthPx / scale).dp
-    val measuredH = (heightPx / scale).dp
-    val width =
-        when {
-            !wrapWidth && requested.width.isSpecified -> requested.width
-            widthPx > 0 -> measuredW
-            else -> return null
-        }
-    val height =
-        when {
-            !wrapHeight && requested.height.isSpecified -> requested.height
-            heightPx > 0 -> measuredH
-            else -> return null
-        }
-    val minW = minimumSize?.width
-    val minH = minimumSize?.height
-    val flooredW = if (minW != null && minW.isSpecified && width < minW) minW else width
-    val flooredH = if (minH != null && minH.isSpecified && height < minH) minH else height
-    if (flooredW.value <= 0f || flooredH.value <= 0f) return null
-    return DpSize(flooredW, flooredH)
 }

@@ -5,7 +5,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -262,7 +261,6 @@ internal fun ApplicationScope.openDecoratedWindow(
     // parent window's theme/user locals from the first composition without
     // hijacking popup positioning. See [LocalTaoCompositionLocalContextBridge].
     initialCompositionLocalContext: CompositionLocalContext? = null,
-    sizePolicy: WindowSizePolicy = WindowSizePolicy(),
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     // hiddenFromDock rides on the GTK skip-taskbar/skip-pager hint, which
@@ -353,7 +351,6 @@ internal fun ApplicationScope.openDecoratedWindow(
             initialCompositionLocalContext,
             nativePopupLayers,
             transparent,
-            sizePolicy,
             hotReloadContent,
         )
     }
@@ -377,7 +374,6 @@ internal fun ApplicationScope.openDecoratedWindow(
             initialCompositionLocalContext,
             nativePopupLayers,
             transparent,
-            sizePolicy,
             hotReloadContent,
         )
     }
@@ -514,10 +510,8 @@ internal fun ApplicationScope.openDecoratedWindow(
                         }
                     }
                 }
-                WindowContentRoot(sizePolicy) {
-                    Column {
-                        scopeFactory().hotReloadContent()
-                    }
+                WindowSceneColumn {
+                    scopeFactory().hotReloadContent()
                 }
             }
         }
@@ -630,7 +624,6 @@ private fun ApplicationScope.openDecoratedWindowLinux(
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
     transparent: Boolean,
-    sizePolicy: WindowSizePolicy,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host = TaoComposeSceneHostLinux(window, fullyTransparent = transparent)
@@ -741,10 +734,8 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                             isFullscreen = stateHolder.value.isFullscreen,
                             modifier = Modifier.fillMaxSize().then(border),
                         ) {
-                            WindowContentRoot(sizePolicy) {
-                                Column {
-                                    scopeFactory().content()
-                                }
+                            WindowSceneColumn {
+                                scopeFactory().content()
                             }
                         }
                         if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
@@ -1037,7 +1028,6 @@ private fun ApplicationScope.openDecoratedWindowWindows(
     initialCompositionLocalContext: CompositionLocalContext?,
     nativePopupLayers: Boolean,
     transparent: Boolean,
-    sizePolicy: WindowSizePolicy,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     val host =
@@ -1187,10 +1177,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                             isFullscreen = stateHolder.value.isFullscreen,
                             modifier = Modifier.fillMaxSize().then(border),
                         ) {
-                            WindowContentRoot(sizePolicy) {
-                                Column {
-                                    scopeFactory().content()
-                                }
+                            WindowSceneColumn {
+                                scopeFactory().content()
                             }
                         }
                         if (modalCount.value > 0 || (!isDialog && GlobalModalDialogCount.value > 0)) {
