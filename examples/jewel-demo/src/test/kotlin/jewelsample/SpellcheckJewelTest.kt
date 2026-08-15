@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import dev.nucleusframework.application.spellcheck.NucleusSpellcheckInstaller
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
+import dev.nucleusframework.application.spellcheck.SpellcheckMenuPlacement
 import dev.nucleusframework.spellcheck.SpellcheckSession
 import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
@@ -43,6 +44,30 @@ class SpellcheckJewelTest {
                         ProvideJewelSpellcheckMenu {
                             assertSame(ContextMenuDivider, LocalSpellcheckMenuSeparator.current)
                             SpellcheckContextMenu(text = "helo", onTextChange = {}) {
+                                assertSame(
+                                    ContextMenuRepresentation,
+                                    LocalContextMenuRepresentation.current,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun `top placement keeps Jewel chrome`() {
+        runComposeUiTest {
+            setContent {
+                IntUiTheme {
+                    CompositionLocalProvider(LocalContextMenuRepresentation provides ContextMenuRepresentation) {
+                        ProvideJewelSpellcheckMenu {
+                            SpellcheckContextMenu(
+                                text = "helo",
+                                onTextChange = {},
+                                menuPlacement = SpellcheckMenuPlacement.Top,
+                            ) {
                                 assertSame(
                                     ContextMenuRepresentation,
                                     LocalContextMenuRepresentation.current,

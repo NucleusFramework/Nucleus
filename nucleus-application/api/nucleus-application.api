@@ -156,13 +156,13 @@ public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
 public final class dev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller;
-	public final fun menuItems (Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;)Ljava/util/List;
-	public static synthetic fun menuItems$default (Ldev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller;Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;ILjava/lang/Object;)Ljava/util/List;
+	public final fun menuItems (Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;)Ljava/util/List;
+	public static synthetic fun menuItems$default (Ldev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller;Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;ILjava/lang/Object;)Ljava/util/List;
 }
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuKt {
-	public static final fun SpellcheckContextMenu (Landroidx/compose/foundation/text/input/TextFieldState;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
-	public static final fun SpellcheckContextMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SpellcheckContextMenu (Landroidx/compose/foundation/text/input/TextFieldState;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SpellcheckContextMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuSeparator : androidx/compose/foundation/ContextMenuItem {
@@ -172,6 +172,14 @@ public final class dev/nucleusframework/application/spellcheck/SpellcheckContext
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuSeparatorKt {
 	public static final fun getLocalSpellcheckMenuSeparator ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement : java/lang/Enum {
+	public static final field Bottom Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static final field Top Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static fun values ()[Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
 }
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckUnderlineKt {

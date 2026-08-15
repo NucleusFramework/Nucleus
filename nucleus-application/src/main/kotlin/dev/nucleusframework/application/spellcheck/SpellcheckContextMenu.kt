@@ -1,4 +1,5 @@
 @file:OptIn(
+    androidx.compose.foundation.ExperimentalFoundationApi::class,
     androidx.compose.ui.ExperimentalComposeUiApi::class,
     kotlinx.coroutines.ExperimentalCoroutinesApi::class,
 )
@@ -7,13 +8,20 @@ package dev.nucleusframework.application.spellcheck
 
 import androidx.compose.foundation.ContextMenuDataProvider
 import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.foundation.ContextMenuRepresentation
+import androidx.compose.foundation.ContextMenuState
+import androidx.compose.foundation.LocalContextMenuRepresentation
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.LocalTextContextMenu
+import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
@@ -52,6 +60,27 @@ internal fun spellcheckRangesStillValid(
     }
 
 /**
+ * Where [SpellcheckContextMenu] inserts its suggestions relative to the
+ * field's existing items (Cut/Copy/Paste and any app extras).
+ *
+ * Compose walks context-menu data inner-first, so a parent
+ * `ContextMenuDataProvider` always lands at the **bottom**. [Top] prepends
+ * at display time and keeps the ambient `LocalContextMenuRepresentation`
+ * (Jewel or any custom chrome).
+ *
+ * Provide a custom `LocalTextContextMenu` / representation **outside** this
+ * wrap. Apps that build the item list themselves should insert
+ * [NucleusSpellcheckInstaller.menuItems] at the desired index instead.
+ */
+public enum class SpellcheckMenuPlacement {
+    /** Suggestions, then a separator, then Cut/Copy/Paste and app items. */
+    Top,
+
+    /** Cut/Copy/Paste and app items, then a separator, then suggestions. */
+    Bottom,
+}
+
+/**
  * Chrome/Electron-style spellcheck around an existing `TextField` /
  * `BasicTextField` / Jewel `TextField`.
  *
@@ -61,15 +90,20 @@ internal fun spellcheckRangesStillValid(
  *
  * Jewel separators (`ContextMenuDivider`) come from
  * `LocalSpellcheckMenuSeparator`, provided by `JewelDecoratedWindow` /
- * `ProvideJewelSpellcheckMenu`.
+ * `ProvideJewelSpellcheckMenu`. Custom representations (icons, keybindings,
+ * color pickers) are left in place.
  *
  * No-op when Hunspell is unavailable.
+ *
+ * @param menuPlacement [SpellcheckMenuPlacement.Bottom] (default) appends
+ *   after existing items; [SpellcheckMenuPlacement.Top] prepends before them.
  */
 @Composable
 public fun SpellcheckContextMenu(
     text: String,
     onTextChange: (String) -> Unit,
     session: SpellcheckSession? = null,
+    menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     content: @Composable () -> Unit,
 ) {
     val current = rememberAvailableSession(session)
@@ -81,6 +115,7 @@ public fun SpellcheckContextMenu(
     val rangesState = remember { mutableStateOf(emptyList<SpellcheckWord>()) }
     val latestText = remember { mutableStateOf(text) }
     latestText.value = text
+    val latestOnTextChange = rememberUpdatedState(onTextChange)
     CollectMisspellings(current, latestText, rangesState)
     var inputRequest by remember { mutableStateOf<PlatformTextInputMethodRequest?>(null) }
     val interceptor =
@@ -90,18 +125,18 @@ public fun SpellcheckContextMenu(
                 nextHandler.startInputMethod(request)
             }
         }
+    val menuItems = {
+        spellcheckContextMenuItems(
+            text = latestText.value,
+            session = current,
+            ranges = spellcheckRangesStillValid(latestText.value, rangesState.value),
+            separator = separator,
+            onTextChange = latestOnTextChange.value,
+            placement = menuPlacement,
+        )
+    }
     ProvideSpellcheckSeparators {
-        ContextMenuDataProvider(
-            items = {
-                spellcheckContextMenuItems(
-                    text = text,
-                    session = current,
-                    ranges = spellcheckRangesStillValid(text, rangesState.value),
-                    separator = separator,
-                    onTextChange = onTextChange,
-                )
-            },
-        ) {
+        ProvideSpellcheckMenuItems(items = menuItems, placement = menuPlacement) {
             InterceptPlatformTextInput(interceptor) {
                 SpellcheckImeUnderlineBox(
                     inputRequest = inputRequest,
@@ -115,11 +150,14 @@ public fun SpellcheckContextMenu(
 
 /**
  * [SpellcheckContextMenu] for a [TextFieldState] field.
+ *
+ * @param menuPlacement See [SpellcheckContextMenu].
  */
 @Composable
 public fun SpellcheckContextMenu(
     state: TextFieldState,
     session: SpellcheckSession? = null,
+    menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     content: @Composable () -> Unit,
 ) {
     SpellcheckContextMenu(
@@ -128,6 +166,7 @@ public fun SpellcheckContextMenu(
             state.edit { replace(0, length, new) }
         },
         session = session,
+        menuPlacement = menuPlacement,
         content = content,
     )
 }
@@ -208,6 +247,7 @@ internal fun spellcheckContextMenuItems(
     ranges: List<SpellcheckWord>,
     separator: ContextMenuItem,
     onTextChange: (String) -> Unit,
+    placement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
 ): List<ContextMenuItem> {
     if (ranges.isEmpty()) return emptyList()
     val suggestions = ArrayList<ContextMenuItem>()
@@ -227,30 +267,38 @@ internal fun spellcheckContextMenuItems(
         addToDictionaryLabel = SpellcheckMenuModel.DEFAULT_ADD_TO_DICTIONARY_LABEL,
         onAddToDictionary = { session.addToDictionary(first.word) },
         separator = separator,
+        placement = placement,
     )
 }
 
 /**
- * Classic desktop menu: hairline, suggestions, hairline, then
- * "Add to dictionary". [SpellcheckContextMenuSeparator] is drawn by
- * [ProvideSpellcheckSeparators]; Jewel supplies `ContextMenuDivider`.
+ * Classic desktop menu around suggestions and "Add to dictionary".
+ * [SpellcheckMenuPlacement.Bottom] leads with a separator (after Cut/Copy/Paste);
+ * [SpellcheckMenuPlacement.Top] trails with one (before Cut/Copy/Paste).
+ * [SpellcheckContextMenuSeparator] is drawn by [ProvideSpellcheckSeparators];
+ * Jewel supplies `ContextMenuDivider`.
  */
 internal fun spellcheckMenuSections(
     suggestions: List<ContextMenuItem>,
     addToDictionaryLabel: String,
     onAddToDictionary: () -> Unit,
     separator: ContextMenuItem,
+    placement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
 ): List<ContextMenuItem> =
     buildList {
-        add(separator)
+        if (placement == SpellcheckMenuPlacement.Bottom) add(separator)
         addAll(suggestions)
         add(separator)
         add(ContextMenuItem(addToDictionaryLabel) { onAddToDictionary() })
+        if (placement == SpellcheckMenuPlacement.Top) add(separator)
     }
 
 /**
- * Builds extra context-menu items for [word]. Used by tests and the
- * in-repo consumer; apps should wrap fields with [SpellcheckContextMenu].
+ * Builds extra context-menu items for [word]. Used by tests, the in-repo
+ * consumer, and apps that own the menu list (insert the returned block
+ * at the top or bottom of `buildList`).
+ *
+ * Fields that can use the wrap should prefer [SpellcheckContextMenu].
  */
 public object NucleusSpellcheckInstaller {
     /**
@@ -258,6 +306,9 @@ public object NucleusSpellcheckInstaller {
      *
      * [separator] is inserted around the suggestions. Defaults to
      * [SpellcheckContextMenuSeparator]; Jewel supplies `ContextMenuDivider`.
+     *
+     * [menuPlacement] only changes which side of the block gets the
+     * outer separator — put the returned list at the matching index.
      */
     public fun menuItems(
         word: String,
@@ -265,6 +316,7 @@ public object NucleusSpellcheckInstaller {
         onSuggestion: (String) -> Unit,
         onAddToDictionary: () -> Unit,
         separator: ContextMenuItem = SpellcheckContextMenuSeparator,
+        menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     ): List<ContextMenuItem> {
         val model = buildSpellcheckMenuModel(word, session) ?: return emptyList()
         return spellcheckMenuSections(
@@ -275,6 +327,66 @@ public object NucleusSpellcheckInstaller {
             addToDictionaryLabel = model.addToDictionaryLabel,
             onAddToDictionary = onAddToDictionary,
             separator = separator,
+            placement = menuPlacement,
         )
+    }
+}
+
+@Composable
+private fun ProvideSpellcheckMenuItems(
+    items: () -> List<ContextMenuItem>,
+    placement: SpellcheckMenuPlacement,
+    content: @Composable () -> Unit,
+) {
+    when (placement) {
+        SpellcheckMenuPlacement.Bottom ->
+            ContextMenuDataProvider(items = items, content = content)
+        SpellcheckMenuPlacement.Top -> {
+            val base = LocalTextContextMenu.current
+            val latestItems = rememberUpdatedState(items)
+            val menu =
+                remember(base) {
+                    SpellcheckTopTextContextMenu(base) { latestItems.value() }
+                }
+            CompositionLocalProvider(LocalTextContextMenu provides menu, content = content)
+        }
+    }
+}
+
+private class SpellcheckTopTextContextMenu(
+    private val base: TextContextMenu,
+    private val extraItems: () -> List<ContextMenuItem>,
+) : TextContextMenu {
+    @Composable
+    override fun Area(
+        textManager: TextContextMenu.TextManager,
+        state: ContextMenuState,
+        content: @Composable () -> Unit,
+    ) {
+        val delegate = LocalContextMenuRepresentation.current
+        val latestExtra = rememberUpdatedState(extraItems)
+        val representation =
+            remember(delegate) {
+                SpellcheckTopMenuRepresentation(delegate) { latestExtra.value() }
+            }
+        CompositionLocalProvider(LocalContextMenuRepresentation provides representation) {
+            base.Area(textManager, state, content)
+        }
+    }
+}
+
+private class SpellcheckTopMenuRepresentation(
+    private val delegate: ContextMenuRepresentation,
+    private val extraItems: () -> List<ContextMenuItem>,
+) : ContextMenuRepresentation {
+    @Composable
+    override fun Representation(
+        state: ContextMenuState,
+        items: () -> List<ContextMenuItem>,
+    ) {
+        delegate.Representation(state) {
+            val extra = extraItems()
+            if (extra.isEmpty()) items() else extra + items()
+        }
     }
 }

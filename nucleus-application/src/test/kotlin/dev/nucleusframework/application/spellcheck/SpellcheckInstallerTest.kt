@@ -60,6 +60,23 @@ class SpellcheckInstallerTest {
     }
 
     @Test
+    fun `top placement trails with a separator instead of leading`() {
+        val items =
+            spellcheckMenuSections(
+                suggestions = listOf(ContextMenuItem("hello") {}),
+                addToDictionaryLabel = "Add to dictionary",
+                onAddToDictionary = {},
+                separator = SpellcheckContextMenuSeparator,
+                placement = SpellcheckMenuPlacement.Top,
+            )
+        assertEquals(4, items.size)
+        assertEquals("hello", items[0].label)
+        assertTrue(items[1] === SpellcheckContextMenuSeparator)
+        assertEquals("Add to dictionary", items[2].label)
+        assertTrue(items[3] === SpellcheckContextMenuSeparator)
+    }
+
+    @Test
     fun `recompute delay is zero after whitespace and idle mid-word`() {
         assertEquals(0L, spellcheckRecomputeDelayMs(""))
         assertEquals(0L, spellcheckRecomputeDelayMs("helo "))
