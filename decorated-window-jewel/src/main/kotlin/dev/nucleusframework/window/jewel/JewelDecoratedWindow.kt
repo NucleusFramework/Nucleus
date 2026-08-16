@@ -99,8 +99,8 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
     // of the parent, the only client-positionable window kind under xdg-shell
     // (parent-relative coordinates). For drag ghosts. Ignored elsewhere.
     popupFor: NucleusWindow? = null,
-    // Replace Compose-drawn context menus with the OS menu. Tao + macOS
-    // only; no-op on Windows, Linux, and AWT.
+    // Replace Compose-drawn context menus with the OS-looking menu. Tao +
+    // macOS (`NSMenu`) or Tao + Windows (Fluent flyout); no-op on Linux and AWT.
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (Tao backend; on Linux effective on X11/XWayland only).

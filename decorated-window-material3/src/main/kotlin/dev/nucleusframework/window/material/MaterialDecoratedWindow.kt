@@ -100,8 +100,8 @@ public fun NucleusApplicationScope.MaterialDecoratedWindow(
     // (NSPanel / WS_POPUP HWND / Tao popup window on Linux) so menus can
     // extend past the window bounds. Honoured by the Tao backend; ignored by AWT.
     nativePopupLayers: Boolean = false,
-    // Replace Compose-drawn context menus with the OS menu. Tao + macOS
-    // only; no-op on Windows, Linux, and AWT.
+    // Replace Compose-drawn context menus with the OS-looking menu. Tao +
+    // macOS (`NSMenu`) or Tao + Windows (Fluent flyout); no-op on Linux and AWT.
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (Tao backend; on Linux effective on X11/XWayland only).

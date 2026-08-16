@@ -5,8 +5,8 @@ package dev.nucleusframework.application.contextmenu
  * is active.
  *
  * Stock values (`Cut`, `Copy`, `Paste`, …) resolve to the OS glyph (SF Symbol
- * on macOS). [SfSymbol] is a raw macOS symbol name for custom items. Windows
- * and Linux ignore icons until those backends land.
+ * on macOS, Segoe Fluent Icons on the Windows Compose flyout). [SfSymbol] is
+ * a raw macOS symbol name for custom items and is ignored on Windows / Linux.
  */
 public sealed class ContextMenuIcon {
     /** System cut / scissors glyph. */
@@ -30,7 +30,7 @@ public sealed class ContextMenuIcon {
     /**
      * A raw SF Symbol name (macOS 11+), e.g. `"square.and.arrow.up"`.
      *
-     * Ignored on Windows / Linux.
+     * Ignored on Windows and Linux.
      */
     public data class SfSymbol(
         public val name: String,

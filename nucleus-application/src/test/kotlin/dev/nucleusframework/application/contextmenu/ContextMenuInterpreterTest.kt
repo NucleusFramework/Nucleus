@@ -84,6 +84,17 @@ class ContextMenuInterpreterTest {
     }
 
     @Test
+    fun `stock icons map to fluent glyphs and sf symbols are ignored`() {
+        assertEquals("\uE8C6", ContextMenuIcon.Cut.toFluentGlyph())
+        assertEquals("\uE8C8", ContextMenuIcon.Copy.toFluentGlyph())
+        assertEquals("\uE77F", ContextMenuIcon.Paste.toFluentGlyph())
+        assertEquals("\uE8B3", ContextMenuIcon.SelectAll.toFluentGlyph())
+        assertEquals("\uE74D", ContextMenuIcon.Delete.toFluentGlyph())
+        assertEquals("\uE8B7", ContextMenuIcon.Folder.toFluentGlyph())
+        assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").toFluentGlyph())
+    }
+
+    @Test
     fun `native text menu tags cut copy paste`() {
         val manager =
             object : TextContextMenu.TextManager {

@@ -8,15 +8,17 @@ import androidx.compose.foundation.ContextMenuState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NativePopupMenuItem
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import dev.nucleusframework.menu.macos.popUpNativeMenu
 
 /**
- * Renders the context menu as a native `NSMenu` on macOS.
+ * Renders the context menu as a native `NSMenu` on macOS, or as a Compose
+ * Fluent flyout (WinUI 3 MenuFlyout metrics) on Windows.
  *
- * On Windows / Linux this object is never installed ([NativeContextMenuProvider]
- * is a no-op there). Calling [Representation] off macOS closes the menu
+ * On Linux this object is never installed ([NativeContextMenuProvider] is a
+ * no-op there). Calling [Representation] off a supported OS closes the menu
  * immediately so a stray install cannot leave Compose in `Open`.
  */
 public object NativeContextMenuRepresentation : ContextMenuRepresentation {
@@ -27,6 +29,10 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
     ) {
         val status = state.status
         if (status !is ContextMenuState.Status.Open) return
+        if (Platform.Current == Platform.Windows) {
+            FluentContextMenuPopup(state, items)
+            return
+        }
         val interpreter = LocalContextMenuItemInterpreter.current
         val separator = LocalSpellcheckMenuSeparator.current
         LaunchedEffect(status) {
@@ -37,7 +43,7 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
             }
             val popupItems =
                 resolved.map { item ->
-                    interpreter.interpret(item, separator).toPopupItem()
+                    interpreter.interpret(item, separator).toMacPopupItem()
                 }
             try {
                 popUpNativeMenu(popupItems)
@@ -48,13 +54,13 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
     }
 }
 
-internal fun ContextMenuEntry.toPopupItem(): NativePopupMenuItem =
+internal fun ContextMenuEntry.toMacPopupItem(): NativePopupMenuItem =
     when (this) {
         is ContextMenuEntry.Separator -> NativePopupMenuItem.Separator
         is ContextMenuEntry.Submenu ->
             NativePopupMenuItem.Submenu(
                 title = label,
-                items = items.map { child -> child.toPopupItem() },
+                items = items.map { child -> child.toMacPopupItem() },
             )
         is ContextMenuEntry.Item ->
             NativePopupMenuItem.Entry(
