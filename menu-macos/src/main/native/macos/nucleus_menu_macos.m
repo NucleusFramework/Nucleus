@@ -925,6 +925,19 @@ JNIEXPORT jboolean JNICALL JNI_FN(nativeMenuPopUp)(JNIEnv *env, jclass clazz,
     return result ? JNI_TRUE : JNI_FALSE;
 }
 
+JNIEXPORT jboolean JNICALL JNI_FN(nativeMenuPopUpAtCursor)(JNIEnv *env, jclass clazz,
+                                                            jlong menuHandle) {
+    (void)env; (void)clazz;
+    NSMenu *menu = HANDLE_TO_MENU(menuHandle);
+    __block BOOL result = NO;
+    runOnMain(^{
+        result = [menu popUpMenuPositioningItem:nil
+                                     atLocation:[NSEvent mouseLocation]
+                                         inView:nil];
+    });
+    return result ? JNI_TRUE : JNI_FALSE;
+}
+
 // ============================================================================
 // SECTION: Menu bar
 // ============================================================================

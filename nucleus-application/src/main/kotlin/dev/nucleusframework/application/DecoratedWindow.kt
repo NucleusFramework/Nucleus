@@ -44,6 +44,11 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // window's render target. Honoured by the Tao backend on all three
     // platforms; ignored by AWT.
     nativePopupLayers: Boolean = false,
+    // Replace Compose-drawn context menus (ContextMenuArea, text
+    // Cut/Copy/Paste, spellcheck items) with the OS menu. Tao + macOS
+    // only (`NSMenu`); no-op on Windows, Linux, and AWT. Independent of
+    // [nativePopupLayers].
+    nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (macOS: NSApplication accessory policy, app-wide; Windows:
     // WS_EX_TOOLWINDOW, per-window; Linux: GTK skip-taskbar hint, per-window,
@@ -103,6 +108,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 undecorated = undecorated,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
+                nativeContextMenu = nativeContextMenu,
                 hiddenFromDock = hiddenFromDock,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
@@ -137,6 +143,7 @@ public fun DecoratedWindow(
     undecorated: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -156,6 +163,7 @@ public fun DecoratedWindow(
         undecorated = undecorated,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
+        nativeContextMenu = nativeContextMenu,
         hiddenFromDock = hiddenFromDock,
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,

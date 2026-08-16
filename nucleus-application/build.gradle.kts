@@ -24,6 +24,9 @@ dependencies {
     api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
+    // Native context menu (NSMenu pop-up). The library no-ops when the
+    // macOS dylib is missing, so Windows / Linux consumers just skip the pop.
+    implementation(project(":menu-macos"))
     // Spellcheck (Linux Hunspell, macOS NSSpellChecker, Windows ISpellChecker).
     // `api` because SpellcheckContextMenu / NucleusSpellcheckInstaller expose SpellcheckSession.
     api(project(":spellcheck"))

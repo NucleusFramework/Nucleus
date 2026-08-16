@@ -2,11 +2,14 @@ package dev.nucleusframework.window.jewel
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.nucleusframework.application.contextmenu.LocalContextMenuItemInterpreter
 import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import org.jetbrains.jewel.ui.component.ContextMenuDivider
 
 /**
- * Provides Jewel's [ContextMenuDivider] to [LocalSpellcheckMenuSeparator].
+ * Provides Jewel's [ContextMenuDivider] to [LocalSpellcheckMenuSeparator] and
+ * [JewelContextMenuInterpreter] so a native context menu can map Jewel
+ * Cut / Copy / Paste action types to OS icons.
  *
  * Compile-time Jewel reference — no reflection. Installed automatically by
  * [JewelDecoratedWindow] and [JewelDecoratedDialog]. Apps that build their
@@ -16,6 +19,7 @@ import org.jetbrains.jewel.ui.component.ContextMenuDivider
 public fun ProvideJewelSpellcheckMenu(content: @Composable () -> Unit) {
     CompositionLocalProvider(
         LocalSpellcheckMenuSeparator provides ContextMenuDivider,
+        LocalContextMenuItemInterpreter provides JewelContextMenuInterpreter,
         content = content,
     )
 }
