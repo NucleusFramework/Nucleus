@@ -135,15 +135,49 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
 
 // Custom NSView that hosts replacement traffic-light buttons in the content view
 // during fullscreen, mirroring JBR's AWTButtonsView.
-// Propagates mouseEntered:/mouseExited: to all button subviews so AppKit
-// activates the grouped traffic-light hover state (colored icons on hover).
+// Copies of _NSThemeWidget draw inactive-gray when they are not the window's
+// real title-bar buttons, so at rest we paint the standard active colours
+// ourselves and reveal native close/zoom on hover (issue #531). Miniaturise
+// is disabled: performMiniaturize: is a no-op in fullscreen.
 @interface NucleusButtonsView : NSView {
     BOOL _dispatching;
     BOOL _mouseInside;
 }
+- (void)applyHoverState;
 @end
 
+// Standard Big Sur+ traffic-light sRGB fills (see NucleusTaoButtonsView).
+static NSColor *jniTrafficCloseColor(void) {
+    return [NSColor colorWithSRGBRed:1.0 green:95.0 / 255.0 blue:87.0 / 255.0 alpha:1.0];
+}
+static NSColor *jniTrafficZoomColor(void) {
+    return [NSColor colorWithSRGBRed:40.0 / 255.0 green:200.0 / 255.0 blue:64.0 / 255.0 alpha:1.0];
+}
+static NSColor *jniTrafficDisabledColor(NSView *view) {
+    BOOL dark = NO;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName name = [view.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua ]];
+        dark = [name isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return dark ? [NSColor colorWithWhite:0.40 alpha:1.0]
+                : [NSColor colorWithWhite:0.80 alpha:1.0];
+}
+
+static void jniFillTrafficCircle(NSView *button, NSColor *color) {
+    NSRect r = button.frame;
+    CGFloat d = fmin(MIN(r.size.width, r.size.height),
+                     isTahoeOrLater() ? 14.0 : 12.0);
+    NSRect oval = NSMakeRect(NSMidX(r) - d / 2.0, NSMidY(r) - d / 2.0, d, d);
+    [color setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:oval] fill];
+}
+
 @implementation NucleusButtonsView
+
+- (BOOL)isOpaque {
+    return NO;
+}
 
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
@@ -160,14 +194,31 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
     [self addTrackingArea:ta];
 }
 
+- (void)applyHoverState {
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    NSButton *closeBtn = (NSButton *)buttons[0];
+    NSButton *minBtn = (NSButton *)buttons[1];
+    NSButton *zoomBtn = (NSButton *)buttons[2];
+    minBtn.enabled = NO;
+    minBtn.hidden = YES;
+    closeBtn.hidden = !_mouseInside;
+    zoomBtn.hidden = !_mouseInside;
+    [closeBtn setHighlighted:_mouseInside];
+    [zoomBtn setHighlighted:_mouseInside];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)mouseEntered:(NSEvent *)event {
     if (_dispatching) return;
     _dispatching = YES;
     _mouseInside = YES;
     [super mouseEntered:event];
-    for (NSView *btn in self.subviews) {
-        [btn mouseEntered:event];
-    }
+    [self applyHoverState];
+    // Skip miniaturise (index 1) — it is disabled in fullscreen.
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count >= 1) [buttons[0] mouseEntered:event];
+    if (buttons.count >= 3) [buttons[2] mouseEntered:event];
     _dispatching = NO;
 }
 
@@ -176,18 +227,32 @@ static void notifyMenuBarOffsetChanged(NSWindow *window, float offset) {
     _dispatching = YES;
     _mouseInside = NO;
     [super mouseExited:event];
-    for (NSView *btn in self.subviews) {
-        [btn mouseExited:event];
-    }
+    [self applyHoverState];
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count >= 1) [buttons[0] mouseExited:event];
+    if (buttons.count >= 3) [buttons[2] mouseExited:event];
     _dispatching = NO;
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    if (!_mouseInside) {
+        jniFillTrafficCircle(buttons[0], jniTrafficCloseColor());
+        jniFillTrafficCircle(buttons[1], jniTrafficDisabledColor(self));
+        jniFillTrafficCircle(buttons[2], jniTrafficZoomColor());
+    } else {
+        jniFillTrafficCircle(buttons[1], jniTrafficDisabledColor(self));
+    }
 }
 
 // Private AppKit hook: standard window buttons ask their superview whether
 // the traffic-light group is hovered before drawing the glyphs. Without it,
 // pre-Tahoe systems never show the symbols on hover (mirrors JBR's
-// AWTButtonsView).
+// AWTButtonsView). Miniaturise is never in the group — it is disabled.
 - (BOOL)_mouseInGroup:(NSButton *)button {
-    (void)button;
+    if (self.subviews.count >= 2 && button == self.subviews[1]) return NO;
     return _mouseInside;
 }
 
@@ -559,7 +624,9 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         : 0;
     [container setFrame:NSMakeRect(containerX, y, containerWidth, titleBarHeight)];
 
-    NSUInteger masks = [window styleMask];
+    // Drop FullScreen from the mask: copies built with it draw as inactive
+    // gray and the miniaturise widget is born disabled (issue #531).
+    NSUInteger masks = [window styleMask] & ~NSWindowStyleMaskFullScreen;
 
     // Create replacement buttons positioned with the same formula as applyConstraints.
     // In RTL mode, buttons are mirrored inside the container.
@@ -580,12 +647,21 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         CGFloat centerY = titleBarHeight / 2.0f;
         [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f, centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
-        [btn setTarget:window];
-        [btn setAction:actions[idx]];
+        if (idx == 1) {
+            // Miniaturise is a no-op while the window is fullscreen.
+            [btn setEnabled:NO];
+            [btn setTarget:nil];
+            [btn setAction:NULL];
+        } else {
+            [btn setTarget:window];
+            [btn setAction:actions[idx]];
+        }
+        [btn setHidden:YES];
         [container addSubview:btn];
     }
 
     [parent addSubview:container];
+    [container applyHoverState];
 
     objc_setAssociatedObject(window, &kFullscreenButtonsKey, container,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -775,6 +851,7 @@ static void updateFullScreenButtonsPosition(NSWindow *window) {
         [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f, centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
     }
+    [container applyHoverState];
 }
 
 // ─── _adjustWindowToScreen swizzle ──────────────────────────────────────────────
