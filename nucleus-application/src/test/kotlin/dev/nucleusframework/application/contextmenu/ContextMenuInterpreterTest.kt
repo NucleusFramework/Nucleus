@@ -6,6 +6,7 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.ui.text.AnnotatedString
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenuSeparator
+import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import org.junit.Assert.assertEquals
@@ -146,6 +147,27 @@ class ContextMenuInterpreterTest {
         assertEquals("\uE74D", ContextMenuIcon.Delete.toFluentGlyph())
         assertEquals("\uE8B7", ContextMenuIcon.Folder.toFluentGlyph())
         assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").toFluentGlyph())
+    }
+
+    @Test
+    fun `stock icons map to breeze glyphs and sf symbols are ignored`() {
+        assertEquals("\u2702", ContextMenuIcon.Cut.toBreezeGlyph())
+        assertEquals("\u2398", ContextMenuIcon.Copy.toBreezeGlyph())
+        assertEquals("\u2399", ContextMenuIcon.Paste.toBreezeGlyph())
+        assertEquals("\u2611", ContextMenuIcon.SelectAll.toBreezeGlyph())
+        assertEquals("\u232B", ContextMenuIcon.Delete.toBreezeGlyph())
+        assertEquals("\u25A1", ContextMenuIcon.Folder.toBreezeGlyph())
+        assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").toBreezeGlyph())
+    }
+
+    @Test
+    fun `linux flyout uses breeze on kde and adwaita otherwise`() {
+        val theme = linuxContextMenuTheme()
+        if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
+            assertSame(BreezeMenuTheme, theme)
+        } else {
+            assertSame(AdwaitaMenuTheme, theme)
+        }
     }
 
     @Test

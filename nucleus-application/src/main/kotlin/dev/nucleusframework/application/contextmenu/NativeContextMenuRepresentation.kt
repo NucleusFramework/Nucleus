@@ -8,6 +8,7 @@ import androidx.compose.foundation.ContextMenuState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
+import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NativePopupMenuItem
 import dev.nucleusframework.menu.macos.NsMenuItemImage
@@ -15,7 +16,8 @@ import dev.nucleusframework.menu.macos.popUpNativeMenu
 
 /**
  * OS-looking context menu: `NSMenu` on macOS, a Compose Fluent flyout on
- * Windows, a Compose Adwaita flyout on Linux.
+ * Windows, a Compose Adwaita flyout on GNOME-like Linux desktops, a
+ * Compose Breeze flyout on KDE Plasma.
  *
  * Calling [Representation] off a supported OS closes the menu immediately
  * so a stray install cannot leave Compose in `Open`.
@@ -38,7 +40,7 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
         }
         when (Platform.Current) {
             Platform.Windows -> ContextMenuFlyout(status, entries, FluentMenuTheme, onDismiss)
-            Platform.Linux -> ContextMenuFlyout(status, entries, AdwaitaMenuTheme, onDismiss)
+            Platform.Linux -> ContextMenuFlyout(status, entries, linuxContextMenuTheme(), onDismiss)
             Platform.MacOS -> {
                 LaunchedEffect(status) {
                     try {
@@ -52,6 +54,12 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
         }
     }
 }
+
+internal fun linuxContextMenuTheme(): ContextMenuFlyoutTheme =
+    when (LinuxDesktopEnvironment.Current) {
+        LinuxDesktopEnvironment.KDE -> BreezeMenuTheme
+        else -> AdwaitaMenuTheme
+    }
 
 internal fun ContextMenuEntry.toMacPopupItem(): NativePopupMenuItem =
     when (this) {
