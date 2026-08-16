@@ -232,7 +232,7 @@ public final class dev/nucleusframework/menu/macos/NativePopupMenuItem$Submenu :
 	public final fun getTitle ()Ljava/lang/String;
 }
 
-public final class dev/nucleusframework/menu/macos/NativePopupMenuKt {
+public final class dev/nucleusframework/menu/macos/NativePopupMenuItemKt {
 	public static final fun isNativePopupMenuAvailable ()Z
 	public static final fun popUpNativeMenu (Ljava/util/List;)Z
 }
