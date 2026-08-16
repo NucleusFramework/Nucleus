@@ -6,6 +6,7 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.ui.text.AnnotatedString
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenuSeparator
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -26,7 +27,60 @@ class ContextMenuInterpreterTest {
         val typed = entry as ContextMenuEntry.Item
         assertEquals("Delete", typed.label)
         assertSame(ContextMenuIcon.Delete, typed.icon)
+        assertNull(typed.shortcut)
         assertTrue(typed.enabled)
+    }
+
+    @Test
+    fun `stock edit icons get platform shortcuts`() {
+        val copy =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem("Copy", icon = ContextMenuIcon.Copy) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        val cut =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem("Cut", icon = ContextMenuIcon.Cut) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        val paste =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem("Paste", icon = ContextMenuIcon.Paste) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        val selectAll =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem("Select All", icon = ContextMenuIcon.SelectAll) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        assertEquals(expectedPrimaryShortcut("C"), copy.shortcut)
+        assertEquals(expectedPrimaryShortcut("X"), cut.shortcut)
+        assertEquals(expectedPrimaryShortcut("V"), paste.shortcut)
+        assertEquals(expectedPrimaryShortcut("A"), selectAll.shortcut)
+    }
+
+    @Test
+    fun `explicit shortcut overrides stock fallback and empty hides it`() {
+        val custom =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem(
+                    label = "Copy",
+                    icon = ContextMenuIcon.Copy,
+                    shortcut = "Ctrl+Shift+C",
+                ) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        assertEquals("Ctrl+Shift+C", custom.shortcut)
+        val hidden =
+            DefaultContextMenuItemInterpreter.interpret(
+                NucleusContextMenuItem(
+                    label = "Copy",
+                    icon = ContextMenuIcon.Copy,
+                    shortcut = "",
+                ) {},
+                SpellcheckContextMenuSeparator,
+            ) as ContextMenuEntry.Item
+        assertNull(hidden.shortcut)
     }
 
     @Test
@@ -122,7 +176,15 @@ class ContextMenuInterpreterTest {
         assertSame(ContextMenuIcon.Paste, (items[2] as NucleusContextMenuItem).icon)
         assertSame(ContextMenuIcon.SelectAll, (items[3] as NucleusContextMenuItem).icon)
         assertEquals(false, items[2].enabled)
+        val interpreted = items.map { DefaultContextMenuItemInterpreter.interpret(it, SpellcheckContextMenuSeparator) }
+        assertEquals(expectedPrimaryShortcut("X"), (interpreted[0] as ContextMenuEntry.Item).shortcut)
+        assertEquals(expectedPrimaryShortcut("C"), (interpreted[1] as ContextMenuEntry.Item).shortcut)
+        assertEquals(expectedPrimaryShortcut("V"), (interpreted[2] as ContextMenuEntry.Item).shortcut)
+        assertEquals(expectedPrimaryShortcut("A"), (interpreted[3] as ContextMenuEntry.Item).shortcut)
     }
 }
+
+private fun expectedPrimaryShortcut(key: String): String =
+    if (Platform.Current == Platform.MacOS) "⌘$key" else "Ctrl+$key"
 
 private fun symbolName(icon: ContextMenuIcon): String = (icon.toNsMenuItemImage() as NsMenuItemImage.SystemSymbol).name

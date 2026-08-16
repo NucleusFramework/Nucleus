@@ -159,11 +159,13 @@ public abstract class dev/nucleusframework/application/contextmenu/ContextMenuEn
 
 public final class dev/nucleusframework/application/contextmenu/ContextMenuEntry$Item : dev/nucleusframework/application/contextmenu/ContextMenuEntry {
 	public static final field $stable I
-	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;)V
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getEnabled ()Z
 	public final fun getIcon ()Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;
 	public final fun getLabel ()Ljava/lang/String;
 	public final fun getOnClick ()Lkotlin/jvm/functions/Function0;
+	public final fun getShortcut ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/application/contextmenu/ContextMenuEntry$Separator : dev/nucleusframework/application/contextmenu/ContextMenuEntry {
@@ -246,6 +248,10 @@ public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIconKt {
+	public static final fun stockShortcut (Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;)Ljava/lang/String;
+}
+
 public abstract interface class dev/nucleusframework/application/contextmenu/ContextMenuItemInterpreter {
 	public abstract fun interpret (Landroidx/compose/foundation/ContextMenuItem;Landroidx/compose/foundation/ContextMenuItem;)Ldev/nucleusframework/application/contextmenu/ContextMenuEntry;
 }
@@ -282,9 +288,10 @@ public final class dev/nucleusframework/application/contextmenu/NucleusContextMe
 
 public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuItem : androidx/compose/foundation/ContextMenuItem {
 	public static final field $stable I
-	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;)V
-	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Ljava/lang/String;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun getIcon ()Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;
+	public final fun getShortcut ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuSubmenu : androidx/compose/foundation/ContextMenuItem {

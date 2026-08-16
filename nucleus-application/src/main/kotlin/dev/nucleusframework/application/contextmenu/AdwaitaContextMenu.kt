@@ -36,6 +36,9 @@ internal val AdwaitaMenuTheme =
         ambientShadow = Color.Black.copy(alpha = 0.09f),
         spotShadow = Color.Black.copy(alpha = 0.05f),
         showIcons = false,
+        shortcutGap = 24.dp,
+        shortcutSize = 14.sp,
+        shortcutAlpha = 0.55f,
         colors = ::adwaitaColors,
         glyph = { null },
     )

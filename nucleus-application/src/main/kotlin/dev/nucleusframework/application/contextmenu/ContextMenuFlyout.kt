@@ -87,6 +87,9 @@ internal class ContextMenuFlyoutTheme(
     val ambientShadow: Color,
     val spotShadow: Color,
     val showIcons: Boolean,
+    val shortcutGap: Dp,
+    val shortcutSize: TextUnit,
+    val shortcutAlpha: Float,
     val colors: (dark: Boolean) -> ContextMenuFlyoutColors,
     val glyph: (ContextMenuIcon) -> String?,
 )
@@ -160,6 +163,7 @@ private fun ContextMenuFlyoutSurface(
                             label = entry.label,
                             enabled = entry.enabled,
                             icon = entry.icon?.let(theme.glyph),
+                            shortcut = entry.shortcut,
                             reserveIcon = reserveIcon,
                             chevron = false,
                             theme = theme,
@@ -211,6 +215,7 @@ private fun ContextMenuFlyoutSubmenu(
             label = entry.label,
             enabled = true,
             icon = null,
+            shortcut = null,
             reserveIcon = reserveIcon,
             chevron = true,
             theme = theme,
@@ -247,6 +252,7 @@ private fun ContextMenuFlyoutRow(
     label: String,
     enabled: Boolean,
     icon: String?,
+    shortcut: String?,
     reserveIcon: Boolean,
     chevron: Boolean,
     theme: ContextMenuFlyoutTheme,
@@ -300,6 +306,19 @@ private fun ContextMenuFlyoutRow(
                 ),
             maxLines = 1,
         )
+        if (!shortcut.isNullOrEmpty()) {
+            Spacer(Modifier.width(theme.shortcutGap))
+            BasicText(
+                text = shortcut,
+                style =
+                    TextStyle(
+                        color = if (enabled) content.copy(alpha = theme.shortcutAlpha) else colors.textDisabled,
+                        fontSize = theme.shortcutSize,
+                        fontFamily = theme.uiFont,
+                    ),
+                maxLines = 1,
+            )
+        }
         if (chevron) {
             Spacer(Modifier.width(theme.iconGap))
             BasicText(

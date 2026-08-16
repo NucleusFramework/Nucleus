@@ -24,6 +24,7 @@ import dev.nucleusframework.spellcheck.SpellcheckSession
 import dev.nucleusframework.application.contextmenu.ContextMenuEntry
 import dev.nucleusframework.application.contextmenu.ContextMenuIcon
 import dev.nucleusframework.application.contextmenu.LocalContextMenuItemInterpreter
+import dev.nucleusframework.application.contextmenu.stockShortcut
 import dev.nucleusframework.window.jewel.JewelContextMenuInterpreter
 import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
@@ -102,6 +103,7 @@ class SpellcheckJewelTest {
         val entry = JewelContextMenuInterpreter.interpret(item, ContextMenuDivider)
         val typed = entry as ContextMenuEntry.Item
         assertSame(ContextMenuIcon.Copy, typed.icon)
+        assertEquals(ContextMenuIcon.Copy.stockShortcut(), typed.shortcut)
         assertSame(
             ContextMenuEntry.Separator,
             JewelContextMenuInterpreter.interpret(ContextMenuDivider, ContextMenuDivider),

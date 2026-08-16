@@ -35,6 +35,9 @@ internal val FluentMenuTheme =
         ambientShadow = Color.Black.copy(alpha = 0.20f),
         spotShadow = Color.Black.copy(alpha = 0.20f),
         showIcons = true,
+        shortcutGap = 36.dp,
+        shortcutSize = 12.sp,
+        shortcutAlpha = 0.60f,
         colors = ::fluentColors,
         glyph = ContextMenuIcon::toFluentGlyph,
     )
