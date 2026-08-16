@@ -37,6 +37,7 @@ enum class Tab(
     WebView("WebView"),
     SwiftUI("SwiftUI"),
     Texture("Texture"),
+    Spellcheck("Spellcheck"),
 }
 
 @Composable

@@ -87,6 +87,7 @@ ktor-client-apache5 = { module = "io.ktor:ktor-client-apache5", version.ref = "k
 coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 coroutines-swing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-swing", version.ref = "coroutines" }
 jewel-foundation = { module = "org.jetbrains.jewel:jewel-foundation", version.ref = "jewel" }
+jewel-ui = { module = "org.jetbrains.jewel:jewel-ui", version.ref = "jewel" }
 jewel-int-ui-standalone = { module = "org.jetbrains.jewel:jewel-int-ui-standalone", version.ref = "jewel" }
 jewel-markdown-int-ui-standalone-styling = { module = "org.jetbrains.jewel:jewel-markdown-int-ui-standalone-styling", version.ref = "jewel" }
 jewel-markdown-extensions-autolink = { module = "org.jetbrains.jewel:jewel-markdown-extensions-autolink", version.ref = "jewel" }

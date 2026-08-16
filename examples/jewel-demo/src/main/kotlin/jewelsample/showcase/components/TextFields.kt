@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.ui.Outline
 import org.jetbrains.jewel.ui.component.GroupHeader
@@ -42,6 +43,21 @@ fun TextFields(modifier: Modifier = Modifier) {
     VerticallyScrollableContainer(modifier.fillMaxSize()) {
         Column {
             TextFieldsRows(readOnly = false)
+
+            Spacer(Modifier.height(16.dp))
+
+            GroupHeader("Spellcheck")
+
+            Spacer(Modifier.height(16.dp))
+
+            val spellcheckState = rememberTextFieldState("helo jewel")
+            SpellcheckContextMenu(state = spellcheckState) {
+                TextField(
+                    state = spellcheckState,
+                    modifier = Modifier.width(280.dp),
+                    placeholder = { Text("Type to spellcheck") },
+                )
+            }
 
             Spacer(Modifier.height(16.dp))
 

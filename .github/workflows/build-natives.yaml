@@ -107,6 +107,11 @@ jobs:
         shell: cmd
         run: call media-control\src\main\native\windows\build.bat
 
+      - name: Build spellcheck Windows DLLs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        shell: cmd
+        run: call spellcheck\src\main\native\windows\build.bat
+
       - name: Setup Rust (Windows)
         if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
@@ -151,6 +156,7 @@ jobs:
             "system-info/nucleus_system_info.dll"
             "scheduler/nucleus_scheduler.dll"
             "media-control/nucleus_media_control_windows.dll"
+            "spellcheck/nucleus_spellcheck.dll"
             "fs-watcher/nucleus_fs_watcher.dll"
             "decorated-window-tao/nucleus_tao.dll"
             "decorated-window-tao/nucleus_tao_windows_deco.dll"
@@ -265,6 +271,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash media-control/src/main/native/macos/build.sh
 
+      - name: Build spellcheck macOS dylibs
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash spellcheck/src/main/native/macos/build.sh
+
       - name: Setup Rust (macOS)
         if: steps.natives-cache.outputs.cache-hit != 'true'
         uses: dtolnay/rust-toolchain@v1
@@ -303,6 +313,7 @@ jobs:
             "decorated-window-core/libnucleus_layout_direction.dylib"
             "system-info/libnucleus_system_info.dylib"
             "media-control/libnucleus_media_control_macos.dylib"
+            "spellcheck/libnucleus_spellcheck.dylib"
             "fs-watcher/libnucleus_fs_watcher.dylib"
             "decorated-window-tao/libnucleus_tao.dylib"
             "decorated-window-tao/libnucleus_tao_metal.dylib"
@@ -377,6 +388,10 @@ jobs:
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash linux-hidpi/src/main/native/linux/build.sh
 
+      - name: Build spellcheck native shared library
+        if: steps.natives-cache.outputs.cache-hit != 'true'
+        run: bash spellcheck/src/main/native/linux/build.sh
+
       - name: Build system-color Linux native shared library
         if: steps.natives-cache.outputs.cache-hit != 'true'
         run: bash system-color/src/main/native/linux/build.sh
@@ -438,6 +453,7 @@ jobs:
             "darkmode-detector/libnucleus_linux_theme.so"
             "decorated-window-jni/libnucleus_linux_jni.so"
             "linux-hidpi/libnucleus_linux_hidpi_jni.so"
+            "spellcheck/libnucleus_spellcheck.so"
             "system-color/libnucleus_systemcolor.so"
             "energy-manager/libnucleus_energy_manager.so"
             "notification-linux/libnucleus_notification_linux.so"

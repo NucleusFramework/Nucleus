@@ -48,8 +48,9 @@ public fun JewelDecoratedDialog(
             focusable = focusable,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
-            content = content,
-        )
+        ) {
+            ProvideJewelSpellcheckMenu { content() }
+        }
     }
 }
 
@@ -92,7 +93,7 @@ public fun NucleusApplicationScope.JewelDecoratedDialog(
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
         ) {
-            content()
+            ProvideJewelSpellcheckMenu { content() }
         }
     }
 }
