@@ -19,6 +19,7 @@ import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import dev.nucleusframework.application.spellcheck.NucleusSpellcheckInstaller
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
 import dev.nucleusframework.application.spellcheck.SpellcheckMenuPlacement
+import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
 import dev.nucleusframework.application.contextmenu.ContextMenuEntry
 import dev.nucleusframework.application.contextmenu.ContextMenuIcon
@@ -141,9 +142,10 @@ class SpellcheckJewelTest {
             assertTrue("expected menu items", items.isNotEmpty())
             assertSame(ContextMenuDivider, items.first())
             assertSame(ContextMenuDivider, items[items.lastIndex - 1])
-            val suggestions = items.filter { it !== ContextMenuDivider && it.label != "Add to dictionary" }
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
+            val suggestions = items.filter { it !== ContextMenuDivider && it.label != addLabel }
             assertTrue("expected suggestions, got ${items.map { it.label }}", suggestions.isNotEmpty())
-            assertEquals("Add to dictionary", items.last().label)
+            assertEquals(addLabel, items.last().label)
         }
     }
 

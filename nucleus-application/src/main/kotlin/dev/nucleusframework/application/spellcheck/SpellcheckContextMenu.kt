@@ -264,7 +264,7 @@ internal fun spellcheckContextMenuItems(
     val first = ranges.first()
     return spellcheckMenuSections(
         suggestions = suggestions,
-        addToDictionaryLabel = SpellcheckMenuModel.DEFAULT_ADD_TO_DICTIONARY_LABEL,
+        addToDictionaryLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel(),
         onAddToDictionary = { session.addToDictionary(first.word) },
         separator = separator,
         placement = placement,
