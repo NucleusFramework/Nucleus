@@ -12,7 +12,8 @@
     { "name": "Events", "role": "page tab", "actionsAll": ["click"] },
     { "name": "WebView", "role": "page tab", "actionsAll": ["click"] },
     { "name": "SwiftUI", "role": "page tab", "actionsAll": ["click"] },
-    { "name": "Texture", "role": "page tab", "actionsAll": ["click"] }
+    { "name": "Texture", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Spellcheck", "role": "page tab", "actionsAll": ["click"] }
   ],
   "nodes": [
     {
