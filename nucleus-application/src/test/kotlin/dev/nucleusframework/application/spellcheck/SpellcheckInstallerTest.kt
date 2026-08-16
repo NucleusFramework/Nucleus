@@ -6,6 +6,7 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.createFontFamilyResolver
 import androidx.compose.ui.unit.Constraints
@@ -108,6 +109,7 @@ class SpellcheckInstallerTest {
                     ranges = ranges,
                     separator = SpellcheckContextMenuSeparator,
                     onTextChange = { rewritten = it },
+                    anchor = TextRange(0, 4),
                 )
             val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
             val suggestions =
@@ -161,6 +163,126 @@ class SpellcheckInstallerTest {
             assertNotNull("expected a menu model for helo", model)
             assertEquals("hello world", applySuggestion("helo world", model!!, "hello"))
         }
+    }
+
+    @Test
+    fun `menu items only include suggestions for the selected misspelling`() {
+        SpellcheckSession(
+            locale = Locale.US,
+            userDictionaryFile = isolatedUserDict(),
+        ).use { session ->
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
+            val text = "helo wrold"
+            val ranges = session.misspellings(text)
+            assumeTrue("expected two misspellings", ranges.size >= 2)
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
+            val heloItems =
+                spellcheckContextMenuItems(
+                    text = text,
+                    session = session,
+                    ranges = ranges,
+                    separator = SpellcheckContextMenuSeparator,
+                    onTextChange = {},
+                    anchor = TextRange(0, 4),
+                )
+            val heloSuggestions =
+                heloItems.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+            assertTrue("expected helo suggestions", heloSuggestions.isNotEmpty())
+            assertTrue(
+                "helo menu must not list the other misspelling",
+                heloSuggestions.none { it.label == "wrold" },
+            )
+            val empty =
+                spellcheckContextMenuItems(
+                    text = text,
+                    session = session,
+                    ranges = ranges,
+                    separator = SpellcheckContextMenuSeparator,
+                    onTextChange = {},
+                    anchor = TextRange(4, 5),
+                )
+            assertTrue("whitespace must not open spellcheck items", empty.isEmpty())
+        }
+    }
+
+    @Test
+    fun `click offset wins over a stale caret selection`() {
+        SpellcheckSession(
+            locale = Locale.US,
+            userDictionaryFile = isolatedUserDict(),
+        ).use { session ->
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
+            val text = "helo wrold"
+            val ranges = session.misspellings(text)
+            assumeTrue("expected two misspellings", ranges.size >= 2)
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
+            val anchor = spellcheckAnchor(clickOffset = 7, selection = TextRange(0, 4))
+            val items =
+                spellcheckContextMenuItems(
+                    text = text,
+                    session = session,
+                    ranges = ranges,
+                    separator = SpellcheckContextMenuSeparator,
+                    onTextChange = {},
+                    anchor = anchor,
+                )
+            val suggestions =
+                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+            assertTrue("expected wrold suggestions", suggestions.isNotEmpty())
+            assertTrue(
+                "click on wrold must not list the helo token",
+                suggestions.none { it.label.equals("helo", ignoreCase = true) },
+            )
+        }
+    }
+
+    @Test
+    fun `selection maps onto the misspelling under the caret or highlight`() {
+        val helo = iterateWords("helo wrold").first { it.word == "helo" }
+        val wrold = iterateWords("helo wrold").first { it.word == "wrold" }
+        val ranges = listOf(helo, wrold)
+        assertEquals(helo, misspellingAt(ranges, TextRange(0, 4)))
+        assertEquals(helo, misspellingAt(ranges, TextRange(2)))
+        assertEquals(wrold, misspellingAt(ranges, TextRange(5, 10)))
+        assertEquals(null, misspellingAt(ranges, TextRange(4, 5)))
+        assertEquals(null, misspellingAt(emptyList(), TextRange(0, 4)))
+        assertEquals(TextRange(7), spellcheckAnchor(clickOffset = 7, selection = TextRange(0, 4)))
+        assertEquals(TextRange(0, 4), spellcheckAnchor(clickOffset = null, selection = TextRange(0, 4)))
+        assertEquals(null, spellcheckAnchor(clickOffset = null, selection = null))
+    }
+
+    @Test
+    fun `click in layout space maps onto the misspelled span`() {
+        val measurer =
+            TextMeasurer(
+                defaultFontFamilyResolver = createFontFamilyResolver(),
+                defaultDensity = Density(1f),
+                defaultLayoutDirection = LayoutDirection.Ltr,
+            )
+        val layout =
+            measurer.measure(
+                text = "helo wrold",
+                style = TextStyle(fontSize = 16.sp),
+                constraints = Constraints(maxWidth = 1000),
+            )
+        val helo = iterateWords("helo wrold").first { it.word == "helo" }
+        val wrold = iterateWords("helo wrold").first { it.word == "wrold" }
+        val heloBox = boundingBoxesForRange(layout, helo.start, helo.end).first()
+        val wroldBox = boundingBoxesForRange(layout, wrold.start, wrold.end).first()
+        val heloClick =
+            textOffsetAtRoot(
+                layout,
+                Offset.Zero,
+                Offset(heloBox.left + heloBox.width / 2f, heloBox.center.y),
+            )
+        val wroldClick =
+            textOffsetAtRoot(
+                layout,
+                Offset.Zero,
+                Offset(wroldBox.left + wroldBox.width / 2f, wroldBox.center.y),
+            )
+        assertEquals(helo, misspellingAt(listOf(helo, wrold), TextRange(heloClick)))
+        assertEquals(wrold, misspellingAt(listOf(helo, wrold), TextRange(wroldClick)))
     }
 
     @Test

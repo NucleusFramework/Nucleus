@@ -32,6 +32,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
+import androidx.compose.ui.text.TextRange
 import dev.nucleusframework.spellcheck.SpellChecker
 import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
@@ -118,6 +119,7 @@ public fun SpellcheckContextMenu(
     val latestOnTextChange = rememberUpdatedState(onTextChange)
     CollectMisspellings(current, latestText, rangesState)
     var inputRequest by remember { mutableStateOf<PlatformTextInputMethodRequest?>(null) }
+    var pendingClickInRoot by remember { mutableStateOf<Offset?>(null) }
     val interceptor =
         remember {
             PlatformTextInputInterceptor { request, nextHandler ->
@@ -126,6 +128,16 @@ public fun SpellcheckContextMenu(
             }
         }
     val menuItems = {
+        val request = inputRequest
+        val clickOffset =
+            pendingClickInRoot?.let { click ->
+                request?.let { clickOffsetInField(it, click) }
+            }
+        val anchor =
+            spellcheckAnchor(
+                clickOffset = clickOffset,
+                selection = request?.value?.invoke()?.selection,
+            )
         spellcheckContextMenuItems(
             text = latestText.value,
             session = current,
@@ -133,14 +145,20 @@ public fun SpellcheckContextMenu(
             separator = separator,
             onTextChange = latestOnTextChange.value,
             placement = menuPlacement,
+            anchor = anchor,
         )
     }
     ProvideSpellcheckSeparators {
-        ProvideSpellcheckMenuItems(items = menuItems, placement = menuPlacement) {
+        ProvideSpellcheckMenuItems(
+            items = menuItems,
+            placement = menuPlacement,
+            onMenuClosed = { pendingClickInRoot = null },
+        ) {
             InterceptPlatformTextInput(interceptor) {
                 SpellcheckImeUnderlineBox(
                     inputRequest = inputRequest,
                     ranges = rangesState.value,
+                    onSecondaryClickInRoot = { pendingClickInRoot = it },
                     content = content,
                 )
             }
@@ -209,13 +227,18 @@ private fun CollectMisspellings(
 private fun SpellcheckImeUnderlineBox(
     inputRequest: PlatformTextInputMethodRequest?,
     ranges: List<SpellcheckWord>,
+    onSecondaryClickInRoot: (Offset) -> Unit,
     content: @Composable () -> Unit,
 ) {
     var boxOriginInRoot by remember { mutableStateOf(Offset.Zero) }
+    val latestClick = rememberUpdatedState(onSecondaryClickInRoot)
     Box(
         Modifier
             .onGloballyPositioned { boxOriginInRoot = it.positionInRoot() }
-            .drawWithContent {
+            .detectSecondaryClickInRoot(
+                originInRoot = { boxOriginInRoot },
+                onClick = { latestClick.value(it) },
+            ).drawWithContent {
                 drawContent()
                 val request = inputRequest ?: return@drawWithContent
                 val fieldText = request.value().text
@@ -248,24 +271,21 @@ internal fun spellcheckContextMenuItems(
     separator: ContextMenuItem,
     onTextChange: (String) -> Unit,
     placement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
+    anchor: TextRange? = null,
 ): List<ContextMenuItem> {
-    if (ranges.isEmpty()) return emptyList()
-    val suggestions = ArrayList<ContextMenuItem>()
-    val unique = ranges.distinctBy { it.word }.take(2)
-    for (range in unique) {
-        val model = buildSpellcheckMenuModel(range.word, session, range) ?: continue
-        for (suggestion in model.suggestions) {
-            suggestions +=
-                ContextMenuItem(suggestion) {
-                    onTextChange(applySuggestion(text, model, suggestion))
-                }
+    if (ranges.isEmpty() || anchor == null) return emptyList()
+    val target = misspellingAt(ranges, anchor) ?: return emptyList()
+    val model = buildSpellcheckMenuModel(target.word, session, target) ?: return emptyList()
+    val suggestions =
+        model.suggestions.map { suggestion ->
+            ContextMenuItem(suggestion) {
+                onTextChange(applySuggestion(text, model, suggestion))
+            }
         }
-    }
-    val first = ranges.first()
     return spellcheckMenuSections(
         suggestions = suggestions,
         addToDictionaryLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel(),
-        onAddToDictionary = { session.addToDictionary(first.word) },
+        onAddToDictionary = { session.addToDictionary(target.word) },
         separator = separator,
         placement = placement,
     )
@@ -336,20 +356,45 @@ public object NucleusSpellcheckInstaller {
 private fun ProvideSpellcheckMenuItems(
     items: () -> List<ContextMenuItem>,
     placement: SpellcheckMenuPlacement,
+    onMenuClosed: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    when (placement) {
-        SpellcheckMenuPlacement.Bottom ->
-            ContextMenuDataProvider(items = items, content = content)
-        SpellcheckMenuPlacement.Top -> {
-            val base = LocalTextContextMenu.current
-            val latestItems = rememberUpdatedState(items)
-            val menu =
-                remember(base) {
-                    SpellcheckTopTextContextMenu(base) { latestItems.value() }
-                }
-            CompositionLocalProvider(LocalTextContextMenu provides menu, content = content)
+    val delegate = LocalContextMenuRepresentation.current
+    val latestClosed = rememberUpdatedState(onMenuClosed)
+    val representation =
+        remember(delegate) {
+            SpellcheckMenuSessionRepresentation(delegate) { latestClosed.value() }
         }
+    CompositionLocalProvider(LocalContextMenuRepresentation provides representation) {
+        when (placement) {
+            SpellcheckMenuPlacement.Bottom ->
+                ContextMenuDataProvider(items = items, content = content)
+            SpellcheckMenuPlacement.Top -> {
+                val base = LocalTextContextMenu.current
+                val latestItems = rememberUpdatedState(items)
+                val menu =
+                    remember(base) {
+                        SpellcheckTopTextContextMenu(base) { latestItems.value() }
+                    }
+                CompositionLocalProvider(LocalTextContextMenu provides menu, content = content)
+            }
+        }
+    }
+}
+
+private class SpellcheckMenuSessionRepresentation(
+    private val delegate: ContextMenuRepresentation,
+    private val onClosed: () -> Unit,
+) : ContextMenuRepresentation {
+    @Composable
+    override fun Representation(
+        state: ContextMenuState,
+        items: () -> List<ContextMenuItem>,
+    ) {
+        if (state.status !is ContextMenuState.Status.Open) {
+            onClosed()
+        }
+        delegate.Representation(state, items)
     }
 }
 
