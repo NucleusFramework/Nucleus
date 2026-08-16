@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.PlatformLocalization
 /**
  * Jewel-style [TextContextMenu]: rebuilds Cut / Copy / Paste / Select All as
  * [NucleusContextMenuItem]s tagged with [ContextMenuIcon] stock values so
- * [NativeContextMenuRepresentation] can attach the OS glyphs.
+ * [NativeContextMenuRepresentation] can attach the OS glyphs and accelerators.
  *
  * Disabled actions are kept (same as Compose's default and Jewel) so the menu
  * shape stays stable while the field's selection changes.

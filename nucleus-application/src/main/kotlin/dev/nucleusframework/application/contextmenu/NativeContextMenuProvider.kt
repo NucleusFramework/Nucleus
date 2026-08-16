@@ -46,9 +46,9 @@ public val isNativeContextMenuSupported: Boolean
 
 /**
  * Installs [NativeTextContextMenu] (so Cut / Copy / Paste carry
- * [ContextMenuIcon] stock tags) and [NativeContextMenuRepresentation]
- * (`NSMenu` on macOS, Compose Adwaita flyout on Linux, Compose Fluent
- * flyout on Windows).
+ * [ContextMenuIcon] stock tags and platform accelerators) and
+ * [NativeContextMenuRepresentation] (`NSMenu` on macOS, Compose Adwaita
+ * flyout on Linux, Compose Fluent flyout on Windows).
  *
  * No-op when [enabled] is `false` or when [isNativeContextMenuSupported] is
  * `false` (missing macOS native lib). Compose / Jewel chrome stays.

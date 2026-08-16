@@ -9,7 +9,7 @@ import org.jetbrains.jewel.ui.component.ContextMenuDivider
 /**
  * Provides Jewel's [ContextMenuDivider] to [LocalSpellcheckMenuSeparator] and
  * [JewelContextMenuInterpreter] so a native context menu can map Jewel
- * Cut / Copy / Paste action types to OS icons.
+ * Cut / Copy / Paste action types to OS icons and accelerators.
  *
  * Compile-time Jewel reference — no reflection. Installed automatically by
  * [JewelDecoratedWindow] and [JewelDecoratedDialog]. Apps that build their

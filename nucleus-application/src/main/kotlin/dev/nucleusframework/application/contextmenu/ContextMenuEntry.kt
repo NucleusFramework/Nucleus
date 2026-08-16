@@ -17,12 +17,16 @@ public sealed class ContextMenuEntry {
      * @param enabled Whether the row can be chosen.
      * @param icon Optional native icon.
      * @param onClick Invoked when the user chooses the row.
+     * @param shortcut Accelerator shown on the right of the Linux / Windows
+     *   flyout (e.g. `Ctrl+C`). `null` or empty hides it. macOS `NSMenu` does
+     *   not use this field yet.
      */
     public class Item(
         public val label: String,
         public val enabled: Boolean,
         public val icon: ContextMenuIcon?,
         public val onClick: () -> Unit,
+        public val shortcut: String? = null,
     ) : ContextMenuEntry()
 
     /** A horizontal separator. */
@@ -84,6 +88,7 @@ public object DefaultContextMenuItemInterpreter : ContextMenuItemInterpreter {
                     enabled = item.enabled,
                     icon = item.icon,
                     onClick = item.onClick,
+                    shortcut = item.resolvedShortcut(),
                 )
             else ->
                 ContextMenuEntry.Item(

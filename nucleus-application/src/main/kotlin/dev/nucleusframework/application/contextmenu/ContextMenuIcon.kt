@@ -1,5 +1,7 @@
 package dev.nucleusframework.application.contextmenu
 
+import dev.nucleusframework.core.runtime.Platform
+
 /**
  * Icon shown next to a [NucleusContextMenuItem] when the native context menu
  * is active.
@@ -37,3 +39,28 @@ public sealed class ContextMenuIcon {
         public val name: String,
     ) : ContextMenuIcon()
 }
+
+/**
+ * Conventional accelerator for this stock icon, formatted like Jewel / GTK:
+ * `Ctrl+C` on Linux and Windows, `⌘C` on macOS.
+ *
+ * [ContextMenuIcon.Delete], [ContextMenuIcon.Folder], and
+ * [ContextMenuIcon.SfSymbol] have no standard shortcut and return `null`.
+ */
+public fun ContextMenuIcon.stockShortcut(): String? =
+    when (this) {
+        ContextMenuIcon.Cut -> primaryModifierShortcut("X")
+        ContextMenuIcon.Copy -> primaryModifierShortcut("C")
+        ContextMenuIcon.Paste -> primaryModifierShortcut("V")
+        ContextMenuIcon.SelectAll -> primaryModifierShortcut("A")
+        ContextMenuIcon.Delete,
+        ContextMenuIcon.Folder,
+        is ContextMenuIcon.SfSymbol,
+        -> null
+    }
+
+internal fun primaryModifierShortcut(key: String): String =
+    when (Platform.Current) {
+        Platform.MacOS -> "⌘$key"
+        else -> "Ctrl+$key"
+    }
