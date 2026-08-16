@@ -481,8 +481,14 @@ static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode
 // solution (matching JBR's AWTButtonsView) is to:
 //   1. Hide the AppKit titlebar container while in fullscreen,
 //   2. Install a custom NSView in the contentView containing 3 NSButtons
-//      created via [NSWindow standardWindowButton:forStyleMask:] — they look
-//      identical to the real traffic-lights and accept the standard actions.
+//      created via [NSWindow standardWindowButton:forStyleMask:].
+//
+// Copies built with the live fullscreen styleMask draw as inactive (gray)
+// because they are not the window's real title-bar widgets (issue #531).
+// At rest we therefore paint the standard active traffic-light colours
+// ourselves; on group hover we reveal the native close/zoom widgets (so the
+// glyphs match AppKit) and keep miniaturise hidden — performMiniaturize: is
+// a no-op in fullscreen, so the button is disabled rather than dead.
 
 // Neutralizes the NSToolbarFullScreenWindow overlay AppKit creates lazily in
 // fullscreen (despite its name it hosts the re-parented native title bar, so
@@ -509,12 +515,45 @@ static void neutralizeToolbarFullScreenWindows(void) {
     }
 }
 
+// Standard Big Sur+ traffic-light sRGB fills. Used for the rest-state
+// placeholders: copies of _NSThemeWidget draw inactive-gray when they are
+// not the window's real title-bar buttons (issue #531).
+static NSColor *taoTrafficCloseColor(void) {
+    return [NSColor colorWithSRGBRed:1.0 green:95.0 / 255.0 blue:87.0 / 255.0 alpha:1.0];
+}
+static NSColor *taoTrafficZoomColor(void) {
+    return [NSColor colorWithSRGBRed:40.0 / 255.0 green:200.0 / 255.0 blue:64.0 / 255.0 alpha:1.0];
+}
+static NSColor *taoTrafficDisabledColor(NSView *view) {
+    BOOL dark = NO;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName name = [view.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua ]];
+        dark = [name isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return dark ? [NSColor colorWithWhite:0.40 alpha:1.0]
+                : [NSColor colorWithWhite:0.80 alpha:1.0];
+}
+
+static void taoFillTrafficCircle(NSView *button, NSColor *color) {
+    NSRect r = button.frame;
+    CGFloat d = fmin(MIN(r.size.width, r.size.height),
+                     isTahoeOrLater() ? 14.0 : 12.0);
+    NSRect oval = NSMakeRect(NSMidX(r) - d / 2.0, NSMidY(r) - d / 2.0, d, d);
+    [color setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:oval] fill];
+}
+
 @interface NucleusTaoButtonsView : NSView {
     BOOL _mouseInside;
 }
+- (void)applyHoverState;
 @end
 
 @implementation NucleusTaoButtonsView
+- (BOOL)isOpaque {
+    return NO;
+}
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     for (NSTrackingArea *ta in self.trackingAreas) {
@@ -529,30 +568,51 @@ static void neutralizeToolbarFullScreenWindows(void) {
             userInfo:nil];
     [self addTrackingArea:ta];
 }
-// The buttons only repaint their glyphs when explicitly invalidated: they
-// query _mouseInGroup: at draw time. Synthesizing mouseEntered:/mouseExited:
-// on the buttons instead leaves _NSThemeWidget in an inconsistent hover
-// state on pre-Tahoe macOS — only the zoom button repainted, and its glyph
-// never cleared on exit (issue #310 B1).
-- (void)setButtonsNeedDisplay {
-    for (NSView *btn in self.subviews) [btn setNeedsDisplay:YES];
+// Rest: hide the native copies and paint active-coloured circles (miniaturise
+// stays the disabled gray). Hover: reveal native close/zoom so AppKit draws
+// the glyphs; miniaturise stays hidden because it cannot work in fullscreen.
+- (void)applyHoverState {
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    NSButton *closeBtn = (NSButton *)buttons[0];
+    NSButton *minBtn = (NSButton *)buttons[1];
+    NSButton *zoomBtn = (NSButton *)buttons[2];
+    minBtn.enabled = NO;
+    minBtn.hidden = YES;
+    closeBtn.hidden = !_mouseInside;
+    zoomBtn.hidden = !_mouseInside;
+    [closeBtn setHighlighted:_mouseInside];
+    [zoomBtn setHighlighted:_mouseInside];
+    [self setNeedsDisplay:YES];
 }
 - (void)mouseEntered:(NSEvent *)event {
     (void)event;
     _mouseInside = YES;
-    [self setButtonsNeedDisplay];
+    [self applyHoverState];
 }
 - (void)mouseExited:(NSEvent *)event {
     (void)event;
     _mouseInside = NO;
-    [self setButtonsNeedDisplay];
+    [self applyHoverState];
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    if (!_mouseInside) {
+        taoFillTrafficCircle(buttons[0], taoTrafficCloseColor());
+        taoFillTrafficCircle(buttons[1], taoTrafficDisabledColor(self));
+        taoFillTrafficCircle(buttons[2], taoTrafficZoomColor());
+    } else {
+        taoFillTrafficCircle(buttons[1], taoTrafficDisabledColor(self));
+    }
 }
 // Private AppKit hook: standard window buttons ask their superview whether
 // the traffic-light group is hovered before drawing the glyphs. Without it,
 // pre-Tahoe systems never show the symbols on hover (mirrors JBR's
-// AWTButtonsView).
+// AWTButtonsView). Miniaturise is never in the group — it is disabled.
 - (BOOL)_mouseInGroup:(NSButton *)button {
-    (void)button;
+    if (self.subviews.count >= 2 && button == self.subviews[1]) return NO;
     return _mouseInside;
 }
 @end
@@ -604,7 +664,9 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         ? (NSViewMinXMargin | NSViewMinYMargin)
         : NSViewMinYMargin;
 
-    NSUInteger masks = [window styleMask];
+    // Drop FullScreen from the mask: copies built with it draw as inactive
+    // gray and the miniaturise widget is born disabled (issue #531).
+    NSUInteger masks = [window styleMask] & ~NSWindowStyleMaskFullScreen;
     NSArray<NSNumber *> *types = @[
         @(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)
     ];
@@ -627,12 +689,21 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f,
                                  centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
-        [btn setTarget:window];
-        [btn setAction:actions[idx]];
+        if (idx == 1) {
+            // Miniaturise is a no-op while the window is fullscreen.
+            [btn setEnabled:NO];
+            [btn setTarget:nil];
+            [btn setAction:NULL];
+        } else {
+            [btn setTarget:window];
+            [btn setAction:actions[idx]];
+        }
+        [btn setHidden:YES];
         [container addSubview:btn];
     }
 
     [parent addSubview:container];
+    [container applyHoverState];
     objc_setAssociatedObject(window, &kTaoFullscreenButtonsKey, container,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
@@ -688,6 +759,7 @@ static void updateFullScreenButtonsPosition(NSWindow *window) {
                                  centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
     }
+    [container applyHoverState];
 }
 
 // ── Menu bar reveal tracking (Carbon) ───────────────────────────────────
