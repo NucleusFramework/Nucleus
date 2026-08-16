@@ -1,6 +1,7 @@
 package dev.nucleusframework.scheduler.internal
 
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.scheduler.DesktopBootReceiver
 import dev.nucleusframework.scheduler.TaskId
 import java.io.File
 
@@ -17,6 +18,8 @@ import java.io.File
  * explicit uninstall hooks.
  */
 internal object TaskWrapperScript {
+    private const val SCHEDULER_ARG = DesktopBootReceiver.SCHEDULER_ARG
+
     private fun scriptsDir(appId: String): File {
         val baseDir =
             when (Platform.Current) {
@@ -73,40 +76,57 @@ internal object TaskWrapperScript {
         appId: String,
         taskId: TaskId,
         execPath: String,
+        execArgs: List<String>,
         taskFolder: String,
         metadataDir: String,
     ): File {
         val file = scriptFile(appId, taskId)
         file.parentFile.mkdirs()
+        file.writeText(buildWindowsScript(taskId, execPath, execArgs, taskFolder, metadataDir))
+        return file
+    }
 
+    /** Builds the VBScript content written by [generateWindowsScript]. */
+    internal fun buildWindowsScript(
+        taskId: TaskId,
+        execPath: String,
+        execArgs: List<String>,
+        taskFolder: String,
+        metadataDir: String,
+    ): String {
         val metadataFile = "$metadataDir\\${taskId.value}.properties"
 
-        val content =
+        // shell.Run expects a single command string; the exe path is always quoted so
+        // spaces are safe, and any argument containing a space gets quoted too.
+        val commandLine =
             buildString {
-                appendLine("Set fso = CreateObject(\"Scripting.FileSystemObject\")")
-                appendLine("If Not fso.FileExists(${vbsQuote(execPath)}) Then")
-                appendLine("    On Error Resume Next")
-                appendLine("    Set svc = CreateObject(\"Schedule.Service\")")
-                appendLine("    svc.Connect")
-                appendLine("    Set folder = svc.GetFolder(${vbsQuote(taskFolder)})")
-                appendLine("    folder.DeleteTask ${vbsQuote(taskId.value)}, 0")
-                appendLine("    folder.DeleteTask ${vbsQuote("${taskId.value}-retry")}, 0")
-                appendLine("    On Error GoTo 0")
-                appendLine(
-                    "    If fso.FileExists(${vbsQuote(metadataFile)}) Then fso.DeleteFile ${vbsQuote(metadataFile)}",
-                )
-                appendLine("    fso.DeleteFile WScript.ScriptFullName")
-                appendLine("    WScript.Quit 0")
-                appendLine("End If")
-                appendLine("Set shell = CreateObject(\"WScript.Shell\")")
-                // shell.Run expects a command string; inner quotes wrap the exe path for spaces.
-                // VBS string: "..." with doubled quotes inside → literal quotes in the value.
-                appendLine(
-                    "shell.Run \"\"\"${vbsEscape(execPath)}\"\" --nucleus-scheduler-run ${taskId.value}\", 0, True",
-                )
+                append('"').append(execPath).append('"')
+                for (arg in execArgs + SCHEDULER_ARG + taskId.value) {
+                    append(' ')
+                    if (arg.contains(' ')) append('"').append(arg).append('"') else append(arg)
+                }
             }
-        file.writeText(content)
-        return file
+
+        return buildString {
+            appendLine("Set fso = CreateObject(\"Scripting.FileSystemObject\")")
+            appendLine("If Not fso.FileExists(${vbsQuote(execPath)}) Then")
+            appendLine("    On Error Resume Next")
+            appendLine("    Set svc = CreateObject(\"Schedule.Service\")")
+            appendLine("    svc.Connect")
+            appendLine("    Set folder = svc.GetFolder(${vbsQuote(taskFolder)})")
+            appendLine("    folder.DeleteTask ${vbsQuote(taskId.value)}, 0")
+            appendLine("    folder.DeleteTask ${vbsQuote("${taskId.value}-retry")}, 0")
+            appendLine("    On Error GoTo 0")
+            appendLine(
+                "    If fso.FileExists(${vbsQuote(metadataFile)}) Then fso.DeleteFile ${vbsQuote(metadataFile)}",
+            )
+            appendLine("    fso.DeleteFile WScript.ScriptFullName")
+            appendLine("    WScript.Quit 0")
+            appendLine("End If")
+            appendLine("Set shell = CreateObject(\"WScript.Shell\")")
+            // VBS string: "..." with doubled quotes inside → literal quotes in the value.
+            appendLine("shell.Run ${vbsQuote(commandLine)}, 0, True")
+        }
     }
 
     /** Wraps a value in VBS double quotes, doubling any inner quotes. */
@@ -117,10 +137,12 @@ internal object TaskWrapperScript {
 
     // -- Linux bash wrapper ---------------------------------------------------
 
+    @Suppress("LongParameterList")
     fun generateLinuxScript(
         appId: String,
         taskId: TaskId,
         execPath: String,
+        execArgs: List<String>,
         timerUnit: String,
         serviceUnit: String,
         serviceFilePath: String,
@@ -129,27 +151,55 @@ internal object TaskWrapperScript {
     ): File {
         val file = scriptFile(appId, taskId)
         file.parentFile.mkdirs()
-
-        val content =
-            buildString {
-                appendLine("#!/bin/bash")
-                appendLine("EXEC=${quote(execPath)}")
-                appendLine("if [ ! -x \"${'$'}EXEC\" ]; then")
-                appendLine("    systemctl --user disable --now ${quote(timerUnit)} 2>/dev/null")
-                appendLine("    systemctl --user disable ${quote(serviceUnit)} 2>/dev/null")
-                appendLine("    rm -f ${quote(timerFilePath)}")
-                appendLine("    rm -f ${quote(serviceFilePath)}")
-                appendLine("    systemctl --user daemon-reload 2>/dev/null")
-                appendLine("    rm -f ${quote(metadataDir + "/" + taskId.value + ".properties")}")
-                appendLine("    rm -f ${quote(file.absolutePath)}")
-                appendLine("    exit 0")
-                appendLine("fi")
-                appendLine("\"${'$'}EXEC\" --nucleus-scheduler-run ${taskId.value}")
-            }
-        file.writeText(content)
+        file.writeText(
+            buildLinuxScript(
+                taskId = taskId,
+                execPath = execPath,
+                execArgs = execArgs,
+                timerUnit = timerUnit,
+                serviceUnit = serviceUnit,
+                serviceFilePath = serviceFilePath,
+                timerFilePath = timerFilePath,
+                metadataDir = metadataDir,
+                scriptPath = file.absolutePath,
+            ),
+        )
         file.setExecutable(true)
         return file
     }
 
-    private fun quote(s: String): String = "\"$s\""
+    /** Builds the bash script content written by [generateLinuxScript]. */
+    @Suppress("LongParameterList")
+    internal fun buildLinuxScript(
+        taskId: TaskId,
+        execPath: String,
+        execArgs: List<String>,
+        timerUnit: String,
+        serviceUnit: String,
+        serviceFilePath: String,
+        timerFilePath: String,
+        metadataDir: String,
+        scriptPath: String,
+    ): String {
+        val args =
+            (execArgs + SCHEDULER_ARG + taskId.value).joinToString(" ") { shellQuote(it) }
+        return buildString {
+            appendLine("#!/bin/bash")
+            appendLine("EXEC=${shellQuote(execPath)}")
+            appendLine("if [ ! -x \"${'$'}EXEC\" ]; then")
+            appendLine("    systemctl --user disable --now ${shellQuote(timerUnit)} 2>/dev/null")
+            appendLine("    systemctl --user disable ${shellQuote(serviceUnit)} 2>/dev/null")
+            appendLine("    rm -f ${shellQuote(timerFilePath)}")
+            appendLine("    rm -f ${shellQuote(serviceFilePath)}")
+            appendLine("    systemctl --user daemon-reload 2>/dev/null")
+            appendLine("    rm -f ${shellQuote("$metadataDir/${taskId.value}.properties")}")
+            appendLine("    rm -f ${shellQuote(scriptPath)}")
+            appendLine("    exit 0")
+            appendLine("fi")
+            appendLine("\"${'$'}EXEC\" $args")
+        }
+    }
+
+    /** Wraps a value in single quotes, escaping any embedded single quote. */
+    private fun shellQuote(s: String): String = "'" + s.replace("'", "'\\''") + "'"
 }

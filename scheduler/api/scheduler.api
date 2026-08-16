@@ -231,6 +231,14 @@ public final class dev/nucleusframework/scheduler/RetryPolicy$Linear : dev/nucle
 	public fun toString ()Ljava/lang/String;
 }
 
+public final class dev/nucleusframework/scheduler/SchedulerConfig {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/SchedulerConfig;
+	public static final fun getExecutableArguments ()Ljava/util/List;
+	public static final fun getExecutablePath ()Ljava/lang/String;
+	public static final fun setExecutableArguments (Ljava/util/List;)V
+	public static final fun setExecutablePath (Ljava/lang/String;)V
+}
+
 public final class dev/nucleusframework/scheduler/TaskContext {
 	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;IILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
