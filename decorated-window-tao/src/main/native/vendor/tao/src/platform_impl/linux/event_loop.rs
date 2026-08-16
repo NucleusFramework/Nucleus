@@ -889,7 +889,20 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             window.connect_scroll_event(move |_, event| {
-              let (x, y) = event.delta();
+              // GDK only fills `delta_x`/`delta_y` for GDK_SCROLL_SMOOTH
+              // (trackpads). A discrete mouse wheel arrives with
+              // `direction = UP/DOWN/LEFT/RIGHT` and a zero delta, so the
+              // upstream `event.delta()` mapping drops the event entirely and
+              // the wheel never scrolls. Map the direction back onto a unit
+              // delta so discrete and smooth scrolls share one sign convention.
+              let (x, y) = match event.direction() {
+                ScrollDirection::Smooth => event.delta(),
+                ScrollDirection::Up => (0.0, -1.0),
+                ScrollDirection::Down => (0.0, 1.0),
+                ScrollDirection::Left => (-1.0, 0.0),
+                ScrollDirection::Right => (1.0, 0.0),
+                _ => (0.0, 0.0),
+              };
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::MouseWheel {

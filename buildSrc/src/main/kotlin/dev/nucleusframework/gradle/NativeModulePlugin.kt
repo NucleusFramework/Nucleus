@@ -99,7 +99,11 @@ open class NativeModuleExtension(
                 // only the launcher script under the per-OS directory.
                 include("Cargo.toml", "Cargo.lock", "build.rs", "src/**")
                 include("${target.sourceDirName}/**")
-                exclude("target/**", "vendor/**")
+                // Vendored tao is patched in-tree (#533 discrete scroll lives
+                // there). Other vendor trees (accesskit forks, ANGLE headers)
+                // are large and rarely change independently of `src/**`.
+                include("vendor/tao/**")
+                exclude("target/**", "vendor/accesskit_*/**", "vendor/angle-headers/**")
             }
 
         val task =
