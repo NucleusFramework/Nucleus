@@ -57,33 +57,20 @@ import dev.nucleusframework.window.icons.windows.RestoreDark
 import dev.nucleusframework.window.icons.windows.RestoreInactive
 import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
+import dev.nucleusframework.window.internal.WindowsCaptionButtonStyle
+import dev.nucleusframework.window.internal.animateWindowsCaptionColor
+import dev.nucleusframework.window.internal.windowsCaptionButtonBackground
 import dev.nucleusframework.window.resolveWindowControl
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
 
-// Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
+// Mirrors `decorated-window-awt/WindowsWindowControlArea.kt` so the visual
 // output is identical between the AWT-based backend and the Tao backend.
 
 private val WINDOWS_BUTTON_WIDTH = 46.dp
 
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredLight = Color(0x1A000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredDark = Color(0x1AFFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedLight = Color(0x33000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedDark = Color(0x33FFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonHovered = Color(0xFFE81123)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonPressed = Color(0xFFF1707A)
+private const val CLOSE_HOVER_ALPHA_EPSILON = 0.02f
 
 /**
  * Windows-style window controls (minimize / maximize-restore / close).
@@ -274,17 +261,29 @@ private fun WindowsCaptionButton(
 ) {
     var hovered by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
+    val appearing = hovered || pressed
 
-    val backgroundColor =
-        captionButtonBackground(
+    val targetBackground =
+        windowsCaptionButtonBackground(
             hovered = hovered,
             pressed = pressed,
             isCloseButton = isCloseButton,
             isDark = isDark,
-            style = style,
+            customHover = style.colors.iconButtonHoveredBackground,
+            customPressed = style.colors.iconButtonPressedBackground,
+        )
+    val backgroundColor =
+        animateWindowsCaptionColor(
+            targetBackground,
+            appearing = appearing,
+            durationMillis = WindowsCaptionButtonStyle.BACKGROUND_FADE_OUT_MILLIS,
         )
 
-    val isCloseHovered = (hovered || pressed) && isCloseButton
+    // Keep the white close glyph while the red fill is still fading out so
+    // the X does not snap back to gray on a still-red background.
+    val isCloseHovered =
+        isCloseButton &&
+            (appearing || backgroundColor.alpha > CLOSE_HOVER_ALPHA_EPSILON)
     val currentIcon: Painter =
         rememberVectorPainter(
             if (isCloseHovered && iconHover != null) iconHover else icon,
@@ -319,33 +318,6 @@ private fun WindowsCaptionButton(
         contentAlignment = Alignment.Center,
     ) {
         Image(painter = currentIcon, contentDescription = contentDescription, colorFilter = colorFilter)
-    }
-}
-
-// Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so custom
-// [TitleBarStyle] colors apply identically on the Tao backend. Close-button
-// hover/pressed always use the fixed Windows red — matching AWT.
-private fun captionButtonBackground(
-    hovered: Boolean,
-    pressed: Boolean,
-    isCloseButton: Boolean,
-    isDark: Boolean,
-    style: TitleBarStyle,
-): Color {
-    val customHover = style.colors.iconButtonHoveredBackground
-    val customPressed = style.colors.iconButtonPressedBackground
-    val pressedColor =
-        customPressed.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
-    val hoveredColor =
-        customHover.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
-    return when {
-        pressed && isCloseButton -> WindowsCloseButtonPressed
-        pressed -> pressedColor
-        hovered && isCloseButton -> WindowsCloseButtonHovered
-        hovered -> hoveredColor
-        else -> Color.Transparent
     }
 }
 
