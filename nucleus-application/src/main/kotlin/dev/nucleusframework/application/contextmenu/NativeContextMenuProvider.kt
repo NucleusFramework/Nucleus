@@ -14,9 +14,9 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.isNativePopupMenuAvailable as isMacOsNativePopupMenuAvailable
 
 /**
- * `true` when [NativeContextMenuProvider] has installed the native
+ * `true` when [NativeContextMenuProvider] has installed the OS-looking
  * representation in this subtree. Spellcheck uses this to stop drawing its
- * own Compose popup (separators are native rows instead).
+ * own Compose popup (separators are handled by the OS-looking renderer).
  */
 public val LocalNativeContextMenu: ProvidableCompositionLocal<Boolean> =
     staticCompositionLocalOf { false }
@@ -24,36 +24,38 @@ public val LocalNativeContextMenu: ProvidableCompositionLocal<Boolean> =
 /**
  * Window density captured by [NativeContextMenuProvider], above any
  * subtree [LocalDensity] override (e.g. the demo Gallery at 75%).
- * The Windows Compose flyout uses this so it stays at OS scale.
+ * The Windows / Linux Compose flyouts use this so they stay at OS scale.
  */
 internal val LocalContextMenuDensity: ProvidableCompositionLocal<Density?> =
     staticCompositionLocalOf { null }
 
 /**
- * Whether this process can show the opt-in native-looking context menu:
- * macOS + `menu-macos`, or Windows (Compose Fluent flyout). Linux is
- * always `false`.
+ * Whether this process can show the opt-in OS-looking context menu:
+ * macOS + `menu-macos` (`NSMenu`), Linux (Compose Adwaita flyout), or
+ * Windows (Compose Fluent flyout).
  */
 public val isNativeContextMenuSupported: Boolean
     get() =
         when (Platform.Current) {
             Platform.MacOS -> isMacOsNativePopupMenuAvailable
-            Platform.Windows -> true
+            Platform.Linux,
+            Platform.Windows,
+            -> true
             else -> false
         }
 
 /**
- * Jewel-style context-menu provider: installs [NativeTextContextMenu] (so
- * Cut / Copy / Paste carry [ContextMenuIcon] stock tags) and
- * [NativeContextMenuRepresentation] (`NSMenu` on macOS, Compose Fluent
+ * Installs [NativeTextContextMenu] (so Cut / Copy / Paste carry
+ * [ContextMenuIcon] stock tags) and [NativeContextMenuRepresentation]
+ * (`NSMenu` on macOS, Compose Adwaita flyout on Linux, Compose Fluent
  * flyout on Windows).
  *
  * No-op when [enabled] is `false` or when [isNativeContextMenuSupported] is
- * `false` (Linux, missing macOS native lib). Compose / Jewel chrome stays.
+ * `false` (missing macOS native lib). Compose / Jewel chrome stays.
  *
  * @param enabled Caller opt-in, typically [DecoratedWindow]'s
  *   `nativeContextMenu` flag.
- * @param content Window content that should use the native menu.
+ * @param content Window content that should use the OS-looking menu.
  */
 @Suppress("FunctionNaming")
 @Composable

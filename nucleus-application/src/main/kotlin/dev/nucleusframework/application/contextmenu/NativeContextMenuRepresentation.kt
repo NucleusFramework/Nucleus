@@ -14,12 +14,11 @@ import dev.nucleusframework.menu.macos.NsMenuItemImage
 import dev.nucleusframework.menu.macos.popUpNativeMenu
 
 /**
- * Renders the context menu as a native `NSMenu` on macOS, or as a Compose
- * Fluent flyout (WinUI 3 MenuFlyout metrics) on Windows.
+ * OS-looking context menu: `NSMenu` on macOS, a Compose Fluent flyout on
+ * Windows, a Compose Adwaita flyout on Linux.
  *
- * On Linux this object is never installed ([NativeContextMenuProvider] is a
- * no-op there). Calling [Representation] off a supported OS closes the menu
- * immediately so a stray install cannot leave Compose in `Open`.
+ * Calling [Representation] off a supported OS closes the menu immediately
+ * so a stray install cannot leave Compose in `Open`.
  */
 public object NativeContextMenuRepresentation : ContextMenuRepresentation {
     @Composable
@@ -29,27 +28,27 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
     ) {
         val status = state.status
         if (status !is ContextMenuState.Status.Open) return
-        if (Platform.Current == Platform.Windows) {
-            FluentContextMenuPopup(state, items)
-            return
-        }
         val interpreter = LocalContextMenuItemInterpreter.current
         val separator = LocalSpellcheckMenuSeparator.current
-        LaunchedEffect(status) {
-            val resolved = items()
-            if (resolved.isEmpty() || !isNativeContextMenuSupported) {
-                state.status = ContextMenuState.Status.Closed
-                return@LaunchedEffect
-            }
-            val popupItems =
-                resolved.map { item ->
-                    interpreter.interpret(item, separator).toMacPopupItem()
+        val entries = items().map { item -> interpreter.interpret(item, separator) }
+        val onDismiss = { state.status = ContextMenuState.Status.Closed }
+        if (entries.isEmpty()) {
+            LaunchedEffect(status) { onDismiss() }
+            return
+        }
+        when (Platform.Current) {
+            Platform.Windows -> ContextMenuFlyout(status, entries, FluentMenuTheme, onDismiss)
+            Platform.Linux -> ContextMenuFlyout(status, entries, AdwaitaMenuTheme, onDismiss)
+            Platform.MacOS -> {
+                LaunchedEffect(status) {
+                    try {
+                        popUpNativeMenu(entries.map { it.toMacPopupItem() })
+                    } finally {
+                        onDismiss()
+                    }
                 }
-            try {
-                popUpNativeMenu(popupItems)
-            } finally {
-                state.status = ContextMenuState.Status.Closed
             }
+            else -> LaunchedEffect(status) { onDismiss() }
         }
     }
 }

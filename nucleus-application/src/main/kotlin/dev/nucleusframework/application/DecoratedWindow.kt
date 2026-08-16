@@ -46,8 +46,8 @@ public fun NucleusApplicationScope.DecoratedWindow(
     nativePopupLayers: Boolean = false,
     // Replace Compose-drawn context menus (ContextMenuArea, text
     // Cut/Copy/Paste, spellcheck items) with the OS-looking menu. Tao +
-    // macOS (`NSMenu`) or Tao + Windows (Compose Fluent flyout). No-op on
-    // Linux and AWT.
+    // macOS (`NSMenu`), or a Compose flyout on Linux (Adwaita) / Windows
+    // (Fluent). No-op on AWT.
     // Independent of [nativePopupLayers].
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and

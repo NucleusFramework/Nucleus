@@ -24,8 +24,9 @@ dependencies {
     api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
-    // Native context menu: NSMenu on macOS. Windows is a Compose Fluent
-    // flyout (no JNI). The macOS library no-ops when the dylib is missing.
+    // Native context menu: NSMenu on macOS. Windows and Linux are Compose
+    // flyouts (Fluent / Adwaita). The macOS library no-ops when the dylib
+    // is missing.
     implementation(project(":menu-macos"))
     // Spellcheck (Linux Hunspell, macOS NSSpellChecker, Windows ISpellChecker).
     // `api` because SpellcheckContextMenu / NucleusSpellcheckInstaller expose SpellcheckSession.

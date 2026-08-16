@@ -82,7 +82,8 @@ public fun NucleusApplicationScope.MaterialDecoratedWindow(
     // extend past the window bounds. Honoured by the Tao backend; ignored by AWT.
     nativePopupLayers: Boolean = false,
     // Replace Compose-drawn context menus with the OS-looking menu. Tao +
-    // macOS (`NSMenu`) or Tao + Windows (Fluent flyout); no-op on Linux and AWT.
+    // macOS (`NSMenu`), or a Compose flyout on Linux (Adwaita) / Windows
+    // (Fluent). No-op on AWT.
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (Tao backend; on Linux effective on X11/XWayland only).

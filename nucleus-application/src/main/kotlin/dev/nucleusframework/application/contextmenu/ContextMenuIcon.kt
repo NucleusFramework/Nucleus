@@ -5,8 +5,9 @@ package dev.nucleusframework.application.contextmenu
  * is active.
  *
  * Stock values (`Cut`, `Copy`, `Paste`, …) resolve to the OS glyph (SF Symbol
- * on macOS, Segoe Fluent Icons on the Windows Compose flyout). [SfSymbol] is
- * a raw macOS symbol name for custom items and is ignored on Windows / Linux.
+ * on macOS, Adwaita-style symbolic strokes on the Linux Compose flyout,
+ * Segoe Fluent Icons on the Windows Compose flyout). [SfSymbol] is a raw
+ * macOS symbol name and is ignored on Windows / Linux.
  */
 public sealed class ContextMenuIcon {
     /** System cut / scissors glyph. */
