@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao.popup
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.InternalComposeUiApi
@@ -12,7 +11,6 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
@@ -28,6 +26,8 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.newMetalRenderExecutor
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import dev.nucleusframework.window.tao.scene.replayPictureToFrame
@@ -71,7 +71,8 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private var panel: Long = 0
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
     private var disposed = false
 
     /**
@@ -86,7 +87,6 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     override var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     override var onKeyEvent: ((KeyEvent) -> Boolean)? = null
 
-    private val frameClock = BroadcastFrameClock { scheduleRender() }
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
@@ -137,14 +137,14 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     val queuePtr = NativeMetalBridge.nativeQueuePtr(attachmentHandle)
                     directContext =
                         runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
-                    scene =
-                        CanvasLayersComposeScene(
+                    sceneBundle =
+                        canvasLayersSceneBundle(
+                            coroutineContext = flushingDispatcher,
                             density = Density(scale),
                             layoutDirection = GlobalLayoutDirection,
                             size = IntSize(1, 1),
-                            coroutineContext = flushingDispatcher + frameClock,
                             platformContext = StandalonePopupPlatformContext(),
-                            invalidate = { scheduleRender() },
+                            requestFrame = { scheduleRender() },
                         )
                     PopupNativeBridge.nativeSetEventCallback(panel, PanelEventCallback())
                     PopupNativeBridge.nativeOrderOut(panel) // hidden until first setVisible(true)
@@ -157,7 +157,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        scene?.setContent(content = content)
         scheduleRender()
     }
 
@@ -273,8 +273,8 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         disposed = true
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         metalTextureHostCache.invalidate()
         val ctx = directContext
         directContext = null
@@ -298,7 +298,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private fun renderNow() {
         renderPending.set(false)
         if (disposed) return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         val handle = attachmentHandle
         if (handle == 0L || widthPx <= 0 || heightPx <= 0) return
@@ -342,9 +342,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
         // Record on the main thread (Compose state lives here). The Picture is
         // a thread-safe snapshot — safe to hand to the render thread for replay.
-        frameClock.sendFrame(frameNs)
+        // `recordSceneToPicture` ticks the scene's frame clock with the paced
+        // `frameNs` (via FrameRecomposer.performFrame) before drawing.
         flushingDispatcher.drain()
-        val picture = recordSceneToPicture(sc, widthPx, heightPx, frameNs)
+        val picture = recordSceneToPicture(bundle, widthPx, heightPx, frameNs)
         replayInFlight.set(true)
         renderExecutor.submit {
             try {
@@ -369,16 +370,14 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
      */
     private fun renderFrameBlocking() {
         if (disposed) return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         val handle = attachmentHandle
         if (handle == 0L || widthPx <= 0 || heightPx <= 0) return
         flushingDispatcher.drain()
         val frameNs = System.nanoTime()
         nextFrameNs = frameNs + FRAME_INTERVAL_NS
-        frameClock.sendFrame(frameNs)
-        flushingDispatcher.drain()
-        val picture = recordSceneToPicture(sc, widthPx, heightPx, frameNs)
+        val picture = recordSceneToPicture(bundle, widthPx, heightPx, frameNs)
         runOnRenderThread {
             try {
                 replayPictureToFrame(handle, ctx, picture, clearColor = 0x00000000)

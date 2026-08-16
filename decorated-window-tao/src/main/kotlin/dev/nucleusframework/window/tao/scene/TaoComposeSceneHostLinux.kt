@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -11,16 +10,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -182,7 +178,8 @@ internal class TaoComposeSceneHostLinux(
     private var currentKeyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers()
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
 
     /**
      * Handle `TextureView`s in this window's scene import onto — see
@@ -202,7 +199,6 @@ internal class TaoComposeSceneHostLinux(
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
 
     /** Floating text-selection bar shown on touch selection. */
@@ -460,45 +456,42 @@ internal class TaoComposeSceneHostLinux(
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
             )
-        scene =
+        sceneBundle =
             if (nativePopupLayers) {
                 // Opt-in path: every Popup becomes a Tao popup window owned by
                 // this window (override-redirect on X11, wl_subsurface on
                 // Wayland), so popup content can extend beyond — and float
                 // independently of — the window bounds.
-                PlatformLayersComposeScene(
+                platformLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
                         TaoComposeSceneContext(
                             platformContext = platformContext,
-                        ) { density, layoutDirection, focusable, cc ->
+                        ) { density, layoutDirection, focusable, consumeOutside ->
                             TaoPopupSceneLayerLinux(
                                 host = popupHost(),
                                 initialDensity = density,
                                 initialLayoutDirection = layoutDirection,
                                 initialFocusable = focusable,
-                                parentCompositionContext = cc,
+                                initialConsumePointerInputOutside = consumeOutside,
                             )
                         },
-                    invalidate = {
-                        requestRedrawCoalesced()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { requestRedrawCoalesced() },
+                )
             } else {
                 // Default: Compose Popup / DropdownMenu / Tooltip content stays
                 // in the same EGL render target as the rest of the UI.
-                CanvasLayersComposeScene(
+                canvasLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = platformContext,
-                    invalidate = {
-                        requestRedrawCoalesced()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { requestRedrawCoalesced() },
+                )
             }
+        scene?.compositionLocalContext = pendingCompositionLocalContext
 
         // Notify popup layers when the host window moves on screen — X11
         // popups are positioned in root coordinates and don't auto-track.
@@ -1430,16 +1423,16 @@ internal class TaoComposeSceneHostLinux(
         skipDrainBudget = SKIP_DRAIN_BUDGET_PER_FRAME
 
         val ctx = directContext ?: return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
 
         val now = System.nanoTime()
 
-        // Same frame-clock ordering as the Windows path: tick before render so
-        // `withFrameNanos`-driven animations apply on the current frame instead
-        // of lagging by one.
-        flushingDispatcher.drain()
-        frameClock.sendFrame(now)
+        // Drain queued main-thread work before the frame. The scene's frame
+        // clock is ticked inside `bundle.render` (FrameRecomposer.performFrame),
+        // so `withFrameNanos`-driven animations apply on the current frame
+        // instead of lagging by one — same guarantee as before, now atomic with
+        // the recompose → layout → draw the render call performs.
         flushingDispatcher.drain()
 
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
@@ -1449,8 +1442,8 @@ internal class TaoComposeSceneHostLinux(
         updateResizeBurstSwapInterval()
 
         val paintSize = resolvePaintSize()
-        if (sc.size != paintSize) {
-            sc.size = paintSize
+        if (bundle.scene.size != paintSize) {
+            bundle.scene.size = paintSize
             lastSceneSizeUpdateNs = now
         }
 
@@ -1463,8 +1456,9 @@ internal class TaoComposeSceneHostLinux(
         // a transparent clear. The rounded corners are carved back to
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
-        sc.render(surface.canvas.asComposeCanvas(), now)
+        bundle.render(surface.canvas, now)
         applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
+
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
@@ -1961,7 +1955,7 @@ internal class TaoComposeSceneHostLinux(
             override val coordinateOffset: IntOffset get() = IntOffset.Zero
 
             override val sceneCoroutineContext: CoroutineContext
-                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+                get() = outer.coroutineContext + outer.flushingDispatcher
 
             override fun requestRedraw() = outer.requestRedrawCoalesced()
 
@@ -2200,8 +2194,8 @@ internal class TaoComposeSceneHostLinux(
         // to free its Skia resources — leaving that context current. The
         // host re-bind below must come after so the host's GPU releases land
         // on the right context.
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
 
         // Re-bind THIS window's EGL context before tearing down Skia. The
         // GPU-resource releases that follow (glDeleteFramebuffers /

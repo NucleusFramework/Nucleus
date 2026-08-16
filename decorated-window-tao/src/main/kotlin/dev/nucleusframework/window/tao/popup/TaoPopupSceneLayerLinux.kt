@@ -9,14 +9,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
@@ -35,7 +33,9 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.releaseGlTextureImports
 import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.alignToBufferScale
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.preservingEglBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import dev.nucleusframework.window.tao.scene.withEglContextCurrent
@@ -86,7 +86,7 @@ internal class TaoPopupSceneLayerLinux(
     initialDensity: Density,
     initialLayoutDirection: LayoutDirection,
     initialFocusable: Boolean,
-    @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
+    initialConsumePointerInputOutside: Boolean,
 ) : ComposeSceneLayer {
     private var _density = initialDensity
     private var _layoutDirection = initialLayoutDirection
@@ -172,12 +172,12 @@ internal class TaoPopupSceneLayerLinux(
             override val containerSize: IntSize get() = sceneLayoutSize
         }
 
-    private val innerScene: ComposeScene =
-        CanvasLayersComposeScene(
+    private val sceneBundle: TaoSceneBundle =
+        canvasLayersSceneBundle(
+            coroutineContext = host.sceneCoroutineContext,
             density = _density,
             layoutDirection = _layoutDirection,
             size = sceneLayoutSize,
-            coroutineContext = host.sceneCoroutineContext,
             platformContext =
                 object : PlatformContext.Empty() {
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
@@ -191,8 +191,10 @@ internal class TaoPopupSceneLayerLinux(
                         )
                     }
                 },
-            invalidate = { host.requestRedraw() },
+            requestFrame = { host.requestRedraw() },
         )
+
+    private val innerScene: ComposeScene get() = sceneBundle.scene
 
     private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
@@ -317,6 +319,11 @@ internal class TaoPopupSceneLayerLinux(
             _focusable = value
         }
 
+    // Stored for the ComposeSceneLayer contract; outside-press dismissal is
+    // handled via the parent scene's forwarded press listener, so this flag is
+    // not consulted on the render path.
+    override var consumePointerInputOutside: Boolean = initialConsumePointerInputOutside
+
     override fun close() {
         if (released) return
         released = true
@@ -327,7 +334,7 @@ internal class TaoPopupSceneLayerLinux(
         // Drop the TextureView handle before the context it points at dies: a
         // late composition must not import onto a closed context.
         glTextureHostState.value = null
-        innerScene.close()
+        sceneBundle.close()
         if (attachment != 0L) {
             // A layer closes when Compose drops it — from the owner's
             // composition, i.e. inside the window scene's render pass. Binding
@@ -352,7 +359,10 @@ internal class TaoPopupSceneLayerLinux(
         popupWindow.requestClose()
     }
 
-    override fun setContent(content: @Composable () -> Unit) {
+    override fun setContent(
+        @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
+        content: @Composable () -> Unit,
+    ) {
         innerScene.setContent {
             val locals = _compositionLocalContext
             // Our texture host goes *inside* the replayed locals: those carry
@@ -465,7 +475,7 @@ internal class TaoPopupSceneLayerLinux(
             canvas.save()
             try {
                 canvas.translate(-frame.left.toFloat(), -frame.top.toFloat())
-                innerScene.render(canvas.asComposeCanvas(), nanoTime)
+                sceneBundle.render(canvas, nanoTime)
             } finally {
                 canvas.restore()
             }

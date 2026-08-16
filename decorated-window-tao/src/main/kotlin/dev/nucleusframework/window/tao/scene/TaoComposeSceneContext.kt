@@ -1,6 +1,5 @@
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.CompositionContext
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.scene.ComposeSceneContext
@@ -31,13 +30,13 @@ internal class TaoComposeSceneContext(
         density: Density,
         layoutDirection: LayoutDirection,
         focusable: Boolean,
-        compositionContext: CompositionContext,
+        consumePointerInputOutside: Boolean,
     ) -> ComposeSceneLayer,
 ) : ComposeSceneContext {
     override fun createLayer(
         density: Density,
         layoutDirection: LayoutDirection,
         focusable: Boolean,
-        compositionContext: CompositionContext,
-    ): ComposeSceneLayer = layerFactory(density, layoutDirection, focusable, compositionContext)
+        consumePointerInputOutside: Boolean,
+    ): ComposeSceneLayer = layerFactory(density, layoutDirection, focusable, consumePointerInputOutside)
 }

@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.InternalComposeUiApi
@@ -11,7 +10,6 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsOwner
@@ -46,7 +44,7 @@ import kotlin.coroutines.CoroutineContext
  * - the event-translation layer: [dispatchNativeKeyEvent], [taoKeyboardModifiers],
  *   [TaoSyntheticMouseWheelEvent], mac/linux key tables;
  * - the CPU record path [recordSceneToPicture] the host uses for every frame;
- * - the [CanvasLayersComposeScene] configuration mirrored from
+ * - the `CanvasLayersComposeScene` configuration mirrored from
  *   `TaoComposeSceneHost.attach()` (same scene type, same clock/dispatcher
  *   context shape).
  *
@@ -56,7 +54,7 @@ import kotlin.coroutines.CoroutineContext
  * guards, so a regression in those contracts fails here first.
  *
  * Time is fully synthetic: [frame] advances a virtual clock, pumps the
- * single-threaded dispatcher, delivers [BroadcastFrameClock] frames and
+ * single-threaded dispatcher, delivers frame-clock ticks and
  * records the scene through [recordSceneToPicture] — one call, one frame,
  * bit-for-bit reproducible.
  */
@@ -191,7 +189,6 @@ internal class TaoSceneTestScope(
     density: Float,
 ) {
     private val dispatcher = QueueDispatcher()
-    private val frameClock = BroadcastFrameClock()
     private var timeNanos = 0L
     private var invalidated = false
 
@@ -229,15 +226,17 @@ internal class TaoSceneTestScope(
                 }
         }
 
-    val scene: ComposeScene =
-        CanvasLayersComposeScene(
+    private val sceneBundle: TaoSceneBundle =
+        canvasLayersSceneBundle(
+            coroutineContext = dispatcher,
             density = Density(density),
             layoutDirection = GlobalLayoutDirection,
             size = IntSize(width, height),
-            coroutineContext = dispatcher + frameClock,
             platformContext = platformContext,
-            invalidate = { invalidated = true },
+            requestFrame = { invalidated = true },
         )
+
+    val scene: ComposeScene get() = sceneBundle.scene
 
     // ── Host-mirrored pointer state (same guards as TaoComposeSceneHost) ────
     private var lastPointerX = 0f
@@ -250,7 +249,7 @@ internal class TaoSceneTestScope(
         private set
 
     fun setContent(content: @Composable () -> Unit) {
-        scene.setContent(content)
+        scene.setContent(content = content)
         frame()
     }
 
@@ -277,9 +276,12 @@ internal class TaoSceneTestScope(
         // withFrameNanos) marks the scene dirty for frameUntilIdle.
         invalidated = false
         pumpUntilIdle()
-        frameClock.sendFrame(timeNanos)
-        pumpUntilIdle()
-        return recordSceneToPicture(scene, width, height, timeNanos).also { lastPicture = it }
+        // The frame clock is ticked inside `recordSceneToPicture` (Compose 1.12
+        // drives it through `FrameRecomposer.performFrame`, which flushes its own
+        // dispatchers around the tick), so the recompose triggered by this
+        // frame's `withFrameNanos` continuations is part of the recorded picture
+        // — same guarantee the explicit sendFrame + pump used to give.
+        return recordSceneToPicture(sceneBundle, width, height, timeNanos).also { lastPicture = it }
     }
 
     /**
@@ -553,7 +555,7 @@ internal class TaoSceneTestScope(
     }
 
     fun close() {
-        scene.close()
+        sceneBundle.close()
         dispatcher.pump()
     }
 

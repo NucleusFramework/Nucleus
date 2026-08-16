@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
@@ -12,17 +11,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.scene.CanvasLayersComposeScene
+
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
@@ -174,11 +171,12 @@ internal class TaoComposeSceneHostWindows(
      */
     val windowsTextureHostState: MutableState<TaoWindowsTextureHost?> = mutableStateOf(null)
 
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
+
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val frameClock = BroadcastFrameClock()
     private val flushingDispatcher = FlushingMainDispatcher()
 
     /**
@@ -188,7 +186,7 @@ internal class TaoComposeSceneHostWindows(
      * scheduler. Cancelled in [detach].
      */
     private val gestureScope =
-        CoroutineScope(coroutineContext + flushingDispatcher + frameClock + SupervisorJob())
+        CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
@@ -365,40 +363,41 @@ internal class TaoComposeSceneHostWindows(
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
             )
-        scene =
+        sceneBundle =
             if (nativePopupLayers) {
                 // Opt-in path (e.g. tray popups): every Popup becomes a
                 // transparent WS_POPUP HWND owned by this window, so popup
                 // content can extend beyond — and float independently of —
                 // the window bounds. popupHost() is non-null here: hwnd and
                 // directContext were both set above.
-                PlatformLayersComposeScene(
+                platformLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
                         TaoComposeSceneContext(
                             platformContext = platformContext,
-                        ) { density, layoutDirection, focusable, cc ->
+                        ) { density, layoutDirection, focusable, consumeOutside ->
                             TaoPopupSceneLayerWindows(
                                 host = requireNotNull(popupHost()),
                                 initialDensity = density,
                                 initialLayoutDirection = layoutDirection,
                                 initialFocusable = focusable,
-                                parentCompositionContext = cc,
+                                initialConsumePointerInputOutside = consumeOutside,
                             )
                         },
-                    invalidate = { window.requestRedraw() },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { window.requestRedraw() },
+                )
             } else {
-                CanvasLayersComposeScene(
+                canvasLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = platformContext,
-                    invalidate = { window.requestRedraw() },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { window.requestRedraw() },
+                )
             }
+        scene?.compositionLocalContext = pendingCompositionLocalContext
 
         publishWindowsTextureHost()
         registerInboundDnD()
@@ -907,26 +906,13 @@ internal class TaoComposeSceneHostWindows(
         targetWidthPx: Int,
         targetHeightPx: Int,
     ) {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         if (targetWidthPx <= 0 || targetHeightPx <= 0) return
-        sc.size = IntSize(targetWidthPx, targetHeightPx)
+        bundle.scene.size = IntSize(targetWidthPx, targetHeightPx)
         // Apply pending snapshot writes (the chrome flip pushed just before
         // this call) so the warmed layout already has the right chrome.
         flushingDispatcher.drain()
-        frameClock.sendFrame(System.nanoTime())
-        flushingDispatcher.drain()
-        val recorder = org.jetbrains.skia.PictureRecorder()
-        try {
-            val canvas =
-                recorder.beginRecording(
-                    org.jetbrains.skia.Rect
-                        .makeWH(targetWidthPx.toFloat(), targetHeightPx.toFloat()),
-                )
-            sc.render(canvas.asComposeCanvas(), System.nanoTime())
-            recorder.finishRecordingAsPicture().close()
-        } finally {
-            recorder.close()
-        }
+        recordSceneToPicture(bundle, targetWidthPx, targetHeightPx).close()
     }
 
     /**
@@ -1129,7 +1115,8 @@ internal class TaoComposeSceneHostWindows(
 
     fun onRedrawRequested() {
         val ctx = directContext ?: return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
+        val sc = bundle.scene
 
         if (widthPx <= 0 || heightPx <= 0) return
 
@@ -1158,16 +1145,12 @@ internal class TaoComposeSceneHostWindows(
 
         val now = System.nanoTime()
 
-        // ── Frame clock ordering ──────────────────────────────────────────
-        // Tick the frame clock BEFORE rendering and drain twice. Without this
-        // the smooth-scroll animation (and any other `withFrameNanos`-driven
-        // animation) lags one frame behind: `sendFrame` resumes the awaiting
-        // continuations which then mutate state, but if we render first the
-        // composition reads the *previous* frame's state. JNI / Skiko's
-        // default loop ticks before render, so to match that feel we mirror
-        // the order here.
-        flushingDispatcher.drain()
-        frameClock.sendFrame(now)
+        // ── Frame pump ────────────────────────────────────────────────────
+        // Drain queued main-thread work (scroll dispatch, a11y, etc.) before
+        // the frame. The scene's frame clock is ticked inside `bundle.render`
+        // (via FrameRecomposer.performFrame), so `withFrameNanos`-driven
+        // animation state is resumed and applied atomically with this frame's
+        // recompose → layout → draw — no one-frame lag.
         flushingDispatcher.drain()
 
         // Make sure the ES context + host window surface are current on this
@@ -1231,7 +1214,8 @@ internal class TaoComposeSceneHostWindows(
             // colour (alpha-0 by default, or a semi-transparent WindowBackground).
             // Opaque windows: themed clear as usual.
             surface.canvas.clear(resolveClientClearArgb())
-            sc.render(surface.canvas.asComposeCanvas(), now)
+            bundle.render(surface.canvas, now)
+
             // `flushAndSubmit` issues the glFlush that commits the frame to
             // the back buffer; the present happens below, after the overlay/
             // popup renderers (they only need the flush, not the present).
@@ -1485,7 +1469,7 @@ internal class TaoComposeSceneHostWindows(
                 return IntSize(w, h)
             }
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
-                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+                get() = outer.coroutineContext + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx
 
             override fun requestRedraw() = outer.window.requestRedraw()
@@ -1684,8 +1668,8 @@ internal class TaoComposeSceneHostWindows(
         if (attachmentHandle != 0L) {
             NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         }
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         if (directContext != null) {
             // Belt for TextureView imports a leaked composition may still hold:
             // scene.close() above released the leases of every live one. They

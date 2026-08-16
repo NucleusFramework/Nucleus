@@ -14,7 +14,6 @@ import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -33,6 +32,8 @@ import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.platformLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
@@ -203,7 +204,8 @@ internal class NativeViewOverlayController(
     // Created on / used on / closed on the host's render thread (Skia Metal
     // DirectContext is thread-affine). See TaoComposeSceneHost's render thread.
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
 
     /**
      * Set in [dispose] before GPU teardown; read on the render thread via
@@ -404,28 +406,28 @@ internal class NativeViewOverlayController(
         // bounds, intercept clicks themselves (instead of falling
         // through to the user's native subview), and dismiss on
         // outside-click via the panel's NSEvent local monitor.
-        scene =
-            PlatformLayersComposeScene(
+        sceneBundle =
+            platformLayersSceneBundle(
+                coroutineContext = popupHost.sceneCoroutineContext,
                 density = Density(scale),
                 layoutDirection = LayoutDirection.Ltr,
                 size = IntSize(widthPx, heightPx),
-                coroutineContext = popupHost.sceneCoroutineContext,
                 composeSceneContext =
                     TaoComposeSceneContext(
                         platformContext = ourPlatformContext,
-                    ) { density, layoutDirection, focusable, cc ->
+                    ) { density, layoutDirection, focusable, consumeOutside ->
                         TaoPopupSceneLayer(
                             host = overlayPopupHost,
                             initialDensity = density,
                             initialLayoutDirection = layoutDirection,
                             initialFocusable = focusable,
-                            parentCompositionContext = cc,
+                            initialConsumePointerInputOutside = consumeOutside,
                         )
                     },
-                invalidate = { popupHost.requestRedraw() },
+                requestFrame = { popupHost.requestRedraw() },
             )
         pendingContent?.let {
-            scene?.setContent(it)
+            scene?.setContent(content = it)
             pendingContent = null
         }
 
@@ -443,7 +445,7 @@ internal class NativeViewOverlayController(
             }
         }
         val sc = scene
-        if (sc != null) sc.setContent(wrapped) else pendingContent = wrapped
+        if (sc != null) sc.setContent(content = wrapped) else pendingContent = wrapped
         popupHost.requestRedraw()
     }
 
@@ -511,13 +513,13 @@ internal class NativeViewOverlayController(
     private fun recordSurface(): TaoRecordedSurface? {
         if (disposed) return null
         val ctx = directContext ?: return null
-        val sc = scene ?: return null
+        val bundle = sceneBundle ?: return null
         if (widthPx == 0 || heightPx == 0) return null
         if (attachmentHandle == 0L) return null
         return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = ctx,
-            picture = recordSceneToPicture(sc, widthPx, heightPx),
+            picture = recordSceneToPicture(bundle, widthPx, heightPx),
             clearColor = 0x00000000,
             isAlive = { !disposed },
         )
@@ -530,8 +532,8 @@ internal class NativeViewOverlayController(
         // Mark disposed before teardown so an already-recorded surface is skipped
         // at replay time (TaoRecordedSurface.isAlive).
         disposed = true
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the Skia context on its owning render thread. dispose() runs in
