@@ -13,7 +13,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.PlatformContext
-
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -148,7 +147,7 @@ private fun captureOuterLocals(layoutDirection: LayoutDirection = GlobalLayoutDi
     var captured: CompositionLocalContext? = null
     val outer =
         canvasLayersSceneBundle(
-            coroutineContext = kotlin.coroutines.EmptyCoroutineContext,
+            coroutineContext = kotlinx.coroutines.Dispatchers.Unconfined,
             density = Density(1f),
             layoutDirection = GlobalLayoutDirection,
             size = IntSize(1, 1),

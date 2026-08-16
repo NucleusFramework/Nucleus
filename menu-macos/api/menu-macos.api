@@ -206,6 +206,37 @@ public final class dev/nucleusframework/menu/macos/NativeMenuScope {
 	public final fun getEntries ()Ljava/util/List;
 }
 
+public abstract class dev/nucleusframework/menu/macos/NativePopupMenuItem {
+	public static final field $stable I
+}
+
+public final class dev/nucleusframework/menu/macos/NativePopupMenuItem$Entry : dev/nucleusframework/menu/macos/NativePopupMenuItem {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/menu/macos/NsMenuItemImage;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getEnabled ()Z
+	public final fun getIcon ()Ldev/nucleusframework/menu/macos/NsMenuItemImage;
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function0;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NativePopupMenuItem$Separator : dev/nucleusframework/menu/macos/NativePopupMenuItem {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/menu/macos/NativePopupMenuItem$Separator;
+}
+
+public final class dev/nucleusframework/menu/macos/NativePopupMenuItem$Submenu : dev/nucleusframework/menu/macos/NativePopupMenuItem {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun getItems ()Ljava/util/List;
+	public final fun getTitle ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/menu/macos/NativePopupMenuItemKt {
+	public static final fun isNativePopupMenuAvailable ()Z
+	public static final fun popUpNativeMenu (Ljava/util/List;)Z
+}
+
 public abstract class dev/nucleusframework/menu/macos/NsMenuItemBadge {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/menu/macos/NsMenuItemBadge$Companion;

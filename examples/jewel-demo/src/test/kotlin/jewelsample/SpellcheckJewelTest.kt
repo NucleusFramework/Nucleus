@@ -19,10 +19,17 @@ import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import dev.nucleusframework.application.spellcheck.NucleusSpellcheckInstaller
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
 import dev.nucleusframework.application.spellcheck.SpellcheckMenuPlacement
+import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
+import dev.nucleusframework.application.contextmenu.ContextMenuEntry
+import dev.nucleusframework.application.contextmenu.ContextMenuIcon
+import dev.nucleusframework.application.contextmenu.LocalContextMenuItemInterpreter
+import dev.nucleusframework.window.jewel.JewelContextMenuInterpreter
 import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
 import org.jetbrains.jewel.intui.standalone.theme.IntUiTheme
 import org.jetbrains.jewel.ui.component.ContextMenuDivider
+import org.jetbrains.jewel.ui.component.ContextMenuItemOption
+import org.jetbrains.jewel.ui.component.ContextMenuItemOptionAction
 import org.jetbrains.jewel.ui.component.ContextMenuRepresentation
 import org.jetbrains.jewel.ui.component.TextField
 import org.junit.Assert.assertEquals
@@ -43,6 +50,10 @@ class SpellcheckJewelTest {
                     CompositionLocalProvider(LocalContextMenuRepresentation provides ContextMenuRepresentation) {
                         ProvideJewelSpellcheckMenu {
                             assertSame(ContextMenuDivider, LocalSpellcheckMenuSeparator.current)
+                            assertSame(
+                                JewelContextMenuInterpreter,
+                                LocalContextMenuItemInterpreter.current,
+                            )
                             SpellcheckContextMenu(text = "helo", onTextChange = {}) {
                                 assertSame(
                                     ContextMenuRepresentation,
@@ -81,6 +92,23 @@ class SpellcheckJewelTest {
     }
 
     @Test
+    fun `Jewel cut action type maps to native stock icon`() {
+        val item =
+            ContextMenuItemOption(
+                actionType = ContextMenuItemOptionAction.CopyMenuItemOptionAction,
+                label = "Copy",
+                action = {},
+            )
+        val entry = JewelContextMenuInterpreter.interpret(item, ContextMenuDivider)
+        val typed = entry as ContextMenuEntry.Item
+        assertSame(ContextMenuIcon.Copy, typed.icon)
+        assertSame(
+            ContextMenuEntry.Separator,
+            JewelContextMenuInterpreter.interpret(ContextMenuDivider, ContextMenuDivider),
+        )
+    }
+
+    @Test
     fun `Jewel TextField accepts SpellcheckContextMenu and menu uses ContextMenuDivider`() {
         SpellcheckSession(
             locale = Locale.US,
@@ -114,9 +142,10 @@ class SpellcheckJewelTest {
             assertTrue("expected menu items", items.isNotEmpty())
             assertSame(ContextMenuDivider, items.first())
             assertSame(ContextMenuDivider, items[items.lastIndex - 1])
-            val suggestions = items.filter { it !== ContextMenuDivider && it.label != "Add to dictionary" }
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
+            val suggestions = items.filter { it !== ContextMenuDivider && it.label != addLabel }
             assertTrue("expected suggestions, got ${items.map { it.label }}", suggestions.isNotEmpty())
-            assertEquals("Add to dictionary", items.last().label)
+            assertEquals(addLabel, items.last().label)
         }
     }
 

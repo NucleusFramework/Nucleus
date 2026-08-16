@@ -53,6 +53,8 @@ public final class dev/nucleusframework/spellcheck/SpellcheckMenuModel {
 }
 
 public final class dev/nucleusframework/spellcheck/SpellcheckMenuModel$Companion {
+	public final fun localizedAddToDictionaryLabel (Ljava/util/Locale;)Ljava/lang/String;
+	public static synthetic fun localizedAddToDictionaryLabel$default (Ldev/nucleusframework/spellcheck/SpellcheckMenuModel$Companion;Ljava/util/Locale;ILjava/lang/Object;)Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/spellcheck/SpellcheckMenuModelKt {

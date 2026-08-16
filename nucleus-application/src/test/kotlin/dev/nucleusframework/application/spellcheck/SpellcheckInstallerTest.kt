@@ -12,6 +12,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
+import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
 import dev.nucleusframework.spellcheck.applySuggestion
 import dev.nucleusframework.spellcheck.buildSpellcheckMenuModel
@@ -108,10 +109,11 @@ class SpellcheckInstallerTest {
                     separator = SpellcheckContextMenuSeparator,
                     onTextChange = { rewritten = it },
                 )
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
             val suggestions =
-                items.filter { it !== SpellcheckContextMenuSeparator && it.label != "Add to dictionary" }
+                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
             assertTrue("expected suggestion items", suggestions.isNotEmpty())
-            assertTrue("expected Add to dictionary", items.any { it.label == "Add to dictionary" })
+            assertTrue("expected Add to dictionary", items.any { it.label == addLabel })
             suggestions.first().onClick()
             val result = rewritten ?: error("suggestion must rewrite the field")
             assertTrue("suggestion must keep world", result.contains("world"))
@@ -136,13 +138,14 @@ class SpellcheckInstallerTest {
                     onAddToDictionary = { added = true },
                 )
             assertTrue("expected spellcheck menu items", items.isNotEmpty())
+            val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
             val suggestionItems =
-                items.filter { it !== SpellcheckContextMenuSeparator && it.label != "Add to dictionary" }
+                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
             assertTrue("expected suggestion items, got ${items.map { it.label }}", suggestionItems.isNotEmpty())
-            assertTrue("expected Add to dictionary", items.any { it.label == "Add to dictionary" })
+            assertTrue("expected Add to dictionary", items.any { it.label == addLabel })
             suggestionItems.first().onClick()
             assertEquals(suggestionItems.first().label, applied)
-            items.first { it.label == "Add to dictionary" }.onClick()
+            items.first { it.label == addLabel }.onClick()
             assertTrue(added)
         }
     }

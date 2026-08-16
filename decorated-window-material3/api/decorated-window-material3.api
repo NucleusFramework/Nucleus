@@ -23,7 +23,7 @@ public final class dev/nucleusframework/window/material/MaterialDecoratedDialogK
 
 public final class dev/nucleusframework/window/material/MaterialDecoratedWindowKt {
 	public static final fun MaterialDecoratedWindow-2nA36Wk (Landroidx/compose/ui/window/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/window/styling/TitleBarStyle;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
-	public static final fun MaterialDecoratedWindow-ZKw2RcA (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/window/styling/TitleBarStyle;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun MaterialDecoratedWindow-fsutTYA (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/window/styling/TitleBarStyle;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
 public final class dev/nucleusframework/window/material/MaterialDialogTitleBarKt {

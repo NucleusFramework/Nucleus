@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.rememberPopupPositionProviderAtPosition
+import dev.nucleusframework.application.contextmenu.LocalNativeContextMenu
 
 /**
  * Hairline sentinel for Compose's default context menu. Jewel apps provide
@@ -60,6 +61,10 @@ public val LocalSpellcheckMenuSeparator: ProvidableCompositionLocal<ContextMenuI
  */
 @Composable
 internal fun ProvideSpellcheckSeparators(content: @Composable () -> Unit) {
+    if (LocalNativeContextMenu.current) {
+        content()
+        return
+    }
     if (LocalSpellcheckMenuSeparator.current !== SpellcheckContextMenuSeparator) {
         content()
         return

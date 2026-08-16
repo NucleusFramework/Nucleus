@@ -19,6 +19,7 @@ import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.ObserveSingleInstanceRestore
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
+import dev.nucleusframework.application.contextmenu.NativeContextMenuProvider
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
@@ -49,6 +50,7 @@ internal object TaoDecoratedWindowAdapter {
         undecorated: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
@@ -163,7 +165,9 @@ internal object TaoDecoratedWindowAdapter {
                     LocalTitleBarInfo provides sceneTitleBarInfo,
                 ) {
                     TaoTextSelectionAccessibility {
-                        nucleusScope.content()
+                        NativeContextMenuProvider(enabled = nativeContextMenu) {
+                            nucleusScope.content()
+                        }
                     }
                 }
             }

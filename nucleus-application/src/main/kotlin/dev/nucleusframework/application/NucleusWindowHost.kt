@@ -43,7 +43,7 @@ import androidx.compose.ui.window.rememberWindowState
  * ```
  *
  * Parameter surface matches [DecoratedWindow] (including Tao-only knobs such
- * as [popupFor], [nativePopupLayers], [hiddenFromDock]).
+ * as [popupFor], [nativePopupLayers], [nativeContextMenu], [hiddenFromDock]).
  */
 public fun interface NucleusWindowHost {
     @Composable
@@ -60,6 +60,7 @@ public fun interface NucleusWindowHost {
         undecorated: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
@@ -143,6 +144,7 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
         undecorated: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
@@ -162,6 +164,7 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
             undecorated = undecorated,
             popupFor = popupFor,
             nativePopupLayers = nativePopupLayers,
+            nativeContextMenu = nativeContextMenu,
             hiddenFromDock = hiddenFromDock,
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
@@ -230,6 +233,7 @@ public fun HostedWindow(
     undecorated: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
@@ -249,6 +253,7 @@ public fun HostedWindow(
         undecorated = undecorated,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
+        nativeContextMenu = nativeContextMenu,
         hiddenFromDock = hiddenFromDock,
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,

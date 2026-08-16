@@ -22,7 +22,7 @@ class SpellcheckMenuTest {
             assertNotNull(model)
             assertEquals("helo", model.word)
             assertTrue(model.suggestions.isNotEmpty(), "expected suggestions, got ${model.suggestions}")
-            assertEquals(SpellcheckMenuModel.DEFAULT_ADD_TO_DICTIONARY_LABEL, model.addToDictionaryLabel)
+            assertEquals(SpellcheckMenuModel.localizedAddToDictionaryLabel(), model.addToDictionaryLabel)
             val applied = applySuggestion("helo world", model, model.suggestions.first())
             assertEquals("${model.suggestions.first()} world", applied)
             assertEquals("hello world", applySuggestion("helo world", model, "hello"))

@@ -17,7 +17,6 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalDensity
-
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
@@ -173,7 +172,6 @@ internal class TaoComposeSceneHostWindows(
 
     private var sceneBundle: TaoSceneBundle? = null
     private val scene: ComposeScene? get() = sceneBundle?.scene
-
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null

@@ -269,6 +269,7 @@ private fun runApp() =
                     }
                     false
                 },
+                nativeContextMenu = true,
             ) {
                 val taoWindow = nucleusWindow.unsafe.taoWindow!!
                 var clicks by remember { mutableStateOf(0) }
