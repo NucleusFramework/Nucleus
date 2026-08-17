@@ -270,16 +270,17 @@ internal fun ApplicationScope.openDecoratedWindow(
     // native Wayland does not honour: there is no client-side skip-taskbar
     // protocol on Wayland (xdg-shell, gtk_shell1 and the staging extensions all
     // lack it, and Mutter rejects wlr-layer-shell). It is effective only under
-    // X11/XWayland. Warn so the no-op isn't silent — force XWayland with
-    // NUCLEUS_TAO_LINUX_RENDERER=x11 to actually hide the window.
-    val forcesXWayland =
-        System.getenv("GDK_BACKEND").orEmpty().equals("x11", ignoreCase = true) ||
+    // X11/XWayland. Warn so the no-op isn't silent — either take an X11
+    // surface for this window ([forceX11]) or put the whole app on XWayland
+    // with NUCLEUS_TAO_LINUX_RENDERER=x11.
+    val willBeX11 =
+        forceX11 ||
+            System.getenv("GDK_BACKEND").orEmpty().equals("x11", ignoreCase = true) ||
             System.getenv("NUCLEUS_TAO_LINUX_RENDERER").orEmpty().equals("x11", ignoreCase = true)
     if (hiddenFromDock &&
         Platform.Current == Platform.Linux &&
         Platform.isWayland &&
-        !forcesXWayland &&
-        !forceX11
+        !willBeX11
     ) {
         hiddenFromDockLogger.warning(
             "hiddenFromDock has no effect on native Wayland: Wayland has no client-side " +

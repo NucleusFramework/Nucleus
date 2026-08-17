@@ -549,6 +549,15 @@ private fun WindowState.applyMacOsInitialMaximizedSize() {
 }
 
 /**
+ * How long [applyAlignedPosition] keeps retrying while the native window is
+ * still being created on the Tao event loop — ~10 frames at 60 Hz, far past
+ * any observed startup, and given up on rather than looped forever so a
+ * genuinely unavailable monitor query cannot wedge the effect.
+ */
+private const val ALIGNED_POSITION_RETRIES = 10
+private const val ALIGNED_POSITION_RETRY_MS = 16L
+
+/**
  * Resolves a [WindowPosition.Aligned] against the primary monitor's work area
  * and pushes the resulting outer position to [window]. Returns `true` when the
  * position could be applied, `false` when the platform / native bridge is
@@ -714,15 +723,6 @@ private fun parentOuterOriginLogical(parent: TaoWindow): Pair<Double, Double>? {
  * (slot 0: 1 = Xlib, 2 = Wayland) so we don't have to second-guess GDK env
  * vars or the auto-pick logic in `event_loop.rs`.
  */
-/**
- * How long [applyAlignedPosition] keeps retrying while the native window is
- * still being created on the Tao event loop — ~10 frames at 60 Hz, far past
- * any observed startup, and given up on rather than looped forever so a
- * genuinely unavailable monitor query cannot wedge the effect.
- */
-private const val ALIGNED_POSITION_RETRIES = 10
-private const val ALIGNED_POSITION_RETRY_MS = 16L
-
 private val waylandPositionWarned =
     java.util.concurrent.atomic
         .AtomicBoolean(false)

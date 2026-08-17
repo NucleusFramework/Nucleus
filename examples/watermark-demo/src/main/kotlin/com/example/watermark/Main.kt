@@ -17,15 +17,15 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,11 +49,11 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.composenativetray.tray.api.Tray
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.material.MaterialDecoratedWindow
 import dev.nucleusframework.window.tao.TaoWindow
-import dev.nucleusframework.composenativetray.tray.api.Tray
 import java.io.File
 
 /**
