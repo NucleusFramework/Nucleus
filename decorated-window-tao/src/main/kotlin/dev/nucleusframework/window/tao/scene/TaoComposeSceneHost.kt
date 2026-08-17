@@ -872,6 +872,8 @@ internal class TaoComposeSceneHost(
         aFixed: Int,
         bFixed: Int,
     ) {
+        // sendPointerEvent measures first; see [TaoSceneBundle.prepareForPointerInput].
+        sceneBundle?.prepareForPointerInput()
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
@@ -888,6 +890,7 @@ internal class TaoComposeSceneHost(
     }
 
     fun onPointerExited() {
+        sceneBundle?.prepareForPointerInput()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
@@ -902,6 +905,7 @@ internal class TaoComposeSceneHost(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        sceneBundle?.prepareForPointerInput()
         if (!hasReceivedCursorMove) {
             // No cursor position has been observed yet — this button event
             // cannot correspond to a real user click. Drop it. See the
@@ -942,6 +946,7 @@ internal class TaoComposeSceneHost(
      * can read `scrollAmount` and precise-wheel metadata like the AWT backend.
      */
     fun onPointerScroll(event: TaoPointerScrollEvent) {
+        sceneBundle?.prepareForPointerInput()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(

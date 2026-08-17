@@ -1143,14 +1143,6 @@ internal class TaoComposeSceneHostWindows(
 
         val now = System.nanoTime()
 
-        // ── Frame pump ────────────────────────────────────────────────────
-        // Drain queued main-thread work (scroll dispatch, a11y, etc.) before
-        // the frame. The scene's frame clock is ticked inside `bundle.render`
-        // (via FrameRecomposer.performFrame), so `withFrameNanos`-driven
-        // animation state is resumed and applied atomically with this frame's
-        // recompose → layout → draw — no one-frame lag.
-        flushingDispatcher.drain()
-
         // Make sure the ES context + host window surface are current on this
         // thread (defensive — they already were since `attach`, but overlay/
         // popup renderers re-bind their pbuffer surfaces between frames).
@@ -1211,6 +1203,9 @@ internal class TaoComposeSceneHostWindows(
             // Fully transparent without a backdrop: use the resolved clear
             // colour (alpha-0 by default, or a semi-transparent WindowBackground).
             // Opaque windows: themed clear as usual.
+            // AWT paint order lives inside [TaoSceneBundle.render]. Do not
+            // drain or sendPointerEvent between performFrame and layout —
+            // that is the RectList remount crash. Drain only after record.
             surface.canvas.clear(resolveClientClearArgb())
             bundle.render(surface.canvas, now)
 
@@ -1281,6 +1276,8 @@ internal class TaoComposeSceneHostWindows(
         aFixed: Int,
         bFixed: Int,
     ) {
+        // sendPointerEvent measures first; see [TaoSceneBundle.prepareForPointerInput].
+        sceneBundle?.prepareForPointerInput()
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
@@ -1296,6 +1293,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerExited() {
+        sceneBundle?.prepareForPointerInput()
         if (
             hwnd != 0L &&
             NativeTaoWindowsDecoBridge.isLoaded &&
@@ -1317,6 +1315,7 @@ internal class TaoComposeSceneHostWindows(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        sceneBundle?.prepareForPointerInput()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
@@ -1349,6 +1348,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     private fun sendScrollToScene(event: TaoPointerScrollEvent) {
+        sceneBundle?.prepareForPointerInput()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(

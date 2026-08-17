@@ -8,7 +8,7 @@ import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.PlatformLayersComposeScene
-import androidx.compose.ui.scene.SingleComposeSceneRenderingScope
+import androidx.compose.ui.scene.hasInvalidations
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -17,42 +17,124 @@ import kotlin.coroutines.CoroutineContext
 
 /**
  * Bundles a [ComposeScene] with the [FrameRecomposer] that drives its frame
- * loop.
+ * loop — Tao's stand-in for AWT `ComposeSceneMediator` +
+ * `SingleComposeSceneRenderingScope`.
  *
- * Compose 1.12 split the old `ComposeScene.render(canvas, nanoTime)` call
- * (which used to own recomposition, layout, and draw) into three steps —
- * `FrameRecomposer.performFrame` + `ComposeScene.measureAndLayout` +
- * `ComposeScene.draw` — and replaced the scene factories' former
- * `coroutineContext` / `invalidate` parameters with a [FrameRecomposer] plus
- * separate `invalidateLayout` / `invalidateDraw` callbacks. Compose Desktop's
- * AWT path drives those three steps through [SingleComposeSceneRenderingScope],
- * which swallows layout/draw invalidations raised during the in-flight frame
- * and re-arms [requestFrame] only if the scene is still dirty afterwards.
- * Driving the steps by hand (and wiring `invalidateLayout`/`invalidateDraw`
- * straight to [requestFrame]) can schedule a second frame while
- * `measureAndLayout` is still placing a tree that just remounted — Compose
- * 1.12's [androidx.compose.ui.spatial.RectManager] then throws
- * `LayoutNode not found in RectList` (nucleus-demo tab switches).
+ * ## Why this is not a verbatim AWT copy
+ *
+ * AWT paint order is the contract we **do** match:
+ *
+ * ```
+ * performFrame() → measureAndLayout() → draw()
+ * ```
+ *
+ * Do not drain host work, apply snapshots, or walk a11y between those
+ * phases. AWT never does; doing so after a remount walks Compose 1.12's
+ * RectList while it is torn (`IllegalArgumentException: LayoutNode N not
+ * found in RectList`). Seen on nucleus-demo tab switches: a `when` body
+ * remounts in the same frame as a sibling `graphicsLayer` update
+ * (`replace()` / `onCoordinatorRectChanged`). Vanilla Compose Desktop
+ * (AWT) does not crash — this is a Tao host bug, not an app workaround.
+ *
+ * AWT input **queueing** is the contract we **do not** match. Tao's
+ * native loop delivers pointer events on the compose thread immediately;
+ * [ComposeScene.sendPointerEvent] then calls `measureAndLayout` *before*
+ * dispatching the event. Queuing clicks until the next vsync would add
+ * up to a frame of latency and is a different product than this backend.
+ * Until Compose stops throwing on that early measure, [render] and
+ * [prepareForPointerInput] force a root remasure (1px [ComposeScene.size]
+ * toggle, restored before measure so the presented size is unchanged)
+ * and [render] retries layout once if the first pass still misses
+ * RectList.
+ *
+ * Remove the size toggle / retry when Compose 1.12+ no longer throws on
+ * remount + `graphicsLayer` in one frame. Keep the AWT paint order.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneBundle(
     val scene: ComposeScene,
     val frameRecomposer: FrameRecomposer,
-    private val renderingScope: SingleComposeSceneRenderingScope,
+    private val requestFrame: () -> Unit,
 ) : AutoCloseable {
+    @Volatile
+    private var isRendering: Boolean = false
+
+    fun onSceneInvalidation() {
+        if (isRendering) return
+        requestFrame()
+    }
+
     /**
-     * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
-     * replacement for the pre-1.12 `scene.render(canvas.asComposeCanvas(), nanoTime)`.
-     * [nanoTime] is fed to the recomposer's frame clock, so `withFrameNanos`
-     * animations advance on the timestamp the caller paces to.
+     * One host frame into [canvas], AWT paint order: recompose, then layout,
+     * then draw. See the class KDoc for why host work must not run between
+     * those phases and why a root remasure may precede layout.
      */
     fun render(
         canvas: Canvas,
         nanoTime: Long,
     ) {
-        with(renderingScope) {
-            scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
+        isRendering = true
+        try {
+            try {
+                frameRecomposer.performFrame(nanoTime)
+            } catch (error: IllegalArgumentException) {
+                if (!error.isMissingRectListEntry()) throw error
+                // Remount + graphicsLayer ran inside performFrame; RectList
+                // is already torn. Rebuild from the root on the layout pass.
+                forceRootRemeasure()
+            }
+            measureAndLayoutRebuildingRectList()
+            scene.draw(canvas.asComposeCanvas())
+        } finally {
+            isRendering = false
         }
+        if (scene.hasInvalidations()) {
+            requestFrame()
+        }
+    }
+
+    /**
+     * Call immediately before every [ComposeScene.sendPointerEvent].
+     *
+     * Compose measures before it dispatches the event. After a remount that
+     * has not been laid out yet, that measure hits the torn RectList
+     * [render] would have rebuilt. This is the Tao-only gap versus AWT:
+     * AWT almost never measures a remounted tree until the next paint.
+     * We do not queue the click; we rebuild RectList first. No-op when
+     * layout is already idle.
+     */
+    fun prepareForPointerInput() {
+        forceRootRemeasureIfLayoutPending()
+    }
+
+    private fun measureAndLayoutRebuildingRectList() {
+        forceRootRemeasureIfLayoutPending()
+        try {
+            scene.measureAndLayout()
+        } catch (error: IllegalArgumentException) {
+            if (!error.isMissingRectListEntry()) throw error
+            forceRootRemeasure()
+            scene.measureAndLayout()
+        }
+    }
+
+    /**
+     * Marks the root measure-pending via a 1px [ComposeScene.size] toggle.
+     * The owner only remasures when size actually changes; both assignments
+     * differ from the current field, then the original size is restored so
+     * [ComposeScene.measureAndLayout] never presents the bump.
+     * Temporary: drop with the RectList workaround in the class KDoc.
+     */
+    private fun forceRootRemeasureIfLayoutPending() {
+        if (!scene.hasPendingMeasureOrLayout) return
+        forceRootRemeasure()
+    }
+
+    private fun forceRootRemeasure() {
+        val size = scene.size ?: return
+        if (size.width <= 0 || size.height <= 0) return
+        scene.size = IntSize(size.width, size.height + 1)
+        scene.size = size
     }
 
     override fun close() {
@@ -76,7 +158,7 @@ internal fun canvasLayersSceneBundle(
     platformContext: PlatformContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
-    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
+    lateinit var bundle: TaoSceneBundle
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
     val scene =
         CanvasLayersComposeScene(
@@ -85,10 +167,11 @@ internal fun canvasLayersSceneBundle(
             layoutDirection = layoutDirection,
             size = size,
             platformContext = platformContext,
-            invalidateLayout = { renderingScope.onSceneInvalidation() },
-            invalidateDraw = { renderingScope.onSceneInvalidation() },
+            invalidateLayout = { bundle.onSceneInvalidation() },
+            invalidateDraw = { bundle.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
+    bundle = TaoSceneBundle(scene, frameRecomposer, requestFrame)
+    return bundle
 }
 
 /**
@@ -104,7 +187,7 @@ internal fun platformLayersSceneBundle(
     composeSceneContext: ComposeSceneContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
-    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
+    lateinit var bundle: TaoSceneBundle
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
     val scene =
         PlatformLayersComposeScene(
@@ -113,8 +196,25 @@ internal fun platformLayersSceneBundle(
             layoutDirection = layoutDirection,
             size = size,
             composeSceneContext = composeSceneContext,
-            invalidateLayout = { renderingScope.onSceneInvalidation() },
-            invalidateDraw = { renderingScope.onSceneInvalidation() },
+            invalidateLayout = { bundle.onSceneInvalidation() },
+            invalidateDraw = { bundle.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
+    bundle = TaoSceneBundle(scene, frameRecomposer, requestFrame)
+    return bundle
+}
+
+/** Compose 1.12 RectManager / RectList lookup failures (see [TaoSceneBundle]). */
+private fun Throwable.isMissingRectListEntry(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        val message = current.message.orEmpty()
+        if (
+            message.contains("not found in RectList") ||
+            message.contains("without valid parent index")
+        ) {
+            return true
+        }
+        current = current.cause
+    }
+    return false
 }

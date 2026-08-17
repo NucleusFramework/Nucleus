@@ -356,6 +356,7 @@ public object TaoHeadfulTestSuiteMain {
                 )
             },
         ) +
+            RectListTabSwapHeadfulCases.all() +
             UnspecifiedSizeHeadfulCases.all() +
             LinuxDiscreteScrollHeadfulCases.all() +
             ChromeReviewHeadfulCases.all() +

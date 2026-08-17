@@ -332,6 +332,7 @@ internal class TaoSceneTestScope(
         lastPointerY = yPx
         hasReceivedCursorMove = true
         windowInfo.keyboardModifiers = taoKeyboardModifiers(modifierState)
+        sceneBundle.prepareForPointerInput()
         scene.sendPointerEvent(
             eventType = PointerEventType.Move,
             position = Offset(xPx, yPx),
@@ -350,10 +351,12 @@ internal class TaoSceneTestScope(
     fun pointerButton(
         button: PointerButton,
         pressed: Boolean,
+        render: Boolean = true,
     ) {
         if (!hasReceivedCursorMove) return // host guard: no click before a cursor move
         val modifiers = taoKeyboardModifiers(modifierState)
         if (pressed && isPressed) {
+            sceneBundle.prepareForPointerInput()
             scene.sendPointerEvent(
                 eventType = PointerEventType.Release,
                 position = Offset(lastPointerX, lastPointerY),
@@ -365,6 +368,7 @@ internal class TaoSceneTestScope(
             return // host guard: stray release
         }
         isPressed = pressed
+        sceneBundle.prepareForPointerInput()
         scene.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -372,7 +376,7 @@ internal class TaoSceneTestScope(
             keyboardModifiers = modifiers,
             button = button,
         )
-        frame()
+        if (render) frame()
     }
 
     fun click(
@@ -386,6 +390,7 @@ internal class TaoSceneTestScope(
     }
 
     fun exitPointer() {
+        sceneBundle.prepareForPointerInput()
         scene.sendPointerEvent(
             eventType = PointerEventType.Exit,
             position = Offset(lastPointerX, lastPointerY),
@@ -398,6 +403,7 @@ internal class TaoSceneTestScope(
     /** Mirrors `TaoComposeSceneHost.onPointerScroll` (AWT-shaped native event attached). */
     fun scroll(event: TaoPointerScrollEvent) {
         val modifiers = taoKeyboardModifiers(modifierState)
+        sceneBundle.prepareForPointerInput()
         scene.sendPointerEvent(
             eventType = PointerEventType.Scroll,
             position = Offset(lastPointerX, lastPointerY),

@@ -1428,13 +1428,6 @@ internal class TaoComposeSceneHostLinux(
 
         val now = System.nanoTime()
 
-        // Drain queued main-thread work before the frame. The scene's frame
-        // clock is ticked inside `bundle.render` (FrameRecomposer.performFrame),
-        // so `withFrameNanos`-driven animations apply on the current frame
-        // instead of lagging by one — same guarantee as before, now atomic with
-        // the recompose → layout → draw the render call performs.
-        flushingDispatcher.drain()
-
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
@@ -1455,6 +1448,8 @@ internal class TaoComposeSceneHostLinux(
         // Tao hosts and the AWT backends, instead of showing the desktop through
         // a transparent clear. The rounded corners are carved back to
         // transparent by [applyFrameDecoration] below.
+        // AWT paint order lives inside [TaoSceneBundle.render]. Do not
+        // drain or sendPointerEvent between performFrame and layout.
         surface.canvas.clear(clearColorArgbState.value)
         bundle.render(surface.canvas, now)
         applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
@@ -1629,6 +1624,8 @@ internal class TaoComposeSceneHostLinux(
         aFixed: Int,
         bFixed: Int,
     ) {
+        // sendPointerEvent measures first; see [TaoSceneBundle.prepareForPointerInput].
+        sceneBundle?.prepareForPointerInput()
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
@@ -1715,6 +1712,7 @@ internal class TaoComposeSceneHostLinux(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        sceneBundle?.prepareForPointerInput()
         // JBR-style peer hook: a LMB press inside the resize band starts the
         // native resize drag and is NOT forwarded to Compose. Matches
         // `WLDecoratedPeer.postMouseEvent` calling
@@ -1804,6 +1802,7 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
+        sceneBundle?.prepareForPointerInput()
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
 
