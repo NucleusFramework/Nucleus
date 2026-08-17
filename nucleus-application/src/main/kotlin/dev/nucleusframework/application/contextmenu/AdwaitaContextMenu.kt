@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -23,7 +22,7 @@ internal val AdwaitaMenuTheme =
         chevronSize = 16.sp,
         chevronAlpha = 0.30f,
         minWidth = 120.dp,
-        maxWidth = Dp.Unspecified,
+        maxWidth = 280.dp,
         menuPadding = PaddingValues(6.dp),
         itemHeight = 32.dp,
         itemHorizontalPadding = 12.dp,
