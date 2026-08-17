@@ -12,7 +12,7 @@ use std::{
   time::Instant,
 };
 
-use cairo::{RectangleInt, Region};
+use cairo::Region;
 use crossbeam_channel::SendError;
 use gdk::{Cursor, CursorType, EventKey, EventMask, ScrollDirection, WindowEdge, WindowState};
 use gio::Cancellable;
@@ -495,15 +495,30 @@ impl<T: 'static> EventLoop<T> {
             }
           }
           WindowRequest::CursorIgnoreEvents(ignore) => {
-            if ignore {
-              let empty_region = Region::create_rectangle(&RectangleInt::new(0, 0, 1, 1));
-              window
-                .window()
-                .unwrap()
-                .input_shape_combine_region(&empty_region, 0, 0);
-            } else {
-              window.input_shape_combine_region(None)
-            };
+            // PATCH(nucleus): an *empty* region, not a 1x1 rectangle at the
+            // origin — upstream leaves the top-left pixel clickable. Both
+            // branches also go through the same GdkWindow: upstream cleared
+            // the shape on the GtkWidget, which is a no-op when the shape was
+            // installed on the GdkWindow, so click-through could never be
+            // turned back off.
+            if let Some(gdk_window) = window.window() {
+              if ignore {
+                gdk_window.input_shape_combine_region(&Region::create(), 0, 0);
+              } else {
+                // Only a NULL region clears the shape for good; a full-window
+                // region would go stale on the next resize, and the safe
+                // binding cannot express NULL.
+                use glib::translate::ToGlibPtr;
+                unsafe {
+                  gdk::ffi::gdk_window_input_shape_combine_region(
+                    gdk_window.to_glib_none().0,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                  );
+                }
+              }
+            }
           }
           WindowRequest::ProgressBarState(_) => unreachable!(),
           WindowRequest::BadgeCount(_, _) => unreachable!(),

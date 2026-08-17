@@ -9,8 +9,8 @@ public final class dev/nucleusframework/application/DecoratedDialogKt {
 }
 
 public final class dev/nucleusframework/application/DecoratedWindowKt {
-	public static final fun DecoratedWindow-ghhko4k (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
-	public static final fun DecoratedWindow-sr2hWdk (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedWindow-7qYZe8E (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-MOr4QTY (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/application/DefaultNucleusDialogHost : dev/nucleusframework/application/NucleusDialogHost {

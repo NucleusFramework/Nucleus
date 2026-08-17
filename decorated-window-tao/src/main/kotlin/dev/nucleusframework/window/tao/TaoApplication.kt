@@ -90,6 +90,10 @@ public object TaoApplication {
         // Drop shadow on borderless windows (Windows DWM / macOS hasShadow).
         // Set false for overlays (`DecoratedWindow(undecorated)`).
         undecoratedShadow: Boolean = true,
+        // Linux only: give this window an X11 surface even on a native Wayland
+        // session, so it can use the window management Wayland has no protocol
+        // for. Creation-time only. See [TaoWindow.isNativeWaylandSurface].
+        forceX11: Boolean = false,
     ): TaoWindow {
         val handle = handleSeq.getAndIncrement()
         val window =
@@ -98,6 +102,7 @@ public object TaoApplication {
                 isResizable = resizable,
                 isPopup = popupOf != null,
                 popupParentHandle = popupOf?.handle ?: 0L,
+                requestedX11 = forceX11,
             )
         windows[handle] = window
         val safeWidth = if (width.isFinite() && width > 0.0) width else DEFAULT_WINDOW_WIDTH_DP
@@ -115,6 +120,7 @@ public object TaoApplication {
             skipTaskbar,
             transparent,
             undecoratedShadow,
+            forceX11,
         )
         return window
     }
