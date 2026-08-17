@@ -2,8 +2,10 @@ package dev.nucleusframework.sampletao
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -34,6 +36,7 @@ import dev.nucleusframework.application.spellcheck.SpellcheckContextMenu
 import dev.nucleusframework.spellcheck.SpellChecker
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 @Composable
 internal fun SpellcheckTab(modifier: Modifier = Modifier) {
@@ -42,16 +45,20 @@ internal fun SpellcheckTab(modifier: Modifier = Modifier) {
         mutableStateOf("I recieve the teh package tommorow.\nPlease chek the adress.")
     }
     var material by remember { mutableStateOf("helo material") }
+    var locale by remember { mutableStateOf(SpellChecker.locale) }
     var available by remember { mutableStateOf(SpellChecker.isAvailable) }
     var dictionary by remember { mutableStateOf(SpellChecker.sessionIfReady?.dictionaryTag ?: "—") }
-    LaunchedEffect(Unit) {
-        val session = withContext(Dispatchers.IO) { SpellChecker.ensureSession() }
+    LaunchedEffect(locale) {
+        SpellChecker.locale = locale
+        val session = withContext(Dispatchers.IO) { SpellChecker.ensureSession(locale) }
         available = session.isAvailable
         dictionary = session.dictionaryTag ?: "—"
     }
 
     SpellcheckTabBody(
         modifier = modifier,
+        locale = locale,
+        onLocaleChange = { locale = it },
         available = available,
         dictionary = dictionary,
         singleLine = singleLine,
@@ -66,6 +73,8 @@ internal fun SpellcheckTab(modifier: Modifier = Modifier) {
 @Composable
 private fun SpellcheckTabBody(
     modifier: Modifier,
+    locale: Locale,
+    onLocaleChange: (Locale) -> Unit,
     available: Boolean,
     dictionary: String,
     singleLine: String,
@@ -86,20 +95,25 @@ private fun SpellcheckTabBody(
         BasicText(
             text =
                 if (available) {
-                    "Spellcheck ready ($dictionary). Misspellings get a red wave; " +
-                        "right-click a bad word for suggestions / add to dictionary."
+                    "Spellcheck ready (${locale.toLanguageTag()} → $dictionary). " +
+                        "Misspellings get a red wave; right-click a bad word for " +
+                        "suggestions / add to dictionary."
                 } else {
-                    "Spellcheck not available on this machine " +
-                        "(Linux Hunspell / macOS NSSpellChecker). " +
+                    "Spellcheck not available for ${locale.toLanguageTag()} " +
+                        "(Linux Hunspell / macOS NSSpellChecker / Windows ISpellChecker). " +
                         "Type anyway — the wrap is a no-op."
                 },
             style = TextStyle(color = Color(0xFFA0A4B0), fontSize = 13.sp),
         )
 
+        FieldLabel("Language")
+        LocalePicker(selected = locale, onSelected = onLocaleChange)
+
         FieldLabel("Single line")
         DemoField(
             value = singleLine,
             onValueChange = onSingleLineChange,
+            locale = locale,
             singleLine = true,
             testTag = "spellcheck-single",
         )
@@ -108,6 +122,7 @@ private fun SpellcheckTabBody(
         DemoField(
             value = multiLine,
             onValueChange = onMultiLineChange,
+            locale = locale,
             singleLine = false,
             testTag = "spellcheck-multi",
             modifier = Modifier.heightIn(min = 120.dp),
@@ -117,7 +132,41 @@ private fun SpellcheckTabBody(
         MaterialDemoField(
             value = material,
             onValueChange = onMaterialChange,
+            locale = locale,
         )
+    }
+}
+
+@Composable
+private fun LocalePicker(
+    selected: Locale,
+    onSelected: (Locale) -> Unit,
+) {
+    val system = Locale.getDefault()
+    val options =
+        listOf(
+            system to "System (${system.toLanguageTag()})",
+            Locale.US to "English",
+            Locale.FRANCE to "Français",
+            Locale.GERMANY to "Deutsch",
+        ).distinctBy { it.first }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        for ((value, label) in options) {
+            val active = value == selected
+            val accent = if (active) Color(0xFF8AB4FF) else Color(0xFFA0A4B0)
+            BasicText(
+                text = label,
+                style = TextStyle(color = accent, fontSize = 13.sp, fontWeight = FontWeight.SemiBold),
+                modifier =
+                    Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(accent.copy(alpha = if (active) 0.16f else 0.06f))
+                        .border(1.dp, accent.copy(alpha = if (active) 0.5f else 0.18f), RoundedCornerShape(6.dp))
+                        .clickable { onSelected(value) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                        .testTag("spellcheck-locale-${value.toLanguageTag()}"),
+            )
+        }
     }
 }
 
@@ -133,11 +182,12 @@ private fun FieldLabel(text: String) {
 private fun DemoField(
     value: String,
     onValueChange: (String) -> Unit,
+    locale: Locale,
     singleLine: Boolean,
     testTag: String,
     modifier: Modifier = Modifier,
 ) {
-    SpellcheckContextMenu(text = value, onTextChange = onValueChange) {
+    SpellcheckContextMenu(text = value, onTextChange = onValueChange, locale = locale) {
         BasicTextField(
             value = value,
             onValueChange = onValueChange,
@@ -160,6 +210,7 @@ private fun DemoField(
 private fun MaterialDemoField(
     value: String,
     onValueChange: (String) -> Unit,
+    locale: Locale,
 ) {
     MaterialTheme(
         colors =
@@ -172,7 +223,7 @@ private fun MaterialDemoField(
                 onBackground = Color.White,
             ),
     ) {
-        SpellcheckContextMenu(text = value, onTextChange = onValueChange) {
+        SpellcheckContextMenu(text = value, onTextChange = onValueChange, locale = locale) {
             TextField(
                 value = value,
                 onValueChange = onValueChange,

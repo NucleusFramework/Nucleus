@@ -308,8 +308,8 @@ public final class dev/nucleusframework/application/spellcheck/NucleusSpellcheck
 }
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuKt {
-	public static final fun SpellcheckContextMenu (Landroidx/compose/foundation/text/input/TextFieldState;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
-	public static final fun SpellcheckContextMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SpellcheckContextMenu (Landroidx/compose/foundation/text/input/TextFieldState;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ljava/util/Locale;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SpellcheckContextMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ljava/util/Locale;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuSeparator : androidx/compose/foundation/ContextMenuItem {
