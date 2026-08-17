@@ -637,16 +637,69 @@ public class TaoWindow internal constructor(
         NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
     }
 
+    /**
+     * Pins the window above every other window — Windows `HWND_TOPMOST`, macOS
+     * `NSFloatingWindowLevel`, Linux `gtk_window_set_keep_above`
+     * (`_NET_WM_STATE_ABOVE`; X11/XWayland only, native Wayland has no
+     * client-side stacking protocol and logs a warning).
+     *
+     * Mutually exclusive with [setAlwaysOnBottom]: the last call wins.
+     */
     public fun setAlwaysOnTop(alwaysOnTop: Boolean) {
+        if (alwaysOnTopRequested == alwaysOnTop) return
         if (alwaysOnTop) {
             warnIfNativeWayland(
                 "alwaysOnTop",
                 "Wayland has no client-side stacking protocol (xdg-shell exposes none and " +
                     "Mutter rejects wlr-layer-shell), so gtk_window_set_keep_above is ignored.",
             )
+            setAlwaysOnBottom(false)
         }
+        alwaysOnTopRequested = alwaysOnTop
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
+
+    /**
+     * Pins the window below every other window — Windows `HWND_BOTTOM`, macOS
+     * `NSWindowLevel.BelowNormal`, Linux `gtk_window_set_keep_below`
+     * (`_NET_WM_STATE_BELOW`; X11/XWayland only, same Wayland caveat as
+     * [setAlwaysOnTop]). For wallpaper-level overlays: a desktop widget, a
+     * watermark that must never cover the app in front of it.
+     *
+     * Mutually exclusive with [setAlwaysOnTop]: the last call wins.
+     *
+     * Below-stacking is not the same thing as being part of the desktop — the
+     * window still appears in the taskbar and in Alt+Tab (pair with
+     * `hiddenFromDock` to drop those) and, on Wayland, a surface genuinely glued
+     * to the wallpaper needs `wlr-layer-shell`, which Tao does not support.
+     */
+    public fun setAlwaysOnBottom(alwaysOnBottom: Boolean) {
+        if (alwaysOnBottomRequested == alwaysOnBottom) return
+        if (alwaysOnBottom) {
+            warnIfNativeWayland(
+                "alwaysOnBottom",
+                "Wayland has no client-side stacking protocol (xdg-shell exposes none and " +
+                    "Mutter rejects wlr-layer-shell), so gtk_window_set_keep_below is ignored.",
+            )
+            setAlwaysOnTop(false)
+        }
+        alwaysOnBottomRequested = alwaysOnBottom
+        NativeTaoBridge.nativeSetAlwaysOnBottom(handle, alwaysOnBottom)
+    }
+
+    /**
+     * Last requested stacking mode. Tao makes the two mutually exclusive only in
+     * its `WindowBuilder`, not in the setters, so the pair is arbitrated here —
+     * and clearing one must not be forwarded when it is already clear: on macOS
+     * both `set_always_on_top(false)` and `set_always_on_bottom(false)` reset the
+     * window level to `NSNormalWindowLevel`, so a redundant clear of one mode
+     * would silently undo the other.
+     */
+    @Volatile
+    private var alwaysOnTopRequested: Boolean = false
+
+    @Volatile
+    private var alwaysOnBottomRequested: Boolean = false
 
     public fun setFocusable(focusable: Boolean) {
         NativeTaoBridge.nativeSetFocusable(handle, focusable)

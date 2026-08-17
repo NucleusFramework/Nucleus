@@ -324,6 +324,10 @@ pub(crate) enum UserEvent {
         handle: u64,
         always_on_top: bool,
     },
+    SetAlwaysOnBottom {
+        handle: u64,
+        always_on_bottom: bool,
+    },
     SetFocusable {
         handle: u64,
         focusable: bool,

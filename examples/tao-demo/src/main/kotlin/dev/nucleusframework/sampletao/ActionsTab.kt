@@ -49,6 +49,7 @@ fun ActionsTab(
 ) {
     var titleInput by remember { mutableStateOf("Tao Backend Demo") }
     var alwaysOnTop by remember { mutableStateOf(false) }
+    var alwaysOnBottom by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier.padding(24.dp),
@@ -145,41 +146,26 @@ fun ActionsTab(
             }
         }
 
-        SectionTitle("Always on top")
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier =
-                Modifier
-                    .clip(RoundedCornerShape(8.dp))
-                    .clickable {
-                        alwaysOnTop = !alwaysOnTop
-                        window.setAlwaysOnTop(alwaysOnTop)
-                        onLog("setAlwaysOnTop($alwaysOnTop)")
-                    }.padding(horizontal = 4.dp, vertical = 4.dp),
+        // The two stacking modes are mutually exclusive on the TaoWindow side
+        // (last one set wins), so the checkboxes mirror that here.
+        SectionTitle("Stacking")
+        CheckRow(
+            label = "Keep window above all others",
+            checked = alwaysOnTop,
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (alwaysOnTop) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.06f))
-                        .border(
-                            1.dp,
-                            if (alwaysOnTop) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.2f),
-                            RoundedCornerShape(4.dp),
-                        ).padding(2.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                BasicText(
-                    text = if (alwaysOnTop) "✓" else " ",
-                    style = TextStyle(color = Color(0xFF0F1115), fontSize = 12.sp, fontWeight = FontWeight.Bold),
-                    modifier = Modifier.width(14.dp),
-                )
-            }
-            BasicText(
-                text = "Keep window above all others",
-                style = TextStyle(color = Color(0xFFB7B9C4), fontSize = 13.sp),
-            )
+            alwaysOnTop = !alwaysOnTop
+            if (alwaysOnTop) alwaysOnBottom = false
+            window.setAlwaysOnTop(alwaysOnTop)
+            onLog("setAlwaysOnTop($alwaysOnTop)")
+        }
+        CheckRow(
+            label = "Keep window below all others (desktop level)",
+            checked = alwaysOnBottom,
+        ) {
+            alwaysOnBottom = !alwaysOnBottom
+            if (alwaysOnBottom) alwaysOnTop = false
+            window.setAlwaysOnBottom(alwaysOnBottom)
+            onLog("setAlwaysOnBottom($alwaysOnBottom)")
         }
 
         SectionTitle("Drag")
@@ -247,6 +233,46 @@ private fun SectionTitle(text: String) {
                 letterSpacing = 0.8.sp,
             ),
     )
+}
+
+@Composable
+private fun CheckRow(
+    label: String,
+    checked: Boolean,
+    onToggle: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        modifier =
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onToggle)
+                .padding(horizontal = 4.dp, vertical = 4.dp),
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (checked) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.06f))
+                    .border(
+                        1.dp,
+                        if (checked) Color(0xFF8AB4FF) else Color.White.copy(alpha = 0.2f),
+                        RoundedCornerShape(4.dp),
+                    ).padding(2.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            BasicText(
+                text = if (checked) "✓" else " ",
+                style = TextStyle(color = Color(0xFF0F1115), fontSize = 12.sp, fontWeight = FontWeight.Bold),
+                modifier = Modifier.width(14.dp),
+            )
+        }
+        BasicText(
+            text = label,
+            style = TextStyle(color = Color(0xFFB7B9C4), fontSize = 13.sp),
+        )
+    }
 }
 
 @Composable

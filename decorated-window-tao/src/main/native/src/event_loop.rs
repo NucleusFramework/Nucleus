@@ -519,6 +519,24 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetAlwaysOnBottom {
+                    handle,
+                    always_on_bottom,
+                } => {
+                    // Opposite stacking: HWND_BOTTOM on Windows,
+                    // NSWindowLevel::BelowNormal on macOS, _NET_WM_STATE_BELOW
+                    // (gtk_window_set_keep_below) on X11 — a silent no-op on
+                    // native Wayland, which has no client-side stacking
+                    // protocol. Mutual exclusion with always-on-top is enforced
+                    // by TaoWindow: tao's setters, unlike its WindowBuilder, let
+                    // both requests coexist.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_always_on_bottom(always_on_bottom);
+                        }
+                    }
+                }
                 UserEvent::SetFocusable { handle, focusable } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {

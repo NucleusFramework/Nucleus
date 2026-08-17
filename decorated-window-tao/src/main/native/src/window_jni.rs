@@ -375,6 +375,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetAlwaysOnBottom(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    always_on_bottom: jboolean,
+) {
+    send_user_event(UserEvent::SetAlwaysOnBottom {
+        handle: handle as u64,
+        always_on_bottom: always_on_bottom != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetFocusable(
     _env: JNIEnv,
     _class: JClass,

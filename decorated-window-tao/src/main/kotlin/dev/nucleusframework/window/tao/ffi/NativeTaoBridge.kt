@@ -442,6 +442,12 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetAlwaysOnBottom(
+        handle: Long,
+        alwaysOnBottom: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetFocusable(
         handle: Long,
         focusable: Boolean,
