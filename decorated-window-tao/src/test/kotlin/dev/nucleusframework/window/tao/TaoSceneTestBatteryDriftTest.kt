@@ -76,6 +76,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
+                "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
         )
 
