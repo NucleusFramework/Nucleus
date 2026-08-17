@@ -469,6 +469,10 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     private inner class StandalonePopupPlatformContext : TaoPlatformContextBase() {
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHost.windowInfo
 
+        // Standalone popup surfaces are always per-pixel transparent, so
+        // dialog scrims must use the alpha-aware blend (#559).
+        override val isWindowTransparent: Boolean get() = true
+
         override fun setPointerIcon(pointerIcon: PointerIcon) {
             if (!isValid) return
             PopupNativeBridgeWindows.nativeSetPanelCursor(panel, mapPointerIcon(pointerIcon))

@@ -61,6 +61,15 @@ internal interface TaoPopupHost {
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
 
+    /**
+     * Whether the owner window was created per-pixel transparent
+     * (`DecoratedWindow(transparent = true)`, #416). Overlay scenes render
+     * inside the owner's surface, so they forward this as
+     * `PlatformContext.isWindowTransparent` — the hint Compose uses to pick
+     * the alpha-aware dialog-scrim blend mode (#559).
+     */
+    val isOwnerWindowTransparent: Boolean get() = false
+
     fun requestRedraw()
 
     /**
