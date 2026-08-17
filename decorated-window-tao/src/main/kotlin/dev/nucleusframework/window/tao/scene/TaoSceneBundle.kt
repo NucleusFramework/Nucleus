@@ -8,6 +8,7 @@ import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneContext
 import androidx.compose.ui.scene.PlatformLayersComposeScene
+import androidx.compose.ui.scene.SingleComposeSceneRenderingScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
@@ -23,17 +24,21 @@ import kotlin.coroutines.CoroutineContext
  * `FrameRecomposer.performFrame` + `ComposeScene.measureAndLayout` +
  * `ComposeScene.draw` — and replaced the scene factories' former
  * `coroutineContext` / `invalidate` parameters with a [FrameRecomposer] plus
- * separate `invalidateLayout` / `invalidateDraw` callbacks. (Compose Desktop's
- * own AWT path wraps the same three calls in the module-private
- * `SingleComposeSceneRenderingScope.render`, which isn't visible to external
- * backends, so the Tao hosts drive them directly here.) This type keeps the
- * scene and its recomposer together so the Tao hosts can create, render, and
- * dispose a scene with a single object.
+ * separate `invalidateLayout` / `invalidateDraw` callbacks. Compose Desktop's
+ * AWT path drives those three steps through [SingleComposeSceneRenderingScope],
+ * which swallows layout/draw invalidations raised during the in-flight frame
+ * and re-arms [requestFrame] only if the scene is still dirty afterwards.
+ * Driving the steps by hand (and wiring `invalidateLayout`/`invalidateDraw`
+ * straight to [requestFrame]) can schedule a second frame while
+ * `measureAndLayout` is still placing a tree that just remounted — Compose
+ * 1.12's [androidx.compose.ui.spatial.RectManager] then throws
+ * `LayoutNode not found in RectList` (nucleus-demo tab switches).
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneBundle(
     val scene: ComposeScene,
     val frameRecomposer: FrameRecomposer,
+    private val renderingScope: SingleComposeSceneRenderingScope,
 ) : AutoCloseable {
     /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
@@ -45,9 +50,9 @@ internal class TaoSceneBundle(
         canvas: Canvas,
         nanoTime: Long,
     ) {
-        frameRecomposer.performFrame(nanoTime)
-        scene.measureAndLayout()
-        scene.draw(canvas.asComposeCanvas())
+        with(renderingScope) {
+            scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
+        }
     }
 
     override fun close() {
@@ -71,6 +76,7 @@ internal fun canvasLayersSceneBundle(
     platformContext: PlatformContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
+    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
     val scene =
         CanvasLayersComposeScene(
@@ -79,10 +85,10 @@ internal fun canvasLayersSceneBundle(
             layoutDirection = layoutDirection,
             size = size,
             platformContext = platformContext,
-            invalidateLayout = { requestFrame() },
-            invalidateDraw = { requestFrame() },
+            invalidateLayout = { renderingScope.onSceneInvalidation() },
+            invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
 }
 
 /**
@@ -98,6 +104,7 @@ internal fun platformLayersSceneBundle(
     composeSceneContext: ComposeSceneContext,
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
+    val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
     val scene =
         PlatformLayersComposeScene(
@@ -106,8 +113,8 @@ internal fun platformLayersSceneBundle(
             layoutDirection = layoutDirection,
             size = size,
             composeSceneContext = composeSceneContext,
-            invalidateLayout = { requestFrame() },
-            invalidateDraw = { requestFrame() },
+            invalidateLayout = { renderingScope.onSceneInvalidation() },
+            invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
 }
