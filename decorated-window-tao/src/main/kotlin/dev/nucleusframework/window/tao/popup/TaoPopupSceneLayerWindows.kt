@@ -172,6 +172,12 @@ internal class TaoPopupSceneLayerWindows(
                 object : TaoPlatformContextBase() {
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
                         get() = popupWindowInfo
+
+                    // The popup HWND's surface is per-pixel transparent, so
+                    // dialog scrims must use the alpha-aware blend — same
+                    // contract as Compose Desktop's `WindowComposeSceneLayer`
+                    // (#559).
+                    override val isWindowTransparent: Boolean get() = true
                 },
             requestFrame = { host.requestRedraw() },
         )

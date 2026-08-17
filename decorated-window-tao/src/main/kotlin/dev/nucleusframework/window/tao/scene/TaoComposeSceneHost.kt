@@ -368,6 +368,7 @@ internal class TaoComposeSceneHost(
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
                 onInputSession = { activeInputRequest = it },
+                isWindowTransparent = fullyTransparent,
             )
 
         val hostPopupHost = if (nativePopupLayers) popupHost() else null
@@ -778,6 +779,7 @@ internal class TaoComposeSceneHost(
         return object : TaoPopupHost {
             override val parentNsView: Long get() = outer.nsViewHandle
             override val scale: Float get() = outer.scale
+            override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val workAreaSize: IntSize get() {
                 val packed = NativeMetalBridge.nativeOwnerWorkAreaSize(outer.nsViewHandle)
@@ -1528,6 +1530,11 @@ private class TaoPlatformContext(
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
     private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit,
+    // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
+    // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
+    // created with `transparent = true` — same as Compose Desktop's
+    // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
+    override val isWindowTransparent: Boolean = false,
 ) : TaoPlatformContextBase() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic

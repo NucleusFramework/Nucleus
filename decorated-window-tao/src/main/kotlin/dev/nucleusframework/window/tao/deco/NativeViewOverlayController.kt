@@ -101,6 +101,7 @@ internal class NativeViewOverlayController(
             override val sceneCoroutineContext: CoroutineContext get() = popupHost.sceneCoroutineContext
             override val coordinateOffset: IntOffset
                 get() = IntOffset(overlayOffsetX, overlayOffsetY)
+            override val isOwnerWindowTransparent: Boolean get() = popupHost.isOwnerWindowTransparent
 
             override fun requestRedraw() = popupHost.requestRedraw()
 
@@ -393,6 +394,11 @@ internal class NativeViewOverlayController(
         val ourPlatformContext =
             object : TaoPlatformContextBase() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
+
+                // The overlay composites into the owner window's surface, so
+                // dialog scrims must blend the same way as the owner's (#559).
+                override val isWindowTransparent: Boolean
+                    get() = popupHost.isOwnerWindowTransparent
 
                 override fun setPointerIcon(pointerIcon: PointerIcon) {
                     popupHost.setCursor(pointerIcon.toTaoCursorIconCode())

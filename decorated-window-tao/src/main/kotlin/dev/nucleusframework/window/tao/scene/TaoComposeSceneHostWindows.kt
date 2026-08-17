@@ -360,6 +360,7 @@ internal class TaoComposeSceneHostWindows(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
+                isWindowTransparent = fullyTransparent,
             )
         sceneBundle =
             if (nativePopupLayers) {
@@ -1454,6 +1455,7 @@ internal class TaoComposeSceneHostWindows(
         return object : TaoPopupHostWindows {
             override val parentHwnd: Long get() = outer.hwnd
             override val scale: Float get() = outer.scale
+            override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val workAreaSize: IntSize get() {
                 if (!NativeTaoWindowsDecoBridge.isLoaded) return parentWindowSize
@@ -1798,6 +1800,11 @@ private class WindowsTaoPlatformContext(
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
+    // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
+    // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
+    // created with `transparent = true` — same as Compose Desktop's
+    // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
+    override val isWindowTransparent: Boolean = false,
 ) : TaoPlatformContextBase() {
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {

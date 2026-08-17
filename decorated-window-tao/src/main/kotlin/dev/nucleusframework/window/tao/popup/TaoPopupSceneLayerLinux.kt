@@ -183,6 +183,12 @@ internal class TaoPopupSceneLayerLinux(
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
                         get() = popupWindowInfo
 
+                    // The popup window's surface is per-pixel transparent, so
+                    // dialog scrims must use the alpha-aware blend — same
+                    // contract as Compose Desktop's `WindowComposeSceneLayer`
+                    // (#559).
+                    override val isWindowTransparent: Boolean get() = true
+
                     override fun setPointerIcon(pointerIcon: PointerIcon) {
                         if (released) return
                         NativeTaoBridge.nativeSetCursorIcon(

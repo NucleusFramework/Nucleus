@@ -455,6 +455,7 @@ internal class TaoComposeSceneHostLinux(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
+                isWindowTransparent = fullyTransparent,
             )
         sceneBundle =
             if (nativePopupLayers) {
@@ -2442,6 +2443,11 @@ private class LinuxTaoPlatformContext(
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
+    // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
+    // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
+    // created with `transparent = true` — same as Compose Desktop's
+    // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
+    override val isWindowTransparent: Boolean,
 ) : TaoPlatformContextBase() {
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
