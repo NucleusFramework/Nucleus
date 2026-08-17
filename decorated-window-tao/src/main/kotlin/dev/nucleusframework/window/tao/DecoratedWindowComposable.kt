@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.toRgbaIcon
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 /**
@@ -418,7 +419,21 @@ public fun ApplicationScope.DecoratedWindow(
                 // `state.size` still holds the (smaller) requested size at this
                 // point.
                 val effectiveSize = effectiveAlignedSize(state.size, minimumSize)
-                if (applyAlignedPosition(window, pos, effectiveSize)) {
+                // Resolving an alignment needs the monitor work area, which
+                // Linux queries through the native window — and Tao creates
+                // that asynchronously on its event loop. A JVM start is slow
+                // enough that it is already there at first composition; a
+                // native-image start is not, and a single failed attempt left
+                // the window wherever the WM had centred it, for good, since
+                // this effect only re-runs when `state.position` changes.
+                var landed = applyAlignedPosition(window, pos, effectiveSize)
+                var attempt = 0
+                while (!landed && attempt < ALIGNED_POSITION_RETRIES) {
+                    delay(ALIGNED_POSITION_RETRY_MS)
+                    attempt++
+                    landed = applyAlignedPosition(window, pos, effectiveSize)
+                }
+                if (landed) {
                     applied.position = pos
                 }
             }
@@ -699,6 +714,15 @@ private fun parentOuterOriginLogical(parent: TaoWindow): Pair<Double, Double>? {
  * (slot 0: 1 = Xlib, 2 = Wayland) so we don't have to second-guess GDK env
  * vars or the auto-pick logic in `event_loop.rs`.
  */
+/**
+ * How long [applyAlignedPosition] keeps retrying while the native window is
+ * still being created on the Tao event loop — ~10 frames at 60 Hz, far past
+ * any observed startup, and given up on rather than looped forever so a
+ * genuinely unavailable monitor query cannot wedge the effect.
+ */
+private const val ALIGNED_POSITION_RETRIES = 10
+private const val ALIGNED_POSITION_RETRY_MS = 16L
+
 private val waylandPositionWarned =
     java.util.concurrent.atomic
         .AtomicBoolean(false)
