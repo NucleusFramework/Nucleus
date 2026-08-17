@@ -2442,7 +2442,7 @@ private class LinuxTaoPlatformContext(
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
-) : androidx.compose.ui.platform.PlatformContext.Empty() {
+) : TaoPlatformContextBase() {
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
             override val systemBars: androidx.compose.ui.platform.PlatformInsets =

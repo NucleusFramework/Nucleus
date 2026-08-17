@@ -11,7 +11,6 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
@@ -27,6 +26,7 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.releaseGlTextureImports
 import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
 import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.preservingEglBinding
@@ -473,7 +473,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
 
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : PlatformContext.Empty() {
+    private inner class StandalonePopupPlatformContext : TaoPlatformContextBase() {
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostLinux.windowInfo
 
         override fun setPointerIcon(pointerIcon: PointerIcon) {

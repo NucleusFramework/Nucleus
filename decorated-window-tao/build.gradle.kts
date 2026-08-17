@@ -21,6 +21,10 @@ val publishVersion =
 dependencies {
     api(project(":decorated-window-core"))
     implementation(project(":core-runtime"))
+    // Compose `Modifier.keepScreenOn()` is a no-op on desktop unless the
+    // scene's PlatformContext implements `isKeepScreenOnEnabled`. Tao owns
+    // that context and forwards it to EnergyManager.
+    implementation(project(":energy-manager"))
     implementation(libs.compose.desktop.common)
     // Compose Hot Reload interop (TaoHotReloadBridge). compileOnly: these
     // artifacts are only referenced when running under the hot-reload agent,

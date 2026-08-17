@@ -204,7 +204,7 @@ internal class TaoSceneTestScope(
         }
 
     private val platformContext =
-        object : PlatformContext.Empty() {
+        object : TaoPlatformContextBase() {
             override val windowInfo: TaoWindowInfo = this@TaoSceneTestScope.windowInfo
 
             override val semanticsOwnerListener =

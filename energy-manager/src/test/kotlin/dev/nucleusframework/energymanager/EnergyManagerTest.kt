@@ -5,6 +5,7 @@ import dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge
 import dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge
 import dev.nucleusframework.energymanager.windows.WindowsEnergyManager
 import kotlinx.coroutines.runBlocking
+import org.junit.After
 import org.junit.Assume.assumeTrue
 import java.io.File
 import kotlin.test.Test
@@ -19,6 +20,11 @@ import kotlin.test.assertTrue
  * Tests are skipped on platforms that don't match.
  */
 class EnergyManagerTest {
+    @After
+    fun tearDownAwake() {
+        EnergyManager.resetAwakeForTests()
+    }
+
     private fun assumeLinux() {
         assumeTrue(
             "Test requires Linux",

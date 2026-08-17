@@ -14,7 +14,6 @@ import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
@@ -27,6 +26,7 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.platformLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.renderGlFrame
@@ -436,7 +436,7 @@ internal class NativeViewOverlayControllerWindows(
             // GL state cache for the new framebuffer.
 
             val ourPlatformContext =
-                object : PlatformContext.Empty() {
+                object : TaoPlatformContextBase() {
                     override val windowInfo: WindowInfo get() = overlayWindowInfo
 
                     override fun setPointerIcon(pointerIcon: PointerIcon) {

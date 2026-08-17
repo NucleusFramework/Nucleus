@@ -26,6 +26,11 @@ import java.util.concurrent.Executors
  *   Linux:   GNOME SessionManager / freedesktop PowerManagement / systemd-logind /
  *            X11 inhibitors — [AwakeMode.SYSTEM_ONLY] drops the idle bits and skips
  *            the X11 screen-saver backend.
+ *
+ * [keepAwake] / [releaseAwake] own a single explicit slot (last writer wins
+ * for that slot). [acquireAwake] returns independent handles that coexist
+ * with it; the OS request uses the strongest live [AwakeMode] and is dropped
+ * only when the explicit slot and every handle are gone.
  */
 @Suppress("TooManyFunctions")
 public object EnergyManager {
@@ -36,6 +41,11 @@ public object EnergyManager {
     )
 
     private val unsupported = Result(false, -1, "Not supported on this platform")
+
+    private val lock = Any()
+    private var explicitMode: AwakeMode? = null
+    private val holders = mutableListOf<AwakeHandle>()
+    private var appliedMode: AwakeMode? = null
 
     private val delegate: PlatformEnergyManager? =
         when (Platform.Current) {
@@ -102,19 +112,49 @@ public object EnergyManager {
      * [AwakeMode.SYSTEM_ONLY] lets the screen saver and display sleep behave normally
      * while long background work keeps running.
      *
-     * Calling this while a request is already active replaces it with [mode].
+     * Calling this while a previous [keepAwake] request is already active replaces
+     * that slot with [mode]. Handles from [acquireAwake] are independent: the OS
+     * request uses the strongest live mode and stays held until this slot and
+     * every handle are gone.
      *
      * The request is held by a dedicated internal thread, so it stays active
      * regardless of which thread calls this function — including short-lived
      * coroutine dispatcher workers.
      */
     public fun keepAwake(mode: AwakeMode = AwakeMode.SYSTEM_AND_DISPLAY): Result =
-        delegate?.keepAwake(mode) ?: unsupported
+        synchronized(lock) {
+            explicitMode = mode
+            applyLocked()
+        }
 
     /**
-     * Releases the awake state, allowing the OS to sleep normally.
+     * Acquires an awake request that stays held until [AwakeHandle.close].
+     *
+     * Multiple handles can be active at once and coexist with [keepAwake].
+     * The OS request uses the strongest requested [AwakeMode] and is released
+     * only when every handle (and any unmatched [keepAwake]) is gone.
+     *
+     * Prefer this over [keepAwake] when several independent features (a video
+     * player, a Compose `Modifier.keepScreenOn()`, a download) need the
+     * machine awake without stepping on each other.
      */
-    public fun releaseAwake(): Result = delegate?.releaseAwake() ?: unsupported
+    public fun acquireAwake(mode: AwakeMode = AwakeMode.SYSTEM_AND_DISPLAY): AwakeHandle =
+        synchronized(lock) {
+            val handle = AwakeHandle(mode, ::releaseHandle)
+            holders += handle
+            applyLocked()
+            handle
+        }
+
+    /**
+     * Releases the [keepAwake] slot, allowing the OS to sleep normally if no
+     * [acquireAwake] handle is still live.
+     */
+    public fun releaseAwake(): Result =
+        synchronized(lock) {
+            explicitMode = null
+            applyLocked()
+        }
 
     /**
      * Returns true if an awake request is currently held.
@@ -141,6 +181,60 @@ public object EnergyManager {
      */
     @Deprecated("Renamed to isAwakeActive()", ReplaceWith("isAwakeActive()"))
     public fun isScreenAwakeActive(): Boolean = isAwakeActive()
+
+    private fun releaseHandle(handle: AwakeHandle) {
+        synchronized(lock) {
+            if (!holders.remove(handle)) return
+            applyLocked()
+        }
+    }
+
+    private fun applyLocked(): Result {
+        val strongest = strongestModeLocked()
+        if (strongest == appliedMode) {
+            return Result(true)
+        }
+        val result =
+            if (strongest == null) {
+                delegate?.releaseAwake() ?: unsupported
+            } else {
+                delegate?.keepAwake(strongest) ?: unsupported
+            }
+        if (result.success) {
+            appliedMode = strongest
+        }
+        return result
+    }
+
+    private fun strongestModeLocked(): AwakeMode? {
+        var display = explicitMode == AwakeMode.SYSTEM_AND_DISPLAY
+        var system = explicitMode == AwakeMode.SYSTEM_ONLY
+        for (handle in holders) {
+            when (handle.mode) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> display = true
+                AwakeMode.SYSTEM_ONLY -> system = true
+            }
+        }
+        return when {
+            display -> AwakeMode.SYSTEM_AND_DISPLAY
+            system -> AwakeMode.SYSTEM_ONLY
+            else -> null
+        }
+    }
+
+    /**
+     * Drops every handle and the explicit slot. Test-only: production
+     * callers must close their own [AwakeHandle]s.
+     */
+    internal fun resetAwakeForTests() {
+        synchronized(lock) {
+            val snapshot = holders.toList()
+            holders.clear()
+            explicitMode = null
+            applyLocked()
+            snapshot.forEach { it.markInactive() }
+        }
+    }
 
     /**
      * Executes [block] on a dedicated thread with efficiency mode enabled.
