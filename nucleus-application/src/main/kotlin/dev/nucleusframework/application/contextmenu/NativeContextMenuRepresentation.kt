@@ -7,7 +7,6 @@ import androidx.compose.foundation.ContextMenuRepresentation
 import androidx.compose.foundation.ContextMenuState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import dev.nucleusframework.core.runtime.LinuxUiToolkit
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NativePopupMenuItem
@@ -32,8 +31,11 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
         val status = state.status
         if (status !is ContextMenuState.Status.Open) return
         val interpreter = LocalContextMenuItemInterpreter.current
-        val separator = LocalSpellcheckMenuSeparator.current
-        val entries = items().map { item -> interpreter.interpret(item, separator) }
+        val separator = LocalContextMenuDivider.current ?: NucleusContextMenuDivider
+        val entries =
+            items()
+                .map { item -> interpreter.interpret(item, separator) }
+                .withNormalizedSeparators()
         val onDismiss = { state.status = ContextMenuState.Status.Closed }
         if (entries.isEmpty()) {
             LaunchedEffect(status) { onDismiss() }

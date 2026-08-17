@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.text.TextRange
+import dev.nucleusframework.application.contextmenu.LocalContextMenuDivider
 import dev.nucleusframework.spellcheck.SpellChecker
 import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
@@ -90,10 +91,12 @@ public enum class SpellcheckMenuPlacement {
  * wavy underline under misspelled words (IME layout only — never on a
  * Material/Jewel decoration label).
  *
- * Jewel separators (`ContextMenuDivider`) come from
- * `LocalSpellcheckMenuSeparator`, provided by `JewelDecoratedWindow` /
- * `ProvideJewelSpellcheckMenu`. Custom representations (icons, keybindings,
- * color pickers) are left in place.
+ * The ambient `LocalContextMenuRepresentation` is never replaced — whatever
+ * chrome the app installed keeps drawing the menu. Separators therefore only
+ * appear when that renderer publishes one through `LocalContextMenuDivider`
+ * (`NativeContextMenuProvider`, or Jewel's `ContextMenuDivider` via
+ * `JewelDecoratedWindow` / `ProvideJewelSpellcheckMenu`); with Compose's own
+ * representation the suggestions are appended without a divider.
  *
  * No-op when the native spellcheck engine is unavailable.
  *
@@ -120,7 +123,7 @@ public fun SpellcheckContextMenu(
         content()
         return
     }
-    val separator = LocalSpellcheckMenuSeparator.current
+    val separator = LocalContextMenuDivider.current
     val rangesState = remember { mutableStateOf(emptyList<SpellcheckWord>()) }
     val latestText = remember { mutableStateOf(text) }
     latestText.value = text
@@ -156,20 +159,18 @@ public fun SpellcheckContextMenu(
             anchor = anchor,
         )
     }
-    ProvideSpellcheckSeparators {
-        ProvideSpellcheckMenuItems(
-            items = menuItems,
-            placement = menuPlacement,
-            onMenuClosed = { pendingClickInRoot = null },
-        ) {
-            InterceptPlatformTextInput(interceptor) {
-                SpellcheckImeUnderlineBox(
-                    inputRequest = inputRequest,
-                    ranges = rangesState.value,
-                    onSecondaryClickInRoot = { pendingClickInRoot = it },
-                    content = content,
-                )
-            }
+    ProvideSpellcheckMenuItems(
+        items = menuItems,
+        placement = menuPlacement,
+        onMenuClosed = { pendingClickInRoot = null },
+    ) {
+        InterceptPlatformTextInput(interceptor) {
+            SpellcheckImeUnderlineBox(
+                inputRequest = inputRequest,
+                ranges = rangesState.value,
+                onSecondaryClickInRoot = { pendingClickInRoot = it },
+                content = content,
+            )
         }
     }
 }
@@ -296,7 +297,7 @@ internal fun spellcheckContextMenuItems(
     text: String,
     session: SpellcheckSession,
     ranges: List<SpellcheckWord>,
-    separator: ContextMenuItem,
+    separator: ContextMenuItem?,
     onTextChange: (String) -> Unit,
     placement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     anchor: TextRange? = null,
@@ -323,22 +324,23 @@ internal fun spellcheckContextMenuItems(
  * Classic desktop menu around suggestions and "Add to dictionary".
  * [SpellcheckMenuPlacement.Bottom] leads with a separator (after Cut/Copy/Paste);
  * [SpellcheckMenuPlacement.Top] trails with one (before Cut/Copy/Paste).
- * [SpellcheckContextMenuSeparator] is drawn by [ProvideSpellcheckSeparators];
- * Jewel supplies `ContextMenuDivider`.
+ *
+ * A `null` [separator] means the ambient renderer cannot draw one — the
+ * sections are then emitted without any, never with a stand-in row.
  */
 internal fun spellcheckMenuSections(
     suggestions: List<ContextMenuItem>,
     addToDictionaryLabel: String,
     onAddToDictionary: () -> Unit,
-    separator: ContextMenuItem,
+    separator: ContextMenuItem?,
     placement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
 ): List<ContextMenuItem> =
     buildList {
-        if (placement == SpellcheckMenuPlacement.Bottom) add(separator)
+        if (separator != null && placement == SpellcheckMenuPlacement.Bottom) add(separator)
         addAll(suggestions)
-        add(separator)
+        if (separator != null) add(separator)
         add(ContextMenuItem(addToDictionaryLabel) { onAddToDictionary() })
-        if (placement == SpellcheckMenuPlacement.Top) add(separator)
+        if (separator != null && placement == SpellcheckMenuPlacement.Top) add(separator)
     }
 
 /**
@@ -352,8 +354,9 @@ public object NucleusSpellcheckInstaller {
     /**
      * Suggestions plus "Add to dictionary" for [word].
      *
-     * [separator] is inserted around the suggestions. Defaults to
-     * [SpellcheckContextMenuSeparator]; Jewel supplies `ContextMenuDivider`.
+     * [separator] is inserted around the suggestions. Pass
+     * `LocalContextMenuDivider.current` so the block only carries dividers
+     * when the ambient renderer draws them; `null` (the default) emits none.
      *
      * [menuPlacement] only changes which side of the block gets the
      * outer separator — put the returned list at the matching index.
@@ -363,7 +366,7 @@ public object NucleusSpellcheckInstaller {
         session: SpellcheckSession,
         onSuggestion: (String) -> Unit,
         onAddToDictionary: () -> Unit,
-        separator: ContextMenuItem = SpellcheckContextMenuSeparator,
+        separator: ContextMenuItem? = null,
         menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     ): List<ContextMenuItem> {
         val model = buildSpellcheckMenuModel(word, session) ?: return emptyList()

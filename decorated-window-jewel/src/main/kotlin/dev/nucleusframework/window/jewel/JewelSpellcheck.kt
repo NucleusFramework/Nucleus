@@ -2,12 +2,14 @@ package dev.nucleusframework.window.jewel
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import dev.nucleusframework.application.contextmenu.LocalContextMenuDivider
 import dev.nucleusframework.application.contextmenu.LocalContextMenuItemInterpreter
-import dev.nucleusframework.application.spellcheck.LocalSpellcheckMenuSeparator
 import org.jetbrains.jewel.ui.component.ContextMenuDivider
 
 /**
- * Provides Jewel's [ContextMenuDivider] to [LocalSpellcheckMenuSeparator] and
+ * Publishes Jewel's [ContextMenuDivider] as the renderer's divider through
+ * [LocalContextMenuDivider], so features that build menu items (spellcheck)
+ * emit separators Jewel's chrome can actually draw, and installs
  * [JewelContextMenuInterpreter] so a native context menu can map Jewel
  * Cut / Copy / Paste action types to OS icons and accelerators.
  *
@@ -18,7 +20,7 @@ import org.jetbrains.jewel.ui.component.ContextMenuDivider
 @Composable
 public fun ProvideJewelSpellcheckMenu(content: @Composable () -> Unit) {
     CompositionLocalProvider(
-        LocalSpellcheckMenuSeparator provides ContextMenuDivider,
+        LocalContextMenuDivider provides ContextMenuDivider,
         LocalContextMenuItemInterpreter provides JewelContextMenuInterpreter,
         content = content,
     )
