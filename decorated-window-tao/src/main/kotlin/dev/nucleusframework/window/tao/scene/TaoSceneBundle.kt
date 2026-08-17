@@ -41,14 +41,16 @@ import kotlin.coroutines.CoroutineContext
  * [ComposeScene.sendPointerEvent] then calls `measureAndLayout` *before*
  * dispatching the event. Queuing clicks until the next vsync would add
  * up to a frame of latency and is a different product than this backend.
- * Until Compose stops throwing on that early measure, [render] and
- * [prepareForPointerInput] force a root remasure (1px [ComposeScene.size]
- * toggle, restored before measure so the presented size is unchanged)
- * and [render] retries layout once if the first pass still misses
- * RectList.
+ * Until Compose stops throwing, [render] and [prepareForPointerInput]
+ * force a root remasure (1px [ComposeScene.size] toggle, restored before
+ * measure). If RectList still throws — including during
+ * [FrameRecomposer.performFrame] `applyChanges` detach (`RectManager.remove`)
+ * — skip layout/draw for this frame and request another. Do **not** remasure
+ * after a failed detach: that measures a half-removed tree and throws
+ * `LayoutNode should be attached to an owner` (Material3 `TopAppBar`).
  *
- * Remove the size toggle / retry when Compose 1.12+ no longer throws on
- * remount + `graphicsLayer` in one frame. Keep the AWT paint order.
+ * Remove the size toggle / skip-frame when Compose 1.12+ no longer throws
+ * on remount + `graphicsLayer` in one frame. Keep the AWT paint order.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneBundle(
@@ -74,21 +76,31 @@ internal class TaoSceneBundle(
         nanoTime: Long,
     ) {
         isRendering = true
+        var skipPresent = false
         try {
             try {
                 frameRecomposer.performFrame(nanoTime)
-            } catch (error: IllegalArgumentException) {
-                if (!error.isMissingRectListEntry()) throw error
-                // Remount + graphicsLayer ran inside performFrame; RectList
-                // is already torn. Rebuild from the root on the layout pass.
-                forceRootRemeasure()
+            } catch (error: Throwable) {
+                if (!error.isTornComposeTree()) throw error
+                // applyChanges detach hit a stale RectList entry. The tree
+                // may be mid-remove — do not measure or draw it this frame.
+                skipPresent = true
             }
-            measureAndLayoutRebuildingRectList()
-            scene.draw(canvas.asComposeCanvas())
+            if (!skipPresent) {
+                skipPresent = !measureAndLayoutRebuildingRectList()
+            }
+            if (!skipPresent) {
+                try {
+                    scene.draw(canvas.asComposeCanvas())
+                } catch (error: Throwable) {
+                    if (!error.isTornComposeTree()) throw error
+                    skipPresent = true
+                }
+            }
         } finally {
             isRendering = false
         }
-        if (scene.hasInvalidations()) {
+        if (skipPresent || scene.hasInvalidations()) {
             requestFrame()
         }
     }
@@ -107,14 +119,15 @@ internal class TaoSceneBundle(
         forceRootRemeasureIfLayoutPending()
     }
 
-    private fun measureAndLayoutRebuildingRectList() {
+    /** @return false if Compose's tree is torn and this frame must not draw. */
+    private fun measureAndLayoutRebuildingRectList(): Boolean {
         forceRootRemeasureIfLayoutPending()
-        try {
+        return try {
             scene.measureAndLayout()
-        } catch (error: IllegalArgumentException) {
-            if (!error.isMissingRectListEntry()) throw error
-            forceRootRemeasure()
-            scene.measureAndLayout()
+            true
+        } catch (error: Throwable) {
+            if (!error.isTornComposeTree()) throw error
+            false
         }
     }
 
@@ -203,14 +216,20 @@ internal fun platformLayersSceneBundle(
     return bundle
 }
 
-/** Compose 1.12 RectManager / RectList lookup failures (see [TaoSceneBundle]). */
-private fun Throwable.isMissingRectListEntry(): Boolean {
+/**
+ * Compose 1.12 RectList / detach failures (see [TaoSceneBundle]).
+ * Includes the follow-up `should be attached to an owner` after a
+ * half-finished `applyChanges` remove.
+ */
+private fun Throwable.isTornComposeTree(): Boolean {
     var current: Throwable? = this
     while (current != null) {
         val message = current.message.orEmpty()
         if (
             message.contains("not found in RectList") ||
-            message.contains("without valid parent index")
+            message.contains("without valid parent index") ||
+            message.contains("should be attached to an owner") ||
+            message.contains("layout state is not idle")
         ) {
             return true
         }
