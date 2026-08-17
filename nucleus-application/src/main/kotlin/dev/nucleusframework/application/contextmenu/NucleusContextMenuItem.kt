@@ -1,6 +1,8 @@
 package dev.nucleusframework.application.contextmenu
 
 import androidx.compose.foundation.ContextMenuItem
+import androidx.compose.runtime.ProvidableCompositionLocal
+import androidx.compose.runtime.staticCompositionLocalOf
 
 /**
  * A [ContextMenuItem] that can carry a [ContextMenuIcon] and a keyboard
@@ -37,14 +39,31 @@ internal fun NucleusContextMenuItem.resolvedShortcut(): String? =
  * Hairline separator for [NativeContextMenuRepresentation] and for apps that
  * build the item list themselves.
  *
- * Prefer this over an empty [ContextMenuItem] so every renderer (native,
- * Jewel `ContextMenuDivider`, spellcheck) can recognise it.
+ * Prefer this over an empty [ContextMenuItem] so every renderer that owns its
+ * chrome can recognise it.
  */
 public object NucleusContextMenuDivider : ContextMenuItem(
     label = "---",
     enabled = false,
     onClick = {},
 )
+
+/**
+ * Divider understood by the context-menu renderer installed in this subtree,
+ * or `null` when the ambient renderer has no notion of a separator.
+ *
+ * A renderer that owns the chrome publishes its own divider here:
+ * [NativeContextMenuProvider] provides [NucleusContextMenuDivider] (drawn by
+ * `NSMenu` on macOS and by the Fluent / Adwaita / Breeze flyouts elsewhere),
+ * and `ProvideJewelSpellcheckMenu` provides Jewel's `ContextMenuDivider`.
+ *
+ * The default is `null`: Compose's own representation — and any custom one an
+ * app installs — cannot draw a divider, so features that build menu items
+ * (spellcheck) must omit separators instead of inventing chrome. Read it
+ * rather than assuming a sentinel is drawable.
+ */
+public val LocalContextMenuDivider: ProvidableCompositionLocal<ContextMenuItem?> =
+    staticCompositionLocalOf { null }
 
 /**
  * A nested submenu. [items] is evaluated when the native menu is materialised.

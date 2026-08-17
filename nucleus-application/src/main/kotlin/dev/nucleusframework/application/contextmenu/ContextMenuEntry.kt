@@ -3,7 +3,6 @@ package dev.nucleusframework.application.contextmenu
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
-import dev.nucleusframework.application.spellcheck.SpellcheckContextMenuSeparator
 
 /**
  * Platform-neutral description of one context-menu row, after an
@@ -48,16 +47,46 @@ public sealed class ContextMenuEntry {
  * Turns a Compose [ContextMenuItem] into a [ContextMenuEntry].
  *
  * The default understands [NucleusContextMenuItem], [NucleusContextMenuDivider],
- * [NucleusContextMenuSubmenu], and the spellcheck separator sentinels. Jewel
- * installs a richer interpreter (action types → stock icons, `ContextMenuDivider`,
- * submenus) from `decorated-window-jewel`.
+ * and [NucleusContextMenuSubmenu]. Jewel installs a richer interpreter (action
+ * types → stock icons, `ContextMenuDivider`, submenus) from
+ * `decorated-window-jewel`.
  */
 public fun interface ContextMenuItemInterpreter {
-    /** Interprets [item]. [separator] is the ambient spellcheck separator sentinel. */
+    /** Interprets [item]. [separator] is the ambient [LocalContextMenuDivider]. */
     public fun interpret(
         item: ContextMenuItem,
         separator: ContextMenuItem,
     ): ContextMenuEntry
+}
+
+/**
+ * Drops separators a renderer would draw as a bare rule: leading ones, trailing
+ * ones, and runs of consecutive ones. Applied recursively to submenus.
+ *
+ * Menu items come from several independent contributors (the field's own
+ * Cut / Copy / Paste, app extras, spellcheck), so a block that legitimately
+ * brings its own divider can still end up next to someone else's.
+ */
+internal fun List<ContextMenuEntry>.withNormalizedSeparators(): List<ContextMenuEntry> {
+    val normalized = mutableListOf<ContextMenuEntry>()
+    forEach { entry ->
+        when (entry) {
+            is ContextMenuEntry.Separator -> {
+                if (normalized.lastOrNull() is ContextMenuEntry.Item ||
+                    normalized.lastOrNull() is ContextMenuEntry.Submenu
+                ) {
+                    normalized += entry
+                }
+            }
+            is ContextMenuEntry.Submenu ->
+                normalized += ContextMenuEntry.Submenu(entry.label, entry.items.withNormalizedSeparators())
+            is ContextMenuEntry.Item -> normalized += entry
+        }
+    }
+    while (normalized.lastOrNull() is ContextMenuEntry.Separator) {
+        normalized.removeAt(normalized.lastIndex)
+    }
+    return normalized
 }
 
 /** Ambient [ContextMenuItemInterpreter]. Defaults to [DefaultContextMenuItemInterpreter]. */
@@ -65,7 +94,7 @@ public val LocalContextMenuItemInterpreter: ProvidableCompositionLocal<ContextMe
     staticCompositionLocalOf { DefaultContextMenuItemInterpreter }
 
 /**
- * Default interpreter: Nucleus item types, the spellcheck / Nucleus dividers,
+ * Default interpreter: Nucleus item types, the ambient and Nucleus dividers,
  * everything else as a label-only row.
  */
 public object DefaultContextMenuItemInterpreter : ContextMenuItemInterpreter {
@@ -76,7 +105,6 @@ public object DefaultContextMenuItemInterpreter : ContextMenuItemInterpreter {
         when {
             item === separator -> ContextMenuEntry.Separator
             item === NucleusContextMenuDivider -> ContextMenuEntry.Separator
-            item === SpellcheckContextMenuSeparator -> ContextMenuEntry.Separator
             item is NucleusContextMenuSubmenu ->
                 ContextMenuEntry.Submenu(
                     label = item.label,

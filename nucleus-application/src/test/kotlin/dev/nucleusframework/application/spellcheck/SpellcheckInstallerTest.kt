@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.sp
+import dev.nucleusframework.application.contextmenu.NucleusContextMenuDivider
 import dev.nucleusframework.spellcheck.SpellcheckMenuModel
 import dev.nucleusframework.spellcheck.SpellcheckSession
 import dev.nucleusframework.spellcheck.applySuggestion
@@ -29,18 +30,18 @@ import java.util.UUID
 
 class SpellcheckInstallerTest {
     @Test
-    fun `default separator is inserted around suggestions`() {
+    fun `renderer divider is inserted around suggestions`() {
         val items =
             spellcheckMenuSections(
                 suggestions = listOf(ContextMenuItem("hello") {}),
                 addToDictionaryLabel = "Add to dictionary",
                 onAddToDictionary = {},
-                separator = SpellcheckContextMenuSeparator,
+                separator = NucleusContextMenuDivider,
             )
         assertEquals(4, items.size)
-        assertTrue(items[0] === SpellcheckContextMenuSeparator)
+        assertTrue(items[0] === NucleusContextMenuDivider)
         assertEquals("hello", items[1].label)
-        assertTrue(items[2] === SpellcheckContextMenuSeparator)
+        assertTrue(items[2] === NucleusContextMenuDivider)
         assertEquals("Add to dictionary", items[3].label)
     }
 
@@ -62,20 +63,60 @@ class SpellcheckInstallerTest {
     }
 
     @Test
+    fun `no separator is emitted when the renderer cannot draw one`() {
+        SpellcheckMenuPlacement.entries.forEach { placement ->
+            val items =
+                spellcheckMenuSections(
+                    suggestions = listOf(ContextMenuItem("hello") {}),
+                    addToDictionaryLabel = "Add to dictionary",
+                    onAddToDictionary = {},
+                    separator = null,
+                    placement = placement,
+                )
+            assertEquals("$placement", 2, items.size)
+            assertEquals("hello", items[0].label)
+            assertEquals("Add to dictionary", items[1].label)
+            assertTrue(
+                "no stand-in row may be emitted for $placement",
+                items.none { it.label.isEmpty() || !it.enabled },
+            )
+        }
+    }
+
+    @Test
+    fun `installer emits no separator by default`() {
+        SpellcheckSession(
+            locale = Locale.US,
+            userDictionaryFile = isolatedUserDict(),
+        ).use { session ->
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
+            val items =
+                NucleusSpellcheckInstaller.menuItems(
+                    word = "helo",
+                    session = session,
+                    onSuggestion = {},
+                    onAddToDictionary = {},
+                )
+            assertTrue("expected spellcheck menu items", items.isNotEmpty())
+            assertTrue("default must not insert a divider", items.none { it === NucleusContextMenuDivider })
+        }
+    }
+
+    @Test
     fun `top placement trails with a separator instead of leading`() {
         val items =
             spellcheckMenuSections(
                 suggestions = listOf(ContextMenuItem("hello") {}),
                 addToDictionaryLabel = "Add to dictionary",
                 onAddToDictionary = {},
-                separator = SpellcheckContextMenuSeparator,
+                separator = NucleusContextMenuDivider,
                 placement = SpellcheckMenuPlacement.Top,
             )
         assertEquals(4, items.size)
         assertEquals("hello", items[0].label)
-        assertTrue(items[1] === SpellcheckContextMenuSeparator)
+        assertTrue(items[1] === NucleusContextMenuDivider)
         assertEquals("Add to dictionary", items[2].label)
-        assertTrue(items[3] === SpellcheckContextMenuSeparator)
+        assertTrue(items[3] === NucleusContextMenuDivider)
     }
 
     @Test
@@ -107,13 +148,13 @@ class SpellcheckInstallerTest {
                     text = "helo world",
                     session = session,
                     ranges = ranges,
-                    separator = SpellcheckContextMenuSeparator,
+                    separator = NucleusContextMenuDivider,
                     onTextChange = { rewritten = it },
                     anchor = TextRange(0, 4),
                 )
             val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
             val suggestions =
-                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+                items.filter { it !== NucleusContextMenuDivider && it.label != addLabel }
             assertTrue("expected suggestion items", suggestions.isNotEmpty())
             assertTrue("expected Add to dictionary", items.any { it.label == addLabel })
             suggestions.first().onClick()
@@ -142,7 +183,7 @@ class SpellcheckInstallerTest {
             assertTrue("expected spellcheck menu items", items.isNotEmpty())
             val addLabel = SpellcheckMenuModel.localizedAddToDictionaryLabel()
             val suggestionItems =
-                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+                items.filter { it !== NucleusContextMenuDivider && it.label != addLabel }
             assertTrue("expected suggestion items, got ${items.map { it.label }}", suggestionItems.isNotEmpty())
             assertTrue("expected Add to dictionary", items.any { it.label == addLabel })
             suggestionItems.first().onClick()
@@ -181,12 +222,12 @@ class SpellcheckInstallerTest {
                     text = text,
                     session = session,
                     ranges = ranges,
-                    separator = SpellcheckContextMenuSeparator,
+                    separator = NucleusContextMenuDivider,
                     onTextChange = {},
                     anchor = TextRange(0, 4),
                 )
             val heloSuggestions =
-                heloItems.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+                heloItems.filter { it !== NucleusContextMenuDivider && it.label != addLabel }
             assertTrue("expected helo suggestions", heloSuggestions.isNotEmpty())
             assertTrue(
                 "helo menu must not list the other misspelling",
@@ -197,7 +238,7 @@ class SpellcheckInstallerTest {
                     text = text,
                     session = session,
                     ranges = ranges,
-                    separator = SpellcheckContextMenuSeparator,
+                    separator = NucleusContextMenuDivider,
                     onTextChange = {},
                     anchor = TextRange(4, 5),
                 )
@@ -222,12 +263,12 @@ class SpellcheckInstallerTest {
                     text = text,
                     session = session,
                     ranges = ranges,
-                    separator = SpellcheckContextMenuSeparator,
+                    separator = NucleusContextMenuDivider,
                     onTextChange = {},
                     anchor = anchor,
                 )
             val suggestions =
-                items.filter { it !== SpellcheckContextMenuSeparator && it.label != addLabel }
+                items.filter { it !== NucleusContextMenuDivider && it.label != addLabel }
             assertTrue("expected wrold suggestions", suggestions.isNotEmpty())
             assertTrue(
                 "click on wrold must not list the helo token",

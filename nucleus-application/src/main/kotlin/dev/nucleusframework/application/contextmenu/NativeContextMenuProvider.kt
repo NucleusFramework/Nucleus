@@ -15,8 +15,10 @@ import dev.nucleusframework.menu.macos.isNativePopupMenuAvailable as isMacOsNati
 
 /**
  * `true` when [NativeContextMenuProvider] has installed the OS-looking
- * representation in this subtree. Spellcheck uses this to stop drawing its
- * own Compose popup (separators are handled by the OS-looking renderer).
+ * representation in this subtree.
+ *
+ * Renderer capabilities are published separately — read [LocalContextMenuDivider]
+ * rather than this flag to know whether a separator can be drawn.
  */
 public val LocalNativeContextMenu: ProvidableCompositionLocal<Boolean> =
     staticCompositionLocalOf { false }
@@ -71,6 +73,7 @@ public fun NativeContextMenuProvider(
     val windowDensity = LocalDensity.current
     CompositionLocalProvider(
         LocalNativeContextMenu provides true,
+        LocalContextMenuDivider provides NucleusContextMenuDivider,
         LocalContextMenuDensity provides windowDensity,
         LocalContextMenuRepresentation provides NativeContextMenuRepresentation,
         LocalTextContextMenu provides NativeTextContextMenu,

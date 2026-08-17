@@ -42,6 +42,17 @@ internal val AdwaitaMenuTheme =
         glyph = { null },
     )
 
+/**
+ * `separator { background: $border_color; }` in libadwaita's `_misc.scss`, with
+ * `$border_color: color-mix(in srgb, currentColor var(--border-opacity), transparent)`
+ * and `--border-opacity: 15%`. `currentColor` inside a menu is `popover_fg_color`,
+ * so the rule is 15 % of the *text* colour — white on a dark menu, and
+ * `RGB(0 0 6 / 80%)` premultiplied down to 12 % on a light one. It is not
+ * `popover_shade_color` (25 % black in dark), which libadwaita keeps for scroll
+ * undershoots: that reads as a dark gap instead of Adwaita's light hairline.
+ */
+private const val ADWAITA_BORDER_OPACITY = 0.15f
+
 private fun adwaitaColors(dark: Boolean): ContextMenuFlyoutColors =
     if (dark) {
         ContextMenuFlyoutColors(
@@ -49,7 +60,7 @@ private fun adwaitaColors(dark: Boolean): ContextMenuFlyoutColors =
             text = Color.White,
             textDisabled = Color.White.copy(alpha = 0.50f),
             hover = Color.White.copy(alpha = 0.10f),
-            separator = Color(red = 0, green = 0, blue = 6, alpha = 0x40),
+            separator = Color.White.copy(alpha = ADWAITA_BORDER_OPACITY),
             border = Color.Black.copy(alpha = 0.05f),
         )
     } else {
@@ -58,7 +69,7 @@ private fun adwaitaColors(dark: Boolean): ContextMenuFlyoutColors =
             text = Color(red = 0, green = 0, blue = 6, alpha = 0xCC),
             textDisabled = Color(red = 0, green = 0, blue = 6, alpha = 0x66),
             hover = Color(red = 0, green = 0, blue = 6, alpha = 0x1A),
-            separator = Color(red = 0, green = 0, blue = 6, alpha = 0x12),
+            separator = Color(red = 0, green = 0, blue = 6).copy(alpha = 0.80f * ADWAITA_BORDER_OPACITY),
             border = Color.Black.copy(alpha = 0.05f),
         )
     }

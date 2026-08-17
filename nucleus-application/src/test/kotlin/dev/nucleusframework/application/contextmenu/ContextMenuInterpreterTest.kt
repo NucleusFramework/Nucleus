@@ -5,7 +5,6 @@ package dev.nucleusframework.application.contextmenu
 import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.ui.text.AnnotatedString
-import dev.nucleusframework.application.spellcheck.SpellcheckContextMenuSeparator
 import dev.nucleusframework.core.runtime.LinuxUiToolkit
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NsMenuItemImage
@@ -24,7 +23,7 @@ class ContextMenuInterpreterTest {
                 icon = ContextMenuIcon.Delete,
                 onClick = {},
             )
-        val entry = DefaultContextMenuItemInterpreter.interpret(item, SpellcheckContextMenuSeparator)
+        val entry = DefaultContextMenuItemInterpreter.interpret(item, NucleusContextMenuDivider)
         val typed = entry as ContextMenuEntry.Item
         assertEquals("Delete", typed.label)
         assertSame(ContextMenuIcon.Delete, typed.icon)
@@ -37,22 +36,22 @@ class ContextMenuInterpreterTest {
         val copy =
             DefaultContextMenuItemInterpreter.interpret(
                 NucleusContextMenuItem("Copy", icon = ContextMenuIcon.Copy) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         val cut =
             DefaultContextMenuItemInterpreter.interpret(
                 NucleusContextMenuItem("Cut", icon = ContextMenuIcon.Cut) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         val paste =
             DefaultContextMenuItemInterpreter.interpret(
                 NucleusContextMenuItem("Paste", icon = ContextMenuIcon.Paste) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         val selectAll =
             DefaultContextMenuItemInterpreter.interpret(
                 NucleusContextMenuItem("Select All", icon = ContextMenuIcon.SelectAll) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         assertEquals(expectedPrimaryShortcut("C"), copy.shortcut)
         assertEquals(expectedPrimaryShortcut("X"), cut.shortcut)
@@ -69,7 +68,7 @@ class ContextMenuInterpreterTest {
                     icon = ContextMenuIcon.Copy,
                     shortcut = "Ctrl+Shift+C",
                 ) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         assertEquals("Ctrl+Shift+C", custom.shortcut)
         val hidden =
@@ -79,7 +78,7 @@ class ContextMenuInterpreterTest {
                     icon = ContextMenuIcon.Copy,
                     shortcut = "",
                 ) {},
-                SpellcheckContextMenuSeparator,
+                NucleusContextMenuDivider,
             ) as ContextMenuEntry.Item
         assertNull(hidden.shortcut)
     }
@@ -89,23 +88,62 @@ class ContextMenuInterpreterTest {
         val interpreter = DefaultContextMenuItemInterpreter
         assertSame(
             ContextMenuEntry.Separator,
-            interpreter.interpret(NucleusContextMenuDivider, SpellcheckContextMenuSeparator),
-        )
-        assertSame(
-            ContextMenuEntry.Separator,
-            interpreter.interpret(SpellcheckContextMenuSeparator, SpellcheckContextMenuSeparator),
+            interpreter.interpret(NucleusContextMenuDivider, NucleusContextMenuDivider),
         )
         val custom = ContextMenuItem("---") {}
         assertSame(
             ContextMenuEntry.Separator,
             interpreter.interpret(custom, custom),
         )
+        assertTrue(
+            "an unrelated item must stay a row",
+            interpreter.interpret(ContextMenuItem("Rename") {}, custom) is ContextMenuEntry.Item,
+        )
+    }
+
+    @Test
+    fun `separators are trimmed at the edges and collapsed in runs`() {
+        val entries =
+            listOf(
+                ContextMenuEntry.Separator,
+                ContextMenuEntry.Separator,
+                row("Cut"),
+                ContextMenuEntry.Separator,
+                ContextMenuEntry.Separator,
+                row("Paste"),
+                ContextMenuEntry.Separator,
+            ).withNormalizedSeparators()
+        assertEquals(3, entries.size)
+        assertEquals("Cut", (entries[0] as ContextMenuEntry.Item).label)
+        assertSame(ContextMenuEntry.Separator, entries[1])
+        assertEquals("Paste", (entries[2] as ContextMenuEntry.Item).label)
+    }
+
+    @Test
+    fun `separator normalization recurses into submenus`() {
+        val entries =
+            listOf(
+                ContextMenuEntry.Submenu(
+                    label = "More",
+                    items = listOf(ContextMenuEntry.Separator, row("Nested"), ContextMenuEntry.Separator),
+                ),
+            ).withNormalizedSeparators()
+        val submenu = entries.single() as ContextMenuEntry.Submenu
+        assertEquals(1, submenu.items.size)
+        assertEquals("Nested", (submenu.items.single() as ContextMenuEntry.Item).label)
+    }
+
+    @Test
+    fun `a menu made only of separators normalizes to nothing`() {
+        assertTrue(
+            listOf(ContextMenuEntry.Separator, ContextMenuEntry.Separator).withNormalizedSeparators().isEmpty(),
+        )
     }
 
     @Test
     fun `plain compose item has no icon`() {
         val item = ContextMenuItem("Copy") {}
-        val entry = DefaultContextMenuItemInterpreter.interpret(item, SpellcheckContextMenuSeparator)
+        val entry = DefaultContextMenuItemInterpreter.interpret(item, NucleusContextMenuDivider)
         val typed = entry as ContextMenuEntry.Item
         assertEquals("Copy", typed.label)
         assertNull(typed.icon)
@@ -120,7 +158,7 @@ class ContextMenuInterpreterTest {
                     NucleusContextMenuDivider,
                 )
             }
-        val entry = DefaultContextMenuItemInterpreter.interpret(submenu, SpellcheckContextMenuSeparator)
+        val entry = DefaultContextMenuItemInterpreter.interpret(submenu, NucleusContextMenuDivider)
         val typed = entry as ContextMenuEntry.Submenu
         assertEquals("More", typed.label)
         assertEquals(2, typed.items.size)
@@ -206,13 +244,16 @@ class ContextMenuInterpreterTest {
         assertSame(ContextMenuIcon.Paste, (items[2] as NucleusContextMenuItem).icon)
         assertSame(ContextMenuIcon.SelectAll, (items[3] as NucleusContextMenuItem).icon)
         assertEquals(false, items[2].enabled)
-        val interpreted = items.map { DefaultContextMenuItemInterpreter.interpret(it, SpellcheckContextMenuSeparator) }
+        val interpreted = items.map { DefaultContextMenuItemInterpreter.interpret(it, NucleusContextMenuDivider) }
         assertEquals(expectedPrimaryShortcut("X"), (interpreted[0] as ContextMenuEntry.Item).shortcut)
         assertEquals(expectedPrimaryShortcut("C"), (interpreted[1] as ContextMenuEntry.Item).shortcut)
         assertEquals(expectedPrimaryShortcut("V"), (interpreted[2] as ContextMenuEntry.Item).shortcut)
         assertEquals(expectedPrimaryShortcut("A"), (interpreted[3] as ContextMenuEntry.Item).shortcut)
     }
 }
+
+private fun row(label: String): ContextMenuEntry.Item =
+    ContextMenuEntry.Item(label = label, enabled = true, icon = null, onClick = {})
 
 private fun expectedPrimaryShortcut(key: String): String =
     if (Platform.Current == Platform.MacOS) "⌘$key" else "Ctrl+$key"
