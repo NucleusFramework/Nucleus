@@ -9,6 +9,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
+import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
@@ -280,6 +281,13 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneSemanticsTest: clickable nodes expose an onClick action") {
             TaoSceneSemanticsTest().`clickable nodes expose an onClick action`()
+        }
+
+        run("TaoSceneContentSwapTest: swapping a scrollable page of buttons does not crash RectList") {
+            TaoSceneContentSwapTest().`swapping a scrollable page of buttons does not crash RectList`()
+        }
+        run("TaoSceneContentSwapTest: clicking a tab remounts the body without a RectList crash") {
+            TaoSceneContentSwapTest().`clicking a tab remounts the body without a RectList crash`()
         }
 
         run("TaoA11yProjectionTest: compose semantics are projected into the a11y node snapshot") {

@@ -12,6 +12,9 @@ import androidx.compose.ui.scene.SingleComposeSceneRenderingScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.jetbrains.skia.Canvas
 import kotlin.coroutines.CoroutineContext
 
@@ -33,12 +36,19 @@ import kotlin.coroutines.CoroutineContext
  * `measureAndLayout` is still placing a tree that just remounted — Compose
  * 1.12's [androidx.compose.ui.spatial.RectManager] then throws
  * `LayoutNode not found in RectList` (nucleus-demo tab switches).
+ *
+ * Each bundle also carries a [RectManagerEdtGuard], which keeps the
+ * RectManager's delayed dispatch off the AWT EDT (issue #551) — see that class
+ * for the full story.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneBundle(
     val scene: ComposeScene,
     val frameRecomposer: FrameRecomposer,
     private val renderingScope: SingleComposeSceneRenderingScope,
+    private val edtGuard: RectManagerEdtGuard,
+    /** Owns [edtGuard]'s debounce wakeups; cancelled with the scene. */
+    private val guardScope: CoroutineScope,
 ) : AutoCloseable {
     /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
@@ -53,9 +63,11 @@ internal class TaoSceneBundle(
         with(renderingScope) {
             scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
         }
+        edtGuard.afterFrame()
     }
 
     override fun close() {
+        guardScope.cancel()
         scene.close()
         frameRecomposer.close()
     }
@@ -78,17 +90,19 @@ internal fun canvasLayersSceneBundle(
 ): TaoSceneBundle {
     val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
+    val guardScope = CoroutineScope(coroutineContext + SupervisorJob())
+    val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     val scene =
         CanvasLayersComposeScene(
             frameRecomposer = frameRecomposer,
             density = density,
             layoutDirection = layoutDirection,
             size = size,
-            platformContext = platformContext,
+            platformContext = platformContext.withEdtGuard(edtGuard),
             invalidateLayout = { renderingScope.onSceneInvalidation() },
             invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope)
 }
 
 /**
@@ -106,15 +120,32 @@ internal fun platformLayersSceneBundle(
 ): TaoSceneBundle {
     val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
     val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
+    val guardScope = CoroutineScope(coroutineContext + SupervisorJob())
+    val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     val scene =
         PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
             density = density,
             layoutDirection = layoutDirection,
             size = size,
-            composeSceneContext = composeSceneContext,
+            composeSceneContext =
+                object : ComposeSceneContext by composeSceneContext {
+                    override val platformContext: PlatformContext =
+                        composeSceneContext.platformContext.withEdtGuard(edtGuard)
+                },
             invalidateLayout = { renderingScope.onSceneInvalidation() },
             invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope)
 }
+
+/**
+ * Returns a [PlatformContext] view whose [PlatformContext.semanticsOwnerListener]
+ * additionally registers every announced owner with [edtGuard].
+ */
+@OptIn(InternalComposeUiApi::class)
+private fun PlatformContext.withEdtGuard(edtGuard: RectManagerEdtGuard): PlatformContext =
+    object : PlatformContext by this {
+        override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener =
+            edtGuard.wrapListener(this@withEdtGuard.semanticsOwnerListener)
+    }

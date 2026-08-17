@@ -9,10 +9,12 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
+import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
+import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
@@ -51,6 +53,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
+            TaoSceneContentSwapTest::class.java,
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
             TitleBarHitTestTest::class.java,
@@ -70,6 +73,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoMetalMissingPoolE2ETest::class.java to
                 "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
+            TaoSceneRectManagerRaceTest::class.java to
+                "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
         )
