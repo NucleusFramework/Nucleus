@@ -11,7 +11,6 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.platform.PlatformContext
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
@@ -31,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoComposeSceneContext
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.platformLayersSceneBundle
@@ -391,7 +391,7 @@ internal class NativeViewOverlayController(
                 )
             }
         val ourPlatformContext =
-            object : PlatformContext.Empty() {
+            object : TaoPlatformContextBase() {
                 override val windowInfo: WindowInfo get() = overlayWindowInfo
 
                 override fun setPointerIcon(pointerIcon: PointerIcon) {

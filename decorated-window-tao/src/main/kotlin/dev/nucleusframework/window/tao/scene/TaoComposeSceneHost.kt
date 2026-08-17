@@ -1528,7 +1528,7 @@ private class TaoPlatformContext(
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
     private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit,
-) : PlatformContext.Empty() {
+) : TaoPlatformContextBase() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic
     // then operates inside `windowSize - insets`, so a `top` inset matching our
