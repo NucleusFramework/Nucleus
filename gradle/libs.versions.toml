@@ -7,6 +7,7 @@ batik = "1.19"
 coilVersion = "3.5.0"
 compose = "1.12.0-rc01"
 coroutines = "1.11.0"
+composenativetray = "2.1.0"
 detekt = "2.0.0-alpha.5"
 downloadTask = "5.7.0"
 filekit = "0.14.2"
@@ -102,6 +103,7 @@ compose-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose" }
 compose-material = { module = "org.jetbrains.compose.material:material", version.ref = "compose" }
 compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "material3" }
 compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "materialIcons" }
+composenativetray = { module = "dev.nucleusframework:composenativetray", version.ref = "composenativetray" }
 filekit-core = { module = "io.github.vinceglb:filekit-core", version.ref = "filekit" }
 filekit-dialogs = { module = "io.github.vinceglb:filekit-dialogs", version.ref = "filekit" }
 navigation3-ui = { module = "org.jetbrains.androidx.navigation3:navigation3-ui", version.ref = "navigation3" }
