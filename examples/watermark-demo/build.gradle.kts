@@ -11,7 +11,9 @@ dependencies {
     implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
     implementation(project(":core-runtime"))
+    implementation(project(":decorated-window-material3"))
     implementation(compose.desktop.currentOs)
+    implementation(compose.material3)
     implementation(libs.composenativetray)
 }
 

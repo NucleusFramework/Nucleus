@@ -8,12 +8,27 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +49,10 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.material.MaterialDecoratedWindow
+import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.composenativetray.tray.api.Tray
 import java.io.File
 
@@ -55,12 +74,16 @@ import java.io.File
  * which the Tao backend resolves against the primary monitor's work area at
  * runtime.
  *
+ * A second, ordinary window drives it: toggle the watermark on and off, pick
+ * its corner. That window keeps the session's native surface, which on Linux
+ * makes the demo the mixed case — a Wayland app with one X11 window.
+ *
  * **Linux**: an overlay like this needs X11 semantics — stacking
  * (`alwaysOnTop`), programmatic positioning (`WindowPosition.Aligned`) and
- * workspace stickiness are all absent from the Wayland protocol, and the Tao
- * backend logs a warning for each. Run under XWayland
- * (`NUCLEUS_TAO_LINUX_RENDERER=x11`) or give the overlay window its own X11
- * surface while the rest of the app stays on Wayland.
+ * workspace stickiness are all absent from the Wayland protocol. Rather than
+ * pushing the whole app onto XWayland with
+ * `NUCLEUS_TAO_LINUX_RENDERER=x11`, the watermark asks for an X11 surface of
+ * its own (`forceX11`); the control window stays on Wayland.
  *
  * The tray icon is fed as image *files* (the `iconPath` overload): the
  * composable-icon overloads render through a skiko `Image.encodeToData`
@@ -77,6 +100,7 @@ fun main(args: Array<String>) =
                 size = DpSize(360.dp, 160.dp),
             )
         var corner by remember { mutableStateOf<Alignment>(Alignment.BottomEnd) }
+        var watermarkVisible by remember { mutableStateOf(true) }
 
         fun moveTo(alignment: Alignment) {
             corner = alignment
@@ -88,6 +112,12 @@ fun main(args: Array<String>) =
             windowsIconPath = trayIconIco,
             tooltip = "Nucleus watermark",
         ) {
+            CheckableItem(
+                label = "Show watermark",
+                checked = watermarkVisible,
+                onCheckedChange = { watermarkVisible = it },
+            )
+            Divider()
             CheckableItem(
                 label = "Top left",
                 checked = corner == Alignment.TopStart,
@@ -112,25 +142,53 @@ fun main(args: Array<String>) =
             Item(label = "Quit") { exitApplication() }
         }
 
-        DecoratedWindow(
-            onCloseRequest = ::exitApplication,
-            state = state,
-            title = "Watermark",
-            resizable = false,
-            alwaysOnTop = true,
-            undecorated = true,
-            transparent = true,
-            hiddenFromDock = true,
-            focusable = false,
-            // A watermark must never get in the way: clicks fall through to
-            // whatever is underneath and the window never takes focus.
-            clickThrough = true,
-            // …and it follows the user across desktops. macOS/Linux need this
-            // explicitly; on Windows a taskbar-excluded window already shows on
-            // every virtual desktop.
-            visibleOnAllWorkspaces = true,
-        ) {
-            AnimatedWatermark()
+        var overlaySurface by remember { mutableStateOf<String?>(null) }
+
+        MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
+            MaterialDecoratedWindow(
+                onCloseRequest = ::exitApplication,
+                state = rememberWindowState(size = DpSize(440.dp, 470.dp)),
+                title = "Watermark control",
+            ) {
+                TitleBar {
+                    Text("Watermark control", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
+                ControlPanel(
+                    watermarkVisible = watermarkVisible,
+                    onWatermarkVisibleChange = { watermarkVisible = it },
+                    corner = corner,
+                    onCornerChange = ::moveTo,
+                    controlSurface = surfaceLabel(nucleusWindow.unsafe.taoWindow),
+                    overlaySurface = overlaySurface,
+                )
+            }
+        }
+
+        if (watermarkVisible) {
+            DecoratedWindow(
+                onCloseRequest = { watermarkVisible = false },
+                state = state,
+                title = "Watermark",
+                resizable = false,
+                alwaysOnTop = true,
+                undecorated = true,
+                transparent = true,
+                hiddenFromDock = true,
+                focusable = false,
+                // A watermark must never get in the way: clicks fall through to
+                // whatever is underneath and the window never takes focus.
+                clickThrough = true,
+                // …and it follows the user across desktops. macOS/Linux need this
+                // explicitly; on Windows a taskbar-excluded window already shows on
+                // every virtual desktop.
+                visibleOnAllWorkspaces = true,
+                // Linux: everything above needs an X11 surface. Only this window
+                // gets one — the control window stays on the session's compositor.
+                forceX11 = true,
+            ) {
+                LaunchedEffect(nucleusWindow) { overlaySurface = surfaceLabel(nucleusWindow.unsafe.taoWindow) }
+                AnimatedWatermark()
+            }
         }
     }
 
@@ -207,5 +265,164 @@ private fun AnimatedWatermark() {
                     letterSpacing = 8.sp,
                 ),
         )
+    }
+}
+
+/**
+ * Which windowing system actually backs a window, read from the live surface
+ * rather than from the environment — the whole point of `forceX11` is that the
+ * answer differs between two windows of the same process. `null` on
+ * macOS/Windows, where the question does not arise.
+ */
+private fun surfaceLabel(window: TaoWindow?): String? {
+    if (window == null || Platform.Current != Platform.Linux) return null
+    return if (window.isNativeWaylandSurface) "Wayland" else "X11"
+}
+
+/**
+ * The control window's content: toggle the overlay, pick the corner it is
+ * pinned to, and see which surface each of the two windows ended up on.
+ */
+@Composable
+private fun ControlPanel(
+    watermarkVisible: Boolean,
+    onWatermarkVisibleChange: (Boolean) -> Unit,
+    corner: Alignment,
+    onCornerChange: (Alignment) -> Unit,
+    controlSurface: String?,
+    overlaySurface: String?,
+) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 24.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column {
+                Text("Watermark overlay", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    text = "Transparent, click-through, always on top",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Switch(checked = watermarkVisible, onCheckedChange = onWatermarkVisibleChange)
+        }
+
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                text = "Pinned corner",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            CornerPicker(corner = corner, enabled = watermarkVisible, onCornerChange = onCornerChange)
+        }
+
+        if (controlSurface != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "Surfaces",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                SurfaceRow("This window", controlSurface)
+                SurfaceRow("Overlay", overlaySurface ?: "—")
+            }
+        }
+    }
+}
+
+/** A miniature screen: click a corner to pin the overlay there. */
+@Composable
+private fun CornerPicker(
+    corner: Alignment,
+    enabled: Boolean,
+    onCornerChange: (Alignment) -> Unit,
+) {
+    val corners =
+        listOf(
+            Alignment.TopStart to Alignment.TopStart,
+            Alignment.TopEnd to Alignment.TopEnd,
+            Alignment.BottomStart to Alignment.BottomStart,
+            Alignment.BottomEnd to Alignment.BottomEnd,
+        )
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    shape = RoundedCornerShape(14.dp),
+                ).padding(10.dp),
+    ) {
+        corners.forEach { (alignment, value) ->
+            val selected = corner == value
+            Box(
+                modifier =
+                    Modifier
+                        .align(alignment)
+                        .size(width = 116.dp, height = 52.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (selected) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                        ).clickable(enabled = enabled) { onCornerChange(value) },
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    text = "NUCLEUS",
+                    style = MaterialTheme.typography.labelSmall,
+                    letterSpacing = 2.sp,
+                    color =
+                        if (selected) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                        },
+                )
+            }
+        }
+    }
+}
+
+/** `label — backend` line, with the backend rendered as a pill. */
+@Composable
+private fun SurfaceRow(
+    label: String,
+    backend: String,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, style = MaterialTheme.typography.bodyMedium)
+        Box(
+            modifier =
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+        ) {
+            Text(
+                text = backend,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+            )
+        }
     }
 }
