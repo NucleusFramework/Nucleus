@@ -53,14 +53,19 @@ import kotlinx.coroutines.launch
  * upstream timer would, only on the right thread — then re-pins and schedules
  * a frame for the next real deadline.
  *
- * Residual upstream exposure (documented, not host-fixable without patching
- * Compose): an app that registers debounced rect callbacks
- * (`Modifier.onLayoutRectChanged` / `onFirstVisible` / `onVisibilityChanged` —
- * nothing in stock Compose/Foundation/Material registers one by default) can
- * still get one EDT dispatch if a pass runs >16ms past a mid-pass re-arm AND
- * no layout/semantics notification arrives in between ([onScenePulse] re-pins
- * on each one). Apps without such callbacks — including every current Nucleus
- * API — never execute RectManager code off the scene thread.
+ * Coverage: on Compose 1.12.0-rc01 the pin is believed complete even for apps
+ * registering debounced rect callbacks (`Modifier.onLayoutRectChanged` /
+ * `onFirstVisible` / `onVisibilityChanged`), because the pinned deadline can
+ * never be lowered outside [afterFrame]: `triggerDebounced` returns before
+ * recomputing while the deadline is in the future, and the mid-pass lowering
+ * branch in `ThrottledCallbacks.fireWithUpdatedRect`/`fire` assigns the OLD
+ * deadline back (an upstream no-op — `minDebounceDeadline = currentMinDeadline`
+ * where `thisDeadline` was clearly intended). [onScenePulse] is kept as
+ * defense-in-depth for the day upstream fixes that assignment: it re-pins as
+ * soon as a real (lowered) deadline becomes observable on the scene thread.
+ * `examples/rect-stress-demo` is the standing sentinel: it hammers exactly
+ * this path with a wrong-thread detector in the callback and must never
+ * trigger it.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class RectManagerEdtGuard(
