@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 internal const val SPELLCHECK_IDLE_DELAY_MS: Long = 150L
 
@@ -96,6 +97,12 @@ public enum class SpellcheckMenuPlacement {
  *
  * No-op when the native spellcheck engine is unavailable.
  *
+ * Language follows [SpellChecker.locale] (itself [Locale.getDefault] until
+ * overridden). Pass [locale] to check this field in another language;
+ * pass [session] to supply a fully custom engine. [session] wins when both
+ * are set.
+ *
+ * @param locale language for this field, or `null` to use [SpellChecker.locale]
  * @param menuPlacement [SpellcheckMenuPlacement.Bottom] (default) appends
  *   after existing items; [SpellcheckMenuPlacement.Top] prepends before them.
  */
@@ -104,10 +111,11 @@ public fun SpellcheckContextMenu(
     text: String,
     onTextChange: (String) -> Unit,
     session: SpellcheckSession? = null,
+    locale: Locale? = null,
     menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     content: @Composable () -> Unit,
 ) {
-    val current = rememberAvailableSession(session)
+    val current = rememberAvailableSession(session, locale)
     if (current == null) {
         content()
         return
@@ -169,12 +177,14 @@ public fun SpellcheckContextMenu(
 /**
  * [SpellcheckContextMenu] for a [TextFieldState] field.
  *
+ * @param locale See [SpellcheckContextMenu].
  * @param menuPlacement See [SpellcheckContextMenu].
  */
 @Composable
 public fun SpellcheckContextMenu(
     state: TextFieldState,
     session: SpellcheckSession? = null,
+    locale: Locale? = null,
     menuPlacement: SpellcheckMenuPlacement = SpellcheckMenuPlacement.Bottom,
     content: @Composable () -> Unit,
 ) {
@@ -184,17 +194,35 @@ public fun SpellcheckContextMenu(
             state.edit { replace(0, length, new) }
         },
         session = session,
+        locale = locale,
         menuPlacement = menuPlacement,
         content = content,
     )
 }
 
 @Composable
-private fun rememberAvailableSession(session: SpellcheckSession?): SpellcheckSession? {
-    var resolved by remember(session) { mutableStateOf(session ?: SpellChecker.sessionIfReady) }
-    LaunchedEffect(session) {
-        if (resolved?.isAvailable == true) return@LaunchedEffect
-        resolved = session ?: withContext(Dispatchers.IO) { SpellChecker.ensureSession() }
+private fun rememberAvailableSession(
+    session: SpellcheckSession?,
+    locale: Locale?,
+): SpellcheckSession? {
+    val targetLocale = locale ?: SpellChecker.locale
+    var resolved by remember(session, targetLocale) {
+        mutableStateOf(
+            session
+                ?: SpellChecker.sessionIfReady?.takeIf { it.locale == targetLocale },
+        )
+    }
+    LaunchedEffect(session, targetLocale) {
+        if (session != null) {
+            resolved = session.takeIf { it.isAvailable }
+            return@LaunchedEffect
+        }
+        if (resolved?.isAvailable == true && resolved?.locale == targetLocale) {
+            return@LaunchedEffect
+        }
+        resolved =
+            withContext(Dispatchers.IO) { SpellChecker.ensureSession(targetLocale) }
+                .takeIf { it.isAvailable }
     }
     return resolved?.takeIf { it.isAvailable }
 }

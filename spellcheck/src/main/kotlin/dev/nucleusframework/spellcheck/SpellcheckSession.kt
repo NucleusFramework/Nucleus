@@ -29,9 +29,13 @@ import dev.nucleusframework.spellcheck.windows.NativeSpellcheckBridge as Windows
  * path.
  *
  * [SpellChecker] is the process-wide instance used by `nucleusApplication`.
+ *
+ * @property locale requested language. The loaded engine may resolve to a
+ *   close match (see [dictionaryTag]); missing dictionaries make the
+ *   session a no-op rather than substituting another language.
  */
 public class SpellcheckSession public constructor(
-    locale: Locale = Locale.getDefault(),
+    public val locale: Locale = Locale.getDefault(),
     osName: String = System.getProperty("os.name", ""),
     dictionaryDirectories: List<Path> = DictionaryLocator.defaultDirectories(),
     userDictionaryFile: Path? = defaultUserDictionaryFile(locale),

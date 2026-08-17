@@ -25,10 +25,13 @@ public final class dev/nucleusframework/spellcheck/SpellChecker {
 	public final fun addToDictionary (Ljava/lang/String;)Z
 	public final fun check (Ljava/lang/String;)Z
 	public final fun ensureSession ()Ldev/nucleusframework/spellcheck/SpellcheckSession;
+	public final fun ensureSession (Ljava/util/Locale;)Ldev/nucleusframework/spellcheck/SpellcheckSession;
+	public final fun getLocale ()Ljava/util/Locale;
 	public final fun getSession ()Ldev/nucleusframework/spellcheck/SpellcheckSession;
 	public final fun getSessionIfReady ()Ldev/nucleusframework/spellcheck/SpellcheckSession;
 	public final fun isAvailable ()Z
 	public final fun misspellings (Ljava/lang/String;)Ljava/util/List;
+	public final fun setLocale (Ljava/util/Locale;)V
 	public final fun suggest (Ljava/lang/String;)Ljava/util/List;
 }
 
@@ -74,6 +77,7 @@ public final class dev/nucleusframework/spellcheck/SpellcheckSession : java/lang
 	public final fun check (Ljava/lang/String;)Z
 	public fun close ()V
 	public final fun getDictionaryTag ()Ljava/lang/String;
+	public final fun getLocale ()Ljava/util/Locale;
 	public final fun isAvailable ()Z
 	public final fun misspellings (Ljava/lang/String;)Ljava/util/List;
 	public final fun suggest (Ljava/lang/String;)Ljava/util/List;

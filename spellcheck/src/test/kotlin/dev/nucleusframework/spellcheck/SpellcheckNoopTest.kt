@@ -25,6 +25,7 @@ class SpellcheckNoopTest {
     @Test
     fun `unsupported platform is a no-op`() {
         SpellcheckSession(locale = Locale.US, osName = "FreeBSD").use { session ->
+            assertEquals(Locale.US, session.locale)
             assertFalse(session.isAvailable)
             assertFalse(session.check("hello"))
             assertTrue(session.suggest("helo").isEmpty())

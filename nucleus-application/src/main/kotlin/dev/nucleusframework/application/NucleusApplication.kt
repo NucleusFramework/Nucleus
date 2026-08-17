@@ -64,6 +64,8 @@ public fun nucleusApplication(
     // guarantees it wins regardless of where the app sat in main(). Compose's
     // platform text menu (copy/cut/paste/select-all) reads Locale.getDefault()
     // lazily at first composition, so this must run before any UI is built.
+    // SpellChecker.locale defaults to Locale.getDefault(), so this also
+    // selects the spellcheck language unless the app overrides it.
     if (defaultLocale != null) {
         Locale.setDefault(defaultLocale)
         System.setProperty("user.language", defaultLocale.language)
