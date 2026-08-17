@@ -79,6 +79,14 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // [hiddenFromDock] window already shows on every virtual desktop. Reactive.
     // Honoured by the Tao backend; the AWT backend ignores it.
     visibleOnAllWorkspaces: Boolean = false,
+    // Linux only: give this window an X11 surface even when the app runs on a
+    // native Wayland session (a second GdkDisplay opened on DISPLAY, i.e.
+    // XWayland). Creation-time only. Wayland has no protocol for client-side
+    // stacking, programmatic positioning or workspace stickiness, so an overlay
+    // that needs them can take an X11 surface for itself while the rest of the
+    // app keeps its Wayland surfaces. Honoured by the Tao backend; ignored by
+    // the AWT backend and on other platforms.
+    forceX11: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     when (this) {
@@ -131,6 +139,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 transparent = transparent,
                 clickThrough = clickThrough,
                 visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+                forceX11 = forceX11,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
                 nativeContextMenu = nativeContextMenu,
@@ -176,6 +185,7 @@ public fun DecoratedWindow(
     transparent: Boolean = false,
     clickThrough: Boolean = false,
     visibleOnAllWorkspaces: Boolean = false,
+    forceX11: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.DecoratedWindow(
@@ -199,6 +209,7 @@ public fun DecoratedWindow(
         transparent = transparent,
         clickThrough = clickThrough,
         visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+        forceX11 = forceX11,
         content = content,
     )
 }

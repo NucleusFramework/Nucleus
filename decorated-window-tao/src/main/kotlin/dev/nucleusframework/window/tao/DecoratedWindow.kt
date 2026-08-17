@@ -261,6 +261,9 @@ internal fun ApplicationScope.openDecoratedWindow(
     // parent window's theme/user locals from the first composition without
     // hijacking popup positioning. See [LocalTaoCompositionLocalContextBridge].
     initialCompositionLocalContext: CompositionLocalContext? = null,
+    // Linux only: give this window an X11 surface even on a native Wayland
+    // session — see DecoratedWindow(forceX11 = …).
+    forceX11: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ): TaoWindow {
     // hiddenFromDock rides on the GTK skip-taskbar/skip-pager hint, which
@@ -275,11 +278,13 @@ internal fun ApplicationScope.openDecoratedWindow(
     if (hiddenFromDock &&
         Platform.Current == Platform.Linux &&
         Platform.isWayland &&
-        !forcesXWayland
+        !forcesXWayland &&
+        !forceX11
     ) {
         hiddenFromDockLogger.warning(
             "hiddenFromDock has no effect on native Wayland: Wayland has no client-side " +
-                "skip-taskbar protocol. Run with NUCLEUS_TAO_LINUX_RENDERER=x11 (XWayland) to hide the window.",
+                "skip-taskbar protocol. Pass forceX11 = true for this window, or run with " +
+                "NUCLEUS_TAO_LINUX_RENDERER=x11 (XWayland) for the whole app.",
         )
     }
     val window =
@@ -311,6 +316,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // TaoComposeSceneHost.attach() instead.
             skipTaskbar = hiddenFromDock,
             transparent = transparent,
+            forceX11 = forceX11,
             // Tao defaults borderless windows to a drop shadow (DWM on
             // Windows, NSWindow.hasShadow on macOS). Overlays must opt out
             // or the ghost still shows a soft contour. Fully transparent

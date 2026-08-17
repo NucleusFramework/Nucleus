@@ -277,6 +277,12 @@ pub(crate) enum UserEvent {
         // CSD (`with_csd_hidden_titlebar`, Wayland only). False for borderless
         // overlays.
         undecorated_shadow: bool,
+        // Linux: put this window on an X11 screen even when the process runs
+        // on native Wayland, so it can use the window-management features
+        // Wayland has no protocol for (stacking, programmatic positioning,
+        // workspace stickiness). Ignored elsewhere, and already satisfied when
+        // the process is an X11/XWayland client.
+        force_x11: bool,
     },
     SetVisible {
         handle: u64,

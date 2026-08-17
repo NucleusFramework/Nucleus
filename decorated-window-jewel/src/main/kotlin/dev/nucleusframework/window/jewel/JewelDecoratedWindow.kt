@@ -111,6 +111,23 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
+    // The overlay flags below mirror `dev.nucleusframework.application.DecoratedWindow`.
+    //
+    // Full-window per-pixel transparency: pixels the content leaves at alpha 0
+    // show the desktop behind the window. Creation-time only, normally paired
+    // with [undecorated]. Tao backend only.
+    transparent: Boolean = false,
+    // Click-through window: pointer events fall through to whatever sits below
+    // and the window never intercepts input. Pair with `focusable = false` for
+    // passive overlays. Reactive. Tao backend only.
+    clickThrough: Boolean = false,
+    // Show the window on every desktop / macOS Space / Windows virtual desktop
+    // instead of only the one it was created on. Reactive. Tao backend only.
+    visibleOnAllWorkspaces: Boolean = false,
+    // Linux only: give this window an X11 surface even when the app runs on a
+    // native Wayland session, for the window management Wayland has no protocol
+    // for (stacking, positioning, workspace stickiness). Creation-time only.
+    forceX11: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     val windowStyle = rememberJewelWindowStyle()
@@ -133,6 +150,10 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
             enabled = enabled,
             focusable = focusable,
             alwaysOnTop = alwaysOnTop,
+            transparent = transparent,
+            clickThrough = clickThrough,
+            visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+            forceX11 = forceX11,
             undecorated = undecorated,
             popupFor = popupFor,
             nativeContextMenu = nativeContextMenu,

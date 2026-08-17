@@ -1,0 +1,12 @@
+public final class com/example/rectstress/ComposableSingletons$MainKt {
+	public static final field INSTANCE Lcom/example/rectstress/ComposableSingletons$MainKt;
+	public fun <init> ()V
+	public final fun getLambda$-1782098224$Nucleus_examples_rect_stress_demo ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-535725003$Nucleus_examples_rect_stress_demo ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$1066003079$Nucleus_examples_rect_stress_demo ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class com/example/rectstress/MainKt {
+	public static final fun main ([Ljava/lang/String;)V
+}
+

@@ -198,7 +198,7 @@ public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowComposableKt {
-	public static final fun DecoratedWindow-krRzeA4 (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-119p4RY (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
@@ -500,8 +500,8 @@ public final class dev/nucleusframework/window/tao/TaoApplication {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoApplication;
 	public final fun exit ()V
-	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZ)Ldev/nucleusframework/window/tao/TaoWindow;
-	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
+	public final fun openWindow (Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZ)Ldev/nucleusframework/window/tao/TaoWindow;
+	public static synthetic fun openWindow$default (Ldev/nucleusframework/window/tao/TaoApplication;Ljava/lang/String;DDZZZZLdev/nucleusframework/window/tao/TaoWindow;ZZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoWindow;
 	public final fun run (Lkotlin/jvm/functions/Function1;)V
 }
 
@@ -715,6 +715,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun isFullscreen ()Z
 	public final fun isMaximized ()Z
 	public final fun isMinimized ()Z
+	public final fun isNativeWaylandSurface ()Z
 	public final fun isPopup ()Z
 	public final fun isResizable ()Z
 	public final fun isTiled ()Z

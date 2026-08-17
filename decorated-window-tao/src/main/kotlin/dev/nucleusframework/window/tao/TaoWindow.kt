@@ -42,6 +42,12 @@ public class TaoWindow internal constructor(
      * window as a Wayland `wl_subsurface`.
      */
     internal val popupParentHandle: Long = 0L,
+    /**
+     * `true` when the window asked for an X11 surface through
+     * `openWindow(forceX11 = true)` (Linux only). Kept so [show] can report a
+     * request the native side could not honour.
+     */
+    internal val requestedX11: Boolean = false,
 ) {
     // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
     // gating) recompose when resizability changes at runtime — the AWT
@@ -711,8 +717,16 @@ public class TaoWindow internal constructor(
         )
     }
 
-    /** `true` when this window is backed by a native Wayland surface. */
-    private val isNativeWaylandSurface: Boolean
+    /**
+     * `true` when this window is backed by a native Wayland surface, `false`
+     * on X11/XWayland and on every other platform.
+     *
+     * Per-window, read from the native surface rather than the environment:
+     * a window opened with `forceX11` reports `false` inside an app whose other
+     * windows are Wayland. Only meaningful once the native window exists (after
+     * `WINDOW_READY`).
+     */
+    public val isNativeWaylandSurface: Boolean
         get() {
             if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
             val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
@@ -814,6 +828,15 @@ public class TaoWindow internal constructor(
         // click-through state lands on the mapped window — see
         // [ignoreCursorEvents].
         if (ignoreCursorEvents) NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, true)
+        // The native surface exists by now, so this is the first point where an
+        // unhonoured [requestedX11] can be reported.
+        if (requestedX11 && isNativeWaylandSurface && waylandWarnings.add("forceX11")) {
+            waylandLogger.warning(
+                "forceX11 could not give this window an X11 surface — no X server on DISPLAY " +
+                    "(no XWayland in this session?). It stays on Wayland, where stacking, " +
+                    "positioning and workspace stickiness are unavailable.",
+            )
+        }
     }
 
     public fun hide() {

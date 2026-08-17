@@ -155,6 +155,13 @@ internal object NativeTaoBridge {
         // false (`DecoratedWindow(undecorated = true)`). Ignored on Linux
         // (CSD shadow is gated in the host).
         undecoratedShadow: Boolean,
+        // Linux: give this window an X11 surface even when the process runs on
+        // native Wayland, by re-homing it on a second GdkDisplay opened on
+        // DISPLAY. Creation-time only. Ignored elsewhere and when the process
+        // is already an X11/XWayland client. Silently keeps the Wayland surface
+        // when no X server is reachable — callers check the surface kind
+        // (`nativeLinuxHandles`) rather than a return value.
+        forceX11: Boolean,
     )
 
     @JvmStatic

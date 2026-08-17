@@ -71,6 +71,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     skip_taskbar: jboolean,
     transparent: jboolean,
     undecorated_shadow: jboolean,
+    force_x11: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -89,6 +90,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         skip_taskbar: skip_taskbar != JNI_FALSE,
         transparent: transparent != JNI_FALSE,
         undecorated_shadow: undecorated_shadow != JNI_FALSE,
+        force_x11: force_x11 != JNI_FALSE,
     });
 }
 

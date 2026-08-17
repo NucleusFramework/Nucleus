@@ -12,7 +12,7 @@ use std::{
   time::Instant,
 };
 
-use cairo::{RectangleInt, Region};
+use cairo::Region;
 use crossbeam_channel::SendError;
 use gdk::{Cursor, CursorType, EventKey, EventMask, ScrollDirection, WindowEdge, WindowState};
 use gio::Cancellable;

@@ -155,6 +155,20 @@ public fun ApplicationScope.DecoratedWindow(
      * caveat.
      */
     visibleOnAllWorkspaces: Boolean = false,
+    /**
+     * Linux only: give this window an X11 surface even when the app runs on a
+     * native Wayland session, by re-homing it on a second `GdkDisplay` opened
+     * on `DISPLAY` (XWayland). Creation-time only.
+     *
+     * Wayland deliberately has no protocol for client-side stacking
+     * ([alwaysOnTop]), programmatic positioning ([state]`.position`) or
+     * workspace stickiness ([visibleOnAllWorkspaces]), so an overlay that needs
+     * them can take an X11 surface for itself while the rest of the app keeps
+     * its Wayland surfaces — no `NUCLEUS_TAO_LINUX_RENDERER=x11` for the whole
+     * process. Logs a warning when no X server is reachable and the window
+     * stays on Wayland.
+     */
+    forceX11: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -229,6 +243,7 @@ public fun ApplicationScope.DecoratedWindow(
                     macOSStyle = macOSStyle,
                     hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
+                    forceX11 = forceX11,
                     content = {
                         val backgroundArgb = latestWindowBackgroundArgb.value
                         val clearColorLayers = LocalWindowClearColorLayers.current
