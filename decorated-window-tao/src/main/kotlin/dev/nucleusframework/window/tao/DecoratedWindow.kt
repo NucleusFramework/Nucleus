@@ -313,8 +313,13 @@ internal fun ApplicationScope.openDecoratedWindow(
             transparent = transparent,
             // Tao defaults borderless windows to a drop shadow (DWM on
             // Windows, NSWindow.hasShadow on macOS). Overlays must opt out
-            // or the ghost still shows a soft contour.
-            undecoratedShadow = !undecorated,
+            // or the ghost still shows a soft contour. Fully transparent
+            // windows drop it on Windows too: the style-level shadow traces
+            // the rectangular HWND, not the content-defined shape (#416) —
+            // macOS keeps it (AppKit shapes the shadow to the drawn content)
+            // and Linux keeps its CSD hidden-titlebar path.
+            undecoratedShadow =
+                !undecorated && !(transparent && Platform.Current == Platform.Windows),
         )
 
     // Compose Hot Reload: the agent only auto-wraps AWT `ComposeWindow`/
@@ -709,8 +714,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
             ) {
                 // Default: CSD outline (vanilla-style frame for custom chrome).
                 // `undecorated` = fully borderless overlay — no Compose stroke.
+                // `transparent` skips it too: the stroke traces the rectangular
+                // window bounds, not the content-defined shape (#416).
                 val border =
-                    if (undecorated) {
+                    if (undecorated || transparent) {
                         Modifier
                     } else {
                         rememberUndecoratedWindowBorder(
@@ -1149,9 +1156,11 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 }
                 // Default: CSD outline for custom chrome windows. `undecorated`
                 // means fully borderless (vanilla Compose Desktop semantics for
-                // overlays/ghosts) — do not stroke a frame.
+                // overlays/ghosts) — do not stroke a frame. `transparent`
+                // windows skip it too: the DWM 1px frame follows the
+                // rectangular HWND, not the content-defined shape (#416).
                 val border =
-                    if (undecorated) {
+                    if (undecorated || transparent) {
                         Modifier
                     } else {
                         rememberUndecoratedWindowBorder(
