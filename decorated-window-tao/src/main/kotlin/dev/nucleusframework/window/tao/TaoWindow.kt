@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * event loop, which executes them on the platform event-loop thread. Listener
  * registration is also safe to call across threads.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 public class TaoWindow internal constructor(
     public val handle: Long,
     isResizable: Boolean = true,
@@ -635,6 +635,17 @@ public class TaoWindow internal constructor(
 
     public fun setFocusable(focusable: Boolean) {
         NativeTaoBridge.nativeSetFocusable(handle, focusable)
+    }
+
+    /**
+     * Makes the window click-through: every pointer event falls through to
+     * whatever sits below it (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
+     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
+     * Linux). Pair with [setFocusable]`(false)` for passive overlays such as
+     * watermarks or HUDs that must never intercept input.
+     */
+    public fun setIgnoreCursorEvents(ignore: Boolean) {
+        NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
     }
 
     /** Logical pixels. Pass `null` to clear the minimum. */

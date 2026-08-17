@@ -386,6 +386,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetIgnoreCursorEvents(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    ignore: jboolean,
+) {
+    send_user_event(UserEvent::SetIgnoreCursorEvents {
+        handle: handle as u64,
+        ignore: ignore != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMinInnerSize(
     _env: JNIEnv,
     _class: JClass,

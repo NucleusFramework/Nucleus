@@ -464,6 +464,40 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetIgnoreCursorEvents { handle, ignore } => {
+                    // Click-through: WS_EX_TRANSPARENT|WS_EX_LAYERED on
+                    // Windows, NSWindow.ignoresMouseEvents on macOS, an empty
+                    // GDK input region on Linux.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            let _ = w.set_ignore_cursor_events(ignore);
+                            // tao only flips the ex-styles. A WS_EX_LAYERED
+                            // window renders NOTHING until its layering
+                            // attributes are initialised — without this the
+                            // whole window disappears the moment click-through
+                            // is enabled. Full alpha keeps per-pixel
+                            // transparency driven by DWM blur-behind.
+                            #[cfg(target_os = "windows")]
+                            if ignore {
+                                use tao::platform::windows::WindowExtWindows;
+                                use windows::Win32::Foundation::{COLORREF, HWND};
+                                use windows::Win32::UI::WindowsAndMessaging::{
+                                    SetLayeredWindowAttributes, LWA_ALPHA,
+                                };
+                                let hwnd = HWND(w.hwnd() as *mut _);
+                                unsafe {
+                                    let _ = SetLayeredWindowAttributes(
+                                        hwnd,
+                                        COLORREF(0),
+                                        255,
+                                        LWA_ALPHA,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 UserEvent::Focus { handle } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {

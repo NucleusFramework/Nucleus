@@ -198,7 +198,7 @@ public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowComposableKt {
-	public static final fun DecoratedWindow-KMb5BrY (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-4Q_Ebkg (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
@@ -747,6 +747,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun setFocusable (Z)V
 	public final fun setFullscreen (Z)V
 	public final fun setIcon (II[B)V
+	public final fun setIgnoreCursorEvents (Z)V
 	public final fun setInnerSize (DD)V
 	public final fun setMaximized (Z)V
 	public final fun setMinimized (Z)V

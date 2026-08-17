@@ -65,6 +65,15 @@ public fun ApplicationScope.DecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
+    /**
+     * Click-through window: every pointer event falls through to whatever
+     * sits below (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
+     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
+     * Linux). Reactive — can be toggled at runtime. Pair with
+     * `focusable = false` for passive overlays (watermarks, HUDs) that must
+     * never intercept input.
+     */
+    clickThrough: Boolean = false,
     isDialog: Boolean = false,
     /**
      * Fully borderless window — for overlays/ghosts (drag previews, HUDs).
@@ -415,6 +424,7 @@ public fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, title) { window.setTitle(title) }
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }
+    LaunchedEffect(window, clickThrough) { window.setIgnoreCursorEvents(clickThrough) }
     LaunchedEffect(window, visible) {
         if (visible) {
             window.show()

@@ -440,6 +440,12 @@ internal object NativeTaoBridge {
         focusable: Boolean,
     )
 
+    @JvmStatic
+    external fun nativeSetIgnoreCursorEvents(
+        handle: Long,
+        ignore: Boolean,
+    )
+
     /**
      * Raises the window to the top of the z-order, restores it if minimized,
      * and gives it keyboard focus. Maps to Tao's `Window::set_focus()` which

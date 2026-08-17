@@ -322,6 +322,10 @@ pub(crate) enum UserEvent {
         handle: u64,
         focusable: bool,
     },
+    SetIgnoreCursorEvents {
+        handle: u64,
+        ignore: bool,
+    },
     Focus {
         handle: u64,
     },

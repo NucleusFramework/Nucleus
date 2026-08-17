@@ -38,6 +38,11 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // change after the native window exists. Typically combined with
     // [undecorated]. Honoured by the Tao backend; the AWT backend ignores it.
     transparent: Boolean = false,
+    // Click-through window: pointer events fall through to whatever sits
+    // below, and the window never intercepts input. Pair with
+    // `focusable = false` for passive overlays (watermarks, HUDs). Reactive.
+    // Honoured by the Tao backend; the AWT backend ignores it.
+    clickThrough: Boolean = false,
     // Linux/Tao only: make this window a popup overlay of [popupFor]. On
     // Wayland it maps as a wl_subsurface of the parent — the only window kind
     // a client can freely position under xdg-shell (coordinates are
@@ -113,6 +118,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
                 transparent = transparent,
+                clickThrough = clickThrough,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
                 nativeContextMenu = nativeContextMenu,
@@ -149,6 +155,7 @@ public fun DecoratedWindow(
     alwaysOnTop: Boolean = false,
     undecorated: Boolean = false,
     transparent: Boolean = false,
+    clickThrough: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
     nativeContextMenu: Boolean = false,
@@ -170,6 +177,7 @@ public fun DecoratedWindow(
         alwaysOnTop = alwaysOnTop,
         undecorated = undecorated,
         transparent = transparent,
+        clickThrough = clickThrough,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
         nativeContextMenu = nativeContextMenu,
