@@ -31,8 +31,8 @@ internal val LocalContextMenuDensity: ProvidableCompositionLocal<Density?> =
 
 /**
  * Whether this process can show the opt-in OS-looking context menu:
- * macOS + `menu-macos` (`NSMenu`), Linux (Compose Adwaita or Breeze
- * flyout), or Windows (Compose Fluent flyout).
+ * macOS + `menu-macos` (`NSMenu`), Linux (Compose Adwaita on GTK
+ * desktops, Breeze on Qt desktops), or Windows (Compose Fluent flyout).
  */
 public val isNativeContextMenuSupported: Boolean
     get() =
@@ -48,7 +48,8 @@ public val isNativeContextMenuSupported: Boolean
  * Installs [NativeTextContextMenu] (so Cut / Copy / Paste carry
  * [ContextMenuIcon] stock tags and platform accelerators) and
  * [NativeContextMenuRepresentation] (`NSMenu` on macOS, Compose Adwaita
- * or Breeze flyout on Linux, Compose Fluent flyout on Windows).
+ * flyout on GTK Linux / Breeze on Qt Linux, Compose Fluent flyout on
+ * Windows).
  *
  * No-op when [enabled] is `false` or when [isNativeContextMenuSupported] is
  * `false` (missing macOS native lib). Compose / Jewel chrome stays.

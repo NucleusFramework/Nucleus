@@ -6,7 +6,7 @@ import androidx.compose.foundation.ContextMenuItem
 import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.ui.text.AnnotatedString
 import dev.nucleusframework.application.spellcheck.SpellcheckContextMenuSeparator
-import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
+import dev.nucleusframework.core.runtime.LinuxUiToolkit
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import org.junit.Assert.assertEquals
@@ -150,20 +150,28 @@ class ContextMenuInterpreterTest {
     }
 
     @Test
-    fun `stock icons map to breeze glyphs and sf symbols are ignored`() {
-        assertEquals("\u2702", ContextMenuIcon.Cut.toBreezeGlyph())
-        assertEquals("\u2398", ContextMenuIcon.Copy.toBreezeGlyph())
-        assertEquals("\u2399", ContextMenuIcon.Paste.toBreezeGlyph())
-        assertEquals("\u2611", ContextMenuIcon.SelectAll.toBreezeGlyph())
-        assertEquals("\u232B", ContextMenuIcon.Delete.toBreezeGlyph())
-        assertEquals("\u25A1", ContextMenuIcon.Folder.toBreezeGlyph())
-        assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").toBreezeGlyph())
+    fun `stock icons map to breeze vectors and sf symbols are ignored`() {
+        listOf(
+            ContextMenuIcon.Cut,
+            ContextMenuIcon.Copy,
+            ContextMenuIcon.Paste,
+            ContextMenuIcon.SelectAll,
+            ContextMenuIcon.Delete,
+            ContextMenuIcon.Folder,
+        ).forEach { icon ->
+            val vector = icon.toBreezeVector()!!
+            assertEquals("width of $icon", 16f, vector.defaultWidth.value, 0f)
+            assertEquals("height of $icon", 16f, vector.defaultHeight.value, 0f)
+            assertEquals("viewport width of $icon", 16f, vector.viewportWidth, 0f)
+            assertEquals("viewport height of $icon", 16f, vector.viewportHeight, 0f)
+        }
+        assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").toBreezeVector())
     }
 
     @Test
-    fun `linux flyout uses breeze on kde and adwaita otherwise`() {
+    fun `linux flyout uses breeze on qt desktops and adwaita on gtk`() {
         val theme = linuxContextMenuTheme()
-        if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
+        if (LinuxUiToolkit.Current == LinuxUiToolkit.Qt) {
             assertSame(BreezeMenuTheme, theme)
         } else {
             assertSame(AdwaitaMenuTheme, theme)

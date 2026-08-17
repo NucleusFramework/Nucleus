@@ -23,7 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -38,16 +38,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.paint
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.rememberPopupPositionProviderAtPosition
@@ -92,7 +99,13 @@ internal class ContextMenuFlyoutTheme(
     val shortcutAlpha: Float,
     val colors: (dark: Boolean) -> ContextMenuFlyoutColors,
     val glyph: (ContextMenuIcon) -> String?,
-)
+    val vector: (ContextMenuIcon) -> ImageVector? = { null },
+) {
+    internal fun hasIcon(icon: ContextMenuIcon?): Boolean {
+        if (icon == null) return false
+        return vector(icon) != null || glyph(icon) != null
+    }
+}
 
 @Composable
 internal fun ContextMenuFlyout(
@@ -130,11 +143,13 @@ private fun ContextMenuFlyoutSurface(
     val reserveIcon =
         theme.showIcons &&
             entries.any { entry ->
-                entry is ContextMenuEntry.Item && theme.glyph(entry.icon ?: return@any false) != null
+                entry is ContextMenuEntry.Item && theme.hasIcon(entry.icon)
             }
+    val maxWidth = theme.maxWidth.takeOrElse { 320.dp }
     Box(Modifier.padding(theme.shadowPad)) {
         Column(
             Modifier
+                .widthIn(min = theme.minWidth, max = maxWidth)
                 .shadow(
                     elevation = theme.shadowElevation,
                     shape = theme.menuShape,
@@ -142,7 +157,6 @@ private fun ContextMenuFlyoutSurface(
                     ambientColor = theme.ambientShadow,
                     spotColor = theme.spotShadow,
                 ).width(IntrinsicSize.Max)
-                .widthIn(min = theme.minWidth, max = theme.maxWidth)
                 .clip(theme.menuShape)
                 .border(1.dp, colors.border, theme.menuShape)
                 .background(colors.surface)
@@ -162,7 +176,7 @@ private fun ContextMenuFlyoutSurface(
                         ContextMenuFlyoutRow(
                             label = entry.label,
                             enabled = entry.enabled,
-                            icon = entry.icon?.let(theme.glyph),
+                            icon = entry.icon,
                             shortcut = entry.shortcut,
                             reserveIcon = reserveIcon,
                             chevron = false,
@@ -251,7 +265,7 @@ private fun ContextMenuFlyoutSubmenu(
 private fun ContextMenuFlyoutRow(
     label: String,
     enabled: Boolean,
-    icon: String?,
+    icon: ContextMenuIcon?,
     shortcut: String?,
     reserveIcon: Boolean,
     chevron: Boolean,
@@ -262,6 +276,7 @@ private fun ContextMenuFlyoutRow(
 ) {
     val hovered by interactionSource.collectIsHoveredAsState()
     val content = if (enabled) colors.text else colors.textDisabled
+    val iconSp = with(LocalDensity.current) { theme.iconSize.toSp() }
     Row(
         Modifier
             .fillMaxWidth()
@@ -279,19 +294,12 @@ private fun ContextMenuFlyoutRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (reserveIcon) {
-            if (icon != null) {
-                BasicText(
-                    text = icon,
-                    style =
-                        TextStyle(
-                            color = content,
-                            fontSize = 16.sp,
-                            fontFamily = theme.iconFont,
-                        ),
-                )
-            } else {
-                Spacer(Modifier.size(theme.iconSize))
-            }
+            ContextMenuFlyoutIcon(
+                icon = icon,
+                content = content,
+                iconSp = iconSp,
+                theme = theme,
+            )
             Spacer(Modifier.width(theme.iconGap))
         }
         BasicText(
@@ -331,5 +339,41 @@ private fun ContextMenuFlyoutRow(
                     ),
             )
         }
+    }
+}
+
+@Composable
+private fun ContextMenuFlyoutIcon(
+    icon: ContextMenuIcon?,
+    content: Color,
+    iconSp: TextUnit,
+    theme: ContextMenuFlyoutTheme,
+) {
+    val vector = icon?.let(theme.vector)
+    val glyph = icon?.let(theme.glyph)
+    val iconModifier = Modifier.requiredSize(theme.iconSize)
+    if (vector != null) {
+        Box(
+            iconModifier.paint(
+                painter = rememberVectorPainter(vector),
+                contentScale = ContentScale.Fit,
+                colorFilter = ColorFilter.tint(content),
+            ),
+        )
+    } else if (glyph != null) {
+        Box(iconModifier, contentAlignment = Alignment.Center) {
+            BasicText(
+                text = glyph,
+                style =
+                    TextStyle(
+                        color = content,
+                        fontSize = iconSp,
+                        fontFamily = theme.iconFont,
+                        textAlign = TextAlign.Center,
+                    ),
+            )
+        }
+    } else {
+        Spacer(iconModifier)
     }
 }

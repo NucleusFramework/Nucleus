@@ -85,6 +85,19 @@ public final class dev/nucleusframework/core/runtime/LinuxDesktopEnvironment$Com
 	public final fun getCurrent ()Ldev/nucleusframework/core/runtime/LinuxDesktopEnvironment;
 }
 
+public final class dev/nucleusframework/core/runtime/LinuxUiToolkit : java/lang/Enum {
+	public static final field Companion Ldev/nucleusframework/core/runtime/LinuxUiToolkit$Companion;
+	public static final field Gtk Ldev/nucleusframework/core/runtime/LinuxUiToolkit;
+	public static final field Qt Ldev/nucleusframework/core/runtime/LinuxUiToolkit;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/core/runtime/LinuxUiToolkit;
+	public static fun values ()[Ldev/nucleusframework/core/runtime/LinuxUiToolkit;
+}
+
+public final class dev/nucleusframework/core/runtime/LinuxUiToolkit$Companion {
+	public final fun getCurrent ()Ldev/nucleusframework/core/runtime/LinuxUiToolkit;
+}
+
 public final class dev/nucleusframework/core/runtime/NativeLibraryLoader {
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NativeLibraryLoader;
 	public final fun load (Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;)Z

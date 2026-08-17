@@ -7,8 +7,8 @@ import dev.nucleusframework.core.runtime.Platform
  * is active.
  *
  * Stock values (`Cut`, `Copy`, `Paste`, …) resolve to the OS glyph (SF Symbol
- * on macOS, Breeze Unicode glyphs on the KDE Compose flyout, Segoe Fluent
- * Icons on the Windows Compose flyout). Adwaita flyouts hide icons.
+ * on macOS, 16 dp Breeze vectors on the Qt/KDE Compose flyout, Segoe Fluent
+ * Icons on the Windows Compose flyout). Adwaita (GTK) flyouts hide icons.
  * [SfSymbol] is a raw macOS symbol name and is ignored on Windows / Linux.
  */
 public sealed class ContextMenuIcon {
