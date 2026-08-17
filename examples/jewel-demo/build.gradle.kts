@@ -97,16 +97,6 @@ tasks.withType<Test>().configureEach {
 
 nucleus.application {
     mainClass = "jewelsample.MainKt"
-    jvmArgs +=
-        listOf(
-            "--add-opens",
-            "java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-        )
-
     buildTypes {
         release {
             proguard {

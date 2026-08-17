@@ -18,6 +18,8 @@ internal val DEFAULT_RUNTIME_MODULES =
         "java.net.http",
         "jdk.accessibility",
         "jdk.crypto.ec",
+        // sun.misc.Unsafe — required by JNA, Jewel and many common libraries
+        "jdk.unsupported",
     )
 
 abstract class JvmApplicationDistributions : AbstractDistributions() {
