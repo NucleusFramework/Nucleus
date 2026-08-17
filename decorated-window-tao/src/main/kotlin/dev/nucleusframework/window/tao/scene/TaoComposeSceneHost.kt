@@ -250,11 +250,27 @@ internal class TaoComposeSceneHost(
     // under the cursor.
     //
     // Defensive contract: a Press received while already pressed first
-    // emits a Release at the last known position to close out the stale
-    // interaction, then emits the new Press. A Release received while not
-    // pressed is dropped (Compose would otherwise crash inside the input
-    // processor on a Release for an unknown pointer).
+    // emits a Release *of the stuck button* at the last known position to
+    // close out the stale interaction, then emits the new Press. A Release
+    // received while not pressed is dropped (Compose would otherwise crash
+    // inside the input processor on a Release for an unknown pointer).
+    //
+    // The stale state is not hypothetical: any native session that takes
+    // over event delivery mid-click swallows the matching MOUSE_UP. The
+    // canonical case is the native context menu — its tracking session eats
+    // the right-button up, `isPressed` latches true, and the *next* left
+    // Press used to close the stale interaction by releasing the *new*
+    // (left) button, which the scene never saw pressed. The scene's stream
+    // stayed unbalanced and every later click was misrouted until an
+    // accidental right-click re-synced it — observed as "the widget can't
+    // be dragged after opening its context menu". Hence [pressedButtonCode]:
+    // the synthetic Release must name the button that is actually stuck.
     private var isPressed: Boolean = false
+
+    // Tao button code of the Press that set [isPressed]; the synthetic
+    // Release in [onPointerButton] and [onFocusChanged] must release this
+    // button, not whichever button the new event carries.
+    private var pressedButtonCode: Int = 0
 
     // Set the first time we see a CursorMoved from Tao. Until then, any
     // button event is dropped — a real user click cannot occur without the
@@ -677,6 +693,22 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        if (!focused && isPressed) {
+            // Whatever stole focus mid-click (a native context-menu tracking
+            // session, a compositor drag) owns the pointer now and will eat
+            // the matching MOUSE_UP — it is never coming. Close the stale
+            // interaction here so the next Press hit-tests fresh instead of
+            // being misrouted along the stuck button's gesture (see
+            // [isPressed]).
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                position = Offset(lastPointerX, lastPointerY),
+                type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
+                button = mapButton(pressedButtonCode),
+            )
+            isPressed = false
+        }
     }
 
     /** Current scale factor (logical→physical multiplier). */
@@ -915,20 +947,22 @@ internal class TaoComposeSceneHost(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (pressed && isPressed) {
             // Stale "still-down" state — close it out before opening a new
-            // interaction so Compose hit-tests this Press fresh. See the
-            // comment on `isPressed` for the rationale.
+            // interaction so Compose hit-tests this Press fresh. Release the
+            // button that is actually stuck, not the one this event carries.
+            // See the comment on `isPressed` for the rationale.
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Release,
                 position = Offset(lastPointerX, lastPointerY),
                 type = PointerType.Mouse,
                 keyboardModifiers = currentKeyboardModifiers,
-                button = composeButton,
+                button = mapButton(pressedButtonCode),
             )
         } else if (!pressed && !isPressed) {
             // Stray Release without a matching Press — drop it.
             return
         }
         isPressed = pressed
+        if (pressed) pressedButtonCode = buttonCode
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
