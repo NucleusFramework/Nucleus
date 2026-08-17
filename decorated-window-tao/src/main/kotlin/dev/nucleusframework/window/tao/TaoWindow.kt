@@ -645,8 +645,20 @@ public class TaoWindow internal constructor(
      * watermarks or HUDs that must never intercept input.
      */
     public fun setIgnoreCursorEvents(ignore: Boolean) {
+        ignoreCursorEvents = ignore
         NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
     }
+
+    /**
+     * Last requested [setIgnoreCursorEvents] state, replayed by [show] — on
+     * Linux the GDK input region is bound to the `GdkWindow` alive when it is
+     * installed, and a window created hidden (every [DecoratedWindow], which
+     * shows only after the first paint) swaps it on the way to its first map.
+     * Windows and macOS keep the flag across the show, but replaying is a
+     * plain style/flag write there too, so it stays unconditional.
+     */
+    @Volatile
+    private var ignoreCursorEvents: Boolean = false
 
     /**
      * Shows the window on every desktop instead of only the one it was created
@@ -755,6 +767,10 @@ public class TaoWindow internal constructor(
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         NativeTaoBridge.nativeSetVisible(handle, true)
+        // Queued behind the show above (both ride the same event loop), so the
+        // click-through state lands on the mapped window — see
+        // [ignoreCursorEvents].
+        if (ignoreCursorEvents) NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, true)
     }
 
     public fun hide() {
