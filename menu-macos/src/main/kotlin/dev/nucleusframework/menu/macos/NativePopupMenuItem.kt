@@ -47,6 +47,14 @@ public val isNativePopupMenuAvailable: Boolean
  * chooses an item or dismisses the menu. No-op and returns `false` when the
  * native library is not loaded.
  *
+ * Do **not** call this on the UI thread of the Tao backend: from there the
+ * tracking loop opens inside tao's event callback, whose reentrancy guard
+ * suppresses every `MainEventsCleared` tick — Compose frames, animations and
+ * the `Dispatchers.Main` pump all freeze until the menu closes. Call from a
+ * background thread instead; the bridge marshals onto the AppKit main queue
+ * itself, so the menu still opens on the main thread but from a regular queue
+ * drain that leaves tao's run-loop observers firing.
+ *
  * @return `true` if the user selected an item, `false` if dismissed or
  *   unavailable.
  */
