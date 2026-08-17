@@ -55,6 +55,13 @@ import java.io.File
  * which the Tao backend resolves against the primary monitor's work area at
  * runtime.
  *
+ * **Linux**: an overlay like this needs X11 semantics — stacking
+ * (`alwaysOnTop`), programmatic positioning (`WindowPosition.Aligned`) and
+ * workspace stickiness are all absent from the Wayland protocol, and the Tao
+ * backend logs a warning for each. Run under XWayland
+ * (`NUCLEUS_TAO_LINUX_RENDERER=x11`) or give the overlay window its own X11
+ * surface while the rest of the app stays on Wayland.
+ *
  * The tray icon is fed as image *files* (the `iconPath` overload): the
  * composable-icon overloads render through a skiko `Image.encodeToData`
  * signature that no longer exists in the skiko shipped with Compose 1.12, and

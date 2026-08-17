@@ -144,8 +144,10 @@ public fun ApplicationScope.DecoratedWindow(
      * on (macOS Spaces, Linux workspaces, Windows virtual desktops). Reactive.
      *
      * macOS `NSWindowCollectionBehaviorCanJoinAllSpaces` / Linux
-     * `gtk_window_stick()`; no-op on Windows, where a [hiddenFromDock] window is
-     * already visible on all desktops (`WS_EX_TOOLWINDOW` windows are not
+     * `gtk_window_stick()` (X11 and XWayland only — native Wayland has no
+     * workspace protocol and logs a warning); no-op on Windows, where a
+     * [hiddenFromDock] window is already visible on all desktops
+     * (`WS_EX_TOOLWINDOW` windows are not
      * tracked by the Virtual Desktop Manager). Without it a macOS overlay
      * disappears as soon as the user switches Space.
      *

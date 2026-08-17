@@ -9,8 +9,10 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -630,6 +632,13 @@ public class TaoWindow internal constructor(
     }
 
     public fun setAlwaysOnTop(alwaysOnTop: Boolean) {
+        if (alwaysOnTop) {
+            warnIfNativeWayland(
+                "alwaysOnTop",
+                "Wayland has no client-side stacking protocol (xdg-shell exposes none and " +
+                    "Mutter rejects wlr-layer-shell), so gtk_window_set_keep_above is ignored.",
+            )
+        }
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
 
@@ -676,8 +685,42 @@ public class TaoWindow internal constructor(
      * not expose.
      */
     public fun setVisibleOnAllWorkspaces(visible: Boolean) {
+        if (visible) {
+            warnIfNativeWayland(
+                "visibleOnAllWorkspaces",
+                "Wayland has no client-side workspace protocol, so gtk_window_stick is ignored.",
+            )
+        }
         NativeTaoBridge.nativeSetVisibleOnAllWorkspaces(handle, visible)
     }
+
+    /**
+     * Logs once per window and per [feature] when this window's surface is a
+     * native Wayland one, where several window-management features are simply
+     * absent from the protocol. The check is per-window (the surface kind
+     * reported by the native side), not a process-wide env sniff.
+     */
+    private fun warnIfNativeWayland(
+        feature: String,
+        detail: String,
+    ) {
+        if (!isNativeWaylandSurface || !waylandWarnings.add(feature)) return
+        waylandLogger.warning(
+            "$feature has no effect on native Wayland: $detail " +
+                "Run with NUCLEUS_TAO_LINUX_RENDERER=x11 (XWayland) if the app needs it.",
+        )
+    }
+
+    /** `true` when this window is backed by a native Wayland surface. */
+    private val isNativeWaylandSurface: Boolean
+        get() {
+            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
+            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
+            return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
+        }
+
+    /** Features already reported through [warnIfNativeWayland] for this window. */
+    private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
 
     /** Logical pixels. Pass `null` to clear the minimum. */
     public fun setMinimumSize(
@@ -1066,6 +1109,8 @@ public class TaoWindow internal constructor(
 
         /** `nativeLinuxHandles` slot 0: 1 = Xlib, 2 = Wayland. */
         const val WAYLAND_HANDLE_KIND: Long = 2L
+
+        val waylandLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.wayland")
     }
 }
 

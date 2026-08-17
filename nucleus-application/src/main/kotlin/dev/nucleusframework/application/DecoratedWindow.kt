@@ -74,7 +74,8 @@ public fun NucleusApplicationScope.DecoratedWindow(
     clickThrough: Boolean = false,
     // Show the window on every desktop instead of only the one it was created
     // on — macOS Spaces (`NSWindowCollectionBehaviorCanJoinAllSpaces`), Linux
-    // workspaces (`gtk_window_stick`, X11/XWayland). No-op on Windows, where a
+    // workspaces (`gtk_window_stick`, X11/XWayland only — native Wayland has no
+    // workspace protocol and logs a warning). No-op on Windows, where a
     // [hiddenFromDock] window already shows on every virtual desktop. Reactive.
     // Honoured by the Tao backend; the AWT backend ignores it.
     visibleOnAllWorkspaces: Boolean = false,
