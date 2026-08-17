@@ -33,6 +33,11 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // Fully borderless window (no macOS traffic lights) — for overlay/ghost windows.
     // Honoured by the Tao backend; the AWT backend currently ignores it.
     undecorated: Boolean = false,
+    // Full-window per-pixel transparency: pixels the content leaves at alpha 0
+    // show the desktop behind the window (#416). Creation-time only — cannot
+    // change after the native window exists. Typically combined with
+    // [undecorated]. Honoured by the Tao backend; the AWT backend ignores it.
+    transparent: Boolean = false,
     // Linux/Tao only: make this window a popup overlay of [popupFor]. On
     // Wayland it maps as a wl_subsurface of the parent — the only window kind
     // a client can freely position under xdg-shell (coordinates are
@@ -107,6 +112,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
+                transparent = transparent,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
                 nativeContextMenu = nativeContextMenu,
@@ -142,6 +148,7 @@ public fun DecoratedWindow(
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
     undecorated: Boolean = false,
+    transparent: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
     nativeContextMenu: Boolean = false,
@@ -162,6 +169,7 @@ public fun DecoratedWindow(
         focusable = focusable,
         alwaysOnTop = alwaysOnTop,
         undecorated = undecorated,
+        transparent = transparent,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
         nativeContextMenu = nativeContextMenu,
