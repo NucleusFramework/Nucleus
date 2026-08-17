@@ -65,15 +65,6 @@ public fun ApplicationScope.DecoratedWindow(
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
-    /**
-     * Click-through window: every pointer event falls through to whatever
-     * sits below (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
-     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
-     * Linux). Reactive — can be toggled at runtime. Pair with
-     * `focusable = false` for passive overlays (watermarks, HUDs) that must
-     * never intercept input.
-     */
-    clickThrough: Boolean = false,
     isDialog: Boolean = false,
     /**
      * Fully borderless window — for overlays/ghosts (drag previews, HUDs).
@@ -139,6 +130,29 @@ public fun ApplicationScope.DecoratedWindow(
     // the first composition (see [openDecoratedWindow]). Defaults to null for
     // top-level windows; [DecoratedDialog] forwards its parent's locals here.
     compositionLocalContext: CompositionLocalContext? = null,
+    /**
+     * Click-through window: every pointer event falls through to whatever
+     * sits below (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
+     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
+     * Linux). Reactive — can be toggled at runtime. Pair with
+     * `focusable = false` for passive overlays (watermarks, HUDs) that must
+     * never intercept input.
+     */
+    clickThrough: Boolean = false,
+    /**
+     * Show the window on every desktop rather than only the one it was created
+     * on (macOS Spaces, Linux workspaces, Windows virtual desktops). Reactive.
+     *
+     * macOS `NSWindowCollectionBehaviorCanJoinAllSpaces` / Linux
+     * `gtk_window_stick()`; no-op on Windows, where a [hiddenFromDock] window is
+     * already visible on all desktops (`WS_EX_TOOLWINDOW` windows are not
+     * tracked by the Virtual Desktop Manager). Without it a macOS overlay
+     * disappears as soon as the user switches Space.
+     *
+     * See [TaoWindow.setVisibleOnAllWorkspaces] for the full-screen Space
+     * caveat.
+     */
+    visibleOnAllWorkspaces: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -425,6 +439,9 @@ public fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }
     LaunchedEffect(window, clickThrough) { window.setIgnoreCursorEvents(clickThrough) }
+    LaunchedEffect(window, visibleOnAllWorkspaces) {
+        window.setVisibleOnAllWorkspaces(visibleOnAllWorkspaces)
+    }
     LaunchedEffect(window, visible) {
         if (visible) {
             window.show()

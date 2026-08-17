@@ -648,6 +648,25 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
     }
 
+    /**
+     * Shows the window on every desktop instead of only the one it was created
+     * on — macOS `NSWindowCollectionBehaviorCanJoinAllSpaces`, Linux
+     * `gtk_window_stick()` (X11/XWayland; native Wayland has no such
+     * protocol).
+     *
+     * No-op on Windows, which needs none: a window excluded from the taskbar
+     * (`hiddenFromDock`, i.e. `WS_EX_TOOLWINDOW`) is not tracked by the Virtual
+     * Desktop Manager and is already visible on all desktops.
+     *
+     * macOS caveat: this joins every regular Space. Floating above *another*
+     * app's full-screen Space additionally needs a window level above
+     * `NSFloatingWindowLevel` (what [setAlwaysOnTop] maps to), which Tao does
+     * not expose.
+     */
+    public fun setVisibleOnAllWorkspaces(visible: Boolean) {
+        NativeTaoBridge.nativeSetVisibleOnAllWorkspaces(handle, visible)
+    }
+
     /** Logical pixels. Pass `null` to clear the minimum. */
     public fun setMinimumSize(
         widthDp: Double?,

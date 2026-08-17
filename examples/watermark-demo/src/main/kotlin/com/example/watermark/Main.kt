@@ -46,9 +46,11 @@ import java.io.File
  * watermark pill — everything else shows the desktop through.
  *
  * The app has no Dock/taskbar presence (`hiddenFromDock`), never takes focus
- * (`focusable = false`) and lets every click fall through to whatever sits
- * underneath (`clickThrough`); it is controlled entirely from its tray icon
- * (ComposeNativeTray): pick the corner the watermark is pinned to, or quit.
+ * (`focusable = false`), lets every click fall through to whatever sits
+ * underneath (`clickThrough`) and stays on screen across desktops /
+ * macOS Spaces (`visibleOnAllWorkspaces`); it is controlled entirely from its
+ * tray icon (ComposeNativeTray): pick the corner the watermark is pinned to,
+ * or quit.
  * Corner changes go through `WindowState.position = WindowPosition.Aligned(...)`,
  * which the Tao backend resolves against the primary monitor's work area at
  * runtime.
@@ -112,10 +114,14 @@ fun main(args: Array<String>) =
             undecorated = true,
             transparent = true,
             hiddenFromDock = true,
+            focusable = false,
             // A watermark must never get in the way: clicks fall through to
             // whatever is underneath and the window never takes focus.
             clickThrough = true,
-            focusable = false,
+            // …and it follows the user across desktops. macOS/Linux need this
+            // explicitly; on Windows a taskbar-excluded window already shows on
+            // every virtual desktop.
+            visibleOnAllWorkspaces = true,
         ) {
             AnimatedWatermark()
         }

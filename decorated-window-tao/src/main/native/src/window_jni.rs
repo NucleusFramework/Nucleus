@@ -399,6 +399,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetVisibleOnAllWorkspaces(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    visible: jboolean,
+) {
+    send_user_event(UserEvent::SetVisibleOnAllWorkspaces {
+        handle: handle as u64,
+        visible: visible != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMinInnerSize(
     _env: JNIEnv,
     _class: JClass,

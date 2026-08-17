@@ -326,6 +326,10 @@ pub(crate) enum UserEvent {
         handle: u64,
         ignore: bool,
     },
+    SetVisibleOnAllWorkspaces {
+        handle: u64,
+        visible: bool,
+    },
     Focus {
         handle: u64,
     },

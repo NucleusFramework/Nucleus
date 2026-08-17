@@ -498,6 +498,21 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetVisibleOnAllWorkspaces { handle, visible } => {
+                    // macOS: NSWindowCollectionBehaviorCanJoinAllSpaces — an
+                    // NSWindow otherwise stays bound to the Space it was created
+                    // in, so an overlay vanishes the moment the user switches
+                    // desktop. Linux: gtk_window_stick(). Windows: tao no-op,
+                    // and none is needed — a taskbar-excluded (WS_EX_TOOLWINDOW)
+                    // window is not tracked by the Virtual Desktop Manager and
+                    // therefore already shows on every desktop.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_visible_on_all_workspaces(visible);
+                        }
+                    }
+                }
                 UserEvent::Focus { handle } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
