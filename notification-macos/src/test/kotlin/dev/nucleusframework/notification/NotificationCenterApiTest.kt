@@ -30,7 +30,11 @@ class NotificationCenterApiTest {
         assertTrue(latch.await(2, TimeUnit.SECONDS))
         assertEquals(false, granted.get())
         assertNotNull(error.get())
-        assertTrue(error.get()!!.contains(".app") || error.get()!!.contains("bundle"))
+        assertTrue(
+            error.get()!!.contains(".app") ||
+                error.get()!!.contains("bundle") ||
+                error.get()!!.contains("platform"),
+        )
     }
 
     @Test

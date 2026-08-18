@@ -1,6 +1,7 @@
 package dev.nucleusframework.window
 
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.utils.linux.LinuxButtonLayoutObserver
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,6 +13,18 @@ class NativeLayoutDirectionBridgeTest {
         val direction = nativeSystemLayoutDirection()
         assertTrue(direction == LayoutDirection.Ltr || direction == LayoutDirection.Rtl)
         assertEquals(direction, nativeSystemLayoutDirection())
+    }
+
+    @Test
+    fun `linux native layout queries are safe to call`() {
+        if (!System.getProperty("os.name").contains("Linux", ignoreCase = true)) return
+        val rtl = runCatching { NativeLayoutDirectionBridge.nativeIsRTL() }.getOrNull()
+        if (rtl != null) {
+            assertEquals(rtl, NativeLayoutDirectionBridge.nativeIsRTL())
+        }
+        runCatching { NativeLayoutDirectionBridge.nativeGetButtonLayout() }
+        LinuxButtonLayoutObserver.registerListener { }
+        LinuxButtonLayoutObserver.removeListener { }
     }
 
     @Test

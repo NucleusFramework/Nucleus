@@ -187,9 +187,11 @@ Java_dev_nucleusframework_energymanager_linux_NativeLinuxEnergyBridge_nativeDisa
     (void)env; (void)clazz;
     int first_error = 0;
 
-    /* 1. CPU nice reset to 0 */
+    /* 1. CPU nice reset to 0 — may fail with EACCES without CAP_SYS_NICE,
+     *    which is expected: unprivileged processes cannot lower their
+     *    nice value once raised. Matches disableLight / disableThread. */
     errno = 0;
-    if (setpriority(PRIO_PROCESS, 0, 0) != 0) {
+    if (setpriority(PRIO_PROCESS, 0, 0) != 0 && errno != EACCES) {
         first_error = errno;
     }
 

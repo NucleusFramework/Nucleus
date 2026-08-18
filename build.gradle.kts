@@ -257,10 +257,12 @@ tasks.register("preMerge") {
 }
 
 // Aggregated coverage for every published runtime module. The 75% floor is
-// line coverage of *application* code. The only exclusions are generated
-// catalogues: SF Symbols, Freedesktop names, and CSD title-bar ImageVectors
-// (path data, no branching). Do not add production packages here to hit 75%
-// — write tests. GraalVM @TargetClass substitutions stay IN the report.
+// the *union* of line coverage across Linux + macOS + Windows — one OS
+// cannot hit it, because each backend's JNI sits in the same denominator.
+// Local `check` / `preMerge` therefore do not run koverVerify. CI downloads
+// each OS's `koverBinaryReport` into build/kover/cross-os/ and runs
+// koverVerify on the merged report. Do not add production-package excludes
+// to hit 75% — write tests. GraalVM @TargetClass substitutions stay IN.
 kover {
     reports {
         filters {
@@ -278,6 +280,12 @@ kover {
             }
         }
         total {
+            // Single-OS `check` must stay green. The 75% rule is enforced by
+            // the CI `coverage-verify` job, which calls `koverVerify` after
+            // merging the three OS binary reports.
+            verify {
+                onCheck = false
+            }
             html {
                 title = "Nucleus published runtime"
                 htmlDir.set(layout.buildDirectory.dir("reports/kover/html"))
@@ -289,12 +297,25 @@ kover {
                 header = "Nucleus published runtime line coverage"
                 format = "<entity> line coverage: <value>%"
             }
+            binary {
+                file.set(layout.buildDirectory.file("reports/kover/report.bin"))
+            }
             // Merged when :decorated-window-tao:taoHeadfulTest has been run
             // (Kover agent on the JavaExec). A missing/empty file is skipped
             // so a clean checkout can still produce a unit-test-only report.
             val headfulIc = file("decorated-window-tao/build/kover/bin-reports/taoHeadful.ic")
             if (headfulIc.isFile && headfulIc.length() > 0L) {
                 additionalBinaryReports.add(headfulIc)
+            }
+            // CI drops each OS's koverBinaryReport here before koverVerify.
+            // Configuration-time listing is enough: the files exist before
+            // Gradle starts on the merge job.
+            val crossOsDir = file("build/kover/cross-os")
+            if (crossOsDir.isDirectory) {
+                crossOsDir
+                    .walkTopDown()
+                    .filter { it.isFile && (it.extension == "ic" || it.extension == "bin") && it.length() > 0L }
+                    .forEach { additionalBinaryReports.add(it) }
             }
         }
     }

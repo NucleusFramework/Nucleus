@@ -64,9 +64,14 @@ class WindowChromeKotlinTest {
 
     @Test
     fun `kde padding is zero off kde`() {
-        assertTrue(LinuxDesktopEnvironment.Current != LinuxDesktopEnvironment.KDE)
         val padding = kdePaddingForButtonLayout()
-        assertEquals(PaddingValues(0.dp), padding)
+        if (LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE) {
+            assertTrue(
+                padding == PaddingValues(start = 4.dp) || padding == PaddingValues(end = 4.dp),
+            )
+        } else {
+            assertEquals(PaddingValues(0.dp), padding)
+        }
     }
 
     @Test

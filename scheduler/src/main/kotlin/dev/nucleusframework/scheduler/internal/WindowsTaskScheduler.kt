@@ -161,7 +161,10 @@ internal object WindowsTaskScheduler : PlatformScheduler {
         )
     }
 
-    override fun getAllTasks(): List<TaskInfo> = getAllTaskIds().mapNotNull { getTaskInfo(it) }
+    override fun getAllTasks(): List<TaskInfo> {
+        if (!isAvailable) return emptyList()
+        return getAllTaskIds().mapNotNull { getTaskInfo(it) }
+    }
 
     // -- Retry support --------------------------------------------------------
 

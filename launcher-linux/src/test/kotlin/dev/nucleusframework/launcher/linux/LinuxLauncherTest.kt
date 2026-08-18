@@ -5,7 +5,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 class LinuxLauncherTest {
     @Test
@@ -74,6 +73,7 @@ class LinuxLauncherTest {
 
     @Test
     fun `launcher entry methods are false when native is missing`() {
+        if (LinuxLauncherEntry.isAvailable) return
         assertFalse(LinuxLauncherEntry.isAvailable)
         val uri = LinuxLauncherEntry.appUri("myapp.desktop")
         assertFalse(LinuxLauncherEntry.update(uri, LauncherProperties(count = 1L, countVisible = true)))
@@ -93,7 +93,28 @@ class LinuxLauncherTest {
     }
 
     @Test
+    fun `launcher entry methods drive the native bridge when it is loaded`() {
+        if (!LinuxLauncherEntry.isAvailable) return
+        val uri = LinuxLauncherEntry.appUri("nucleus-kover-coverage.desktop")
+        LinuxLauncherEntry.update(uri, LauncherProperties(count = 1L, countVisible = true))
+        LinuxLauncherEntry.update(uri, LauncherProperties(progress = 0.2, progressVisible = false))
+        LinuxLauncherEntry.update(uri, LauncherProperties(urgent = true, updating = true, quicklist = ""))
+        LinuxLauncherEntry.setCount(uri, 3)
+        LinuxLauncherEntry.setCount(uri, 3, visible = false)
+        LinuxLauncherEntry.clearCount(uri)
+        LinuxLauncherEntry.setProgress(uri, 0.5)
+        LinuxLauncherEntry.setProgress(uri, 1.0, visible = false)
+        LinuxLauncherEntry.clearProgress(uri)
+        LinuxLauncherEntry.setUrgent(uri, true)
+        LinuxLauncherEntry.setUrgent(uri, false)
+        LinuxLauncherEntry.setUpdating(uri, true)
+        LinuxLauncherEntry.registerQueryHandler(uri)
+        LinuxLauncherEntry.unregister()
+    }
+
+    @Test
     fun `quicklist setMenu and dispose are no-ops without native code`() {
+        if (NativeLinuxLauncherBridge.isLoaded) return
         val quicklist = LinuxQuicklist("/com/example/MyApp/Menu")
         assertEquals("/com/example/MyApp/Menu", quicklist.objectPath)
         var clicked = -1

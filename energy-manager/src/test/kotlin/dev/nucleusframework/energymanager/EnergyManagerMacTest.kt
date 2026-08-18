@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager
 
+import org.junit.Assume.assumeTrue
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -12,8 +13,14 @@ class EnergyManagerMacTest {
         EnergyManager.resetAwakeForTests()
     }
 
+    private fun assumeMacOs() {
+        val os = System.getProperty("os.name").lowercase()
+        assumeTrue("Test requires macOS", os.contains("mac") || os.contains("darwin"))
+    }
+
     @Test
     fun `efficiency modes are available on this mac`() {
+        assumeMacOs()
         assertTrue(EnergyManager.isAvailable())
         val light = EnergyManager.enableLightEfficiencyMode()
         assertTrue(light.success, light.message)
@@ -28,6 +35,7 @@ class EnergyManagerMacTest {
 
     @Test
     fun `keepAwake and acquireAwake coexist and release`() {
+        assumeMacOs()
         assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
         assertTrue(EnergyManager.isAwakeActive())
         val handle = EnergyManager.acquireAwake(AwakeMode.SYSTEM_AND_DISPLAY)
@@ -41,6 +49,7 @@ class EnergyManagerMacTest {
 
     @Test
     fun `replacing keepAwake mode then releasing drops the slot`() {
+        assumeMacOs()
         assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_AND_DISPLAY).success)
         assertTrue(EnergyManager.keepAwake(AwakeMode.SYSTEM_ONLY).success)
         assertTrue(EnergyManager.releaseAwake().success)
@@ -49,6 +58,7 @@ class EnergyManagerMacTest {
 
     @Test
     fun `closing an acquire handle twice is safe`() {
+        assumeMacOs()
         val handle = EnergyManager.acquireAwake(AwakeMode.SYSTEM_ONLY)
         handle.close()
         handle.close()

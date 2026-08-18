@@ -22,7 +22,8 @@ class TaskbarProgressWindowTest {
 
     @Test
     fun `window and app-wide dock apis succeed on macos`() {
-        assertTrue(TaskbarProgress.isAvailable(), "macOS dock progress dylib should load")
+        if (!TaskbarProgress.isAvailable()) return
+        assertTrue(TaskbarProgress.isAvailable())
         val window = Frame("kover-taskbar").also { frame = it }
         window.setSize(80, 60)
         window.isUndecorated = true

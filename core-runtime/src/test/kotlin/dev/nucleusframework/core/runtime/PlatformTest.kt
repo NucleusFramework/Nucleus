@@ -7,19 +7,29 @@ import org.junit.Test
 
 class PlatformTest {
     @Test
-    fun `current platform is MacOS on this host`() {
+    fun `current platform matches the host os family`() {
         val os = System.getProperty("os.name", "")
-        if (!os.contains("mac", ignoreCase = true) && !os.contains("darwin", ignoreCase = true)) {
-            return
+        when {
+            os.contains("mac", ignoreCase = true) || os.contains("darwin", ignoreCase = true) ->
+                assertEquals(Platform.MacOS, Platform.Current)
+            os.contains("linux", ignoreCase = true) ->
+                assertEquals(Platform.Linux, Platform.Current)
+            os.contains("win", ignoreCase = true) ->
+                assertEquals(Platform.Windows, Platform.Current)
+            else -> assertEquals(Platform.Unknown, Platform.Current)
         }
-        assertEquals(Platform.MacOS, Platform.Current)
     }
 
     @Test
-    fun `wayland is false on non-linux hosts`() {
+    fun `wayland is false on non-linux hosts and follows session env on linux`() {
         if (Platform.Current != Platform.Linux) {
             assertFalse(Platform.isWayland)
+            return
         }
+        val wayland =
+            System.getenv("XDG_SESSION_TYPE") == "wayland" ||
+                System.getenv("WAYLAND_DISPLAY") != null
+        assertEquals(wayland, Platform.isWayland)
     }
 
     @Test

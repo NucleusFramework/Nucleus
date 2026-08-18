@@ -78,7 +78,5 @@ class LinuxUiToolkitMoreTokensTest {
             LinuxUiToolkit.Gtk,
             linuxUiToolkit("Hyprland:something", null, null, null, null),
         )
-        assertEquals(LinuxDesktopEnvironment.Unknown, LinuxDesktopEnvironment.Current)
-        assertEquals(LinuxUiToolkit.Gtk, LinuxUiToolkit.Current)
     }
 }

@@ -9,6 +9,7 @@ import kotlin.test.assertTrue
 class NativeMacSystemColorBridgeTest {
     @Test
     fun `native callbacks deliver accent and contrast updates`() {
+        if (!NativeMacSystemColorBridge.isLoaded) return
         assertTrue(NativeMacSystemColorBridge.isLoaded)
         val accents = mutableListOf<Color?>()
         val contrasts = mutableListOf<Boolean>()

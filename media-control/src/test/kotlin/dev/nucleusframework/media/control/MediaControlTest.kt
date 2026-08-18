@@ -1,6 +1,9 @@
 package dev.nucleusframework.media.control
 
+import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.media.control.linux.NativeLinuxBridge
 import dev.nucleusframework.media.control.macos.NativeMacOsBridge
+import dev.nucleusframework.media.control.windows.NativeWindowsBridge
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
@@ -78,14 +81,17 @@ class MediaControlTest {
         val received = AtomicReference<MediaControlEvent?>(null)
         MediaControlService.attach { }
         try {
-            fun expect(json: String, expected: MediaControlEvent) {
+            fun expect(
+                json: String,
+                expected: MediaControlEvent,
+            ) {
                 received.set(null)
                 val next = CountDownLatch(1)
                 MediaControlService.attach { event ->
                     received.set(event)
                     next.countDown()
                 }
-                NativeMacOsBridge.onMediaControlEvent(json)
+                fireNativeEvent(json)
                 assertTrue(next.await(3, TimeUnit.SECONDS), "timed out for $json")
                 assertEquals(expected, received.get())
             }
@@ -105,16 +111,25 @@ class MediaControlTest {
 
             val ignored = CountDownLatch(1)
             received.set(MediaControlEvent.Play)
-            NativeMacOsBridge.onMediaControlEvent("not-json")
-            NativeMacOsBridge.onMediaControlEvent("""{"type":"unknown"}""")
-            NativeMacOsBridge.onMediaControlEvent("""{"type":"seek"}""")
-            NativeMacOsBridge.onMediaControlEvent("""{"type":"set_position"}""")
-            NativeMacOsBridge.onMediaControlEvent("""{"type":"set_volume"}""")
-            NativeMacOsBridge.onMediaControlEvent("""{"type":"open_uri"}""")
+            fireNativeEvent("not-json")
+            fireNativeEvent("""{"type":"unknown"}""")
+            fireNativeEvent("""{"type":"seek"}""")
+            fireNativeEvent("""{"type":"set_position"}""")
+            fireNativeEvent("""{"type":"set_volume"}""")
+            fireNativeEvent("""{"type":"open_uri"}""")
             assertFalse(ignored.await(150, TimeUnit.MILLISECONDS))
             assertEquals(MediaControlEvent.Play, received.get())
         } finally {
             MediaControlService.detach()
+        }
+    }
+
+    private fun fireNativeEvent(json: String) {
+        when (Platform.Current) {
+            Platform.Linux -> NativeLinuxBridge.onMediaControlEvent(json)
+            Platform.MacOS -> NativeMacOsBridge.onMediaControlEvent(json)
+            Platform.Windows -> NativeWindowsBridge.onMediaControlEvent(json)
+            else -> Unit
         }
     }
 }

@@ -1,5 +1,6 @@
 package dev.nucleusframework.globalhotkey
 
+import dev.nucleusframework.core.runtime.Platform
 import java.awt.event.KeyEvent
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -77,8 +78,21 @@ class GlobalHotKeyManagerTest {
         }
 
         val media = GlobalHotKeyManager.register(MediaKey.PLAY_PAUSE) { _, _ -> }
-        assertEquals(-1L, media)
-        assertEquals("Media keys are not supported on macOS", GlobalHotKeyManager.lastError)
+        when (Platform.Current) {
+            Platform.MacOS -> {
+                assertEquals(-1L, media)
+                assertEquals("Media keys are not supported on macOS", GlobalHotKeyManager.lastError)
+            }
+            Platform.Linux -> {
+                if (media != -1L) {
+                    assertTrue(media > 0L)
+                    assertTrue(GlobalHotKeyManager.unregister(media))
+                } else {
+                    assertTrue(GlobalHotKeyManager.lastError != null)
+                }
+            }
+            else -> assertEquals(-1L, media)
+        }
 
         assertTrue(GlobalHotKeyManager.commitRegistrations())
         assertNull(GlobalHotKeyManager.portalShortcutId(1L))

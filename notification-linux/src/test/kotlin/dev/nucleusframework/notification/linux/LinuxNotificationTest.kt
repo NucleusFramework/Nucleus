@@ -143,6 +143,7 @@ class LinuxNotificationTest {
 
     @Test
     fun `center is a no-op when the native library is missing`() {
+        if (LinuxNotificationCenter.isAvailable) return
         assertFalse(LinuxNotificationCenter.isAvailable)
         val id =
             LinuxNotificationCenter.notify(

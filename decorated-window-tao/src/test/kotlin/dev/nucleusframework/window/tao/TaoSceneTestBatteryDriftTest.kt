@@ -79,6 +79,10 @@ class TaoSceneTestBatteryDriftTest {
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
+                "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
+            XdgPortalParentTest::class.java to
+                "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =

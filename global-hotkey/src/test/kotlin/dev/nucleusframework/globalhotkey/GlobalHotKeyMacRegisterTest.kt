@@ -18,6 +18,8 @@ class GlobalHotKeyMacRegisterTest {
 
     @Test
     fun `macos initialize registers and unregisters several keys`() {
+        val os = System.getProperty("os.name").lowercase()
+        if (!os.contains("mac") && !os.contains("darwin")) return
         assertTrue(GlobalHotKeyManager.isAvailable)
         assertTrue(GlobalHotKeyManager.initialize())
         val first =

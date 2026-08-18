@@ -59,8 +59,47 @@ class LinuxButtonLayoutParseTest {
     @Test
     fun `readSystem falls back to default off gnome`() {
         val system = LinuxButtonLayout.readSystem()
-        assertEquals(LinuxButtonLayout.Default, system)
-        assertTrue(system.controlsOnRight)
-        assertEquals(3, system.buttons.size)
+        assertTrue(system.hasClose)
+        assertTrue(system.buttons.isNotEmpty())
+        if (system == LinuxButtonLayout.Default) {
+            assertTrue(system.controlsOnRight)
+            assertEquals(3, system.buttons.size)
+        }
+    }
+
+    @Test
+    fun `empty and colon-only layouts keep close on the right`() {
+        val empty = LinuxButtonLayout.parse("")
+        assertTrue(empty.controlsOnRight)
+        assertTrue(empty.buttons.isEmpty())
+        assertFalse(empty.hasClose)
+
+        val colon = LinuxButtonLayout.parse(":")
+        assertTrue(colon.controlsOnRight)
+        assertTrue(colon.buttons.isEmpty())
+
+        val appmenu = LinuxButtonLayout.parse("appmenu:")
+        assertTrue(appmenu.controlsOnRight)
+        assertTrue(appmenu.buttons.isEmpty())
+    }
+
+    @Test
+    fun `whitespace around tokens is ignored`() {
+        val layout = LinuxButtonLayout.parse("  close , minimize  :")
+        assertFalse(layout.controlsOnRight)
+        assertEquals(
+            listOf(LinuxTitleBarButton.CLOSE, LinuxTitleBarButton.MINIMIZE),
+            layout.buttons,
+        )
+    }
+
+    @Test
+    fun `close on the right wins when both sides list it`() {
+        val layout = LinuxButtonLayout.parse("close:minimize,close")
+        assertTrue(layout.controlsOnRight)
+        assertEquals(
+            listOf(LinuxTitleBarButton.CLOSE, LinuxTitleBarButton.MINIMIZE),
+            layout.buttons,
+        )
     }
 }
