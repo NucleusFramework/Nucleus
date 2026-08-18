@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.binaryCompatibilityValidator)
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.kover)
     alias(libs.plugins.versionCheck)
 }
 
@@ -100,6 +101,19 @@ subprojects {
                 .get()
                 .pluginId,
         )
+    }
+
+    if (!isDemoProject) {
+        // Library modules only. Examples stay out of the aggregated report so
+        // demo UI does not dilute (or inflate) published-runtime coverage.
+        pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
     }
 
     ktlint {
@@ -240,6 +254,50 @@ tasks.register("preMerge") {
     dependsOn(":examples:nucleus-demo:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
+}
+
+// Aggregated coverage for every published runtime module. The 75% floor is
+// line coverage of *application* code. The only exclusions are generated
+// catalogues: SF Symbols, Freedesktop names, and CSD title-bar ImageVectors
+// (path data, no branching). Do not add production packages here to hit 75%
+// — write tests. GraalVM @TargetClass substitutions stay IN the report.
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "dev.nucleusframework.sfsymbols.*",
+                    "dev.nucleusframework.freedesktop.icons.*",
+                    "dev.nucleusframework.window.icons.*",
+                )
+            }
+        }
+        verify {
+            rule("published-runtime-line-coverage") {
+                minBound(75)
+            }
+        }
+        total {
+            html {
+                title = "Nucleus published runtime"
+                htmlDir.set(layout.buildDirectory.dir("reports/kover/html"))
+            }
+            xml {
+                xmlFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
+            }
+            log {
+                header = "Nucleus published runtime line coverage"
+                format = "<entity> line coverage: <value>%"
+            }
+            // Merged when :decorated-window-tao:taoHeadfulTest has been run
+            // (Kover agent on the JavaExec). A missing/empty file is skipped
+            // so a clean checkout can still produce a unit-test-only report.
+            val headfulIc = file("decorated-window-tao/build/kover/bin-reports/taoHeadful.ic")
+            if (headfulIc.isFile && headfulIc.length() > 0L) {
+                additionalBinaryReports.add(headfulIc)
+            }
+        }
+    }
 }
 
 tasks.wrapper {

@@ -19,6 +19,7 @@ dependencies {
     implementation(project(":core-runtime"))
     api(project(":sf-symbols"))
     api(libs.compose.desktop.common)
+    testImplementation(kotlin("test"))
 }
 
 java {

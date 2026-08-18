@@ -19,6 +19,8 @@ dependencies {
     implementation(project(":core-runtime"))
     api(libs.compose.foundation)
     testImplementation(kotlin("test"))
+    testImplementation(compose.desktop.currentOs)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 // ---------- Native JNI builds ----------

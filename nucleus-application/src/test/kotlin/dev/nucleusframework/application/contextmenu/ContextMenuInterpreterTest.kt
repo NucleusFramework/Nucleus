@@ -7,8 +7,11 @@ import androidx.compose.foundation.text.TextContextMenu
 import androidx.compose.ui.text.AnnotatedString
 import dev.nucleusframework.core.runtime.LinuxUiToolkit
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.menu.macos.NativePopupMenuItem
 import dev.nucleusframework.menu.macos.NsMenuItemImage
+import dev.nucleusframework.menu.macos.isNativePopupMenuAvailable
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -249,6 +252,46 @@ class ContextMenuInterpreterTest {
         assertEquals(expectedPrimaryShortcut("C"), (interpreted[1] as ContextMenuEntry.Item).shortcut)
         assertEquals(expectedPrimaryShortcut("V"), (interpreted[2] as ContextMenuEntry.Item).shortcut)
         assertEquals(expectedPrimaryShortcut("A"), (interpreted[3] as ContextMenuEntry.Item).shortcut)
+    }
+
+    @Test
+    fun `entries convert to native mac popup items`() {
+        var clicks = 0
+        val item =
+            ContextMenuEntry.Item(
+                label = "Delete",
+                enabled = false,
+                icon = ContextMenuIcon.Delete,
+                onClick = { clicks++ },
+                shortcut = "⌘⌫",
+            )
+        val popup = item.toMacPopupItem() as NativePopupMenuItem.Entry
+        assertEquals("Delete", popup.title)
+        assertFalse(popup.enabled)
+        assertEquals("trash", (popup.icon as NsMenuItemImage.SystemSymbol).name)
+        popup.onClick()
+        assertEquals(1, clicks)
+
+        assertSame(NativePopupMenuItem.Separator, ContextMenuEntry.Separator.toMacPopupItem())
+
+        val submenu =
+            ContextMenuEntry.Submenu(
+                label = "More",
+                items = listOf(item, ContextMenuEntry.Separator, row("Nested")),
+            ).toMacPopupItem() as NativePopupMenuItem.Submenu
+        assertEquals("More", submenu.title)
+        assertEquals(3, submenu.items.size)
+        assertTrue(submenu.items[1] === NativePopupMenuItem.Separator)
+        assertNull(ContextMenuIcon.SelectAll.toNsMenuItemImage())
+        assertEquals("trash", symbolName(ContextMenuIcon.Delete))
+        assertEquals(isNativeContextMenuSupported, Platform.Current != Platform.MacOS || isNativePopupMenuAvailable)
+    }
+
+    @Test
+    fun `stock shortcuts are null for delete folder and raw symbols`() {
+        assertNull(ContextMenuIcon.Delete.stockShortcut())
+        assertNull(ContextMenuIcon.Folder.stockShortcut())
+        assertNull(ContextMenuIcon.SfSymbol("square.and.arrow.up").stockShortcut())
     }
 }
 

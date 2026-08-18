@@ -26,6 +26,7 @@ configurations {
 dependencies {
     implementation(project(":core-runtime"))
     add("reproImplementation", sourceSets["main"].output)
+    testImplementation(kotlin("test"))
 }
 
 val reproOrder = providers.gradleProperty("reproOrder").orElse("a")

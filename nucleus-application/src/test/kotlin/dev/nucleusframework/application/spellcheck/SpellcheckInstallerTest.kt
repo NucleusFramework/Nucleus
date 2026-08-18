@@ -347,6 +347,86 @@ class SpellcheckInstallerTest {
     }
 
     @Test
+    fun `installer is empty for an empty word or a no-op session`() {
+        SpellcheckSession(locale = Locale.US, osName = "FreeBSD").use { session ->
+            assertTrue(
+                NucleusSpellcheckInstaller
+                    .menuItems(
+                        word = "helo",
+                        session = session,
+                        onSuggestion = {},
+                        onAddToDictionary = {},
+                    ).isEmpty(),
+            )
+            assertTrue(
+                NucleusSpellcheckInstaller
+                    .menuItems(
+                        word = "",
+                        session = session,
+                        onSuggestion = {},
+                        onAddToDictionary = {},
+                    ).isEmpty(),
+            )
+        }
+    }
+
+    @Test
+    fun `menu items honor top placement and a custom separator`() {
+        SpellcheckSession(
+            locale = Locale.US,
+            userDictionaryFile = isolatedUserDict(),
+        ).use { session ->
+            assumeTrue("Native spellcheck + English dictionary required", session.isAvailable)
+            val divider = NucleusContextMenuDivider
+            val items =
+                NucleusSpellcheckInstaller.menuItems(
+                    word = "helo",
+                    session = session,
+                    onSuggestion = {},
+                    onAddToDictionary = {},
+                    separator = divider,
+                    menuPlacement = SpellcheckMenuPlacement.Top,
+                )
+            assertTrue(items.isNotEmpty())
+            assertTrue(items.last() === divider)
+            assertTrue(items.first() !== divider)
+        }
+    }
+
+    @Test
+    fun `context menu items are empty without an anchor or ranges`() {
+        SpellcheckSession(locale = Locale.US, osName = "FreeBSD").use { session ->
+            assertTrue(
+                spellcheckContextMenuItems(
+                    text = "helo",
+                    session = session,
+                    ranges = emptyList(),
+                    separator = NucleusContextMenuDivider,
+                    onTextChange = {},
+                    anchor = TextRange(0, 4),
+                ).isEmpty(),
+            )
+            assertTrue(
+                spellcheckContextMenuItems(
+                    text = "helo",
+                    session = session,
+                    ranges = iterateWords("helo"),
+                    separator = NucleusContextMenuDivider,
+                    onTextChange = {},
+                    anchor = null,
+                ).isEmpty(),
+            )
+        }
+    }
+
+    @Test
+    fun `recompute delay treats tabs as whitespace`() {
+        assertEquals(0L, spellcheckRecomputeDelayMs("helo\t"))
+        assertEquals(0L, spellcheckRecomputeDelayMs(" "))
+        assertEquals(SPELLCHECK_IDLE_DELAY_MS, spellcheckRecomputeDelayMs("x"))
+    }
+
+    @Test
     fun `legacy IME zero offset falls back to the inner clipping rect`() {
         val inner = Rect(left = 16f, top = 28f, right = 240f, bottom = 52f)
         assertEquals(
@@ -359,6 +439,39 @@ class SpellcheckInstallerTest {
         )
         assertEquals(null, resolveSpellcheckTextOriginInRoot(Offset.Zero, Rect.Zero))
         assertEquals(null, resolveSpellcheckTextOriginInRoot(null, null))
+        assertEquals(
+            inner.topLeft,
+            resolveSpellcheckTextOriginInRoot(Offset.Unspecified, inner),
+        )
+        assertEquals(null, resolveSpellcheckTextOriginInRoot(Offset.Unspecified, Rect.Zero))
+        assertEquals(null, resolveSpellcheckTextOriginInRoot(Offset.Zero, Rect(0f, 0f, 0f, 10f)))
+    }
+
+    @Test
+    fun `reversed selection still hits the enclosing misspelling`() {
+        val helo = iterateWords("helo wrold").first { it.word == "helo" }
+        assertEquals(helo, misspellingAt(listOf(helo), TextRange(4, 0)))
+        assertEquals(helo, misspellingAt(listOf(helo), TextRange(3, 1)))
+        assertEquals(null, misspellingAt(listOf(helo), TextRange(8)))
+    }
+
+    @Test
+    fun `empty or inverted bounding ranges produce no boxes`() {
+        val measurer =
+            TextMeasurer(
+                defaultFontFamilyResolver = createFontFamilyResolver(),
+                defaultDensity = Density(1f),
+                defaultLayoutDirection = LayoutDirection.Ltr,
+            )
+        val layout =
+            measurer.measure(
+                text = "helo",
+                style = TextStyle(fontSize = 16.sp),
+                constraints = Constraints(maxWidth = 1000),
+            )
+        assertTrue(boundingBoxesForRange(layout, 2, 2).isEmpty())
+        assertTrue(boundingBoxesForRange(layout, 3, 1).isEmpty())
+        assertTrue(spellcheckRangesStillValid("hi", iterateWords("helo")).isEmpty())
     }
 
     private fun isolatedUserDict() = Files.createTempFile("nucleus-spellcheck-ui-", "-${UUID.randomUUID()}.dic")

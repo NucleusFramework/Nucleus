@@ -16,6 +16,7 @@ val publishVersion =
 dependencies {
     implementation(kotlin("stdlib"))
     implementation(project(":core-runtime"))
+    testImplementation(kotlin("test"))
 }
 
 java {
@@ -27,6 +28,10 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
     }
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 nucleusNative {

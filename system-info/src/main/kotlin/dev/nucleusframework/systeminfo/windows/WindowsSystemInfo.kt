@@ -1,5 +1,6 @@
 package dev.nucleusframework.systeminfo.windows
 
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.systeminfo.PlatformSystemInfo
 import dev.nucleusframework.systeminfo.model.BatteryInfo
 import dev.nucleusframework.systeminfo.model.BatteryState
@@ -22,10 +23,14 @@ import dev.nucleusframework.systeminfo.model.UserInfo
 internal object WindowsSystemInfo : PlatformSystemInfo {
     private val bridge = NativeWindowsSystemInfoBridge
 
-    override fun isAvailable(): Boolean = bridge.isLoaded
+    // isLoaded can be true off-Windows: NativeLibraryLoader caches by library name,
+    // and every platform ships nucleus_system_info. JNI symbols are class-specific.
+    private fun ready(): Boolean = Platform.Current == Platform.Windows && bridge.isLoaded
+
+    override fun isAvailable(): Boolean = ready()
 
     override fun osInfo(): OsInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         return OsInfo(
             name = bridge.nativeOsName(),
             kernelVersion = bridge.nativeKernelVersion(),
@@ -40,7 +45,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun memoryInfo(): MemoryInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         return MemoryInfo(
             totalMemory = bridge.nativeTotalMemory(),
             freeMemory = bridge.nativeFreeMemory(),
@@ -53,7 +58,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun cpuInfo(): CpuGlobalInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         val count = bridge.nativeCpuCount()
         val names = bridge.nativeCpuNames() ?: emptyArray()
         val vendorIds = bridge.nativeCpuVendorIds() ?: emptyArray()
@@ -79,7 +84,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun disks(): List<DiskInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeDiskCount()
         if (count <= 0) return emptyList()
         val names = bridge.nativeDiskNames() ?: return emptyList()
@@ -105,7 +110,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun components(): List<ComponentInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeComponentCount()
         if (count <= 0) return emptyList()
         val labels = bridge.nativeComponentLabels() ?: return emptyList()
@@ -126,7 +131,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun networks(): List<NetworkInterfaceInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeNetworkCount()
         if (count <= 0) return emptyList()
         val names = bridge.nativeNetworkNames() ?: return emptyList()
@@ -154,7 +159,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun users(): List<UserInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeUserCount()
         if (count <= 0) return emptyList()
         val names = bridge.nativeUserNames() ?: return emptyList()
@@ -172,7 +177,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun motherboard(): MotherboardInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         return MotherboardInfo(
             name = bridge.nativeMotherboardName(),
             vendorName = bridge.nativeMotherboardVendor(),
@@ -183,7 +188,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun product(): ProductInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         return ProductInfo(
             name = bridge.nativeProductName(),
             family = bridge.nativeProductFamily(),
@@ -196,7 +201,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun processes(): List<ProcessInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeProcessCount()
         if (count <= 0) return emptyList()
         val pids = bridge.nativeProcessPids() ?: return emptyList()
@@ -233,7 +238,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun process(pid: Long): ProcessInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         val name = bridge.nativeProcessByPidName(pid) ?: return null
         val ppid = bridge.nativeProcessByPidParentPid(pid)
         return ProcessInfo(
@@ -254,12 +259,12 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun idleTime(): Long {
-        if (!bridge.isLoaded) return -1L
+        if (!ready()) return -1L
         return bridge.nativeIdleTimeSeconds()
     }
 
     override fun batteryInfo(): BatteryInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         if (!bridge.nativeBatteryPresent()) return null
         val currentCapacity = bridge.nativeBatteryCurrentCapacity()
         val maxCapacity = bridge.nativeBatteryMaxCapacity()
@@ -310,7 +315,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
 
     @Suppress("CyclomaticComplexMethod")
     override fun gpus(): List<GpuInfo> {
-        if (!bridge.isLoaded) return emptyList()
+        if (!ready()) return emptyList()
         val count = bridge.nativeGpuCount()
         if (count <= 0) return emptyList()
         val names = bridge.nativeGpuNames() ?: return emptyList()
@@ -355,7 +360,7 @@ internal object WindowsSystemInfo : PlatformSystemInfo {
     }
 
     override fun connectivityInfo(): ConnectivityInfo? {
-        if (!bridge.isLoaded) return null
+        if (!ready()) return null
         val connected = bridge.nativeIsNetworkConnected()
         return ConnectivityInfo(
             isConnected = connected,

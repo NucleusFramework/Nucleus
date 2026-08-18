@@ -53,6 +53,22 @@ internal object ChromeReviewHeadfulCases {
             it.contains("mac") || it.contains("darwin")
         }
 
+    /**
+     * `new Robot()` blocks indefinitely on macOS when the JVM lacks the
+     * Accessibility TCC grant. Probe it off-thread with a short timeout.
+     */
+    private fun awtRobotAvailable(): Boolean =
+        try {
+            val future =
+                java.util.concurrent.CompletableFuture.supplyAsync {
+                    Robot()
+                    true
+                }
+            future.get(2, java.util.concurrent.TimeUnit.SECONDS)
+        } catch (_: Exception) {
+            false
+        }
+
     fun all(): List<TaoWindowTestCase> =
         listOf(
             windowsBackdropSurvivesCancelableClose(),
@@ -329,6 +345,11 @@ internal object ChromeReviewHeadfulCases {
                     // positive control never arms so the case only ever reports
                     // INCONCLUSIVE. Keep it for local runs, where it is real.
                     System.getenv("CI") != null -> "AWT Robot cannot inject input on hosted CI runners"
+                    // Same hang happens on a local Mac without TCC Accessibility
+                    // for the JVM (this worktree's coverage run). Probe Robot()
+                    // with a short timeout so the suite can finish.
+                    !awtRobotAvailable() ->
+                        "AWT Robot() blocked or failed (macOS Accessibility / no input injection)"
                     else -> null
                 }
             },

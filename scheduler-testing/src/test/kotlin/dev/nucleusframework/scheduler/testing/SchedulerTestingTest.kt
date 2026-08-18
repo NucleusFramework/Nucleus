@@ -1,9 +1,11 @@
 package dev.nucleusframework.scheduler.testing
 
+import dev.nucleusframework.scheduler.CronExpression
 import dev.nucleusframework.scheduler.DesktopTask
 import dev.nucleusframework.scheduler.DesktopTaskScheduler
 import dev.nucleusframework.scheduler.ExistingTaskPolicy
 import dev.nucleusframework.scheduler.LastTaskResult
+import dev.nucleusframework.scheduler.NetworkType
 import dev.nucleusframework.scheduler.TaskContext
 import dev.nucleusframework.scheduler.TaskData
 import dev.nucleusframework.scheduler.TaskId
@@ -13,6 +15,7 @@ import dev.nucleusframework.scheduler.TaskResult
 import dev.nucleusframework.scheduler.TaskState
 import dev.nucleusframework.scheduler.decode
 import dev.nucleusframework.scheduler.inputData
+import java.time.LocalTime
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlin.test.Test
@@ -570,5 +573,213 @@ class AdvanceTimeTest {
             } finally {
                 scheduler.uninstall()
             }
+        }
+
+    @Test
+    fun `advanceTimeBy skips calendar tasks`() =
+        runBlocking {
+            val registry =
+                TaskRegistry
+                    .Builder()
+                    .register(GenericTaskId) { SuccessTask() }
+                    .build()
+            TestDesktopTaskScheduler().use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.calendar(GenericTaskId, CronExpression.everyDayAt(LocalTime.of(9, 0))),
+                )
+                val results = scheduler.advanceTimeBy(24.hours, registry)
+                assertEquals(0, results.size)
+                assertTrue(scheduler.getExecutionHistory(GenericTaskId).isEmpty())
+            }
+        }
+}
+
+class TestDesktopTaskSchedulerMoreTest {
+    @Test
+    fun `runTask throws when the task is not enqueued`() =
+        runBlocking {
+            val registry = TaskRegistry.Builder().register(SuccessId) { SuccessTask() }.build()
+            TestDesktopTaskScheduler().use { scheduler ->
+                val error =
+                    kotlin.test.assertFailsWith<IllegalStateException> {
+                        scheduler.runTask(SuccessId, registry)
+                    }
+                assertTrue(error.message!!.contains(SuccessId.value))
+            }
+        }
+
+    @Test
+    fun `runTask records failure and resets the attempt counter`() =
+        runBlocking {
+            val registry = TaskRegistry.Builder().register(FailingId) { FailingTask() }.build()
+            TestDesktopTaskScheduler().use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(TaskRequest.periodic(FailingId, 1.hours))
+                val result = scheduler.runTask(FailingId, registry)
+                assertTrue(result is TaskResult.Failure)
+                assertEquals("something went wrong", result.message)
+                val info = DesktopTaskScheduler.getTaskInfo(FailingId)
+                assertNotNull(info)
+                assertEquals(0, info.runCount)
+                assertTrue(info.lastResult is LastTaskResult.Failure)
+                val history = scheduler.getExecutionHistory(FailingId)
+                assertEquals(1, history.size)
+                assertEquals(1, history[0].runAttemptCount)
+            }
+        }
+
+    @Test
+    fun `getTaskInfo is null for a task that was never enqueued`() {
+        TestDesktopTaskScheduler().use { scheduler ->
+            scheduler.install()
+            assertNull(DesktopTaskScheduler.getTaskInfo(UnknownId))
+            assertTrue(scheduler.getEnqueuedRequests().isEmpty())
+            assertEquals(0L, scheduler.currentVirtualTimeMs)
+        }
+    }
+
+    @Test
+    fun `getEnqueuedRequests returns every stored request`() {
+        TestDesktopTaskScheduler().use { scheduler ->
+            scheduler.install()
+            DesktopTaskScheduler.enqueue(TaskRequest.periodic(SuccessId, 1.hours))
+            DesktopTaskScheduler.enqueue(TaskRequest.onBoot(BootId))
+            val ids = scheduler.getEnqueuedRequests().map { it.taskId }.toSet()
+            assertEquals(setOf(SuccessId, BootId), ids)
+        }
+    }
+
+    @Test
+    fun `UPDATE_DATA keeps the original enqueue time`() =
+        runBlocking {
+            val registry = TaskRegistry.Builder().register(SuccessId) { SuccessTask() }.build()
+            TestDesktopTaskScheduler().use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.periodic(SuccessId, 2.hours) {
+                        inputData(Versioned(version = "1"))
+                    },
+                )
+                scheduler.advanceTimeBy(1.hours, registry)
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.periodic(SuccessId, 2.hours) {
+                        inputData(Versioned(version = "2"))
+                        existingTaskPolicy(ExistingTaskPolicy.UPDATE_DATA)
+                    },
+                )
+                val afterUpdate = scheduler.advanceTimeBy(1.hours, registry)
+                assertEquals(1, afterUpdate.size)
+                assertEquals("2", scheduler.getEnqueuedRequest(SuccessId)?.inputData?.decode<Versioned>()?.version)
+            }
+        }
+
+    @Test
+    fun `periodic constraint skip does not increment the attempt counter`() =
+        runBlocking {
+            val checker = TestConstraintChecker()
+            checker.networkConnected = false
+            val registry = TaskRegistry.Builder().register(SuccessId) { SuccessTask() }.build()
+            TestDesktopTaskScheduler(constraintChecker = checker).use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.periodic(SuccessId, 1.hours) {
+                        constraints { requiredNetworkType = NetworkType.CONNECTED }
+                    },
+                )
+                val records = scheduler.advanceTimeBy(2.hours, registry)
+                assertEquals(2, records.size)
+                assertTrue(records.all { it.result is LastTaskResult.ConstraintsNotMet })
+                assertEquals(listOf(1, 1), records.map { it.runAttemptCount })
+            }
+        }
+
+    @Test
+    fun `calendar constraint skip increments the attempt counter`() =
+        runBlocking {
+            val checker = TestConstraintChecker()
+            checker.availableStorageBytes = 0
+            val registry = TaskRegistry.Builder().register(GenericTaskId) { SuccessTask() }.build()
+            TestDesktopTaskScheduler(constraintChecker = checker).use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.calendar(GenericTaskId, CronExpression.everyHour()) {
+                        constraints { minimumStorageBytes = 1 }
+                    },
+                )
+                assertNull(scheduler.runTask(GenericTaskId, registry))
+                val history = scheduler.getExecutionHistory(GenericTaskId)
+                assertEquals(1, history.size)
+                assertTrue(history[0].result is LastTaskResult.ConstraintsNotMet)
+                assertEquals(1, history[0].runAttemptCount)
+                assertNull(scheduler.runTask(GenericTaskId, registry))
+                assertEquals(2, scheduler.getExecutionHistory(GenericTaskId)[1].runAttemptCount)
+            }
+        }
+
+    @Test
+    fun `onBoot constraint skip increments the attempt counter`() =
+        runBlocking {
+            val checker = TestConstraintChecker()
+            checker.isCharging = false
+            val registry = TaskRegistry.Builder().register(BootId) { SuccessTask() }.build()
+            TestDesktopTaskScheduler(constraintChecker = checker).use { scheduler ->
+                scheduler.install()
+                DesktopTaskScheduler.enqueue(
+                    TaskRequest.onBoot(BootId) {
+                        constraints { requiresCharging = true }
+                    },
+                )
+                assertNull(scheduler.runTask(BootId, registry))
+                val skip = scheduler.getExecutionHistory(BootId).single().result
+                assertTrue(skip is LastTaskResult.ConstraintsNotMet)
+                assertEquals(setOf("charging"), skip.unsatisfied)
+            }
+        }
+
+    @Test
+    fun `ExecutionRecord equality is structural`() {
+        val record =
+            TestDesktopTaskScheduler.ExecutionRecord(
+                taskId = SuccessId,
+                result = LastTaskResult.Success,
+                runAttemptCount = 1,
+                virtualTimeMs = 1000L,
+            )
+        assertEquals(
+            record,
+            TestDesktopTaskScheduler.ExecutionRecord(
+                taskId = SuccessId,
+                result = LastTaskResult.Success,
+                runAttemptCount = 1,
+                virtualTimeMs = 1000L,
+            ),
+        )
+        assertEquals(
+            record.hashCode(),
+            TestDesktopTaskScheduler.ExecutionRecord(
+                taskId = SuccessId,
+                result = LastTaskResult.Success,
+                runAttemptCount = 1,
+                virtualTimeMs = 1000L,
+            ).hashCode(),
+        )
+    }
+
+    @Test
+    fun `TestTaskRunner default task id is test-task`() =
+        runBlocking {
+            val task =
+                object : DesktopTask {
+                    var seen: TaskId? = null
+
+                    override suspend fun doWork(context: TaskContext): TaskResult {
+                        seen = context.taskId
+                        return TaskResult.Success
+                    }
+                }
+            val result = TestTaskRunner.runTask(task)
+            assertEquals(TaskResult.Success, result)
+            assertEquals(TaskId("test-task"), task.seen)
         }
 }

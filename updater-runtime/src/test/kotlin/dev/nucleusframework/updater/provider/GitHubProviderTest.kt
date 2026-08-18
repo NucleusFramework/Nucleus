@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpHandler
 import com.sun.net.httpserver.HttpServer
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.updater.exception.NetworkException
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -151,6 +152,81 @@ class GitHubProviderTest {
         newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient)
 
         assertNull(lastAuthHeader.get())
+    }
+
+    @Test
+    fun `stable channel is case-insensitive`() {
+        val url = newProvider().resolveMetadataUrl("LATEST", Platform.MacOS, httpClient)
+        assertEquals("https://github.com/acme/tool/releases/latest/download/LATEST-mac.yml", url)
+        assertEquals(0, apiCallCount.get())
+    }
+
+    @Test
+    fun `getUpdateMetadataUrl and getDownloadUrl use the repo coordinates`() {
+        val provider = newProvider()
+        assertEquals(
+            "https://github.com/acme/tool/releases/latest/download/beta.yml",
+            provider.getUpdateMetadataUrl("beta", Platform.Windows),
+        )
+        assertEquals(
+            "https://github.com/acme/tool/releases/download/v2.1.0/App-2.1.0.dmg",
+            provider.getDownloadUrl("App-2.1.0.dmg", "2.1.0"),
+        )
+        assertEquals(emptyMap<String, String>(), provider.authHeaders())
+        assertEquals(mapOf("Authorization" to "token ghp_x"), newProvider(token = "ghp_x").authHeaders())
+    }
+
+    @Test
+    fun `HTTP 500 becomes a NetworkException`() {
+        responseStatus = 500
+        responseBody = "oops"
+        try {
+            newProvider().resolveMetadataUrl("beta", Platform.Linux, httpClient)
+            fail("expected NetworkException")
+        } catch (e: NetworkException) {
+            assertTrue(e.message!!.contains("HTTP 500"))
+            assertTrue(e.message!!.contains("acme/tool"))
+        }
+    }
+
+    @Test
+    fun `HTTP 403 with exhausted rate limit mentions the token hint`() {
+        responseStatus = 403
+        server.stop(0)
+        server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server.createContext("/repos/") { exchange ->
+            apiCallCount.incrementAndGet()
+            exchange.responseHeaders.add("X-RateLimit-Remaining", "0")
+            val bytes = "rate limited".toByteArray()
+            exchange.sendResponseHeaders(403, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        val provider =
+            GitHubProvider("acme", "tool").apply {
+                apiBaseUrl = "http://127.0.0.1:${server.address.port}"
+            }
+        try {
+            provider.resolveMetadataUrl("beta", Platform.Linux, httpClient)
+            fail("expected NetworkException")
+        } catch (e: NetworkException) {
+            assertTrue(e.message!!.contains("rate limit exceeded"))
+        }
+    }
+
+    @Test
+    fun `tag match is case-insensitive and ignores extra JSON fields`() {
+        responseBody =
+            """
+            [
+              {"tag_name":"v1.4.0-Beta.9","prerelease":true,"draft":false,"name":"ignored"}
+            ]
+            """.trimIndent()
+        val url = newProvider().resolveMetadataUrl("beta", Platform.Unknown, httpClient)
+        assertEquals(
+            "https://github.com/acme/tool/releases/download/v1.4.0-Beta.9/beta.yml",
+            url,
+        )
     }
 
     private data class Release(

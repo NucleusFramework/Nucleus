@@ -41,6 +41,14 @@ class NativeLibraryLoaderTest {
     }
 
     @Test
+    fun `load returns false for a library that is not on this platform`() {
+        assertEquals(
+            false,
+            NativeLibraryLoader.load("nucleus_does_not_exist_kover", NativeLibraryLoaderTest::class.java),
+        )
+    }
+
+    @Test
     fun `extractIfAbsent extracts when target is missing`() {
         val dir = Files.createTempDirectory("nucleus-extract")
         val source = dir.resolve("source.bin").apply { writeText("library bytes") }

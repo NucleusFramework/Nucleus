@@ -20,6 +20,7 @@ dependencies {
     compileOnly("org.graalvm.nativeimage:svm:25.0.0")
     implementation(project(":core-runtime"))
     implementation(project(":linux-hidpi"))
+    testImplementation(kotlin("test"))
 }
 
 java {
@@ -31,6 +32,10 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
     }
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 nucleusNative {

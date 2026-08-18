@@ -24,6 +24,7 @@ dependencies {
     // nucleus-application to expose a NucleusWindow-typed unified facade
     // that dispatches to the correct backend at runtime.
     compileOnly(project(":nucleus-application"))
+    testImplementation(kotlin("test"))
 }
 
 java {

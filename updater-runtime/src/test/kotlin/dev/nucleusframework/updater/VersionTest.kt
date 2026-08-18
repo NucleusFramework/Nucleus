@@ -133,4 +133,40 @@ class VersionTest {
         assertEquals(2, v.minor)
         assertEquals(3, v.patch)
     }
+
+    @Test
+    fun `trailing dots are treated as zero components`() {
+        assertEquals(Version(1, 0, 0, ""), Version.fromString("1."))
+        assertEquals(Version(1, 2, 0, ""), Version.fromString("1.2."))
+    }
+
+    @Test
+    fun `empty pre-release suffix is the same as no meta`() {
+        val v = Version.fromString("1.2.3-")
+        assertEquals("", v.meta)
+        assertEquals("1.2.3", v.toString())
+        assertEquals(0, v.compareTo(Version.fromString("1.2.3")))
+    }
+
+    @Test
+    fun `numeric identifier is less than a non-numeric identifier`() {
+        assertTrue(Version.fromString("1.0.0-1") < Version.fromString("1.0.0-beta"))
+        assertTrue(Version.fromString("1.0.0-beta") > Version.fromString("1.0.0-1"))
+    }
+
+    @Test
+    fun `longer pre-release is greater when the common prefix matches`() {
+        assertTrue(Version.fromString("1.0.0-beta.1") > Version.fromString("1.0.0-beta"))
+        assertTrue(Version.fromString("1.0.0-beta") < Version.fromString("1.0.0-beta.1"))
+    }
+
+    @Test
+    fun `identical pre-release identifiers compare equal`() {
+        assertEquals(0, Version.fromString("1.0.0-rc.1").compareTo(Version.fromString("1.0.0-rc.1")))
+    }
+
+    @Test
+    fun `two empty metas compare equal`() {
+        assertEquals(0, Version.fromString("2.0.0").compareTo(Version.fromString("2.0.0")))
+    }
 }
