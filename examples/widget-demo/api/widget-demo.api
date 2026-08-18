@@ -1,0 +1,14 @@
+public final class com/example/widget/ComposableSingletons$MainKt {
+	public static final field INSTANCE Lcom/example/widget/ComposableSingletons$MainKt;
+	public fun <init> ()V
+	public final fun getLambda$932567716$Nucleus_examples_widget_demo ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class com/example/widget/MainKt {
+	public static final fun main ([Ljava/lang/String;)V
+}
+
+public final class com/example/widget/NucleusAtomKt {
+	public static final fun NucleusAtom-rAjV9yQ (Landroidx/compose/ui/Modifier;FLandroidx/compose/runtime/Composer;II)V
+}
+

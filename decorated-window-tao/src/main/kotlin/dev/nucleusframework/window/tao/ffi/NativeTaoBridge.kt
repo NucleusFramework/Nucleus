@@ -524,9 +524,15 @@ internal object NativeTaoBridge {
     )
 
     /**
-     * Anchors macOS IME UI at the given window-local rect in *physical pixels*
-     * (top-left origin). Tao's stock `firstRectForCharacterRange:` returns
-     * 0×0; we override it so candidate windows can follow the caret.
+     * Anchors native IME UI at the given window-local rect in *physical pixels*
+     * (top-left origin).
+     *
+     * On macOS, Tao's stock `firstRectForCharacterRange:` returns 0×0; we
+     * override it so candidate windows can follow the caret. On Windows the
+     * rect is pushed to IMM32 as the composition point plus the candidate
+     * window's exclusion zone.
+     *
+     * Not implemented on Linux yet (#558).
      */
     @JvmStatic
     external fun nativeSetImeRect(
@@ -536,6 +542,14 @@ internal object NativeTaoBridge {
         width: Int,
         height: Int,
     )
+
+    /**
+     * Discards any in-flight IME composition — called when the focused field's
+     * input session ends so a pending candidate window does not linger, nor
+     * commit into whatever gains focus next. Windows only.
+     */
+    @JvmStatic
+    external fun nativeCancelImeComposition(handle: Long)
 
     /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
     @JvmStatic

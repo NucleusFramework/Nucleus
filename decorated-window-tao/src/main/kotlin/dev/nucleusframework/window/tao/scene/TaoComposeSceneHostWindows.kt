@@ -11,6 +11,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
@@ -46,7 +47,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
@@ -1824,6 +1827,57 @@ private class WindowsTaoPlatformContext(
         )
     }
 
+    /**
+     * Compose calls this when a `BasicTextField` gains focus. We track the
+     * caret rectangle and push it to IMM32 (#558) so the candidate window of
+     * MS-IME / Pinyin / Hangul sits on the caret instead of the client area's
+     * top-left corner. (The `Win+.` emoji panel is positioned through TSF, not
+     * IMM32, so it is unaffected by this.)
+     *
+     * Mirrors `DesktopTextInputService2.startInput` in compose-multiplatform-core,
+     * but feeds the rect through `ImmSetCandidateWindow` / `ImmSetCompositionWindow`
+     * rather than AWT's `InputMethodRequests.getTextLocation`.
+     *
+     * The rect is in scene-root physical pixels, which is exactly what IMM32
+     * wants: the scene covers the whole client area (the custom title bar is
+     * drawn inside it and reports no platform inset), so root (0, 0) is
+     * client (0, 0).
+     */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    override suspend fun startInputMethod(
+        request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
+    ): Nothing {
+        try {
+            coroutineScope {
+                launch {
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            // The caret rect is unbounded: it goes negative — or past
+                            // the client area — once the field scrolls out of the
+                            // viewport, which would fling the candidate window off the
+                            // window. Clip it to the field's visible text region.
+                            request.focusedRectInRoot()?.clampedTo(request.textClippingRectInRoot())
+                        }.collect { rect ->
+                            if (rect != null) {
+                                NativeTaoBridge.nativeSetImeRect(
+                                    windowHandle,
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.width.toInt().coerceAtLeast(1),
+                                    rect.height.toInt().coerceAtLeast(1),
+                                )
+                            }
+                        }
+                }
+                awaitCancellation()
+            }
+        } finally {
+            // Field blurred (or the session restarted): drop any composition so
+            // the candidate window goes away with it.
+            NativeTaoBridge.nativeCancelImeComposition(windowHandle)
+        }
+    }
+
     private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int {
         when {
             icon === androidx.compose.ui.input.pointer.PointerIcon.Default ->
@@ -1855,4 +1909,21 @@ private class WindowsTaoPlatformContext(
             }
         }.getOrDefault(dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT)
     }
+}
+
+/**
+ * Confines this rect to [bounds], collapsing rather than inverting when it
+ * falls entirely outside. `Rect.intersect` is not usable here: the caret rect
+ * can legitimately be zero-width, which no overlap test accepts.
+ */
+private fun Rect.clampedTo(bounds: Rect?): Rect {
+    if (bounds == null || bounds.isEmpty) return this
+    val clampedLeft = left.coerceIn(bounds.left, bounds.right)
+    val clampedTop = top.coerceIn(bounds.top, bounds.bottom)
+    return Rect(
+        left = clampedLeft,
+        top = clampedTop,
+        right = right.coerceIn(clampedLeft, bounds.right),
+        bottom = bottom.coerceIn(clampedTop, bounds.bottom),
+    )
 }

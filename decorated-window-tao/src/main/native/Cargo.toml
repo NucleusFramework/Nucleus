@@ -58,6 +58,8 @@ windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
+    # IMM32 for the IME caret rect (#558).
+    "Win32_UI_Input_Ime",
 ] }
 
 [build-dependencies]
