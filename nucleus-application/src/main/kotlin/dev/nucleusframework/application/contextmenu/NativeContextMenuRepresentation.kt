@@ -12,6 +12,8 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.menu.macos.NativePopupMenuItem
 import dev.nucleusframework.menu.macos.NsMenuItemImage
 import dev.nucleusframework.menu.macos.popUpNativeMenu
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * OS-looking context menu: `NSMenu` on macOS, a Compose Fluent flyout on
@@ -45,9 +47,27 @@ public object NativeContextMenuRepresentation : ContextMenuRepresentation {
             Platform.Windows -> ContextMenuFlyout(status, entries, FluentMenuTheme, onDismiss)
             Platform.Linux -> ContextMenuFlyout(status, entries, linuxContextMenuTheme(), onDismiss)
             Platform.MacOS -> {
+                val macEntries = entries.map { it.toMacPopupItem() }
                 LaunchedEffect(status) {
                     try {
-                        popUpNativeMenu(entries.map { it.toMacPopupItem() })
+                        // `popUpMenuPositioningItem:` spins AppKit's nested
+                        // event-tracking loop. Entered from this dispatcher it
+                        // would run *inside* tao's event callback, whose
+                        // reentrancy guard (`AppState::in_callback`) then
+                        // suppresses every `MainEventsCleared` tick until the
+                        // menu closes — freezing frames, animations, `delay`
+                        // and the whole `Dispatchers.Main` pump for as long as
+                        // the menu is open. Hop off the UI thread instead: the
+                        // menu bridge marshals onto the AppKit main queue
+                        // itself, so the menu still opens on the main thread
+                        // but from a regular queue drain, outside the callback
+                        // — the tracking loop then runs in a common run-loop
+                        // mode where tao's observers keep firing. Same
+                        // discipline as the deferred window-drag helper in
+                        // `window_drag.m`.
+                        withContext(Dispatchers.IO) {
+                            popUpNativeMenu(macEntries)
+                        }
                     } finally {
                         onDismiss()
                     }

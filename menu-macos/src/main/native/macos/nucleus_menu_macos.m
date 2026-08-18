@@ -931,6 +931,15 @@ JNIEXPORT jboolean JNICALL JNI_FN(nativeMenuPopUpAtCursor)(JNIEnv *env, jclass c
     NSMenu *menu = HANDLE_TO_MENU(menuHandle);
     __block BOOL result = NO;
     runOnMain(^{
+        // This runs several dispatch hops after the right-click that asked
+        // for the menu, often before the click's app activation has landed
+        // (an accessory app stays inactive until AppKit finishes activating).
+        // A popup opened on a not-yet-active app dismisses instantly and
+        // invisibly — "the first right-click does nothing". Activate first
+        // so the menu opens on the first click, every time.
+        if (![NSApp isActive]) {
+            [NSApp activateIgnoringOtherApps:YES];
+        }
         result = [menu popUpMenuPositioningItem:nil
                                      atLocation:[NSEvent mouseLocation]
                                          inView:nil];

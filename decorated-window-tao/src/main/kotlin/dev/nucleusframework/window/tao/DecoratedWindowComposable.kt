@@ -170,6 +170,18 @@ public fun ApplicationScope.DecoratedWindow(
      * stays on Wayland.
      */
     forceX11: Boolean = false,
+    /**
+     * Pin the window below every other window instead of above them — Windows
+     * `HWND_BOTTOM`, macOS `NSWindowLevel.BelowNormal`, Linux
+     * `gtk_window_set_keep_below` (X11/XWayland only; same Wayland caveat as
+     * [alwaysOnTop]). Reactive.
+     *
+     * For wallpaper-level overlays — a desktop widget, a watermark that must
+     * never cover the window in front of it. Mutually exclusive with
+     * [alwaysOnTop]; see [TaoWindow.setAlwaysOnBottom] for what below-stacking
+     * does *not* give you (it is not `_NET_WM_WINDOW_TYPE_DESKTOP`).
+     */
+    alwaysOnBottom: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -469,6 +481,7 @@ public fun ApplicationScope.DecoratedWindow(
     // ── Other reactive params ──
     LaunchedEffect(window, title) { window.setTitle(title) }
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
+    LaunchedEffect(window, alwaysOnBottom) { window.setAlwaysOnBottom(alwaysOnBottom) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }
     LaunchedEffect(window, clickThrough) { window.setIgnoreCursorEvents(clickThrough) }
     LaunchedEffect(window, visibleOnAllWorkspaces) {

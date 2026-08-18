@@ -87,6 +87,13 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // app keeps its Wayland surfaces. Honoured by the Tao backend; ignored by
     // the AWT backend and on other platforms.
     forceX11: Boolean = false,
+    // Pin the window below every other window instead of above them — macOS
+    // `NSWindowLevel.BelowNormal`, Windows `HWND_BOTTOM`, Linux
+    // `gtk_window_set_keep_below` (X11/XWayland only, native Wayland has no
+    // client-side stacking protocol). For wallpaper-level overlays such as
+    // desktop widgets. Mutually exclusive with [alwaysOnTop] — last one set
+    // wins. Reactive. Honoured by the Tao backend; the AWT backend ignores it.
+    alwaysOnBottom: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     when (this) {
@@ -140,6 +147,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 clickThrough = clickThrough,
                 visibleOnAllWorkspaces = visibleOnAllWorkspaces,
                 forceX11 = forceX11,
+                alwaysOnBottom = alwaysOnBottom,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
                 nativeContextMenu = nativeContextMenu,
@@ -186,6 +194,7 @@ public fun DecoratedWindow(
     clickThrough: Boolean = false,
     visibleOnAllWorkspaces: Boolean = false,
     forceX11: Boolean = false,
+    alwaysOnBottom: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.DecoratedWindow(
@@ -210,6 +219,7 @@ public fun DecoratedWindow(
         clickThrough = clickThrough,
         visibleOnAllWorkspaces = visibleOnAllWorkspaces,
         forceX11 = forceX11,
+        alwaysOnBottom = alwaysOnBottom,
         content = content,
     )
 }
