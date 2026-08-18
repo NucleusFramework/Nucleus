@@ -76,6 +76,19 @@ nucleusNative {
 // native image; it consumes the compiled test classes through this
 // configuration (test source sets are not published otherwise).
 
+// Apache-2.0 §4(a) / BSD-3-Clause: this JAR ships libnucleus_tao (which statically links the
+// vendored tao and AccessKit forks) and, on Windows, the ANGLE DLLs — so the attribution notices
+// and license texts must travel with it. Copied from the repo root so there is a single copy to
+// maintain — see THIRD_PARTY_NOTICES.md §2–4.
+tasks.named<Jar>("jar") {
+    metaInf {
+        from(rootProject.file("THIRD_PARTY_NOTICES.md"))
+        from(rootProject.file("licenses")) {
+            into("licenses")
+        }
+    }
+}
+
 val taoTestClassesJar by tasks.registering(Jar::class) {
     archiveClassifier.set("test-classes")
     from(sourceSets.test.get().output)

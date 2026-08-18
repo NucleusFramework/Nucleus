@@ -83,7 +83,9 @@ import kotlin.io.path.isRegularFile
  *   1. Resolve the platform-specific app directory from the jpackage app-image output.
  *   2. Update the executable type in the app image's .cfg launcher file.
  *   3. Generate an electron-builder YAML configuration from the DSL settings.
- *   4. Invoke electron-builder via npx with `--prepackaged`.
+ *   4. Provision the pinned electron-builder toolchain (`npm ci --ignore-scripts` against the lock
+ *      file embedded in this plugin) and invoke its CLI with `--prepackaged` — see
+ *      [dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderToolManager].
  *   5. Output the final installer/package to [destinationDir].
  */
 @DisableCachingByDefault(because = "Depends on external electron-builder tool")
@@ -255,8 +257,9 @@ abstract class AbstractElectronBuilderPackageTask
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
-            val npx = detectNpx()
-            validateNodeVersion()
+            val node = detectNode()
+            val npm = detectNpm()
+            validateNodeVersion(node)
 
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
             val windowsIconOverride = resolveWindowsIcon()
@@ -308,7 +311,9 @@ abstract class AbstractElectronBuilderPackageTask
                     outputDir = outputDir,
                     targets = buildElectronBuilderTargets(),
                     extraConfigArgs = extraConfigArgs,
-                    npx = npx,
+                    node = node,
+                    npm = npm,
+                    toolDir = File(outputDir, ELECTRON_BUILDER_TOOL_DIR_NAME),
                     environment = ebEnvironment,
                     publishFlag = resolvePublishFlag(),
                 ),
@@ -372,21 +377,26 @@ abstract class AbstractElectronBuilderPackageTask
             return flag
         }
 
-        private fun detectNpx(): File =
-            NodeJsDetector.detectNpx(
+        private fun detectNode(): File =
+            NodeJsDetector.detectNode(
                 customNodePath = customNodePath.orNull,
                 logger = logger,
             ) ?: throw GradleException(
-                "npx not found. Node.js 18+ is required for electron-builder packaging. " +
+                "node not found. Node.js 18+ is required for electron-builder packaging. " +
                     "Install Node.js or set the 'compose.electronBuilder.nodePath' Gradle property.",
             )
 
-        private fun validateNodeVersion() {
-            val node =
-                NodeJsDetector.detectNode(
-                    customNodePath = customNodePath.orNull,
-                    logger = logger,
-                ) ?: return
+        private fun detectNpm(): File =
+            NodeJsDetector.detectNpm(
+                customNodePath = customNodePath.orNull,
+                logger = logger,
+            ) ?: throw GradleException(
+                "npm not found. It provisions the pinned electron-builder toolchain from the " +
+                    "plugin's package-lock.json. Install Node.js 18+ (npm ships with it) or set " +
+                    "the 'compose.electronBuilder.nodePath' Gradle property.",
+            )
+
+        private fun validateNodeVersion(node: File) {
             val version = NodeJsDetector.getNodeVersion(node) ?: return
             if (!NodeJsDetector.isNodeVersionSupported(version)) {
                 throw GradleException(
@@ -1875,7 +1885,15 @@ abstract class AbstractElectronBuilderPackageTask
          * for parallel-safe builds. Called only after electron-builder finishes.
          */
         private fun cleanupBuildTemporaries(outputDir: File) {
-            for (dirName in listOf(".npm-cache", ".npm-prefix", ".electron-builder-cache", ".app-image")) {
+            for (dirName in
+                listOf(
+                    ".npm-cache",
+                    ".npm-prefix",
+                    ".electron-builder-cache",
+                    ELECTRON_BUILDER_TOOL_DIR_NAME,
+                    ".app-image",
+                )
+            ) {
                 val dir = File(outputDir, dirName)
                 if (dir.isDirectory) {
                     dir.deleteRecursively()
@@ -2024,11 +2042,17 @@ private fun copyAppImage(
 }
 
 /**
+ * Name of the build-local directory holding the provisioned electron-builder toolchain
+ * (`package.json`, `package-lock.json`, `node_modules`). Removed by `cleanupBuildTemporaries`.
+ */
+internal const val ELECTRON_BUILDER_TOOL_DIR_NAME = ".electron-builder-tool"
+
+/**
  * Returns an env map that isolates npm and electron-builder caches to subdirectories
  * of [outputDir]. This prevents EPERM/EBUSY errors on Windows when multiple
- * electron-builder tasks run in parallel and compete for shared caches (npx cache,
+ * electron-builder tasks run in parallel and compete for shared caches (npm cache,
  * NSIS downloads, etc.). The prefix is also isolated to avoid npm 11+ ECOMPROMISED
- * errors caused by concurrent npx invocations sharing the global prefix.
+ * errors caused by concurrent npm invocations sharing the global prefix.
  *
  * Additional npm config isolation (userconfig, globalconfig) prevents npm from
  * reading shared config files that could cause lock contention on Windows ARM64.

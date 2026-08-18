@@ -1,4 +1,10 @@
-Copyright (c) 2020 <Source Code Author>
+MIT License
+
+Copyright (c) 2026 Elie Gambache
+
+This license covers the code authored in this repository. Third-party components
+redistributed here (including code derived from Apache-2.0 licensed projects) keep
+their own licenses — see THIRD_PARTY_NOTICES.md.
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

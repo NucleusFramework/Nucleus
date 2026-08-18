@@ -5,6 +5,7 @@
 
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.tasks.ELECTRON_BUILDER_TOOL_DIR_NAME
 import dev.nucleusframework.internal.utils.Arch
 import java.io.File
 
@@ -40,13 +41,17 @@ internal object MacDmgLzma {
     private const val APP_BUILDER_SEARCH_DEPTH = 8
 
     /**
-     * Locates electron-builder's bundled `app-builder` binary, used to regenerate the
-     * differential-update blockmap after recompression. It is a transitive dependency
-     * (`app-builder-bin`) of the electron-builder install created by npx.
+     * Locates electron-builder's `app-builder` binary, used to regenerate the differential-update
+     * blockmap after recompression.
      *
-     * Searches the task-isolated npm cache (`<outputDir>/.npm-cache`, where the plugin points
-     * `NPM_CONFIG_CACHE`) first, then falls back to npm's default per-user npx cache. Returns null
-     * when it cannot be found — the caller then drops the now-stale blockmap instead.
+     * Search order, all task-local (see `isolatedCacheEnv`): electron-builder's own cache
+     * (`<outputDir>/.electron-builder-cache`, where `ELECTRON_BUILDER_CACHE` points and where
+     * electron-builder downloads `app-builder-bin` at run time), the provisioned toolchain
+     * (`<outputDir>/.electron-builder-tool/node_modules`, in case a future version ships it as an
+     * npm dependency again), then the isolated npm cache. `userHome` keeps npm's per-user npx cache
+     * as a last resort for builds still carrying one from an earlier plugin version.
+     *
+     * Returns null when it cannot be found — the caller then drops the now-stale blockmap instead.
      */
     fun locateAppBuilder(
         outputDir: File,
@@ -54,7 +59,13 @@ internal object MacDmgLzma {
         userHome: File = File(System.getProperty("user.home")),
     ): File? {
         val binaryName = if (arch == Arch.Arm64) "app-builder_arm64" else "app-builder_amd64"
-        val roots = listOf(File(outputDir, ".npm-cache"), File(userHome, ".npm/_npx"))
+        val roots =
+            listOf(
+                File(outputDir, ".electron-builder-cache"),
+                File(outputDir, "$ELECTRON_BUILDER_TOOL_DIR_NAME/node_modules"),
+                File(outputDir, ".npm-cache"),
+                File(userHome, ".npm/_npx"),
+            )
         for (root in roots) {
             findAppBuilder(root, binaryName)?.let { return it }
         }
