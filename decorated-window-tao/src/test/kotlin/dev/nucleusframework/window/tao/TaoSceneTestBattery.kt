@@ -238,6 +238,9 @@ public object TaoSceneTestBattery {
         run("TaoScenePopupTest: outside click dismisses a focusable popup") {
             TaoScenePopupTest().`outside click dismisses a focusable popup`()
         }
+        run("TaoScenePopupTest: two stacked popups keep independent pixels") {
+            TaoScenePopupTest().`two stacked popups keep independent pixels`()
+        }
         run("TaoScenePopupTest: click inside a focusable popup does not dismiss it") {
             TaoScenePopupTest().`click inside a focusable popup does not dismiss it`()
         }

@@ -255,6 +255,29 @@ class TitleBarLayoutPolicyTest {
         }
 
     @Test
+    fun `generic title bar accepts a gradient and background slot`() =
+        runComposeUiTest {
+            var painted = false
+            var barWidth = 0
+            setContent {
+                WithTitleBarInfo {
+                    GenericTitleBarImpl(
+                        state = DecoratedWindowState.of(active = false, tiled = true),
+                        modifier = Modifier.width(280.dp).onSizeChanged { barWidth = it.width },
+                        gradientStartColor = Color(0xFF336699),
+                        applyTitleBar = { _, _ -> PaddingValues(1.dp) },
+                        backgroundContent = { painted = true },
+                    ) {
+                        Box(Modifier.size(12.dp).align(Alignment.Start))
+                    }
+                }
+            }
+            waitForIdle()
+            assertTrue(painted)
+            assertTrue(barWidth > 0)
+        }
+
+    @Test
     fun `empty measurables do not crash the measure policy`() =
         runComposeUiTest {
             var laidOut = IntSize.Zero

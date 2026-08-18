@@ -83,6 +83,8 @@ class TaoSceneTestBatteryDriftTest {
                 "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
             XdgPortalParentTest::class.java to
                 "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
+            dev.nucleusframework.window.ChromeLogicTest::class.java to
+                "unit tests for chrome helpers; no ComposeScene",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =
