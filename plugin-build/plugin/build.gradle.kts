@@ -100,6 +100,19 @@ tasks.named<ProcessResources>("processResources") {
     }
 }
 
+// Apache-2.0 §4(a): this JAR is a binary distribution of source derived from the JetBrains Compose
+// Multiplatform Gradle plugin, so the attribution notices and the license text must travel with it.
+// Copied from the repo root (one level above this included build) so there is a single copy to
+// maintain — see THIRD_PARTY_NOTICES.md §1.
+tasks.named<Jar>("jar") {
+    metaInf {
+        from(rootProject.file("../THIRD_PARTY_NOTICES.md"))
+        from(rootProject.file("../licenses")) {
+            into("licenses")
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
