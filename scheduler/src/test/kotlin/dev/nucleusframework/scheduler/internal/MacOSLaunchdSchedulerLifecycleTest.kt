@@ -38,6 +38,7 @@ class MacOSLaunchdSchedulerLifecycleTest {
 
     @Test
     fun `missing tasks report as not scheduled`() {
+        if (Platform.Current != Platform.MacOS) return
         val missing = TaskId("kovercov-missing")
         assertFalse(MacOSLaunchdScheduler.isScheduled(missing))
         assertNull(MacOSLaunchdScheduler.getTaskInfo(missing))
@@ -48,6 +49,7 @@ class MacOSLaunchdSchedulerLifecycleTest {
 
     @Test
     fun `keep and update-data short-circuit when a plist already exists`() {
+        if (Platform.Current != Platform.MacOS) return
         val taskId = TaskId("kovercov-keep")
         val plist = launchAgentsPlist(taskId)
         plist.parentFile.mkdirs()
@@ -219,6 +221,7 @@ class MacOSLaunchdSchedulerLifecycleTest {
 
     @Test
     fun `cancelAll is a no-op when this app has no launch agents`() {
+        if (Platform.Current != Platform.MacOS) return
         val ours = TaskId("kovercov-cancel-all-probe")
         assertFalse(MacOSLaunchdScheduler.isScheduled(ours))
         // Only safe if this process has not left other kovercov agents behind.

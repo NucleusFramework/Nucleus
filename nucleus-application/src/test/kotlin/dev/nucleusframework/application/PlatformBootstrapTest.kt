@@ -57,6 +57,7 @@ class PlatformBootstrapTest {
         primePlatformIntegrations(args)
         primePlatformIntegrations(args)
         assertEquals(2, AutoLaunch.calls)
+        WindowsJumpListManager.reset()
         invokePrimeWindowsAumid()
         assertEquals(1, WindowsJumpListManager.calls)
         assertTrue(platformBootstrapClass().name.endsWith("PlatformBootstrapKt"))

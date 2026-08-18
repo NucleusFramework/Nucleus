@@ -3,8 +3,8 @@ package dev.nucleusframework.autolaunch
 import dev.nucleusframework.autolaunch.linux.LinuxAutoLaunch
 import dev.nucleusframework.autolaunch.linux.SystemdUserBackend
 import dev.nucleusframework.autolaunch.linux.UnsupportedLinuxBackend
-import dev.nucleusframework.autolaunch.windows.WindowsAutoLaunch
 import dev.nucleusframework.autolaunch.windows.Win32RegistryBackend
+import dev.nucleusframework.autolaunch.windows.WindowsAutoLaunch
 import dev.nucleusframework.core.runtime.ExecutableRuntime
 import kotlin.test.AfterTest
 import kotlin.test.Test

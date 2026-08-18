@@ -51,10 +51,11 @@ class MacOsDockMenuTest {
     fun `native click callback is delivered on the edt`() {
         val latch = CountDownLatch(1)
         var clicked = -1
-        MacOsDockMenu.listener = DockMenuListener { id ->
-            clicked = id
-            latch.countDown()
-        }
+        MacOsDockMenu.listener =
+            DockMenuListener { id ->
+                clicked = id
+                latch.countDown()
+            }
         try {
             NativeMacOsDockMenuBridge.onMenuItemClicked(42)
             if (MacOsDockMenu.listener != null) {

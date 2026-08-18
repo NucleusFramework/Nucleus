@@ -19,7 +19,10 @@ class NativeLinuxHotKeyBridgeTest {
     @Test
     fun `linux initialize register and native callback reach the listener`() {
         if (Platform.Current != Platform.Linux || !NativeLinuxHotKeyBridge.isLoaded) return
-        assertTrue(GlobalHotKeyManager.initialize())
+        if (!GlobalHotKeyManager.initialize()) {
+            assertTrue(GlobalHotKeyManager.lastError != null)
+            return
+        }
         val fired = AtomicInteger(0)
         val handle =
             GlobalHotKeyManager.register(

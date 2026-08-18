@@ -34,6 +34,7 @@ class CalendarConfigEqualityTest {
         assertEquals(a, b)
         assertEquals(a.hashCode(), b.hashCode())
         assertNotEquals(a, c)
+        @Suppress("EqualsNullCall")
         assertFalse(a.equals(null))
         assertFalse(a.equals("nope"))
         assertEquals(a, a)

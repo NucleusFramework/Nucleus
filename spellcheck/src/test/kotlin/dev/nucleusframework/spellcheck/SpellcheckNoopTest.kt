@@ -107,7 +107,9 @@ class SpellcheckNoopTest {
 
     @Test
     fun `linux with dummy dictionaries stays a no-op without Hunspell`() {
-        val dir = java.nio.file.Files.createTempDirectory("nucleus-spellcheck-dummy-")
+        val dir =
+            java.nio.file.Files
+                .createTempDirectory("nucleus-spellcheck-dummy-")
         try {
             java.nio.file.Files
                 .writeString(dir.resolve("en_US.aff"), "SET UTF-8")

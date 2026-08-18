@@ -42,7 +42,10 @@ class PlatformInstallerHelpersTest {
         val windows =
             runCatching { invokeBuildProcessForInstaller(file, Platform.Windows, "exe") }
                 .exceptionOrNull()
-        assertTrue(windows?.message?.contains("Windows uses installWindows") == true || windows is IllegalStateException)
+        assertTrue(
+            windows?.message?.contains("Windows uses installWindows") == true ||
+                windows is IllegalStateException,
+        )
         val unknown =
             runCatching { invokeBuildProcessForInstaller(file, Platform.Unknown, "bin") }
                 .exceptionOrNull()

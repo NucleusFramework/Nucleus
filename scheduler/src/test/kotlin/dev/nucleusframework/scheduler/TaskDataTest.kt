@@ -59,6 +59,7 @@ class TaskDataTest {
         assertEquals(a, b)
         assertNotEquals(a, c)
         assertFalse(a.equals("not-task-data"))
+        @Suppress("EqualsNullCall")
         assertEquals(false, a.equals(null))
     }
 }

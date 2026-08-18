@@ -10,6 +10,7 @@ import kotlin.test.fail
 
 class NsMenuNativeApiTest {
     @Test
+    @Suppress("LongMethod")
     fun `create inspect and release a native menu tree without popping it`() {
         if (!NsMenu.isAvailable) {
             assertFalse(isNativePopupMenuAvailable)

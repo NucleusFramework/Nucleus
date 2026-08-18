@@ -30,7 +30,10 @@ class LinuxBackendFallbackTest {
             NativeAutoLaunchLinuxBridge.RC_NO_PORTAL,
             NativeAutoLaunchLinuxBridge.requestBackground(true, arrayOf("app"), "reason"),
         )
-        assertEquals(NativeAutoLaunchLinuxBridge.RC_ERROR, NativeAutoLaunchLinuxBridge.writeUnitFile("x.service", "[Unit]"))
+        assertEquals(
+            NativeAutoLaunchLinuxBridge.RC_ERROR,
+            NativeAutoLaunchLinuxBridge.writeUnitFile("x.service", "[Unit]"),
+        )
         assertEquals(NativeAutoLaunchLinuxBridge.RC_ERROR, NativeAutoLaunchLinuxBridge.deleteUnitFile("x.service"))
         assertEquals(NativeAutoLaunchLinuxBridge.RC_ERROR, NativeAutoLaunchLinuxBridge.enableUnit("x.service"))
         assertEquals(NativeAutoLaunchLinuxBridge.RC_ERROR, NativeAutoLaunchLinuxBridge.disableUnit("x.service"))

@@ -122,10 +122,18 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     // is counted. JavaExec is otherwise invisible to Kover.
     dependsOn(tasks.named("koverFindJar"))
     doFirst {
-        val agent = layout.buildDirectory.file("kover/kover-jvm-agent-0.9.8.jar").get().asFile
+        val agent =
+            layout.buildDirectory
+                .file("kover/kover-jvm-agent-0.9.8.jar")
+                .get()
+                .asFile
         val report = taoHeadfulKoverReport.get().asFile
         report.parentFile.mkdirs()
-        val argsFile = layout.buildDirectory.file("tmp/taoHeadful/kover-agent.args").get().asFile
+        val argsFile =
+            layout.buildDirectory
+                .file("tmp/taoHeadful/kover-agent.args")
+                .get()
+                .asFile
         argsFile.parentFile.mkdirs()
         argsFile.writeText(
             buildString {

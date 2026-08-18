@@ -47,7 +47,9 @@ class MacOsNotificationModelTest {
         val options = setOf(AuthorizationOption.ALERT, AuthorizationOption.SOUND, AuthorizationOption.BADGE)
         val mask = options.toMask { it.rawValue }
         assertEquals(
-            AuthorizationOption.ALERT.rawValue or AuthorizationOption.SOUND.rawValue or AuthorizationOption.BADGE.rawValue,
+            AuthorizationOption.ALERT.rawValue or
+                AuthorizationOption.SOUND.rawValue or
+                AuthorizationOption.BADGE.rawValue,
             mask,
         )
         assertEquals(options, mask.toOptionSet(AuthorizationOption::rawValue))
@@ -93,12 +95,25 @@ class MacOsNotificationModelTest {
         assertEquals(NotificationTrigger.TRIGGER_TYPE_TIME_INTERVAL, interval.typeId)
         assertTrue(interval.repeats)
 
-        val error = assertFailsWith<IllegalArgumentException> { NotificationTrigger.TimeInterval(0.0) }
+        val error =
+            assertFailsWith<IllegalArgumentException> { NotificationTrigger.TimeInterval(0.0) }
         assertTrue(error.message!!.contains("positive"))
-        val repeatError = assertFailsWith<IllegalArgumentException> { NotificationTrigger.TimeInterval(30.0, repeats = true) }
+        val repeatError =
+            assertFailsWith<IllegalArgumentException> {
+                NotificationTrigger.TimeInterval(30.0, repeats = true)
+            }
         assertTrue(repeatError.message!!.contains("60"))
 
-        val components = DateComponents(year = 2024, month = 8, day = 18, hour = 9, minute = 30, second = 0, weekday = 1)
+        val components =
+            DateComponents(
+                year = 2024,
+                month = 8,
+                day = 18,
+                hour = 9,
+                minute = 30,
+                second = 0,
+                weekday = 1,
+            )
         val calendar = NotificationTrigger.Calendar(components, repeats = true)
         assertEquals(NotificationTrigger.TRIGGER_TYPE_CALENDAR, calendar.typeId)
         assertEquals(2024, calendar.dateComponents.year)
@@ -222,7 +237,9 @@ class NotificationCenterFallbackTest {
         if (!NotificationCenter.isAvailable) {
             var authGranted: Boolean? = null
             var authError: String? = null
-            NotificationCenter.requestAuthorization(setOf(AuthorizationOption.ALERT, AuthorizationOption.SOUND)) { granted, error ->
+            NotificationCenter.requestAuthorization(
+                setOf(AuthorizationOption.ALERT, AuthorizationOption.SOUND),
+            ) { granted, error ->
                 authGranted = granted
                 authError = error
             }
@@ -311,6 +328,7 @@ class NotificationCenterFallbackTest {
     }
 
     @Test
+    @Suppress("LongMethod")
     fun `bridge callbacks reconstruct settings and delivered notifications`() {
         val bridge = dev.nucleusframework.notification.macos.NativeMacNotificationBridge
 
@@ -426,7 +444,11 @@ class NotificationCenterFallbackTest {
 
         val addLatch = CountDownLatch(1)
         var addError: String? = "unset"
-        val addId = bridge.registerCallback<Function1<String?, Unit>> { addError = it; addLatch.countDown() }
+        val addId =
+            bridge.registerCallback<Function1<String?, Unit>> {
+                addError = it
+                addLatch.countDown()
+            }
         bridge.onRequestAdded(addId, null)
         assertTrue(addLatch.await(3, TimeUnit.SECONDS))
         assertNull(addError)
@@ -434,8 +456,16 @@ class NotificationCenterFallbackTest {
         val badgeLatch = CountDownLatch(2)
         var badgeError: String? = "unset"
         var badgeCount = -1
-        val badgeId = bridge.registerCallback<Function1<String?, Unit>> { badgeError = it; badgeLatch.countDown() }
-        val countId = bridge.registerCallback<Function1<Int, Unit>> { badgeCount = it; badgeLatch.countDown() }
+        val badgeId =
+            bridge.registerCallback<Function1<String?, Unit>> {
+                badgeError = it
+                badgeLatch.countDown()
+            }
+        val countId =
+            bridge.registerCallback<Function1<Int, Unit>> {
+                badgeCount = it
+                badgeLatch.countDown()
+            }
         bridge.onBadgeResult(badgeId, "nope")
         bridge.onBadgeCount(countId, 4)
         assertTrue(badgeLatch.await(3, TimeUnit.SECONDS))

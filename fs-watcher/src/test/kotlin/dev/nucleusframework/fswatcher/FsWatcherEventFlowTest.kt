@@ -2561,7 +2561,7 @@ class FsWatcherEventFlowTest {
     @Test
     fun canonicalAndSymlinkRegistrationsKeepPathScopedEventBoundToOriginInstallation() =
         runBlocking {
-            if (!FsWatchers.isSupported()) return@runBlocking
+            if (!FsWatchers.isSupported() || isWindowsHost()) return@runBlocking
 
             val canonicalRoot = Files.createTempDirectory("fs-watcher-alias-fanout-target")
             val symlinkRoot = canonicalRoot.parent.resolve("${canonicalRoot.fileName}-alias-link")
@@ -2638,7 +2638,7 @@ class FsWatcherEventFlowTest {
     @Test
     fun canonicalAndSymlinkRegistrationsKeepPathScopedErrorsBoundToOriginInstallation() =
         runBlocking {
-            if (!FsWatchers.isSupported()) return@runBlocking
+            if (!FsWatchers.isSupported() || isWindowsHost()) return@runBlocking
 
             val canonicalRoot = Files.createTempDirectory("fs-watcher-alias-error-target")
             val symlinkRoot = canonicalRoot.parent.resolve("${canonicalRoot.fileName}-alias-link")

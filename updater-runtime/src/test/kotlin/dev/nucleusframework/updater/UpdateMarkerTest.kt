@@ -69,7 +69,8 @@ class UpdateMarkerTest {
         val file =
             File(
                 System.getProperty("user.home"),
-                "Library/Application Support/${dev.nucleusframework.core.runtime.NucleusApp.appId}/nucleus-update-event",
+                "Library/Application Support/" +
+                    "${dev.nucleusframework.core.runtime.NucleusApp.appId}/nucleus-update-event",
             )
         if (!file.isFile) return
         file.writeText("not-a-pair\n")

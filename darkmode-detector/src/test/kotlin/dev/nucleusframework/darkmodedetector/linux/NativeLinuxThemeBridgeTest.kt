@@ -1,13 +1,16 @@
 package dev.nucleusframework.darkmodedetector.linux
 
+import dev.nucleusframework.core.runtime.Platform
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class NativeLinuxThemeBridgeTest {
+    private fun linuxNativeReady(): Boolean = Platform.Current == Platform.Linux && NativeLinuxBridge.isLoaded
+
     @Test
     fun `theme change callbacks reach registered listeners`() {
-        if (!NativeLinuxBridge.isLoaded) return
+        if (!linuxNativeReady()) return
         val seen = mutableListOf<Boolean>()
         val listener = java.util.function.Consumer<Boolean> { seen += it }
         NativeLinuxBridge.registerListener(listener)
@@ -26,7 +29,7 @@ class NativeLinuxThemeBridgeTest {
 
     @Test
     fun `portal detector reports a stable boolean when native is loaded`() {
-        if (!NativeLinuxBridge.isLoaded) return
+        if (!linuxNativeReady()) return
         val dark = LinuxPortalThemeDetector.isDark()
         assertTrue(dark == LinuxPortalThemeDetector.isDark())
     }

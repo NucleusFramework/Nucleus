@@ -64,6 +64,7 @@ class CronExpressionTest {
         assertEquals(a.hashCode(), b.hashCode())
         assertNotEquals(a, c)
         assertNotEquals<Any>(a, "*-*-* 09:00:00")
+        @Suppress("EqualsNullCall")
         assertFalse(a.equals(null))
     }
 }

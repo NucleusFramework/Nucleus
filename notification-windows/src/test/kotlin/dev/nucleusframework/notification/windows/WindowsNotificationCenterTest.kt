@@ -11,6 +11,7 @@ import kotlin.test.assertTrue
 class WindowsNotificationCenterTest {
     @Test
     fun `unavailable center reports the documented fallback`() {
+        if (WindowsNotificationCenter.isAvailable) return
         assertFalse(WindowsNotificationCenter.isAvailable)
         assertFalse(WindowsNotificationCenter.initialize(aumid = "com.example.Test"))
         assertFalse(WindowsNotificationCenter.initialize(aumid = "com.example.Test", appName = "Test"))
@@ -198,6 +199,7 @@ class WindowsNotificationCenterTest {
 
     @Test
     fun `show simple builds one two or three text lines`() {
+        if (WindowsNotificationCenter.isAvailable) return
         var error: String? = null
         WindowsNotificationCenter.showSimple("Only title") { error = it }
         assertEquals("Not available on this platform", error)

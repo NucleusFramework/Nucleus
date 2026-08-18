@@ -193,7 +193,9 @@ class GitHubProviderTest {
     fun `HTTP 403 with exhausted rate limit mentions the token hint`() {
         responseStatus = 403
         server.stop(0)
-        server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        server =
+            com.sun.net.httpserver.HttpServer
+                .create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/repos/") { exchange ->
             apiCallCount.incrementAndGet()
             exchange.responseHeaders.add("X-RateLimit-Remaining", "0")

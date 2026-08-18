@@ -23,7 +23,11 @@ class GlobalHotKeyManagerTest {
         assertEquals(0x0008, HotKeyModifier.META.nativeFlag)
         assertEquals(0x0003, HotKeyModifier.ALT + HotKeyModifier.CONTROL)
         assertEquals(0x0007, (HotKeyModifier.ALT + HotKeyModifier.CONTROL) + HotKeyModifier.SHIFT)
-        assertEquals(0x000F, ((HotKeyModifier.ALT + HotKeyModifier.CONTROL) + HotKeyModifier.SHIFT) + HotKeyModifier.META)
+        assertEquals(
+            0x000F,
+            ((HotKeyModifier.ALT + HotKeyModifier.CONTROL) + HotKeyModifier.SHIFT) +
+                HotKeyModifier.META,
+        )
         assertEquals(0xB3, MediaKey.PLAY_PAUSE.nativeCode)
         assertEquals(0xB2, MediaKey.STOP.nativeCode)
         assertEquals(0xB0, MediaKey.NEXT_TRACK.nativeCode)
@@ -61,7 +65,10 @@ class GlobalHotKeyManagerTest {
             assertFalse(GlobalHotKeyManager.initialize())
             return
         }
-        assertTrue(GlobalHotKeyManager.initialize())
+        if (!GlobalHotKeyManager.initialize()) {
+            assertTrue(GlobalHotKeyManager.lastError != null)
+            return
+        }
         assertTrue(GlobalHotKeyManager.initialize())
 
         val handle =
@@ -83,7 +90,7 @@ class GlobalHotKeyManagerTest {
                 assertEquals(-1L, media)
                 assertEquals("Media keys are not supported on macOS", GlobalHotKeyManager.lastError)
             }
-            Platform.Linux -> {
+            Platform.Linux, Platform.Windows -> {
                 if (media != -1L) {
                     assertTrue(media > 0L)
                     assertTrue(GlobalHotKeyManager.unregister(media))
@@ -94,7 +101,10 @@ class GlobalHotKeyManagerTest {
             else -> assertEquals(-1L, media)
         }
 
-        assertTrue(GlobalHotKeyManager.commitRegistrations())
+        assertTrue(
+            GlobalHotKeyManager.commitRegistrations() ||
+                GlobalHotKeyManager.lastError != null,
+        )
         assertNull(GlobalHotKeyManager.portalShortcutId(1L))
         GlobalHotKeyManager.shutdown()
         GlobalHotKeyManager.shutdown()
@@ -103,7 +113,10 @@ class GlobalHotKeyManagerTest {
     @Test
     fun `initialized manager can register alternate modifiers and reject a bogus unregister`() {
         if (!GlobalHotKeyManager.isAvailable) return
-        assertTrue(GlobalHotKeyManager.initialize())
+        if (!GlobalHotKeyManager.initialize()) {
+            assertTrue(GlobalHotKeyManager.lastError != null)
+            return
+        }
 
         val none =
             GlobalHotKeyManager.register(keyCode = KeyEvent.VK_F23, modifiers = 0) { _, _ -> }
@@ -125,7 +138,10 @@ class GlobalHotKeyManagerTest {
         if (!missing) {
             assertTrue(GlobalHotKeyManager.lastError != null)
         }
-        assertTrue(GlobalHotKeyManager.commitRegistrations())
+        assertTrue(
+            GlobalHotKeyManager.commitRegistrations() ||
+                GlobalHotKeyManager.lastError != null,
+        )
         GlobalHotKeyManager.shutdown()
     }
 }

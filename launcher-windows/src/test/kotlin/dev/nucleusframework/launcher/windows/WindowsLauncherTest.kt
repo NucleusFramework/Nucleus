@@ -79,6 +79,7 @@ class WindowsLauncherTest {
 
     @Test
     fun `jump list manager is a documented no-op without native code`() {
+        if (WindowsJumpListManager.isAvailable) return
         assertFalse(WindowsJumpListManager.isAvailable)
         assertFalse(WindowsJumpListManager.setProcessAppId("com.example.App"))
         assertEquals("Native library not available", WindowsJumpListManager.lastError)
@@ -110,6 +111,7 @@ class WindowsLauncherTest {
 
     @Test
     fun `badge manager is a documented no-op without native code`() {
+        if (WindowsBadgeManager.isAvailable) return
         assertFalse(WindowsBadgeManager.isAvailable)
         assertFalse(WindowsBadgeManager.initialize("com.example.App"))
         assertEquals("Native library not available", WindowsBadgeManager.lastError)
@@ -122,6 +124,7 @@ class WindowsLauncherTest {
 
     @Test
     fun `overlay icon and thumbnail toolbar report missing native library`() {
+        if (WindowsOverlayIcon.isAvailable || WindowsThumbnailToolbar.isAvailable) return
         assertFalse(WindowsOverlayIcon.isAvailable)
         assertFalse(WindowsOverlayIcon.setIcon(1L, TaskbarIconSource.FromStock(StockIcon.INFO), "info"))
         assertEquals("Native library not available", WindowsOverlayIcon.lastError)
@@ -137,6 +140,7 @@ class WindowsLauncherTest {
 
     @Test
     fun `badge initialize without aumid and remaining glyphs stay no-ops`() {
+        if (WindowsBadgeManager.isAvailable) return
         assertFalse(WindowsBadgeManager.initialize(null))
         assertEquals("Native library not available", WindowsBadgeManager.lastError)
         assertFalse(WindowsBadgeManager.setCount(0))

@@ -129,8 +129,17 @@ class ToastXmlBuilderTest {
                     }
                 },
             )
-        assertContains(xml, "<image src=\"https://example.com/a.png\" hint-crop=\"circle\" alt=\"alt &amp; more\" addImageQuery=\"true\"/>")
-        assertFalse(xml.substringAfter("<image src=\"https://example.com/a.png\"").substringBefore("/>").contains("placement="))
+        assertContains(
+            xml,
+            "<image src=\"https://example.com/a.png\" hint-crop=\"circle\" " +
+                "alt=\"alt &amp; more\" addImageQuery=\"true\"/>",
+        )
+        assertFalse(
+            xml
+                .substringAfter("<image src=\"https://example.com/a.png\"")
+                .substringBefore("/>")
+                .contains("placement="),
+        )
         assertContains(xml, "placement=\"appLogoOverride\"")
         assertContains(xml, "hint-crop=\"none\"")
         assertContains(xml, "placement=\"hero\"")
@@ -209,7 +218,11 @@ class ToastXmlBuilderTest {
                     }
                 },
             )
-        assertContains(determinate, "<progress title=\"Downloading...\" value=\"0.5\" valueStringOverride=\"50%\" status=\"50% complete\"/>")
+        assertContains(
+            determinate,
+            "<progress title=\"Downloading...\" value=\"0.5\" " +
+                "valueStringOverride=\"50%\" status=\"50% complete\"/>",
+        )
 
         val bound =
             ToastXmlBuilder.buildXml(
@@ -285,7 +298,11 @@ class ToastXmlBuilderTest {
                     }
                 },
             )
-        assertContains(xml, "<input id=\"replyBox\" type=\"text\" title=\"Reply\" placeHolderContent=\"Type a message...\" defaultInput=\"Hi\"/>")
+        assertContains(
+            xml,
+            "<input id=\"replyBox\" type=\"text\" title=\"Reply\" " +
+                "placeHolderContent=\"Type a message...\" defaultInput=\"Hi\"/>",
+        )
         assertContains(xml, "<input id=\"snoozeTime\" type=\"selection\" title=\"Snooze for\" defaultInput=\"15\">")
         assertContains(xml, "<selection id=\"5\" content=\"5 minutes\"/>")
         assertContains(xml, "activationType=\"background\"")
@@ -377,7 +394,11 @@ class ToastXmlBuilderTest {
                     )
                 },
             )
-        assertContains(xml, "<header id=\"meetings\" title=\"Meetings &amp; more\" arguments=\"action=open\" activationType=\"background\"/>")
+        assertContains(
+            xml,
+            "<header id=\"meetings\" title=\"Meetings &amp; more\" " +
+                "arguments=\"action=open\" activationType=\"background\"/>",
+        )
 
         val defaultHeader =
             ToastXmlBuilder.buildXml(

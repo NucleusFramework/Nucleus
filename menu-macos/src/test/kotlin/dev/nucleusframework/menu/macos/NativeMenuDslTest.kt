@@ -172,7 +172,13 @@ class NativeMenuDslTest {
 
     @Test
     fun `popup menu items and empty pop-up return false`() {
-        val entry = NativePopupMenuItem.Entry("Open", enabled = false, icon = NsMenuItemImage.Named("NSOpen"), onClick = {})
+        val entry =
+            NativePopupMenuItem.Entry(
+                "Open",
+                enabled = false,
+                icon = NsMenuItemImage.Named("NSOpen"),
+                onClick = {},
+            )
         val submenu = NativePopupMenuItem.Submenu("More", listOf(entry, NativePopupMenuItem.Separator))
         assertEquals("Open", entry.title)
         assertFalse(entry.enabled)

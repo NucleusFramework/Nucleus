@@ -87,7 +87,10 @@ class CheckForUpdatesLogicTest {
         assertEquals("1.0.0", available.info.version)
         assertEquals(UpdateLevel.MAJOR, available.level)
         assertEquals("App-1.0.0.zip", available.info.currentFile.fileName)
-        assertTrue(available.info.currentFile.url.endsWith("/App-1.0.0.zip"))
+        assertTrue(
+            available.info.currentFile.url
+                .endsWith("/App-1.0.0.zip"),
+        )
     }
 
     @Test

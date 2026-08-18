@@ -1,14 +1,18 @@
 package dev.nucleusframework.systemcolor.linux
 
 import androidx.compose.ui.graphics.Color
+import dev.nucleusframework.core.runtime.Platform
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class NativeLinuxSystemColorBridgeTest {
+    private fun linuxNativeReady(): Boolean =
+        Platform.Current == Platform.Linux && NativeLinuxSystemColorBridge.isLoaded
+
     @Test
     fun `native callbacks deliver accent and contrast updates`() {
-        if (!NativeLinuxSystemColorBridge.isLoaded) return
+        if (!linuxNativeReady()) return
         val accents = mutableListOf<Color>()
         val contrasts = mutableListOf<Boolean>()
         val accentListener = java.util.function.Consumer<Color> { accents += it }
@@ -37,7 +41,7 @@ class NativeLinuxSystemColorBridgeTest {
 
     @Test
     fun `accent color query is safe when the portal is absent`() {
-        if (!NativeLinuxSystemColorBridge.isLoaded) return
+        if (!linuxNativeReady()) return
         val supported = LinuxSystemColorDetector.isAccentColorSupported()
         val color = LinuxSystemColorDetector.getAccentColor()
         if (supported && color != null) {

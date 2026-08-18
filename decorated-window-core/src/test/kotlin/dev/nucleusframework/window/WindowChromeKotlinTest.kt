@@ -151,9 +151,16 @@ class WindowChromeKotlinTest {
         assertEquals(null, info.icon)
         info.title = "second"
         info.icon = null
-        info.clientRegions["drag"] = androidx.compose.ui.geometry.Rect(0f, 0f, 10f, 4f)
+        info.clientRegions["drag"] =
+            androidx.compose.ui.geometry
+                .Rect(0f, 0f, 10f, 4f)
         assertEquals("second", info.title)
-        assertEquals(10f, info.clientRegions.getValue("drag").width)
+        assertEquals(
+            10f,
+            info.clientRegions
+                .getValue("drag")
+                .width,
+        )
         val scope = TitleBarScopeImpl("Hello", null)
         assertEquals("Hello", scope.title)
         assertEquals(null, scope.icon)
@@ -213,9 +220,23 @@ class WindowChromeKotlinTest {
 
     @Test
     fun `color luminance helper treats black as dark and white as light`() {
-        assertTrue(androidx.compose.ui.graphics.Color.Black.isDark())
-        assertFalse(androidx.compose.ui.graphics.Color.White.isDark())
-        assertTrue(androidx.compose.ui.graphics.Color(0xFF202020).isDark())
-        assertFalse(androidx.compose.ui.graphics.Color(0xFFF5F5F5).isDark())
+        assertTrue(
+            androidx.compose.ui.graphics.Color.Black
+                .isDark(),
+        )
+        assertFalse(
+            androidx.compose.ui.graphics.Color.White
+                .isDark(),
+        )
+        assertTrue(
+            androidx.compose.ui.graphics
+                .Color(0xFF202020)
+                .isDark(),
+        )
+        assertFalse(
+            androidx.compose.ui.graphics
+                .Color(0xFFF5F5F5)
+                .isDark(),
+        )
     }
 }

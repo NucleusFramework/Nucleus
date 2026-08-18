@@ -166,7 +166,8 @@ class TitleBarLayoutPolicyTest {
             val endBox = end!!
             assertTrue(
                 centerBox.size.width > requestedCenterPx,
-                "FillCenter should stretch the center child: measured=${centerBox.size.width} requested=$requestedCenterPx",
+                "FillCenter should stretch the center child: " +
+                    "measured=${centerBox.size.width} requested=$requestedCenterPx",
             )
             assertTrue(
                 startBox.positionInParent().x + startBox.size.width <= centerBox.positionInParent().x + 1f,

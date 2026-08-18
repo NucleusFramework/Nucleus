@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -33,7 +34,9 @@ public class XdgForeignExport internal constructor(
 
     override fun close() {
         if (closed.compareAndSet(false, true)) {
-            if (NativeTaoBridge.isLoaded) {
+            // The Tao library name is shared across OS; the unexport symbol
+            // exists only in the Linux build.
+            if (Platform.Current == Platform.Linux && NativeTaoBridge.isLoaded) {
                 NativeTaoBridge.nativeLinuxUnexportXdgForeignHandle(windowHandle)
             }
         }

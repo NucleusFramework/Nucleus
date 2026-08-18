@@ -275,10 +275,11 @@ class ContextMenuInterpreterTest {
         assertSame(NativePopupMenuItem.Separator, ContextMenuEntry.Separator.toMacPopupItem())
 
         val submenu =
-            ContextMenuEntry.Submenu(
-                label = "More",
-                items = listOf(item, ContextMenuEntry.Separator, row("Nested")),
-            ).toMacPopupItem() as NativePopupMenuItem.Submenu
+            ContextMenuEntry
+                .Submenu(
+                    label = "More",
+                    items = listOf(item, ContextMenuEntry.Separator, row("Nested")),
+                ).toMacPopupItem() as NativePopupMenuItem.Submenu
         assertEquals("More", submenu.title)
         assertEquals(3, submenu.items.size)
         assertTrue(submenu.items[1] === NativePopupMenuItem.Separator)

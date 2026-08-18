@@ -36,22 +36,12 @@ class TaskbarProgressTest {
         val critical = TaskbarProgress.requestAttentionForHwnd(0L, TaskbarProgress.AttentionType.CRITICAL)
         val stop = TaskbarProgress.stopAttentionForHwnd(0L)
 
-        if (available) {
-            assertTrue(progress)
-            assertTrue(clampedHigh)
-            assertTrue(clampedLow)
-            assertTrue(normal)
-            assertTrue(error)
-            assertTrue(paused)
-            assertTrue(indeterminate)
-            assertTrue(hidden)
-            assertTrue(attention)
-            assertTrue(critical)
-            assertTrue(stop)
-        } else {
+        if (!available) {
             assertFalse(progress)
             assertFalse(normal)
         }
+        // hwnd 0 is not a real window. Native backends may succeed
+        // (macOS dock is app-wide) or refuse the handle.
         TaskbarProgress.stopAttentionForHwnd(0L)
         TaskbarProgress.setStateForHwnd(0L, TaskbarProgress.State.NO_PROGRESS)
     }

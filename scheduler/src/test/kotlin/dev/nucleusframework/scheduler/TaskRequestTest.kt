@@ -58,7 +58,10 @@ class TaskRequestTest {
 
         assertEquals(TaskId("sync"), request.taskId)
         assertEquals(2.hours, request.interval)
-        assertEquals(SyncInput(endpoint = "https://api.example.com", retries = 2), request.inputData.decode<SyncInput>())
+        assertEquals(
+            SyncInput(endpoint = "https://api.example.com", retries = 2),
+            request.inputData.decode<SyncInput>(),
+        )
         assertEquals(policy, request.retryPolicy)
         assertEquals(ExistingTaskPolicy.REPLACE, request.existingTaskPolicy)
         assertTrue(request.runImmediately)

@@ -15,9 +15,9 @@ import dev.nucleusframework.scheduler.TaskResult
 import dev.nucleusframework.scheduler.TaskState
 import dev.nucleusframework.scheduler.decode
 import dev.nucleusframework.scheduler.inputData
-import java.time.LocalTime
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
+import java.time.LocalTime
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -670,7 +670,14 @@ class TestDesktopTaskSchedulerMoreTest {
                 )
                 val afterUpdate = scheduler.advanceTimeBy(1.hours, registry)
                 assertEquals(1, afterUpdate.size)
-                assertEquals("2", scheduler.getEnqueuedRequest(SuccessId)?.inputData?.decode<Versioned>()?.version)
+                assertEquals(
+                    "2",
+                    scheduler
+                        .getEnqueuedRequest(SuccessId)
+                        ?.inputData
+                        ?.decode<Versioned>()
+                        ?.version,
+                )
             }
         }
 
@@ -757,12 +764,13 @@ class TestDesktopTaskSchedulerMoreTest {
         )
         assertEquals(
             record.hashCode(),
-            TestDesktopTaskScheduler.ExecutionRecord(
-                taskId = SuccessId,
-                result = LastTaskResult.Success,
-                runAttemptCount = 1,
-                virtualTimeMs = 1000L,
-            ).hashCode(),
+            TestDesktopTaskScheduler
+                .ExecutionRecord(
+                    taskId = SuccessId,
+                    result = LastTaskResult.Success,
+                    runAttemptCount = 1,
+                    virtualTimeMs = 1000L,
+                ).hashCode(),
         )
     }
 

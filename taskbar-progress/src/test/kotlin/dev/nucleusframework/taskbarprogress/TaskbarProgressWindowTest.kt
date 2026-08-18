@@ -1,6 +1,7 @@
 package dev.nucleusframework.taskbarprogress
 
 import java.awt.Frame
+import java.awt.GraphicsEnvironment
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -22,6 +23,7 @@ class TaskbarProgressWindowTest {
 
     @Test
     fun `window and app-wide dock apis succeed on macos`() {
+        if (GraphicsEnvironment.isHeadless()) return
         if (!TaskbarProgress.isAvailable()) return
         assertTrue(TaskbarProgress.isAvailable())
         val window = Frame("kover-taskbar").also { frame = it }
@@ -50,6 +52,7 @@ class TaskbarProgressWindowTest {
 
     @Test
     fun `unavailable hwnd path still returns a boolean`() {
+        if (GraphicsEnvironment.isHeadless()) return
         if (!TaskbarProgress.isAvailable()) {
             val window = Frame("kover-taskbar-missing").also { frame = it }
             assertFalse(TaskbarProgress.setProgress(window, 0.1))

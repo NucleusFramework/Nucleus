@@ -161,11 +161,13 @@ class TestConstraintCheckerTest {
             checker.networkConnected = false
             val taskId = TaskId("constrained")
             val registry =
-                TaskRegistry.Builder().register(taskId) {
-                    object : DesktopTask {
-                        override suspend fun doWork(context: TaskContext): TaskResult = TaskResult.Success
-                    }
-                }.build()
+                TaskRegistry
+                    .Builder()
+                    .register(taskId) {
+                        object : DesktopTask {
+                            override suspend fun doWork(context: TaskContext): TaskResult = TaskResult.Success
+                        }
+                    }.build()
 
             TestDesktopTaskScheduler(constraintChecker = checker).use { scheduler ->
                 scheduler.install()
