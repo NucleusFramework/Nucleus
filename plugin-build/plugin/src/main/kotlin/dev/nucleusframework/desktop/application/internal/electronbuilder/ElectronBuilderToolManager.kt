@@ -9,7 +9,6 @@ import org.gradle.api.logging.Logger
 import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.IOException
 
 /**
  * Parameters for invoking electron-builder.
@@ -20,38 +19,76 @@ internal data class ElectronBuilderInvocation(
     val outputDir: File,
     val targets: List<String>,
     val extraConfigArgs: List<String> = emptyList(),
-    val npx: File,
+    val node: File,
+    val npm: File,
+    val toolDir: File,
     val environment: Map<String, String> = emptyMap(),
     val publishFlag: String = "never",
 )
 
 /**
- * Manages electron-builder installation and invocation.
+ * Provisions and invokes the pinned electron-builder toolchain.
  *
- * electron-builder is invoked via npx to avoid global installation requirements.
- * It uses the `--prepackaged` flag to package a pre-built app directory (from jpackage).
+ * The toolchain is installed from a lock file that ships inside this plugin
+ * (`src/main/resources/nucleus/electron-builder/package{,-lock}.json`) with
+ * `npm ci --ignore-scripts`, into a build-local directory. electron-builder is then run directly
+ * through `node <toolDir>/node_modules/electron-builder/cli.js`, with `--prepackaged` pointing at
+ * the app image jpackage produced.
+ *
+ * This replaces `npx --yes electron-builder@<version>`. `npx` pinned only the top-level version:
+ * the ~275 transitive packages were resolved fresh from the registry on every build, with no lock
+ * state to check them against and with install scripts enabled — on the same machine that holds the
+ * code-signing certificates and notarization credentials. `npm ci` fails unless every tarball
+ * matches the `integrity` hash recorded in the committed lock file, and `--ignore-scripts` keeps
+ * `preinstall`/`postinstall` hooks in that tree from executing at all.
+ *
+ * Not covered by the lock file: electron-builder downloads a few helper binaries at run time
+ * (`app-builder`, 7-Zip, NSIS, the snap/AppImage templates) from GitHub into `ELECTRON_BUILDER_CACHE`,
+ * verified by its own checksums rather than by npm's. Regenerate the lock file with
+ * `scripts/update-electron-builder-lock.sh`.
  */
 internal class ElectronBuilderToolManager(
     private val execOperations: ExecOperations,
     private val logger: Logger,
 ) {
-    companion object {
-        private const val ELECTRON_BUILDER_PACKAGE = "electron-builder"
+    internal companion object {
+        /**
+         * Pinned electron-builder version. It must match the `electron-builder` entry of the
+         * embedded `package.json` / `package-lock.json` (asserted by
+         * `ElectronBuilderToolchainLockTest`).
+         *
+         * Pinned so the packaged output (and the generated AppImage AppRun) is reproducible across
+         * builds: left unpinned, the same plugin + sources produce different artifacts on different
+         * days. See #266.
+         */
+        internal const val ELECTRON_BUILDER_VERSION = "26.15.5"
 
-        // Pin electron-builder so the packaged output (and the generated AppImage AppRun) is
-        // reproducible across builds. Left unpinned, `npx electron-builder` resolves whatever
-        // version is latest at build time, so the same plugin + sources can produce different
-        // artifacts on different days. See #266.
-        private const val ELECTRON_BUILDER_VERSION = "26.15.5"
-        private const val ELECTRON_BUILDER_SPEC = "$ELECTRON_BUILDER_PACKAGE@$ELECTRON_BUILDER_VERSION"
+        /** Classpath directory holding the pinned toolchain manifest and its lock file. */
+        internal const val TOOLCHAIN_RESOURCE_DIR = "/nucleus/electron-builder"
+
+        internal const val PACKAGE_JSON = "package.json"
+        internal const val PACKAGE_LOCK_JSON = "package-lock.json"
+
+        /** electron-builder's declared `bin` entry, relative to the provisioned tool directory. */
+        private const val CLI_RELATIVE_PATH = "node_modules/electron-builder/cli.js"
 
         private const val PREPACKAGED_ELECTRON_VERSION = "33.0.0"
+
+        private const val MAX_INSTALL_ATTEMPTS = 3
+
+        /** Reads one of the embedded toolchain files. Absence is a packaging bug, not user error. */
+        internal fun readToolchainResource(name: String): String {
+            val path = "$TOOLCHAIN_RESOURCE_DIR/$name"
+            val stream =
+                ElectronBuilderToolManager::class.java.getResourceAsStream(path)
+                    ?: error("Embedded electron-builder toolchain file is missing from the plugin JAR: $path")
+            return stream.use { it.readBytes().toString(Charsets.UTF_8) }
+        }
     }
 
     /**
-     * Invokes electron-builder with the given invocation parameters.
-     *
-     * @param invocation The parameters for the electron-builder invocation.
+     * Invokes electron-builder with the given invocation parameters, provisioning the pinned
+     * toolchain first when it is not already installed in [ElectronBuilderInvocation.toolDir].
      */
     fun invoke(invocation: ElectronBuilderInvocation) {
         require(invocation.configFile.exists()) {
@@ -63,10 +100,11 @@ internal class ElectronBuilderToolManager(
 
         invocation.outputDir.mkdirs()
 
+        val cli = provisionCli(invocation)
+
         val args =
             buildList {
-                add("--yes")
-                add(ELECTRON_BUILDER_SPEC)
+                add(cli.absolutePath)
                 add("--prepackaged")
                 add(invocation.prepackagedDir.absolutePath)
                 add("--config")
@@ -80,70 +118,128 @@ internal class ElectronBuilderToolManager(
                 add(invocation.outputDir.absolutePath)
             }
 
-        logger.info("Running electron-builder: ${invocation.npx.absolutePath} ${args.joinToString(" ")}")
+        logger.info("Running electron-builder: ${invocation.node.absolutePath} ${args.joinToString(" ")}")
 
-        invokeWithRetry(invocation, args, maxAttempts = 3)
+        val result =
+            run(
+                executable = invocation.node,
+                args = args,
+                workingDir = invocation.outputDir,
+                environment = invocation.environment,
+            )
+        if (result.exitValue != 0) {
+            error(
+                failureMessage(
+                    what = "electron-builder",
+                    exitValue = result.exitValue,
+                    command = "${invocation.node.absolutePath} ${args.joinToString(" ")}",
+                    result = result,
+                ),
+            )
+        }
     }
 
     /**
-     * Executes electron-builder, retrying on npm ECOMPROMISED errors.
-     * npm 11+ on Windows ARM64 intermittently fails with "Lock compromised"
-     * due to internal cache integrity race conditions. Cleaning the npm cache
-     * and retrying resolves the issue.
+     * Installs the pinned toolchain into [ElectronBuilderInvocation.toolDir] if needed and returns
+     * electron-builder's CLI entry point.
+     *
+     * The install is skipped when the CLI is already present and the staged manifest still matches
+     * the embedded one — so parallel format tasks that share a tool directory pay for it once.
      */
-    private fun invokeWithRetry(
-        invocation: ElectronBuilderInvocation,
-        args: List<String>,
-        maxAttempts: Int,
-    ) {
-        for (attempt in 1..maxAttempts) {
-            val stdout = ByteArrayOutputStream()
-            val stderr = ByteArrayOutputStream()
+    private fun provisionCli(invocation: ElectronBuilderInvocation): File {
+        val toolDir = invocation.toolDir
+        val cli = File(toolDir, CLI_RELATIVE_PATH)
 
-            val result =
-                execOperations.exec { spec ->
-                    spec.executable = invocation.npx.absolutePath
-                    spec.args = args
-                    spec.environment(invocation.environment)
-                    spec.workingDir = invocation.outputDir
-                    spec.isIgnoreExitValue = true
-                    spec.standardOutput = stdout
-                    spec.errorOutput = stderr
-                }
+        val manifestChanged = stageToolchainManifest(toolDir)
+        if (cli.isFile && !manifestChanged) {
+            logger.info("Reusing provisioned electron-builder toolchain at ${toolDir.absolutePath}")
+            return cli
+        }
 
-            val stdoutStr = stdout.toString()
-            val stderrStr = stderr.toString()
+        logger.lifecycle(
+            "Provisioning electron-builder $ELECTRON_BUILDER_VERSION from the pinned lock file " +
+                "(npm ci --ignore-scripts) into ${toolDir.absolutePath}",
+        )
+        installToolchain(invocation)
 
-            if (stdoutStr.isNotBlank()) {
-                logger.info(stdoutStr)
+        if (!cli.isFile) {
+            error(
+                "electron-builder was installed but its CLI is missing at ${cli.absolutePath}. " +
+                    "The embedded package-lock.json may no longer match electron-builder " +
+                    "$ELECTRON_BUILDER_VERSION — regenerate it with " +
+                    "scripts/update-electron-builder-lock.sh.",
+            )
+        }
+        return cli
+    }
+
+    /**
+     * Writes the embedded `package.json` / `package-lock.json` into [toolDir].
+     *
+     * @return true when either file changed, meaning `npm ci` must run again.
+     */
+    private fun stageToolchainManifest(toolDir: File): Boolean {
+        toolDir.mkdirs()
+        var changed = false
+        for (name in listOf(PACKAGE_JSON, PACKAGE_LOCK_JSON)) {
+            val target = File(toolDir, name)
+            val embedded = readToolchainResource(name)
+            if (!target.isFile || target.readText() != embedded) {
+                target.writeText(embedded)
+                changed = true
             }
+        }
+        return changed
+    }
 
+    /**
+     * Runs `npm ci` in the tool directory, retrying on npm ECOMPROMISED errors.
+     *
+     * npm 11+ on Windows ARM64 intermittently fails with "Lock compromised" due to internal cache
+     * integrity race conditions. Cleaning the npm cache and retrying resolves the issue.
+     */
+    private fun installToolchain(invocation: ElectronBuilderInvocation) {
+        val args =
+            listOf(
+                "ci",
+                // Nothing in the electron-builder tree needs an install hook, and this is the
+                // machine that holds the signing certificates. Keep them from running.
+                "--ignore-scripts",
+                "--no-audit",
+                "--no-fund",
+                "--no-progress",
+                "--loglevel=error",
+            )
+
+        for (attempt in 1..MAX_INSTALL_ATTEMPTS) {
+            val result =
+                run(
+                    executable = invocation.npm,
+                    args = args,
+                    workingDir = invocation.toolDir,
+                    environment = invocation.environment,
+                )
             if (result.exitValue == 0) return
 
-            val isCompromised = stderrStr.contains("ECOMPROMISED")
-            if (isCompromised && attempt < maxAttempts) {
+            if (result.stderr.contains("ECOMPROMISED") && attempt < MAX_INSTALL_ATTEMPTS) {
                 logger.lifecycle(
-                    "npm ECOMPROMISED error on attempt $attempt/$maxAttempts, " +
+                    "npm ECOMPROMISED error on attempt $attempt/$MAX_INSTALL_ATTEMPTS, " +
                         "cleaning npm cache and retrying...",
                 )
                 cleanNpmCache(invocation)
                 continue
             }
 
-            val errMsg =
-                buildString {
-                    appendLine("electron-builder failed with exit code ${result.exitValue}")
-                    appendLine("Command: ${invocation.npx.absolutePath} ${args.joinToString(" ")}")
-                    if (stderrStr.isNotBlank()) {
-                        appendLine("Stderr:")
-                        appendLine(stderrStr)
-                    }
-                    if (stdoutStr.isNotBlank()) {
-                        appendLine("Stdout:")
-                        appendLine(stdoutStr)
-                    }
-                }
-            error(errMsg)
+            error(
+                failureMessage(
+                    what =
+                        "npm ci for the pinned electron-builder toolchain " +
+                            "(a mismatch against package-lock.json integrity hashes also fails here)",
+                    exitValue = result.exitValue,
+                    command = "${invocation.npm.absolutePath} ${args.joinToString(" ")}",
+                    result = result,
+                ),
+            )
         }
     }
 
@@ -156,22 +252,53 @@ internal class ElectronBuilderToolManager(
         }
     }
 
-    /**
-     * Checks if electron-builder is available via npx.
-     */
-    fun isAvailable(npx: File): Boolean =
-        try {
-            val result =
-                execOperations.exec { spec ->
-                    spec.executable = npx.absolutePath
-                    spec.args = listOf("--yes", ELECTRON_BUILDER_SPEC, "--version")
-                    spec.isIgnoreExitValue = true
-                    spec.standardOutput = ByteArrayOutputStream()
-                    spec.errorOutput = ByteArrayOutputStream()
-                }
-            result.exitValue == 0
-        } catch (e: IOException) {
-            logger.warn("Failed to check electron-builder availability: ${e.message}")
-            false
+    private class ProcessResult(
+        val exitValue: Int,
+        val stdout: String,
+        val stderr: String,
+    )
+
+    private fun run(
+        executable: File,
+        args: List<String>,
+        workingDir: File,
+        environment: Map<String, String>,
+    ): ProcessResult {
+        val stdout = ByteArrayOutputStream()
+        val stderr = ByteArrayOutputStream()
+        val result =
+            execOperations.exec { spec ->
+                spec.executable = executable.absolutePath
+                spec.args = args
+                spec.environment(environment)
+                spec.workingDir = workingDir
+                spec.isIgnoreExitValue = true
+                spec.standardOutput = stdout
+                spec.errorOutput = stderr
+            }
+        val out = stdout.toString()
+        if (out.isNotBlank()) {
+            logger.info(out)
+        }
+        return ProcessResult(result.exitValue, out, stderr.toString())
+    }
+
+    private fun failureMessage(
+        what: String,
+        exitValue: Int,
+        command: String,
+        result: ProcessResult,
+    ): String =
+        buildString {
+            appendLine("$what failed with exit code $exitValue")
+            appendLine("Command: $command")
+            if (result.stderr.isNotBlank()) {
+                appendLine("Stderr:")
+                appendLine(result.stderr)
+            }
+            if (result.stdout.isNotBlank()) {
+                appendLine("Stdout:")
+                appendLine(result.stdout)
+            }
         }
 }

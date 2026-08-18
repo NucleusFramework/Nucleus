@@ -48,19 +48,42 @@ internal object NodeJsDetector {
     fun detectNpx(
         customNodePath: String? = null,
         logger: Logger? = null,
+    ): File? = detectSibling(if (currentOS == OS.Windows) "npx.cmd" else "npx", customNodePath, logger)
+
+    /**
+     * Locates npm on the system.
+     *
+     * Needed to provision the pinned electron-builder toolchain with `npm ci` — see
+     * [ElectronBuilderToolManager]. `npx` cannot be used for that: it resolves and installs
+     * whatever the registry serves at build time, with no lock state to check the tree against.
+     *
+     * @param customNodePath Optional override directory containing npm.
+     * @param logger Gradle logger.
+     * @return The File pointing to the npm executable, or null if not found.
+     */
+    fun detectNpm(
+        customNodePath: String? = null,
+        logger: Logger? = null,
+    ): File? = detectSibling(if (currentOS == OS.Windows) "npm.cmd" else "npm", customNodePath, logger)
+
+    /**
+     * Resolves [executableName] next to [customNodePath] when it is set (the property may point at
+     * either the node binary or its directory), otherwise falls back to `PATH`.
+     */
+    private fun detectSibling(
+        executableName: String,
+        customNodePath: String?,
+        logger: Logger?,
     ): File? {
         if (customNodePath != null) {
-            val npxName = if (currentOS == OS.Windows) "npx.cmd" else "npx"
             val dir = File(customNodePath)
             val parent = if (dir.isFile) dir.parentFile else dir
-            val npx = parent.resolve(npxName)
-            if (npx.exists() && npx.canExecute()) {
-                return npx
+            val candidate = parent?.resolve(executableName)
+            if (candidate != null && candidate.exists() && candidate.canExecute()) {
+                return candidate
             }
         }
-
-        val npxName = if (currentOS == OS.Windows) "npx.cmd" else "npx"
-        return findInPath(npxName, logger)
+        return findInPath(executableName, logger)
     }
 
     /**
