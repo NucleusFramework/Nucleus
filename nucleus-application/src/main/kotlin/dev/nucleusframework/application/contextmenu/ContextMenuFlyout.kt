@@ -34,7 +34,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -46,6 +48,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
@@ -59,6 +62,10 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import androidx.compose.ui.window.rememberPopupPositionProviderAtPosition
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.dropWhile
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.map
 
 private const val SUBMENU_OPEN_DELAY_MS = 200L
 private const val SUBMENU_CLOSE_DELAY_MS = 160L
@@ -116,6 +123,7 @@ internal fun ContextMenuFlyout(
 ) {
     val dark = isSystemInDarkTheme()
     val menuDensity = LocalContextMenuDensity.current ?: LocalDensity.current
+    DismissOnWindowFocusLoss(onDismiss)
     Popup(
         popupPositionProvider = rememberPopupPositionProviderAtPosition(status.rect.center),
         onDismissRequest = onDismiss,
@@ -131,6 +139,43 @@ internal fun ContextMenuFlyout(
         }
     }
 }
+
+/**
+ * Closes the menu as soon as the owning window loses focus.
+ *
+ * The flyout is a native popup surface whose outside-click monitor only
+ * observes this process, so a click that activates another application never
+ * reaches it: on Windows `WH_MOUSE` is a thread-local hook, and on Linux the
+ * scene layer is told about outside presses by the *parent window's* own
+ * pointer input (`TaoPopupHostLinux.registerOutsidePressListener`) — Wayland
+ * has no way to watch another surface's clicks at all. Window focus is the
+ * one signal every backend does deliver, and it also covers dismissals with
+ * no click behind them (Alt+Tab, the taskbar, a notification stealing
+ * activation), which is what the OS menus do.
+ *
+ * Reads [LocalWindowInfo] from the *parent* scene: inside [Popup] the layer
+ * publishes its own `WindowInfo` with `isWindowFocused` pinned to `true`.
+ */
+@Composable
+private fun DismissOnWindowFocusLoss(onDismiss: () -> Unit) {
+    val windowInfo = LocalWindowInfo.current
+    val currentOnDismiss by rememberUpdatedState(onDismiss)
+    LaunchedEffect(windowInfo) {
+        snapshotFlow { windowInfo.isWindowFocused }
+            .windowFocusLosses()
+            .collect { currentOnDismiss() }
+    }
+}
+
+/**
+ * Emits once per focused → unfocused transition, ignoring a leading unfocused
+ * run so a backend that has not yet reported focus when the menu opens does
+ * not dismiss it immediately.
+ */
+internal fun Flow<Boolean>.windowFocusLosses(): Flow<Unit> =
+    dropWhile { focused -> !focused }
+        .filter { focused -> !focused }
+        .map { }
 
 @Composable
 private fun ContextMenuFlyoutSurface(
