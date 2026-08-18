@@ -14,11 +14,15 @@ import kotlin.time.Duration.Companion.hours
 @OptIn(InternalSchedulerApi::class)
 class PlatformSchedulerFallbackTest {
     @Test
-    fun `windows availability tracks whether the shared native library loaded`() {
+    fun `windows availability requires the Windows platform and a loaded library`() {
         // macOS and Windows share the `nucleus_scheduler` library name, so the JNI
         // class can report loaded on macOS even though the Windows COM entry points
-        // are absent. Availability is still exactly the load flag.
-        assertEquals(WindowsTaskSchedulerJni.isLoaded, WindowsTaskScheduler.isAvailable)
+        // are absent. Availability must also require Platform.Windows.
+        if (Platform.Current == Platform.Windows) {
+            assertEquals(WindowsTaskSchedulerJni.isLoaded, WindowsTaskScheduler.isAvailable)
+        } else {
+            assertFalse(WindowsTaskScheduler.isAvailable)
+        }
     }
 
     @Test

@@ -319,34 +319,15 @@ internal object PlatformInstaller {
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher = currentExecutablePath()
-        val installerCmd =
-            when (extension) {
-                "msi" -> "Start-Process msiexec -ArgumentList '/i', '\"${file.absolutePath}\"', '/passive' -Wait"
-                else -> "Start-Process '${file.absolutePath}' -ArgumentList '/S', '--updated' -Wait"
-            }
-
-        val relaunchCmd =
-            if (restart && launcher != null) {
-                "\n|# Relaunch the application\n|Start-Process '$launcher'"
-            } else {
-                ""
-            }
-
         val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.ps1")
         script.writeText(
-            """
-            |# Wait for the app process to fully exit
-            |while (Get-Process -Id $pid -ErrorAction SilentlyContinue) {
-            |    Start-Sleep -Milliseconds 500
-            |}
-            |
-            |# Run the installer silently
-            |$installerCmd
-            |$relaunchCmd
-            |# Clean up
-            |Remove-Item '${file.absolutePath}' -Force -ErrorAction SilentlyContinue
-            |Remove-Item '${script.absolutePath}' -Force -ErrorAction SilentlyContinue
-            """.trimMargin(),
+            buildWindowsUpdateScript(
+                pid = pid,
+                installerCommand = windowsInstallerCommand(file, extension),
+                relaunchCommand = windowsRelaunchCommand(restart, launcher),
+                artifactPath = file.absolutePath,
+                scriptPath = script.absolutePath,
+            ),
         )
 
         ProcessBuilder(

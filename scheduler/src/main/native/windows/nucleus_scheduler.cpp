@@ -7,8 +7,11 @@
 
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
+#define SECURITY_WIN32
 #include <jni.h>
 #include <windows.h>
+#include <lmcons.h>
+#include <security.h>
 #include <taskschd.h>
 #include <wrl/client.h>
 #include <string>
@@ -17,6 +20,7 @@
 #pragma comment(lib, "taskschd.lib")
 #pragma comment(lib, "ole32.lib")
 #pragma comment(lib, "oleaut32.lib")
+#pragma comment(lib, "secur32.lib")
 
 using Microsoft::WRL::ComPtr;
 
@@ -292,6 +296,18 @@ static HRESULT applyTrigger(ITaskDefinition *task, const TriggerConfig &cfg) {
     case TK_LOGON: {
         hr = triggers->Create(TASK_TRIGGER_LOGON, &trigger);
         if (FAILED(hr)) return hr;
+
+        ComPtr<ILogonTrigger> lt;
+        hr = trigger->QueryInterface(IID_PPV_ARGS(&lt));
+        if (FAILED(hr)) return hr;
+
+        // An unset UserId means "any user", which RegisterTaskDefinition
+        // rejects with E_ACCESSDENIED (0x80070005) for a non-admin caller.
+        WCHAR user[UNLEN + 1 + 256];
+        ULONG userLen = static_cast<ULONG>(std::size(user));
+        if (GetUserNameExW(NameSamCompatible, user, &userLen)) {
+            lt->put_UserId(BStr(user));
+        }
         break;
     }
 

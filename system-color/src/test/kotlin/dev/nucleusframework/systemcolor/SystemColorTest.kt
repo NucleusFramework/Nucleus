@@ -3,6 +3,7 @@ package dev.nucleusframework.systemcolor
 import androidx.compose.ui.graphics.Color
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.systemcolor.mac.MacSystemColorDetector
+import dev.nucleusframework.systemcolor.windows.WindowsSystemColorDetector
 import java.util.function.Consumer
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -38,17 +39,41 @@ class SystemColorTest {
     }
 
     @Test
+    fun `windows detector returns a Color or null and a high-contrast boolean`() {
+        if (Platform.Current != Platform.Windows) return
+
+        val color: Color? = WindowsSystemColorDetector.getAccentColor()
+        if (color != null) {
+            assertTrue(color.red in 0f..1f)
+            assertTrue(color.green in 0f..1f)
+            assertTrue(color.blue in 0f..1f)
+        }
+        val highContrast = WindowsSystemColorDetector.isHighContrast()
+        assertEquals(highContrast, WindowsSystemColorDetector.isHighContrast())
+        assertTrue(WindowsSystemColorDetector.isAccentColorSupported())
+    }
+
+    @Test
     fun `accent and contrast listeners can be registered and removed`() {
-        if (Platform.Current != Platform.MacOS) return
+        if (Platform.Current != Platform.MacOS && Platform.Current != Platform.Windows) return
 
         var colorSeen: Color? = Color.Transparent
         var contrastSeen: Boolean? = null
-        val accentListener = Consumer<Color?> { colorSeen = it }
-        val contrastListener = Consumer<Boolean> { contrastSeen = it }
-        MacSystemColorDetector.registerAccentListener(accentListener)
-        MacSystemColorDetector.removeAccentListener(accentListener)
-        MacSystemColorDetector.registerContrastListener(contrastListener)
-        MacSystemColorDetector.removeContrastListener(contrastListener)
+        if (Platform.Current == Platform.MacOS) {
+            val accentListener = Consumer<Color?> { colorSeen = it }
+            val contrastListener = Consumer<Boolean> { contrastSeen = it }
+            MacSystemColorDetector.registerAccentListener(accentListener)
+            MacSystemColorDetector.removeAccentListener(accentListener)
+            MacSystemColorDetector.registerContrastListener(contrastListener)
+            MacSystemColorDetector.removeContrastListener(contrastListener)
+        } else {
+            val accentListener = Consumer<Color> { colorSeen = it }
+            val contrastListener = Consumer<Boolean> { contrastSeen = it }
+            WindowsSystemColorDetector.registerAccentListener(accentListener)
+            WindowsSystemColorDetector.removeAccentListener(accentListener)
+            WindowsSystemColorDetector.registerContrastListener(contrastListener)
+            WindowsSystemColorDetector.removeContrastListener(contrastListener)
+        }
         assertEquals(Color.Transparent, colorSeen)
         assertEquals(null, contrastSeen)
     }

@@ -1,6 +1,7 @@
 package dev.nucleusframework.scheduler.internal
 
 import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.scheduler.ExistingTaskPolicy
 import dev.nucleusframework.scheduler.InternalSchedulerApi
 import dev.nucleusframework.scheduler.TaskId
@@ -30,7 +31,11 @@ internal object WindowsTaskScheduler : PlatformScheduler {
     private const val HOURLY_INTERVAL_MINUTES = 60
     private const val HOURLY_DURATION_MINUTES = 60
 
-    val isAvailable: Boolean get() = WindowsTaskSchedulerJni.isLoaded
+    // macOS and Windows share the `nucleus_scheduler` library name, so the
+    // JNI class can report loaded off-Windows even though COM entry points
+    // exist only in the Win32 build.
+    val isAvailable: Boolean
+        get() = Platform.Current == Platform.Windows && WindowsTaskSchedulerJni.isLoaded
 
     private val appId: String
         get() = NucleusApp.appId
