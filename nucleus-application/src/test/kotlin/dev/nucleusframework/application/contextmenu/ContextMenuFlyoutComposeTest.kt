@@ -10,8 +10,10 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.runComposeUiTest
+import dev.nucleusframework.core.runtime.Platform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class ContextMenuFlyoutComposeTest {
@@ -79,6 +81,10 @@ class ContextMenuFlyoutComposeTest {
 
     @Test
     fun `linux representation opens the desktop flyout`() {
+        assumeTrue(
+            "macOS Representation uses NSMenu, not the Compose flyout",
+            Platform.Current != Platform.MacOS,
+        )
         runComposeUiTest {
             val state = ContextMenuState()
             state.status = ContextMenuState.Status.Open(Rect(4f, 4f, 16f, 16f))

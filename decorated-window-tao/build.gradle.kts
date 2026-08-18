@@ -121,19 +121,21 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     // Same Kover JVM agent the `test` task uses, so headful window coverage
     // is counted. JavaExec is otherwise invisible to Kover.
     dependsOn(tasks.named("koverFindJar"))
+    // Resolve these as RegularFileProperty at configuration time so the
+    // doFirst action does not capture the Gradle script `layout` object
+    // (configuration-cache incompatible).
+    val koverAgentJar =
+        layout.buildDirectory
+            .file("kover/kover-jvm-agent-0.9.8.jar")
+    val koverArgsFile =
+        layout.buildDirectory
+            .file("tmp/taoHeadful/kover-agent.args")
+    val koverReportFile = taoHeadfulKoverReport
     doFirst {
-        val agent =
-            layout.buildDirectory
-                .file("kover/kover-jvm-agent-0.9.8.jar")
-                .get()
-                .asFile
-        val report = taoHeadfulKoverReport.get().asFile
+        val agent = koverAgentJar.get().asFile
+        val report = koverReportFile.get().asFile
         report.parentFile.mkdirs()
-        val argsFile =
-            layout.buildDirectory
-                .file("tmp/taoHeadful/kover-agent.args")
-                .get()
-                .asFile
+        val argsFile = koverArgsFile.get().asFile
         argsFile.parentFile.mkdirs()
         argsFile.writeText(
             buildString {
