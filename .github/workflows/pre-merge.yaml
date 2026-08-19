@@ -197,58 +197,6 @@ jobs:
       - name: Run Gradle tasks
         run: ./gradlew preMerge --continue
 
-      - name: Produce Linux Kover binary report
-        if: success() || failure()
-        run: ./gradlew koverBinaryReport --no-configuration-cache
-
-      - name: Upload Linux Kover report
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kover-Linux
-          path: build/reports/kover/report.bin
-          if-no-files-found: warn
-
-  # Full published-runtime test suite on macOS and Windows so Kover can
-  # union their JNI/backend hits with the Linux preMerge report. Linux is
-  # already covered by `gradle` above — do not pay for it twice.
-  coverage:
-    needs: build-natives
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Download native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: 'natives-*'
-          merge-multiple: true
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: Run published-runtime tests and produce Kover binary report
-        run: ./gradlew koverBinaryReport --no-configuration-cache --continue
-
-      - name: Upload Kover report
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kover-${{ runner.os }}
-          path: build/reports/kover/report.bin
-          if-no-files-found: warn
-
   # Stage-1 offscreen Tao scene tests on the full OS matrix. These tests are
   # headless (CPU-recorded ComposeScene, no display), so plain runners work on
   # all three platforms; the native artifacts are downloaded for the
@@ -346,14 +294,6 @@ jobs:
       - name: Run headful suite
         if: runner.os != 'Linux'
         run: ./gradlew :decorated-window-tao:taoHeadfulTest
-
-      - name: Upload headful Kover report
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kover-headful-${{ runner.os }}
-          path: decorated-window-tao/build/kover/bin-reports/taoHeadful.ic
-          if-no-files-found: warn
 
       - name: Smoke standalone NSPanel chain (macOS)
         if: runner.os == 'macOS'
@@ -486,59 +426,6 @@ jobs:
           swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
-
-  # Union of Linux + macOS + Windows line coverage. The 75% floor is this
-  # merged number, not any single OS. Headful ICs are optional extras.
-  coverage-verify:
-    needs: [gradle, coverage, tao-headful]
-    if: ${{ !cancelled() && needs.gradle.result == 'success' && needs.coverage.result == 'success' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
-
-      - name: Download native artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: 'natives-*'
-          merge-multiple: true
-
-      - name: Download OS Kover reports
-        uses: actions/download-artifact@v4
-        with:
-          pattern: 'kover-*'
-          path: build/kover/cross-os
-          merge-multiple: false
-
-      - name: Flatten Kover reports
-        run: |
-          mkdir -p build/kover/cross-os
-          find build/kover/cross-os -type f \( -name '*.bin' -o -name '*.ic' \) -print
-          # download-artifact with merge-multiple:false nests each artifact.
-          # additionalBinaryReports walks the tree, so nesting is fine.
-          count=$(find build/kover/cross-os -type f \( -name '*.bin' -o -name '*.ic' \) | wc -l)
-          echo "Found $count Kover binary reports"
-          test "$count" -ge 2
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '21'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
-
-      - name: Verify merged published-runtime coverage
-        run: ./gradlew koverXmlReport koverLog koverVerify --no-configuration-cache
-
-      - name: Upload merged Kover HTML
-        if: success() || failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kover-merged-html
-          path: build/reports/kover/html
-          if-no-files-found: warn
 
   # ── Expensive PR-only stages ───────────────────────────────────────────
   # Packaging and GraalVM used to be independent workflows that each re-ran

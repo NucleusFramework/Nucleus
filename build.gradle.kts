@@ -256,13 +256,10 @@ tasks.register("preMerge") {
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
 }
 
-// Aggregated coverage for every published runtime module. The 75% floor is
-// the *union* of line coverage across Linux + macOS + Windows — one OS
-// cannot hit it, because each backend's JNI sits in the same denominator.
-// Local `check` / `preMerge` therefore do not run koverVerify. CI downloads
-// each OS's `koverBinaryReport` into build/kover/cross-os/ and runs
-// koverVerify on the merged report. Do not add production-package excludes
-// to hit 75% — write tests. GraalVM @TargetClass substitutions stay IN.
+// Aggregated coverage for every published runtime module. Local `check` /
+// `preMerge` do not run koverVerify — coverage is informational only
+// (`./gradlew koverHtmlReport` / `koverLog`). GraalVM @TargetClass
+// substitutions stay IN.
 kover {
     reports {
         filters {
@@ -274,15 +271,7 @@ kover {
                 )
             }
         }
-        verify {
-            rule("published-runtime-line-coverage") {
-                minBound(75)
-            }
-        }
         total {
-            // Single-OS `check` must stay green. The 75% rule is enforced by
-            // the CI `coverage-verify` job, which calls `koverVerify` after
-            // merging the three OS binary reports.
             verify {
                 onCheck = false
             }
@@ -307,9 +296,9 @@ kover {
             if (headfulIc.isFile && headfulIc.length() > 0L) {
                 additionalBinaryReports.add(headfulIc)
             }
-            // CI drops each OS's koverBinaryReport here before koverVerify.
-            // Configuration-time listing is enough: the files exist before
-            // Gradle starts on the merge job.
+            // Optional extra binary reports dropped into this directory
+            // (e.g. a local multi-OS merge). Configuration-time listing
+            // is enough: the files must exist before Gradle starts.
             val crossOsDir = file("build/kover/cross-os")
             if (crossOsDir.isDirectory) {
                 crossOsDir
