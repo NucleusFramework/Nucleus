@@ -3,14 +3,44 @@ package dev.nucleusframework.updater.internal
 import dev.nucleusframework.core.runtime.Platform
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 
 class PlatformInstallerHelpersTest {
+    @Test
+    fun `update work dir is a fresh private directory not a predictable shared temp path`() {
+        val first = createUpdateWorkDir()
+        val second = createUpdateWorkDir()
+        try {
+            assertTrue("work dir must exist", first.isDirectory)
+            // A fixed name in the shared temp dir would collide across runs; each run is unique.
+            assertNotEquals("each update run gets its own directory", first.absolutePath, second.absolutePath)
+            // On POSIX the directory must be owner-only (rwx------), closing the symlink/pre-create hole.
+            val posix = Files.getFileAttributeView(first.toPath(), PosixFileAttributeView::class.java)
+            if (posix != null) {
+                assertEquals(
+                    setOf(
+                        PosixFilePermission.OWNER_READ,
+                        PosixFilePermission.OWNER_WRITE,
+                        PosixFilePermission.OWNER_EXECUTE,
+                    ),
+                    posix.readAttributes().permissions(),
+                )
+            }
+        } finally {
+            first.delete()
+            second.delete()
+        }
+    }
+
     @get:Rule
     val tmp = TemporaryFolder()
 
