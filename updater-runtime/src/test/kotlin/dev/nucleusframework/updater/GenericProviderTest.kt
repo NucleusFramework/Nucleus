@@ -3,10 +3,32 @@ package dev.nucleusframework.updater
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.updater.provider.GenericProvider
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GenericProviderTest {
+    @Test
+    fun `rejects a plain http base url on a public host`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            GenericProvider("http://updates.example.com")
+        }
+    }
+
+    @Test
+    fun `rejects a non http scheme`() {
+        assertThrows(IllegalArgumentException::class.java) {
+            GenericProvider("ftp://updates.example.com")
+        }
+    }
+
+    @Test
+    fun `allows plain http only for loopback hosts`() {
+        // Local integration tests (e.g. the delta RangeHttpServer) serve fixtures over loopback http.
+        assertEquals("http://127.0.0.1:8080", GenericProvider("http://127.0.0.1:8080").baseUrl)
+        assertEquals("http://localhost:8080", GenericProvider("http://localhost:8080").baseUrl)
+    }
+
     @Test
     fun `trims a trailing slash from the base url`() {
         val provider = GenericProvider("https://updates.example.com/channel/")
