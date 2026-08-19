@@ -1,5 +1,6 @@
 package dev.nucleusframework.updater.internal
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -53,5 +54,23 @@ class WindowsUpdateScriptTest {
         assertTrue("artifact cleanup: $script", script.contains("Remove-Item '${artifact.absolutePath}'"))
         assertTrue("script cleanup: $script", script.contains("Remove-Item '${scriptFile.absolutePath}'"))
         assertFalse("unexpected msiexec: $script", script.contains("msiexec"))
+    }
+
+    @Test
+    fun `a single quote in the manifest-derived name cannot break out of the powershell string`() {
+        // The artifact name comes from the remote manifest's `url`; a hostile `'` must be neutralised.
+        val artifact = File("C:\\\\Temp\\\\ev'il; Start-Process calc.exe #.exe")
+        val script =
+            buildWindowsUpdateScript(
+                pid = 1L,
+                installerCommand = windowsInstallerCommand(artifact, "exe"),
+                relaunchCommand = "",
+                artifactPath = artifact.absolutePath,
+                scriptPath = "C:\\\\Temp\\\\nucleus-update.ps1",
+            )
+        // The lone quote is doubled (escaped); the raw break-out sequence never appears verbatim.
+        assertTrue("escaped: $script", script.contains("ev''il; Start-Process calc.exe #.exe"))
+        assertFalse("raw quote break-out: $script", script.contains("ev'il;"))
+        assertEquals("ev''il", psSingleQuote("ev'il"))
     }
 }
