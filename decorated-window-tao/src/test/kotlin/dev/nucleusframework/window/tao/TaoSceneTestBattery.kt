@@ -85,6 +85,15 @@ public object TaoSceneTestBattery {
         run("TaoKeyMappingTest: linux ctrl combos fall back to the latin keysym") {
             TaoKeyMappingTest().`linux ctrl combos fall back to the latin keysym`()
         }
+        run("TaoKeyMappingTest: linux function keys F1 to F12") {
+            TaoKeyMappingTest().`linux function keys F1 to F12`()
+        }
+        run("TaoKeyMappingTest: linux keypad keys carry numpad location") {
+            TaoKeyMappingTest().`linux keypad keys carry numpad location`()
+        }
+        run("TaoKeyMappingTest: linux navigation space caps lock and punctuation") {
+            TaoKeyMappingTest().`linux navigation space caps lock and punctuation`()
+        }
         run("TaoKeyboardModifiersDecodeTest: all sixteen combinations decode exactly") {
             TaoKeyboardModifiersDecodeTest().`all sixteen combinations decode exactly`()
         }
@@ -228,6 +237,9 @@ public object TaoSceneTestBattery {
         }
         run("TaoScenePopupTest: outside click dismisses a focusable popup") {
             TaoScenePopupTest().`outside click dismisses a focusable popup`()
+        }
+        run("TaoScenePopupTest: two stacked popups keep independent pixels") {
+            TaoScenePopupTest().`two stacked popups keep independent pixels`()
         }
         run("TaoScenePopupTest: click inside a focusable popup does not dismiss it") {
             TaoScenePopupTest().`click inside a focusable popup does not dismiss it`()

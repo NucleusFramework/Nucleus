@@ -8,6 +8,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.File
 
 class UpdateMarkerTest {
     @After
@@ -60,6 +61,24 @@ class UpdateMarkerTest {
         assertNotNull(result)
         assertEquals("1.1.0", result!!.first)
         assertEquals("2.0.0", result.second)
+    }
+
+    @Test
+    fun `malformed marker files are treated as missing`() {
+        UpdateMarker.write("1.0.0", "2.0.0")
+        val file =
+            File(
+                System.getProperty("user.home"),
+                "Library/Application Support/" +
+                    "${dev.nucleusframework.core.runtime.NucleusApp.appId}/nucleus-update-event",
+            )
+        if (!file.isFile) return
+        file.writeText("not-a-pair\n")
+        assertNull(UpdateMarker.read())
+        file.writeText("previousVersion=only\n")
+        assertNull(UpdateMarker.read())
+        file.writeText("newVersion=2.0.0\n")
+        assertNull(UpdateMarker.read())
     }
 
     @Test

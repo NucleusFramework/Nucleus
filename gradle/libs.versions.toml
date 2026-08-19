@@ -24,6 +24,7 @@ jna = "5.19.1"
 kotlin = "2.4.0"
 kotlinPoet = "2.3.0"
 kotlinxSerialization = "1.11.0"
+kover = "0.9.8"
 ktlintGradle = "14.2.0"
 ktor = "3.5.1"
 lifecycleViewmodelNavigation3 = "2.10.0"
@@ -47,6 +48,7 @@ zstdKmp = "0.4.0"
 binaryCompatibilityValidator = { id = "org.jetbrains.kotlinx.binary-compatibility-validator", version.ref = "bcv" }
 detekt = { id = "dev.detekt", version.ref = "detekt"}
 kotlin = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin"}
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 ktlint = { id = "org.jlleitschuh.gradle.ktlint", version.ref = "ktlintGradle"}
 pluginPublish = { id = "com.gradle.plugin-publish", version.ref = "pluginPublish"}
 versionCheck = { id = "com.github.ben-manes.versions", version.ref = "versionCheck"}

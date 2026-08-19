@@ -110,11 +110,43 @@ artifacts {
 // accepts window creation from thread 0. Not part of `check`: needs a display
 // (real session on macOS/Windows CI runners, Xvfb+WM on Linux).
 
+val taoHeadfulKoverReport =
+    layout.buildDirectory.file("kover/bin-reports/taoHeadful.ic")
+
 val taoHeadfulTest by tasks.registering(JavaExec::class) {
     description = "Runs the stage-2 real-window Tao test suite (requires a display)"
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+    // Same Kover JVM agent the `test` task uses, so headful window coverage
+    // is counted. JavaExec is otherwise invisible to Kover.
+    dependsOn(tasks.named("koverFindJar"))
+    // Resolve these as RegularFileProperty at configuration time so the
+    // doFirst action does not capture the Gradle script `layout` object
+    // (configuration-cache incompatible).
+    val koverAgentJar =
+        layout.buildDirectory
+            .file("kover/kover-jvm-agent-0.9.8.jar")
+    val koverArgsFile =
+        layout.buildDirectory
+            .file("tmp/taoHeadful/kover-agent.args")
+    val koverReportFile = taoHeadfulKoverReport
+    doFirst {
+        val agent = koverAgentJar.get().asFile
+        val report = koverReportFile.get().asFile
+        report.parentFile.mkdirs()
+        val argsFile = koverArgsFile.get().asFile
+        argsFile.parentFile.mkdirs()
+        argsFile.writeText(
+            buildString {
+                appendLine("report.file=${report.absolutePath}")
+                appendLine("exclude=android.*")
+                appendLine("exclude=com.android.*")
+                appendLine("exclude=jdk.internal.*")
+            },
+        )
+        jvmArgs("-javaagent:${agent.absolutePath}=file:${argsFile.absolutePath}")
+    }
     // Forward the watchdog / case-name filter overrides into the forked JVM.
     System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
         systemProperty("nucleus.tao.headful.watchdogMillis", it)

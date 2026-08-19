@@ -1,4 +1,3 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -35,8 +34,6 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
-    // Registry tests only run on Windows
-    onlyIf { Os.isFamily(Os.FAMILY_WINDOWS) }
 }
 
 nucleusNative {

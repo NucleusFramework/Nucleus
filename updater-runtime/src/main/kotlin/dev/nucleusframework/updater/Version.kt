@@ -42,9 +42,9 @@ public data class Version(
             val matchResult =
                 SEMVER_REGEXP.matchEntire(versionString.trim())
                     ?: return Version(0, 0, 0, "")
-            val major = matchResult.groups[GROUP_MAJOR]?.value?.toInt() ?: 0
-            val minor = matchResult.groups[GROUP_MINOR]?.value?.toInt() ?: 0
-            val patch = matchResult.groups[GROUP_PATCH]?.value?.toInt() ?: 0
+            val major = matchResult.groups[GROUP_MAJOR]?.value?.toIntOrNull() ?: 0
+            val minor = matchResult.groups[GROUP_MINOR]?.value?.toIntOrNull() ?: 0
+            val patch = matchResult.groups[GROUP_PATCH]?.value?.toIntOrNull() ?: 0
             val meta = matchResult.groups[GROUP_META]?.value ?: ""
             return Version(major, minor, patch, meta)
         }

@@ -1,6 +1,7 @@
 package dev.nucleusframework.spellcheck
 
 import org.junit.Assume.assumeFalse
+import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
 import kotlin.test.Test
@@ -57,6 +58,78 @@ class SpellcheckNoopTest {
             assertFalse(session.check("hello"))
             assertTrue(session.suggest("helo").isEmpty())
             assertFalse(session.addToDictionary("helo"))
+        }
+    }
+
+    @Test
+    fun `darwin alias and nux alias pick the matching platform branch`() {
+        val isolated = Files.createTempFile("nucleus-spellcheck-darwin-", ".dic")
+        SpellcheckSession(
+            locale = Locale.US,
+            osName = "Darwin",
+            userDictionaryFile = isolated,
+        ).use { darwin ->
+            val hostMac = System.getProperty("os.name", "").contains("Mac", ignoreCase = true)
+            if (hostMac) {
+                SpellcheckSession(locale = Locale.US, userDictionaryFile = isolated).use { host ->
+                    assertEquals(host.isAvailable, darwin.isAvailable)
+                    assertEquals(host.dictionaryTag, darwin.dictionaryTag)
+                }
+            } else {
+                assertFalse(darwin.isAvailable)
+            }
+        }
+        SpellcheckSession(
+            locale = Locale.US,
+            osName = "GNU/Linux",
+            dictionaryDirectories = listOf(Path.of("/tmp/nucleus-spellcheck-missing-nux")),
+        ).use { linux ->
+            assertFalse(linux.isAvailable)
+            assertEquals(null, linux.dictionaryTag)
+        }
+    }
+
+    @Test
+    fun `empty and blank words never check or persist on a no-op session`() {
+        SpellcheckSession(locale = Locale.US, osName = "FreeBSD").use { session ->
+            assertEquals(null, session.dictionaryTag)
+            assertFalse(session.check(""))
+            assertFalse(session.check("   "))
+            assertEquals(emptyList(), session.suggest(""))
+            assertFalse(session.addToDictionary(""))
+            assertFalse(session.addToDictionary(" \t"))
+            assertEquals(emptyList(), session.misspellings("helo world"))
+            session.close()
+            assertFalse(session.isAvailable)
+            assertFalse(session.check("hello"))
+        }
+    }
+
+    @Test
+    fun `linux with dummy dictionaries stays a no-op without Hunspell`() {
+        val dir =
+            java.nio.file.Files
+                .createTempDirectory("nucleus-spellcheck-dummy-")
+        try {
+            java.nio.file.Files
+                .writeString(dir.resolve("en_US.aff"), "SET UTF-8")
+            java.nio.file.Files
+                .writeString(dir.resolve("en_US.dic"), "1\nhello")
+            SpellcheckSession(
+                locale = Locale.US,
+                osName = "Linux",
+                dictionaryDirectories = listOf(dir),
+            ).use { session ->
+                val hostLinux =
+                    System.getProperty("os.name", "").contains("Linux", ignoreCase = true)
+                if (!hostLinux) {
+                    assertFalse(session.isAvailable)
+                    assertFalse(session.check("hello"))
+                    assertEquals(emptyList(), session.suggest("helo"))
+                }
+            }
+        } finally {
+            dir.toFile().deleteRecursively()
         }
     }
 }

@@ -46,6 +46,31 @@ class SpellcheckLabelTest {
     }
 
     @Test
+    fun `country-less and extra locales use the language table`() {
+        assertEquals("辞書に追加", SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.JAPANESE))
+        assertEquals("사전에 추가", SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.KOREAN))
+        assertEquals(
+            "Adicionar ao dicionário",
+            SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.forLanguageTag("pt-BR")),
+        )
+        assertEquals(
+            "Agregar al diccionario",
+            SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.forLanguageTag("es-US")),
+        )
+        assertEquals(
+            "加入字典",
+            SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.forLanguageTag("zh-HK")),
+        )
+        val previous = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.ITALY)
+            assertEquals("Aggiungi al dizionario", SpellcheckMenuModel.localizedAddToDictionaryLabel())
+        } finally {
+            Locale.setDefault(previous)
+        }
+    }
+
+    @Test
     fun `legacy language codes map onto the modern tags`() {
         assertEquals(
             SpellcheckMenuModel.localizedAddToDictionaryLabel(Locale.forLanguageTag("id")),

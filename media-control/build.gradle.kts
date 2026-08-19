@@ -17,6 +17,7 @@ val publishVersion =
 dependencies {
     api(project(":core-runtime"))
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(kotlin("test"))
 }
 
 java {

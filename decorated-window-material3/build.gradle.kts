@@ -24,6 +24,11 @@ dependencies {
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.compose.material3)
+    testImplementation(kotlin("test"))
+    testImplementation(project(":decorated-window-core"))
+    testImplementation(compose.desktop.currentOs)
+    testImplementation(libs.compose.material3)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {
