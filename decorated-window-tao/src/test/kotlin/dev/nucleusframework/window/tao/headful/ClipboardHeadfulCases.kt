@@ -10,10 +10,14 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
+import java.awt.image.BufferedImage
+import java.io.File
 import java.util.concurrent.TimeUnit
+import javax.imageio.ImageIO
 
 /**
  * #582 — the Tao clipboard must be the *window's* clipboard (GTK / the current
@@ -31,14 +35,17 @@ import java.util.concurrent.TimeUnit
  * real input event. An unfocused window neither sees nor can take the
  * selection — the same reason `wl-paste` needs the `data-control` protocol.
  *
- * The AWT path is deliberately unreachable: the clipboard is built with a
- * fallback that fails the case if it is ever consulted.
+ * In the two text cases the AWT path is deliberately unreachable — the
+ * clipboard is built with a fallback that fails the case if it is ever
+ * consulted. The third case is the opposite: it checks that non-text flavors,
+ * which GTK does not carry yet, still reach the app through that fallback.
  */
 internal object ClipboardHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
         listOf(
             gtkClipboardReadsForeignSelection(),
             gtkClipboardPublishesToTheDesktop(),
+            nonTextFlavorsStillReachTheApp(),
         )
 
     /** Text with a non-BMP character: modified UTF-8 would corrupt it. */
@@ -85,6 +92,81 @@ internal object ClipboardHeadfulCases {
                 readClipboardWith("wl-paste", "--no-newline") == text
             }
         }
+
+    /**
+     * GTK only carries text so far, so an image must still arrive through the
+     * AWT fallback: replacing `LocalClipboard` on Linux must not *narrow* what
+     * an app can paste. Skipped when AWT itself cannot see the image (no
+     * XWayland bridge), since then there is nothing to preserve.
+     */
+    private fun nonTextFlavorsStillReachTheApp(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#582 an image on the clipboard still reaches the app (AWT fallback)",
+            skip = { linuxWithNativeClipboard() ?: requireTool("wl-copy") },
+        ) {
+            focusAndSettle()
+
+            check(publishPngWithWlCopy()) { "wl-copy failed to publish the image" }
+            if (!awtSeesImage()) {
+                // The X11 bridge is what the fallback rides on; without it this
+                // case has no baseline to compare against.
+                return@TaoWindowTestCase
+            }
+
+            val clipboard = TaoLinuxClipboard(fallback = AwtClipboard)
+            awaitClipboard("the clip entry to offer an image flavor") {
+                clipboard.getClipEntry()?.supportsImage() == true
+            }
+        }
+
+    private suspend fun publishPngWithWlCopy(): Boolean =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val png = File.createTempFile("nucleus-582-", ".png")
+                png.deleteOnExit()
+                val image = BufferedImage(PROBE_IMAGE_SIZE, PROBE_IMAGE_SIZE, BufferedImage.TYPE_INT_RGB)
+                ImageIO.write(image, "png", png)
+                val process =
+                    ProcessBuilder("wl-copy", "--type", "image/png")
+                        .redirectInput(png)
+                        .redirectErrorStream(true)
+                        .start()
+                process.waitFor(TOOL_TIMEOUT_SECONDS, TimeUnit.SECONDS) && process.exitValue() == 0
+            }.getOrDefault(false)
+        }
+
+    private suspend fun awtSeesImage(): Boolean =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                Toolkit
+                    .getDefaultToolkit()
+                    .systemClipboard
+                    .getContents(null)
+                    ?.isDataFlavorSupported(DataFlavor.imageFlavor) == true
+            }.getOrDefault(false)
+        }
+
+    private fun ClipEntry.supportsImage(): Boolean =
+        (nativeClipEntry as? Transferable)?.isDataFlavorSupported(DataFlavor.imageFlavor) == true
+
+    /** What Compose's `AwtPlatformClipboard` does; that class is internal, hence the copy. */
+    private object AwtClipboard : Clipboard {
+        override suspend fun getClipEntry(): ClipEntry? =
+            withContext(Dispatchers.IO) {
+                Toolkit
+                    .getDefaultToolkit()
+                    .systemClipboard
+                    .getContents(null)
+                    ?.let { ClipEntry(it) }
+            }
+
+        override suspend fun setClipEntry(clipEntry: ClipEntry?) {
+            val transferable = clipEntry?.nativeClipEntry as? Transferable ?: return
+            withContext(Dispatchers.IO) {
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(transferable, null)
+            }
+        }
+    }
 
     /**
      * Wayland hands selection offers to the focused client only, so a case that
@@ -168,6 +250,7 @@ internal object ClipboardHeadfulCases {
         return if (NativeTaoLinuxClipboardBridge.isAvailable) null else "GTK clipboard unavailable"
     }
 
+    private const val PROBE_IMAGE_SIZE = 32
     private const val TOOL_TIMEOUT_SECONDS = 5L
     private const val FOCUS_SETTLE_MILLIS = 800L
     private const val CLIPBOARD_TIMEOUT_MILLIS = 5_000L

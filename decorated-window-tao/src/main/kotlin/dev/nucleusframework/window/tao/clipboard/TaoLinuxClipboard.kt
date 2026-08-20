@@ -46,6 +46,11 @@ import kotlin.coroutines.resume
  * the selection still holds that same text, preserving span styles for
  * copy/paste inside the app.
  *
+ * Everything that is *not* text — images, file lists — keeps going through
+ * [fallback], so this narrows nothing compared to the AWT clipboard it
+ * replaces. GTK can carry those too (`gtk_clipboard_set_image`, `text/uri-list`)
+ * and should, so that they stop depending on XWayland as well.
+ *
  * Threading: GTK is only touched from `Dispatchers.Main`, which on this
  * backend *is* the GTK main thread (Tao's native event loop).
  */
@@ -62,7 +67,8 @@ internal class TaoLinuxClipboard(
 
     override suspend fun getClipEntry(): ClipEntry? {
         if (!NativeTaoLinuxClipboardBridge.isAvailable) return fallback.getClipEntry()
-        val text = withContext(Dispatchers.Main) { requestText() } ?: return null
+        val text = withContext(Dispatchers.Main) { requestText() }
+        if (text == null) return nonTextEntryFromAwt()
         lastWritten?.let { (written, entry) -> if (written == text) return entry }
         return ClipEntry(StringSelection(text))
     }
@@ -81,7 +87,10 @@ internal class TaoLinuxClipboard(
         // another process), hence IO rather than the GTK thread.
         val text = withContext(Dispatchers.IO) { (clipEntry.nativeClipEntry as? Transferable)?.plainTextOrNull() }
         if (text == null) {
-            logger.log(Level.FINE, "Clip entry carries no text/plain flavor; clipboard left unchanged")
+            // Images, file lists, anything else: GTK only carries text here, so
+            // publishing them stays AWT's job until those flavors are wired up.
+            logger.log(Level.FINE, "Clip entry carries no text/plain flavor; publishing it through AWT")
+            fallback.setClipEntry(clipEntry)
             return
         }
         withContext(Dispatchers.Main) {
@@ -92,6 +101,25 @@ internal class TaoLinuxClipboard(
                 logger.log(Level.FINE, "GTK refused the selection; clipboard left unchanged")
             }
         }
+    }
+
+    /**
+     * What AWT has when GTK reports no text — images and file lists, which this
+     * clipboard does not carry yet, would otherwise disappear from
+     * `LocalClipboard` on Linux.
+     *
+     * An AWT entry that *does* offer text is discarded instead: GTK just said
+     * there is none, so the X11 selection is the stale one — that disagreement
+     * is the whole of #582, and returning its text would reintroduce the bug.
+     */
+    private suspend fun nonTextEntryFromAwt(): ClipEntry? {
+        val entry = runCatching { fallback.getClipEntry() }.getOrNull() ?: return null
+        val transferable = entry.nativeClipEntry as? Transferable ?: return null
+        val offersText =
+            withContext(Dispatchers.IO) {
+                runCatching { transferable.isDataFlavorSupported(DataFlavor.stringFlavor) }.getOrDefault(false)
+            }
+        return if (offersText) null else entry
     }
 
     /**
