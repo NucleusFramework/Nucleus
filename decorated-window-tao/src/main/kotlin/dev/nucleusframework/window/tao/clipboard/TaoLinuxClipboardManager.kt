@@ -19,11 +19,15 @@ import java.awt.datatransfer.Transferable
  * composables still on the old local get the same clipboard as the rest of the
  * app instead of silently reading AWT's X11 selection.
  *
- * GTK has no non-blocking way to serve a synchronous read: both native calls
- * used here spin a nested GTK main loop until the selection owner answers.
+ * GTK has no non-blocking way to serve a synchronous read: every native call
+ * used here spins a nested GTK main loop until the selection owner answers.
  * That is only legal on the GTK main thread, so off-thread callers are handed
  * to [fallback] rather than corrupting the loop — as is every call when the
  * native helper is unavailable.
+ *
+ * [getClip] probes text, then image, then files, because this API has no way
+ * to ask what the selection offers before reading it. Each probe is a round
+ * trip, so the cost is only paid when the earlier formats are absent.
  */
 internal class TaoLinuxClipboardManager(
     private val fallback: ClipboardManager,
@@ -52,8 +56,17 @@ internal class TaoLinuxClipboardManager(
 
     override fun getClip(): ClipEntry? {
         if (!usesNative) return fallback.getClip()
-        val text = NativeTaoLinuxClipboardBridge.nativeWaitForTextUtf8() ?: return null
-        return ClipEntry(StringSelection(text.toString(Charsets.UTF_8)))
+        NativeTaoLinuxClipboardBridge.nativeWaitForTextUtf8()?.let {
+            return ClipEntry(StringSelection(it.toString(Charsets.UTF_8)))
+        }
+        NativeTaoLinuxClipboardBridge.nativeWaitForImagePng()?.let { png ->
+            return ClipEntry(GtkClipboardTransferable(text = null, fetchPng = { png }, fetchUriList = null))
+        }
+        NativeTaoLinuxClipboardBridge.nativeWaitForUriListUtf8()?.let { uris ->
+            val uriList = uris.toString(Charsets.UTF_8)
+            return ClipEntry(GtkClipboardTransferable(text = null, fetchPng = null, fetchUriList = { uriList }))
+        }
+        return null
     }
 
     override fun setClip(clipEntry: ClipEntry?) {
@@ -65,8 +78,8 @@ internal class TaoLinuxClipboardManager(
             NativeTaoLinuxClipboardBridge.nativeClear()
             return
         }
-        val text = (clipEntry.nativeClipEntry as? Transferable)?.plainTextOrNull() ?: return
-        NativeTaoLinuxClipboardBridge.nativeSetTextUtf8(text.toByteArray())
+        val payload = (clipEntry.nativeClipEntry as? Transferable)?.toGtkPayload()
+        if (payload == null) fallback.setClip(clipEntry) else payload.publish()
     }
 
     override val nativeClipboard: Any
