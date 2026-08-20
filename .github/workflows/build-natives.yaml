@@ -469,6 +469,7 @@ jobs:
             "decorated-window-tao/libnucleus_tao_egl.so"
             "decorated-window-tao/libnucleus_tao_linux_widget.so"
             "decorated-window-tao/libnucleus_tao_linux_popup.so"
+            "decorated-window-tao/libnucleus_tao_linux_clipboard.so"
           )
           MISSING=0
           for e in "${FILES[@]}"; do

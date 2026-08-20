@@ -32,6 +32,7 @@ import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clipboard.ProvideTaoClipboard
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
@@ -1072,7 +1073,12 @@ internal class TaoComposeSceneHostLinux(
             androidx.compose.runtime.SideEffect {
                 capturedFocusManager = fm
             }
-            TaoTextToolbarHost(textToolbar, content)
+            // GTK clipboard instead of AWT's X11-only one: the window lives on
+            // whichever GDK backend the session provides, and on Wayland the
+            // two selections are not the same one (issue #582).
+            ProvideTaoClipboard {
+                TaoTextToolbarHost(textToolbar, content)
+            }
         }
     }
 

@@ -387,6 +387,24 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge$BytesCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onBytes", "parameterTypes": ["byte[]"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.clipboard.TaoLinuxClipboard$ResumeOnBytes",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onBytes", "parameterTypes": ["byte[]"] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge",
             "jniAccessible": true
         },

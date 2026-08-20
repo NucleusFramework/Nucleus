@@ -170,6 +170,8 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_widget.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_popup.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_popup.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_clipboard.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_clipboard.so"
             "graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib"
             "graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib"
           )
