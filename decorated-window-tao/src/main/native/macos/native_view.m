@@ -463,10 +463,28 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     NSPoint windowPoint = window_point_from_compose_px(content, xPx, yPx);
     NSView *hit = hit_native_child(child, windowPoint);
     if (hit == nil) return;
+    // Prefer the original AppKit event: same sign, precise-pixel flag,
+    // momentum phase. Tao queues the scroll onto Compose on the same
+    // turn, so currentEvent is still the scrollWheel that started this.
+    NSEvent *current = NSApp.currentEvent;
+    if (current != nil && current.type == NSEventTypeScrollWheel) {
+        [hit scrollWheel:current];
+        return;
+    }
+    // Fallback: Compose/AWT scrollDelta is the inverse of AppKit
+    // `scrollingDelta` (TaoWindow.kt SCROLL_PIXEL/LINE) and pixel
+    // wheels are divided by 10. Reconstruct AppKit units.
+    //   Y: rust keeps scrollingDeltaY, Kotlin negates → nativeY = -dy*10
+    //   X: rust already flips scrollingDeltaX, Kotlin negates again
+    //      → nativeX = dx*10
+    const float kAwtPixelToRotation = 10.f;
     CGEventRef cg = CGEventCreateScrollWheelEvent(
-        NULL, kCGScrollEventUnitPixel, 2, (int32_t)lroundf(dy), (int32_t)lroundf(dx));
+        NULL, kCGScrollEventUnitPixel, 2,
+        (int32_t)lroundf(-dy * kAwtPixelToRotation),
+        (int32_t)lroundf(dx * kAwtPixelToRotation));
     if (cg == NULL) return;
-    CGEventSetLocation(cg, NSPointToCGPoint([hit.window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin));
+    CGEventSetLocation(cg, NSPointToCGPoint(
+        [hit.window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin));
     NSEvent *event = [NSEvent eventWithCGEvent:cg];
     CFRelease(cg);
     if (event != nil) [hit scrollWheel:event];
