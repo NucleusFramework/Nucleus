@@ -44,14 +44,10 @@ import kotlin.math.roundToInt
  *    automatically calls `[window makeFirstResponder:overlay]` so
  *    keystrokes route to the overlay's `ComposeScene` without any
  *    extra Kotlin-side hop.
- *  - **Linux**: the consumer rect is registered with the Linux
- *    overlay controller, which updates the EGL subsurface's input
- *    region (`wl_surface.set_input_region` / `XShape ShapeInput`).
- *    Releasing GTK's focused widget on press happens at a different
- *    layer (`GtkWidgetEmbedding`'s outer Box) so this modifier stays
- *    a pure observer of layout — adding a `pointerInput` here was
- *    found to silently swallow events from descendants in some
- *    Compose configurations.
+ *  - **Linux**: optional extra EventBox. Interop blending already
+ *    captures the whole NativeView rect so Compose hit-tests siblings
+ *    itself; this modifier remains for widgets that need an explicit
+ *    region (and stays a layout observer — no `pointerInput`).
  *  - **Windows**: no-op. Interop blending captures the NativeView
  *    rect in a DirectComposition overlay and Compose hit-tests
  *    siblings itself — same as macOS.

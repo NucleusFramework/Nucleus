@@ -252,6 +252,7 @@ internal class TaoComposeSceneHostLinux(
      * opaque region. Tracked by handle so duplicate attach/detach is safe.
      */
     private val attachedNativeViews: MutableSet<Long> = linkedSetOf()
+    private val nativeViewRects: MutableMap<Long, IntArray> = LinkedHashMap()
 
     private var widthPx: Int = 0
     private var heightPx: Int = 0
@@ -2044,6 +2045,8 @@ internal class TaoComposeSceneHostLinux(
             }
 
             override fun detach(childHandle: Long) {
+                outer.nativeViewRects.remove(childHandle)
+                outer.overlayController.unregisterRegion(childHandle)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.remove(childHandle)) {
@@ -2069,6 +2072,11 @@ internal class TaoComposeSceneHostLinux(
                 val hLogical = (heightPx / s).toInt().coerceAtLeast(1)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
+                // Capture the whole NativeView rect in a GtkEventBox so
+                // Compose sees hits first (siblings / content slot);
+                // unconsumed events are synthesised back onto the widget.
+                outer.nativeViewRects[handle] = intArrayOf(xPx, yPx, widthPx, heightPx)
+                outer.overlayController.registerRegion(handle, xPx, yPx, widthPx, heightPx)
             }
 
             override fun setCornerRadius(
@@ -2081,6 +2089,37 @@ internal class TaoComposeSceneHostLinux(
                 // a no-op for now; callers that need rounded corners
                 // on Linux fall back to drawing a Compose
                 // RoundedCornerShape on top of the widget area.
+            }
+
+            override fun dispatchPointerToNative(
+                handle: Long,
+                type: Int,
+                xPx: Float,
+                yPx: Float,
+                button: Int,
+                pressed: Boolean,
+            ) {
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val rect = outer.nativeViewRects[handle]
+                val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()
+                val yLogical = ((yPx - (rect?.get(1)?.toFloat() ?: 0f)) / s).toInt()
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
+                    .nativeDispatchPointer(handle, type, xLogical, yLogical, button, pressed)
+            }
+
+            override fun dispatchScrollToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                dx: Float,
+                dy: Float,
+            ) {
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val rect = outer.nativeViewRects[handle]
+                val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()
+                val yLogical = ((yPx - (rect?.get(1)?.toFloat() ?: 0f)) / s).toInt()
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
+                    .nativeDispatchScroll(handle, xLogical, yLogical, dx, dy)
             }
         }
     }

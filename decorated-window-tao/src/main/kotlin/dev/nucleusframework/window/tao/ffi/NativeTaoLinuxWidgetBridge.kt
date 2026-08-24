@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao_linux_widget"
  * Threading: every entry point must run on the GTK main thread (=
  * Tao event-loop thread = Compose dispatcher thread).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoLinuxWidgetBridge {
     val isLoaded: Boolean =
         NativeLibraryLoader.load(
@@ -143,5 +144,31 @@ internal object NativeTaoLinuxWidgetBridge {
     external fun nativeSetInputBoxCallback(
         boxPtr: Long,
         callback: OverlayInputCallback?,
+    )
+
+    /**
+     * Synthesises a GDK pointer event onto [widgetPtr] in widget-local
+     * logical pixels. [type]: 1 down, 2 up, 3 move. [button]: 1 primary,
+     * 2 secondary, 3 middle. Used to redispatch Compose-unconsumed hits
+     * to the embedded GTK widget after interop blending captured them.
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        widgetPtr: Long,
+        type: Int,
+        xLogical: Int,
+        yLogical: Int,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /** Forwards a Compose scroll delta as a smooth `GdkEventScroll`. */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        widgetPtr: Long,
+        xLogical: Int,
+        yLogical: Int,
+        dx: Float,
+        dy: Float,
     )
 }

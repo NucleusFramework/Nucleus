@@ -68,7 +68,8 @@ private const val INITIAL_URL = "https://nucleusframework.dev"
  *  - **macOS**: `WKWebView` sits below the Metal surface; hole-punch
  *    blending lets siblings and in-scene `Popup`s composite over it.
  *  - **Linux**: `WebKitWebView` under the EGL surface, same hole punch.
- *    Interactive overlay widgets still use `consumeOverlayPointerEvents`.
+ *    A GtkEventBox covering the NativeView rect lets Compose see hits
+ *    first; unconsumed events go back to the widget.
  *  - **Windows**: a DirectComposition overlay covering the NativeView
  *    rect composites the host scene on top of the child HWND / WebView2
  *    visual. Same sibling chrome as macOS.

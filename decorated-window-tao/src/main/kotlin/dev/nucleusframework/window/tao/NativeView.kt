@@ -47,8 +47,8 @@ import kotlin.math.roundToInt
  *    `SwingPanel` with `compose.interop.blending=true`.
  *  - [NucleusPlatformView.GtkWidget] — Linux, GTK widget reparented
  *    into Tao's content widget. Same hole-punch blending as macOS;
- *    the [content] slot renders in the host scene. Interactive overlay
- *    widgets still opt in with [consumeOverlayPointerEvents].
+ *    a GtkEventBox covering the NativeView rect lets Compose see hits
+ *    first, then unconsumed events are synthesised back onto the widget.
  *  - [NucleusPlatformView.HWnd] — Windows, child HWND reparented under
  *    the Tao main HWND. A DirectComposition overlay covering the
  *    NativeView rect composites the host scene on top (Win32 children
@@ -259,21 +259,11 @@ private fun NsViewEmbedding(
 }
 
 /**
- * Linux GTK widget embedding path — direct equivalent of
- * [NsViewEmbedding]. The [content] slot **is** supported on Linux,
- * unlike the simpler "no overlay" mode the file used to ship with:
- * the embedded `GtkWidget*` paints into GTK's window buffer, the
- * Compose scene composites on top with alpha, and `content` lives
- * inline in that scene — overlap with the embedded rect is naturally
- * handled by Compose's own draw order.
- *
- * Hit-test passthrough is region-based, mirroring macOS:
- * descendants of [content] that wrap themselves in
- * [dev.nucleusframework.window.tao.consumeOverlayPointerEvents]
- * register their bounds with the host's [TaoLinuxOverlayController];
- * the EGL surface's input region is the union of those rects, so
- * outside of them every click falls through to GTK and reaches the
- * embedded widget.
+ * Linux GTK widget embedding path — same hole-punch blending as
+ * [NsViewEmbedding]. The embedded widget paints into GTK's buffer;
+ * Compose composites on top with alpha. A GtkEventBox covering the
+ * NativeView rect captures hits for Compose (siblings and [content]);
+ * unconsumed events are synthesised back onto the widget.
  *
  * Falls back to an empty `Box(modifier)` when the runtime isn't
  * Linux or the GTK host isn't available.
@@ -316,6 +306,7 @@ private fun GtkWidgetEmbedding(
         modifier =
             modifier
                 .punchNativeViewHole()
+                .nativeViewPointerInterop(host, handle, lastRect)
                 .onGloballyPositioned { coords ->
                     val pos = coords.positionInRoot()
                     val xPx = pos.x.roundToInt()
@@ -335,12 +326,7 @@ private fun GtkWidgetEmbedding(
                     }
                 },
     ) {
-        // Overlay slot — rendered inside the *same* Compose
-        // scene as the rest of the window. Interactive widgets
-        // register with [overlayController] via
-        // [Modifier.consumeOverlayPointerEvents] so their rect
-        // joins the EGL surface's input region. Outside of those
-        // rects clicks fall through to the embedded GTK widget.
+        // Overlay slot — same Compose scene as the rest of the window.
         NativeViewOverlayContent {
             if (overlayController != null) {
                 CompositionLocalProvider(
@@ -383,7 +369,7 @@ private fun NativeViewOverlayContent(content: @Composable () -> Unit) {
 
 /**
  * Redispatches pointer events that Compose did not consume onto the
- * embedded AppKit view. Siblings drawn *after* [NativeView] hit-test
+ * embedded native view. Siblings drawn *after* [NativeView] hit-test
  * first and never reach this modifier — that's how a Button/Snackbar
  * overlapping the native view stays interactive.
  */
