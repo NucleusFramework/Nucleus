@@ -240,6 +240,14 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHostWindows$BlendingOverlayCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float"] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge$OverlayKeyCallback",
             "jniAccessible": true,
             "methods": [

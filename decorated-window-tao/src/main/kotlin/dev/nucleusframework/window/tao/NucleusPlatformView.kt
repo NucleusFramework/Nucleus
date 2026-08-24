@@ -16,9 +16,9 @@ package dev.nucleusframework.window.tao
  *    input via `TaoLinuxOverlayController`'s GtkEventBox regions.
  *  - [HWnd] on Windows — child HWND reparented under the Tao main HWND
  *    via `SetParent`, sized via `SetWindowPos`, clipped with
- *    `SetWindowRgn(CreateRoundRectRgn)` for rounded corners. Supports
- *    the [content] overlay slot via a sibling top-level WS_POPUP HWND
- *    with per-pixel alpha via DirectComposition (see `NativeViewOverlayControllerWindows`).
+ *    `SetWindowRgn(CreateRoundRectRgn)` for rounded corners. A
+ *    DirectComposition overlay composites the host scene over the
+ *    embed so siblings and the `content` slot draw on top.
  *
  * The default empty implementations let host code call lifecycle
  * methods unconditionally without forcing every variant to override
@@ -109,9 +109,9 @@ public sealed interface NucleusPlatformView {
 
     /**
      * Windows variant — child HWND reparented under the Tao main HWND
-     * via `SetParent`, with the [content] overlay slot rendered in a
-     * sibling top-level WS_POPUP HWND owning its own transparent DComp
-     * context (see `NativeViewOverlayControllerWindows`).
+     * via `SetParent`. A DirectComposition overlay composites the host
+     * Compose scene over the embed so siblings and the `content` slot
+     * draw on top (Win32 children always paint above their parent).
      */
     public interface HWnd : NucleusPlatformView {
         /** Pointer to the user-supplied `HWND` (cast to Long). */

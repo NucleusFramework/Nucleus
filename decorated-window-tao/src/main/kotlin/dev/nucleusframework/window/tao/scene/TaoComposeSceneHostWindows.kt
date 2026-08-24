@@ -12,6 +12,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -38,6 +39,7 @@ import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
@@ -73,7 +75,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * loop (Windows imposes no main-thread constraint, but the GL context is bound
  * to whatever thread called `nativeAttach`, so all rendering must stay on it).
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 @Suppress("LargeClass", "TooManyFunctions")
 internal class TaoComposeSceneHostWindows(
     private val window: TaoWindow,
@@ -255,6 +257,23 @@ internal class TaoComposeSceneHostWindows(
      * a NULL bind point inside the driver (reproduced on NVIDIA).
      */
     private var hostContextDirtied: Boolean = false
+
+    /**
+     * Full-client DirectComposition overlay used to composite the main
+     * Compose scene **over** embedded child HWNDs (Win32 children always
+     * paint above their parent). `SetWindowRgn` is the union of live
+     * NativeView rects: outside it the overlay has no presence, so title
+     * bar / regular Compose keep hitting the owner HWND. Inside it the
+     * overlay is HTCLIENT, Compose sees the event first, and unconsumed
+     * clicks are synthesised onto the child (or the owner, for hwnd=0
+     * WebView2).
+     */
+    private var blendingOverlay: Long = 0
+    private val blendingOverlayToken: Any = Any()
+    private var nativeViewAttachCount: Int = 0
+    private val nativeViewRects: MutableMap<Long, IntArray> = LinkedHashMap()
+    private var nativePointerDispatchedThisEvent: Boolean = false
+    private val blendingOverlayCallback = BlendingOverlayCallback()
 
     // Frame pacing is delegated to VSync — `eglSwapInterval(1)` makes
     // eglSwapBuffers pace off the display refresh, which keeps Compose
@@ -964,6 +983,7 @@ internal class TaoComposeSceneHostWindows(
         if (widthPxNew == widthPx && heightPxNew == heightPx) return
         widthPx = widthPxNew
         heightPx = heightPxNew
+        syncBlendingOverlayFrame()
         // The GL surface child + ComposeScene size are pushed in
         // onRedrawRequested (see the pendingResizeApply block there), so a
         // throttled or async paint always renders the freshest size and keeps
@@ -1565,15 +1585,25 @@ internal class TaoComposeSceneHostWindows(
         if (hwnd == 0L) return null
         if (!dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge.isLoaded) return null
         val parent = hwnd
+        val outer = this
         return object : dev.nucleusframework.window.tao.TaoNativeViewHost {
             override fun attach(childHandle: Long) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeAttach(parent, childHandle)
+                if (outer.nativeViewAttachCount == 0) outer.ensureBlendingOverlay()
+                outer.nativeViewAttachCount++
             }
 
             override fun detach(childHandle: Long) {
+                outer.nativeViewRects.remove(childHandle)
+                outer.flushBlendingOverlayRegions()
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeDetach(childHandle)
+                outer.nativeViewAttachCount--
+                if (outer.nativeViewAttachCount <= 0) {
+                    outer.nativeViewAttachCount = 0
+                    outer.releaseBlendingOverlay()
+                }
             }
 
             override fun setFrame(
@@ -1585,6 +1615,8 @@ internal class TaoComposeSceneHostWindows(
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeSetFrame(parent, handle, xPx, yPx, widthPx, heightPx)
+                outer.nativeViewRects[handle] = intArrayOf(xPx, yPx, widthPx, heightPx)
+                outer.flushBlendingOverlayRegions()
             }
 
             override fun setCornerRadius(
@@ -1594,6 +1626,176 @@ internal class TaoComposeSceneHostWindows(
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
                     .nativeSetCornerRadius(parent, handle, radiusPx)
             }
+
+            override fun dispatchPointerToNative(
+                handle: Long,
+                type: Int,
+                xPx: Float,
+                yPx: Float,
+                button: Int,
+                pressed: Boolean,
+            ) {
+                if (parent == 0L) return
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                    .nativeDispatchPointer(parent, handle, type, xPx, yPx, button, pressed)
+            }
+
+            override fun dispatchScrollToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                dx: Float,
+                dy: Float,
+            ) {
+                if (parent == 0L) return
+                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                    .nativeDispatchScroll(parent, handle, xPx, yPx, dx, dy)
+            }
+
+            override fun noteNativePointerDispatch() {
+                outer.nativePointerDispatchedThisEvent = true
+            }
+        }
+    }
+
+    private fun ensureBlendingOverlay() {
+        if (blendingOverlay != 0L) return
+        if (hwnd == 0L || !NativeTaoWindowsOverlayBridge.isLoaded) return
+        val overlay = NativeTaoWindowsOverlayBridge.nativeCreateOverlay(hwnd)
+        if (overlay == 0L) return
+        blendingOverlay = overlay
+        NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(
+            overlay,
+            blendingOverlayCallback,
+        )
+        NativeTaoWindowsOverlayBridge.nativeSetOverlayFrame(
+            overlay,
+            0,
+            0,
+            widthPx.coerceAtLeast(1),
+            heightPx.coerceAtLeast(1),
+        )
+        popupRenderers[blendingOverlayToken] = { renderBlendingOverlay() }
+        hostContextDirtied = true
+        flushBlendingOverlayRegions()
+        window.requestRedraw()
+    }
+
+    private fun releaseBlendingOverlay() {
+        val overlay = blendingOverlay
+        if (overlay == 0L) return
+        popupRenderers.remove(blendingOverlayToken)
+        NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(overlay, null)
+        NativeTaoWindowsOverlayBridge.nativeReleaseOverlay(overlay)
+        blendingOverlay = 0
+        nativeViewRects.clear()
+        hostContextDirtied = true
+    }
+
+    private fun flushBlendingOverlayRegions() {
+        val overlay = blendingOverlay
+        if (overlay == 0L) return
+        val count = nativeViewRects.size
+        if (count == 0) {
+            NativeTaoWindowsOverlayBridge.nativeSetOverlayRegions(overlay, FloatArray(0), 0)
+            return
+        }
+        val flat = FloatArray(count * 4)
+        var i = 0
+        for (r in nativeViewRects.values) {
+            flat[i] = r[0].toFloat()
+            flat[i + 1] = r[1].toFloat()
+            flat[i + 2] = r[2].toFloat()
+            flat[i + 3] = r[3].toFloat()
+            i += 4
+        }
+        NativeTaoWindowsOverlayBridge.nativeSetOverlayRegions(overlay, flat, count)
+    }
+
+    private fun syncBlendingOverlayFrame() {
+        val overlay = blendingOverlay
+        if (overlay == 0L) return
+        NativeTaoWindowsOverlayBridge.nativeSetOverlayFrame(
+            overlay,
+            0,
+            0,
+            widthPx.coerceAtLeast(1),
+            heightPx.coerceAtLeast(1),
+        )
+    }
+
+    private fun renderBlendingOverlay() {
+        val overlay = blendingOverlay
+        val bundle = sceneBundle
+        val ctx = directContext
+        if (overlay == 0L || bundle == null || ctx == null) return
+        if (widthPx <= 0 || heightPx <= 0) return
+        if (!NativeTaoWindowsOverlayBridge.nativeMakeCurrent(overlay)) return
+        ctx.resetGLAll()
+        renderGlFrame(
+            widthPx = widthPx,
+            heightPx = heightPx,
+            directContext = ctx,
+            bundle = bundle,
+            clearColorArgb = 0,
+            present = { NativeTaoWindowsOverlayBridge.nativeSwapBuffers(overlay) },
+        )
+    }
+
+    /**
+     * Named inner class so GraalVM JNI reachability metadata can register
+     * the implementor (same pattern as the old per-NativeView overlay).
+     */
+    private inner class BlendingOverlayCallback : NativeTaoWindowsOverlayBridge.OverlayEventCallback {
+        override fun onPointerEvent(
+            type: Int,
+            x: Float,
+            y: Float,
+            button: Int,
+            modifiers: Int,
+        ) {
+            lastPointerX = x
+            lastPointerY = y
+            currentKeyboardModifiers = taoKeyboardModifiers(modifiers)
+            windowInfo.keyboardModifiers = currentKeyboardModifiers
+            val pointerButton =
+                when (button) {
+                    1 -> PointerButton.Primary
+                    2 -> PointerButton.Secondary
+                    3 -> PointerButton.Tertiary
+                    else -> null
+                }
+            val eventType =
+                when (type) {
+                    1 -> PointerEventType.Press
+                    2 -> PointerEventType.Release
+                    else -> PointerEventType.Move
+                }
+            if (eventType == PointerEventType.Press) nativePointerDispatchedThisEvent = false
+            scene?.sendPointerEvent(
+                eventType = eventType,
+                position = Offset(x, y),
+                type = PointerType.Mouse,
+                button = pointerButton,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
+        }
+
+        override fun onScroll(
+            x: Float,
+            y: Float,
+            dx: Float,
+            dy: Float,
+        ) {
+            lastPointerX = x
+            lastPointerY = y
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Scroll,
+                position = Offset(x, y),
+                scrollDelta = Offset(dx, dy),
+                type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
         }
     }
 
@@ -1653,6 +1855,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        releaseBlendingOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
         // Stop the pinch idle timer; the scene is going away so no Release needed.

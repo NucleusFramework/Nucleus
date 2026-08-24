@@ -52,8 +52,9 @@ import kotlin.math.roundToInt
  *    a pure observer of layout — adding a `pointerInput` here was
  *    found to silently swallow events from descendants in some
  *    Compose configurations.
- *  - **Windows / outside any `NativeView`**: no-op so call sites
- *    stay portable.
+ *  - **Windows**: no-op. Interop blending captures the NativeView
+ *    rect in a DirectComposition overlay and Compose hit-tests
+ *    siblings itself — same as macOS.
  */
 public fun Modifier.consumeOverlayPointerEvents(cursor: PointerIcon? = null): Modifier =
     composed {

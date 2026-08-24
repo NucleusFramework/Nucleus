@@ -17,6 +17,10 @@
 #include <jni.h>
 #include <windows.h>
 
+#ifndef WM_MOUSEHWHEEL
+#define WM_MOUSEHWHEEL 0x020E
+#endif
+
 /* /NODEFAULTLIB shim shared across all .c files linked into this DLL. */
 int _fltused = 0;
 
@@ -159,4 +163,63 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     if (!SetWindowRgn(child, rgn, TRUE)) {
         DeleteObject(rgn);
     }
+}
+
+/* Compose physical pixels (top-left, parent-client) → a mouse message
+ * on the embedded child. When [childHwnd] is not a window (WebView2
+ * CompositionController, hwnd=0) the message is posted to [parentHwnd]
+ * so a parent subclass (sample_webview.cpp SendMouseInput) still sees it. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDispatchPointer(
+    JNIEnv *env, jclass clazz,
+    jlong parentHwnd, jlong childHwnd,
+    jint type, jfloat xPx, jfloat yPx, jint button, jboolean pressed)
+{
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    HWND child = hwnd_from_jlong(childHwnd);
+    if (!IsWindow(parent)) return;
+    HWND target = IsWindow(child) ? child : parent;
+    POINT pt = { (LONG)xPx, (LONG)yPx };
+    if (target != parent) {
+        MapWindowPoints(parent, target, &pt, 1);
+    }
+    UINT msg;
+    if (type == 1) {
+        msg = (button == 2) ? WM_RBUTTONDOWN :
+              (button == 3) ? WM_MBUTTONDOWN : WM_LBUTTONDOWN;
+    } else if (type == 2) {
+        msg = (button == 2) ? WM_RBUTTONUP :
+              (button == 3) ? WM_MBUTTONUP : WM_LBUTTONUP;
+    } else {
+        msg = WM_MOUSEMOVE;
+    }
+    WPARAM mk = 0;
+    if (button == 2 || (pressed == JNI_TRUE && button == 2)) mk |= MK_RBUTTON;
+    else if (button == 3 || (pressed == JNI_TRUE && button == 3)) mk |= MK_MBUTTON;
+    else if (button == 1 || pressed == JNI_TRUE) mk |= MK_LBUTTON;
+    if (GetKeyState(VK_SHIFT) & 0x8000) mk |= MK_SHIFT;
+    if (GetKeyState(VK_CONTROL) & 0x8000) mk |= MK_CONTROL;
+    LPARAM lp = MAKELPARAM((short)pt.x, (short)pt.y);
+    if (type == 1 && IsWindow(child)) SetFocus(child);
+    SendMessageW(target, msg, mk, lp);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDispatchScroll(
+    JNIEnv *env, jclass clazz,
+    jlong parentHwnd, jlong childHwnd,
+    jfloat xPx, jfloat yPx, jfloat dx, jfloat dy)
+{
+    (void)env; (void)clazz;
+    HWND parent = hwnd_from_jlong(parentHwnd);
+    HWND child = hwnd_from_jlong(childHwnd);
+    if (!IsWindow(parent)) return;
+    HWND target = IsWindow(child) ? child : parent;
+    POINT pt = { (LONG)xPx, (LONG)yPx };
+    ClientToScreen(parent, &pt);
+    UINT msg = (dx != 0.0f && (dy == 0.0f || (dx > dy || dx < -dy)))
+        ? WM_MOUSEHWHEEL : WM_MOUSEWHEEL;
+    short delta = (short)(msg == WM_MOUSEHWHEEL ? (dx * 120.0f) : (dy * 120.0f));
+    SendMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
 }

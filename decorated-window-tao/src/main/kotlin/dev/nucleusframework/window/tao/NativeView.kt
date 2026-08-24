@@ -27,10 +27,8 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.deco.LocalNativeViewOverlayControllerWindows
 import dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.NativeViewOverlayController
-import dev.nucleusframework.window.tao.deco.NativeViewOverlayControllerWindows
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -52,11 +50,10 @@ import kotlin.math.roundToInt
  *    the [content] slot renders in the host scene. Interactive overlay
  *    widgets still opt in with [consumeOverlayPointerEvents].
  *  - [NucleusPlatformView.HWnd] — Windows, child HWND reparented under
- *    the Tao main HWND. Child HWNDs paint above the parent surface, so
- *    overlapping Compose uses the [content] overlay slot (a DirectComposition
- *    WS_POPUP). `nativePopupLayers = true` is the equivalent of
- *    `compose.layers.type=WINDOW` for popups that must float above the
- *    child.
+ *    the Tao main HWND. A DirectComposition overlay covering the
+ *    NativeView rect composites the host scene on top (Win32 children
+ *    always paint above their parent). Same sibling / `content` /
+ *    in-scene popup blending as macOS.
  *
  * Variants whose backend isn't implemented (or whose runtime type
  * doesn't match the current OS) fall back to an empty `Box(modifier)`.
@@ -90,16 +87,15 @@ public fun NativeView(
 }
 
 /**
- * Windows HWND embedding path. Falls back to an empty `Box(modifier)`
- * when the runtime isn't Windows or the host scene plumbing isn't
- * available.
+ * Windows HWND embedding path. Child HWNDs paint above the parent
+ * surface, so a DirectComposition overlay (owned by the scene host)
+ * composites the host Compose scene over the NativeView rect — the
+ * SwingPanel interop-blending model. [content] and later siblings
+ * draw in the host scene; unconsumed pointer events are synthesised
+ * onto the child HWND (or the owner, for hwnd=0 WebView2).
  *
- * The [content] slot mounts a Compose scene rendered into a top-level
- * owned overlay HWND rendered via DirectComposition against the
- * host's share group. Outside any region wrapped with
- * `Modifier.consumeOverlayPointerEvents()`, clicks fall through via
- * `WM_NCHITTEST` returning `HTTRANSPARENT` so the embedded child HWND
- * underneath gets them.
+ * Falls back to an empty `Box(modifier)` when the runtime isn't
+ * Windows or the host scene plumbing isn't available.
  */
 @Composable
 private fun HwndEmbedding(
@@ -109,46 +105,21 @@ private fun HwndEmbedding(
     content: @Composable () -> Unit,
 ) {
     val host = LocalTaoNativeViewHost.current
-    val popupHost = dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows.current
     val handle = view.hwndHandle
     val latestContent by rememberUpdatedState(content)
 
-    if (Platform.Current != Platform.Windows || host == null || popupHost == null) {
+    if (Platform.Current != Platform.Windows || host == null) {
         Box(modifier)
         return
     }
-    // [handle == 0L] used to bail out here too, but DComp-backed views
-    // (WebView2 via its CompositionController) intentionally expose a
-    // null HWND because they live in a visual tree, not as Win32 child
-    // windows. The host's `attach`/`setFrame`/`setCornerRadius` calls
-    // are no-ops on a non-window handle (defensive `IsWindow` check on
-    // the C side) — safe to let through. Positioning + clipping happens
-    // entirely via the view-impl's own [setBounds] / [setCornerRadius]
-    // overrides (e.g. WebView2 driving its DComp visual).
+    // [handle == 0L] is intentional for DComp-backed views (WebView2
+    // CompositionController): they have no Win32 child HWND. attach /
+    // setFrame / setCornerRadius no-op on a non-window handle; bounds
+    // and clip go through the view-impl's own overrides.
 
-    val overlay =
-        remember(host, popupHost) {
-            NativeViewOverlayControllerWindows(host, popupHost)
-        }
-
-    DisposableEffect(host, handle, overlay) {
+    DisposableEffect(host, handle) {
         host.attach(handle)
-        // Overlay attach AFTER the user's subview so Z-order is correct
-        // (owned popup HWNDs are guaranteed above their owner by Win32).
-        overlay.attach()
-        onDispose {
-            overlay.dispose()
-            host.detach(handle)
-        }
-    }
-
-    DisposableEffect(overlay) {
-        overlay.setContent {
-            CompositionLocalProvider(LocalNativeViewOverlayControllerWindows provides overlay) {
-                latestContent()
-            }
-        }
-        onDispose { /* dispose handled above */ }
+        onDispose { host.detach(handle) }
     }
 
     val density = LocalDensity.current
@@ -164,46 +135,44 @@ private fun HwndEmbedding(
     val lastRadius = remember { floatArrayOf(Float.NaN) }
     Box(
         modifier =
-            modifier.onGloballyPositioned { coords ->
-                val pos = coords.positionInRoot()
-                val xPx = pos.x.roundToInt()
-                val yPx = pos.y.roundToInt()
-                val wPx = coords.size.width.coerceAtLeast(1)
-                val hPx = coords.size.height.coerceAtLeast(1)
-                val rectChanged =
-                    lastRect[0] != xPx ||
-                        lastRect[1] != yPx ||
-                        lastRect[2] != wPx ||
-                        lastRect[3] != hPx
-                if (rectChanged) {
-                    lastRect[0] = xPx
-                    lastRect[1] = yPx
-                    lastRect[2] = wPx
-                    lastRect[3] = hPx
-                    host.setFrame(handle, xPx, yPx, wPx, hPx)
-                    overlay.setBounds(xPx, yPx, wPx, hPx)
-                    view.resize(wPx, hPx)
-                    view.setBounds(xPx, yPx, wPx, hPx)
-                }
-                if (rectChanged || lastRadius[0] != cornerRadiusPx) {
-                    lastRadius[0] = cornerRadiusPx
-                    val radiusToApply =
-                        if (cornerRadiusPx.isInfinite()) {
-                            min(wPx, hPx) / 2f
-                        } else {
-                            cornerRadiusPx
-                        }
-                    // Two complementary clip paths: the host applies
-                    // `SetWindowRgn` on the user HWND (works for regular
-                    // GDI/HWND-painted children), AND the view-impl gets
-                    // a chance to apply its own clip on whatever surface
-                    // it renders into. The latter is what makes WebView2's
-                    // DComp-painted content actually round its corners.
-                    host.setCornerRadius(handle, radiusToApply)
-                    view.setCornerRadius(radiusToApply)
-                }
-            },
-    )
+            modifier
+                .punchNativeViewHole()
+                .nativeViewPointerInterop(host, handle, lastRect)
+                .onGloballyPositioned { coords ->
+                    val pos = coords.positionInRoot()
+                    val xPx = pos.x.roundToInt()
+                    val yPx = pos.y.roundToInt()
+                    val wPx = coords.size.width.coerceAtLeast(1)
+                    val hPx = coords.size.height.coerceAtLeast(1)
+                    val rectChanged =
+                        lastRect[0] != xPx ||
+                            lastRect[1] != yPx ||
+                            lastRect[2] != wPx ||
+                            lastRect[3] != hPx
+                    if (rectChanged) {
+                        lastRect[0] = xPx
+                        lastRect[1] = yPx
+                        lastRect[2] = wPx
+                        lastRect[3] = hPx
+                        host.setFrame(handle, xPx, yPx, wPx, hPx)
+                        view.resize(wPx, hPx)
+                        view.setBounds(xPx, yPx, wPx, hPx)
+                    }
+                    if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                        lastRadius[0] = cornerRadiusPx
+                        val radiusToApply =
+                            if (cornerRadiusPx.isInfinite()) {
+                                min(wPx, hPx) / 2f
+                            } else {
+                                cornerRadiusPx
+                            }
+                        host.setCornerRadius(handle, radiusToApply)
+                        view.setCornerRadius(radiusToApply)
+                    }
+                },
+    ) {
+        NativeViewOverlayContent(latestContent)
+    }
 }
 
 /**

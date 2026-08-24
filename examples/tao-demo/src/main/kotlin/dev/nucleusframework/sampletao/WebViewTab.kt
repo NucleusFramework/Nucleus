@@ -69,8 +69,9 @@ private const val INITIAL_URL = "https://nucleusframework.dev"
  *    blending lets siblings and in-scene `Popup`s composite over it.
  *  - **Linux**: `WebKitWebView` under the EGL surface, same hole punch.
  *    Interactive overlay widgets still use `consumeOverlayPointerEvents`.
- *  - **Windows**: child HWND paints above the parent, so the overlay
- *    chrome goes through `NativeView`'s `content` slot (DComp popup).
+ *  - **Windows**: a DirectComposition overlay covering the NativeView
+ *    rect composites the host scene on top of the child HWND / WebView2
+ *    visual. Same sibling chrome as macOS.
  */
 @Composable
 internal fun WebViewTab(modifier: Modifier = Modifier) {
@@ -120,27 +121,6 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             // One-shot navigation tracker so `update` doesn't reload on
             // every recomposition.
             val loadedFlag = remember { booleanArrayOf(false) }
-            // macOS / Linux: Compose siblings after NativeView draw on top
-            // of the page (interop blending). Windows child HWNDs stay
-            // above the parent surface, so the same chrome is passed
-            // through the `content` slot there.
-            val overlay: @Composable () -> Unit = {
-                WebViewOverlay(
-                    url = urlInput,
-                    onUrlChange = { urlInput = it },
-                    onUrlFocusChange = { urlFocused = it },
-                    onSubmit = { controller?.loadUrl(urlInput) },
-                    canGoBack = canGoBack,
-                    canGoForward = canGoForward,
-                    isLoading = isLoading,
-                    onBack = { if (canGoBack) controller?.goBack() },
-                    onForward = { if (canGoForward) controller?.goForward() },
-                    onReload = { controller?.reload() },
-                    showPopup = showPopup,
-                    onTogglePopup = { showPopup = !showPopup },
-                    onDismissPopup = { showPopup = false },
-                )
-            }
             NativeView(
                 factory = {
                     val view = createSampleWebViewPlatformView(parentHwnd) { c -> controller = c }
@@ -155,9 +135,24 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                         c.loadUrl(INITIAL_URL)
                     }
                 },
-                content = if (Platform.Current == Platform.Windows) overlay else ({}),
             )
-            if (Platform.Current != Platform.Windows) overlay()
+            // Compose siblings after NativeView draw on top of the page
+            // (interop blending on every OS).
+            WebViewOverlay(
+                url = urlInput,
+                onUrlChange = { urlInput = it },
+                onUrlFocusChange = { urlFocused = it },
+                onSubmit = { controller?.loadUrl(urlInput) },
+                canGoBack = canGoBack,
+                canGoForward = canGoForward,
+                isLoading = isLoading,
+                onBack = { if (canGoBack) controller?.goBack() },
+                onForward = { if (canGoForward) controller?.goForward() },
+                onReload = { controller?.reload() },
+                showPopup = showPopup,
+                onTogglePopup = { showPopup = !showPopup },
+                onDismissPopup = { showPopup = false },
+            )
         }
     }
 }
