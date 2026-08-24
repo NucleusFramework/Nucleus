@@ -11,20 +11,18 @@ private const val LIBRARY_NAME = "nucleus_tao_macos_native_view"
  * Two distinct surfaces:
  *  - **Generic NSView interop** (`nativeAddSubview` /
  *    `nativeRemoveSubview` / `nativeSetSubviewFrame`) — used by the
- *    `NativeView` composable to mount user-supplied NSViews as
- *    subviews of the host content view.
- *  - **Sibling overlay NSView** (`nativeCreateOverlay` /
- *    `nativeSetOverlayFrame` / `nativeSetOverlayCallback` /
- *    `nativeSetOverlayRegions` / `nativeReleaseOverlay`) — used by the
- *    overlay slot of `NativeView`. The overlay is itself an NSView
- *    sibling of the user's native subview; its `hitTest:` returns nil
- *    for points outside any registered interactive region, so AppKit
- *    falls through to the next sibling (the user's native view) for
- *    transparent regions. That's how a Compose watermark over a
- *    `WKWebView` can let the page underneath receive scroll/clicks.
+ *    `NativeView` composable to mount user-supplied NSViews **below**
+ *    the host content view so Compose can blend over them.
+ *  - **Pointer redispatch** (`nativeDispatchPointer` /
+ *    `nativeDispatchScroll`) — Compose sits on top and forwards events
+ *    it does not consume to the embedded view.
+ *  - **Sibling overlay NSView** (`nativeCreateOverlay` / …) — leftover
+ *    second Compose surface; live `NativeView` content renders in the
+ *    host scene. Kept for headful tests that fabricate an NSView.
  *
  * Threading: every entry point must run on the macOS main thread.
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoMacOsNativeViewBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoMacOsNativeViewBridge::class.java)
 
@@ -63,6 +61,42 @@ internal object NativeTaoMacOsNativeViewBridge {
         childNsView: Long,
         radiusPx: Float,
     )
+
+    /**
+     * Synthesises an AppKit mouse event onto [childNsView] at the Compose
+     * (content-view local, top-left, physical pixels) coordinate.
+     * [type]: 1 down, 2 up, 3 move. [button]: 0 none, 1 primary, 2 secondary.
+     * A move with [pressed] `true` is delivered as a drag.
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        contentNsView: Long,
+        childNsView: Long,
+        type: Int,
+        xPx: Float,
+        yPx: Float,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /** Forwards a Compose scroll delta as an `NSEventTypeScrollWheel`. */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        contentNsView: Long,
+        childNsView: Long,
+        xPx: Float,
+        yPx: Float,
+        dx: Float,
+        dy: Float,
+    )
+
+    /** Makes [nsView] the window's first responder (native IME / typing). */
+    @JvmStatic
+    external fun nativeMakeFirstResponder(nsView: Long)
+
+    /** Restores the Tao content view as first responder after Compose consumes a click. */
+    @JvmStatic
+    external fun nativeMakeContentViewFirstResponder(contentNsView: Long)
 
     // ── Sibling overlay NSView ────────────────────────────────────────
 

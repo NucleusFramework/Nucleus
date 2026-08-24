@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.WindowTransparencyMode
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoCursorIcon
@@ -222,6 +223,9 @@ internal class TaoComposeSceneHost(
 
     private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
     private var interopAttachCount: Int = 0
+
+    /** Set by NativeView pointer-interop when a Press was forwarded to AppKit. */
+    private var nativePointerDispatchedThisEvent: Boolean = false
 
     /** Renderer's view of whether interop is currently active — lags the
      *  transaction's flag by one frame on the OFF transition so the
@@ -740,18 +744,16 @@ internal class TaoComposeSceneHost(
         val outer = this
         return object : TaoNativeViewHost {
             override fun attach(childHandle: Long) {
-                // Eager. NativeView.kt's DisposableEffect relies on the
-                // ordering `host.attach() -> overlay.attach()` so the
-                // overlay's `nativeCreateOverlay` lands ABOVE the user's
-                // subview in the parent's subview list (NSView z-order
-                // = order of addition for siblings positioned with
-                // NSWindowAbove relativeTo:nil). Deferring this would
-                // re-order the adds and bury the overlay behind the
-                // WKWebView. The visual-sync win we want is for
-                // *reposition*, not for mount, so subview list mutation
-                // stays eager.
+                // Eager: NativeView.kt's DisposableEffect mounts the
+                // child as soon as the composable enters the tree.
+                // Visual sync with Compose is for *reposition*
+                // (`scheduleInterop` + presentsWithTransaction), not
+                // for the initial add.
                 if (outer.interopAttachCount == 0) {
                     outer.transaction.isInteropActive = true
+                    // Punch-through blending needs a non-opaque CAMetalLayer
+                    // and alpha-0 Skia clears — same latch as glass regions.
+                    WindowTransparencyMode.acquire(outer.window, outer.glassBackgroundState)
                 }
                 outer.interopAttachCount++
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
@@ -762,6 +764,7 @@ internal class TaoComposeSceneHost(
                 outer.interopAttachCount--
                 if (outer.interopAttachCount == 0) {
                     outer.transaction.isInteropActive = false
+                    WindowTransparencyMode.release(outer.window, outer.glassBackgroundState)
                 }
             }
 
@@ -790,6 +793,48 @@ internal class TaoComposeSceneHost(
 
             override fun scheduleInterop(action: () -> Unit) {
                 outer.scheduleInteropAction(action)
+            }
+
+            override fun dispatchPointerToNative(
+                handle: Long,
+                type: Int,
+                xPx: Float,
+                yPx: Float,
+                button: Int,
+                pressed: Boolean,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                NativeTaoMacOsNativeViewBridge.nativeDispatchPointer(
+                    outer.nsViewHandle,
+                    handle,
+                    type,
+                    xPx,
+                    yPx,
+                    button,
+                    pressed,
+                )
+            }
+
+            override fun dispatchScrollToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                dx: Float,
+                dy: Float,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
+                    outer.nsViewHandle,
+                    handle,
+                    xPx,
+                    yPx,
+                    dx,
+                    dy,
+                )
+            }
+
+            override fun noteNativePointerDispatch() {
+                outer.nativePointerDispatchedThisEvent = true
             }
         }
     }
@@ -963,6 +1008,7 @@ internal class TaoComposeSceneHost(
         }
         isPressed = pressed
         if (pressed) pressedButtonCode = buttonCode
+        if (pressed) nativePointerDispatchedThisEvent = false
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -970,6 +1016,16 @@ internal class TaoComposeSceneHost(
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )
+        if (pressed &&
+            !nativePointerDispatchedThisEvent &&
+            nsViewHandle != 0L &&
+            NativeTaoMacOsNativeViewBridge.isLoaded
+        ) {
+            // Compose consumed the click (or it missed every NativeView):
+            // take first-responder back so typing goes to Compose, not a
+            // previously focused WKWebView sitting under the Metal layer.
+            NativeTaoMacOsNativeViewBridge.nativeMakeContentViewFirstResponder(nsViewHandle)
+        }
     }
 
     /**

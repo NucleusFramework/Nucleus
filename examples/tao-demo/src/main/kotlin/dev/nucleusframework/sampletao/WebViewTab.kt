@@ -47,6 +47,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.NativeView
@@ -59,18 +61,16 @@ private const val INITIAL_URL = "https://nucleusframework.dev"
 /**
  * **WebView demo tab.**
  *
- * A live native WebView mounted via `NativeView`, with a Compose-
- * rendered floating navigation pill (back / forward / reload + URL
- * field) painted on top via `NativeView`'s `content` slot.
+ * A live native WebView mounted via `NativeView`, with Compose chrome
+ * (nav pill, optional popup) drawn **on top** as later siblings — the
+ * same layout as Compose Desktop's `SwingPanel` + interop blending.
  *
- *  - **macOS**: real `WKWebView` embedded as an `NSView` sibling.
- *    Overlay slot lives in a borderless transparent NSPanel above the
- *    host window and intercepts pointer events inside its bounds.
- *  - **Linux**: real `WebKitWebView` reparented into Tao's GTK
- *    content widget tree via `NucleusPlatformView.GtkWidget`. **No
- *    overlay slot** — the `content` lambda is rendered by Compose on
- *    top of GTK and may visually overlap the page, but the WebView
- *    receives all pointer/keyboard events directly through GTK.
+ *  - **macOS**: `WKWebView` sits below the Metal surface; hole-punch
+ *    blending lets siblings and in-scene `Popup`s composite over it.
+ *  - **Linux**: `WebKitWebView` under the EGL surface, same hole punch.
+ *    Interactive overlay widgets still use `consumeOverlayPointerEvents`.
+ *  - **Windows**: child HWND paints above the parent, so the overlay
+ *    chrome goes through `NativeView`'s `content` slot (DComp popup).
  */
 @Composable
 internal fun WebViewTab(modifier: Modifier = Modifier) {
@@ -90,6 +90,7 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
+    var showPopup by remember { mutableStateOf(false) }
 
     // Lightweight polling: backend-native navigation observers
     // (WKWebView KVO / WebKitWebView property notify) would be
@@ -119,6 +120,27 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
             // One-shot navigation tracker so `update` doesn't reload on
             // every recomposition.
             val loadedFlag = remember { booleanArrayOf(false) }
+            // macOS / Linux: Compose siblings after NativeView draw on top
+            // of the page (interop blending). Windows child HWNDs stay
+            // above the parent surface, so the same chrome is passed
+            // through the `content` slot there.
+            val overlay: @Composable () -> Unit = {
+                WebViewOverlay(
+                    url = urlInput,
+                    onUrlChange = { urlInput = it },
+                    onUrlFocusChange = { urlFocused = it },
+                    onSubmit = { controller?.loadUrl(urlInput) },
+                    canGoBack = canGoBack,
+                    canGoForward = canGoForward,
+                    isLoading = isLoading,
+                    onBack = { if (canGoBack) controller?.goBack() },
+                    onForward = { if (canGoForward) controller?.goForward() },
+                    onReload = { controller?.reload() },
+                    showPopup = showPopup,
+                    onTogglePopup = { showPopup = !showPopup },
+                    onDismissPopup = { showPopup = false },
+                )
+            }
             NativeView(
                 factory = {
                     val view = createSampleWebViewPlatformView(parentHwnd) { c -> controller = c }
@@ -133,30 +155,97 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                         c.loadUrl(INITIAL_URL)
                     }
                 },
+                content = if (Platform.Current == Platform.Windows) overlay else ({}),
+            )
+            if (Platform.Current != Platform.Windows) overlay()
+        }
+    }
+}
+
+@Composable
+private fun WebViewOverlay(
+    url: String,
+    onUrlChange: (String) -> Unit,
+    onUrlFocusChange: (Boolean) -> Unit,
+    onSubmit: () -> Unit,
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    isLoading: Boolean,
+    onBack: () -> Unit,
+    onForward: () -> Unit,
+    onReload: () -> Unit,
+    showPopup: Boolean,
+    onTogglePopup: () -> Unit,
+    onDismissPopup: () -> Unit,
+) {
+    Box(Modifier.fillMaxSize().padding(24.dp)) {
+        OverlayChip(
+            modifier = Modifier.align(Alignment.TopStart),
+            onClick = onTogglePopup,
+        )
+        if (showPopup) {
+            Popup(
+                alignment = Alignment.TopStart,
+                onDismissRequest = onDismissPopup,
+                properties = PopupProperties(focusable = true),
             ) {
-                // Compose UI rendered ON TOP of the WebView
                 Box(
                     modifier =
                         Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                    contentAlignment = Alignment.BottomEnd,
+                            .padding(start = 8.dp, top = 48.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(Color(0xF00F172A))
+                            .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(10.dp))
+                            .consumeOverlayPointerEvents()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
-                    NavPill(
-                        url = urlInput,
-                        onUrlChange = { urlInput = it },
-                        onUrlFocusChange = { urlFocused = it },
-                        onSubmit = { controller?.loadUrl(urlInput) },
-                        canGoBack = canGoBack,
-                        canGoForward = canGoForward,
-                        isLoading = isLoading,
-                        onBack = { if (canGoBack) controller?.goBack() },
-                        onForward = { if (canGoForward) controller?.goForward() },
-                        onReload = { controller?.reload() },
+                    BasicText(
+                        text = "Compose Popup over NativeView",
+                        style = TextStyle(color = Color.White, fontSize = 13.sp),
                     )
                 }
             }
         }
+        NavPill(
+            url = url,
+            onUrlChange = onUrlChange,
+            onUrlFocusChange = onUrlFocusChange,
+            onSubmit = onSubmit,
+            canGoBack = canGoBack,
+            canGoForward = canGoForward,
+            isLoading = isLoading,
+            onBack = onBack,
+            onForward = onForward,
+            onReload = onReload,
+            modifier = Modifier.align(Alignment.BottomEnd),
+        )
+    }
+}
+
+@Composable
+private fun OverlayChip(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier =
+            modifier
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xCC0F172A))
+                .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(20.dp))
+                .consumeOverlayPointerEvents()
+                .clickable(onClick = onClick)
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+    ) {
+        BasicText(
+            text = "Popup over WebView",
+            style =
+                TextStyle(
+                    color = Color(0xFF80D8FF),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                ),
+        )
     }
 }
 
@@ -172,10 +261,11 @@ private fun NavPill(
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReload: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Box(
         modifier =
-            Modifier
+            modifier
                 .padding(8.dp)
                 .height(56.dp)
                 .width(520.dp)

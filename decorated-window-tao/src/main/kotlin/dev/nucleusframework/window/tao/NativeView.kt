@@ -1,4 +1,5 @@
 @file:Suppress("MagicNumber")
+@file:OptIn(ExperimentalComposeUiApi::class)
 
 package dev.nucleusframework.window.tao
 
@@ -11,12 +12,16 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
@@ -26,7 +31,6 @@ import dev.nucleusframework.window.tao.deco.LocalNativeViewOverlayControllerWind
 import dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.NativeViewOverlayController
 import dev.nucleusframework.window.tao.deco.NativeViewOverlayControllerWindows
-import dev.nucleusframework.window.tao.popup.LocalTaoPopupHost
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -37,15 +41,22 @@ import kotlin.math.roundToInt
  * The user supplies a [NucleusPlatformView] from [factory] — a sealed
  * type whose variant decides the embedding strategy:
  *
- *  - [NucleusPlatformView.NsView] — macOS, real AppKit subview
- *    embedding. Supports the [content] overlay slot via a sibling
- *    overlay NSView with its own `CAMetalLayer` + `ComposeScene`.
+ *  - [NucleusPlatformView.NsView] — macOS, real AppKit view sitting
+ *    **below** the Compose Metal surface. Compose punches a transparent
+ *    hole so the native view shows through; overlapping Compose
+ *    (the [content] slot **and** later siblings — snackbars, buttons,
+ *    in-scene popups) draws on top. Same model as Compose Desktop's
+ *    `SwingPanel` with `compose.interop.blending=true`.
  *  - [NucleusPlatformView.GtkWidget] — Linux, GTK widget reparented
- *    into Tao's content widget. **No overlay support**: the [content]
- *    slot is silently ignored.
+ *    into Tao's content widget. Same hole-punch blending as macOS;
+ *    the [content] slot renders in the host scene. Interactive overlay
+ *    widgets still opt in with [consumeOverlayPointerEvents].
  *  - [NucleusPlatformView.HWnd] — Windows, child HWND reparented under
- *    the Tao main HWND. Supports the [content] overlay slot via a
- *    sibling top-level WS_POPUP HWND rendered via DirectComposition.
+ *    the Tao main HWND. Child HWNDs paint above the parent surface, so
+ *    overlapping Compose uses the [content] overlay slot (a DirectComposition
+ *    WS_POPUP). `nativePopupLayers = true` is the equivalent of
+ *    `compose.layers.type=WINDOW` for popups that must float above the
+ *    child.
  *
  * Variants whose backend isn't implemented (or whose runtime type
  * doesn't match the current OS) fall back to an empty `Box(modifier)`.
@@ -196,9 +207,13 @@ private fun HwndEmbedding(
 }
 
 /**
- * macOS NSView embedding path. Falls back to an empty `Box(modifier)`
- * when the runtime isn't macOS or the host scene plumbing isn't
- * available.
+ * macOS NSView embedding path. The native view sits **below** the
+ * Compose Metal surface; this composable punches a `BlendMode.Clear`
+ * hole so it shows through, then draws [content] (and any later
+ * Compose siblings) on top — SwingPanel interop-blending semantics.
+ *
+ * Falls back to an empty `Box(modifier)` when the runtime isn't macOS
+ * or the host scene plumbing isn't available.
  */
 @Composable
 private fun NsViewEmbedding(
@@ -208,43 +223,19 @@ private fun NsViewEmbedding(
     content: @Composable () -> Unit,
 ) {
     val host = LocalTaoNativeViewHost.current
-    val popupHost = LocalTaoPopupHost.current
     val handle = view.nsViewHandle
     val latestContent by rememberUpdatedState(content)
 
-    if (Platform.Current != Platform.MacOS || host == null || popupHost == null || handle == 0L) {
+    if (Platform.Current != Platform.MacOS || host == null || handle == 0L) {
         Box(modifier)
         return
     }
 
-    val overlay =
-        remember(host, popupHost) {
-            NativeViewOverlayController(host, popupHost)
-        }
-
-    DisposableEffect(host, handle, overlay) {
+    DisposableEffect(host, handle) {
         host.attach(handle)
-        // Overlay must attach AFTER the user's subview so AppKit
-        // paints it on top in the subview list.
-        overlay.attach()
-        onDispose {
-            overlay.dispose()
-            host.detach(handle)
-        }
+        onDispose { host.detach(handle) }
     }
 
-    DisposableEffect(overlay) {
-        overlay.setContent {
-            CompositionLocalProvider(LocalNativeViewOverlayController provides overlay) {
-                latestContent()
-            }
-        }
-        onDispose { /* dispose handled above */ }
-    }
-
-    // Resolve the corner-radius into pixels here so the layout-time
-    // closure doesn't have to read CompositionLocals. `Infinity`
-    // tells the native side to cap at min(w, h) / 2 → fully round.
     val density = LocalDensity.current
     val cornerRadiusPx =
         remember(cornerRadius, density) {
@@ -254,54 +245,48 @@ private fun NsViewEmbedding(
                 else -> with(density) { cornerRadius.toPx() }
             }
         }
-    // Cache the last applied rect + radius so layout passes that
-    // don't change anything skip the JNI hop entirely.
     val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
     val lastRadius = remember { floatArrayOf(Float.NaN) }
     Box(
         modifier =
-            modifier.onGloballyPositioned { coords ->
-                val pos = coords.positionInRoot()
-                val xPx = pos.x.roundToInt()
-                val yPx = pos.y.roundToInt()
-                val wPx = coords.size.width.coerceAtLeast(1)
-                val hPx = coords.size.height.coerceAtLeast(1)
-                val rectChanged =
-                    lastRect[0] != xPx ||
-                        lastRect[1] != yPx ||
-                        lastRect[2] != wPx ||
-                        lastRect[3] != hPx
-                if (rectChanged) {
-                    lastRect[0] = xPx
-                    lastRect[1] = yPx
-                    lastRect[2] = wPx
-                    lastRect[3] = hPx
-                    host.setFrame(handle, xPx, yPx, wPx, hPx)
-                    overlay.setBounds(xPx, yPx, wPx, hPx)
-                    // Parity with HwndEmbedding: notify the view-impl so
-                    // custom NsView hosts (child NSWindows, controller-style
-                    // APIs) can react to layout changes.
-                    view.resize(wPx, hPx)
-                    view.setBounds(xPx, yPx, wPx, hPx)
-                }
-                // Re-applied on every size change because circular mode
-                // (Infinity) needs the radius rebound to min(w,h)/2;
-                // a fixed radius is also re-applied when bounds change
-                // since AppKit's cornerRadius is stable across resize but
-                // the cap may move. Cheap call.
-                if (rectChanged || lastRadius[0] != cornerRadiusPx) {
-                    lastRadius[0] = cornerRadiusPx
-                    val radiusToApply =
-                        if (cornerRadiusPx.isInfinite()) {
-                            min(wPx, hPx) / 2f
-                        } else {
-                            cornerRadiusPx
-                        }
-                    host.setCornerRadius(handle, radiusToApply)
-                    view.setCornerRadius(radiusToApply)
-                }
-            },
-    )
+            modifier
+                .punchNativeViewHole()
+                .nativeViewPointerInterop(host, handle, lastRect)
+                .onGloballyPositioned { coords ->
+                    val pos = coords.positionInRoot()
+                    val xPx = pos.x.roundToInt()
+                    val yPx = pos.y.roundToInt()
+                    val wPx = coords.size.width.coerceAtLeast(1)
+                    val hPx = coords.size.height.coerceAtLeast(1)
+                    val rectChanged =
+                        lastRect[0] != xPx ||
+                            lastRect[1] != yPx ||
+                            lastRect[2] != wPx ||
+                            lastRect[3] != hPx
+                    if (rectChanged) {
+                        lastRect[0] = xPx
+                        lastRect[1] = yPx
+                        lastRect[2] = wPx
+                        lastRect[3] = hPx
+                        host.setFrame(handle, xPx, yPx, wPx, hPx)
+                        view.resize(wPx, hPx)
+                        view.setBounds(xPx, yPx, wPx, hPx)
+                    }
+                    if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                        lastRadius[0] = cornerRadiusPx
+                        val radiusToApply =
+                            if (cornerRadiusPx.isInfinite()) {
+                                min(wPx, hPx) / 2f
+                            } else {
+                                cornerRadiusPx
+                            }
+                        host.setCornerRadius(handle, radiusToApply)
+                        view.setCornerRadius(radiusToApply)
+                    }
+                },
+    ) {
+        NativeViewOverlayContent(latestContent)
+    }
 }
 
 /**
@@ -361,10 +346,8 @@ private fun GtkWidgetEmbedding(
         // single `drawWithContent` is unambiguous.
         modifier =
             modifier
-                .drawWithContent {
-                    drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
-                    drawContent()
-                }.onGloballyPositioned { coords ->
+                .punchNativeViewHole()
+                .onGloballyPositioned { coords ->
                     val pos = coords.positionInRoot()
                     val xPx = pos.x.roundToInt()
                     val yPx = pos.y.roundToInt()
@@ -383,27 +366,13 @@ private fun GtkWidgetEmbedding(
                     }
                 },
     ) {
-        // Wrap the overlay slot in an offscreen graphics layer:
-        // children paint into a private buffer (initially fully
-        // transparent), then the buffer composites onto the cleared
-        // parent canvas. This isolates Compose's internal AA
-        // blending from our `BlendMode.Clear` background — without
-        // it, glyph edges with alpha < 1 blend with the
-        // already-cleared destination in odd ways and look
-        // partially erased.
-        Box(
-            modifier =
-                Modifier.graphicsLayer {
-                    compositingStrategy = CompositingStrategy.Offscreen
-                },
-        ) {
-            // Overlay slot — rendered inside the *same* Compose
-            // scene as the rest of the window (no second scene /
-            // Metal layer like macOS). Interactive widgets register
-            // with [overlayController] via
-            // [Modifier.consumeOverlayPointerEvents] so their rect
-            // joins the EGL surface's input region. Outside of those
-            // rects clicks fall through to the embedded GTK widget.
+        // Overlay slot — rendered inside the *same* Compose
+        // scene as the rest of the window. Interactive widgets
+        // register with [overlayController] via
+        // [Modifier.consumeOverlayPointerEvents] so their rect
+        // joins the EGL surface's input region. Outside of those
+        // rects clicks fall through to the embedded GTK widget.
+        NativeViewOverlayContent {
             if (overlayController != null) {
                 CompositionLocalProvider(
                     LocalTaoLinuxOverlayController provides overlayController,
@@ -416,6 +385,98 @@ private fun GtkWidgetEmbedding(
         }
     }
 }
+
+/**
+ * Clears the NativeView slot to alpha 0 so the platform view sitting
+ * under the Compose surface shows through, then draws overlay children.
+ */
+private fun Modifier.punchNativeViewHole(): Modifier =
+    drawWithContent {
+        drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
+        drawContent()
+    }
+
+/**
+ * Isolates overlay drawing in an offscreen layer so glyph AA does not
+ * blend against the `BlendMode.Clear` hole (partially-erased edges).
+ */
+@Composable
+private fun NativeViewOverlayContent(content: @Composable () -> Unit) {
+    Box(
+        modifier =
+            Modifier.graphicsLayer {
+                compositingStrategy = CompositingStrategy.Offscreen
+            },
+    ) {
+        content()
+    }
+}
+
+/**
+ * Redispatches pointer events that Compose did not consume onto the
+ * embedded AppKit view. Siblings drawn *after* [NativeView] hit-test
+ * first and never reach this modifier — that's how a Button/Snackbar
+ * overlapping the native view stays interactive.
+ */
+private fun Modifier.nativeViewPointerInterop(
+    host: TaoNativeViewHost,
+    handle: Long,
+    lastRect: IntArray,
+): Modifier =
+    pointerInput(host, handle) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent()
+                val change = event.changes.firstOrNull()
+                if (change == null || event.changes.any { it.isConsumed }) {
+                    continue
+                }
+                val xPx = lastRect[0] + change.position.x
+                val yPx = lastRect[1] + change.position.y
+                val button =
+                    when (event.button) {
+                        PointerButton.Secondary -> 2
+                        PointerButton.Primary -> 1
+                        else -> if (change.pressed) 1 else 0
+                    }
+                val dispatched =
+                    when (event.type) {
+                        PointerEventType.Press -> {
+                            host.noteNativePointerDispatch()
+                            host.dispatchPointerToNative(handle, 1, xPx, yPx, button, true)
+                            true
+                        }
+                        PointerEventType.Release -> {
+                            host.dispatchPointerToNative(handle, 2, xPx, yPx, button, false)
+                            true
+                        }
+                        PointerEventType.Move -> {
+                            host.dispatchPointerToNative(
+                                handle,
+                                3,
+                                xPx,
+                                yPx,
+                                button,
+                                change.pressed,
+                            )
+                            true
+                        }
+                        PointerEventType.Scroll -> {
+                            host.dispatchScrollToNative(
+                                handle,
+                                xPx,
+                                yPx,
+                                change.scrollDelta.x,
+                                change.scrollDelta.y,
+                            )
+                            true
+                        }
+                        else -> false
+                    }
+                if (dispatched) event.changes.forEach { it.consume() }
+            }
+        }
+    }
 
 /** Plumbing CompositionLocal — provided by `DecoratedWindow`. */
 internal val LocalTaoNativeViewHost = compositionLocalOf<TaoNativeViewHost?> { null }
@@ -453,6 +514,37 @@ internal interface TaoNativeViewHost {
     fun scheduleInterop(action: () -> Unit) {
         action()
     }
+
+    /**
+     * Forwards a Compose pointer event that landed on this native view
+     * and was not consumed by overlapping Compose content. macOS only;
+     * no-op elsewhere. [type] is 1 down / 2 up / 3 move.
+     */
+    fun dispatchPointerToNative(
+        handle: Long,
+        type: Int,
+        xPx: Float,
+        yPx: Float,
+        button: Int,
+        pressed: Boolean,
+    ) {
+    }
+
+    /** Forwards an unconsumed Compose scroll onto the native view. macOS only. */
+    fun dispatchScrollToNative(
+        handle: Long,
+        xPx: Float,
+        yPx: Float,
+        dx: Float,
+        dy: Float,
+    ) {
+    }
+
+    /**
+     * Marks that the in-flight pointer Press was handed to a native
+     * view (so the host must not steal first-responder back).
+     */
+    fun noteNativePointerDispatch() {}
 }
 
 /**

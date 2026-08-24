@@ -77,9 +77,10 @@ public sealed interface NucleusPlatformView {
     public fun dispose() {}
 
     /**
-     * macOS variant — embedded as a sibling `NSView` of the Tao host's
-     * content view, with an optional Compose overlay rendered into a
-     * `CAMetalLayer` of its own. See `NativeViewOverlayController`.
+     * macOS variant — embedded **below** the Tao host's content view so
+     * Compose can punch a transparent hole and draw on top (interop
+     * blending). The [NativeView] `content` slot renders in the host
+     * scene; overlapping siblings do too.
      */
     public interface NsView : NucleusPlatformView {
         /** Pointer to the user-supplied `NSView*` (top-bit clear). */
