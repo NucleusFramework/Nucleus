@@ -395,11 +395,15 @@ static NSView *hit_native_child(NSView *child, NSPoint windowPoint) {
 static NSEvent *mouse_event_at(NSView *view, NSEventType type, NSPoint windowPoint, jint clickCount) {
     NSWindow *win = view.window;
     NSTimeInterval ts = [NSProcessInfo processInfo].systemUptime;
+    NSEventModifierFlags mods = 0;
     NSEvent *current = NSApp.currentEvent;
-    if (current != nil) ts = current.timestamp;
+    if (current != nil) {
+        ts = current.timestamp;
+        mods = current.modifierFlags;
+    }
     return [NSEvent mouseEventWithType:type
                               location:windowPoint
-                         modifierFlags:0
+                         modifierFlags:mods
                              timestamp:ts
                           windowNumber:win.windowNumber
                                context:nil
@@ -434,7 +438,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     } else {
         nsType = NSEventTypeMouseMoved;
     }
-    NSEvent *event = mouse_event_at(hit, nsType, windowPoint, type == 1 ? 1 : 0);
+    NSEvent *current = NSApp.currentEvent;
+    NSEvent *event = (current != nil && current.type == nsType)
+        ? current
+        : mouse_event_at(hit, nsType, windowPoint, type == 1 ? 1 : 0);
     if (type == 1) {
         [hit.window makeFirstResponder:hit];
         if (nsType == NSEventTypeRightMouseDown) [hit rightMouseDown:event];
@@ -643,9 +650,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeSe
 }
 
 /* Returns YES if the overlay NSView is the current first responder of
- * its host NSWindow. Used by `NativeViewOverlayController` to decide
- * whether to consume key events from the host's pre-existing Tao
- * key-forwarding pipeline. */
+ * its host NSWindow. Kept for headful tests that fabricate an overlay. */
 JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeIsFirstResponder(
     JNIEnv *env, jclass clazz, jlong overlayPtr)

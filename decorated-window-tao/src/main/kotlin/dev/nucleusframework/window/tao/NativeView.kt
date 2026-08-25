@@ -5,7 +5,6 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.compositionLocalOf
@@ -27,8 +26,6 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.deco.LocalTaoLinuxOverlayController
-import dev.nucleusframework.window.tao.deco.NativeViewOverlayController
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -80,46 +77,67 @@ public fun NativeView(
     SideEffect { latestUpdate(view) }
 
     when (view) {
-        is NucleusPlatformView.NsView -> NsViewEmbedding(view, modifier, cornerRadius, content)
-        is NucleusPlatformView.GtkWidget -> GtkWidgetEmbedding(view, modifier, content)
-        is NucleusPlatformView.HWnd -> HwndEmbedding(view, modifier, cornerRadius, content)
+        is NucleusPlatformView.NsView ->
+            EmbeddedNativeView(
+                handle = view.nsViewHandle,
+                view = view,
+                modifier = modifier,
+                cornerRadius = cornerRadius,
+                content = content,
+                enabled = Platform.Current == Platform.MacOS && view.nsViewHandle != 0L,
+                applyCornerRadius = true,
+            )
+        is NucleusPlatformView.GtkWidget ->
+            EmbeddedNativeView(
+                handle = view.gtkWidgetHandle,
+                view = view,
+                modifier = modifier,
+                cornerRadius = cornerRadius,
+                content = content,
+                enabled = Platform.Current == Platform.Linux && view.gtkWidgetHandle != 0L,
+                applyCornerRadius = false,
+            )
+        is NucleusPlatformView.HWnd ->
+            EmbeddedNativeView(
+                handle = view.hwndHandle,
+                view = view,
+                modifier = modifier,
+                cornerRadius = cornerRadius,
+                content = content,
+                // hwnd == 0 is intentional for DComp-backed views (WebView2
+                // CompositionController): they have no Win32 child HWND.
+                enabled = Platform.Current == Platform.Windows,
+                applyCornerRadius = true,
+            )
     }
 }
 
 /**
- * Windows HWND embedding path. Child HWNDs paint above the parent
- * surface, so a DirectComposition overlay (owned by the scene host)
- * composites the host Compose scene over the NativeView rect — the
- * SwingPanel interop-blending model. [content] and later siblings
- * draw in the host scene; unconsumed pointer events are synthesised
- * onto the child HWND (or the owner, for hwnd=0 WebView2).
- *
- * Falls back to an empty `Box(modifier)` when the runtime isn't
- * Windows or the host scene plumbing isn't available.
+ * Shared host-scene embedding: hole-punch, pointer redispatch, frame
+ * sync, [content] in the same Compose scene. Platform hosts only attach
+ * the native child and (Windows/Linux) capture hits for Compose.
  */
 @Composable
-private fun HwndEmbedding(
-    view: NucleusPlatformView.HWnd,
+private fun EmbeddedNativeView(
+    handle: Long,
+    view: NucleusPlatformView,
     modifier: Modifier,
     cornerRadius: Dp,
     content: @Composable () -> Unit,
+    enabled: Boolean,
+    applyCornerRadius: Boolean,
 ) {
     val host = LocalTaoNativeViewHost.current
-    val handle = view.hwndHandle
     val latestContent by rememberUpdatedState(content)
-
-    if (Platform.Current != Platform.Windows || host == null) {
+    if (!enabled || host == null) {
         Box(modifier)
         return
     }
-    // [handle == 0L] is intentional for DComp-backed views (WebView2
-    // CompositionController): they have no Win32 child HWND. attach /
-    // setFrame / setCornerRadius no-op on a non-window handle; bounds
-    // and clip go through the view-impl's own overrides.
 
-    DisposableEffect(host, handle) {
-        host.attach(handle)
-        onDispose { host.detach(handle) }
+    val regionToken = remember { Any() }
+    DisposableEffect(host, regionToken) {
+        host.attach(handle, regionToken)
+        onDispose { host.detach(handle, regionToken) }
     }
 
     val density = LocalDensity.current
@@ -154,11 +172,11 @@ private fun HwndEmbedding(
                         lastRect[1] = yPx
                         lastRect[2] = wPx
                         lastRect[3] = hPx
-                        host.setFrame(handle, xPx, yPx, wPx, hPx)
+                        host.setFrame(handle, xPx, yPx, wPx, hPx, regionToken)
                         view.resize(wPx, hPx)
                         view.setBounds(xPx, yPx, wPx, hPx)
                     }
-                    if (rectChanged || lastRadius[0] != cornerRadiusPx) {
+                    if (applyCornerRadius && (rectChanged || lastRadius[0] != cornerRadiusPx)) {
                         lastRadius[0] = cornerRadiusPx
                         val radiusToApply =
                             if (cornerRadiusPx.isInfinite()) {
@@ -172,172 +190,6 @@ private fun HwndEmbedding(
                 },
     ) {
         NativeViewOverlayContent(latestContent)
-    }
-}
-
-/**
- * macOS NSView embedding path. The native view sits **below** the
- * Compose Metal surface; this composable punches a `BlendMode.Clear`
- * hole so it shows through, then draws [content] (and any later
- * Compose siblings) on top — SwingPanel interop-blending semantics.
- *
- * Falls back to an empty `Box(modifier)` when the runtime isn't macOS
- * or the host scene plumbing isn't available.
- */
-@Composable
-private fun NsViewEmbedding(
-    view: NucleusPlatformView.NsView,
-    modifier: Modifier,
-    cornerRadius: Dp,
-    content: @Composable () -> Unit,
-) {
-    val host = LocalTaoNativeViewHost.current
-    val handle = view.nsViewHandle
-    val latestContent by rememberUpdatedState(content)
-
-    if (Platform.Current != Platform.MacOS || host == null || handle == 0L) {
-        Box(modifier)
-        return
-    }
-
-    DisposableEffect(host, handle) {
-        host.attach(handle)
-        onDispose { host.detach(handle) }
-    }
-
-    val density = LocalDensity.current
-    val cornerRadiusPx =
-        remember(cornerRadius, density) {
-            when {
-                cornerRadius == Dp.Unspecified -> 0f
-                cornerRadius == Dp.Infinity -> Float.POSITIVE_INFINITY
-                else -> with(density) { cornerRadius.toPx() }
-            }
-        }
-    val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
-    val lastRadius = remember { floatArrayOf(Float.NaN) }
-    Box(
-        modifier =
-            modifier
-                .punchNativeViewHole()
-                .nativeViewPointerInterop(host, handle, lastRect)
-                .onGloballyPositioned { coords ->
-                    val pos = coords.positionInRoot()
-                    val xPx = pos.x.roundToInt()
-                    val yPx = pos.y.roundToInt()
-                    val wPx = coords.size.width.coerceAtLeast(1)
-                    val hPx = coords.size.height.coerceAtLeast(1)
-                    val rectChanged =
-                        lastRect[0] != xPx ||
-                            lastRect[1] != yPx ||
-                            lastRect[2] != wPx ||
-                            lastRect[3] != hPx
-                    if (rectChanged) {
-                        lastRect[0] = xPx
-                        lastRect[1] = yPx
-                        lastRect[2] = wPx
-                        lastRect[3] = hPx
-                        host.setFrame(handle, xPx, yPx, wPx, hPx)
-                        view.resize(wPx, hPx)
-                        view.setBounds(xPx, yPx, wPx, hPx)
-                    }
-                    if (rectChanged || lastRadius[0] != cornerRadiusPx) {
-                        lastRadius[0] = cornerRadiusPx
-                        val radiusToApply =
-                            if (cornerRadiusPx.isInfinite()) {
-                                min(wPx, hPx) / 2f
-                            } else {
-                                cornerRadiusPx
-                            }
-                        host.setCornerRadius(handle, radiusToApply)
-                        view.setCornerRadius(radiusToApply)
-                    }
-                },
-    ) {
-        NativeViewOverlayContent(latestContent)
-    }
-}
-
-/**
- * Linux GTK widget embedding path — same hole-punch blending as
- * [NsViewEmbedding]. The embedded widget paints into GTK's buffer;
- * Compose composites on top with alpha. A GtkEventBox covering the
- * NativeView rect captures hits for Compose (siblings and [content]);
- * unconsumed events are synthesised back onto the widget.
- *
- * Falls back to an empty `Box(modifier)` when the runtime isn't
- * Linux or the GTK host isn't available.
- */
-@Composable
-private fun GtkWidgetEmbedding(
-    view: NucleusPlatformView.GtkWidget,
-    modifier: Modifier,
-    content: @Composable () -> Unit,
-) {
-    val host = LocalTaoNativeViewHost.current
-    val overlayController = LocalTaoLinuxOverlayController.current
-    val handle = view.gtkWidgetHandle
-    val latestContent by rememberUpdatedState(content)
-
-    if (Platform.Current != Platform.Linux || host == null || handle == 0L) {
-        Box(modifier)
-        return
-    }
-
-    DisposableEffect(host, handle) {
-        host.attach(handle)
-        onDispose { host.detach(handle) }
-    }
-
-    val lastRect = remember { intArrayOf(Int.MIN_VALUE, Int.MIN_VALUE, -1, -1) }
-    Box(
-        // `drawWithContent` lets us strictly order:
-        //   1. Clear the destination to alpha=0 so any opaque
-        //      ancestor `background(...)` painted earlier in the
-        //      scene doesn't sit on top of GTK's surface buffer in
-        //      the EGL composite step and hide the embedded widget.
-        //   2. Then draw children (the overlay `content()`) on top.
-        // Doing this with a sibling `Box(...).drawBehind { Clear }`
-        // worked for opaque widgets but caused the partial-erase
-        // artefact on AA glyph edges — Compose's draw ordering with
-        // `matchParentSize` siblings + internal RenderNodes (ripple,
-        // shadows) doesn't always serialise the way you'd expect. A
-        // single `drawWithContent` is unambiguous.
-        modifier =
-            modifier
-                .punchNativeViewHole()
-                .nativeViewPointerInterop(host, handle, lastRect)
-                .onGloballyPositioned { coords ->
-                    val pos = coords.positionInRoot()
-                    val xPx = pos.x.roundToInt()
-                    val yPx = pos.y.roundToInt()
-                    val wPx = coords.size.width.coerceAtLeast(1)
-                    val hPx = coords.size.height.coerceAtLeast(1)
-                    if (lastRect[0] != xPx ||
-                        lastRect[1] != yPx ||
-                        lastRect[2] != wPx ||
-                        lastRect[3] != hPx
-                    ) {
-                        lastRect[0] = xPx
-                        lastRect[1] = yPx
-                        lastRect[2] = wPx
-                        lastRect[3] = hPx
-                        host.setFrame(handle, xPx, yPx, wPx, hPx)
-                    }
-                },
-    ) {
-        // Overlay slot — same Compose scene as the rest of the window.
-        NativeViewOverlayContent {
-            if (overlayController != null) {
-                CompositionLocalProvider(
-                    LocalTaoLinuxOverlayController provides overlayController,
-                ) {
-                    latestContent()
-                }
-            } else {
-                latestContent()
-            }
-        }
     }
 }
 
@@ -438,9 +290,20 @@ internal val LocalTaoNativeViewHost = compositionLocalOf<TaoNativeViewHost?> { n
 
 /** Decouples [NativeView] from the platform-specific scene host. */
 internal interface TaoNativeViewHost {
-    fun attach(childHandle: Long)
+    /**
+     * Mounts [childHandle] in the native window. [regionToken] uniquely
+     * identifies this embedding for hit-capture bookkeeping (EventBox /
+     * overlay RGN) so hwnd=0 WebView2 slots do not collide.
+     */
+    fun attach(
+        childHandle: Long,
+        regionToken: Any,
+    )
 
-    fun detach(childHandle: Long)
+    fun detach(
+        childHandle: Long,
+        regionToken: Any,
+    )
 
     fun setFrame(
         handle: Long,
@@ -448,6 +311,7 @@ internal interface TaoNativeViewHost {
         yPx: Int,
         widthPx: Int,
         heightPx: Int,
+        regionToken: Any,
     )
 
     fun setCornerRadius(
@@ -456,24 +320,9 @@ internal interface TaoNativeViewHost {
     )
 
     /**
-     * Enqueues an AppKit mutation to run inside the next frame's
-     * `CATransaction`, atomically with the Compose Metal present.
-     * Used by `NativeViewOverlayController` to keep its overlay
-     * NSView's `setFrame` in lock-step with the user subview's frame
-     * change.
-     *
-     * Default fallback runs the action immediately — preserves
-     * behaviour for hosts that don't yet implement the transaction
-     * model (no visual sync, but still functionally correct).
-     */
-    fun scheduleInterop(action: () -> Unit) {
-        action()
-    }
-
-    /**
      * Forwards a Compose pointer event that landed on this native view
-     * and was not consumed by overlapping Compose content. macOS only;
-     * no-op elsewhere. [type] is 1 down / 2 up / 3 move.
+     * and was not consumed by overlapping Compose content.
+     * [type] is 1 down / 2 up / 3 move.
      */
     fun dispatchPointerToNative(
         handle: Long,
@@ -485,7 +334,7 @@ internal interface TaoNativeViewHost {
     ) {
     }
 
-    /** Forwards an unconsumed Compose scroll onto the native view. macOS only. */
+    /** Forwards an unconsumed Compose scroll onto the native view. */
     fun dispatchScrollToNative(
         handle: Long,
         xPx: Float,
@@ -501,12 +350,3 @@ internal interface TaoNativeViewHost {
      */
     fun noteNativePointerDispatch() {}
 }
-
-/**
- * CompositionLocal exposing the overlay controller (if any) to
- * descendants of [NativeView]'s `content` slot. Used by
- * [Modifier.consumeOverlayPointerEvents] to register itself as an
- * interactive region.
- */
-internal val LocalNativeViewOverlayController =
-    compositionLocalOf<NativeViewOverlayController?> { null }

@@ -8,31 +8,10 @@ import dev.nucleusframework.window.tao.TaoMouseButton
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
 
 /**
- * Linux-only counterpart of macOS's `NativeViewOverlayController` —
- * but **stripped of the rendering responsibility**. On Linux the
- * Compose surface already paints on top of the embedded GTK widget,
- * so the `content` slot of `NativeView` can be rendered inline in
- * the main Compose scene. The OS-level concern is **input routing**:
- * by default, every click on the Compose region falls through to the
- * embedded native widget (the EGL subsurface is input-transparent),
- * which is exactly what we want for non-interactive overlay pixels.
- *
- * For *interactive* overlay regions (a `BasicTextField`, a `Button`,
- * etc., wrapped with [dev.nucleusframework.window.tao.consumeOverlayPointerEvents])
- * we materialise an invisible `GtkEventBox` inside Tao's GtkOverlay,
- * positioned at the rect Compose reported. Clicks in the rect hit
- * the EventBox first (it's stacked above the embedded widget in
- * `gtk_overlay_add_overlay` order), bubble up unhandled to Tao's
- * `connect_button_press_event` handler at the GtkApplicationWindow
- * level, and reach the Compose scene through the normal pipeline.
- * Keystrokes follow the same path because the EventBox grabs GTK
- * focus on press.
- *
- * This is the GTK-native analogue of macOS's region-based
- * `NucleusTaoNativeOverlayView.hitTest:` — same UX semantics, but
- * implemented through GTK widgets instead of `wl_surface.set_input_region`
- * because nothing on our side listens for `wl_pointer.button` events
- * on the EGL subsurface.
+ * Input capture for NativeView on Linux. The EGL subsurface is
+ * input-transparent, so each NativeView rect is covered by an invisible
+ * `GtkEventBox` stacked above the embedded widget. Hits reach Compose
+ * first; unconsumed events are synthesised back onto the widget.
  *
  * Threading: every method runs on the GTK main thread.
  */
@@ -61,12 +40,8 @@ internal val LocalTaoLinuxOverlayController =
     compositionLocalOf<TaoLinuxOverlayController?> { null }
 
 /**
- * Concrete impl. Maintains one `GtkEventBox` handle per registered
- * key inside the GtkOverlay injected into Tao's content widget tree.
- * Mirrors the rect-management pattern of macOS's
- * `NativeViewOverlayController.regions` / `flushRegions`, but each
- * region is its own GTK widget rather than a flat rect list passed
- * to the compositor.
+ * Concrete impl. One `GtkEventBox` per registered key inside the
+ * GtkOverlay injected into Tao's content widget tree.
  */
 internal class TaoLinuxOverlayControllerImpl(
     private val gtkWindowProvider: () -> Long,
@@ -89,6 +64,7 @@ internal class TaoLinuxOverlayControllerImpl(
      */
     private val moveDispatcher: (xPx: Int, yPx: Int) -> Unit,
     private val buttonDispatcher: (button: Int, pressed: Boolean) -> Unit,
+    private val scrollDispatcher: (xPx: Int, yPx: Int, dx: Float, dy: Float) -> Unit,
     /**
      * Called when the GTK EventBox loses focus (= user clicked
      * somewhere outside our overlay, e.g. on the embedded WebView).
@@ -151,6 +127,16 @@ internal class TaoLinuxOverlayControllerImpl(
                     handleReleaseForPopupCapture(button, ownerKey)
                 }
             }
+        }
+
+        override fun onScroll(
+            xLogical: Int,
+            yLogical: Int,
+            dx: Float,
+            dy: Float,
+        ) {
+            val s = scaleProvider().takeIf { it > 0f } ?: 1f
+            scrollDispatcher((xLogical * s).toInt(), (yLogical * s).toInt(), dx, dy)
         }
     }
 

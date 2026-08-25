@@ -2033,7 +2033,10 @@ internal class TaoComposeSceneHostLinux(
         if (gtkWindow == 0L) return null
         val outer = this
         return object : dev.nucleusframework.window.tao.TaoNativeViewHost {
-            override fun attach(childHandle: Long) {
+            override fun attach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.add(childHandle)) {
@@ -2044,9 +2047,12 @@ internal class TaoComposeSceneHostLinux(
                 }
             }
 
-            override fun detach(childHandle: Long) {
+            override fun detach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 outer.nativeViewRects.remove(childHandle)
-                outer.overlayController.unregisterRegion(childHandle)
+                outer.overlayController.unregisterRegion(regionToken)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.remove(childHandle)) {
@@ -2061,6 +2067,7 @@ internal class TaoComposeSceneHostLinux(
                 yPx: Int,
                 widthPx: Int,
                 heightPx: Int,
+                regionToken: Any,
             ) {
                 // Compose feeds physical pixels; GTK 3 lays out in
                 // logical pixels (the compositor applies the device
@@ -2076,7 +2083,7 @@ internal class TaoComposeSceneHostLinux(
                 // Compose sees hits first (siblings / content slot);
                 // unconsumed events are synthesised back onto the widget.
                 outer.nativeViewRects[handle] = intArrayOf(xPx, yPx, widthPx, heightPx)
-                outer.overlayController.registerRegion(handle, xPx, yPx, widthPx, heightPx)
+                outer.overlayController.registerRegion(regionToken, xPx, yPx, widthPx, heightPx)
             }
 
             override fun setCornerRadius(
@@ -2125,15 +2132,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Plumbing for the overlay slot of `NativeView` on Linux. Returns
-     * a freshly-created controller bound to this host's EGL
-     * attachment so [dev.nucleusframework.window.tao.consumeOverlayPointerEvents]
-     * modifiers in the `content` lambda can register their bounds and
-     * have the EGL surface's input region updated accordingly.
-     *
-     * One controller per window — multiple `NativeView`s inside the
-     * same window share its rect set, which is fine because input
-     * region is a window-level single list.
+     * GtkEventBox capture for NativeView rects. The EGL subsurface is
+     * input-transparent; each NativeView registers its bounds so Compose
+     * sees hits first. One controller per window.
      */
     private val overlayController: TaoLinuxOverlayControllerImpl =
         TaoLinuxOverlayControllerImpl(
@@ -2159,6 +2160,13 @@ internal class TaoComposeSceneHostLinux(
             },
             buttonDispatcher = { button, pressed ->
                 onPointerButton(button, pressed)
+            },
+            scrollDispatcher = { xPx, yPx, dx, dy ->
+                lastPointerX = xPx.toFloat()
+                lastPointerY = yPx.toFloat()
+                onPointerScroll(
+                    TaoPointerScrollEvent(dxAwt = dx, dyAwt = dy, scrollAmount = 1),
+                )
             },
             focusReleaseDispatcher = {
                 // 1) Deselect the currently-focused widget (e.g. the

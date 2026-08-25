@@ -197,6 +197,33 @@ static void dispatchPointer(OverlayState *s, int type, int button, LPARAM lParam
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
+static UINT gLastInputMsg;
+static WPARAM gLastInputW;
+static LPARAM gLastInputL;
+static HWND gLastInputHwnd;
+static BOOL gHasLastInput;
+
+void nucleus_tao_remember_native_input(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
+    gLastInputHwnd = hwnd;
+    gLastInputMsg = msg;
+    gLastInputW = w;
+    gLastInputL = l;
+    gHasLastInput = TRUE;
+}
+
+BOOL nucleus_tao_replay_last_native_input(HWND target) {
+    if (!gHasLastInput || !IsWindow(target)) return FALSE;
+    LPARAM lp = gLastInputL;
+    if (gLastInputMsg != WM_MOUSEWHEEL && gLastInputMsg != WM_MOUSEHWHEEL &&
+        target != gLastInputHwnd && IsWindow(gLastInputHwnd)) {
+        POINT pt = { (SHORT)LOWORD(lp), (SHORT)HIWORD(lp) };
+        MapWindowPoints(gLastInputHwnd, target, &pt, 1);
+        lp = MAKELPARAM((short)pt.x, (short)pt.y);
+    }
+    SendMessageW(target, gLastInputMsg, gLastInputW, lp);
+    return TRUE;
+}
+
 static void dispatchScroll(OverlayState *s, int xLocal, int yLocal,
                            float dx, float dy) {
     if (!s->pointerCb) return;
@@ -252,19 +279,33 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
          * main pipeline so Compose's focused overlay TextField
          * receives typed input. */
         if (s && s->owner) SetFocus(s->owner);
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
         if (s) {
             int btn = (msg == WM_LBUTTONDOWN) ? BTN_PRIMARY :
                       (msg == WM_RBUTTONDOWN) ? BTN_SECONDARY : BTN_MIDDLE;
             dispatchPointer(s, EVT_PTR_DOWN, btn, l);
         }
         return 0;
-    case WM_LBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_PRIMARY, l);   return 0;
-    case WM_RBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_SECONDARY, l); return 0;
-    case WM_MBUTTONUP:   if (s) dispatchPointer(s, EVT_PTR_UP,   BTN_MIDDLE, l);    return 0;
-    case WM_MOUSEMOVE:   if (s) dispatchPointer(s, EVT_PTR_MOVE, BTN_NONE, l);      return 0;
+    case WM_LBUTTONUP:
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
+        if (s) dispatchPointer(s, EVT_PTR_UP, BTN_PRIMARY, l);
+        return 0;
+    case WM_RBUTTONUP:
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
+        if (s) dispatchPointer(s, EVT_PTR_UP, BTN_SECONDARY, l);
+        return 0;
+    case WM_MBUTTONUP:
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
+        if (s) dispatchPointer(s, EVT_PTR_UP, BTN_MIDDLE, l);
+        return 0;
+    case WM_MOUSEMOVE:
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
+        if (s) dispatchPointer(s, EVT_PTR_MOVE, BTN_NONE, l);
+        return 0;
 
     case WM_MOUSEWHEEL: {
         if (!s) break;
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
         short delta = (short)HIWORD(w);
         POINT pt;
         pt.x = (short)LOWORD(l);
@@ -275,6 +316,7 @@ static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     }
     case WM_MOUSEHWHEEL: {
         if (!s) break;
+        nucleus_tao_remember_native_input(hwnd, msg, w, l);
         short delta = (short)HIWORD(w);
         POINT pt;
         pt.x = (short)LOWORD(l);

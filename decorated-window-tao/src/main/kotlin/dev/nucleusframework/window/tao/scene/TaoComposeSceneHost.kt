@@ -742,13 +742,17 @@ internal class TaoComposeSceneHost(
         if (nsViewHandle == 0L) return null
         if (!NativeTaoMacOsNativeViewBridge.isLoaded) return null
         val outer = this
+        @Suppress("UnusedParameter")
         return object : TaoNativeViewHost {
-            override fun attach(childHandle: Long) {
+            override fun attach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 // Eager: NativeView.kt's DisposableEffect mounts the
                 // child as soon as the composable enters the tree.
                 // Visual sync with Compose is for *reposition*
-                // (`scheduleInterop` + presentsWithTransaction), not
-                // for the initial add.
+                // (`scheduleInteropAction` + presentsWithTransaction),
+                // not for the initial add.
                 if (outer.interopAttachCount == 0) {
                     outer.transaction.isInteropActive = true
                     // Punch-through blending needs a non-opaque CAMetalLayer
@@ -759,7 +763,10 @@ internal class TaoComposeSceneHost(
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
 
-            override fun detach(childHandle: Long) {
+            override fun detach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.interopAttachCount--
                 if (outer.interopAttachCount == 0) {
@@ -774,6 +781,7 @@ internal class TaoComposeSceneHost(
                 yPx: Int,
                 widthPx: Int,
                 heightPx: Int,
+                regionToken: Any,
             ) {
                 outer.scheduleInteropAction {
                     NativeTaoMacOsNativeViewBridge
@@ -789,10 +797,6 @@ internal class TaoComposeSceneHost(
                     NativeTaoMacOsNativeViewBridge
                         .nativeSetSubviewCornerRadius(outer.nsViewHandle, handle, radiusPx)
                 }
-            }
-
-            override fun scheduleInterop(action: () -> Unit) {
-                outer.scheduleInteropAction(action)
             }
 
             override fun dispatchPointerToNative(
@@ -841,9 +845,7 @@ internal class TaoComposeSceneHost(
 
     /**
      * Enqueues an AppKit mutation to be drained inside the next frame's
-     * transaction. Accessible to the overlay controller so its own
-     * `nativeSetOverlayFrame` calls share the same atomic CATransaction
-     * as the user's subview frame change.
+     * transaction, atomically with the Compose Metal present.
      */
     internal fun scheduleInteropAction(action: TaoInteropAction) {
         transaction.add(action)

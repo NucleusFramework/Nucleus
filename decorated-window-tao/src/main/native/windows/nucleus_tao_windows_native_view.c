@@ -16,6 +16,7 @@
 
 #include <jni.h>
 #include <windows.h>
+#include "nucleus_tao_windows_overlay_internal.h"
 
 #ifndef WM_MOUSEHWHEEL
 #define WM_MOUSEHWHEEL 0x020E
@@ -180,6 +181,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     HWND child = hwnd_from_jlong(childHwnd);
     if (!IsWindow(parent)) return;
     HWND target = IsWindow(child) ? child : parent;
+    if (type == 1 && IsWindow(child)) SetFocus(child);
+    if (nucleus_tao_replay_last_native_input(target)) return;
     POINT pt = { (LONG)xPx, (LONG)yPx };
     if (target != parent) {
         MapWindowPoints(parent, target, &pt, 1);
@@ -201,7 +204,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     if (GetKeyState(VK_SHIFT) & 0x8000) mk |= MK_SHIFT;
     if (GetKeyState(VK_CONTROL) & 0x8000) mk |= MK_CONTROL;
     LPARAM lp = MAKELPARAM((short)pt.x, (short)pt.y);
-    if (type == 1 && IsWindow(child)) SetFocus(child);
     SendMessageW(target, msg, mk, lp);
 }
 
@@ -216,10 +218,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     HWND child = hwnd_from_jlong(childHwnd);
     if (!IsWindow(parent)) return;
     HWND target = IsWindow(child) ? child : parent;
+    if (nucleus_tao_replay_last_native_input(target)) return;
     POINT pt = { (LONG)xPx, (LONG)yPx };
     ClientToScreen(parent, &pt);
     UINT msg = (dx != 0.0f && (dy == 0.0f || (dx > dy || dx < -dy)))
         ? WM_MOUSEHWHEEL : WM_MOUSEWHEEL;
-    short delta = (short)(msg == WM_MOUSEHWHEEL ? (dx * 120.0f) : (dy * 120.0f));
+    /* Compose/AWT deltas are already negated vs Win32. */
+    short delta = (short)(msg == WM_MOUSEHWHEEL ? (-dx * 120.0f) : (-dy * 120.0f));
     SendMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
 }

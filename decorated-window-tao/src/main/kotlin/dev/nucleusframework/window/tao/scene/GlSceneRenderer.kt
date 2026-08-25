@@ -9,8 +9,8 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 
 /**
- * Per-frame Skia/GL rendering helper shared by the overlay controller
- * and the popup scene layer. Wraps the default GL framebuffer in a
+ * Per-frame Skia/GL rendering helper shared by the NativeView blending
+ * overlay and popup scene layers. Wraps the default GL framebuffer in a
  * Skia [Surface], lets the scene paint, then presents.
  *
  * Caller must:

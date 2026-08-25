@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerIcon
+import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -53,7 +54,6 @@ import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.NativeView
 import dev.nucleusframework.window.tao.NucleusPlatformView
-import dev.nucleusframework.window.tao.consumeOverlayPointerEvents
 import kotlinx.coroutines.delay
 
 private const val INITIAL_URL = "https://nucleusframework.dev"
@@ -192,7 +192,6 @@ private fun WebViewOverlay(
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(0xF00F172A))
                             .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(10.dp))
-                            .consumeOverlayPointerEvents()
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                 ) {
                     BasicText(
@@ -229,7 +228,6 @@ private fun OverlayChip(
                 .clip(RoundedCornerShape(20.dp))
                 .background(Color(0xCC0F172A))
                 .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(20.dp))
-                .consumeOverlayPointerEvents()
                 .clickable(onClick = onClick)
                 .padding(horizontal = 14.dp, vertical = 8.dp),
     ) {
@@ -267,8 +265,7 @@ private fun NavPill(
                 .width(520.dp)
                 .clip(RoundedCornerShape(28.dp))
                 .background(Color(0xCC0F172A))
-                .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(28.dp))
-                .consumeOverlayPointerEvents(),
+                .border(1.dp, Color(0x4080D8FF), RoundedCornerShape(28.dp)),
     ) {
         Row(
             modifier =
@@ -398,7 +395,7 @@ private fun UrlField(
                     1.dp,
                     if (hasFocus) Color(0xFF60A5FA) else Color.Transparent,
                     RoundedCornerShape(18.dp),
-                ).consumeOverlayPointerEvents(cursor = PointerIcon.Text)
+                ).pointerHoverIcon(PointerIcon.Text, overrideDescendants = true)
                 .padding(horizontal = 12.dp),
     ) {
         BasicTextField(

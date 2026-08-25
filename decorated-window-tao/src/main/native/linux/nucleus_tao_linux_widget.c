@@ -109,8 +109,11 @@ typedef gulong     (*PFN_g_signal_connect_data)(
 typedef void      *(*PFN_gtk_widget_get_window)(GtkWidget *w);
 typedef gboolean   (*PFN_gtk_widget_event)(GtkWidget *w, void *event);
 typedef unsigned int (*PFN_gtk_get_current_event_time)(void);
+typedef void      *(*PFN_gtk_get_current_event)(void);
 typedef void      *(*PFN_gdk_event_new)(int type);
 typedef void       (*PFN_gdk_event_free)(void *event);
+typedef void      *(*PFN_gdk_window_ref)(void *window);
+typedef void       (*PFN_gdk_window_unref)(void *window);
 
 /* GtkAlign enum — `GTK_ALIGN_FILL` = 0 (GTK 3), `GTK_ALIGN_START` = 1.
  * We use START on the dummy main child so it doesn't request expansion. */
@@ -151,8 +154,11 @@ static struct {
     PFN_gtk_widget_get_window     gtk_widget_get_window;
     PFN_gtk_widget_event          gtk_widget_event;
     PFN_gtk_get_current_event_time gtk_get_current_event_time;
+    PFN_gtk_get_current_event     gtk_get_current_event;
     PFN_gdk_event_new             gdk_event_new;
     PFN_gdk_event_free            gdk_event_free;
+    PFN_gdk_window_ref            gdk_window_ref;
+    PFN_gdk_window_unref          gdk_window_unref;
 } g;
 
 static void *load_first(const char *const *names) {
@@ -214,9 +220,12 @@ static int ensure_gtk_loaded(void) {
     g.gtk_widget_get_window       = (PFN_gtk_widget_get_window)       dlsym(libgtk, "gtk_widget_get_window");
     g.gtk_widget_event            = (PFN_gtk_widget_event)            dlsym(libgtk, "gtk_widget_event");
     g.gtk_get_current_event_time  = (PFN_gtk_get_current_event_time)  dlsym(libgtk, "gtk_get_current_event_time");
+    g.gtk_get_current_event       = (PFN_gtk_get_current_event)       dlsym(libgtk, "gtk_get_current_event");
     if (libgdk != NULL) {
         g.gdk_event_new           = (PFN_gdk_event_new)               dlsym(libgdk, "gdk_event_new");
         g.gdk_event_free          = (PFN_gdk_event_free)              dlsym(libgdk, "gdk_event_free");
+        g.gdk_window_ref          = (PFN_gdk_window_ref)              dlsym(libgdk, "gdk_window_ref");
+        g.gdk_window_unref        = (PFN_gdk_window_unref)            dlsym(libgdk, "gdk_window_unref");
     }
 
     if (!g.gtk_bin_get_child || !g.gtk_widget_get_parent ||
@@ -247,6 +256,7 @@ static int ensure_gtk_loaded(void) {
 static JavaVM      *sJVM = NULL;
 static jclass       sCallbackClass = NULL;
 static jmethodID    sOnEventMethod = NULL; /* (IIIII)V — type, x, y, button, pressed */
+static jmethodID    sOnScrollMethod = NULL; /* (IIFF)V — x, y, dx, dy */
 
 static void ensure_callback_cache(JNIEnv *env, jobject sample) {
     if (sOnEventMethod != NULL) return;
@@ -258,6 +268,8 @@ static void ensure_callback_cache(JNIEnv *env, jobject sample) {
     (*env)->DeleteLocalRef(env, local);
     if (sCallbackClass == NULL) return;
     sOnEventMethod = (*env)->GetMethodID(env, sCallbackClass, "onEvent", "(IIIII)V");
+    sOnScrollMethod = (*env)->GetMethodID(env, sCallbackClass, "onScroll", "(IIFF)V");
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
 static JNIEnv *attach_jvm_thread(void) {
@@ -297,6 +309,17 @@ static void invoke_callback(GtkWidget *box, int type, int x, int y, int button) 
     if (env == NULL) return;
     (*env)->CallVoidMethod(env, cb, sOnEventMethod, (jint) type, (jint) x, (jint) y,
                            (jint) button, (jint) (type == EVT_OVERLAY_PRESS ? 1 : 0));
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+static void invoke_scroll_callback(GtkWidget *box, int x, int y, float dx, float dy) {
+    if (sOnScrollMethod == NULL) return;
+    jobject cb = (jobject) g.g_object_get_data(box, "nucleus_tao_overlay_cb");
+    if (cb == NULL) return;
+    JNIEnv *env = attach_jvm_thread();
+    if (env == NULL) return;
+    (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
+        (jint) x, (jint) y, (jfloat) dx, (jfloat) dy);
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
@@ -536,9 +559,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeReques
     g.gtk_window_set_focus(win, NULL);
 }
 
-/* ── Input-box overlay: click forwarder for `consumeOverlayPointerEvents` ──
+/* ── Input-box overlay: hit capture for NativeView blending ──
  *
- * The Linux equivalent of macOS's region-based `hitTest:` overlay. We
+ * The Linux equivalent of Compose-first hit-testing over an embed. We
  * cannot use `wl_surface.set_input_region` on the EGL subsurface to
  * intercept clicks: nothing on our side listens for `wl_pointer.button`
  * events on that subsurface, so any click delivered to it gets dropped
@@ -591,6 +614,24 @@ typedef struct {
     double        x;
     double        y;
 } gdk_event_motion_t;
+
+/* GdkEventScroll partial layout — fields we read. Direction: 0 up,
+ * 1 down, 2 left, 3 right, 4 smooth (delta_x/delta_y). */
+typedef struct {
+    int           type;
+    void         *window;
+    signed char   send_event;
+    unsigned int  time;
+    double        x;
+    double        y;
+    unsigned int  state;
+    int           direction;
+    void         *device;
+    double        x_root;
+    double        y_root;
+    double        delta_x;
+    double        delta_y;
+} gdk_event_scroll_t;
 
 /* Map GTK's native button code (1 = LEFT, 2 = MIDDLE, 3 = RIGHT) to
  * Tao's AWT-style encoding (`TaoMouseButton.LEFT = 0`, `RIGHT = 1`,
@@ -692,6 +733,31 @@ static gboolean on_input_box_motion_notify(GtkWidget *widget, void *event_ptr,
     return GTK_TRUE;
 }
 
+#define GDK_SCROLL_UP     0
+#define GDK_SCROLL_DOWN   1
+#define GDK_SCROLL_LEFT   2
+#define GDK_SCROLL_RIGHT  3
+#define GDK_SCROLL_SMOOTH 4
+
+static gboolean on_input_box_scroll(GtkWidget *widget, void *event_ptr,
+                                    void *user_data) {
+    (void) user_data;
+    gdk_event_scroll_t *e = (gdk_event_scroll_t *) event_ptr;
+    if (e == NULL) return GTK_FALSE;
+    int wx, wy;
+    translate_to_content(widget, e->x, e->y, &wx, &wy);
+    float dx = (float) e->delta_x;
+    float dy = (float) e->delta_y;
+    if (e->direction == GDK_SCROLL_UP) { dx = 0.f; dy = -1.f; }
+    else if (e->direction == GDK_SCROLL_DOWN) { dx = 0.f; dy = 1.f; }
+    else if (e->direction == GDK_SCROLL_LEFT) { dx = -1.f; dy = 0.f; }
+    else if (e->direction == GDK_SCROLL_RIGHT) { dx = 1.f; dy = 0.f; }
+    invoke_scroll_callback(widget, wx, wy, dx, dy);
+    /* Consume so the embedded widget doesn't also scroll; Compose
+     * redispatches unconsumed wheels via gtk_get_current_event. */
+    return GTK_TRUE;
+}
+
 EXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeAddInputBox(
     JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
@@ -740,12 +806,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeAddInp
     g.g_signal_connect_data(
         box, "button-release-event",
         (void (*)(void)) on_input_box_button_release, NULL, NULL, 0);
-    /* GDK_POINTER_MOTION_MASK = 1 << 2 = 4. Without this bit set,
-     * motion-notify-event is not delivered to this widget. */
-    g.gtk_widget_add_events(box, /*GDK_POINTER_MOTION_MASK*/ 4);
+    /* GDK_POINTER_MOTION_MASK=4, GDK_SCROLL_MASK=1<<21,
+     * GDK_SMOOTH_SCROLL_MASK=1<<23. */
+    g.gtk_widget_add_events(box, 4 | (1 << 21) | (1 << 23));
     g.g_signal_connect_data(
         box, "motion-notify-event",
         (void (*)(void)) on_input_box_motion_notify, NULL, NULL, 0);
+    g.g_signal_connect_data(
+        box, "scroll-event",
+        (void (*)(void)) on_input_box_scroll, NULL, NULL, 0);
     g.g_signal_connect_data(
         box, "focus-out-event",
         (void (*)(void)) on_input_box_focus_out, NULL, NULL, 0);
@@ -831,13 +900,45 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeRemove
 #define GDK_BUTTON_PRESS    4
 #define GDK_BUTTON_RELEASE  7
 #define GDK_SCROLL         31
-#define GDK_SCROLL_SMOOTH   4
 
 /* Compose button 1/2/3 (primary/secondary/middle) → GTK 1/3/2. */
 static unsigned int compose_button_to_gtk(int button) {
     if (button == 2) return 3;
     if (button == 3) return 2;
     return 1;
+}
+
+/* gtk_get_current_event() returns a copy the caller must free.
+ * Retarget window + coords onto [widget] so the original OS event
+ * (sign, device, time) is what the embed sees. */
+static int retarget_current_event(GtkWidget *widget, double x, double y) {
+    if (g.gtk_get_current_event == NULL || g.gdk_event_free == NULL ||
+        g.gtk_widget_event == NULL || g.gtk_widget_get_window == NULL) {
+        return 0;
+    }
+    void *cur = g.gtk_get_current_event();
+    if (cur == NULL) return 0;
+    void *nw = g.gtk_widget_get_window(widget);
+    if (nw == NULL) {
+        g.gdk_event_free(cur);
+        return 0;
+    }
+    if (g.gdk_window_ref != NULL) g.gdk_window_ref(nw);
+    gdk_event_motion_t *e = (gdk_event_motion_t *) cur;
+    void *old = e->window;
+    e->window = nw;
+    e->x = x;
+    e->y = y;
+    if (old != NULL && g.gdk_window_unref != NULL) g.gdk_window_unref(old);
+    g.gtk_widget_event(widget, cur);
+    g.gdk_event_free(cur);
+    return 1;
+}
+
+static void assign_event_window(void *event, void *gdk_window) {
+    gdk_event_motion_t *e = (gdk_event_motion_t *) event;
+    if (gdk_window != NULL && g.gdk_window_ref != NULL) g.gdk_window_ref(gdk_window);
+    e->window = gdk_window;
 }
 
 /* [type] 1 down, 2 up, 3 move. Coords are widget-local logical pixels. */
@@ -849,12 +950,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDispat
     (void) env; (void) clazz; (void) pressed;
     if (!ensure_gtk_loaded()) return;
     if (widget_ptr == 0) return;
+    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
+    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
+    if (type == 1 && g.gtk_widget_grab_focus != NULL) {
+        g.gtk_widget_grab_focus(widget);
+    }
+    if (retarget_current_event(widget, (double) x_logical, (double) y_logical)) return;
     if (g.gdk_event_new == NULL || g.gdk_event_free == NULL ||
         g.gtk_widget_event == NULL || g.gtk_widget_get_window == NULL) {
         return;
     }
-    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
-    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
     void *gdk_window = g.gtk_widget_get_window(widget);
     if (gdk_window == NULL) return;
 
@@ -866,16 +971,13 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDispat
     if (event == NULL) return;
     gdk_event_button_t *e = (gdk_event_button_t *) event;
     e->type = gdk_type;
-    e->window = gdk_window;
+    assign_event_window(event, gdk_window);
     e->send_event = 1;
     e->time = g.gtk_get_current_event_time != NULL ? g.gtk_get_current_event_time() : 0;
     e->x = (double) x_logical;
     e->y = (double) y_logical;
     if (type == 1 || type == 2) {
         e->button = compose_button_to_gtk(button);
-    }
-    if (type == 1 && g.gtk_widget_grab_focus != NULL) {
-        g.gtk_widget_grab_focus(widget);
     }
     g.gtk_widget_event(widget, event);
     g.gdk_event_free(event);
@@ -889,36 +991,21 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDispat
     (void) env; (void) clazz;
     if (!ensure_gtk_loaded()) return;
     if (widget_ptr == 0) return;
+    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
+    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
+    if (retarget_current_event(widget, (double) x_logical, (double) y_logical)) return;
     if (g.gdk_event_new == NULL || g.gdk_event_free == NULL ||
         g.gtk_widget_event == NULL || g.gtk_widget_get_window == NULL) {
         return;
     }
-    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
-    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
     void *gdk_window = g.gtk_widget_get_window(widget);
     if (gdk_window == NULL) return;
-
-    typedef struct {
-        int           type;
-        void         *window;
-        signed char   send_event;
-        unsigned int  time;
-        double        x;
-        double        y;
-        unsigned int  state;
-        int           direction;
-        void         *device;
-        double        x_root;
-        double        y_root;
-        double        delta_x;
-        double        delta_y;
-    } gdk_event_scroll_t;
 
     void *event = g.gdk_event_new(GDK_SCROLL);
     if (event == NULL) return;
     gdk_event_scroll_t *e = (gdk_event_scroll_t *) event;
     e->type = GDK_SCROLL;
-    e->window = gdk_window;
+    assign_event_window(event, gdk_window);
     e->send_event = 1;
     e->time = g.gtk_get_current_event_time != NULL ? g.gtk_get_current_event_time() : 0;
     e->x = (double) x_logical;

@@ -127,6 +127,15 @@ internal object NativeTaoLinuxWidgetBridge {
             button: Int,
             pressed: Int,
         )
+
+        /** Widget-content logical pixels; [dx]/[dy] are GTK scroll deltas. */
+        fun onScroll(
+            xLogical: Int,
+            yLogical: Int,
+            dx: Float,
+            dy: Float,
+        ) {
+        }
     }
 
     /**
@@ -162,7 +171,11 @@ internal object NativeTaoLinuxWidgetBridge {
         pressed: Boolean,
     )
 
-    /** Forwards a Compose scroll delta as a smooth `GdkEventScroll`. */
+    /**
+     * Forwards an unconsumed scroll onto [widgetPtr]. Prefers the live
+     * GDK event (`gtk_get_current_event`); synthesises a smooth scroll
+     * only if that event is gone.
+     */
     @JvmStatic
     external fun nativeDispatchScroll(
         widgetPtr: Long,
