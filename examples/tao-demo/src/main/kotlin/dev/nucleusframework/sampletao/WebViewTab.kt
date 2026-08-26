@@ -94,6 +94,17 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
     var isLoading by remember { mutableStateOf(false) }
     var showPopup by remember { mutableStateOf(false) }
 
+    // NUCLEUS_DEMO_AUTOPOPUP_MS=<delay> opens the overlay Popup after the
+    // delay — automation hook to exercise glyph uploads that happen after
+    // the WebView's GPU compositor started (screenshot-based checks).
+    LaunchedEffect(Unit) {
+        val autoPopupMs = System.getenv("NUCLEUS_DEMO_AUTOPOPUP_MS")?.toLongOrNull()
+        if (autoPopupMs != null) {
+            delay(autoPopupMs)
+            showPopup = true
+        }
+    }
+
     // Lightweight polling: backend-native navigation observers
     // (WKWebView KVO / WebKitWebView property notify) would be
     // cleaner but a 120ms tick is plenty for a sample. Skips updating

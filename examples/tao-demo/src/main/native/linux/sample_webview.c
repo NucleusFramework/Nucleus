@@ -27,6 +27,16 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeCreate(
     JNIEnv *env, jclass clazz)
 {
     (void) env; (void) clazz;
+    /* NUCLEUS_DEMO_PLAIN_WIDGET=1 embeds a plain GTK label instead of a
+     * WebKitWebView — diagnostic hook to bisect embed-related rendering
+     * bugs between WebKit's GL and the NativeView machinery itself. All
+     * navigation entry points below no-op via WEBKIT_IS_WEB_VIEW. */
+    if (g_getenv("NUCLEUS_DEMO_PLAIN_WIDGET") != NULL) {
+        GtkWidget *label = gtk_label_new("Plain GTK widget (no WebKit)");
+        if (label == NULL) return 0;
+        g_object_ref_sink(label);
+        return (jlong) (uintptr_t) label;
+    }
     /* Ephemeral context, one per view — deliberately NOT the default
      * WebKitWebContext. The default context is a process-global with a
      * persistent network session; once instantiated it is finalized by
@@ -78,6 +88,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeLoadUrl(
     (void) clazz;
     if (handle == 0 || url_str == NULL) return;
     GtkWidget *web_view = (GtkWidget *) (uintptr_t) handle;
+    if (!WEBKIT_IS_WEB_VIEW(web_view)) return;
     const char *cUrl = (*env)->GetStringUTFChars(env, url_str, NULL);
     if (cUrl == NULL) return;
     webkit_web_view_load_uri(WEBKIT_WEB_VIEW(web_view), cUrl);
@@ -90,6 +101,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeGoBack(
 {
     (void) env; (void) clazz;
     if (handle == 0) return;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return;
     webkit_web_view_go_back(WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle));
 }
 
@@ -99,6 +111,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeGoForward(
 {
     (void) env; (void) clazz;
     if (handle == 0) return;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return;
     webkit_web_view_go_forward(WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle));
 }
 
@@ -108,6 +121,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeReload(
 {
     (void) env; (void) clazz;
     if (handle == 0) return;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return;
     webkit_web_view_reload(WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle));
 }
 
@@ -117,6 +131,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeCanGoBack(
 {
     (void) env; (void) clazz;
     if (handle == 0) return JNI_FALSE;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return JNI_FALSE;
     return webkit_web_view_can_go_back(
         WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) ? JNI_TRUE : JNI_FALSE;
 }
@@ -127,6 +142,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeCanGoForward(
 {
     (void) env; (void) clazz;
     if (handle == 0) return JNI_FALSE;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return JNI_FALSE;
     return webkit_web_view_can_go_forward(
         WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) ? JNI_TRUE : JNI_FALSE;
 }
@@ -137,6 +153,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeCurrentUrl(
 {
     (void) clazz;
     if (handle == 0) return NULL;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return NULL;
     const gchar *uri = webkit_web_view_get_uri(
         WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle));
     if (uri == NULL) return NULL;
@@ -149,6 +166,7 @@ Java_dev_nucleusframework_sampletao_SampleWebViewLinuxBridge_nativeIsLoading(
 {
     (void) env; (void) clazz;
     if (handle == 0) return JNI_FALSE;
+    if (!WEBKIT_IS_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) return JNI_FALSE;
     return webkit_web_view_is_loading(
         WEBKIT_WEB_VIEW((GtkWidget *) (uintptr_t) handle)) ? JNI_TRUE : JNI_FALSE;
 }
