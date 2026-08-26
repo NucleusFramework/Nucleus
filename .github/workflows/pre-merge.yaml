@@ -361,7 +361,12 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          # libwebkit2gtk: tao-demo's WebView tab now hosts ComposeNativeWebView,
+          # whose Linux backend dlopens libwebkit2gtk-4.1. The multi-tab a11y
+          # probe (verify-atspi-all-tabs.py) visits that tab and would crash the
+          # app on runners, which don't ship webkit2gtk by default.
           sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
+            libwebkit2gtk-4.1-0 \
             at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)
