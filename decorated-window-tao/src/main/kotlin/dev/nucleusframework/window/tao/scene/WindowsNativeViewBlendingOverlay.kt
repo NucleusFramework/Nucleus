@@ -26,7 +26,29 @@ internal class WindowsNativeViewBlendingOverlay(
 
         fun requestRedraw()
 
-        fun renderBlendingFrame(overlayHandle: Long)
+        /**
+         * Subscribes to host-window screen moves. The overlay is a
+         * top-level WS_POPUP owned by the host HWND — it does not
+         * auto-track the owner, so each move must re-issue the frame.
+         */
+        fun registerOwnerMoveListener(
+            token: Any,
+            onMoved: () -> Unit,
+        )
+
+        fun unregisterOwnerMoveListener(token: Any)
+
+        /**
+         * Renders the host scene into the overlay surface, clipped to
+         * [clipRectsPx] (flat x,y,w,h quads, owner-client pixels). The
+         * window region already hides everything outside those rects, so
+         * clipping skips the redundant raster work — the scene only pays
+         * for the pixels the overlay actually shows.
+         */
+        fun renderBlendingFrame(
+            overlayHandle: Long,
+            clipRectsPx: FloatArray,
+        )
 
         fun onBlendingPointer(
             type: Int,
@@ -46,9 +68,13 @@ internal class WindowsNativeViewBlendingOverlay(
 
     private var overlay: Long = 0
     private val rendererToken: Any = Any()
+    private val moveListenerToken: Any = Any()
     private var attachCount: Int = 0
     private val rects: MutableMap<Any, IntArray> = LinkedHashMap()
     private val callback = Callback()
+
+    /** Flat x,y,w,h snapshot of [rects], rebuilt by [flushRegions]. */
+    private var clipRectsFlat: FloatArray = FloatArray(0)
 
     fun retain() {
         if (attachCount == 0) ensureOverlay()
@@ -93,11 +119,13 @@ internal class WindowsNativeViewBlendingOverlay(
     fun destroyOverlay() {
         val handle = overlay
         if (handle == 0L) return
+        host.unregisterOwnerMoveListener(moveListenerToken)
         host.popupRenderers.remove(rendererToken)
         NativeTaoWindowsOverlayBridge.nativeSetOverlayCallback(handle, null)
         NativeTaoWindowsOverlayBridge.nativeReleaseOverlay(handle)
         overlay = 0
         rects.clear()
+        clipRectsFlat = FloatArray(0)
         host.hostContextDirtied = true
     }
 
@@ -117,8 +145,12 @@ internal class WindowsNativeViewBlendingOverlay(
         )
         host.popupRenderers[rendererToken] = {
             val handle = overlay
-            if (handle != 0L) host.renderBlendingFrame(handle)
+            val clip = clipRectsFlat
+            // No live NativeView rects → the window region is empty and
+            // nothing the overlay could draw is visible; skip the frame.
+            if (handle != 0L && clip.isNotEmpty()) host.renderBlendingFrame(handle, clip)
         }
+        host.registerOwnerMoveListener(moveListenerToken) { syncFrame() }
         host.hostContextDirtied = true
         flushRegions()
         host.requestRedraw()
@@ -129,6 +161,7 @@ internal class WindowsNativeViewBlendingOverlay(
         if (handle == 0L) return
         val count = rects.size
         if (count == 0) {
+            clipRectsFlat = FloatArray(0)
             NativeTaoWindowsOverlayBridge.nativeSetOverlayRegions(handle, FloatArray(0), 0)
             return
         }
@@ -141,6 +174,7 @@ internal class WindowsNativeViewBlendingOverlay(
             flat[i + 3] = r[3].toFloat()
             i += 4
         }
+        clipRectsFlat = flat
         NativeTaoWindowsOverlayBridge.nativeSetOverlayRegions(handle, flat, count)
     }
 

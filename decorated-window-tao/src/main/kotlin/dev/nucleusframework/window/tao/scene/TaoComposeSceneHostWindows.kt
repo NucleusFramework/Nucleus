@@ -56,6 +56,8 @@ import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
+import org.jetbrains.skia.PathBuilder
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
@@ -259,6 +261,18 @@ internal class TaoComposeSceneHostWindows(
     private var hostContextDirtied: Boolean = false
 
     private val nativeViewBlending = WindowsNativeViewBlendingOverlay(BlendingHost())
+
+    /**
+     * True while an unconsumed Compose pointer event is being replayed
+     * onto a native view (synchronous SendMessage on this thread). For
+     * hwnd==0 WebView2 composition hosting the message targets the main
+     * HWND so the embedder's parent subclass can feed the
+     * CompositionController — but Tao's WndProc then processes that same
+     * message and would hand it to the ComposeScene a second time
+     * (double text-field context menus, doubled moves). The guard drops
+     * that synchronous echo; the native side still sees the message.
+     */
+    private var nativePointerRedispatchInFlight: Boolean = false
 
     // Frame pacing is delegated to VSync — `eglSwapInterval(1)` makes
     // eglSwapBuffers pace off the display refresh, which keeps Compose
@@ -1290,6 +1304,7 @@ internal class TaoComposeSceneHostWindows(
         aFixed: Int,
         bFixed: Int,
     ) {
+        if (nativePointerRedispatchInFlight) return
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
         lastPointerX = xPx
@@ -1326,6 +1341,7 @@ internal class TaoComposeSceneHostWindows(
         buttonCode: Int,
         pressed: Boolean,
     ) {
+        if (nativePointerRedispatchInFlight) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
@@ -1338,6 +1354,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun onPointerScroll(event: TaoPointerScrollEvent) {
+        if (nativePointerRedispatchInFlight) return
         // Stock Compose Desktop wheel path: the event goes straight into the
         // scene and MouseWheelScrollingLogic animates it (smooth-scroll
         // tween) — the same pipeline as upstream Compose on Windows and
@@ -1621,8 +1638,13 @@ internal class TaoComposeSceneHostWindows(
                 pressed: Boolean,
             ) {
                 if (parent == 0L) return
-                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
-                    .nativeDispatchPointer(parent, handle, type, xPx, yPx, button, pressed)
+                outer.nativePointerRedispatchInFlight = true
+                try {
+                    dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                        .nativeDispatchPointer(parent, handle, type, xPx, yPx, button, pressed)
+                } finally {
+                    outer.nativePointerRedispatchInFlight = false
+                }
             }
 
             override fun dispatchScrollToNative(
@@ -1633,8 +1655,13 @@ internal class TaoComposeSceneHostWindows(
                 dy: Float,
             ) {
                 if (parent == 0L) return
-                dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
-                    .nativeDispatchScroll(parent, handle, xPx, yPx, dx, dy)
+                outer.nativePointerRedispatchInFlight = true
+                try {
+                    dev.nucleusframework.window.tao.ffi.NativeTaoWindowsNativeViewBridge
+                        .nativeDispatchScroll(parent, handle, xPx, yPx, dx, dy)
+                } finally {
+                    outer.nativePointerRedispatchInFlight = false
+                }
             }
         }
     }
@@ -1655,7 +1682,21 @@ internal class TaoComposeSceneHostWindows(
             window.requestRedraw()
         }
 
-        override fun renderBlendingFrame(overlayHandle: Long) {
+        override fun registerOwnerMoveListener(
+            token: Any,
+            onMoved: () -> Unit,
+        ) {
+            this@TaoComposeSceneHostWindows.ownerMoveListeners[token] = onMoved
+        }
+
+        override fun unregisterOwnerMoveListener(token: Any) {
+            this@TaoComposeSceneHostWindows.ownerMoveListeners.remove(token)
+        }
+
+        override fun renderBlendingFrame(
+            overlayHandle: Long,
+            clipRectsPx: FloatArray,
+        ) {
             val bundle = sceneBundle
             val ctx = directContext
             if (bundle == null || ctx == null) return
@@ -1670,10 +1711,40 @@ internal class TaoComposeSceneHostWindows(
                 widthPx = this@TaoComposeSceneHostWindows.widthPx,
                 heightPx = this@TaoComposeSceneHostWindows.heightPx,
                 directContext = ctx,
-                bundle = bundle,
                 clearColorArgb = 0,
                 present = { NativeTaoWindowsOverlayBridge.nativeSwapBuffers(overlayHandle) },
-            )
+            ) { canvas, nanoTime ->
+                // Clip to the union of NativeView rects — SetWindowRgn
+                // already hides everything outside them, so the second
+                // scene pass only rasterizes the pixels the overlay shows.
+                // Aliased clip to match the region's hard integer edges.
+                if (clipRectsPx.size == 4) {
+                    canvas.clipRect(
+                        Rect.makeXYWH(
+                            clipRectsPx[0],
+                            clipRectsPx[1],
+                            clipRectsPx[2],
+                            clipRectsPx[3],
+                        ),
+                    )
+                } else {
+                    val builder = PathBuilder()
+                    var i = 0
+                    while (i < clipRectsPx.size) {
+                        builder.addRect(
+                            Rect.makeXYWH(
+                                clipRectsPx[i],
+                                clipRectsPx[i + 1],
+                                clipRectsPx[i + 2],
+                                clipRectsPx[i + 3],
+                            ),
+                        )
+                        i += 4
+                    }
+                    builder.detach().use { clip -> canvas.clipPath(clip) }
+                }
+                bundle.render(canvas, nanoTime)
+            }
         }
 
         override fun onBlendingPointer(

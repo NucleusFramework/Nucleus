@@ -153,7 +153,6 @@ private fun EmbeddedNativeView(
         modifier =
             modifier
                 .punchNativeViewHole()
-                .nativeViewPointerInterop(host, handle, lastRect)
                 .onGloballyPositioned { coords ->
                     val pos = coords.positionInRoot()
                     val xPx = pos.x.roundToInt()
@@ -187,6 +186,19 @@ private fun EmbeddedNativeView(
                     }
                 },
     ) {
+        // Pointer redispatch lives on a layer *below* [content]: Compose
+        // hit-testing stops at the topmost child with a pointer node, so
+        // this layer only sees positions where no overlapping Compose
+        // content handles input — i.e. the punched hole itself. Chrome
+        // drawn over the native view (text fields, buttons) keeps its
+        // events exclusively; they are never replayed onto the native
+        // view (e.g. a right-click on a text field must open only the
+        // Compose context menu, not the native one underneath too).
+        Box(
+            Modifier
+                .matchParentSize()
+                .nativeViewPointerInterop(host, handle, lastRect),
+        )
         latestContent()
     }
 }
@@ -203,9 +215,11 @@ private fun Modifier.punchNativeViewHole(): Modifier =
 
 /**
  * Redispatches pointer events that Compose did not consume onto the
- * embedded native view. Siblings drawn *after* [NativeView] hit-test
- * first and never reach this modifier — that's how a Button/Snackbar
- * overlapping the native view stays interactive.
+ * embedded native view. Mounted below the `content` slot, so both the
+ * slot and siblings drawn *after* [NativeView] hit-test first and never
+ * reach this modifier — that's how a Button/Snackbar overlapping the
+ * native view stays interactive and why their events are never also
+ * replayed onto the native view.
  */
 private fun Modifier.nativeViewPointerInterop(
     host: TaoNativeViewHost,

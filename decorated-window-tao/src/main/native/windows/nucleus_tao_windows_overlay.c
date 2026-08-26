@@ -538,7 +538,12 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsOverlayBridge_nativeCre
      * per-HWND (see createSurface) so a sibling DecoratedDialog's
      * attach/detach can't wipe it. */
     s->gl.hostHwnd = owner;
-    if (!nucleus_tao_overlay_gl_init(&s->gl, TRUE)) {
+    /* Popup-surface treatment (no rounded corners, no extended frame,
+     * no transitions): the blending overlay must be visually inert —
+     * applyDwmPolish's {1,1,1,1} frame margins draw a DWM shadow/border
+     * around the whole popup, which reads as a gray outline around the
+     * host window. */
+    if (!nucleus_tao_overlay_gl_init(&s->gl, FALSE)) {
         /* Init failed — tear down everything we created and return 0. */
         unregisterOverlayFromOwner(s);
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
