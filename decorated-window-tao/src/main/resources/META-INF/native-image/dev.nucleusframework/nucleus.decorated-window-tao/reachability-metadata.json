@@ -232,7 +232,7 @@
             ]
         },
         {
-            "type": "dev.nucleusframework.window.tao.deco.NativeViewOverlayControllerWindows$OverlayCallback",
+            "type": "dev.nucleusframework.window.tao.scene.WindowsNativeViewBlendingOverlay$Callback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
@@ -350,21 +350,13 @@
                 { "name": "onOutsideClick", "parameterTypes": ["int","int"] }
             ]
         },
-        {
-            "type": "dev.nucleusframework.window.tao.deco.NativeViewOverlayController$OverlayCallback",
-            "jniAccessible": true,
-            "methods": [
-                { "name": "onPointerEvent",         "parameterTypes": ["int","float","float","int","int"] },
-                { "name": "onScroll",               "parameterTypes": ["float","float","float","float"] },
-                { "name": "onKeyEvent",             "parameterTypes": ["int","int","int","int"] },
-                { "name": "onResignFirstResponder", "parameterTypes": [] }
-            ]
-        },
+
         {
             "type": "dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl$InputCallback",
             "jniAccessible": true,
             "methods": [
-                { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
+                { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] },
+                { "name": "onScroll", "parameterTypes": ["int","int","float","float"] }
             ]
         },
         {
@@ -384,6 +376,24 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "onEvent", "parameterTypes": ["int","int","int","int","int"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge",
+            "jniAccessible": true
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.ffi.NativeTaoLinuxClipboardBridge$BytesCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onBytes", "parameterTypes": ["byte[]"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.clipboard.TaoLinuxClipboard$ResumeOnBytes",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onBytes", "parameterTypes": ["byte[]"] }
             ]
         },
         {

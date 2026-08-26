@@ -24,6 +24,7 @@ dependencies {
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.jewel.foundation)
+    implementation(libs.jewel.ui)
 }
 
 java {

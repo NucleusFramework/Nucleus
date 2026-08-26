@@ -903,8 +903,9 @@ class FsWatcherRealFileSystemTest {
     fun symlinkRootResolvedFileEventsDoNotRemapWhenFollowSymlinksDisabled() =
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
-            // Linux reports this real-fs symlink case differently from the lexical-path behavior asserted here.
-            if (isLinuxHost()) return@runBlocking
+            // Linux and Windows report this real-fs symlink case differently
+            // from the lexical-path behavior asserted here.
+            if (isLinuxHost() || isWindowsHost()) return@runBlocking
 
             val canonicalRoot = createRealTempDirectory("fs-watcher-real-fs-no-follow-target")
             val symlinkRoot = canonicalRoot.parent.resolve("${canonicalRoot.fileName}-link")
@@ -1219,6 +1220,8 @@ private fun List<FsWatchEvent>.anyCoreEventFor(path: Path): Boolean =
 private fun createRealTempDirectory(prefix: String): Path = Files.createTempDirectory(prefix).toRealPath()
 
 private fun isLinuxHost(): Boolean = System.getProperty("os.name").startsWith("Linux")
+
+private fun isWindowsHost(): Boolean = System.getProperty("os.name").startsWith("Windows")
 
 private enum class RealFsEventKind {
     CREATED,

@@ -9,8 +9,10 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -19,7 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  * event loop, which executes them on the platform event-loop thread. Listener
  * registration is also safe to call across threads.
  */
-@Suppress("TooManyFunctions")
+@Suppress("TooManyFunctions", "LargeClass")
 public class TaoWindow internal constructor(
     public val handle: Long,
     isResizable: Boolean = true,
@@ -40,6 +42,12 @@ public class TaoWindow internal constructor(
      * window as a Wayland `wl_subsurface`.
      */
     internal val popupParentHandle: Long = 0L,
+    /**
+     * `true` when the window asked for an X11 surface through
+     * `openWindow(forceX11 = true)` (Linux only). Kept so [show] can report a
+     * request the native side could not honour.
+     */
+    internal val requestedX11: Boolean = false,
 ) {
     // Snapshot-backed so Compose consumers (WindowControls*, resize hit-test
     // gating) recompose when resizability changes at runtime — the AWT
@@ -629,13 +637,157 @@ public class TaoWindow internal constructor(
         NativeTaoWindowsDecoBridge.nativeSetFullscreen(hwnd, fullscreen)
     }
 
+    /**
+     * Pins the window above every other window — Windows `HWND_TOPMOST`, macOS
+     * `NSFloatingWindowLevel`, Linux `gtk_window_set_keep_above`
+     * (`_NET_WM_STATE_ABOVE`; X11/XWayland only, native Wayland has no
+     * client-side stacking protocol and logs a warning).
+     *
+     * Mutually exclusive with [setAlwaysOnBottom]: the last call wins.
+     */
     public fun setAlwaysOnTop(alwaysOnTop: Boolean) {
+        if (alwaysOnTopRequested == alwaysOnTop) return
+        if (alwaysOnTop) {
+            warnIfNativeWayland(
+                "alwaysOnTop",
+                "Wayland has no client-side stacking protocol (xdg-shell exposes none and " +
+                    "Mutter rejects wlr-layer-shell), so gtk_window_set_keep_above is ignored.",
+            )
+            setAlwaysOnBottom(false)
+        }
+        alwaysOnTopRequested = alwaysOnTop
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
     }
+
+    /**
+     * Pins the window below every other window — Windows `HWND_BOTTOM`, macOS
+     * `NSWindowLevel.BelowNormal`, Linux `gtk_window_set_keep_below`
+     * (`_NET_WM_STATE_BELOW`; X11/XWayland only, same Wayland caveat as
+     * [setAlwaysOnTop]). For wallpaper-level overlays: a desktop widget, a
+     * watermark that must never cover the app in front of it.
+     *
+     * Mutually exclusive with [setAlwaysOnTop]: the last call wins.
+     *
+     * Below-stacking is not the same thing as being part of the desktop — the
+     * window still appears in the taskbar and in Alt+Tab (pair with
+     * `hiddenFromDock` to drop those) and, on Wayland, a surface genuinely glued
+     * to the wallpaper needs `wlr-layer-shell`, which Tao does not support.
+     */
+    public fun setAlwaysOnBottom(alwaysOnBottom: Boolean) {
+        if (alwaysOnBottomRequested == alwaysOnBottom) return
+        if (alwaysOnBottom) {
+            warnIfNativeWayland(
+                "alwaysOnBottom",
+                "Wayland has no client-side stacking protocol (xdg-shell exposes none and " +
+                    "Mutter rejects wlr-layer-shell), so gtk_window_set_keep_below is ignored.",
+            )
+            setAlwaysOnTop(false)
+        }
+        alwaysOnBottomRequested = alwaysOnBottom
+        NativeTaoBridge.nativeSetAlwaysOnBottom(handle, alwaysOnBottom)
+    }
+
+    /**
+     * Last requested stacking mode. Tao makes the two mutually exclusive only in
+     * its `WindowBuilder`, not in the setters, so the pair is arbitrated here —
+     * and clearing one must not be forwarded when it is already clear: on macOS
+     * both `set_always_on_top(false)` and `set_always_on_bottom(false)` reset the
+     * window level to `NSNormalWindowLevel`, so a redundant clear of one mode
+     * would silently undo the other.
+     */
+    @Volatile
+    private var alwaysOnTopRequested: Boolean = false
+
+    @Volatile
+    private var alwaysOnBottomRequested: Boolean = false
 
     public fun setFocusable(focusable: Boolean) {
         NativeTaoBridge.nativeSetFocusable(handle, focusable)
     }
+
+    /**
+     * Makes the window click-through: every pointer event falls through to
+     * whatever sits below it (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
+     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
+     * Linux). Pair with [setFocusable]`(false)` for passive overlays such as
+     * watermarks or HUDs that must never intercept input.
+     */
+    public fun setIgnoreCursorEvents(ignore: Boolean) {
+        ignoreCursorEvents = ignore
+        NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, ignore)
+    }
+
+    /**
+     * Last requested [setIgnoreCursorEvents] state, replayed by [show] — on
+     * Linux the GDK input region is bound to the `GdkWindow` alive when it is
+     * installed, and a window created hidden (every [DecoratedWindow], which
+     * shows only after the first paint) swaps it on the way to its first map.
+     * Windows and macOS keep the flag across the show, but replaying is a
+     * plain style/flag write there too, so it stays unconditional.
+     */
+    @Volatile
+    private var ignoreCursorEvents: Boolean = false
+
+    /**
+     * Shows the window on every desktop instead of only the one it was created
+     * on — macOS `NSWindowCollectionBehaviorCanJoinAllSpaces`, Linux
+     * `gtk_window_stick()` (X11/XWayland; native Wayland has no such
+     * protocol).
+     *
+     * No-op on Windows, which needs none: a window excluded from the taskbar
+     * (`hiddenFromDock`, i.e. `WS_EX_TOOLWINDOW`) is not tracked by the Virtual
+     * Desktop Manager and is already visible on all desktops.
+     *
+     * macOS caveat: this joins every regular Space. Floating above *another*
+     * app's full-screen Space additionally needs a window level above
+     * `NSFloatingWindowLevel` (what [setAlwaysOnTop] maps to), which Tao does
+     * not expose.
+     */
+    public fun setVisibleOnAllWorkspaces(visible: Boolean) {
+        if (visible) {
+            warnIfNativeWayland(
+                "visibleOnAllWorkspaces",
+                "Wayland has no client-side workspace protocol, so gtk_window_stick is ignored.",
+            )
+        }
+        NativeTaoBridge.nativeSetVisibleOnAllWorkspaces(handle, visible)
+    }
+
+    /**
+     * Logs once per window and per [feature] when this window's surface is a
+     * native Wayland one, where several window-management features are simply
+     * absent from the protocol. The check is per-window (the surface kind
+     * reported by the native side), not a process-wide env sniff.
+     */
+    private fun warnIfNativeWayland(
+        feature: String,
+        detail: String,
+    ) {
+        if (!isNativeWaylandSurface || !waylandWarnings.add(feature)) return
+        waylandLogger.warning(
+            "$feature has no effect on native Wayland: $detail " +
+                "Run with NUCLEUS_TAO_LINUX_RENDERER=x11 (XWayland) if the app needs it.",
+        )
+    }
+
+    /**
+     * `true` when this window is backed by a native Wayland surface, `false`
+     * on X11/XWayland and on every other platform.
+     *
+     * Per-window, read from the native surface rather than the environment:
+     * a window opened with `forceX11` reports `false` inside an app whose other
+     * windows are Wayland. Only meaningful once the native window exists (after
+     * `WINDOW_READY`).
+     */
+    public val isNativeWaylandSurface: Boolean
+        get() {
+            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
+            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
+            return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
+        }
+
+    /** Features already reported through [warnIfNativeWayland] for this window. */
+    private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
 
     /** Logical pixels. Pass `null` to clear the minimum. */
     public fun setMinimumSize(
@@ -725,6 +877,19 @@ public class TaoWindow internal constructor(
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
         NativeTaoBridge.nativeSetVisible(handle, true)
+        // Queued behind the show above (both ride the same event loop), so the
+        // click-through state lands on the mapped window — see
+        // [ignoreCursorEvents].
+        if (ignoreCursorEvents) NativeTaoBridge.nativeSetIgnoreCursorEvents(handle, true)
+        // The native surface exists by now, so this is the first point where an
+        // unhonoured [requestedX11] can be reported.
+        if (requestedX11 && isNativeWaylandSurface && waylandWarnings.add("forceX11")) {
+            waylandLogger.warning(
+                "forceX11 could not give this window an X11 surface — no X server on DISPLAY " +
+                    "(no XWayland in this session?). It stays on Wayland, where stacking, " +
+                    "positioning and workspace stickiness are unavailable.",
+            )
+        }
     }
 
     public fun hide() {
@@ -1020,6 +1185,8 @@ public class TaoWindow internal constructor(
 
         /** `nativeLinuxHandles` slot 0: 1 = Xlib, 2 = Wayland. */
         const val WAYLAND_HANDLE_KIND: Long = 2L
+
+        val waylandLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.wayland")
     }
 }
 

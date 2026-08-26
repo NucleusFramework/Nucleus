@@ -9,6 +9,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
+import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
@@ -83,6 +84,15 @@ public object TaoSceneTestBattery {
         }
         run("TaoKeyMappingTest: linux ctrl combos fall back to the latin keysym") {
             TaoKeyMappingTest().`linux ctrl combos fall back to the latin keysym`()
+        }
+        run("TaoKeyMappingTest: linux function keys F1 to F12") {
+            TaoKeyMappingTest().`linux function keys F1 to F12`()
+        }
+        run("TaoKeyMappingTest: linux keypad keys carry numpad location") {
+            TaoKeyMappingTest().`linux keypad keys carry numpad location`()
+        }
+        run("TaoKeyMappingTest: linux navigation space caps lock and punctuation") {
+            TaoKeyMappingTest().`linux navigation space caps lock and punctuation`()
         }
         run("TaoKeyboardModifiersDecodeTest: all sixteen combinations decode exactly") {
             TaoKeyboardModifiersDecodeTest().`all sixteen combinations decode exactly`()
@@ -228,6 +238,9 @@ public object TaoSceneTestBattery {
         run("TaoScenePopupTest: outside click dismisses a focusable popup") {
             TaoScenePopupTest().`outside click dismisses a focusable popup`()
         }
+        run("TaoScenePopupTest: two stacked popups keep independent pixels") {
+            TaoScenePopupTest().`two stacked popups keep independent pixels`()
+        }
         run("TaoScenePopupTest: click inside a focusable popup does not dismiss it") {
             TaoScenePopupTest().`click inside a focusable popup does not dismiss it`()
         }
@@ -280,6 +293,13 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneSemanticsTest: clickable nodes expose an onClick action") {
             TaoSceneSemanticsTest().`clickable nodes expose an onClick action`()
+        }
+
+        run("TaoSceneContentSwapTest: swapping a scrollable page of buttons does not crash RectList") {
+            TaoSceneContentSwapTest().`swapping a scrollable page of buttons does not crash RectList`()
+        }
+        run("TaoSceneContentSwapTest: clicking a tab remounts the body without a RectList crash") {
+            TaoSceneContentSwapTest().`clicking a tab remounts the body without a RectList crash`()
         }
 
         run("TaoA11yProjectionTest: compose semantics are projected into the a11y node snapshot") {

@@ -22,7 +22,7 @@ import java.io.File
  * `pkexec /opt/<app>/nucleus-update-helper <pkg>` (see updater `PlatformInstaller`).
  *
  * Exit codes of the helper: 2 usage, 3 package mismatch, 4 missing key/signature,
- * gpg's own non-zero on a failed signature.
+ * gpgv's own non-zero on a failed signature.
  *
  * The helper file name is mirrored in `updater-runtime` (`PlatformInstaller.UPDATE_HELPER_NAME`);
  * keep both in sync.
@@ -32,30 +32,53 @@ internal object LinuxUpdateHelper {
     const val PUBLIC_KEY_RELATIVE_PATH: String = "resources/nucleus-update.pub.asc"
 
     /**
-     * Self-contained bash helper: verify detached signature against the bundled public key,
-     * ensure the package upgrades only the app that owns this helper, then `dpkg -i` / `rpm -U`.
+     * Self-contained bash helper: copy the caller-supplied package and signature into a
+     * root-owned working directory, verify the detached signature of that copy against the
+     * bundled public key, ensure the package upgrades only the app that owns this helper and is
+     * not a downgrade, then `dpkg -i` / `rpm -U` the verified copy.
+     *
+     * Security notes:
+     * - The helper runs as **root** via pkexec, but the caller-supplied path is writable by the
+     *   unprivileged invoking user. Verifying that path and then re-opening it for install would
+     *   be a TOCTOU: the bytes could be swapped between `gpg --verify` and `dpkg -i`. Copying into
+     *   a root-owned dir *before* verifying, then installing the copy, removes that window.
+     * - `dpkg -i` will install an older, still-validly-signed release (a rollback to a known-
+     *   vulnerable version), so the deb path refuses anything that is not a strict version
+     *   increase. `rpm -U` (without `--oldpackage`) already refuses downgrades.
      */
     val SCRIPT: String =
         $$"""
         #!/usr/bin/env bash
         # Installed by Nucleus as a package-owned file. Verifies a signed update against the
-        # bundled public key and, if valid and for this same app, installs it.
+        # bundled public key and, if valid, for this same app and a strict upgrade, installs it.
         # Invoked via pkexec (see polkit policy installed by afterInstall).
         set -eu
         if [ "$#" -lt 1 ]; then echo "usage: nucleus-update-helper <package>" >&2; exit 2; fi
-        PKG="$1"
-        [ -f "$PKG" ] || { echo "package not found: $PKG" >&2; exit 2; }
+        SRC_PKG="$1"
+        [ -f "$SRC_PKG" ] || { echo "package not found: $SRC_PKG" >&2; exit 2; }
+        SRC_SIG="$SRC_PKG.asc"
+        [ -f "$SRC_SIG" ] || { echo "missing signature: $SRC_SIG" >&2; exit 4; }
         SELF="$(readlink -f "$0")"
         APPDIR="$(dirname "$SELF")"
         PUBKEY="$APPDIR/resources/nucleus-update.pub.asc"
-        SIG="$PKG.asc"
         [ -f "$PUBKEY" ] || { echo "missing public key: $PUBKEY" >&2; exit 4; }
-        [ -f "$SIG" ]    || { echo "missing signature: $SIG" >&2; exit 4; }
 
-        # Verify the detached signature against the bundled key in a throwaway keyring.
-        KR="$(mktemp -d)"; trap 'rm -rf "$KR"' EXIT; chmod 700 "$KR"
-        gpg --homedir "$KR" --batch --quiet --import "$PUBKEY"
-        gpg --homedir "$KR" --batch --verify "$SIG" "$PKG"
+        # Copy into a root-owned working dir BEFORE verifying, then verify and install the copies.
+        # The source path is writable by the unprivileged caller, so verifying it and re-opening it
+        # for install would let the bytes be swapped in between (TOCTOU); the root-owned copy cannot.
+        WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT; chmod 700 "$WORK"
+        PKG="$WORK/$(basename "$SRC_PKG")"
+        SIG="$PKG.asc"
+        cp -- "$SRC_PKG" "$PKG"
+        cp -- "$SRC_SIG" "$SIG"
+
+        # Verify the detached signature of the copy against the bundled key in a throwaway keyring.
+        # gpgv never starts a gpg-agent; gpg --import/--verify would daemonize one for this homedir
+        # and, having no idle timeout, it would keep the app's systemd scope alive forever (#567).
+        # gpg --dearmor is a pure filter: no keyring or agent access.
+        KR="$WORK/keyring"; mkdir -p "$KR"; chmod 700 "$KR"
+        gpg --homedir "$KR" --batch --quiet --dearmor < "$PUBKEY" > "$KR/pub.gpg"
+        gpgv --keyring "$KR/pub.gpg" "$SIG" "$PKG"
 
         # Only upgrade THIS app: new package name must match the package that owns the helper.
         # The helper is shipped in the package payload so package managers track this path.
@@ -64,13 +87,22 @@ internal object LinuxUpdateHelper {
             OWNER="$(dpkg -S "$SELF" 2>/dev/null | cut -d: -f1 | head -n1)"
             NEW="$(dpkg-deb -f "$PKG" Package)"
             [ -n "$OWNER" ] && [ "$NEW" = "$OWNER" ] || { echo "package mismatch: $NEW != $OWNER" >&2; exit 3; }
-            exec dpkg -i "$PKG"
+            # Refuse downgrades: dpkg -i does not, so a signed older release could roll the app back.
+            CUR="$(dpkg-query -W -f='${Version}' "$OWNER" 2>/dev/null || true)"
+            NEWVER="$(dpkg-deb -f "$PKG" Version)"
+            if [ -n "$CUR" ] && ! dpkg --compare-versions "$NEWVER" gt "$CUR"; then
+              echo "refusing non-upgrade: $NEWVER is not newer than installed $CUR" >&2; exit 5
+            fi
+            # Not exec: the EXIT trap must still run to remove the root-owned work dir (#567).
+            dpkg -i "$PKG"
             ;;
           *.rpm)
             OWNER="$(rpm -qf --qf '%{NAME}' "$SELF" 2>/dev/null || true)"
             NEW="$(rpm -qp --qf '%{NAME}' "$PKG")"
             [ -n "$OWNER" ] && [ "$NEW" = "$OWNER" ] || { echo "package mismatch: $NEW != $OWNER" >&2; exit 3; }
-            exec rpm -U "$PKG"
+            # rpm -U (without --oldpackage) already refuses downgrades.
+            # Not exec: the EXIT trap must still run to remove the root-owned work dir (#567).
+            rpm -U "$PKG"
             ;;
           *) echo "unsupported package: $PKG" >&2; exit 2 ;;
         esac

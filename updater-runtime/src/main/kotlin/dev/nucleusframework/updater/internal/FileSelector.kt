@@ -16,6 +16,7 @@ internal object FileSelector {
     // Formats matched by file extension only (no ambiguity).
     private val EXTENSION_FORMATS =
         mapOf(
+            "exe" to ".exe",
             "deb" to ".deb",
             "rpm" to ".rpm",
             "snap" to ".snap",

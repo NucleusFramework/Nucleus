@@ -23,7 +23,6 @@
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun onScaleFactorChanged</ID>
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun requestClose</ID>
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun requestRedraw</ID>
-    <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setAlwaysOnTop</ID>
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setFocusable</ID>
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setMaximized</ID>
     <ID>UndocumentedPublicFunction:TaoWindow.kt:TaoWindow$public fun setMinimized</ID>

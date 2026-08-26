@@ -16,6 +16,7 @@ plugins {
     alias(libs.plugins.binaryCompatibilityValidator)
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.kover)
     alias(libs.plugins.versionCheck)
 }
 
@@ -45,6 +46,7 @@ apiValidation {
             "avfoundation-demo",
             "tao-native-test",
             "window-scaffold-demo",
+            "watermark-demo",
             // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
             // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
             "decorated-window-jewel",
@@ -99,6 +101,19 @@ subprojects {
                 .get()
                 .pluginId,
         )
+    }
+
+    if (!isDemoProject) {
+        // Library modules only. Examples stay out of the aggregated report so
+        // demo UI does not dilute (or inflate) published-runtime coverage.
+        pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
     }
 
     ktlint {
@@ -239,6 +254,60 @@ tasks.register("preMerge") {
     dependsOn(":examples:nucleus-demo:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
+}
+
+// Aggregated coverage for every published runtime module. Local `check` /
+// `preMerge` do not run koverVerify — coverage is informational only
+// (`./gradlew koverHtmlReport` / `koverLog`). GraalVM @TargetClass
+// substitutions stay IN.
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "dev.nucleusframework.sfsymbols.*",
+                    "dev.nucleusframework.freedesktop.icons.*",
+                    "dev.nucleusframework.window.icons.*",
+                )
+            }
+        }
+        total {
+            verify {
+                onCheck = false
+            }
+            html {
+                title = "Nucleus published runtime"
+                htmlDir.set(layout.buildDirectory.dir("reports/kover/html"))
+            }
+            xml {
+                xmlFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
+            }
+            log {
+                header = "Nucleus published runtime line coverage"
+                format = "<entity> line coverage: <value>%"
+            }
+            binary {
+                file.set(layout.buildDirectory.file("reports/kover/report.bin"))
+            }
+            // Merged when :decorated-window-tao:taoHeadfulTest has been run
+            // (Kover agent on the JavaExec). A missing/empty file is skipped
+            // so a clean checkout can still produce a unit-test-only report.
+            val headfulIc = file("decorated-window-tao/build/kover/bin-reports/taoHeadful.ic")
+            if (headfulIc.isFile && headfulIc.length() > 0L) {
+                additionalBinaryReports.add(headfulIc)
+            }
+            // Optional extra binary reports dropped into this directory
+            // (e.g. a local multi-OS merge). Configuration-time listing
+            // is enough: the files must exist before Gradle starts.
+            val crossOsDir = file("build/kover/cross-os")
+            if (crossOsDir.isDirectory) {
+                crossOsDir
+                    .walkTopDown()
+                    .filter { it.isFile && (it.extension == "ic" || it.extension == "bin") && it.length() > 0L }
+                    .forEach { additionalBinaryReports.add(it) }
+            }
+        }
+    }
 }
 
 tasks.wrapper {

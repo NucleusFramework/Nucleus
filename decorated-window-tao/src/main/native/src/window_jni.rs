@@ -71,6 +71,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     skip_taskbar: jboolean,
     transparent: jboolean,
     undecorated_shadow: jboolean,
+    force_x11: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -89,6 +90,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         skip_taskbar: skip_taskbar != JNI_FALSE,
         transparent: transparent != JNI_FALSE,
         undecorated_shadow: undecorated_shadow != JNI_FALSE,
+        force_x11: force_x11 != JNI_FALSE,
     });
 }
 
@@ -373,6 +375,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetAlwaysOnBottom(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    always_on_bottom: jboolean,
+) {
+    send_user_event(UserEvent::SetAlwaysOnBottom {
+        handle: handle as u64,
+        always_on_bottom: always_on_bottom != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetFocusable(
     _env: JNIEnv,
     _class: JClass,
@@ -382,6 +397,32 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     send_user_event(UserEvent::SetFocusable {
         handle: handle as u64,
         focusable: focusable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetIgnoreCursorEvents(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    ignore: jboolean,
+) {
+    send_user_event(UserEvent::SetIgnoreCursorEvents {
+        handle: handle as u64,
+        ignore: ignore != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetVisibleOnAllWorkspaces(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    visible: jboolean,
+) {
+    send_user_event(UserEvent::SetVisibleOnAllWorkspaces {
+        handle: handle as u64,
+        visible: visible != JNI_FALSE,
     });
 }
 

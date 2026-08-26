@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.windows
 
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
@@ -55,7 +56,8 @@ internal object WindowsEnergyManager : PlatformEnergyManager {
     }
 
     override fun isAvailable(): Boolean =
-        NativeWindowsEnergyBridge.isLoaded &&
+        Platform.Current == Platform.Windows &&
+            NativeWindowsEnergyBridge.isLoaded &&
             runCatching { NativeWindowsEnergyBridge.nativeIsSupported() }.getOrDefault(false)
 
     override fun enableEfficiencyMode() = callNative { NativeWindowsEnergyBridge.nativeEnableEfficiencyMode() }

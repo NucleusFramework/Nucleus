@@ -44,6 +44,12 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // window's render target. Honoured by the Tao backend on all three
     // platforms; ignored by AWT.
     nativePopupLayers: Boolean = false,
+    // Replace Compose-drawn context menus (ContextMenuArea, text
+    // Cut/Copy/Paste, spellcheck items) with the OS-looking menu. Tao +
+    // macOS (`NSMenu`), or a Compose flyout on Linux (Adwaita) / Windows
+    // (Fluent). No-op on AWT.
+    // Independent of [nativePopupLayers].
+    nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (macOS: NSApplication accessory policy, app-wide; Windows:
     // WS_EX_TOOLWINDOW, per-window; Linux: GTK skip-taskbar hint, per-window,
@@ -52,6 +58,42 @@ public fun NucleusApplicationScope.DecoratedWindow(
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    // The overlay flags below are appended rather than grouped with
+    // [undecorated]: inserting a parameter mid-list silently shifts every
+    // positional call site. Keep new parameters here, before [content].
+    //
+    // Full-window per-pixel transparency: pixels the content leaves at alpha 0
+    // show the desktop behind the window (#416). Creation-time only — cannot
+    // change after the native window exists. Typically combined with
+    // [undecorated]. Honoured by the Tao backend; the AWT backend ignores it.
+    transparent: Boolean = false,
+    // Click-through window: pointer events fall through to whatever sits
+    // below, and the window never intercepts input. Pair with
+    // `focusable = false` for passive overlays (watermarks, HUDs). Reactive.
+    // Honoured by the Tao backend; the AWT backend ignores it.
+    clickThrough: Boolean = false,
+    // Show the window on every desktop instead of only the one it was created
+    // on — macOS Spaces (`NSWindowCollectionBehaviorCanJoinAllSpaces`), Linux
+    // workspaces (`gtk_window_stick`, X11/XWayland only — native Wayland has no
+    // workspace protocol and logs a warning). No-op on Windows, where a
+    // [hiddenFromDock] window already shows on every virtual desktop. Reactive.
+    // Honoured by the Tao backend; the AWT backend ignores it.
+    visibleOnAllWorkspaces: Boolean = false,
+    // Linux only: give this window an X11 surface even when the app runs on a
+    // native Wayland session (a second GdkDisplay opened on DISPLAY, i.e.
+    // XWayland). Creation-time only. Wayland has no protocol for client-side
+    // stacking, programmatic positioning or workspace stickiness, so an overlay
+    // that needs them can take an X11 surface for itself while the rest of the
+    // app keeps its Wayland surfaces. Honoured by the Tao backend; ignored by
+    // the AWT backend and on other platforms.
+    forceX11: Boolean = false,
+    // Pin the window below every other window instead of above them — macOS
+    // `NSWindowLevel.BelowNormal`, Windows `HWND_BOTTOM`, Linux
+    // `gtk_window_set_keep_below` (X11/XWayland only, native Wayland has no
+    // client-side stacking protocol). For wallpaper-level overlays such as
+    // desktop widgets. Mutually exclusive with [alwaysOnTop] — last one set
+    // wins. Reactive. Honoured by the Tao backend; the AWT backend ignores it.
+    alwaysOnBottom: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     when (this) {
@@ -101,8 +143,14 @@ public fun NucleusApplicationScope.DecoratedWindow(
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
+                transparent = transparent,
+                clickThrough = clickThrough,
+                visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+                forceX11 = forceX11,
+                alwaysOnBottom = alwaysOnBottom,
                 popupFor = popupFor,
                 nativePopupLayers = nativePopupLayers,
+                nativeContextMenu = nativeContextMenu,
                 hiddenFromDock = hiddenFromDock,
                 minimumSize = minimumSize,
                 onPreviewKeyEvent = onPreviewKeyEvent,
@@ -137,10 +185,16 @@ public fun DecoratedWindow(
     undecorated: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    transparent: Boolean = false,
+    clickThrough: Boolean = false,
+    visibleOnAllWorkspaces: Boolean = false,
+    forceX11: Boolean = false,
+    alwaysOnBottom: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.DecoratedWindow(
@@ -156,10 +210,16 @@ public fun DecoratedWindow(
         undecorated = undecorated,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
+        nativeContextMenu = nativeContextMenu,
         hiddenFromDock = hiddenFromDock,
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
+        transparent = transparent,
+        clickThrough = clickThrough,
+        visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+        forceX11 = forceX11,
+        alwaysOnBottom = alwaysOnBottom,
         content = content,
     )
 }

@@ -42,8 +42,11 @@ import androidx.compose.ui.window.rememberWindowState
  * }
  * ```
  *
- * Parameter surface matches [DecoratedWindow] (including Tao-only knobs such
- * as [popupFor], [nativePopupLayers], [hiddenFromDock]).
+ * Parameters follow [DecoratedWindow], Tao-only knobs included ([popupFor],
+ * [nativePopupLayers], [nativeContextMenu], [hiddenFromDock],
+ * [alwaysOnBottom]). Creation-time overlay flags that only make sense on a
+ * top-level window ([DecoratedWindow]'s `transparent`, `clickThrough`,
+ * `visibleOnAllWorkspaces`, `forceX11`) are not routed through the host.
  */
 public fun interface NucleusWindowHost {
     @Composable
@@ -60,10 +63,12 @@ public fun interface NucleusWindowHost {
         undecorated: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        alwaysOnBottom: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     )
 }
@@ -143,10 +148,12 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
         undecorated: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
+        alwaysOnBottom: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         DecoratedWindow(
@@ -162,10 +169,12 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
             undecorated = undecorated,
             popupFor = popupFor,
             nativePopupLayers = nativePopupLayers,
+            nativeContextMenu = nativeContextMenu,
             hiddenFromDock = hiddenFromDock,
             minimumSize = minimumSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
+            alwaysOnBottom = alwaysOnBottom,
             content = content,
         )
     }
@@ -230,10 +239,12 @@ public fun HostedWindow(
     undecorated: Boolean = false,
     popupFor: NucleusWindow? = null,
     nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
+    alwaysOnBottom: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusWindowHost.current.Window(
@@ -249,10 +260,12 @@ public fun HostedWindow(
         undecorated = undecorated,
         popupFor = popupFor,
         nativePopupLayers = nativePopupLayers,
+        nativeContextMenu = nativeContextMenu,
         hiddenFromDock = hiddenFromDock,
         minimumSize = minimumSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
+        alwaysOnBottom = alwaysOnBottom,
         content = content,
     )
 }

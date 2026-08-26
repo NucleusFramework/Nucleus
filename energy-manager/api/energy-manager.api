@@ -1,3 +1,9 @@
+public final class dev/nucleusframework/energymanager/AwakeHandle : java/lang/AutoCloseable {
+	public fun close ()V
+	public final fun getMode ()Ldev/nucleusframework/energymanager/AwakeMode;
+	public final fun isActive ()Z
+}
+
 public final class dev/nucleusframework/energymanager/AwakeMode : java/lang/Enum {
 	public static final field SYSTEM_AND_DISPLAY Ldev/nucleusframework/energymanager/AwakeMode;
 	public static final field SYSTEM_ONLY Ldev/nucleusframework/energymanager/AwakeMode;
@@ -8,6 +14,8 @@ public final class dev/nucleusframework/energymanager/AwakeMode : java/lang/Enum
 
 public final class dev/nucleusframework/energymanager/EnergyManager {
 	public static final field INSTANCE Ldev/nucleusframework/energymanager/EnergyManager;
+	public final fun acquireAwake (Ldev/nucleusframework/energymanager/AwakeMode;)Ldev/nucleusframework/energymanager/AwakeHandle;
+	public static synthetic fun acquireAwake$default (Ldev/nucleusframework/energymanager/EnergyManager;Ldev/nucleusframework/energymanager/AwakeMode;ILjava/lang/Object;)Ldev/nucleusframework/energymanager/AwakeHandle;
 	public final fun disableEfficiencyMode ()Ldev/nucleusframework/energymanager/EnergyManager$Result;
 	public final fun disableLightEfficiencyMode ()Ldev/nucleusframework/energymanager/EnergyManager$Result;
 	public final fun disableThreadEfficiencyMode ()Ldev/nucleusframework/energymanager/EnergyManager$Result;

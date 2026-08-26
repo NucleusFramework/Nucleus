@@ -21,6 +21,7 @@ import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
+import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
 import dev.nucleusframework.window.jewel.rememberJewelTitleBarStyle
 import dev.nucleusframework.window.jewel.rememberJewelWindowStyle
 import jewelsample.view.TitleBarView
@@ -106,7 +107,9 @@ fun main() =
                     androidx.compose.runtime.CompositionLocalProvider(
                         androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
                     ) {
-                        ProvideMarkdownStyling { currentView.content() }
+                        ProvideJewelSpellcheckMenu {
+                            ProvideMarkdownStyling { currentView.content() }
+                        }
                     }
                 }
             },

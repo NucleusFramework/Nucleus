@@ -2,7 +2,6 @@
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
@@ -15,14 +14,13 @@ import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
-import androidx.compose.ui.scene.PlatformLayersComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.WindowTransparencyMode
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoCursorIcon
@@ -187,11 +185,11 @@ internal class TaoComposeSceneHost(
     private var attachmentHandle: Long = 0
     private var nsViewHandle: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
-    private val frameClock = BroadcastFrameClock()
 
     // Dispatcher that funnels Compose's async work (notably MouseWheel scroll
     // dispatching, which uses the scene's coroutineContext) onto the render
@@ -226,6 +224,9 @@ internal class TaoComposeSceneHost(
     private var transaction = MutableTaoInteropTransaction(isInteropActive = false)
     private var interopAttachCount: Int = 0
 
+    /** Set by NativeView pointer-interop when a Press was forwarded to AppKit. */
+    private var nativePointerDispatchedThisEvent: Boolean = false
+
     /** Renderer's view of whether interop is currently active — lags the
      *  transaction's flag by one frame on the OFF transition so the
      *  final sync flush still goes through `presentsWithTransaction`. */
@@ -253,11 +254,27 @@ internal class TaoComposeSceneHost(
     // under the cursor.
     //
     // Defensive contract: a Press received while already pressed first
-    // emits a Release at the last known position to close out the stale
-    // interaction, then emits the new Press. A Release received while not
-    // pressed is dropped (Compose would otherwise crash inside the input
-    // processor on a Release for an unknown pointer).
+    // emits a Release *of the stuck button* at the last known position to
+    // close out the stale interaction, then emits the new Press. A Release
+    // received while not pressed is dropped (Compose would otherwise crash
+    // inside the input processor on a Release for an unknown pointer).
+    //
+    // The stale state is not hypothetical: any native session that takes
+    // over event delivery mid-click swallows the matching MOUSE_UP. The
+    // canonical case is the native context menu — its tracking session eats
+    // the right-button up, `isPressed` latches true, and the *next* left
+    // Press used to close the stale interaction by releasing the *new*
+    // (left) button, which the scene never saw pressed. The scene's stream
+    // stayed unbalanced and every later click was misrouted until an
+    // accidental right-click re-synced it — observed as "the widget can't
+    // be dragged after opening its context menu". Hence [pressedButtonCode]:
+    // the synthetic Release must name the button that is actually stuck.
     private var isPressed: Boolean = false
+
+    // Tao button code of the Press that set [isPressed]; the synthetic
+    // Release in [onPointerButton] and [onFocusChanged] must release this
+    // button, not whichever button the new event carries.
+    private var pressedButtonCode: Int = 0
 
     // Set the first time we see a CursorMoved from Tao. Until then, any
     // button event is dropped — a real user click cannot occur without the
@@ -337,12 +354,6 @@ internal class TaoComposeSceneHost(
             prepareFullscreenFrame(targetW, targetH)
         }
 
-        // CRITICAL: provide our own MonotonicFrameClock (BroadcastFrameClock)
-        // in the scene's coroutineContext. Without one, Compose's recomposer
-        // can't tell when a frame has finished and re-fires `invalidate` after
-        // every render — causing a continuous render loop that saturates the
-        // main thread. We tick the clock manually at the end of each
-        // onRedrawRequested.
         // The DnD manager needs lazy access to the scene's rootDragAndDropNode,
         // but the scene cannot be constructed before we hand it the
         // PlatformContext that owns the manager. Resolve on each call.
@@ -377,54 +388,58 @@ internal class TaoComposeSceneHost(
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
                 onInputSession = { activeInputRequest = it },
+                isWindowTransparent = fullyTransparent,
             )
 
         val hostPopupHost = if (nativePopupLayers) popupHost() else null
-        scene =
+        // The scene's MonotonicFrameClock is owned by the FrameRecomposer inside the
+        // bundle (Compose 1.12). It matters that the clock exists: without one the
+        // recomposer can't tell when a frame finished and re-fires the invalidation
+        // after every render, saturating the main thread. The recomposer now ticks it
+        // itself in `performFrame` (one frame per FrameDispatcher tick, re-scheduling
+        // only while animations remain), so the host no longer sends frames manually.
+        sceneBundle =
             if (hostPopupHost != null) {
                 // Opt-in path (e.g. tray popups): every Popup becomes a native
                 // NSPanel owned by this window, so popup content can extend
                 // beyond — and float independently of — the window bounds.
-                PlatformLayersComposeScene(
+                platformLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     size = IntSize(widthPx, heightPx),
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     composeSceneContext =
                         TaoComposeSceneContext(
                             platformContext = taoPlatformContext,
-                        ) { density, layoutDirection, focusable, cc ->
+                        ) { density, layoutDirection, focusable, consumeOutside ->
                             TaoPopupSceneLayer(
                                 host = hostPopupHost,
                                 initialDensity = density,
                                 initialLayoutDirection = layoutDirection,
                                 initialFocusable = focusable,
-                                parentCompositionContext = cc,
+                                initialConsumePointerInputOutside = consumeOutside,
                             )
                         },
-                    invalidate = {
-                        frameDispatcher?.scheduleFrame()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    // Schedule a frame on the render loop (coalesced); it renders
+                    // then waits for the next vsync. See startRenderLoop.
+                    requestFrame = { frameDispatcher?.scheduleFrame() },
+                )
             } else {
                 // Match Windows and Linux for the main host scene: Compose
                 // Popup / DropdownMenu / Tooltip content stays in the same
                 // Metal render target instead of becoming a native NSPanel.
                 // NativeView overlay scenes still opt into TaoComposeSceneContext
                 // when their popups must float above an embedded AppKit view.
-                CanvasLayersComposeScene(
+                canvasLayersSceneBundle(
+                    coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     size = IntSize(widthPx, heightPx),
-                    coroutineContext = coroutineContext + frameClock + flushingDispatcher,
                     platformContext = taoPlatformContext,
-                    invalidate = {
-                        // Schedule a frame on the render loop (coalesced); it renders
-                        // then waits for the next vsync. See startRenderLoop.
-                        frameDispatcher?.scheduleFrame()
-                    },
-                ).apply { compositionLocalContext = pendingCompositionLocalContext }
+                    requestFrame = { frameDispatcher?.scheduleFrame() },
+                )
             }
+        scene?.compositionLocalContext = pendingCompositionLocalContext
 
         registerInboundDnD()
     }
@@ -682,6 +697,22 @@ internal class TaoComposeSceneHost(
 
     fun onFocusChanged(focused: Boolean) {
         windowInfo.isWindowFocused = focused
+        if (!focused && isPressed) {
+            // Whatever stole focus mid-click (a native context-menu tracking
+            // session, a compositor drag) owns the pointer now and will eat
+            // the matching MOUSE_UP — it is never coming. Close the stale
+            // interaction here so the next Press hit-tests fresh instead of
+            // being misrouted along the stuck button's gesture (see
+            // [isPressed]).
+            scene?.sendPointerEvent(
+                eventType = PointerEventType.Release,
+                position = Offset(lastPointerX, lastPointerY),
+                type = PointerType.Mouse,
+                keyboardModifiers = currentKeyboardModifiers,
+                button = mapButton(pressedButtonCode),
+            )
+            isPressed = false
+        }
     }
 
     /** Current scale factor (logical→physical multiplier). */
@@ -711,30 +742,36 @@ internal class TaoComposeSceneHost(
         if (nsViewHandle == 0L) return null
         if (!NativeTaoMacOsNativeViewBridge.isLoaded) return null
         val outer = this
+        @Suppress("UnusedParameter")
         return object : TaoNativeViewHost {
-            override fun attach(childHandle: Long) {
-                // Eager. NativeView.kt's DisposableEffect relies on the
-                // ordering `host.attach() -> overlay.attach()` so the
-                // overlay's `nativeCreateOverlay` lands ABOVE the user's
-                // subview in the parent's subview list (NSView z-order
-                // = order of addition for siblings positioned with
-                // NSWindowAbove relativeTo:nil). Deferring this would
-                // re-order the adds and bury the overlay behind the
-                // WKWebView. The visual-sync win we want is for
-                // *reposition*, not for mount, so subview list mutation
-                // stays eager.
+            override fun attach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
+                // Eager: NativeView.kt's DisposableEffect mounts the
+                // child as soon as the composable enters the tree.
+                // Visual sync with Compose is for *reposition*
+                // (`scheduleInteropAction` + presentsWithTransaction),
+                // not for the initial add.
                 if (outer.interopAttachCount == 0) {
                     outer.transaction.isInteropActive = true
+                    // Punch-through blending needs a non-opaque CAMetalLayer
+                    // and alpha-0 Skia clears — same latch as glass regions.
+                    WindowTransparencyMode.acquire(outer.window, outer.glassBackgroundState)
                 }
                 outer.interopAttachCount++
                 NativeTaoMacOsNativeViewBridge.nativeAddSubview(outer.nsViewHandle, childHandle)
             }
 
-            override fun detach(childHandle: Long) {
+            override fun detach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 NativeTaoMacOsNativeViewBridge.nativeRemoveSubview(childHandle)
                 outer.interopAttachCount--
                 if (outer.interopAttachCount == 0) {
                     outer.transaction.isInteropActive = false
+                    WindowTransparencyMode.release(outer.window, outer.glassBackgroundState)
                 }
             }
 
@@ -744,6 +781,7 @@ internal class TaoComposeSceneHost(
                 yPx: Int,
                 widthPx: Int,
                 heightPx: Int,
+                regionToken: Any,
             ) {
                 outer.scheduleInteropAction {
                     NativeTaoMacOsNativeViewBridge
@@ -761,17 +799,53 @@ internal class TaoComposeSceneHost(
                 }
             }
 
-            override fun scheduleInterop(action: () -> Unit) {
-                outer.scheduleInteropAction(action)
+            override fun dispatchPointerToNative(
+                handle: Long,
+                type: Int,
+                xPx: Float,
+                yPx: Float,
+                button: Int,
+                pressed: Boolean,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                NativeTaoMacOsNativeViewBridge.nativeDispatchPointer(
+                    outer.nsViewHandle,
+                    handle,
+                    type,
+                    xPx,
+                    yPx,
+                    button,
+                    pressed,
+                )
+            }
+
+            override fun dispatchScrollToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                dx: Float,
+                dy: Float,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
+                    outer.nsViewHandle,
+                    handle,
+                    xPx,
+                    yPx,
+                    dx,
+                    dy,
+                )
+            }
+
+            override fun noteNativePointerDispatch() {
+                outer.nativePointerDispatchedThisEvent = true
             }
         }
     }
 
     /**
      * Enqueues an AppKit mutation to be drained inside the next frame's
-     * transaction. Accessible to the overlay controller so its own
-     * `nativeSetOverlayFrame` calls share the same atomic CATransaction
-     * as the user's subview frame change.
+     * transaction, atomically with the Compose Metal present.
      */
     internal fun scheduleInteropAction(action: TaoInteropAction) {
         transaction.add(action)
@@ -784,6 +858,7 @@ internal class TaoComposeSceneHost(
         return object : TaoPopupHost {
             override val parentNsView: Long get() = outer.nsViewHandle
             override val scale: Float get() = outer.scale
+            override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
             override val workAreaSize: IntSize get() {
                 val packed = NativeMetalBridge.nativeOwnerWorkAreaSize(outer.nsViewHandle)
@@ -793,7 +868,7 @@ internal class TaoComposeSceneHost(
                 return if (w > 0 && h > 0) IntSize(w, h) else parentWindowSize
             }
             override val sceneCoroutineContext: CoroutineContext
-                get() = outer.coroutineContext + outer.frameClock + outer.flushingDispatcher
+                get() = outer.coroutineContext + outer.flushingDispatcher
 
             override fun requestRedraw() = outer.window.requestRedraw()
 
@@ -919,20 +994,23 @@ internal class TaoComposeSceneHost(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         if (pressed && isPressed) {
             // Stale "still-down" state — close it out before opening a new
-            // interaction so Compose hit-tests this Press fresh. See the
-            // comment on `isPressed` for the rationale.
+            // interaction so Compose hit-tests this Press fresh. Release the
+            // button that is actually stuck, not the one this event carries.
+            // See the comment on `isPressed` for the rationale.
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Release,
                 position = Offset(lastPointerX, lastPointerY),
                 type = PointerType.Mouse,
                 keyboardModifiers = currentKeyboardModifiers,
-                button = composeButton,
+                button = mapButton(pressedButtonCode),
             )
         } else if (!pressed && !isPressed) {
             // Stray Release without a matching Press — drop it.
             return
         }
         isPressed = pressed
+        if (pressed) pressedButtonCode = buttonCode
+        if (pressed) nativePointerDispatchedThisEvent = false
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
             position = Offset(lastPointerX, lastPointerY),
@@ -940,6 +1018,16 @@ internal class TaoComposeSceneHost(
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
         )
+        if (pressed &&
+            !nativePointerDispatchedThisEvent &&
+            nsViewHandle != 0L &&
+            NativeTaoMacOsNativeViewBridge.isLoaded
+        ) {
+            // Compose consumed the click (or it missed every NativeView):
+            // take first-responder back so typing goes to Compose, not a
+            // previously focused WKWebView sitting under the Metal layer.
+            NativeTaoMacOsNativeViewBridge.nativeMakeContentViewFirstResponder(nsViewHandle)
+        }
     }
 
     /**
@@ -1298,7 +1386,7 @@ internal class TaoComposeSceneHost(
      * frees the Tao main loop during GPU encode + present + vsync wait.
      */
     private suspend fun renderFrameSuspending(handle: Long) {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
 
@@ -1324,7 +1412,7 @@ internal class TaoComposeSceneHost(
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
@@ -1418,11 +1506,11 @@ internal class TaoComposeSceneHost(
      * [renderFrameSuspending].
      */
     fun renderFrameBlocking() {
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(sc, widthPx, heightPx)
+        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
         val popupSurfaces = recordPopupSurfaces()
         TaoMainDispatcher.pump()
         val handle = attachmentHandle
@@ -1448,8 +1536,8 @@ internal class TaoComposeSceneHost(
         frameDispatcher = null
         renderLoopJob.cancel()
         textToolbar.hide()
-        scene?.close()
-        scene = null
+        sceneBundle?.close()
+        sceneBundle = null
         // Drop the TextureView handle before the context it points at dies.
         metalTextureHostCache.invalidate()
         // Close the DirectContext on its owning thread (FIFO after any in-flight
@@ -1486,8 +1574,8 @@ internal class TaoComposeSceneHost(
      * pumps queued blocks on every `Event::MainEventsCleared` tick of the
      * Tao loop. We also call `window.requestRedraw()` so the loop is woken
      * if it was idle — without it, animations driven by `withFrameNanos`
-     * (whose continuations land here when `frameClock.sendFrame` fires
-     * inside `BaseComposeScene.recompose`) would freeze until input arrives.
+     * (whose continuations land here when `FrameRecomposer.performFrame`
+     * ticks the scene's frame clock) would freeze until input arrives.
      *
      * The auto-pump matters: in the previous implementation, blocks only
      * ran during [onRedrawRequested]'s explicit drain — a chicken-and-egg
@@ -1534,7 +1622,12 @@ private class TaoPlatformContext(
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
     private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit,
-) : PlatformContext.Empty() {
+    // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
+    // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
+    // created with `transparent = true` — same as Compose Desktop's
+    // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
+    override val isWindowTransparent: Boolean = false,
+) : TaoPlatformContextBase() {
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic
     // then operates inside `windowSize - insets`, so a `top` inset matching our

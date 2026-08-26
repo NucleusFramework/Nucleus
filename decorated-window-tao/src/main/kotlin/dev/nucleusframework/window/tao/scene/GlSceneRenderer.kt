@@ -1,8 +1,5 @@
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.ui.InternalComposeUiApi
-import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.scene.ComposeScene
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
@@ -12,8 +9,8 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 
 /**
- * Per-frame Skia/GL rendering helper shared by the overlay controller
- * and the popup scene layer. Wraps the default GL framebuffer in a
+ * Per-frame Skia/GL rendering helper shared by the NativeView blending
+ * overlay and popup scene layers. Wraps the default GL framebuffer in a
  * Skia [Surface], lets the scene paint, then presents.
  *
  * Caller must:
@@ -22,12 +19,11 @@ import org.jetbrains.skia.SurfaceOrigin
  *     GL state cache reflects reality after the external surface switch,
  *  3. provide [present] (the bridge's `nativeSwapBuffers`).
  */
-@OptIn(InternalComposeUiApi::class)
 internal inline fun renderGlFrame(
     widthPx: Int,
     heightPx: Int,
     directContext: DirectContext,
-    scene: ComposeScene,
+    bundle: TaoSceneBundle,
     clearColorArgb: Int,
     crossinline present: () -> Unit,
 ) {
@@ -38,11 +34,10 @@ internal inline fun renderGlFrame(
         clearColorArgb = clearColorArgb,
         present = present,
     ) { canvas, nanoTime ->
-        scene.render(canvas.asComposeCanvas(), nanoTime)
+        bundle.render(canvas, nanoTime)
     }
 }
 
-@OptIn(InternalComposeUiApi::class)
 internal inline fun renderGlFrame(
     widthPx: Int,
     heightPx: Int,

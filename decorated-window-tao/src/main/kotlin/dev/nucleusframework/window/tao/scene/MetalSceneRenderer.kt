@@ -1,8 +1,5 @@
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.ui.InternalComposeUiApi
-import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.scene.ComposeScene
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
@@ -39,9 +36,8 @@ import org.jetbrains.skia.SurfaceOrigin
  * drawable wraps a different texture, so the per-frame allocations in
  * [replayPictureToFrame] are unavoidable.
  */
-@OptIn(InternalComposeUiApi::class)
 internal fun recordSceneToPicture(
-    scene: ComposeScene,
+    bundle: TaoSceneBundle,
     widthPx: Int,
     heightPx: Int,
     nanoTime: Long = System.nanoTime(),
@@ -50,7 +46,7 @@ internal fun recordSceneToPicture(
         // The cull bounds match the drawable size (physical pixels). The scene is
         // rendered at this size; the clear happens at replay time, not here.
         val canvas = recorder.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()))
-        scene.render(canvas.asComposeCanvas(), nanoTime)
+        bundle.render(canvas, nanoTime)
         // Closing the recorder here frees its native memory deterministically
         // (one recorder per frame — a GC-driven Cleaner would lag far behind);
         // the returned Picture owns its own native ref and survives the close.
@@ -122,8 +118,8 @@ internal fun replayPictureToFrame(
 
 /**
  * A frame recorded on the main thread, ready to be replayed + presented on the
- * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer],
- * `NativeViewOverlayController`) and collected by [TaoComposeSceneHost] during
+ * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer])
+ * and collected by [TaoComposeSceneHost] during
  * its record pass; the host replays them on its render thread after the main
  * scene.
  *

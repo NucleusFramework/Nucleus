@@ -12,8 +12,6 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
@@ -29,7 +27,10 @@ import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
 
@@ -76,7 +77,7 @@ internal class TaoPopupSceneLayer(
     initialDensity: Density,
     initialLayoutDirection: LayoutDirection,
     initialFocusable: Boolean,
-    @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
+    initialConsumePointerInputOutside: Boolean,
 ) : ComposeSceneLayer {
     private var _density = initialDensity
     private var _layoutDirection = initialLayoutDirection
@@ -196,23 +197,30 @@ internal class TaoPopupSceneLayer(
             override val containerSize: IntSize get() = sceneLayoutSize
         }
 
-    private val innerScene: ComposeScene =
-        CanvasLayersComposeScene(
+    private val sceneBundle: TaoSceneBundle =
+        canvasLayersSceneBundle(
+            coroutineContext = host.sceneCoroutineContext,
             density = _density,
             layoutDirection = _layoutDirection,
             size = sceneLayoutSize,
-            coroutineContext = host.sceneCoroutineContext,
             platformContext =
-                object : PlatformContext.Empty() {
+                object : TaoPlatformContextBase() {
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
                         get() = popupWindowInfo
+
+                    // The panel's surface is per-pixel transparent, so dialog
+                    // scrims must use the alpha-aware blend — same contract as
+                    // Compose Desktop's `WindowComposeSceneLayer` (#559).
+                    override val isWindowTransparent: Boolean get() = true
 
                     override fun setPointerIcon(pointerIcon: PointerIcon) {
                         host.setCursor(pointerIcon.toTaoCursorIconCode())
                     }
                 },
-            invalidate = { host.requestRedraw() },
+            requestFrame = { host.requestRedraw() },
         )
+
+    private val innerScene: ComposeScene get() = sceneBundle.scene
 
     private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
@@ -368,6 +376,11 @@ internal class TaoPopupSceneLayer(
             PopupNativeBridge.nativeSetFocusable(panelHandle, value)
         }
 
+    // Stored for the ComposeSceneLayer contract; the native popup panel handles
+    // outside-click dismissal via its own NSEvent monitor, so this flag is not
+    // consulted on the render path.
+    override var consumePointerInputOutside: Boolean = initialConsumePointerInputOutside
+
     init {
         // Apply the initial focusable state (constructor sets the field
         // but the setter is not invoked from a constructor parameter).
@@ -384,7 +397,7 @@ internal class TaoPopupSceneLayer(
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, null)
         host.setCursor(TaoCursorIcon.DEFAULT)
-        innerScene.close()
+        sceneBundle.close()
         // Close the Skia context on its owning render thread. close() runs in
         // the host's main-thread record pass (Compose disposal), when the render
         // thread is idle, so this blocking hop returns immediately and can't race
@@ -404,7 +417,10 @@ internal class TaoPopupSceneLayer(
         PopupNativeBridge.nativeRelease(panelHandle)
     }
 
-    override fun setContent(content: @Composable () -> Unit) {
+    override fun setContent(
+        @Suppress("UNUSED_PARAMETER") parentCompositionContext: CompositionContext,
+        content: @Composable () -> Unit,
+    ) {
         innerScene.setContent {
             // Replay parent locals snapshot so MaterialTheme et al. flow
             // into the popup content. Compose's popup framework writes
@@ -470,7 +486,7 @@ internal class TaoPopupSceneLayer(
         return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = directContext,
-            picture = recordSceneToPicture(innerScene, widthPx, heightPx),
+            picture = recordSceneToPicture(sceneBundle, widthPx, heightPx),
             clearColor = 0x00000000,
             isAlive = { !disposed },
         )

@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -269,6 +270,7 @@ private fun runApp() =
                     }
                     false
                 },
+                nativeContextMenu = true,
             ) {
                 val taoWindow = nucleusWindow.unsafe.taoWindow!!
                 var clicks by remember { mutableStateOf(0) }
@@ -281,6 +283,22 @@ private fun runApp() =
                             it.name.equals(System.getenv("NUCLEUS_DEMO_TAB"), ignoreCase = true)
                         } ?: Tab.Demo,
                     )
+                }
+                // NUCLEUS_DEMO_AUTOSWITCH_MS=<delay> cycles through every tab
+                // (delay each) and lands on WebView — automation hook for the
+                // mid-session NativeView mount path (start on Demo, render a
+                // lot of text, then embed), which behaves differently from
+                // landing on WebView directly.
+                LaunchedEffect(Unit) {
+                    val autoSwitchMs = System.getenv("NUCLEUS_DEMO_AUTOSWITCH_MS")?.toLongOrNull()
+                    if (autoSwitchMs != null) {
+                        for (tab in Tab.entries.filter { it != Tab.WebView }) {
+                            kotlinx.coroutines.delay(autoSwitchMs)
+                            selectedTab = tab
+                        }
+                        kotlinx.coroutines.delay(autoSwitchMs)
+                        selectedTab = Tab.WebView
+                    }
                 }
                 val events = previewEvents
 
@@ -397,6 +415,7 @@ private fun runApp() =
                             Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
                             Tab.SwiftUI -> SwiftUITab(modifier = Modifier.fillMaxSize())
                             Tab.Texture -> TextureTab(modifier = Modifier.fillMaxSize())
+                            Tab.Spellcheck -> SpellcheckTab(modifier = Modifier.fillMaxSize())
                         }
                     }
                 }

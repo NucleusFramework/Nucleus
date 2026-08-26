@@ -16,7 +16,7 @@ import org.jetbrains.skia.DirectContext
  * Each surface therefore provides its own [LocalTaoMetalTextureHost]:
  * [TaoComposeSceneHost] for the window scene,
  * [dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer] for native popup
- * layers, `NativeViewOverlayController` for `NativeView` overlays.
+ * layers.
  *
  * Threading: [metalDevicePtr] / [directContext] are read on the macOS main
  * thread; every *use* of [directContext] must be wrapped in

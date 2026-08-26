@@ -183,6 +183,7 @@ NV_FLAGS=(
     -framework Cocoa
     -framework AppKit
     -framework QuartzCore
+    -framework CoreGraphics
     -mmacosx-version-min=10.15
     -fobjc-arc
     -Oz

@@ -85,6 +85,62 @@ fn on_tao_size_move(window_id: tao::window::WindowId, active: bool) {
     dispatch(handle, EVENT_SIZE_MOVE, if active { 1 } else { 0 }, 0);
 }
 
+/// Moves a freshly built window onto an X11 screen while the rest of the
+/// process keeps talking native Wayland.
+///
+/// GTK supports several `GdkDisplay`s in one process and one main loop, so we
+/// open the X server named by `DISPLAY` (XWayland on a Wayland session) once
+/// and re-home the window's `GdkWindow` there. That buys back everything
+/// xdg-shell has no protocol for — stacking (`alwaysOnTop`), programmatic
+/// positioning and workspace stickiness — for overlays that need it, without
+/// forcing the whole app onto XWayland.
+///
+/// `gtk_window_set_screen` unrealizes the widget, so we realize it again to
+/// restore the invariant tao patch 0003 establishes: the `GdkWindow` is valid
+/// when window creation returns, before `WINDOW_READY` reaches the JVM and the
+/// renderer attaches to it.
+#[cfg(target_os = "linux")]
+fn move_window_to_x11(window: &tao::window::Window) {
+    use gtk::prelude::*;
+    use tao::platform::unix::WindowExtUnix;
+
+    let gtk_window = window.gtk_window();
+    if !gtk_window.display().backend().is_wayland() {
+        return; // already an X11 / XWayland client — nothing to do.
+    }
+    // No X server to fall back on (DISPLAY unset, no XWayland): keep the
+    // Wayland surface. The Kotlin side notices — the window still reports a
+    // Wayland surface kind — and logs it there, where the framework's JUL
+    // facade lives.
+    let Some(x11) = x11_display() else {
+        return;
+    };
+    gtk_window.set_screen(&x11.default_screen());
+    gtk_window.realize();
+}
+
+/// The X11 `GdkDisplay`, opened on first use and kept for the process. Lives in
+/// a thread-local because `GdkDisplay` is neither `Send` nor `Sync` and every
+/// caller runs on the event-loop thread.
+#[cfg(target_os = "linux")]
+fn x11_display() -> Option<gtk::gdk::Display> {
+    use std::cell::RefCell;
+    thread_local! {
+        static X11_DISPLAY: RefCell<Option<Option<gtk::gdk::Display>>> = const { RefCell::new(None) };
+    }
+    X11_DISPLAY.with(|cell| {
+        cell.borrow_mut()
+            .get_or_insert_with(|| {
+                let name = std::env::var("DISPLAY").ok()?;
+                // GDK tries its backends in order for the given name; the
+                // Wayland backend cannot parse an X11 display name, so this
+                // resolves to the X11 backend even on a Wayland session.
+                gtk::gdk::Display::open(&name)
+            })
+            .clone()
+    })
+}
+
 pub(crate) fn run_event_loop_blocking() {
     // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
     // a Wayland session, X11 elsewhere). The Wayland-native path goes through
@@ -196,6 +252,7 @@ pub(crate) fn run_event_loop_blocking() {
                     skip_taskbar,
                     transparent,
                     undecorated_shadow,
+                    force_x11,
                 } => {
                     #[allow(unused_mut)]
                     let mut builder = WindowBuilder::new()
@@ -276,6 +333,12 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     let window = builder.build(target);
                     if let Ok(window) = window {
+                        #[cfg(target_os = "linux")]
+                        if force_x11 {
+                            move_window_to_x11(&window);
+                        }
+                        #[cfg(not(target_os = "linux"))]
+                        let _ = force_x11;
                         let logical_w = width as jint;
                         let logical_h = height as jint;
 
@@ -456,11 +519,78 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetAlwaysOnBottom {
+                    handle,
+                    always_on_bottom,
+                } => {
+                    // Opposite stacking: HWND_BOTTOM on Windows,
+                    // NSWindowLevel::BelowNormal on macOS, _NET_WM_STATE_BELOW
+                    // (gtk_window_set_keep_below) on X11 — a silent no-op on
+                    // native Wayland, which has no client-side stacking
+                    // protocol. Mutual exclusion with always-on-top is enforced
+                    // by TaoWindow: tao's setters, unlike its WindowBuilder, let
+                    // both requests coexist.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_always_on_bottom(always_on_bottom);
+                        }
+                    }
+                }
                 UserEvent::SetFocusable { handle, focusable } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_focusable(focusable);
+                        }
+                    }
+                }
+                UserEvent::SetIgnoreCursorEvents { handle, ignore } => {
+                    // Click-through: WS_EX_TRANSPARENT|WS_EX_LAYERED on
+                    // Windows, NSWindow.ignoresMouseEvents on macOS, an empty
+                    // GDK input region on Linux.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            let _ = w.set_ignore_cursor_events(ignore);
+                            // tao only flips the ex-styles. A WS_EX_LAYERED
+                            // window renders NOTHING until its layering
+                            // attributes are initialised — without this the
+                            // whole window disappears the moment click-through
+                            // is enabled. Full alpha keeps per-pixel
+                            // transparency driven by DWM blur-behind.
+                            #[cfg(target_os = "windows")]
+                            if ignore {
+                                use tao::platform::windows::WindowExtWindows;
+                                use windows::Win32::Foundation::{COLORREF, HWND};
+                                use windows::Win32::UI::WindowsAndMessaging::{
+                                    SetLayeredWindowAttributes, LWA_ALPHA,
+                                };
+                                let hwnd = HWND(w.hwnd() as *mut _);
+                                unsafe {
+                                    let _ = SetLayeredWindowAttributes(
+                                        hwnd,
+                                        COLORREF(0),
+                                        255,
+                                        LWA_ALPHA,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                UserEvent::SetVisibleOnAllWorkspaces { handle, visible } => {
+                    // macOS: NSWindowCollectionBehaviorCanJoinAllSpaces — an
+                    // NSWindow otherwise stays bound to the Space it was created
+                    // in, so an overlay vanishes the moment the user switches
+                    // desktop. Linux: gtk_window_stick(). Windows: tao no-op,
+                    // and none is needed — a taskbar-excluded (WS_EX_TOOLWINDOW)
+                    // window is not tracked by the Virtual Desktop Manager and
+                    // therefore already shows on every desktop.
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            w.set_visible_on_all_workspaces(visible);
                         }
                     }
                 }

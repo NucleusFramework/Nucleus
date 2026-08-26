@@ -24,6 +24,13 @@ dependencies {
     api(project(":darkmode-detector"))
     implementation(project(":core-runtime"))
     implementation(project(":graalvm-runtime"))
+    // Native context menu: NSMenu on macOS. Windows and Linux are Compose
+    // flyouts (Fluent / Adwaita). The macOS library no-ops when the dylib
+    // is missing.
+    implementation(project(":menu-macos"))
+    // Spellcheck (Linux Hunspell, macOS NSSpellChecker, Windows ISpellChecker).
+    // `api` because SpellcheckContextMenu / NucleusSpellcheckInstaller expose SpellcheckSession.
+    api(project(":spellcheck"))
     // api: NucleusApplicationScope extends Compose's ApplicationScope, so the
     // supertype must be visible on consumers' compile classpath.
     api(libs.compose.desktop.common)
@@ -55,6 +62,15 @@ kotlin {
  * Live process E2E for the system-theme bridge (needs a display / D-Bus on Linux).
  * Not part of `check` — run explicitly: `./gradlew :nucleus-application:systemThemeE2E`
  */
+tasks.register<JavaExec>("spellcheckConsumer") {
+    group = "verification"
+    description =
+        "Runs the in-repo spellcheck consumer (nucleusApplication installer + shipped check/suggest)"
+    dependsOn(tasks.named("testClasses"))
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("dev.nucleusframework.application.spellcheck.SpellcheckConsumerMainKt")
+}
+
 tasks.register<JavaExec>("systemThemeE2E") {
     group = "verification"
     description =

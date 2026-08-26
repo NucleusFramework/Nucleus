@@ -2851,10 +2851,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeft
         if (view == nil || parent == nil) return;
         CGFloat scale = view.window.backingScaleFactor;
         if (scale <= 0) scale = 1.0;
-        NSRect f = view.frame;
-        CGFloat topPt = parent.isFlipped
+        // Report in the content view's coordinate space (Compose
+        // `positionInRoot`): NativeView blending parents the child under
+        // the theme frame, below the content view, so a superview-local
+        // origin would not match the Compose slot.
+        NSView *content = view.window.contentView;
+        NSRect f = (content != nil && parent != content)
+            ? [parent convertRect:view.frame toView:content]
+            : view.frame;
+        NSView *space = (content != nil) ? content : parent;
+        CGFloat topPt = space.isFlipped
             ? f.origin.y
-            : parent.bounds.size.height - (f.origin.y + f.size.height);
+            : space.bounds.size.height - (f.origin.y + f.size.height);
         int64_t x = (int64_t) lround(f.origin.x * scale);
         int64_t y = (int64_t) lround(topPt * scale);
         packed = (jlong)((((uint64_t)(uint32_t) x) << 32) | ((uint64_t)(uint32_t) y));

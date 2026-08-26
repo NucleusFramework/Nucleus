@@ -11,7 +11,7 @@ import kotlin.coroutines.CoroutineContext
 /**
  * Plumbing the popup / overlay scenes need from their host scene.
  * Implemented by [TaoComposeSceneHost], consumed by [TaoPopupSceneLayer]
- * and `NativeViewOverlayController`.
+ * and native popup layers.
  *
  * Threading: every call must run on the macOS main thread.
  */
@@ -60,6 +60,15 @@ internal interface TaoPopupHost {
      * window coords and end up at the wrong place.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
+
+    /**
+     * Whether the owner window was created per-pixel transparent
+     * (`DecoratedWindow(transparent = true)`, #416). Overlay scenes render
+     * inside the owner's surface, so they forward this as
+     * `PlatformContext.isWindowTransparent` — the hint Compose uses to pick
+     * the alpha-aware dialog-scrim blend mode (#559).
+     */
+    val isOwnerWindowTransparent: Boolean get() = false
 
     fun requestRedraw()
 

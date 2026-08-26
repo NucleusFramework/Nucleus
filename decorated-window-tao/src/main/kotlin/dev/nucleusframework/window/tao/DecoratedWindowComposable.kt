@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.toRgbaIcon
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 /**
@@ -130,6 +131,57 @@ public fun ApplicationScope.DecoratedWindow(
     // the first composition (see [openDecoratedWindow]). Defaults to null for
     // top-level windows; [DecoratedDialog] forwards its parent's locals here.
     compositionLocalContext: CompositionLocalContext? = null,
+    /**
+     * Click-through window: every pointer event falls through to whatever
+     * sits below (`WS_EX_TRANSPARENT | WS_EX_LAYERED` on Windows,
+     * `NSWindow.ignoresMouseEvents` on macOS, an empty GDK input region on
+     * Linux). Reactive — can be toggled at runtime. Pair with
+     * `focusable = false` for passive overlays (watermarks, HUDs) that must
+     * never intercept input.
+     */
+    clickThrough: Boolean = false,
+    /**
+     * Show the window on every desktop rather than only the one it was created
+     * on (macOS Spaces, Linux workspaces, Windows virtual desktops). Reactive.
+     *
+     * macOS `NSWindowCollectionBehaviorCanJoinAllSpaces` / Linux
+     * `gtk_window_stick()` (X11 and XWayland only — native Wayland has no
+     * workspace protocol and logs a warning); no-op on Windows, where a
+     * [hiddenFromDock] window is already visible on all desktops
+     * (`WS_EX_TOOLWINDOW` windows are not
+     * tracked by the Virtual Desktop Manager). Without it a macOS overlay
+     * disappears as soon as the user switches Space.
+     *
+     * See [TaoWindow.setVisibleOnAllWorkspaces] for the full-screen Space
+     * caveat.
+     */
+    visibleOnAllWorkspaces: Boolean = false,
+    /**
+     * Linux only: give this window an X11 surface even when the app runs on a
+     * native Wayland session, by re-homing it on a second `GdkDisplay` opened
+     * on `DISPLAY` (XWayland). Creation-time only.
+     *
+     * Wayland deliberately has no protocol for client-side stacking
+     * ([alwaysOnTop]), programmatic positioning ([state]`.position`) or
+     * workspace stickiness ([visibleOnAllWorkspaces]), so an overlay that needs
+     * them can take an X11 surface for itself while the rest of the app keeps
+     * its Wayland surfaces — no `NUCLEUS_TAO_LINUX_RENDERER=x11` for the whole
+     * process. Logs a warning when no X server is reachable and the window
+     * stays on Wayland.
+     */
+    forceX11: Boolean = false,
+    /**
+     * Pin the window below every other window instead of above them — Windows
+     * `HWND_BOTTOM`, macOS `NSWindowLevel.BelowNormal`, Linux
+     * `gtk_window_set_keep_below` (X11/XWayland only; same Wayland caveat as
+     * [alwaysOnTop]). Reactive.
+     *
+     * For wallpaper-level overlays — a desktop widget, a watermark that must
+     * never cover the window in front of it. Mutually exclusive with
+     * [alwaysOnTop]; see [TaoWindow.setAlwaysOnBottom] for what below-stacking
+     * does *not* give you (it is not `_NET_WM_WINDOW_TYPE_DESKTOP`).
+     */
+    alwaysOnBottom: Boolean = false,
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
@@ -204,6 +256,7 @@ public fun ApplicationScope.DecoratedWindow(
                     macOSStyle = macOSStyle,
                     hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
+                    forceX11 = forceX11,
                     content = {
                         val backgroundArgb = latestWindowBackgroundArgb.value
                         val clearColorLayers = LocalWindowClearColorLayers.current
@@ -378,7 +431,21 @@ public fun ApplicationScope.DecoratedWindow(
                 // `state.size` still holds the (smaller) requested size at this
                 // point.
                 val effectiveSize = effectiveAlignedSize(state.size, minimumSize)
-                if (applyAlignedPosition(window, pos, effectiveSize)) {
+                // Resolving an alignment needs the monitor work area, which
+                // Linux queries through the native window — and Tao creates
+                // that asynchronously on its event loop. A JVM start is slow
+                // enough that it is already there at first composition; a
+                // native-image start is not, and a single failed attempt left
+                // the window wherever the WM had centred it, for good, since
+                // this effect only re-runs when `state.position` changes.
+                var landed = applyAlignedPosition(window, pos, effectiveSize)
+                var attempt = 0
+                while (!landed && attempt < ALIGNED_POSITION_RETRIES) {
+                    delay(ALIGNED_POSITION_RETRY_MS)
+                    attempt++
+                    landed = applyAlignedPosition(window, pos, effectiveSize)
+                }
+                if (landed) {
                     applied.position = pos
                 }
             }
@@ -414,7 +481,12 @@ public fun ApplicationScope.DecoratedWindow(
     // ── Other reactive params ──
     LaunchedEffect(window, title) { window.setTitle(title) }
     LaunchedEffect(window, alwaysOnTop) { window.setAlwaysOnTop(alwaysOnTop) }
+    LaunchedEffect(window, alwaysOnBottom) { window.setAlwaysOnBottom(alwaysOnBottom) }
     LaunchedEffect(window, focusable) { window.setFocusable(focusable) }
+    LaunchedEffect(window, clickThrough) { window.setIgnoreCursorEvents(clickThrough) }
+    LaunchedEffect(window, visibleOnAllWorkspaces) {
+        window.setVisibleOnAllWorkspaces(visibleOnAllWorkspaces)
+    }
     LaunchedEffect(window, visible) {
         if (visible) {
             window.show()
@@ -488,6 +560,15 @@ private fun WindowState.applyMacOsInitialMaximizedSize() {
         }
     }
 }
+
+/**
+ * How long [applyAlignedPosition] keeps retrying while the native window is
+ * still being created on the Tao event loop — ~10 frames at 60 Hz, far past
+ * any observed startup, and given up on rather than looped forever so a
+ * genuinely unavailable monitor query cannot wedge the effect.
+ */
+private const val ALIGNED_POSITION_RETRIES = 10
+private const val ALIGNED_POSITION_RETRY_MS = 16L
 
 /**
  * Resolves a [WindowPosition.Aligned] against the primary monitor's work area

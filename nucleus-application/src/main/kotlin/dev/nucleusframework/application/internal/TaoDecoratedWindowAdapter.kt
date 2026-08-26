@@ -19,6 +19,7 @@ import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.ObserveSingleInstanceRestore
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.TaoNucleusWindow
+import dev.nucleusframework.application.contextmenu.NativeContextMenuProvider
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalTitleBarInfo
 import dev.nucleusframework.window.tao.LocalTaoCompositionLocalContextBridge
@@ -47,8 +48,14 @@ internal object TaoDecoratedWindowAdapter {
         focusable: Boolean,
         alwaysOnTop: Boolean,
         undecorated: Boolean,
+        transparent: Boolean,
+        clickThrough: Boolean,
+        visibleOnAllWorkspaces: Boolean,
+        forceX11: Boolean,
+        alwaysOnBottom: Boolean,
         popupFor: NucleusWindow?,
         nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
         hiddenFromDock: Boolean,
         minimumSize: DpSize?,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
@@ -86,6 +93,11 @@ internal object TaoDecoratedWindowAdapter {
                 focusable = focusable,
                 alwaysOnTop = alwaysOnTop,
                 undecorated = undecorated,
+                transparent = transparent,
+                clickThrough = clickThrough,
+                visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+                forceX11 = forceX11,
+                alwaysOnBottom = alwaysOnBottom,
                 popupFor = popupFor?.unsafe?.taoWindow,
                 nativePopupLayers = nativePopupLayers,
                 hiddenFromDock = hiddenFromDock,
@@ -163,7 +175,9 @@ internal object TaoDecoratedWindowAdapter {
                     LocalTitleBarInfo provides sceneTitleBarInfo,
                 ) {
                     TaoTextSelectionAccessibility {
-                        nucleusScope.content()
+                        NativeContextMenuProvider(enabled = nativeContextMenu) {
+                            nucleusScope.content()
+                        }
                     }
                 }
             }

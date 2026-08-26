@@ -1,6 +1,7 @@
 package dev.nucleusframework.scheduler.internal
 
 import dev.nucleusframework.core.runtime.NucleusApp
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.scheduler.ExistingTaskPolicy
 import dev.nucleusframework.scheduler.InternalSchedulerApi
 import dev.nucleusframework.scheduler.TaskId
@@ -25,23 +26,18 @@ import java.util.logging.Logger
 @Suppress("TooManyFunctions")
 internal object WindowsTaskScheduler : PlatformScheduler {
     private val logger = Logger.getLogger(WindowsTaskScheduler::class.java.name)
-    private const val SCHEDULER_ARG = "--nucleus-scheduler-run"
     private const val TASK_FOLDER = "Nucleus"
     private const val HOURLY_INTERVAL_MINUTES = 60
     private const val HOURLY_DURATION_MINUTES = 60
 
-    val isAvailable: Boolean get() = WindowsTaskSchedulerJni.isLoaded
+    // macOS and Windows share the `nucleus_scheduler` library name, so the
+    // JNI class can report loaded off-Windows even though COM entry points
+    // exist only in the Win32 build.
+    val isAvailable: Boolean
+        get() = Platform.Current == Platform.Windows && WindowsTaskSchedulerJni.isLoaded
 
     private val appId: String
         get() = NucleusApp.appId
-
-    private val executablePath: String?
-        get() =
-            ProcessHandle
-                .current()
-                .info()
-                .command()
-                .orElse(null)
 
     // -- Task naming ----------------------------------------------------------
 
@@ -49,7 +45,11 @@ internal object WindowsTaskScheduler : PlatformScheduler {
 
     private fun retryTaskName(taskId: TaskId): String = "${taskId.value}-retry"
 
-    private fun arguments(taskId: TaskId): String = "$SCHEDULER_ARG ${taskId.value}"
+    /** Argument string for a direct executable invocation (retry fallback path). */
+    private fun arguments(taskId: TaskId): String =
+        SchedulerExecutable.argumentsFor(taskId).joinToString(" ") {
+            if (it.contains(' ')) "\"$it\"" else it
+        }
 
     // -- WScript invocation ---------------------------------------------------
 
@@ -76,7 +76,7 @@ internal object WindowsTaskScheduler : PlatformScheduler {
             }
         }
 
-        val execPath = executablePath
+        val execPath = SchedulerExecutable.path
         if (execPath == null) {
             logger.warning("Cannot resolve executable path — task '${request.taskId}' not scheduled")
             return false
@@ -92,6 +92,7 @@ internal object WindowsTaskScheduler : PlatformScheduler {
                 appId = appId,
                 taskId = request.taskId,
                 execPath = execPath,
+                execArgs = SchedulerExecutable.arguments,
                 taskFolder = folderPath(),
                 metadataDir = metadataDir,
             )
@@ -161,7 +162,10 @@ internal object WindowsTaskScheduler : PlatformScheduler {
         )
     }
 
-    override fun getAllTasks(): List<TaskInfo> = getAllTaskIds().mapNotNull { getTaskInfo(it) }
+    override fun getAllTasks(): List<TaskInfo> {
+        if (!isAvailable) return emptyList()
+        return getAllTaskIds().mapNotNull { getTaskInfo(it) }
+    }
 
     // -- Retry support --------------------------------------------------------
 
@@ -170,7 +174,7 @@ internal object WindowsTaskScheduler : PlatformScheduler {
         delaySeconds: Long,
     ): Boolean {
         if (!isAvailable) return false
-        val execPath = executablePath ?: return false
+        val execPath = SchedulerExecutable.path ?: return false
         val startTime = LocalDateTime.now().plusSeconds(delaySeconds)
         val startBoundary = startTime.format(DateTimeFormatter.ISO_LOCAL_DATE_TIME)
 

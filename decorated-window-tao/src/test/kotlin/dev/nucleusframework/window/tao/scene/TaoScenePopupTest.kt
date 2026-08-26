@@ -90,6 +90,25 @@ class TaoScenePopupTest {
         }
 
     @Test
+    fun `two stacked popups keep independent pixels`() =
+        runTaoSceneTest(width = 160, height = 160) {
+            setContent {
+                Box(Modifier.fillMaxSize().background(Color.White)) {
+                    Popup(offset = IntOffset(10, 10)) {
+                        Box(Modifier.size(40.dp).background(Color.Red))
+                    }
+                    Popup(offset = IntOffset(80, 80)) {
+                        Box(Modifier.size(30.dp).background(Color.Blue))
+                    }
+                }
+            }
+            frame()
+            assertEquals(RED, pixelAt(20, 20))
+            assertEquals(BLUE, pixelAt(95, 95))
+            assertEquals(WHITE, pixelAt(70, 20))
+        }
+
+    @Test
     fun `click inside a focusable popup does not dismiss it`() =
         runTaoSceneTest(width = 200, height = 200) {
             var dismissed = false
@@ -150,6 +169,7 @@ class TaoScenePopupTest {
 
     private companion object {
         const val BLUE = 0xFF0000FF.toInt()
+        const val RED = 0xFFFF0000.toInt()
         const val WHITE = 0xFFFFFFFF.toInt()
     }
 }

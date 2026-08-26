@@ -18,6 +18,9 @@ val publishVersion =
 dependencies {
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
+    testImplementation(kotlin("test"))
+    testImplementation(compose.desktop.currentOs)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {
@@ -29,6 +32,10 @@ kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
     }
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
 
 nucleusNative {

@@ -62,9 +62,14 @@ lighthouse {
     enableUnusedDependencyCheck.set(false)
 }
 
+// Java 17 is the floor imposed by AGP 9.x, which this plugin compiles against
+// (compileOnly) — AGP 9 artifacts are built for 17 and can't be resolved by an
+// 11-targeted consumer. Consequence for users: the plugin now needs a Gradle
+// daemon on JVM 17+ (which Gradle 9 mandates anyway; Gradle 8 users on JVM 11
+// are no longer supported).
 java {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 // === Sandbox runtime shim jar + embedding ===
@@ -95,9 +100,22 @@ tasks.named<ProcessResources>("processResources") {
     }
 }
 
+// Apache-2.0 §4(a): this JAR is a binary distribution of source derived from the JetBrains Compose
+// Multiplatform Gradle plugin, so the attribution notices and the license text must travel with it.
+// Copied from the repo root (one level above this included build) so there is a single copy to
+// maintain — see THIRD_PARTY_NOTICES.md §1.
+tasks.named<Jar>("jar") {
+    metaInf {
+        from(rootProject.file("../THIRD_PARTY_NOTICES.md"))
+        from(rootProject.file("../licenses")) {
+            into("licenses")
+        }
+    }
+}
+
 kotlin {
     compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_11)
+        jvmTarget.set(JvmTarget.JVM_17)
         freeCompilerArgs.add("-opt-in=dev.nucleusframework.ExperimentalNucleusLibrary")
     }
 }

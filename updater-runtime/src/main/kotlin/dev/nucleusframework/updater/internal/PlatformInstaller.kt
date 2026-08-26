@@ -2,8 +2,23 @@ package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.core.runtime.Platform
 import java.io.File
+import java.nio.file.Files
 import java.util.logging.Logger
 import kotlin.system.exitProcess
+
+/**
+ * Creates a fresh, owner-only (POSIX `0700`) working directory for the detached update
+ * scripts and their log.
+ *
+ * A predictable path in the shared temp dir — e.g. `/tmp/nucleus-update.sh` on Linux — lets
+ * any other local user pre-create that path as a file they own or as a symlink, so this
+ * process ends up writing the script body into (and then executing) a file the attacker
+ * controls. Each update run therefore gets its own unguessable private directory, mirroring
+ * the owner-only download staging directory used one layer up in `NucleusUpdater`.
+ *
+ * Exposed for unit tests.
+ */
+internal fun createUpdateWorkDir(): File = Files.createTempDirectory("nucleus-update-").toFile()
 
 /**
  * Walks up from [launcher]'s directory looking for [PlatformInstaller.UPDATE_HELPER_NAME].
@@ -90,9 +105,9 @@ internal object PlatformInstaller {
         // previous inode open. Avoids racing the FUSE unmount that follows process exit.
         val replacedInPlace = replaceAppImageInPlace(newAppImage, destination)
 
-        val tmpDir = System.getProperty("java.io.tmpdir")
-        val script = File(tmpDir, "nucleus-update.sh")
-        val logFile = File(tmpDir, "nucleus-update.log")
+        val workDir = createUpdateWorkDir()
+        val script = File(workDir, "nucleus-update.sh")
+        val logFile = File(workDir, "nucleus-update.log")
         script.writeText(
             buildLinuxAppImageUpdateScript(
                 newFile = newAppImage.absolutePath,
@@ -106,7 +121,7 @@ internal object PlatformInstaller {
         script.setExecutable(true)
 
         // New session, started from $HOME so a FUSE-mount CWD cannot poison the relaunch.
-        val home = File(System.getProperty("user.home") ?: tmpDir)
+        val home = File(System.getProperty("user.home") ?: workDir.absolutePath)
         ProcessBuilder("setsid", "bash", script.absolutePath)
             .directory(home)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
@@ -186,7 +201,7 @@ internal object PlatformInstaller {
                 ""
             }
 
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val script = File(createUpdateWorkDir(), "nucleus-update.sh")
         script.writeText(
             """
             |#!/usr/bin/env bash
@@ -278,16 +293,16 @@ internal object PlatformInstaller {
             resolveCurrentAppBundle()
                 ?: error("Cannot resolve current .app bundle from java.home")
         val installDir = appBundle.parentFile
-        val tmpDir = System.getProperty("java.io.tmpdir")
+        val workDir = createUpdateWorkDir()
 
-        val script = File(tmpDir, "nucleus-update.sh")
+        val script = File(workDir, "nucleus-update.sh")
         script.writeText(
             buildMacZipUpdateScript(
                 zipFile = zipFile.absolutePath,
                 appPath = appBundle.absolutePath,
                 installDir = installDir.absolutePath,
                 appPid = ProcessHandle.current().pid(),
-                logFile = File(tmpDir, "nucleus-update.log").absolutePath,
+                logFile = File(workDir, "nucleus-update.log").absolutePath,
                 restart = restart,
             ),
         )
@@ -319,34 +334,15 @@ internal object PlatformInstaller {
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher = currentExecutablePath()
-        val installerCmd =
-            when (extension) {
-                "msi" -> "Start-Process msiexec -ArgumentList '/i', '\"${file.absolutePath}\"', '/passive' -Wait"
-                else -> "Start-Process '${file.absolutePath}' -ArgumentList '/S', '--updated' -Wait"
-            }
-
-        val relaunchCmd =
-            if (restart && launcher != null) {
-                "\n|# Relaunch the application\n|Start-Process '$launcher'"
-            } else {
-                ""
-            }
-
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.ps1")
+        val script = File(createUpdateWorkDir(), "nucleus-update.ps1")
         script.writeText(
-            """
-            |# Wait for the app process to fully exit
-            |while (Get-Process -Id $pid -ErrorAction SilentlyContinue) {
-            |    Start-Sleep -Milliseconds 500
-            |}
-            |
-            |# Run the installer silently
-            |$installerCmd
-            |$relaunchCmd
-            |# Clean up
-            |Remove-Item '${file.absolutePath}' -Force -ErrorAction SilentlyContinue
-            |Remove-Item '${script.absolutePath}' -Force -ErrorAction SilentlyContinue
-            """.trimMargin(),
+            buildWindowsUpdateScript(
+                pid = pid,
+                installerCommand = windowsInstallerCommand(file, extension),
+                relaunchCommand = windowsRelaunchCommand(restart, launcher),
+                artifactPath = file.absolutePath,
+                scriptPath = script.absolutePath,
+            ),
         )
 
         ProcessBuilder(

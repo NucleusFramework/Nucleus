@@ -302,6 +302,8 @@ internal object NativeNsMenuBridge {
         y: Float,
     ): Boolean
 
+    @JvmStatic external fun nativeMenuPopUpAtCursor(menuHandle: Long): Boolean
+
     // ---- Menu bar ----
 
     @JvmStatic external fun nativeMenuBarIsVisible(): Boolean

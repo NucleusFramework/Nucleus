@@ -71,7 +71,7 @@ lighthouse {
 }
 
 tasks.withType<Detekt>().configureEach {
-    jvmTarget.set("11")
+    jvmTarget.set("17")
     reports {
         html.required.set(true)
         html.outputLocation.set(file("build/reports/detekt.html"))
