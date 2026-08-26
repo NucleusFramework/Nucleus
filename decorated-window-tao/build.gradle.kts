@@ -126,7 +126,7 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     // (configuration-cache incompatible).
     val koverAgentJar =
         layout.buildDirectory
-            .file("kover/kover-jvm-agent-0.9.8.jar")
+            .file(libs.versions.kover.map { "kover/kover-jvm-agent-$it.jar" })
     val koverArgsFile =
         layout.buildDirectory
             .file("tmp/taoHeadful/kover-agent.args")
