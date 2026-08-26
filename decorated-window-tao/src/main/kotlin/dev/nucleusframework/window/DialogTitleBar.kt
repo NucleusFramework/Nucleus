@@ -1,13 +1,15 @@
 package dev.nucleusframework.window
 
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -22,9 +24,7 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.ControlButtonsDirection
@@ -36,19 +36,10 @@ import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
+import dev.nucleusframework.window.tao.deco.WindowsWindowControl
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.utils.linux.linuxTitleBarIcons
-import dev.nucleusframework.window.utils.windows.windowsTitleBarIcons
-
-private val WINDOWS_DLG_BUTTON_WIDTH: Dp = 46.dp
-
-// Fixed Windows-native close button colors — never theme-dependent.
-@Suppress("MagicNumber")
-private val WindowsCloseButtonHovered: Color = Color(0xFFE81123)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonPressed: Color = Color(0xFFF1707A)
 
 private val isKdeDlg: Boolean =
     Platform.Current == Platform.Linux &&
@@ -124,6 +115,7 @@ public fun DecoratedDialogScope.DialogTitleBar(
                 Platform.Windows ->
                     DialogWindowsCloseButton(
                         onClick = { taoWindow.requestUserClose() },
+                        state = windowState,
                         modifier = Modifier.align(Alignment.End),
                         style = style,
                     )
@@ -142,54 +134,28 @@ public fun DecoratedDialogScope.DialogTitleBar(
     )
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+/**
+ * Delegates to the shared [WindowsWindowControl] caption button so the
+ * dialog's close button is pixel-identical to [DecoratedWindow]'s — same
+ * Win11 WinUI tokens and the same snap-in / fade-out hover animation (#584).
+ */
 @Suppress("FunctionNaming")
 @Composable
 private fun TitleBarScope.DialogWindowsCloseButton(
     onClick: () -> Unit,
+    state: DecoratedWindowState,
     modifier: Modifier = Modifier,
     style: TitleBarStyle,
 ) {
-    val icons = windowsTitleBarIcons()
-    val interactionSource = remember { MutableInteractionSource() }
-    var hovered by remember { mutableStateOf(false) }
-    var pressed by remember { mutableStateOf(false) }
-
-    androidx.compose.runtime.CompositionLocalProvider(
+    CompositionLocalProvider(
         LocalLayoutDirection provides LocalControlButtonsDirection.current,
     ) {
-        Box(
-            modifier =
-                modifier
-                    .focusable(false)
-                    .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = onClick,
-                    ).onPointerEvent(PointerEventType.Enter) { hovered = true }
-                    .onPointerEvent(PointerEventType.Exit) {
-                        hovered = false
-                        pressed = false
-                    }.onPointerEvent(PointerEventType.Press) { pressed = true }
-                    .onPointerEvent(PointerEventType.Release) { pressed = false },
-            contentAlignment = Alignment.Center,
-        ) {
-            val bg =
-                when {
-                    pressed -> WindowsCloseButtonPressed
-                    hovered -> WindowsCloseButtonHovered
-                    else -> Color.Transparent
-                }
-            Box(
-                modifier =
-                    Modifier
-                        .size(WINDOWS_DLG_BUTTON_WIDTH, style.metrics.height)
-                        .background(bg),
-            )
-            Image(
-                painter = if (pressed || hovered) icons.closeHover else icons.close,
-                contentDescription = "Close",
+        Row(modifier = modifier.fillMaxHeight()) {
+            WindowsWindowControl(
+                type = WindowControlType.Close,
+                state = state,
+                style = style,
+                onClick = onClick,
             )
         }
     }
