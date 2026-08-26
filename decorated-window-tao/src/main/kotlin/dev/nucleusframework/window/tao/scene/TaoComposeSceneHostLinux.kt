@@ -254,6 +254,28 @@ internal class TaoComposeSceneHostLinux(
     private val attachedNativeViews: MutableSet<Long> = linkedSetOf()
     private val nativeViewRects: MutableMap<Long, IntArray> = LinkedHashMap()
 
+    /**
+     * Latched on the first [NativeView] attach and never cleared: an embedded
+     * widget with a GPU compositor (WebKitWebView) issues GL calls on this
+     * same thread — between our frames, during its own teardown after detach,
+     * and crucially **in the middle of our render pass**: composition effects
+     * running inside `bundle.render` (a `loadUrl` in `update {}`, the realize
+     * triggered by the mount) hand control to WebKit, which makes its own EGL
+     * context current and does not restore ours. Skia only *issues* its GL at
+     * flush time, so the whole frame's GPU work — including the glyph-atlas
+     * uploads for every piece of text first drawn on that frame — would land
+     * in the foreign context; those atlas entries stay blank forever and text
+     * renders with randomly missing glyph instances (seen on Mutter+NVIDIA;
+     * Weston's WebKit init path never swaps the context mid-frame).
+     *
+     * Once latched, every frame (1) re-binds our context and invalidates
+     * Skia's GL state cache after `bundle.render`, before any GPU work, and
+     * (2) `resetGLAll()`s at frame start for the between-frames case — same
+     * protocol as [TaoGpuRenderContext.withContextCurrent] and the standalone
+     * popup host.
+     */
+    private var foreignGlInterop = false
+
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
@@ -1444,6 +1466,9 @@ internal class TaoComposeSceneHostLinux(
         flushingDispatcher.drain()
 
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        // An embedded NativeView's GPU compositor ran GL on this thread since
+        // the last frame — drop Skia's cached GL state before any GPU work.
+        if (foreignGlInterop) ctx.resetGLAll()
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
@@ -1465,6 +1490,18 @@ internal class TaoComposeSceneHostLinux(
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         bundle.render(surface.canvas, now)
+        // bundle.render runs composition effects: an embed's WebKit can do
+        // GL right here (webkit_web_view_load_uri in update{}, realize on
+        // mount) and leave ITS EGL context current on this thread. All the
+        // GL Skia issues below — the whole frame's flush, including the new
+        // tab's glyph-atlas uploads — would then land in the foreign
+        // context: those atlas entries stay blank forever and text renders
+        // with randomly missing glyphs (Mutter+NVIDIA, #NativeView). Re-bind
+        // before any GPU work.
+        if (foreignGlInterop) {
+            NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+            ctx.resetGLAll()
+        }
         applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
 
         surface.flushAndSubmit(syncCpu = false)
@@ -2039,6 +2076,7 @@ internal class TaoComposeSceneHostLinux(
             ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
+                outer.foreignGlInterop = true
                 if (childHandle != 0L && outer.attachedNativeViews.add(childHandle)) {
                     // Force a re-push: lastOpaqueRegion may still hold the full
                     // opaque key from before the embed existed.

@@ -32,10 +32,13 @@ internal object NativeTaoLinuxWidgetBridge {
     external fun nativeGtkVersion(): String?
 
     /**
-     * Reparents [widgetPtr] (a raw `GtkWidget*` cast to Long) into a
-     * `GtkFixed` lazily injected inside Tao's content `GtkBox`. No-op
-     * if Tao's content isn't a GtkBox (other layout backends would
-     * need their own embedding path).
+     * Registers [widgetPtr] (a raw `GtkWidget*` cast to Long) for
+     * embedding into a `GtkOverlay` lazily injected inside Tao's
+     * content `GtkBox`. The actual mount happens on the first
+     * [nativeSetFrame] with a real rect, so the widget realizes
+     * directly at its final size. No-op if Tao's content isn't a
+     * GtkBox (other layout backends would need their own embedding
+     * path).
      */
     @JvmStatic
     external fun nativeAttach(
@@ -156,10 +159,12 @@ internal object NativeTaoLinuxWidgetBridge {
     )
 
     /**
-     * Synthesises a GDK pointer event onto [widgetPtr] in widget-local
-     * logical pixels. [type]: 1 down, 2 up, 3 move. [button]: 1 primary,
-     * 2 secondary, 3 middle. Used to redispatch Compose-unconsumed hits
+     * Forwards the live GDK pointer event captured by the EventBox onto
+     * [widgetPtr], retargeted to widget-local logical pixels. [type]:
+     * 1 down, 2 up, 3 move. Used to redispatch Compose-unconsumed hits
      * to the embedded GTK widget after interop blending captured them.
+     * No-op outside an EventBox signal callback — GdkEvents are never
+     * synthesised (a device-less event crashes WebKit).
      */
     @JvmStatic
     external fun nativeDispatchPointer(
@@ -172,9 +177,9 @@ internal object NativeTaoLinuxWidgetBridge {
     )
 
     /**
-     * Forwards an unconsumed scroll onto [widgetPtr]. Prefers the live
-     * GDK event (`gtk_get_current_event`); synthesises a smooth scroll
-     * only if that event is gone.
+     * Forwards the live GDK scroll event captured by the EventBox onto
+     * [widgetPtr] at widget-local logical pixels. No-op outside an
+     * EventBox scroll callback (never synthesised).
      */
     @JvmStatic
     external fun nativeDispatchScroll(

@@ -16,8 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -189,7 +187,7 @@ private fun EmbeddedNativeView(
                     }
                 },
     ) {
-        NativeViewOverlayContent(latestContent)
+        latestContent()
     }
 }
 
@@ -202,22 +200,6 @@ private fun Modifier.punchNativeViewHole(): Modifier =
         drawRect(color = Color.Transparent, blendMode = BlendMode.Clear)
         drawContent()
     }
-
-/**
- * Isolates overlay drawing in an offscreen layer so glyph AA does not
- * blend against the `BlendMode.Clear` hole (partially-erased edges).
- */
-@Composable
-private fun NativeViewOverlayContent(content: @Composable () -> Unit) {
-    Box(
-        modifier =
-            Modifier.graphicsLayer {
-                compositingStrategy = CompositingStrategy.Offscreen
-            },
-    ) {
-        content()
-    }
-}
 
 /**
  * Redispatches pointer events that Compose did not consume onto the
