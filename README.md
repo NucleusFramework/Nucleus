@@ -22,18 +22,18 @@ API behind a Kotlin one: no AWT dependency on the Tao backend, and the accessibi
 is verified against AT-SPI, UI Automation, and macOS AX in CI on all three platforms.
 
 Read [Why Nucleus](https://nucleusframework.dev/en/docs/why-nucleus) for how it compares to
-Electron and Tauri.
+vanilla Compose Desktop, Electron, and Tauri.
 
 ## Project status
 
-Nucleus is under active development and moves fast. All published runtime modules run in
-Kotlin `explicitApi()` mode with their public surface locked by a binary-compatibility dump
-(`api/*.api`, checked by `apiCheck` via kotlinx binary-compatibility-validator). Breaking
-changes to a public FQN or signature fail CI. The one exception is `decorated-window-jewel`
-(JVM 25 bytecode), which still uses `explicitApi()` but is not dumped until BCV can read
-class-file major version 69. The Tao backend is the recommended one for new projects —
-`decorated-window-jni` and `decorated-window-jbr` are kept for existing users and receive
-fixes only.
+Published releases are `2.5.x` (latest tag `v2.5.0`). Nucleus is under active development
+and moves fast. All published runtime modules run in Kotlin `explicitApi()` mode with
+their public surface locked by a binary-compatibility dump (`api/*.api`, checked by
+`apiCheck` via kotlinx binary-compatibility-validator). Breaking changes to a public FQN
+or signature fail CI. The one exception is `decorated-window-jewel` (JVM 25 bytecode),
+which still uses `explicitApi()` but is not dumped until BCV can read class-file major
+version 69. The Tao backend is the recommended one for new projects —
+`decorated-window-jni` and `decorated-window-jbr` are deprecated and receive fixes only.
 
 ## Used by
 
@@ -55,9 +55,9 @@ your module's `build.gradle.kts`:
 
 ```kotlin title="build.gradle.kts"
 plugins {
-    kotlin("jvm") version "2.4.0"
-    id("org.jetbrains.compose") version "1.11.1"
-    id("dev.nucleusframework") version "2.4.4"
+    kotlin("jvm") version "2.4.10"
+    id("org.jetbrains.compose") version "1.12.0"
+    id("dev.nucleusframework") version "2.5.0"
 }
 
 repositories {
@@ -68,9 +68,9 @@ repositories {
 dependencies {
     implementation(compose.desktop.currentOs)
     // Entry point — provides nucleusApplication and DecoratedWindow
-    implementation("dev.nucleusframework:nucleus.nucleus-application:2.4.4")
+    implementation("dev.nucleusframework:nucleus.nucleus-application:2.5.0")
     // Tao backend — Rust-native windowing
-    implementation("dev.nucleusframework:nucleus.decorated-window-tao:2.4.4")
+    implementation("dev.nucleusframework:nucleus.decorated-window-tao:2.5.0")
 }
 ```
 
@@ -85,7 +85,8 @@ Nucleus builds on Compose Multiplatform and requires:
 | Requirement | Version | Note |
 |-------------|---------|------|
 | JDK | 17+ (25+ for AOT cache) | JBR 25 recommended |
-| Kotlin | 2.4+ | This repo builds with Kotlin 2.4.0 |
+| Kotlin | 2.4.10+ | This repo builds with Kotlin 2.4.10 |
+| Compose Multiplatform | 1.12.0 | Required by the 2.5 line; will not run on 1.11.x |
 | Gradle | 9.0+ | Bundled wrapper is Gradle 9.4.0 |
 
 ## Platform support
@@ -170,11 +171,12 @@ notarization, built-in auto-update, deep links, and file associations.
 
 **Feel native** — Decorated windows with native controls, notifications, taskbar/dock
 badges and menus, media controls (MPRIS, Now Playing, SMTC), dark mode, accent colors,
-global hotkeys, and system tray — all behind clean Kotlin APIs.
+global hotkeys, system tray, native context menus, and OS spell check — all behind
+clean Kotlin APIs.
 
 **Perform** — GraalVM Native Image compiles your app to a standalone binary with automatic
-reachability metadata; a typical Compose UI cold-starts in about half a second and settles
-around 100–150 MB of RAM. Or stay on the JVM with an AOT cache (JDK 25+) and
+reachability metadata; a Hello-World Compose window cold-starts in about 0.2 s and around
+30 MB of RAM (measured on Windows 11). Or stay on the JVM with an AOT cache (JDK 25+) and
 ProGuard-optimized release builds.
 
 ## Runtime modules
@@ -207,6 +209,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.launcher-linux` | Unity Launcher — badge, progress, urgency, quicklist |
 | `nucleus.media-control` | OS media controls — MPRIS (Linux), Now Playing (macOS), SMTC (Windows) |
 | `nucleus.menu-macos` | Native macOS menu bar |
+| `nucleus.spellcheck` | OS spell check (Hunspell / NSSpellChecker / Windows Spell Checking) |
 | `nucleus.freedesktop-icons` | Type-safe freedesktop icon naming constants |
 | `nucleus.sf-symbols` | Type-safe SF Symbols catalog |
 | `nucleus.taskbar-progress` | Cross-platform taskbar progress bar & attention requests |
@@ -233,8 +236,9 @@ Full documentation is available at
 ## Community
 
 Ask questions, report bugs, and share what you're building on
-[GitHub Discussions](https://github.com/NucleusFramework/Nucleus/discussions) and the
-[issue tracker](https://github.com/NucleusFramework/Nucleus/issues).
+[GitHub Discussions](https://github.com/NucleusFramework/Nucleus/discussions), the
+[issue tracker](https://github.com/NucleusFramework/Nucleus/issues), and
+[#nucleus](https://kotlinlang.slack.com/archives/C0BQYKHBGR0) on the Kotlin Slack.
 
 ## License
 
