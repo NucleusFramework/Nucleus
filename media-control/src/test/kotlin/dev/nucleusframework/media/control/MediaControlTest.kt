@@ -71,6 +71,43 @@ class MediaControlTest {
     }
 
     @Test
+    fun `mpris suffix sanitization produces legal dbus names`() {
+        assertEquals("Music_Radio", MediaControlService.sanitizeMprisSuffix("Music Radio"))
+        assertEquals("dev.kdroid.musicradio", MediaControlService.sanitizeMprisSuffix("dev.kdroid.musicradio"))
+        assertEquals("_1password", MediaControlService.sanitizeMprisSuffix("1password"))
+        assertEquals("my-app", MediaControlService.sanitizeMprisSuffix("my-app"))
+        assertEquals("caf__app", MediaControlService.sanitizeMprisSuffix("café app"))
+        assertEquals("a.b", MediaControlService.sanitizeMprisSuffix(".a..b."))
+        assertEquals("NucleusApp", MediaControlService.sanitizeMprisSuffix(""))
+        assertEquals("NucleusApp", MediaControlService.sanitizeMprisSuffix("..."))
+        assertEquals(200, MediaControlService.sanitizeMprisSuffix("a".repeat(300)).length)
+    }
+
+    @Test
+    fun `attach with an invalid dbus name fails open without blocking`() {
+        if (Platform.Current != Platform.Linux || !MediaControlService.isAvailable()) return
+
+        val done = CountDownLatch(1)
+        Thread {
+            MediaControlService.configure(
+                dbusName = "org.mpris.MediaPlayer2.Music Radio",
+                displayName = "Test Player",
+            )
+            MediaControlService.attach { }
+            done.countDown()
+        }.apply {
+            isDaemon = true
+            start()
+        }
+        try {
+            assertTrue(done.await(15, TimeUnit.SECONDS), "attach blocked forever on an invalid D-Bus name")
+        } finally {
+            MediaControlService.detach()
+            MediaControlService.configure(dbusName = "org.mpris.MediaPlayer2.test", displayName = "Test Player")
+        }
+    }
+
+    @Test
     fun `native event json is parsed into typed events when a backend is attached`() {
         if (!MediaControlService.isAvailable()) {
             MediaControlService.attach { }

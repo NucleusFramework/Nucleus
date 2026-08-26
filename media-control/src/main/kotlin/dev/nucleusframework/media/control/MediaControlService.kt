@@ -43,12 +43,17 @@ public object MediaControlService {
      * On Linux, registers the MPRIS D-Bus name (format `org.mpris.MediaPlayer2.<name>`).
      * On macOS, this is a no-op — identity is derived from the host app bundle.
      *
-     * @param dbusName The D-Bus bus name (Linux only). Defaults to `org.mpris.MediaPlayer2.${NucleusApp.appId}`.
+     * @param dbusName The D-Bus bus name (Linux only). Defaults to
+     *                 `org.mpris.MediaPlayer2.<suffix>` where the suffix is [NucleusApp.appId]
+     *                 sanitized into a legal D-Bus name (characters outside `[A-Za-z0-9_-]`
+     *                 replaced, digit-leading elements prefixed). An explicit value is used as-is;
+     *                 if it is not a valid D-Bus name, MPRIS registration is skipped and
+     *                 [attach] returns without blocking.
      * @param displayName The human-readable name shown in the system media center.
      *                    Defaults to [NucleusApp.appName] or `"Nucleus App"`.
      */
     public fun configure(
-        dbusName: String = "org.mpris.MediaPlayer2.${NucleusApp.appId}",
+        dbusName: String = "org.mpris.MediaPlayer2.${sanitizeMprisSuffix(NucleusApp.appId)}",
         displayName: String = NucleusApp.appName ?: "Nucleus App",
     ) {
         backend.configure(dbusName, displayName)
@@ -145,6 +150,26 @@ public object MediaControlService {
     }
 
     private const val MICROS_PER_MS = 1000L
+
+    // "org.mpris.MediaPlayer2." + suffix must stay under the 255-char D-Bus name limit.
+    private const val MAX_MPRIS_SUFFIX_LENGTH = 200
+    private val dbusIllegalChars = Regex("[^A-Za-z0-9_-]")
+
+    /**
+     * Builds a legal D-Bus name suffix from an arbitrary application id: within each
+     * dot-separated element, illegal characters (e.g. spaces) become `_` and elements
+     * starting with a digit get a `_` prefix; empty elements are dropped.
+     */
+    internal fun sanitizeMprisSuffix(appId: String): String =
+        appId
+            .split('.')
+            .filter { it.isNotEmpty() }
+            .joinToString(".") { element ->
+                val cleaned = element.replace(dbusIllegalChars, "_")
+                if (cleaned.first().isDigit()) "_$cleaned" else cleaned
+            }.take(MAX_MPRIS_SUFFIX_LENGTH)
+            .trimEnd('.')
+            .ifEmpty { "NucleusApp" }
 
     // ---- Backend abstraction ------------------------------------------------
 
