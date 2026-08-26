@@ -26,7 +26,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 
 /**
- * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedDialog`.
+ * Tao-backed equivalent of the legacy AWT backend's `DecoratedDialog`.
  *
  * Same parameter set and rendering pipeline as the AWT-based backends:
  * non-resizable by default, close-only chrome via [DialogTitleBar].
@@ -37,7 +37,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
  * `gtk_window_set_transient_for` on Linux/GTK. The dialog sits above its
  * owner in z-order, follows it across minimisation / Spaces / workspace
  * switches, stays out of the taskbar, and disappears with it. The parent is **not** disabled
- * — that matches `decorated-window-jni` (its `JDialog` is not
+ * — that matches the legacy AWT backend (its `JDialog` is not
  * `APPLICATION_MODAL`) and avoids losing the parent's keyboard focus across
  * the dialog lifetime. The parent is captured from [LocalTaoWindow] at the
  * call site, so a `DecoratedDialog` declared outside any [DecoratedWindow]
@@ -194,7 +194,7 @@ public fun ApplicationScope.DecoratedDialog(
 /**
  * Wires the native owner relationship between [dialog] and [parent].
  *
- * Mirrors `decorated-window-jni`'s `DecoratedDialog`, which uses Compose
+ * Mirrors the legacy AWT backend's `DecoratedDialog`, which uses Compose
  * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
  * parent as owner but **not** `APPLICATION_MODAL`, so the parent stays
  * interactive.

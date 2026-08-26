@@ -15,7 +15,7 @@ dependencies {
     implementation(project(":core-runtime"))
     implementation(project(":darkmode-detector"))
     implementation(project(":decorated-window-jewel"))
-    implementation(project(":decorated-window-jni"))
+    implementation(project(":decorated-window-tao"))
     implementation(project(":nucleus-application"))
     implementation(project(":scheduler"))
 
@@ -45,16 +45,6 @@ kotlin {
 
 nucleus.application {
     mainClass = "schedulerdemo.MainKt"
-    jvmArgs +=
-        listOf(
-            "--add-opens",
-            "java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt=ALL-UNNAMED",
-            "--add-opens",
-            "java.desktop/sun.lwawt.macosx=ALL-UNNAMED",
-        )
-
     nativeDistributions {
         packageName = "SchedulerDemo"
         packageVersion = "1.0.0"

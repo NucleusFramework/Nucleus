@@ -62,8 +62,7 @@ runs:
     # Temurin, matching the rest of the workflows. jpackage bundles this JDK into
     # the distributed app. In GraalVM mode the native image is built entirely by
     # the plugin-provisioned GraalVM, so the Gradle JDK contributes nothing to
-    # that output. decorated-window-jbr needs no JBR here — the JBR API comes
-    # from the org.jetbrains.runtime:jbr-api Maven artifact.
+    # that output.
     - name: Set up JDK
       uses: actions/setup-java@v4
       with:

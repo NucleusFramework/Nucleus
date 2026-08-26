@@ -148,14 +148,14 @@ internal class TaoComposeSceneHost(
      * App-level pre-dispatch hook. Receives every Compose [KeyEvent] before it
      * reaches the scene; returning `true` consumes the event and prevents
      * propagation. Mirrors AWT's `Window.setComponentZOrder`-pre-dispatch logic
-     * used by `decorated-window-jni`'s `onPreviewKeyEvent`.
+     * used by the legacy AWT backend's `onPreviewKeyEvent`.
      */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
 
     /**
      * App-level post-dispatch hook. Fires only when the scene did not consume
      * the event. Returning `true` marks it as handled. Mirrors
-     * `decorated-window-jni`'s `onKeyEvent`.
+     * the legacy AWT backend's `onKeyEvent`.
      */
     var keyHandler: ((KeyEvent) -> Boolean)? = null
 

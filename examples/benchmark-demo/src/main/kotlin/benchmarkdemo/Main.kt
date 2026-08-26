@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.TitleBar
@@ -59,7 +58,7 @@ fun main(args: Array<String>) {
         printSuite()
         return
     }
-    nucleusApplication(args = args, backend = NucleusBackend.Tao) {
+    nucleusApplication(args = args) {
         val titleBarStyle =
             TitleBarStyle(
                 colors =

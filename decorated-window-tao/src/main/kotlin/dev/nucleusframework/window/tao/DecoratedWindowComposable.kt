@@ -36,7 +36,7 @@ import kotlin.math.roundToInt
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
- * `decorated-window-jni`'s `DecoratedWindow`.
+ * the legacy AWT backend's `DecoratedWindow`.
  *
  * Reactive parameters (`title`, `alwaysOnTop`, `visible`, `focusable`,
  * `minimumSize`, `icon`, every field of [state]) push to the underlying
@@ -48,7 +48,7 @@ import kotlin.math.roundToInt
  * natively, [state] is updated. The `applied` snapshot guards against
  * feedback loops so we don't write back values we ourselves originated.
  *
- * Limitations vs. `decorated-window-jni`:
+ * Known limitations:
  *  - `enabled` only applies at construction (no live disabling yet).
  *  - User `content` lambda captures latest via `rememberUpdatedState`; state
  *    declared in the parent application scope and read inside `content`

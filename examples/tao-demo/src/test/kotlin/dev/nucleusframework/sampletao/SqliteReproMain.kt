@@ -10,7 +10,6 @@ import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import kotlinx.coroutines.Dispatchers
@@ -57,7 +56,7 @@ fun main() {
         println("[repro] phase 1 read OK, count=${st.getLong(0)}")
     }
 
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         NucleusDecoratedWindowTheme(isDark = true) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,

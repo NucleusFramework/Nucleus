@@ -50,7 +50,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.sampleshared.A11yTab
 import dev.nucleusframework.sampleshared.ComplexTab
@@ -92,7 +91,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
                 override fun onDrop(event: DragAndDropEvent): Boolean {
                     dropCount++
                     // Transparent AWT path — same code that works against
-                    // decorated-window-jni / standard Compose Desktop.
+                    // the legacy AWT backend / standard Compose Desktop.
                     lastDrop =
                         runCatching {
                             @Suppress("UNCHECKED_CAST")
@@ -236,7 +235,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
 
 @Suppress("CyclomaticComplexMethod")
 private fun runApp() =
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         val previewEvents = remember { mutableStateListOf<String>() }
         var childRequest by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }
 

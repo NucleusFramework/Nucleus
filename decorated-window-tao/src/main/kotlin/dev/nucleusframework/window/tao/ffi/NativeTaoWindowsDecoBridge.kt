@@ -9,7 +9,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_deco"
  * (client-area extension via `WM_NCCALCSIZE`, hit-test routing via
  * `WM_NCHITTEST`, DWM shadow via `DwmExtendFrameIntoClientArea`).
  *
- * Mirrors the API of `decorated-window-jni`'s `JniWindowsDecorationBridge`,
+ * Mirrors the API of the legacy AWT backend's Windows decoration bridge,
  * minus the Skiko-AWT child-window plumbing (Tao renders into the HWND
  * directly via ANGLE).
  */

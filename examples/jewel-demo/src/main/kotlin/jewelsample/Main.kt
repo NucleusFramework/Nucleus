@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
@@ -44,7 +43,7 @@ import org.jetbrains.jewel.ui.ComponentStyling
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @ExperimentalLayoutApi
 fun main() =
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         remember {
             JewelLogger.getInstance("StandaloneSample").info("Starting Jewel Standalone sample")
             true
