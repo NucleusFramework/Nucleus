@@ -29,7 +29,6 @@ import androidx.compose.ui.unit.sp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.NativeView
 import dev.nucleusframework.window.tao.NucleusPlatformView
-import dev.nucleusframework.window.tao.consumeOverlayPointerEvents
 import java.lang.foreign.MemorySegment
 
 /**
@@ -121,7 +120,6 @@ private fun SwiftUIControlPill(
     Row(
         modifier =
             Modifier
-                .consumeOverlayPointerEvents()
                 .background(Color(0xCC0F172A), shape = CircleShape)
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

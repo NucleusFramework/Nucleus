@@ -118,8 +118,8 @@ internal fun replayPictureToFrame(
 
 /**
  * A frame recorded on the main thread, ready to be replayed + presented on the
- * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer],
- * `NativeViewOverlayController`) and collected by [TaoComposeSceneHost] during
+ * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer])
+ * and collected by [TaoComposeSceneHost] during
  * its record pass; the host replays them on its render thread after the main
  * scene.
  *

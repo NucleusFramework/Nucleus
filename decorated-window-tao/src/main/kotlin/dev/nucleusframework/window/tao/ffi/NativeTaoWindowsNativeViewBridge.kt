@@ -58,4 +58,33 @@ internal object NativeTaoWindowsNativeViewBridge {
      */
     @JvmStatic
     external fun nativeIsFocusInTree(parentHwnd: Long): Boolean
+
+    /**
+     * Synthesises a mouse message onto [childHwnd] at the parent-client
+     * (top-left, physical pixels) coordinate. When [childHwnd] is not a
+     * window (WebView2 CompositionController), the message is sent to
+     * [parentHwnd] so a parent subclass can forward it.
+     * [type]: 1 down, 2 up, 3 move. [button]: 0 none, 1 primary, 2 secondary.
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        parentHwnd: Long,
+        childHwnd: Long,
+        type: Int,
+        xPx: Float,
+        yPx: Float,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /** Forwards a Compose scroll delta as `WM_MOUSEWHEEL` / `WM_MOUSEHWHEEL`. */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        parentHwnd: Long,
+        childHwnd: Long,
+        xPx: Float,
+        yPx: Float,
+        dx: Float,
+        dy: Float,
+    )
 }

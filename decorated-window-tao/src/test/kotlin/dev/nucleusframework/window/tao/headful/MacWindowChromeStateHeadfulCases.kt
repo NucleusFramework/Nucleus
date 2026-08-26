@@ -59,9 +59,8 @@ internal object MacWindowChromeStateHeadfulCases {
 
     /**
      * Detaching an overlay Metal attachment must not tear down the host
-     * window's own native state. The driver replays the exact JNI sequence
-     * `NativeViewOverlayController` runs when a `NativeView` is composed and
-     * disposed (`nativeCreateOverlay` → `nativeAttachOverlay`, then
+     * window's own native state. The driver replays the JNI sequence
+     * (`nativeCreateOverlay` → `nativeAttachOverlay`, then
      * `nativeDetach` → `nativeReleaseOverlay`, all on the main thread) — an
      * unguarded detach wipes the window's primary-attachment associated
      * object and the fullscreen observer (the #327 machinery), killing
@@ -90,14 +89,14 @@ internal object MacWindowChromeStateHeadfulCases {
                 "window state must be intact before the overlay round-trip (diag=$before)"
             }
 
-            // NativeViewOverlayController.attach()'s native half.
+            // Overlay attach native half.
             val overlayNsView = NativeTaoMacOsNativeViewBridge.nativeCreateOverlay(contentNsView)
             check(overlayNsView != 0L) { "nativeCreateOverlay failed" }
             val attachment = NativeMetalBridge.nativeAttachOverlay(overlayNsView)
             check(attachment != 0L) { "nativeAttachOverlay failed" }
             settle()
 
-            // NativeViewOverlayController.dispose()'s native half, same order.
+            // Overlay dispose native half, same order.
             NativeMetalBridge.nativeDetach(attachment)
             NativeTaoMacOsNativeViewBridge.nativeReleaseOverlay(overlayNsView)
             settle()

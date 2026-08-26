@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao_linux_widget"
  * Threading: every entry point must run on the GTK main thread (=
  * Tao event-loop thread = Compose dispatcher thread).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoLinuxWidgetBridge {
     val isLoaded: Boolean =
         NativeLibraryLoader.load(
@@ -31,10 +32,13 @@ internal object NativeTaoLinuxWidgetBridge {
     external fun nativeGtkVersion(): String?
 
     /**
-     * Reparents [widgetPtr] (a raw `GtkWidget*` cast to Long) into a
-     * `GtkFixed` lazily injected inside Tao's content `GtkBox`. No-op
-     * if Tao's content isn't a GtkBox (other layout backends would
-     * need their own embedding path).
+     * Registers [widgetPtr] (a raw `GtkWidget*` cast to Long) for
+     * embedding into a `GtkOverlay` lazily injected inside Tao's
+     * content `GtkBox`. The actual mount happens on the first
+     * [nativeSetFrame] with a real rect, so the widget realizes
+     * directly at its final size. No-op if Tao's content isn't a
+     * GtkBox (other layout backends would need their own embedding
+     * path).
      */
     @JvmStatic
     external fun nativeAttach(
@@ -126,6 +130,15 @@ internal object NativeTaoLinuxWidgetBridge {
             button: Int,
             pressed: Int,
         )
+
+        /** Widget-content logical pixels; [dx]/[dy] are GTK scroll deltas. */
+        fun onScroll(
+            xLogical: Int,
+            yLogical: Int,
+            dx: Float,
+            dy: Float,
+        ) {
+        }
     }
 
     /**
@@ -143,5 +156,37 @@ internal object NativeTaoLinuxWidgetBridge {
     external fun nativeSetInputBoxCallback(
         boxPtr: Long,
         callback: OverlayInputCallback?,
+    )
+
+    /**
+     * Forwards the live GDK pointer event captured by the EventBox onto
+     * [widgetPtr], retargeted to widget-local logical pixels. [type]:
+     * 1 down, 2 up, 3 move. Used to redispatch Compose-unconsumed hits
+     * to the embedded GTK widget after interop blending captured them.
+     * No-op outside an EventBox signal callback — GdkEvents are never
+     * synthesised (a device-less event crashes WebKit).
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        widgetPtr: Long,
+        type: Int,
+        xLogical: Int,
+        yLogical: Int,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /**
+     * Forwards the live GDK scroll event captured by the EventBox onto
+     * [widgetPtr] at widget-local logical pixels. No-op outside an
+     * EventBox scroll callback (never synthesised).
+     */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        widgetPtr: Long,
+        xLogical: Int,
+        yLogical: Int,
+        dx: Float,
+        dy: Float,
     )
 }

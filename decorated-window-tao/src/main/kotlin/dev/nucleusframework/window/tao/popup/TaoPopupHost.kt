@@ -11,7 +11,7 @@ import kotlin.coroutines.CoroutineContext
 /**
  * Plumbing the popup / overlay scenes need from their host scene.
  * Implemented by [TaoComposeSceneHost], consumed by [TaoPopupSceneLayer]
- * and `NativeViewOverlayController`.
+ * and native popup layers.
  *
  * Threading: every call must run on the macOS main thread.
  */

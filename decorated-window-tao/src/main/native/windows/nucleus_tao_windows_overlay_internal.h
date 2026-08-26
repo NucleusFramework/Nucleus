@@ -67,6 +67,15 @@ void nucleus_tao_overlay_gl_present(GlSurface *gl);
  */
 void nucleus_tao_overlay_gl_resize(GlSurface *gl, int widthPx, int heightPx);
 
+/** Stash the OS mouse/wheel message currently being processed so
+ *  NativeView redispatch can SendMessage the original instead of
+ *  reconstructing deltas. */
+void nucleus_tao_remember_native_input(HWND hwnd, UINT msg, WPARAM w, LPARAM l);
+
+/** Replay the stashed message onto [target]. Wheel LPARAMs stay
+ *  screen-space; mouse LPARAMs are mapped from the source HWND. */
+BOOL nucleus_tao_replay_last_native_input(HWND target);
+
 #ifdef __cplusplus
 }
 #endif

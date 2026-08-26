@@ -252,6 +252,29 @@ internal class TaoComposeSceneHostLinux(
      * opaque region. Tracked by handle so duplicate attach/detach is safe.
      */
     private val attachedNativeViews: MutableSet<Long> = linkedSetOf()
+    private val nativeViewRects: MutableMap<Long, IntArray> = LinkedHashMap()
+
+    /**
+     * Latched on the first [NativeView] attach and never cleared: an embedded
+     * widget with a GPU compositor (WebKitWebView) issues GL calls on this
+     * same thread — between our frames, during its own teardown after detach,
+     * and crucially **in the middle of our render pass**: composition effects
+     * running inside `bundle.render` (a `loadUrl` in `update {}`, the realize
+     * triggered by the mount) hand control to WebKit, which makes its own EGL
+     * context current and does not restore ours. Skia only *issues* its GL at
+     * flush time, so the whole frame's GPU work — including the glyph-atlas
+     * uploads for every piece of text first drawn on that frame — would land
+     * in the foreign context; those atlas entries stay blank forever and text
+     * renders with randomly missing glyph instances (seen on Mutter+NVIDIA;
+     * Weston's WebKit init path never swaps the context mid-frame).
+     *
+     * Once latched, every frame (1) re-binds our context and invalidates
+     * Skia's GL state cache after `bundle.render`, before any GPU work, and
+     * (2) `resetGLAll()`s at frame start for the between-frames case — same
+     * protocol as [TaoGpuRenderContext.withContextCurrent] and the standalone
+     * popup host.
+     */
+    private var foreignGlInterop = false
 
     private var widthPx: Int = 0
     private var heightPx: Int = 0
@@ -1443,6 +1466,9 @@ internal class TaoComposeSceneHostLinux(
         flushingDispatcher.drain()
 
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+        // An embedded NativeView's GPU compositor ran GL on this thread since
+        // the last frame — drop Skia's cached GL state before any GPU work.
+        if (foreignGlInterop) ctx.resetGLAll()
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
@@ -1464,6 +1490,18 @@ internal class TaoComposeSceneHostLinux(
         // transparent by [applyFrameDecoration] below.
         surface.canvas.clear(clearColorArgbState.value)
         bundle.render(surface.canvas, now)
+        // bundle.render runs composition effects: an embed's WebKit can do
+        // GL right here (webkit_web_view_load_uri in update{}, realize on
+        // mount) and leave ITS EGL context current on this thread. All the
+        // GL Skia issues below — the whole frame's flush, including the new
+        // tab's glyph-atlas uploads — would then land in the foreign
+        // context: those atlas entries stay blank forever and text renders
+        // with randomly missing glyphs (Mutter+NVIDIA, #NativeView). Re-bind
+        // before any GPU work.
+        if (foreignGlInterop) {
+            NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
+            ctx.resetGLAll()
+        }
         applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
 
         surface.flushAndSubmit(syncCpu = false)
@@ -2032,9 +2070,13 @@ internal class TaoComposeSceneHostLinux(
         if (gtkWindow == 0L) return null
         val outer = this
         return object : dev.nucleusframework.window.tao.TaoNativeViewHost {
-            override fun attach(childHandle: Long) {
+            override fun attach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
+                outer.foreignGlInterop = true
                 if (childHandle != 0L && outer.attachedNativeViews.add(childHandle)) {
                     // Force a re-push: lastOpaqueRegion may still hold the full
                     // opaque key from before the embed existed.
@@ -2043,7 +2085,12 @@ internal class TaoComposeSceneHostLinux(
                 }
             }
 
-            override fun detach(childHandle: Long) {
+            override fun detach(
+                childHandle: Long,
+                regionToken: Any,
+            ) {
+                outer.nativeViewRects.remove(childHandle)
+                outer.overlayController.unregisterRegion(regionToken)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.remove(childHandle)) {
@@ -2058,6 +2105,7 @@ internal class TaoComposeSceneHostLinux(
                 yPx: Int,
                 widthPx: Int,
                 heightPx: Int,
+                regionToken: Any,
             ) {
                 // Compose feeds physical pixels; GTK 3 lays out in
                 // logical pixels (the compositor applies the device
@@ -2069,6 +2117,11 @@ internal class TaoComposeSceneHostLinux(
                 val hLogical = (heightPx / s).toInt().coerceAtLeast(1)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeSetFrame(gtkWindow, handle, xLogical, yLogical, wLogical, hLogical)
+                // Capture the whole NativeView rect in a GtkEventBox so
+                // Compose sees hits first (siblings / content slot);
+                // unconsumed events are synthesised back onto the widget.
+                outer.nativeViewRects[handle] = intArrayOf(xPx, yPx, widthPx, heightPx)
+                outer.overlayController.registerRegion(regionToken, xPx, yPx, widthPx, heightPx)
             }
 
             override fun setCornerRadius(
@@ -2082,19 +2135,44 @@ internal class TaoComposeSceneHostLinux(
                 // on Linux fall back to drawing a Compose
                 // RoundedCornerShape on top of the widget area.
             }
+
+            override fun dispatchPointerToNative(
+                handle: Long,
+                type: Int,
+                xPx: Float,
+                yPx: Float,
+                button: Int,
+                pressed: Boolean,
+            ) {
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val rect = outer.nativeViewRects[handle]
+                val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()
+                val yLogical = ((yPx - (rect?.get(1)?.toFloat() ?: 0f)) / s).toInt()
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
+                    .nativeDispatchPointer(handle, type, xLogical, yLogical, button, pressed)
+            }
+
+            override fun dispatchScrollToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                dx: Float,
+                dy: Float,
+            ) {
+                val s = if (outer.scale > 0f) outer.scale else 1f
+                val rect = outer.nativeViewRects[handle]
+                val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()
+                val yLogical = ((yPx - (rect?.get(1)?.toFloat() ?: 0f)) / s).toInt()
+                dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
+                    .nativeDispatchScroll(handle, xLogical, yLogical, dx, dy)
+            }
         }
     }
 
     /**
-     * Plumbing for the overlay slot of `NativeView` on Linux. Returns
-     * a freshly-created controller bound to this host's EGL
-     * attachment so [dev.nucleusframework.window.tao.consumeOverlayPointerEvents]
-     * modifiers in the `content` lambda can register their bounds and
-     * have the EGL surface's input region updated accordingly.
-     *
-     * One controller per window — multiple `NativeView`s inside the
-     * same window share its rect set, which is fine because input
-     * region is a window-level single list.
+     * GtkEventBox capture for NativeView rects. The EGL subsurface is
+     * input-transparent; each NativeView registers its bounds so Compose
+     * sees hits first. One controller per window.
      */
     private val overlayController: TaoLinuxOverlayControllerImpl =
         TaoLinuxOverlayControllerImpl(
@@ -2120,6 +2198,13 @@ internal class TaoComposeSceneHostLinux(
             },
             buttonDispatcher = { button, pressed ->
                 onPointerButton(button, pressed)
+            },
+            scrollDispatcher = { xPx, yPx, dx, dy ->
+                lastPointerX = xPx.toFloat()
+                lastPointerY = yPx.toFloat()
+                onPointerScroll(
+                    TaoPointerScrollEvent(dxAwt = dx, dyAwt = dy, scrollAmount = 1),
+                )
             },
             focusReleaseDispatcher = {
                 // 1) Deselect the currently-focused widget (e.g. the
