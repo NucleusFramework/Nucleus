@@ -22,7 +22,7 @@ import java.io.File
  * `pkexec /opt/<app>/nucleus-update-helper <pkg>` (see updater `PlatformInstaller`).
  *
  * Exit codes of the helper: 2 usage, 3 package mismatch, 4 missing key/signature,
- * gpg's own non-zero on a failed signature.
+ * gpgv's own non-zero on a failed signature.
  *
  * The helper file name is mirrored in `updater-runtime` (`PlatformInstaller.UPDATE_HELPER_NAME`);
  * keep both in sync.
@@ -73,9 +73,12 @@ internal object LinuxUpdateHelper {
         cp -- "$SRC_SIG" "$SIG"
 
         # Verify the detached signature of the copy against the bundled key in a throwaway keyring.
+        # gpgv never starts a gpg-agent; gpg --import/--verify would daemonize one for this homedir
+        # and, having no idle timeout, it would keep the app's systemd scope alive forever (#567).
+        # gpg --dearmor is a pure filter: no keyring or agent access.
         KR="$WORK/keyring"; mkdir -p "$KR"; chmod 700 "$KR"
-        gpg --homedir "$KR" --batch --quiet --import "$PUBKEY"
-        gpg --homedir "$KR" --batch --verify "$SIG" "$PKG"
+        gpg --homedir "$KR" --batch --quiet --dearmor < "$PUBKEY" > "$KR/pub.gpg"
+        gpgv --keyring "$KR/pub.gpg" "$SIG" "$PKG"
 
         # Only upgrade THIS app: new package name must match the package that owns the helper.
         # The helper is shipped in the package payload so package managers track this path.
@@ -90,14 +93,16 @@ internal object LinuxUpdateHelper {
             if [ -n "$CUR" ] && ! dpkg --compare-versions "$NEWVER" gt "$CUR"; then
               echo "refusing non-upgrade: $NEWVER is not newer than installed $CUR" >&2; exit 5
             fi
-            exec dpkg -i "$PKG"
+            # Not exec: the EXIT trap must still run to remove the root-owned work dir (#567).
+            dpkg -i "$PKG"
             ;;
           *.rpm)
             OWNER="$(rpm -qf --qf '%{NAME}' "$SELF" 2>/dev/null || true)"
             NEW="$(rpm -qp --qf '%{NAME}' "$PKG")"
             [ -n "$OWNER" ] && [ "$NEW" = "$OWNER" ] || { echo "package mismatch: $NEW != $OWNER" >&2; exit 3; }
             # rpm -U (without --oldpackage) already refuses downgrades.
-            exec rpm -U "$PKG"
+            # Not exec: the EXIT trap must still run to remove the root-owned work dir (#567).
+            rpm -U "$PKG"
             ;;
           *) echo "unsupported package: $PKG" >&2; exit 2 ;;
         esac

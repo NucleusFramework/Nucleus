@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.internal
 
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -27,9 +28,27 @@ class LinuxUpdateHelperTest {
     fun `verification runs against the copied package, not the caller-supplied path`() {
         assertTrue("PKG is inside the work dir", script.contains("""PKG="${'$'}WORK/"""))
         assertTrue(
-            "gpg verifies the copy",
-            script.contains("""gpg --homedir "${'$'}KR" --batch --verify "${'$'}SIG" "${'$'}PKG""""),
+            "gpgv verifies the copy",
+            script.contains("""gpgv --keyring "${'$'}KR/pub.gpg" "${'$'}SIG" "${'$'}PKG""""),
         )
+    }
+
+    @Test
+    fun `no gpg-agent is spawned and the exit trap is not bypassed`() {
+        // #567: gpg --import/--verify daemonize a gpg-agent for the throwaway homedir; with no
+        // idle timeout it inherits the app's systemd scope and keeps it "running" forever, and
+        // exec bypasses the EXIT trap so the root-owned work dir leaks too. Verification must go
+        // through gpgv (never starts an agent); gpg may only be used as the --dearmor pure filter.
+        val commands = script.lines().map { it.trim() }.filterNot { it.startsWith("#") }
+        commands
+            .filter { it.startsWith("gpg ") }
+            .forEach { assertTrue("gpg may only be used as a --dearmor filter: $it", it.contains("--dearmor")) }
+        assertFalse("must not import into a keyring (spawns gpg-agent)", commands.any { it.contains("--import") })
+        assertFalse(
+            "exec would bypass the EXIT trap cleanup",
+            commands.any { it.contains("exec dpkg") || it.contains("exec rpm") },
+        )
+        assertTrue("work dir is cleaned by an EXIT trap", script.contains("""trap 'rm -rf "${'$'}WORK"' EXIT"""))
     }
 
     @Test
