@@ -19,6 +19,9 @@ import java.util.logging.Logger
  * val scheduler = DesktopTaskScheduler.getInstance()
  * scheduler.enqueue(TaskRequest.periodic("sync", 1.hours))
  * ```
+ *
+ * Tasks wake up the running executable by default; apps that boot through a custom
+ * launcher can point the OS at it via [SchedulerConfig].
  */
 @OptIn(InternalSchedulerApi::class)
 public object DesktopTaskScheduler {

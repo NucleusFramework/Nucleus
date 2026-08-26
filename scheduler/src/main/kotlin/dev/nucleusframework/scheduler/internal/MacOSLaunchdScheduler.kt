@@ -27,7 +27,6 @@ import java.util.logging.Logger
 @Suppress("TooManyFunctions")
 internal object MacOSLaunchdScheduler : PlatformScheduler {
     private val logger = Logger.getLogger(MacOSLaunchdScheduler::class.java.name)
-    private const val SCHEDULER_ARG = "--nucleus-scheduler-run"
     private const val COMMAND_TIMEOUT_SECONDS = 10L
     private const val LABEL_PREFIX = "dev.nucleusframework"
     private const val CAL_NOT_SET = -1
@@ -42,14 +41,6 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
 
     private val appId: String
         get() = NucleusApp.appId
-
-    private val executablePath: String?
-        get() =
-            ProcessHandle
-                .current()
-                .info()
-                .command()
-                .orElse(null)
 
     // -- Naming ---------------------------------------------------------------
 
@@ -174,8 +165,8 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
             }
         }
 
-        val execPath = executablePath
-        if (execPath == null) {
+        val command = SchedulerExecutable.commandLine(request.taskId)
+        if (command == null) {
             logger.warning("Cannot resolve executable path — task '${request.taskId}' not scheduled")
             return false
         }
@@ -188,18 +179,18 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
         persistMetadata(request)
 
         return if (useNative) {
-            enqueueNative(request, execPath)
+            enqueueNative(request, command)
         } else {
-            enqueueShell(request, execPath)
+            enqueueShell(request, command)
         }
     }
 
     private fun enqueueNative(
         request: TaskRequest,
-        execPath: String,
+        command: List<String>,
     ): Boolean {
         val plistPath = plistFile(request.taskId).absolutePath
-        val programArgs = arrayOf(execPath, SCHEDULER_ARG, request.taskId.value)
+        val programArgs = command.toTypedArray()
 
         var intervalSeconds = 0
         var calDay = CAL_NOT_SET
@@ -265,13 +256,13 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
 
     private fun enqueueShell(
         request: TaskRequest,
-        execPath: String,
+        command: List<String>,
     ): Boolean {
         launchAgentsDir.mkdirs()
 
         val plistContent =
             try {
-                buildPlist(request, execPath)
+                buildPlist(request, command)
             } catch (e: IllegalArgumentException) {
                 logger.warning("Task '${request.taskId}' not scheduled: ${e.message}")
                 return false
@@ -364,25 +355,25 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
         taskId: TaskId,
         delaySeconds: Long,
     ): Boolean {
-        val execPath = executablePath ?: return false
+        val command = SchedulerExecutable.commandLine(taskId) ?: return false
 
         // Remove any previous retry plist
         cleanupRetryPlist(taskId)
 
         return if (useNative) {
-            scheduleRetryNative(taskId, execPath, delaySeconds)
+            scheduleRetryNative(taskId, command, delaySeconds)
         } else {
-            scheduleRetryShell(taskId, execPath, delaySeconds)
+            scheduleRetryShell(taskId, command, delaySeconds)
         }
     }
 
     private fun scheduleRetryNative(
         taskId: TaskId,
-        execPath: String,
+        command: List<String>,
         delaySeconds: Long,
     ): Boolean {
         val retryPath = retryPlistFile(taskId).absolutePath
-        val programArgs = arrayOf(execPath, SCHEDULER_ARG, taskId.value)
+        val programArgs = command.toTypedArray()
 
         val error =
             MacOSLaunchdSchedulerJni.nativeScheduleRetry(
@@ -401,17 +392,12 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
     @Suppress("TooGenericExceptionCaught")
     private fun scheduleRetryShell(
         taskId: TaskId,
-        execPath: String,
+        command: List<String>,
         delaySeconds: Long,
     ): Boolean {
         val retryFile = retryPlistFile(taskId)
 
-        val programArgs =
-            buildString {
-                appendLine("    <string>$execPath</string>")
-                appendLine("    <string>$SCHEDULER_ARG</string>")
-                appendLine("    <string>${taskId.value}</string>")
-            }.trimEnd()
+        val programArgs = programArgsXml(command, indent = "    ")
 
         val plist =
             buildString {
@@ -477,9 +463,21 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">"""
 
+    /** Renders a command line as the `<string>` entries of a `ProgramArguments` array. */
+    private fun programArgsXml(
+        command: List<String>,
+        indent: String,
+    ): String = command.joinToString("\n") { "$indent<string>${xmlEscape(it)}</string>" }
+
+    private fun xmlEscape(s: String): String =
+        s
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+
     private fun buildPlist(
         request: TaskRequest,
-        execPath: String,
+        command: List<String>,
     ): String =
         buildString {
             appendLine(PLIST_HEADER)
@@ -488,9 +486,7 @@ internal object MacOSLaunchdScheduler : PlatformScheduler {
             appendLine("  <string>${label(request.taskId)}</string>")
             appendLine("  <key>ProgramArguments</key>")
             appendLine("  <array>")
-            appendLine("    <string>$execPath</string>")
-            appendLine("    <string>$SCHEDULER_ARG</string>")
-            appendLine("    <string>${request.taskId.value}</string>")
+            appendLine(programArgsXml(command, indent = "    "))
             appendLine("  </array>")
 
             when (request.type) {
