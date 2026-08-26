@@ -17,6 +17,13 @@ dependencies {
     implementation(project(":examples:shared"))
     implementation(project(":core-runtime"))
     implementation(compose.desktop.currentOs)
+    // Native WebView via ComposeNativeWebView (WKWebView / WebKit2GTK / WebView2).
+    // Exclude published Nucleus artifacts so the in-tree modules win — this
+    // branch's NativeView blending is newer than the version the library
+    // was published against.
+    implementation(libs.composewebview) {
+        exclude(group = "dev.nucleusframework")
+    }
     // Extract-and-load native lib (issue #317): zstd-kmp ships libzstd-kmp.{dylib,so,dll} inside
     // its JAR and loads a temp-extracted copy via System.load(temp). Adding it here + the Pkg
     // store format below activates the sandboxed pipeline so the marker/shim rewrite is exercised

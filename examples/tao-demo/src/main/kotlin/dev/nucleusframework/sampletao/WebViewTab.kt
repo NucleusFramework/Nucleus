@@ -50,10 +50,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
-import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.LocalTaoWindow
-import dev.nucleusframework.window.tao.NativeView
-import dev.nucleusframework.window.tao.NucleusPlatformView
+import dev.nucleusframework.webview.web.LoadingState
+import dev.nucleusframework.webview.web.WebView
+import dev.nucleusframework.webview.web.rememberWebViewNavigator
+import dev.nucleusframework.webview.web.rememberWebViewState
 import kotlinx.coroutines.delay
 
 private const val INITIAL_URL = "https://nucleusframework.dev"
@@ -61,37 +61,23 @@ private const val INITIAL_URL = "https://nucleusframework.dev"
 /**
  * **WebView demo tab.**
  *
- * A live native WebView mounted via `NativeView`, with Compose chrome
- * (nav pill, optional popup) drawn **on top** as later siblings — the
- * same layout as Compose Desktop's `SwingPanel` + interop blending.
+ * Hosts a live native WebView through
+ * [dev.nucleusframework.webview.web.WebView] (ComposeNativeWebView),
+ * with Compose chrome (nav pill, optional popup) drawn **on top** via
+ * the content slot — NativeView interop blending on every OS.
  *
  *  - **macOS**: `WKWebView` sits below the Metal surface; hole-punch
  *    blending lets siblings and in-scene `Popup`s composite over it.
  *  - **Linux**: `WebKitWebView` under the EGL surface, same hole punch.
- *    A GtkEventBox covering the NativeView rect lets Compose see hits
- *    first; unconsumed events go back to the widget.
  *  - **Windows**: a DirectComposition overlay covering the NativeView
- *    rect composites the host scene on top of the child HWND / WebView2
- *    visual. Same sibling chrome as macOS.
+ *    rect composites the host scene on top of the WebView2 visual.
  */
 @Composable
 internal fun WebViewTab(modifier: Modifier = Modifier) {
-    if (!isSampleWebViewSupported()) {
-        UnsupportedPlatform(modifier)
-        return
-    }
-
-    val taoWindow = LocalTaoWindow.current
-    val parentHwnd =
-        remember(taoWindow) {
-            if (Platform.Current == Platform.Windows) taoWindow?.nativeHandle ?: 0L else 0L
-        }
-    var controller: SampleWebViewController? by remember { mutableStateOf(null) }
+    val state = rememberWebViewState(INITIAL_URL)
+    val navigator = rememberWebViewNavigator()
     var urlInput by remember { mutableStateOf(INITIAL_URL) }
     var urlFocused by remember { mutableStateOf(false) }
-    var canGoBack by remember { mutableStateOf(false) }
-    var canGoForward by remember { mutableStateOf(false) }
-    var isLoading by remember { mutableStateOf(false) }
     var showPopup by remember { mutableStateOf(false) }
 
     // NUCLEUS_DEMO_AUTOPOPUP_MS=<delay> opens the overlay Popup after the
@@ -105,21 +91,13 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
         }
     }
 
-    // Lightweight polling: backend-native navigation observers
-    // (WKWebView KVO / WebKitWebView property notify) would be
-    // cleaner but a 120ms tick is plenty for a sample. Skips updating
-    // the URL field while the user is editing it so we don't fight
-    // their cursor.
-    LaunchedEffect(controller) {
-        val c = controller ?: return@LaunchedEffect
-        while (true) {
-            canGoBack = c.canGoBack()
-            canGoForward = c.canGoForward()
-            isLoading = c.isLoading()
-            if (!urlFocused) c.currentUrl()?.let { urlInput = it }
-            delay(120L)
+    LaunchedEffect(state.lastLoadedUrl, urlFocused) {
+        if (!urlFocused) {
+            state.lastLoadedUrl?.let { urlInput = it }
         }
     }
+
+    val isLoading = state.loadingState is LoadingState.Loading
 
     Box(
         modifier = modifier.fillMaxSize().background(Color(0xFF0F1115)).padding(16.dp),
@@ -130,41 +108,27 @@ internal fun WebViewTab(modifier: Modifier = Modifier) {
                     .fillMaxSize()
                     .clip(RoundedCornerShape(12.dp)),
         ) {
-            // One-shot navigation tracker so `update` doesn't reload on
-            // every recomposition.
-            val loadedFlag = remember { booleanArrayOf(false) }
-            NativeView(
-                factory = {
-                    val view = createSampleWebViewPlatformView(parentHwnd) { c -> controller = c }
-                    view
-                },
+            WebView(
+                state = state,
+                navigator = navigator,
                 modifier = Modifier.fillMaxSize(),
-                cornerRadius = 12.dp,
-                update = { _ ->
-                    val c = controller
-                    if (!loadedFlag[0] && c != null) {
-                        loadedFlag[0] = true
-                        c.loadUrl(INITIAL_URL)
-                    }
-                },
-            )
-            // Compose siblings after NativeView draw on top of the page
-            // (interop blending on every OS).
-            WebViewOverlay(
-                url = urlInput,
-                onUrlChange = { urlInput = it },
-                onUrlFocusChange = { urlFocused = it },
-                onSubmit = { controller?.loadUrl(urlInput) },
-                canGoBack = canGoBack,
-                canGoForward = canGoForward,
-                isLoading = isLoading,
-                onBack = { if (canGoBack) controller?.goBack() },
-                onForward = { if (canGoForward) controller?.goForward() },
-                onReload = { controller?.reload() },
-                showPopup = showPopup,
-                onTogglePopup = { showPopup = !showPopup },
-                onDismissPopup = { showPopup = false },
-            )
+            ) {
+                WebViewOverlay(
+                    url = urlInput,
+                    onUrlChange = { urlInput = it },
+                    onUrlFocusChange = { urlFocused = it },
+                    onSubmit = { navigator.loadUrl(urlInput) },
+                    canGoBack = navigator.canGoBack,
+                    canGoForward = navigator.canGoForward,
+                    isLoading = isLoading,
+                    onBack = { if (navigator.canGoBack) navigator.navigateBack() },
+                    onForward = { if (navigator.canGoForward) navigator.navigateForward() },
+                    onReload = { navigator.reload() },
+                    showPopup = showPopup,
+                    onTogglePopup = { showPopup = !showPopup },
+                    onDismissPopup = { showPopup = false },
+                )
+            }
         }
     }
 }
@@ -430,104 +394,6 @@ private fun UrlField(
                     contentAlignment = Alignment.CenterStart,
                 ) { innerTextField() }
             },
-        )
-    }
-}
-
-/**
- * Builds the right [NucleusPlatformView] flavour for the running OS:
- * NSView wrapper on macOS, GtkWidget wrapper on Linux. Hands the
- * resulting controller back via [onController] so the Composable can
- * drive navigation without knowing which backend is live.
- */
-private fun createSampleWebViewPlatformView(
-    parentHwnd: Long,
-    onController: (SampleWebViewController?) -> Unit,
-): NucleusPlatformView =
-    when (Platform.Current) {
-        Platform.MacOS -> {
-            val ptr = SampleWebViewBridge.nativeCreate()
-            onController(MacOsSampleWebViewController(ptr))
-            object : NucleusPlatformView.NsView {
-                override val nsViewHandle: Long = ptr
-
-                override fun dispose() {
-                    SampleWebViewBridge.nativeRelease(ptr)
-                    onController(null)
-                }
-            }
-        }
-        Platform.Linux -> {
-            val ptr = SampleWebViewLinuxBridge.nativeCreate()
-            onController(LinuxSampleWebViewController(ptr))
-            object : NucleusPlatformView.GtkWidget {
-                override val gtkWidgetHandle: Long = ptr
-
-                override fun dispose() {
-                    SampleWebViewLinuxBridge.nativeRelease(ptr)
-                    onController(null)
-                }
-            }
-        }
-        Platform.Windows -> {
-            // The Tao HWND may not be realised yet on the very first
-            // composition of this tab. Returning a HWnd with handle = 0L
-            // lets `HwndEmbedding`'s fallback render an empty `Box` until
-            // the next composition where `LocalTaoWindow.nativeHandle` is
-            // populated. Hard-failing here would crash the sample at startup.
-            if (parentHwnd == 0L) {
-                object : NucleusPlatformView.HWnd {
-                    override val hwndHandle: Long = 0L
-
-                    @Suppress("EmptyFunctionBlock")
-                    override fun dispose() {}
-                }
-            } else {
-                val ptr = SampleWebViewWindowsBridge.nativeCreate(parentHwnd, INITIAL_URL)
-                require(ptr != 0L) { "WebView2 init failed (WebView2 Runtime missing?)" }
-                onController(WindowsSampleWebViewController(ptr))
-                object : NucleusPlatformView.HWnd {
-                    // Opaque handle, NOT a real HWND. We don't expose a Win32
-                    // child HWND to NativeView's reparenting path because the
-                    // WebView lives in a DComp tree owned by the C++ side.
-                    // Returning 0L causes `host.attach`/`detach` to no-op
-                    // safely; positioning happens entirely via setBounds.
-                    override val hwndHandle: Long = 0L
-
-                    override fun setBounds(
-                        xPx: Int,
-                        yPx: Int,
-                        widthPx: Int,
-                        heightPx: Int,
-                    ) {
-                        SampleWebViewWindowsBridge.nativeSetBounds(ptr, xPx, yPx, widthPx, heightPx)
-                    }
-
-                    override fun setCornerRadius(radiusPx: Float) {
-                        // Real DComp clip — `SetWindowRgn` on a fake HWND
-                        // wouldn't reach the WebView2 surface anyway.
-                        SampleWebViewWindowsBridge.nativeSetCornerRadius(ptr, radiusPx)
-                    }
-
-                    override fun dispose() {
-                        SampleWebViewWindowsBridge.nativeRelease(ptr)
-                        onController(null)
-                    }
-                }
-            }
-        }
-        else -> error("WebView demo unsupported on ${Platform.Current}")
-    }
-
-@Composable
-private fun UnsupportedPlatform(modifier: Modifier) {
-    Box(
-        modifier = modifier.fillMaxSize().background(Color(0xFF0F1115)).padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        BasicText(
-            text = "WebView demo — macOS only",
-            style = TextStyle(color = Color(0xFFE6E6E6), fontSize = 14.sp, fontWeight = FontWeight.SemiBold),
         )
     }
 }
