@@ -47,7 +47,7 @@ private val isKdeDlg: Boolean =
 
 /**
  * Tao-backed close-only title bar for [DecoratedDialog]. Mirrors
- * `decorated-window-jni`'s `DialogTitleBar`: same signature and the same
+ * the legacy AWT backend's `DialogTitleBar`: same signature and the same
  * styling pipeline, with min/max stripped (dialogs render only the close
  * button on platforms that need a Compose-drawn chrome).
  */

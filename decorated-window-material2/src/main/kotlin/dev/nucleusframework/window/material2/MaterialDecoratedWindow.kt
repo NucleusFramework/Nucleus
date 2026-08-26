@@ -9,61 +9,14 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.NucleusApplicationScope
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
-import dev.nucleusframework.window.AwtDecoratedWindowScope
-import dev.nucleusframework.window.DecoratedWindow
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.application.DecoratedWindow as NucleusDecoratedWindow
 
-@Suppress("FunctionNaming", "LongParameterList")
-@Composable
-public fun MaterialDecoratedWindow(
-    onCloseRequest: () -> Unit,
-    state: WindowState = rememberWindowState(),
-    visible: Boolean = true,
-    title: String = "",
-    icon: Painter? = null,
-    resizable: Boolean = true,
-    enabled: Boolean = true,
-    focusable: Boolean = true,
-    alwaysOnTop: Boolean = false,
-    minimumSize: DpSize? = null,
-    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
-    onKeyEvent: (KeyEvent) -> Boolean = { false },
-    titleBarStyle: TitleBarStyle? = null,
-    content: @Composable AwtDecoratedWindowScope.() -> Unit,
-) {
-    val colors = MaterialTheme.colors
-    val windowStyle = rememberMaterialWindowStyle(colors)
-    val materialTitleBarStyle = rememberMaterialTitleBarStyle(colors)
-
-    NucleusDecoratedWindowTheme(
-        isDark = !colors.isLight,
-        windowStyle = windowStyle,
-        titleBarStyle = titleBarStyle ?: materialTitleBarStyle,
-    ) {
-        DecoratedWindow(
-            onCloseRequest = onCloseRequest,
-            state = state,
-            visible = visible,
-            title = title,
-            icon = icon,
-            resizable = resizable,
-            enabled = enabled,
-            focusable = focusable,
-            alwaysOnTop = alwaysOnTop,
-            minimumSize = minimumSize,
-            onPreviewKeyEvent = onPreviewKeyEvent,
-            onKeyEvent = onKeyEvent,
-            content = content,
-        )
-    }
-}
-
 /**
- * Material 2 wrapper that picks the correct backend automatically. Use inside
- * `nucleusApplication { … }` — works on AWT (JBR/JNI) and Tao with the same
- * call site.
+ * Material 2 styled window. Use inside `nucleusApplication { … }`: picks
+ * Material colors via [rememberMaterialTitleBarStyle] and wraps the window with
+ * [NucleusDecoratedWindowTheme].
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
@@ -79,35 +32,33 @@ public fun NucleusApplicationScope.MaterialDecoratedWindow(
     alwaysOnTop: Boolean = false,
     // Materialise Compose Popup layers as native transparent windows
     // (NSPanel / WS_POPUP HWND / Tao popup window on Linux) so menus can
-    // extend past the window bounds. Honoured by the Tao backend; ignored by AWT.
+    // extend past the window bounds.
     nativePopupLayers: Boolean = false,
-    // Replace Compose-drawn context menus with the OS-looking menu. Tao +
-    // macOS (`NSMenu`), or a Compose flyout on Linux (Adwaita) / Windows
-    // (Fluent). No-op on AWT.
+    // Replace Compose-drawn context menus with the OS-looking menu: `NSMenu`
+    // on macOS, or a Compose flyout on Linux (Adwaita) / Windows (Fluent).
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
-    // focusable (Tao backend; on Linux effective on X11/XWayland only).
-    // No-op on AWT.
+    // focusable (on Linux effective on X11/XWayland only).
     hiddenFromDock: Boolean = false,
     minimumSize: DpSize? = null,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     titleBarStyle: TitleBarStyle? = null,
     // Fully borderless window (no macOS traffic lights, no CSD outline) — for
-    // overlay/ghost windows. Tao backend only.
+    // overlay/ghost windows.
     undecorated: Boolean = false,
     // The overlay flags below mirror `dev.nucleusframework.application.DecoratedWindow`.
     //
     // Full-window per-pixel transparency: pixels the content leaves at alpha 0
     // show the desktop behind the window. Creation-time only, normally paired
-    // with [undecorated]. Tao backend only.
+    // with [undecorated].
     transparent: Boolean = false,
     // Click-through window: pointer events fall through to whatever sits below
     // and the window never intercepts input. Pair with `focusable = false` for
-    // passive overlays. Reactive. Tao backend only.
+    // passive overlays. Reactive.
     clickThrough: Boolean = false,
     // Show the window on every desktop / macOS Space / Windows virtual desktop
-    // instead of only the one it was created on. Reactive. Tao backend only.
+    // instead of only the one it was created on. Reactive.
     visibleOnAllWorkspaces: Boolean = false,
     // Linux only: give this window an X11 surface even when the app runs on a
     // native Wayland session, for the window management Wayland has no protocol

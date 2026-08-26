@@ -59,7 +59,7 @@ public class TaoWindow internal constructor(
      * the `resizable` flag the window was created with; tracks runtime
      * [setResizable] calls. Surfaced to Compose so [WindowControlsLinux] /
      * [WindowControlsWindows] can hide the maximize button on non-resizable
-     * windows (matches the `decorated-window-jni` behaviour).
+     * windows (matches the legacy AWT backend's behaviour).
      */
     public val isResizable: Boolean
         get() = resizableState.value

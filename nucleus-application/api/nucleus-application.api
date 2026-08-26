@@ -26,14 +26,13 @@ public final class dev/nucleusframework/application/DefaultNucleusWindowHost : d
 }
 
 public final class dev/nucleusframework/application/NucleusApplicationKt {
-	public static final fun nucleusApplication ([Ljava/lang/String;Ldev/nucleusframework/application/NucleusBackend;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;)V
-	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;Ldev/nucleusframework/application/NucleusBackend;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public static final fun nucleusApplication ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;)V
+	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusApplicationScope : androidx/compose/ui/window/ApplicationScope {
 	public abstract fun exitApplication ()V
 	public fun getAotMode ()Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
-	public abstract fun getBackend ()Ldev/nucleusframework/application/NucleusBackend;
 	public fun isAotRuntime ()Z
 	public fun isAotTraining ()Z
 	public abstract fun onDeepLink (Lkotlin/jvm/functions/Function1;)V
@@ -47,19 +46,6 @@ public final class dev/nucleusframework/application/NucleusApplicationScope$Defa
 
 public final class dev/nucleusframework/application/NucleusApplicationScopeKt {
 	public static final fun getLocalNucleusApplicationScope ()Landroidx/compose/runtime/ProvidableCompositionLocal;
-}
-
-public final class dev/nucleusframework/application/NucleusBackend : java/lang/Enum {
-	public static final field Auto Ldev/nucleusframework/application/NucleusBackend;
-	public static final field Awt Ldev/nucleusframework/application/NucleusBackend;
-	public static final field Tao Ldev/nucleusframework/application/NucleusBackend;
-	public static fun getEntries ()Lkotlin/enums/EnumEntries;
-	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/application/NucleusBackend;
-	public static fun values ()[Ldev/nucleusframework/application/NucleusBackend;
-}
-
-public final class dev/nucleusframework/application/NucleusBackendKt {
-	public static final fun getLocalNucleusBackend ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusDecoratedDialogScope : dev/nucleusframework/window/DecoratedDialogScope {
@@ -136,15 +122,11 @@ public final class dev/nucleusframework/application/NucleusWindowKt {
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusWindowUnsafe {
-	public fun getAwtDialog ()Landroidx/compose/ui/awt/ComposeDialog;
-	public fun getAwtWindow ()Landroidx/compose/ui/awt/ComposeWindow;
 	public fun getTaoHandle ()Ljava/lang/Long;
 	public fun getTaoWindow ()Ldev/nucleusframework/window/tao/TaoWindow;
 }
 
 public final class dev/nucleusframework/application/NucleusWindowUnsafe$DefaultImpls {
-	public static fun getAwtDialog (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Landroidx/compose/ui/awt/ComposeDialog;
-	public static fun getAwtWindow (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Landroidx/compose/ui/awt/ComposeWindow;
 	public static fun getTaoHandle (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ljava/lang/Long;
 	public static fun getTaoWindow (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ldev/nucleusframework/window/tao/TaoWindow;
 }

@@ -6,21 +6,15 @@ import androidx.compose.runtime.LaunchedEffect
 import dev.nucleusframework.application.DefaultNucleusDialogHost
 import dev.nucleusframework.application.DefaultNucleusWindowHost
 import dev.nucleusframework.application.LocalNucleusApplicationScope
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusDialogHost
 import dev.nucleusframework.application.LocalNucleusWindowHost
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.ProvideNucleusSystemTheme
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.window.tao.TaoDockPolicy
 import dev.nucleusframework.window.tao.taoApplication
 
-/**
- * Isolates references to Tao symbols. Loaded only when [NucleusBackend.Tao] is
- * chosen — keeps `nucleusApplication` callable on classpaths that lack the
- * `decorated-window-tao` module.
- */
+/** Isolates the Tao entry point (`taoApplication`) from `nucleusApplication`. */
 internal object TaoLauncher {
     fun run(
         args: Array<String>,
@@ -37,7 +31,6 @@ internal object TaoLauncher {
             // carries LocalSystemTheme into each scene (see TaoDecoratedWindowAdapter).
             ProvideNucleusSystemTheme {
                 CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusApplicationScope provides scope,
                     LocalNucleusWindowHost provides DefaultNucleusWindowHost,
                     LocalNucleusDialogHost provides DefaultNucleusDialogHost,

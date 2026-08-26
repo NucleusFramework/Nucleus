@@ -210,7 +210,7 @@ public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompos
 private val ModalScrimColor = Color(0x66000000)
 
 /**
- * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedWindow`.
+ * Tao-backed equivalent of the legacy AWT backend's `DecoratedWindow`.
  * Imperative-on-the-outside, Composable-on-the-inside: opens a single Tao
  * window, mounts the user [content] inside its dedicated `ComposeScene`, and
  * returns the [TaoWindow] handle for further imperative control.
@@ -219,7 +219,7 @@ private val ModalScrimColor = Color(0x66000000)
  * AWT-based backends so an app can swap modules with minimal call-site change.
  * `enabled = false` swallows pointer + keyboard events at the host level so
  * the window appears unresponsive (no native disabled-state visual — matches
- * `decorated-window-jni`'s behavior). `focusable = false` calls
+ * the legacy AWT backend's behavior). `focusable = false` calls
  * `tao::Window::set_focusable(false)`, which prevents the window from ever
  * becoming key (useful for HUD/overlay windows).
  */
@@ -307,7 +307,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // On macOS we keep native decorations (traffic-light buttons live there).
             // On Windows + Linux we drop them — we draw the close/min/max buttons
             // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
-            // the user's [TitleBar] composable, mirroring decorated-window-jni.
+            // the user's [TitleBar] composable, mirroring the legacy AWT backend.
             // `undecorated` opts out entirely (borderless, no traffic lights).
             // Linux still gets the native GTK drop shadow through
             // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).

@@ -11,9 +11,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.window.DialogState
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.NucleusDecoratedDialogScope
 import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.TaoNucleusApplicationScope
@@ -115,7 +113,6 @@ internal object TaoDecoratedDialogAdapter {
                 SideEffect { bridge?.invoke(outerLocals) }
                 CompositionLocalProvider(
                     LocalLayoutDirection provides parentLayoutDirection,
-                    LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusWindow provides nucleusWindow,
                 ) {
                     nucleusScope.content()

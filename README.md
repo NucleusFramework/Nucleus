@@ -32,8 +32,15 @@ their public surface locked by a binary-compatibility dump (`api/*.api`, checked
 `apiCheck` via kotlinx binary-compatibility-validator). Breaking changes to a public FQN
 or signature fail CI. The one exception is `decorated-window-jewel` (JVM 25 bytecode),
 which still uses `explicitApi()` but is not dumped until BCV can read class-file major
-version 69. The Tao backend is the recommended one for new projects —
-`decorated-window-jni` and `decorated-window-jbr` are deprecated and receive fixes only.
+version 69.
+
+Windowing runs on a single backend: the no-AWT Tao one. The legacy AWT-based backends
+(`decorated-window-jni`, `decorated-window-jbr`, and the shared `decorated-window-awt`
+chrome) are removed in 2.6. To migrate: depend on `nucleus.decorated-window-tao`, drop the
+`backend = NucleusBackend.…` argument (`NucleusBackend` and `LocalNucleusBackend` are gone),
+and replace AWT-typed window access (`window.unsafe.awtWindow`, Compose Desktop's `Window` /
+`Dialog` / `Tray`) with `nucleusWindow`, `HostedWindow` / `HostedDialog`, and an AWT-free
+tray.
 
 ## Used by
 
@@ -84,7 +91,7 @@ Nucleus builds on Compose Multiplatform and requires:
 
 | Requirement | Version | Note |
 |-------------|---------|------|
-| JDK | 17+ (25+ for AOT cache) | JBR 25 recommended |
+| JDK | 17+ (25+ for AOT cache) | Any vendor — no JetBrains Runtime needed |
 | Kotlin | 2.4.10+ | This repo builds with Kotlin 2.4.10 |
 | Compose Multiplatform | 1.12.0 | Required by the 2.5 line; will not run on 1.11.x |
 | Gradle | 9.0+ | Bundled wrapper is Gradle 9.4.0 |
@@ -128,10 +135,10 @@ fun main(args: Array<String>) = nucleusApplication(args) {
 single-instance lock, and primes autolaunch / Windows AUMID when those
 modules are on the classpath. Pass the process `args` so deep links,
 file associations, and "started at login" see the original command line.
-The default backend is `Auto` (Tao if `decorated-window-tao` is present,
-otherwise AWT). Inside the block you can call `onDeepLink { }` and
-`aotTraining()`; plugin-injected metadata is `NucleusApp`, not a generated
-constants object.
+Windows are Tao-backed: the native event loop owns the main thread and doubles
+as `Dispatchers.Main`, with no AWT in the process. Inside the block you can call
+`onDeepLink { }` and `aotTraining()`; plugin-injected metadata is `NucleusApp`,
+not a generated constants object.
 
 Then configure packaging in `build.gradle.kts`:
 
@@ -185,18 +192,15 @@ Each module is published independently to Maven Central — use them together or
 
 | Module | Description |
 |--------|-------------|
-| `nucleus.nucleus-application` | `nucleusApplication`, backend-agnostic `DecoratedWindow` / `HostedWindow` |
+| `nucleus.nucleus-application` | `nucleusApplication`, `DecoratedWindow` / `HostedWindow` |
 | `nucleus.core-runtime` | Platform detection, single instance, deep links, `NucleusApp` metadata |
 | `nucleus.aot-runtime` | AOT cache mode detection |
 | `nucleus.updater-runtime` | Auto-update (GitHub/S3), SHA-512, delta/blockmap, progress |
 | `nucleus.darkmode-detector` | Reactive OS dark mode detection |
 | `nucleus.system-color` | Reactive accent color & high contrast detection |
 | `nucleus.system-info` | CPU, memory, GPU (NVIDIA/AMD/Intel), temperature, network, processes |
-| `nucleus.decorated-window-tao` | Recommended windowing backend (Rust `tao`, no AWT) |
+| `nucleus.decorated-window-tao` | Windowing backend (Rust `tao`, no AWT) |
 | `nucleus.decorated-window-core` | Shared window types, layout, chrome (design-system agnostic) |
-| `nucleus.decorated-window-awt` | AWT chrome shared by the JBR/JNI backends |
-| `nucleus.decorated-window-jbr` | Legacy JBR backend (maintenance only) |
-| `nucleus.decorated-window-jni` | Legacy JNI/AWT backend (maintenance only) |
 | `nucleus.decorated-window-jewel` | Jewel (IntelliJ theme) integration |
 | `nucleus.decorated-window-material2` | Material 2 integration |
 | `nucleus.decorated-window-material3` | Material 3 integration |

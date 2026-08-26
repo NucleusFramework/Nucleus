@@ -30,7 +30,6 @@ apiValidation {
             "tao-demo",
             "swing-tao-demo",
             "zstd-demo",
-            "jni-demo",
             "shared",
             "jewel-demo",
             "cmp-demo",
@@ -47,6 +46,8 @@ apiValidation {
             "tao-native-test",
             "window-scaffold-demo",
             "watermark-demo",
+            "rect-stress-demo",
+            "widget-demo",
             // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
             // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
             "decorated-window-jewel",

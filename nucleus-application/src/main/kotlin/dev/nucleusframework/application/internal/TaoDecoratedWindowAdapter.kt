@@ -11,9 +11,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.ObserveSingleInstanceRestore
@@ -169,7 +167,6 @@ internal object TaoDecoratedWindowAdapter {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides parentLayoutDirection,
                     LocalTaoTextSelectionA11yPublisher provides scenePublisher,
-                    LocalNucleusBackend provides NucleusBackend.Tao,
                     LocalNucleusWindow provides nucleusWindow,
                     LocalTaoWindow provides sceneTaoWindow,
                     LocalTitleBarInfo provides sceneTitleBarInfo,

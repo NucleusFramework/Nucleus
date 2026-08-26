@@ -16,7 +16,6 @@ val publishVersion =
 
 dependencies {
     api(project(":decorated-window-core"))
-    api(project(":decorated-window-awt"))
     api(project(":aot-runtime"))
     // api: nucleusApplication bridges Compose's isSystemInDarkTheme() to the
     // reactive OS detector, so consumers always get darkmode-detector on the
@@ -35,12 +34,10 @@ dependencies {
     // supertype must be visible on consumers' compile classpath.
     api(libs.compose.desktop.common)
 
-    // An app ships exactly one backend at runtime — by construction (their
-    // imports overlap, so coexistence is unsupported). We compile against
-    // jni (which provides the AWT-bound DecoratedWindow signature, identical
-    // to jbr's) and tao for the no-AWT path.
-    compileOnly(project(":decorated-window-jni"))
-    compileOnly(project(":decorated-window-tao"))
+    // Tao is the only window backend: `nucleusApplication` always drives its
+    // native event loop, and the public window/dialog scopes expose Tao types.
+    // `api` so consumers get it without declaring it themselves.
+    api(project(":decorated-window-tao"))
 
     testImplementation(libs.junit)
     testImplementation(compose.desktop.currentOs)
@@ -95,8 +92,8 @@ mavenPublishing {
     pom {
         name.set("Nucleus Application")
         description.set(
-            "Unified entry point picking the decorated-window backend " +
-                "(JBR/JNI AWT or no-AWT Tao) and exposing a backend-agnostic window handle.",
+            "Unified entry point for a Nucleus desktop application on the " +
+                "no-AWT Tao backend, exposing a portable window handle.",
         )
         url.set("https://github.com/NucleusFramework/Nucleus")
 
