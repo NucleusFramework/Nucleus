@@ -352,6 +352,15 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
 
+        // Keep the scene's coroutine work (recomposer steps, effects) moving
+        // even while hidden — only the GPU part is skipped below.
+        flushingDispatcher.drain()
+
+        // On-demand rendering: no frames while the panel is hidden. Pending
+        // frame-clock awaiters stay parked; setVisible(true) re-arms the
+        // paced loop.
+        if (!visible) return
+
         // Pace self-invalidating content (animations): DComp presents don't
         // block on vsync, so an unthrottled invalidate->render loop would
         // spin the Tao thread at 100%. Pacing runs on an ABSOLUTE deadline
