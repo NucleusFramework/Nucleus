@@ -4,6 +4,7 @@ import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.TaoWindowResizableTest
 import dev.nucleusframework.window.tao.TaoWindowScrollTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
+import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
@@ -110,6 +111,18 @@ public object TaoSceneTestBattery {
         }
         run("Win32WheelDeltaTest: horizontalWheelIsNegatedToAwtSign") {
             Win32WheelDeltaTest().horizontalWheelIsNegatedToAwtSign()
+        }
+        run("MacOsWheelDeltaTest: scrollUpMatchesTaoWindowAwtSign") {
+            MacOsWheelDeltaTest().scrollUpMatchesTaoWindowAwtSign()
+        }
+        run("MacOsWheelDeltaTest: horizontalDeltaKeepsAppKitX") {
+            MacOsWheelDeltaTest().horizontalDeltaKeepsAppKitX()
+        }
+        run("MacOsWheelDeltaTest: precisePixelDeltaMatchesTaoWindowScale") {
+            MacOsWheelDeltaTest().precisePixelDeltaMatchesTaoWindowScale()
+        }
+        run("MacOsWheelDeltaTest: precisePixelHorizontalMatchesTaoWindowScale") {
+            MacOsWheelDeltaTest().precisePixelHorizontalMatchesTaoWindowScale()
         }
         run("TaoWheelPinchZoomTest: fullWheelDeltaProducesModerateZoomStep") {
             TaoWheelPinchZoomTest().fullWheelDeltaProducesModerateZoomStep()

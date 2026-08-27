@@ -1,0 +1,76 @@
+package dev.nucleusframework.window.tao.event
+
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.scene.ComposeScene
+import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+
+/** Same factor [dev.nucleusframework.window.tao.TaoWindow] uses on `SCROLL_PIXEL`. */
+internal const val AWT_PIXEL_TO_ROTATION: Float = 10f
+
+/** macOS AWT `MouseWheelEvent.scrollAmount`. */
+internal const val MACOS_AWT_SCROLL_AMOUNT: Int = 1
+
+/**
+ * Maps raw AppKit `scrollingDelta*` onto AWT `preciseWheelRotation`.
+ *
+ * Matches [dev.nucleusframework.window.tao.TaoWindow] `SCROLL_LINE` /
+ * `SCROLL_PIXEL`: tao already flips X then Kotlin negates both axes, so
+ * the net sign from raw AppKit is `Offset(dx, -dy)`. Precise (trackpad)
+ * deltas are converted to physical pixels then divided by 10, same as
+ * AWT's NSEvent → `preciseWheelRotation` conversion.
+ *
+ * Popup NSPanel content views skip tao and must go through this before
+ * Compose.
+ */
+internal fun appKitWheelToAwtScrollDelta(
+    dx: Float,
+    dy: Float,
+    precise: Boolean,
+    scale: Float,
+): Offset {
+    val awtSign = Offset(dx, -dy)
+    return if (precise) awtSign * (scale / AWT_PIXEL_TO_ROTATION) else awtSign
+}
+
+internal fun appKitWheelToAwtScrollEvent(
+    dx: Float,
+    dy: Float,
+    precise: Boolean,
+    scale: Float,
+): TaoPointerScrollEvent {
+    val delta = appKitWheelToAwtScrollDelta(dx, dy, precise, scale)
+    return TaoPointerScrollEvent(
+        dxAwt = delta.x,
+        dyAwt = delta.y,
+        scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
+    )
+}
+
+@OptIn(InternalComposeUiApi::class)
+internal fun ComposeScene.dispatchAppKitScroll(
+    x: Float,
+    y: Float,
+    dx: Float,
+    dy: Float,
+    precise: Boolean,
+    scale: Float,
+) {
+    val event = appKitWheelToAwtScrollEvent(dx, dy, precise, scale)
+    sendPointerEvent(
+        eventType = PointerEventType.Scroll,
+        position = Offset(x, y),
+        scrollDelta = Offset(event.dxAwt, event.dyAwt),
+        type = PointerType.Mouse,
+        nativeEvent =
+            TaoSyntheticMouseWheelEvent.create(
+                event = event,
+                x = x,
+                y = y,
+                keyboardModifiers = PointerKeyboardModifiers(),
+            ),
+    )
+}
