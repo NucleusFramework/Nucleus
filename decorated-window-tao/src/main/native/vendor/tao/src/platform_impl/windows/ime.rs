@@ -8,7 +8,9 @@
 //! vocabulary tao gained for macOS in nucleusframework#595.
 
 use std::{
+  collections::VecDeque,
   ffi::{c_void, OsString},
+  mem::MaybeUninit,
   os::windows::ffi::OsStringExt,
 };
 
@@ -19,7 +21,7 @@ use windows::Win32::{
       ImmGetCompositionStringW, ImmGetContext, ImmReleaseContext, GCS_COMPSTR, GCS_RESULTSTR, HIMC,
       IME_COMPOSITION_STRING, ISC_SHOWUICOMPOSITIONWINDOW,
     },
-    WindowsAndMessaging::{self as win32wm, DefWindowProcW},
+    WindowsAndMessaging::{self as win32wm, DefWindowProcW, PeekMessageW, PM_NOREMOVE},
   },
 };
 
@@ -28,6 +30,33 @@ use crate::platform_impl::platform::event_loop::ProcResult;
 /// High surrogates occupy `0xD800..=0xDBFF`; a UTF-16 code unit in that range
 /// is only half a character and has to be joined with the unit that follows.
 const HIGH_SURROGATE_RANGE: std::ops::Range<u16> = 0xD800..0xDC00;
+
+/// True when a `WM_IME_COMPOSITION` carrying the committed string is already
+/// queued for this window.
+///
+/// The Korean IME confirms with Space by sending `WM_IME_ENDCOMPOSITION`
+/// *before* the `WM_IME_COMPOSITION` that carries `GCS_RESULTSTR`, the reverse
+/// of the Chinese and Japanese order. Ending the composition on the first of
+/// those two would drop the text the second one is about to deliver, so the
+/// queue is checked and the end deferred to it. Chromium does the same
+/// (crrev 504d51fc, after Firefox).
+unsafe fn commit_is_queued(hwnd: HWND) -> bool {
+  let mut msg = MaybeUninit::uninit();
+  let has_message = unsafe {
+    PeekMessageW(
+      msg.as_mut_ptr(),
+      Some(hwnd),
+      win32wm::WM_IME_COMPOSITION,
+      win32wm::WM_IME_COMPOSITION,
+      PM_NOREMOVE,
+    )
+  };
+  if !has_message.as_bool() {
+    return false;
+  }
+  let msg = unsafe { msg.assume_init() };
+  msg.lParam.0 as u32 & GCS_RESULTSTR.0 != 0
+}
 
 pub fn is_msg_ime_related(msg_kind: u32) -> bool {
   matches!(
@@ -127,26 +156,47 @@ impl Drop for ImeContext {
 }
 
 /// Tracks the composition across the window messages that make one up.
+#[derive(Default)]
 pub struct ImeHandler {
   /// True between the first preedit and the commit (or cancellation).
   composing: bool,
-  /// UTF-16 code units the IME is about to replay as `WM_IME_CHAR` /
-  /// `WM_CHAR` after a commit. That text already reached the app through
-  /// [`ImeEvent::Commit`], so the replay has to be swallowed or every
+  /// The UTF-16 code units the IME is expected to replay as `WM_IME_CHAR` /
+  /// `WM_CHAR` right after a commit. That text already reached the app
+  /// through [`ImeEvent::Commit`], so the replay has to be swallowed or every
   /// committed character is inserted twice.
-  pending_commit_units: usize,
+  ///
+  /// The units are matched rather than merely counted: an IME that does not
+  /// replay at all (nothing obliges one to, since the composition message is
+  /// answered with 0) would otherwise leave a counter standing, and the next
+  /// ordinary keystrokes would be eaten by it. A mismatch means the replay
+  /// isn't coming, so the expectation is dropped and the key handled
+  /// normally.
+  expected_commit_replay: VecDeque<u16>,
   /// Half of a surrogate pair waiting for the `WM_CHAR` carrying its other
   /// half.
   pending_high_surrogate: Option<u16>,
 }
 
-impl Default for ImeHandler {
-  fn default() -> Self {
-    ImeHandler {
-      composing: false,
-      pending_commit_units: 0,
-      pending_high_surrogate: None,
+impl ImeHandler {
+  /// Swallows one replayed code unit, or reports that this one is a genuine
+  /// keystroke and clears the stale expectation.
+  fn consume_replayed(&mut self, unit: u16) -> bool {
+    match self.expected_commit_replay.front() {
+      Some(&expected) if expected == unit => {
+        self.expected_commit_replay.pop_front();
+        true
+      }
+      Some(_) => {
+        self.expected_commit_replay.clear();
+        false
+      }
+      None => false,
     }
+  }
+
+  fn expect_commit_replay(&mut self, text: &str) {
+    self.expected_commit_replay.clear();
+    self.expected_commit_replay.extend(text.encode_utf16());
   }
 }
 
@@ -172,6 +222,9 @@ impl ImeHandler {
       win32wm::WM_IME_STARTCOMPOSITION => {
         self.composing = true;
         self.pending_high_surrogate = None;
+        // Nothing from an earlier composition can still be in flight once a
+        // new one starts.
+        self.expected_commit_replay.clear();
         Vec::new()
       }
       win32wm::WM_IME_COMPOSITION => {
@@ -180,8 +233,10 @@ impl ImeHandler {
         *result = ProcResult::Value(LRESULT(0));
 
         if lparam.0 == 0 {
-          // The composition was cancelled without committing anything.
-          self.composing = false;
+          // Nothing changed and the composition string is empty. Clear the
+          // preedit, but leave `composing` alone: whether the composition is
+          // still live is decided by START/ENDCOMPOSITION and by `GCS_COMPSTR`
+          // below, and this message is not a reliable cancel signal.
           return vec![ImeEvent::Preedit(String::new())];
         }
 
@@ -194,7 +249,7 @@ impl ImeHandler {
         if flags & GCS_RESULTSTR.0 != 0 {
           if let Some(text) = unsafe { context.composed_text() } {
             if !text.is_empty() {
-              self.pending_commit_units += text.encode_utf16().count();
+              self.expect_commit_replay(&text);
               self.composing = false;
               events.push(ImeEvent::Commit(text));
             }
@@ -211,22 +266,18 @@ impl ImeHandler {
         events
       }
       win32wm::WM_IME_ENDCOMPOSITION => {
-        // The Hangul IME sends `WM_IME_COMPOSITION` *after* this message, so
-        // a still-open composition may yet be committed. Leave `composing`
-        // for that path and only clear a preedit that nothing committed.
-        let context = unsafe { ImeContext::current(hwnd) };
-        let mut events = Vec::new();
+        // The Korean IME puts this message *before* the one carrying the
+        // committed string, so ending the composition here would drop that
+        // text. Hand the composition over to the queued message instead.
+        if unsafe { commit_is_queued(hwnd) } {
+          return Vec::new();
+        }
 
+        let mut events = Vec::new();
         if self.composing {
-          if let Some(text) = unsafe { context.composed_text() } {
-            if !text.is_empty() {
-              self.pending_commit_units += text.encode_utf16().count();
-              events.push(ImeEvent::Commit(text));
-            }
-          }
-          if events.is_empty() {
-            events.push(ImeEvent::Preedit(String::new()));
-          }
+          // Nothing committed: the composition was abandoned, so take the
+          // preedit down with it.
+          events.push(ImeEvent::Preedit(String::new()));
         }
 
         self.composing = false;
@@ -237,7 +288,7 @@ impl ImeHandler {
         // Swallowing this message also stops the default handler from turning
         // it into a `WM_CHAR`.
         *result = ProcResult::Value(LRESULT(0));
-        self.pending_commit_units = self.pending_commit_units.saturating_sub(1);
+        self.consume_replayed(wparam.0 as u16);
         Vec::new()
       }
       win32wm::WM_CHAR | win32wm::WM_SYSCHAR => {
@@ -245,8 +296,7 @@ impl ImeHandler {
 
         let unit = wparam.0 as u16;
 
-        if self.pending_commit_units > 0 {
-          self.pending_commit_units -= 1;
+        if self.consume_replayed(unit) {
           return Vec::new();
         }
 
