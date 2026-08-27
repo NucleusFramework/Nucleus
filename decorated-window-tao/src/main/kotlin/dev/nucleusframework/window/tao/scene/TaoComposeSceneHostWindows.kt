@@ -36,6 +36,7 @@ import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
@@ -1795,7 +1796,7 @@ internal class TaoComposeSceneHostWindows(
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = Offset(x, y),
-                scrollDelta = Offset(-dx, -dy),
+                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
                 type = PointerType.Mouse,
                 keyboardModifiers = currentKeyboardModifiers,
             )

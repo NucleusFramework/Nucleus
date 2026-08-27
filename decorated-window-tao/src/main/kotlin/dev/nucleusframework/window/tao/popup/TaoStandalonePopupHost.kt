@@ -20,6 +20,7 @@ import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
@@ -442,7 +443,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = Offset(x, y),
-                scrollDelta = Offset(dx, dy),
+                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
                 type = PointerType.Mouse,
             )
         }
