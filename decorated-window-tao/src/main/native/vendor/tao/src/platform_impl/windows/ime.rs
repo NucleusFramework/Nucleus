@@ -31,31 +31,66 @@ use crate::platform_impl::platform::event_loop::ProcResult;
 /// is only half a character and has to be joined with the unit that follows.
 const HIGH_SURROGATE_RANGE: std::ops::Range<u16> = 0xD800..0xDC00;
 
-/// True when a `WM_IME_COMPOSITION` carrying the committed string is already
-/// queued for this window.
+/// Everything [`ImeHandler`] needs from the input context and the message
+/// queue, behind a seam.
 ///
-/// The Korean IME confirms with Space by sending `WM_IME_ENDCOMPOSITION`
-/// *before* the `WM_IME_COMPOSITION` that carries `GCS_RESULTSTR`, the reverse
-/// of the Chinese and Japanese order. Ending the composition on the first of
-/// those two would drop the text the second one is about to deliver, so the
-/// queue is checked and the end deferred to it. Chromium does the same
-/// (crrev 504d51fc, after Firefox).
-unsafe fn commit_is_queued(hwnd: HWND) -> bool {
-  let mut msg = MaybeUninit::uninit();
-  let has_message = unsafe {
-    PeekMessageW(
-      msg.as_mut_ptr(),
-      Some(hwnd),
-      win32wm::WM_IME_COMPOSITION,
-      win32wm::WM_IME_COMPOSITION,
-      PM_NOREMOVE,
-    )
-  };
-  if !has_message.as_bool() {
-    return false;
+/// The state machine is the part with the interesting behaviour — the order
+/// the Korean IME uses, matching the replayed commit, what an empty `lparam`
+/// means — and none of it is reachable from a test while the reads go
+/// straight to IMM32. The production implementation is [`Imm32Source`]; tests
+/// drive the same sequences through a stub.
+pub(crate) trait ImeSource {
+  /// The composition in progress (`GCS_COMPSTR`).
+  fn composing_text(&self) -> Option<String>;
+
+  /// The text the composition committed (`GCS_RESULTSTR`).
+  fn composed_text(&self) -> Option<String>;
+
+  /// True when a `WM_IME_COMPOSITION` carrying the committed string is
+  /// already queued for this window.
+  ///
+  /// The Korean IME confirms with Space by sending `WM_IME_ENDCOMPOSITION`
+  /// *before* the `WM_IME_COMPOSITION` that carries `GCS_RESULTSTR`, the
+  /// reverse of the Chinese and Japanese order. Ending the composition on the
+  /// first of those two would drop the text the second one is about to
+  /// deliver, so the queue is checked and the end deferred to it. Chromium
+  /// does the same (crrev 504d51fc, after Firefox).
+  fn commit_is_queued(&self) -> bool;
+}
+
+/// Reads the live input context of `hwnd`.
+struct Imm32Source {
+  hwnd: HWND,
+}
+
+impl ImeSource for Imm32Source {
+  fn composing_text(&self) -> Option<String> {
+    let context = unsafe { ImeContext::current(self.hwnd) };
+    unsafe { context.composition_string(GCS_COMPSTR) }
   }
-  let msg = unsafe { msg.assume_init() };
-  msg.lParam.0 as u32 & GCS_RESULTSTR.0 != 0
+
+  fn composed_text(&self) -> Option<String> {
+    let context = unsafe { ImeContext::current(self.hwnd) };
+    unsafe { context.composition_string(GCS_RESULTSTR) }
+  }
+
+  fn commit_is_queued(&self) -> bool {
+    let mut msg = MaybeUninit::uninit();
+    let has_message = unsafe {
+      PeekMessageW(
+        msg.as_mut_ptr(),
+        Some(self.hwnd),
+        win32wm::WM_IME_COMPOSITION,
+        win32wm::WM_IME_COMPOSITION,
+        PM_NOREMOVE,
+      )
+    };
+    if !has_message.as_bool() {
+      return false;
+    }
+    let msg = unsafe { msg.assume_init() };
+    msg.lParam.0 as u32 & GCS_RESULTSTR.0 != 0
+  }
 }
 
 pub fn is_msg_ime_related(msg_kind: u32) -> bool {
@@ -96,14 +131,6 @@ impl ImeContext {
   unsafe fn current(hwnd: HWND) -> Self {
     let himc = unsafe { ImmGetContext(hwnd) };
     ImeContext { hwnd, himc }
-  }
-
-  unsafe fn composing_text(&self) -> Option<String> {
-    unsafe { self.composition_string(GCS_COMPSTR) }
-  }
-
-  unsafe fn composed_text(&self) -> Option<String> {
-    unsafe { self.composition_string(GCS_RESULTSTR) }
   }
 
   unsafe fn composition_string(&self, gcs_mode: IME_COMPOSITION_STRING) -> Option<String> {
@@ -209,16 +236,31 @@ impl ImeHandler {
     lparam: LPARAM,
     result: &mut ProcResult,
   ) -> Vec<ImeEvent> {
+    // `WM_IME_SETCONTEXT` is the one message whose handling *is* the Win32
+    // call, so it stays out of the state machine.
+    if msg_kind == win32wm::WM_IME_SETCONTEXT {
+      // Clear the flag that asks the IME to draw its own composition window:
+      // the preedit is rendered inline by the embedder, and both at once
+      // shows the text twice. The candidate list keeps its own window
+      // (positioned through `Window::set_ime_position`).
+      let lparam = LPARAM(lparam.0 & !(ISC_SHOWUICOMPOSITIONWINDOW as isize));
+      *result = ProcResult::Value(unsafe { DefWindowProcW(hwnd, msg_kind, wparam, lparam) });
+      return Vec::new();
+    }
+
+    let source = Imm32Source { hwnd };
+    self.process_message_with(&source, msg_kind, wparam, lparam, result)
+  }
+
+  fn process_message_with(
+    &mut self,
+    source: &dyn ImeSource,
+    msg_kind: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    result: &mut ProcResult,
+  ) -> Vec<ImeEvent> {
     match msg_kind {
-      win32wm::WM_IME_SETCONTEXT => {
-        // Clear the flag that asks the IME to draw its own composition
-        // window: the preedit is rendered inline by the embedder, and both at
-        // once shows the text twice. The candidate list keeps its own window
-        // (positioned through `Window::set_ime_position`).
-        let lparam = LPARAM(lparam.0 & !(ISC_SHOWUICOMPOSITIONWINDOW as isize));
-        *result = ProcResult::Value(unsafe { DefWindowProcW(hwnd, msg_kind, wparam, lparam) });
-        Vec::new()
-      }
       win32wm::WM_IME_STARTCOMPOSITION => {
         self.composing = true;
         self.pending_high_surrogate = None;
@@ -241,13 +283,12 @@ impl ImeHandler {
         }
 
         let flags = lparam.0 as u32;
-        let context = unsafe { ImeContext::current(hwnd) };
         let mut events = Vec::new();
 
         // Google Japanese Input and ATOK set both flags on the same message,
         // so the committed text has to be taken before the new preedit.
         if flags & GCS_RESULTSTR.0 != 0 {
-          if let Some(text) = unsafe { context.composed_text() } {
+          if let Some(text) = source.composed_text() {
             if !text.is_empty() {
               self.expect_commit_replay(&text);
               self.composing = false;
@@ -257,7 +298,7 @@ impl ImeHandler {
         }
 
         if flags & GCS_COMPSTR.0 != 0 {
-          if let Some(text) = unsafe { context.composing_text() } {
+          if let Some(text) = source.composing_text() {
             self.composing = !text.is_empty();
             events.push(ImeEvent::Preedit(text));
           }
@@ -269,7 +310,7 @@ impl ImeHandler {
         // The Korean IME puts this message *before* the one carrying the
         // committed string, so ending the composition here would drop that
         // text. Hand the composition over to the queued message instead.
-        if unsafe { commit_is_queued(hwnd) } {
+        if source.commit_is_queued() {
           return Vec::new();
         }
 
@@ -321,5 +362,279 @@ impl ImeHandler {
       }
       _ => Vec::new(),
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  /// Stands in for the input context and the message queue: the three reads
+  /// [`ImeHandler`] makes are answered from here, so the state machine can be
+  /// driven through real message sequences with no IME installed.
+  #[derive(Default)]
+  struct StubSource {
+    composing: Option<String>,
+    composed: Option<String>,
+    commit_queued: bool,
+  }
+
+  impl ImeSource for StubSource {
+    fn composing_text(&self) -> Option<String> {
+      self.composing.clone()
+    }
+
+    fn composed_text(&self) -> Option<String> {
+      self.composed.clone()
+    }
+
+    fn commit_is_queued(&self) -> bool {
+      self.commit_queued
+    }
+  }
+
+  /// Feeds one message and drops the `ProcResult` the caller would consume.
+  fn send(
+    handler: &mut ImeHandler,
+    source: &dyn ImeSource,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+  ) -> Vec<ImeEvent> {
+    let mut result = ProcResult::DefSubclassProc;
+    handler.process_message_with(source, msg, WPARAM(wparam), LPARAM(lparam), &mut result)
+  }
+
+  fn preedit(text: &str) -> ImeEvent {
+    ImeEvent::Preedit(text.to_string())
+  }
+
+  fn commit(text: &str) -> ImeEvent {
+    ImeEvent::Commit(text.to_string())
+  }
+
+  fn text(text: &str) -> ImeEvent {
+    ImeEvent::Text(text.to_string())
+  }
+
+  /// The Japanese/Chinese order: the composition commits and ends, in that
+  /// order.
+  #[test]
+  fn commits_then_ends() {
+    let mut handler = ImeHandler::default();
+    let mut source = StubSource {
+      composing: Some("に".into()),
+      ..Default::default()
+    };
+
+    assert!(send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0).is_empty());
+    assert_eq!(
+      send(
+        &mut handler,
+        &source,
+        win32wm::WM_IME_COMPOSITION,
+        0,
+        GCS_COMPSTR.0 as isize
+      ),
+      vec![preedit("に")]
+    );
+
+    source.composed = Some("荷".into());
+    source.composing = Some(String::new());
+    assert_eq!(
+      send(
+        &mut handler,
+        &source,
+        win32wm::WM_IME_COMPOSITION,
+        0,
+        (GCS_RESULTSTR.0 | GCS_COMPSTR.0) as isize
+      ),
+      vec![commit("荷"), preedit("")],
+      "ATOK and Google Japanese Input set both flags on one message",
+    );
+
+    // Nothing left to commit, so ending must not emit a stray preedit.
+    assert!(send(&mut handler, &source, win32wm::WM_IME_ENDCOMPOSITION, 0, 0).is_empty());
+  }
+
+  /// The Korean order: `WM_IME_ENDCOMPOSITION` arrives *before* the message
+  /// carrying `GCS_RESULTSTR`, so it must not tear the composition down.
+  #[test]
+  fn defers_to_a_queued_commit() {
+    let mut handler = ImeHandler::default();
+    let mut source = StubSource {
+      composing: Some("한".into()),
+      ..Default::default()
+    };
+
+    send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0);
+    send(
+      &mut handler,
+      &source,
+      win32wm::WM_IME_COMPOSITION,
+      0,
+      GCS_COMPSTR.0 as isize,
+    );
+
+    // Space confirms: the commit is already queued behind this message.
+    source.commit_queued = true;
+    assert!(
+      send(&mut handler, &source, win32wm::WM_IME_ENDCOMPOSITION, 0, 0).is_empty(),
+      "the end must be handed to the queued commit, not clear the preedit",
+    );
+
+    source.commit_queued = false;
+    source.composed = Some("한".into());
+    assert_eq!(
+      send(
+        &mut handler,
+        &source,
+        win32wm::WM_IME_COMPOSITION,
+        0,
+        GCS_RESULTSTR.0 as isize
+      ),
+      vec![commit("한")]
+    );
+  }
+
+  /// A composition abandoned without committing takes its preedit with it.
+  #[test]
+  fn ends_without_commit_clears_the_preedit() {
+    let mut handler = ImeHandler::default();
+    let source = StubSource {
+      composing: Some("に".into()),
+      ..Default::default()
+    };
+
+    send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0);
+    send(
+      &mut handler,
+      &source,
+      win32wm::WM_IME_COMPOSITION,
+      0,
+      GCS_COMPSTR.0 as isize,
+    );
+
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_IME_ENDCOMPOSITION, 0, 0),
+      vec![preedit("")]
+    );
+  }
+
+  /// The committed text is replayed as `WM_CHAR`; it already reached the app
+  /// through `ImeCommit`, so it must not be inserted a second time.
+  #[test]
+  fn swallows_the_commit_replay() {
+    let mut handler = ImeHandler::default();
+    let source = StubSource {
+      composed: Some("荷".into()),
+      ..Default::default()
+    };
+
+    send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0);
+    send(
+      &mut handler,
+      &source,
+      win32wm::WM_IME_COMPOSITION,
+      0,
+      GCS_RESULTSTR.0 as isize,
+    );
+
+    let replayed = '荷' as usize;
+    assert!(send(&mut handler, &source, win32wm::WM_CHAR, replayed, 0).is_empty());
+    // The expectation is spent: the same character typed again is real input.
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_CHAR, replayed, 0),
+      vec![text("荷")]
+    );
+  }
+
+  /// Nothing obliges an IME to replay — the composition message is answered
+  /// with 0 — so a stale expectation must never eat a real keystroke.
+  #[test]
+  fn a_missing_replay_does_not_eat_the_next_key() {
+    let mut handler = ImeHandler::default();
+    let source = StubSource {
+      composed: Some("荷".into()),
+      ..Default::default()
+    };
+
+    send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0);
+    send(
+      &mut handler,
+      &source,
+      win32wm::WM_IME_COMPOSITION,
+      0,
+      GCS_RESULTSTR.0 as isize,
+    );
+
+    // The replay never comes; the user types something else.
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_CHAR, 'a' as usize, 0),
+      vec![text("a")]
+    );
+    // And the abandoned expectation is gone, so the next key is untouched.
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_CHAR, 'b' as usize, 0),
+      vec![text("b")]
+    );
+  }
+
+  /// An empty `lparam` says the composition string is empty and nothing more.
+  /// It clears the preedit but must not end the composition, which is still
+  /// live and can carry on.
+  #[test]
+  fn empty_lparam_clears_the_preedit_without_ending_the_composition() {
+    let mut handler = ImeHandler::default();
+    let mut source = StubSource {
+      composing: Some("に".into()),
+      ..Default::default()
+    };
+
+    send(&mut handler, &source, win32wm::WM_IME_STARTCOMPOSITION, 0, 0);
+    send(
+      &mut handler,
+      &source,
+      win32wm::WM_IME_COMPOSITION,
+      0,
+      GCS_COMPSTR.0 as isize,
+    );
+
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_IME_COMPOSITION, 0, 0),
+      vec![preedit("")]
+    );
+
+    // Still composing: typing on resumes the preedit rather than starting over.
+    source.composing = Some("にほ".into());
+    assert_eq!(
+      send(
+        &mut handler,
+        &source,
+        win32wm::WM_IME_COMPOSITION,
+        0,
+        GCS_COMPSTR.0 as isize
+      ),
+      vec![preedit("にほ")]
+    );
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_IME_ENDCOMPOSITION, 0, 0),
+      vec![preedit("")],
+      "the composition was still live, so ending it clears the preedit",
+    );
+  }
+
+  /// A character outside the BMP arrives as two `WM_CHAR` messages.
+  #[test]
+  fn joins_surrogate_pairs() {
+    let mut handler = ImeHandler::default();
+    let source = StubSource::default();
+
+    // U+1F600 GRINNING FACE = D83D DE00
+    assert!(send(&mut handler, &source, win32wm::WM_CHAR, 0xD83D, 0).is_empty());
+    assert_eq!(
+      send(&mut handler, &source, win32wm::WM_CHAR, 0xDE00, 0),
+      vec![text("😀")]
+    );
   }
 }
