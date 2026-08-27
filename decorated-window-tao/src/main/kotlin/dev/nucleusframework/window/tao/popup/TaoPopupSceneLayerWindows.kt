@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
@@ -225,7 +226,7 @@ internal class TaoPopupSceneLayerWindows(
             innerScene.sendPointerEvent(
                 eventType = PointerEventType.Scroll,
                 position = scenePosition(x, y),
-                scrollDelta = Offset(dx, dy),
+                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
                 type = PointerType.Mouse,
             )
         }

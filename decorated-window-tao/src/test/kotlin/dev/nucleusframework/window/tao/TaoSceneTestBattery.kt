@@ -8,6 +8,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
+import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
@@ -103,6 +104,12 @@ public object TaoSceneTestBattery {
         }
         run("TaoSyntheticMouseWheelEventTest: syntheticEventCarriesAwtScrollMetadata") {
             TaoSyntheticMouseWheelEventTest().syntheticEventCarriesAwtScrollMetadata()
+        }
+        run("Win32WheelDeltaTest: wheelTowardsUserMatchesTaoWindowAwtSign") {
+            Win32WheelDeltaTest().wheelTowardsUserMatchesTaoWindowAwtSign()
+        }
+        run("Win32WheelDeltaTest: horizontalWheelIsNegatedToAwtSign") {
+            Win32WheelDeltaTest().horizontalWheelIsNegatedToAwtSign()
         }
         run("TaoWheelPinchZoomTest: fullWheelDeltaProducesModerateZoomStep") {
             TaoWheelPinchZoomTest().fullWheelDeltaProducesModerateZoomStep()
