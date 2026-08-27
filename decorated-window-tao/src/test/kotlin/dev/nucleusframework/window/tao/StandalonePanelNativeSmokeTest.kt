@@ -1,11 +1,13 @@
 package dev.nucleusframework.window.tao
 
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -51,8 +53,51 @@ class StandalonePanelNativeSmokeTest {
                 )
             val ctx = DirectContext.makeGLWithInterface(intf)
             ctx.close()
+
+            // Ownerless tray panels must accept RegisterDragDrop: TrayApp hosts
+            // Compose in this HWND, not a DecoratedWindow, so inbound file drops
+            // never reached Modifier.dragAndDropTarget without this path.
+            assertTrue(NativeTaoWindowsDndBridge.isLoaded, "nucleus_tao_dnd failed to load")
+            val hwnd = PopupNativeBridgeWindows.nativeContentHwnd(panel)
+            assertNotEquals(0L, hwnd, "standalone panel HWND is 0")
+            val rc = NativeTaoWindowsDndBridge.nativeRegister(hwnd, NoOpInboundDnDCallback())
+            assertEquals(0, rc, "RegisterDragDrop on standalone panel failed (rc=$rc)")
+            NativeTaoWindowsDndBridge.nativeRevoke(hwnd)
         } finally {
             PopupNativeBridgeWindows.nativeRelease(panel)
         }
     }
+}
+
+/**
+ * Named class (not a lambda) so [NativeTaoWindowsDndBridge.nativeRegister]'s
+ * `GetMethodID` lookup succeeds — same GraalVM JNI constraint as production
+ * inbound callbacks.
+ */
+private class NoOpInboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
+    override fun onDragEnter(
+        hwnd: Long,
+        x: Int,
+        y: Int,
+        keyState: Int,
+        hasFiles: Boolean,
+    ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+
+    override fun onDragOver(
+        hwnd: Long,
+        x: Int,
+        y: Int,
+        keyState: Int,
+        hasFiles: Boolean,
+    ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+
+    override fun onDragLeave(hwnd: Long) = Unit
+
+    override fun onDrop(
+        hwnd: Long,
+        x: Int,
+        y: Int,
+        keyState: Int,
+        files: Array<String>?,
+    ): Int = NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
 }

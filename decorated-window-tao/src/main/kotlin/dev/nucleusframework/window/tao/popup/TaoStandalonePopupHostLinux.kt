@@ -194,6 +194,10 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             )
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, PanelEventCallback())
         publishGlTextureHost()
+        // Inbound OS file drops are not registered here: NativeTaoLinuxDndBridge
+        // binds GTK widgets, and this panel is a raw X11 window. Tray popups
+        // that need DnD on Linux should use the DecoratedWindow fallback path
+        // (TrayAppImplWindow) until an XDND helper exists for this surface.
         logger.fine { "Standalone popup panel ready (panel=$panel, scale=$panelScale)" }
         return true
     }

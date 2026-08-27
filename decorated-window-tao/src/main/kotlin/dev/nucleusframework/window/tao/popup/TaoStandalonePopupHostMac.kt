@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -9,17 +10,22 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
+import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
@@ -137,16 +143,21 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     val queuePtr = NativeMetalBridge.nativeQueuePtr(attachmentHandle)
                     directContext =
                         runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
+                    val dndManager =
+                        TaoDragAndDropManager(
+                            getRootNode = { scene!!.rootDragAndDropNode },
+                        )
                     sceneBundle =
                         canvasLayersSceneBundle(
                             coroutineContext = flushingDispatcher,
                             density = Density(scale),
                             layoutDirection = GlobalLayoutDirection,
                             size = IntSize(1, 1),
-                            platformContext = StandalonePopupPlatformContext(),
+                            platformContext = StandalonePopupPlatformContext(dndManager),
                             requestFrame = { scheduleRender() },
                         )
                     PopupNativeBridge.nativeSetEventCallback(panel, PanelEventCallback())
+                    registerInboundDnD()
                     PopupNativeBridge.nativeOrderOut(panel) // hidden until first setVisible(true)
                     valid = true
                     logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
@@ -271,6 +282,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
         sceneBundle?.close()
@@ -449,9 +461,97 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         }
     }
 
+    // ── Inbound drag-and-drop ─────────────────────────────────────────────
+    //
+    // Ownerless NSPanel content views never go through DecoratedWindow's
+    // NSDraggingDestination install. Register here so Modifier.dragAndDropTarget
+    // inside a TrayApp (e.g. a file converter) receives OS drops.
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!NativeTaoMacOsDndBridge.isLoaded) {
+            TaoDnDDiagnostics.log("macOS standalone popup DnD lib not loaded — inbound disabled")
+            return
+        }
+        val nsView = PopupNativeBridge.nativeContentNsView(panel)
+        if (nsView == 0L) {
+            TaoDnDDiagnostics.log("macOS standalone popup has no NSView — inbound disabled")
+            return
+        }
+        val rc = NativeTaoMacOsDndBridge.nativeRegister(nsView = nsView, callback = InboundDnDCallback())
+        TaoDnDDiagnostics.log("standalone popup nativeRegister rc=$rc")
+    }
+
+    private fun revokeInboundDnD() {
+        if (!NativeTaoMacOsDndBridge.isLoaded) return
+        val nsView = PopupNativeBridge.nativeContentNsView(panel)
+        if (nsView == 0L) return
+        NativeTaoMacOsDndBridge.nativeRevoke(nsView)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability metadata
+     * can register it explicitly — same constraint as the DecoratedWindow host.
+     */
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private inner class InboundDnDCallback : NativeTaoMacOsDndBridge.Callback {
+        private fun node() = scene?.rootDragAndDropNode
+
+        override fun onDragEnter(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
+            if (!hasFiles) return NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            return if (TaoSceneDnD.onDragEnter(node(), x, y)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
+        }
+
+        override fun onDragOver(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int =
+            if (TaoSceneDnD.onDragOver(node(), x, y)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
+
+        override fun onDragLeave(nsView: Long) {
+            TaoDnDDiagnostics.log("standalone popup onDragLeave")
+            TaoSceneDnD.onDragLeave(node())
+        }
+
+        override fun onDrop(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
+            return if (TaoSceneDnD.onDrop(node(), x, y, files)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
+        }
+    }
+
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : TaoPlatformContextBase() {
+    private inner class StandalonePopupPlatformContext(
+        override val dragAndDropManager: PlatformDragAndDropManager,
+    ) : TaoPlatformContextBase() {
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostMac.windowInfo
 
         // Standalone popup surfaces are always per-pixel transparent, so

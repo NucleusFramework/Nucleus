@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -11,17 +12,22 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
+import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
@@ -150,17 +156,25 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                             null
                         }
                     if (directContext != null) {
+                        // Same lazy getRootNode as the DecoratedWindow host: the
+                        // scene is built with this manager in PlatformContext,
+                        // then rootDragAndDropNode exists after construction.
+                        val dndManager =
+                            TaoDragAndDropManager(
+                                getRootNode = { scene!!.rootDragAndDropNode },
+                            )
                         sceneBundle =
                             canvasLayersSceneBundle(
                                 coroutineContext = flushingDispatcher,
                                 density = Density(scale),
                                 layoutDirection = GlobalLayoutDirection,
                                 size = IntSize(1, 1),
-                                platformContext = StandalonePopupPlatformContext(),
+                                platformContext = StandalonePopupPlatformContext(dndManager),
                                 requestFrame = { scheduleRender() },
                             )
                         PopupNativeBridgeWindows.nativeSetEventCallback(panel, PanelEventCallback())
                         publishTextureHost()
+                        registerInboundDnD()
                         // See TaoComposeSceneHostWindows: all contexts sharing the
                         // process EGL context must resetGLAll when siblings exist.
                         TaoComposeSceneHostWindows.attachedHostCount.incrementAndGet()
@@ -309,6 +323,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             PopupNativeBridgeWindows.nativeSetHighResTimer(false)
         }
         TaoComposeSceneHostWindows.attachedHostCount.decrementAndGet()
+        revokeInboundDnD()
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeWindows.nativeSetEventCallback(panel, null)
         // Teardown binds this panel's own surface for the Skia frees below, and
@@ -474,9 +489,99 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         }
     }
 
+    // ── Inbound drag-and-drop ─────────────────────────────────────────────
+    //
+    // Tray popups are ownerless WS_POPUP HWNDs, not Tao windows, so they never
+    // get Tao's RegisterDragDrop — and unlike DecoratedWindow they also skipped
+    // Nucleus's IDropTarget. Modifier.dragAndDropTarget in a TrayApp (e.g. a
+    // file converter) therefore never saw OS drops. Mirror the window host:
+    // register on the panel HWND, dispatch through TaoSceneDnD.
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!NativeTaoWindowsDndBridge.isLoaded) {
+            TaoDnDDiagnostics.log("windows standalone popup DnD lib not loaded — inbound disabled")
+            return
+        }
+        val hwnd = PopupNativeBridgeWindows.nativeContentHwnd(panel)
+        if (hwnd == 0L) {
+            TaoDnDDiagnostics.log("windows standalone popup has no HWND — inbound disabled")
+            return
+        }
+        val rc = NativeTaoWindowsDndBridge.nativeRegister(hwnd, InboundDnDCallback())
+        TaoDnDDiagnostics.log("standalone popup RegisterDragDrop rc=$rc")
+    }
+
+    private fun revokeInboundDnD() {
+        if (!NativeTaoWindowsDndBridge.isLoaded) return
+        val hwnd = PopupNativeBridgeWindows.nativeContentHwnd(panel)
+        if (hwnd == 0L) return
+        NativeTaoWindowsDndBridge.nativeRevoke(hwnd)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability metadata
+     * can register it explicitly — same constraint as the DecoratedWindow host.
+     */
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private inner class InboundDnDCallback : NativeTaoWindowsDndBridge.Callback {
+        private fun node() = scene?.rootDragAndDropNode
+
+        override fun onDragEnter(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
+            if (!hasFiles) return NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+            return if (TaoSceneDnD.onDragEnter(node(), x, y)) {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+            }
+        }
+
+        override fun onDragOver(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            hasFiles: Boolean,
+        ): Int =
+            if (TaoSceneDnD.onDragOver(node(), x, y)) {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+            }
+
+        override fun onDragLeave(hwnd: Long) {
+            TaoDnDDiagnostics.log("standalone popup onDragLeave")
+            TaoSceneDnD.onDragLeave(node())
+        }
+
+        override fun onDrop(
+            hwnd: Long,
+            x: Int,
+            y: Int,
+            keyState: Int,
+            files: Array<String>?,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
+            return if (TaoSceneDnD.onDrop(node(), x, y, files)) {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoWindowsDndBridge.DROP_EFFECT_NONE
+            }
+        }
+    }
+
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : TaoPlatformContextBase() {
+    private inner class StandalonePopupPlatformContext(
+        override val dragAndDropManager: PlatformDragAndDropManager,
+    ) : TaoPlatformContextBase() {
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHost.windowInfo
 
         // Standalone popup surfaces are always per-pixel transparent, so
