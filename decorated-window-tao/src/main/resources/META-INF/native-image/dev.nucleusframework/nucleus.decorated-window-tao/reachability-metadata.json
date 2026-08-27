@@ -82,6 +82,20 @@
                         "long",
                         "java.lang.String"
                     ]
+                },
+                {
+                    "name": "onImePreedit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
+                    ]
+                },
+                {
+                    "name": "onImeCommit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
+                    ]
                 }
             ]
         },
@@ -134,6 +148,20 @@
                 },
                 {
                     "name": "onImeReplaceCommit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
+                    ]
+                },
+                {
+                    "name": "onImePreedit",
+                    "parameterTypes": [
+                        "long",
+                        "java.lang.String"
+                    ]
+                },
+                {
+                    "name": "onImeCommit",
                     "parameterTypes": [
                         "long",
                         "java.lang.String"

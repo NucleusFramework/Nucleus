@@ -364,7 +364,8 @@ public object TaoHeadfulTestSuiteMain {
             FramePacingHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
-            ClipboardHeadfulCases.all()
+            ClipboardHeadfulCases.all() +
+            ImeHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }

@@ -77,7 +77,7 @@ pub(crate) fn current_modifier_bits() -> i32 {
     const VK_SHIFT: i32 = 0x10;
     const VK_CONTROL: i32 = 0x11;
     const VK_MENU: i32 = 0x12; // Alt
-    // High-order bit set means the key is currently physically down.
+                               // High-order bit set means the key is currently physically down.
     let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16) & 0x8000 != 0 };
     let mut m = 0;
     if down(VK_SHIFT) {
@@ -439,6 +439,44 @@ pub(crate) fn dispatch_key(
         let _ = env.exception_describe();
         let _ = env.exception_clear();
     }
+}
+
+fn dispatch_ime_string(handle: u64, method: &str, text: &str) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let Ok(jstr) = env.new_string(text) else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        method,
+        "(JLjava/lang/String;)V",
+        &[JValue::Long(handle as jlong), JValue::Object(&jstr.into())],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+/// IME composition (marked text) update — macOS only. Empty [text] cancels
+/// the composition (`unmarkText`). See issue #595.
+pub(crate) fn dispatch_ime_preedit(handle: u64, text: &str) {
+    dispatch_ime_string(handle, "onImePreedit", text);
+}
+
+/// IME composition commit — macOS only. `insertText:` while marked text is
+/// active; the JVM replaces the composing region via `commitText` (#595).
+pub(crate) fn dispatch_ime_commit(handle: u64, text: &str) {
+    dispatch_ime_string(handle, "onImeCommit", text);
 }
 
 #[allow(clippy::too_many_arguments, dead_code)]

@@ -335,6 +335,26 @@ pub enum WindowEvent<'a> {
   /// The window received a unicode character.
   ReceivedImeText(String),
 
+  /// The IME composition (marked text / preedit) changed. Nucleus patch for
+  /// nucleusframework#595 — mirrors `setMarkedText:` / `unmarkText`.
+  ///
+  /// Carries the current preedit string. Empty when the composition was
+  /// cancelled (`unmarkText` without a commit).
+  ///
+  /// ## Platform-specific
+  /// - Only emitted on **macOS**.
+  ImePreedit(String),
+
+  /// The IME committed the current composition. Nucleus patch for
+  /// nucleusframework#595 — `insertText:` while marked text is active.
+  ///
+  /// Distinct from [`ReceivedImeText`], which is ordinary character insert
+  /// (no composition) and is forwarded as KEY_TYPED.
+  ///
+  /// ## Platform-specific
+  /// - Only emitted on **macOS**.
+  ImeCommit(String),
+
   /// The window gained or lost focus.
   ///
   /// The parameter is true if the window has gained focus, and false if it has lost focus.
@@ -471,6 +491,8 @@ impl Clone for WindowEvent<'static> {
       HoveredFile(file) => HoveredFile(file.clone()),
       HoveredFileCancelled => HoveredFileCancelled,
       ReceivedImeText(c) => ReceivedImeText(c.clone()),
+      ImePreedit(text) => ImePreedit(text.clone()),
+      ImeCommit(text) => ImeCommit(text.clone()),
       Focused(f) => Focused(*f),
       KeyboardInput {
         device_id,
@@ -563,6 +585,8 @@ impl<'a> WindowEvent<'a> {
       HoveredFile(file) => Some(HoveredFile(file)),
       HoveredFileCancelled => Some(HoveredFileCancelled),
       ReceivedImeText(c) => Some(ReceivedImeText(c)),
+      ImePreedit(text) => Some(ImePreedit(text)),
+      ImeCommit(text) => Some(ImeCommit(text)),
       Focused(focused) => Some(Focused(focused)),
       KeyboardInput {
         device_id,

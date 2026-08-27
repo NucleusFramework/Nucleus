@@ -74,6 +74,10 @@ pub(super) struct ViewState {
   /// If a key-press does not cause an ime event, that means
   /// that the key-press cancelled the ime session. (Except arrow keys)
   key_triggered_ime: bool,
+
+  /// The last `keyDown` was consumed by the IME. The matching `keyUp`
+  /// must not be forwarded either (Nucleus patch, nucleusframework#595).
+  ime_consumed_keydown: bool,
   // Not Needed Anymore
   //raw_characters: Option<String>,
   is_key_down: bool,
@@ -98,6 +102,7 @@ pub fn new_view(ns_window: &NSWindow) -> (Option<Retained<NSView>>, Weak<Mutex<C
     ime_spot: None,
     in_ime_preedit: false,
     key_triggered_ime: false,
+    ime_consumed_keydown: false,
     is_key_down: false,
     modifiers: Default::default(),
     phys_modifiers: Default::default(),
@@ -130,6 +135,28 @@ fn is_arrow_key(keycode: KeyCode) -> bool {
     keycode,
     KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::ArrowLeft | KeyCode::ArrowRight
   )
+}
+
+/// Keys that must not cancel an active composition: arrows navigate the
+/// candidate window; Enter / NumpadEnter typically *commit* asynchronously
+/// (IMKit delivers `insertText:` after `keyDown` returns).
+fn is_ime_navigation_key(keycode: KeyCode) -> bool {
+  is_arrow_key(keycode) || matches!(keycode, KeyCode::Enter | KeyCode::NumpadEnter)
+}
+
+fn queue_window_event(state: &ViewState, event: WindowEvent<'static>) {
+  AppState::queue_event(EventWrapper::StaticEvent(Event::WindowEvent {
+    window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
+    event,
+  }));
+}
+
+fn cancel_preedit(state: &mut ViewState) {
+  if !state.in_ime_preedit {
+    return;
+  }
+  state.in_ime_preedit = false;
+  queue_window_event(state, WindowEvent::ImePreedit(String::new()));
 }
 
 struct ViewClass(&'static Class);
@@ -449,6 +476,17 @@ extern "C" fn set_marked_text(
     let state = &mut *(state_ptr as *mut ViewState);
     state.in_ime_preedit = true;
     state.key_triggered_ime = true;
+
+    // Nucleus patch (nucleusframework#595): forward the preedit to the app.
+    // The IME's inner selection is not representable through Compose's
+    // TextEditingScope and is not forwarded.
+    let preedit: String = if has_attr {
+      let s: &NSString = msg_send![string, string];
+      s.to_string()
+    } else {
+      (*(string as *const NSString)).to_string()
+    };
+    queue_window_event(state, WindowEvent::ImePreedit(preedit));
   }
   trace!("Completed `setMarkedText`");
 }
@@ -456,6 +494,12 @@ extern "C" fn set_marked_text(
 extern "C" fn unmark_text(this: &mut Object, _sel: Sel) {
   trace!("Triggered `unmarkText`");
   unsafe {
+    // Nucleus patch (nucleusframework#595): composition cancelled. No-op when
+    // we were not composing (AppKit also calls this after a commit).
+    let state_ptr: *mut c_void = *this.get_ivar("taoState");
+    let state = &mut *(state_ptr as *mut ViewState);
+    cancel_preedit(state);
+
     let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
     let () = msg_send![(*marked_text_ref), release];
     *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
@@ -542,13 +586,16 @@ extern "C" fn insert_text(
     // We don't need this now, but it's here if that changes.
     //let event: id = msg_send![NSApp(), currentEvent];
 
-    AppState::queue_event(EventWrapper::StaticEvent(Event::WindowEvent {
-      window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
-      event: WindowEvent::ReceivedImeText(string),
-    }));
+    // Nucleus patch (nucleusframework#595): `insertText:` during an active
+    // preedit is a composition commit — one event, replaced in place via
+    // Compose `commitText`. Ordinary insert (no composition) stays
+    // `ReceivedImeText` → KEY_TYPED.
     if state.in_ime_preedit {
       state.in_ime_preedit = false;
       state.key_triggered_ime = true;
+      queue_window_event(state, WindowEvent::ImeCommit(string));
+    } else {
+      queue_window_event(state, WindowEvent::ReceivedImeText(string));
     }
   }
   trace!("Completed `insertText`");
@@ -698,6 +745,7 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
       *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
     }
     state.key_triggered_ime = false;
+    let was_preediting: bool = state.in_ime_preedit;
 
     let array: id = msg_send![class!(NSArray), arrayWithObject: event];
     let () = msg_send![&*this, interpretKeyEvents: array];
@@ -705,26 +753,44 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
     // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
     let in_ime = state.key_triggered_ime;
     let key_event = create_key_event(event, true, is_repeat, in_ime, None);
-    let is_arrow_key = is_arrow_key(key_event.physical_key);
     // If `set_marked_text` or `insert_text` were not invoked, then the IME
     // was deactivated, and we should cancel the IME session. Arrow keys
     // inside an IME window don't invoke those methods — don't cancel then.
-    // Repeat keyDowns while PressAndHold is showing the picker also don't
-    // re-enter those methods; cancelling on them would dismiss the picker.
+    // Enter typically *commits* asynchronously (IMKit delivers `insertText:`
+    // after `keyDown` returns); cancelling would drop the composition and
+    // leak the raw Enter as a newline. Repeat keyDowns while PressAndHold
+    // is showing the picker also don't re-enter those methods.
     let is_preediting: bool = state.in_ime_preedit;
-    if is_preediting && !state.key_triggered_ime && !is_arrow_key && !is_repeat {
+    if is_preediting
+      && !state.key_triggered_ime
+      && !is_ime_navigation_key(key_event.physical_key)
+      && !is_repeat
+    {
       let () = msg_send![this, unmarkText];
-      state.in_ime_preedit = false;
     }
-    let window_event = Event::WindowEvent {
-      window_id,
-      event: WindowEvent::KeyboardInput {
-        device_id: DEVICE_ID,
-        event: key_event,
-        is_synthetic: false,
-      },
-    };
-    AppState::queue_event(EventWrapper::StaticEvent(window_event));
+    // Nucleus patch (nucleusframework#595): keys the IME consumed must not be
+    // double-delivered as raw key events — AWT never delivers a key past
+    // `InputContext.dispatchEvent` once the input method used it. That is:
+    //   - the key produced IME activity (`set_marked_text` / a commit while
+    //     preediting): romaji keystrokes, the conversion Space, Backspace
+    //     editing the preedit, the committing Enter;
+    //   - the key left an active preedit untouched (candidate-window arrows,
+    //     Enter waiting for an async commit, repeats).
+    // A key that *cancelled* the session (branch above) is still delivered,
+    // matching the dead-key behavior of native text views.
+    let ime_consumed = in_ime || (was_preediting && state.in_ime_preedit);
+    state.ime_consumed_keydown = ime_consumed;
+    if !ime_consumed {
+      let window_event = Event::WindowEvent {
+        window_id,
+        event: WindowEvent::KeyboardInput {
+          device_id: DEVICE_ID,
+          event: key_event,
+          is_synthetic: false,
+        },
+      };
+      AppState::queue_event(EventWrapper::StaticEvent(window_event));
+    }
   }
   trace!("Completed `keyDown`");
 }
@@ -738,6 +804,15 @@ extern "C" fn key_up(this: &Object, _sel: Sel, event: &NSEvent) {
     state.is_key_down = false;
 
     update_potentially_stale_modifiers(state, event);
+
+    // Nucleus patch (nucleusframework#595): drop the matching keyUp when
+    // keyDown was consumed by the IME.
+    let ime_consumed = state.ime_consumed_keydown;
+    state.ime_consumed_keydown = false;
+    if ime_consumed {
+      trace!("Completed `keyUp` (IME-consumed)");
+      return;
+    }
 
     let window_event = Event::WindowEvent {
       window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),

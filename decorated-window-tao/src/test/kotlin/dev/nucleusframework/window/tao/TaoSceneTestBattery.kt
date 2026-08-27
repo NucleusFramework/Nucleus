@@ -10,6 +10,7 @@ import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
+import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
@@ -170,6 +171,27 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneKeyboardTest: fallback key handler fires only when the scene does not consume") {
             TaoSceneKeyboardTest().`fallback key handler fires only when the scene does not consume`()
+        }
+        run("TaoSceneImeTest: IME preedit is shown in the field while composing") {
+            TaoSceneImeTest().`IME preedit is shown in the field while composing`()
+        }
+        run("TaoSceneImeTest: IME preedit is an active composition, not committed text") {
+            TaoSceneImeTest().`IME preedit is an active composition, not committed text`()
+        }
+        run("TaoSceneImeTest: IME commit replaces the preedit without inserting a newline") {
+            TaoSceneImeTest().`IME commit replaces the preedit without inserting a newline`()
+        }
+        run("TaoSceneImeTest: shortening the preedit does not delete committed text") {
+            TaoSceneImeTest().`shortening the preedit does not delete committed text`()
+        }
+        run("TaoSceneImeTest: committed text replaces the preedit") {
+            TaoSceneImeTest().`committed text replaces the preedit`()
+        }
+        run("TaoSceneImeTest: cancelled composition removes the preedit") {
+            TaoSceneImeTest().`cancelled composition removes the preedit`()
+        }
+        run("TaoSceneImeTest: typing after a commit works normally") {
+            TaoSceneImeTest().`typing after a commit works normally`()
         }
         run("TaoScenePointerTest: click on a clickable box fires exactly once") {
             TaoScenePointerTest().`click on a clickable box fires exactly once`()

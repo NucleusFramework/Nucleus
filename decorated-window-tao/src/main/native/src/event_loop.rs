@@ -11,14 +11,15 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 
 use crate::events::{
-    current_modifier_bits, dispatch, dispatch_key, dispatch_touch_input, handle_for,
-    mouse_button_code, pack_modifiers, UserEvent, CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED,
-    EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED, EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN,
-    EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED, EVENT_MAIN_EVENTS_CLEARED,
-    EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP, EVENT_MOVED, EVENT_REDRAW_REQUESTED,
-    EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED, EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL,
-    EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE,
-    TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit, dispatch_key,
+    dispatch_touch_input, handle_for, mouse_button_code, pack_modifiers, UserEvent,
+    CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
+    EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
+    EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
+    EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
+    EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE,
+    TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE,
+    TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
@@ -45,7 +46,10 @@ use crate::state::{set_event_loop_proxy, CURRENT_MODIFIERS, WINDOWS};
 // safe point where no native lock is held.
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn on_tao_minimized(window_id: tao::window::WindowId, minimized: bool) {
-    crate::state::send_user_event(crate::events::UserEvent::MinimizedChanged { window_id, minimized });
+    crate::state::send_user_event(crate::events::UserEvent::MinimizedChanged {
+        window_id,
+        minimized,
+    });
 }
 
 // Ctrl-flagged WM_MOUSEWHEEL (precision-touchpad pinch or real Ctrl+wheel),
@@ -311,9 +315,9 @@ pub(crate) fn run_event_loop_blocking() {
                         use tao::platform::unix::{WindowBuilderExtUnix, WindowExtUnix};
                         let parent_gtk = {
                             let guard = WINDOWS.lock().unwrap();
-                            guard.as_ref().and_then(|map| {
-                                map.get(&popup_of).map(|w| w.gtk_window().clone())
-                            })
+                            guard
+                                .as_ref()
+                                .and_then(|map| map.get(&popup_of).map(|w| w.gtk_window().clone()))
                         };
                         if let Some(parent_gtk) = parent_gtk {
                             builder = builder.with_popup_transient_for(&parent_gtk);
@@ -702,7 +706,11 @@ pub(crate) fn run_event_loop_blocking() {
                                 map.remove(&handle);
                             }
                         }
-                        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+                        #[cfg(any(
+                            target_os = "windows",
+                            target_os = "macos",
+                            target_os = "linux"
+                        ))]
                         last_minimized.remove(&handle);
                         dispatch(handle, EVENT_DESTROYED, 0, 0);
                     }
@@ -826,6 +834,12 @@ pub(crate) fn run_event_loop_blocking() {
                                 ch as jint,
                             );
                         }
+                    }
+                    WindowEvent::ImePreedit(text) => {
+                        dispatch_ime_preedit(handle, &text);
+                    }
+                    WindowEvent::ImeCommit(text) => {
+                        dispatch_ime_commit(handle, &text);
                     }
                     WindowEvent::ModifiersChanged(state) => {
                         let modifiers = pack_modifiers(state);

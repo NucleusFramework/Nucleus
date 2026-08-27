@@ -116,6 +116,28 @@ internal object NativeTaoBridge {
             text: String,
         ) {
         }
+
+        /**
+         * macOS IME composition update (`setMarkedText:` / `unmarkText`).
+         * [text] is the current marked text — empty when the composition
+         * was cancelled. Default no-op. See issue #595.
+         */
+        fun onImePreedit(
+            handle: Long,
+            text: String,
+        ) {
+        }
+
+        /**
+         * macOS IME composition commit (`insertText:` while marked text is
+         * active). [text] replaces the composing region via
+         * `TextEditingScope.commitText`. Default no-op. See issue #595.
+         */
+        fun onImeCommit(
+            handle: Long,
+            text: String,
+        ) {
+        }
     }
 
     /** Takes over the calling thread. Blocks until [nativeExit] is called. */
@@ -239,6 +261,49 @@ internal object NativeTaoBridge {
         nsWindow: Long,
         nsView: Long,
     ): Int
+
+    /**
+     * macOS only, headful e2e: `true` when Japanese Kotoeri (romaji/hiragana)
+     * is installed and can be selected — even if it is currently disabled in
+     * the input-source menu.
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriAvailable(): Boolean
+
+    /**
+     * macOS only, headful e2e: enable Kotoeri if needed, select Hiragana,
+     * make [handle]'s view first responder and activate its input context.
+     * Saves the previous input source for [nativeMacOsKotoeriRestore].
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriSelect(handle: Long): Boolean
+
+    /**
+     * macOS only, headful e2e: restore the input source saved by
+     * [nativeMacOsKotoeriSelect] and disable Kotoeri again if this process
+     * enabled it. No-op when select was never called.
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriRestore()
+
+    /** macOS only, headful e2e: current TIS keyboard input source id. */
+    @JvmStatic
+    external fun nativeMacOsCurrentInputSource(): String
+
+    /**
+     * macOS only, headful e2e: deliver a real AppKit `keyDown:` / `keyUp:`
+     * to TaoView for [handle]. [keyCode] is a Carbon virtual key
+     * (`kVK_ANSI_*`). This is the same path a physical keystroke takes, so
+     * Kotoeri's `interpretKeyEvents:` → `setMarkedText:` / `insertText:`
+     * runs for real.
+     */
+    @JvmStatic
+    external fun nativeMacOsPostKeyToView(
+        handle: Long,
+        keyCode: Int,
+        characters: String,
+        down: Boolean,
+    ): Boolean
 
     /**
      * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM

@@ -46,6 +46,24 @@ extern "C" {
     pub(crate) fn nucleus_tao_start_window_drag(ns_window_ptr: i64);
     /// Headful e2e: beginSheetModalForWindow on [ns_window_ptr], cancel, report status.
     pub(crate) fn nucleus_tao_probe_sheet_parent(ns_window_ptr: i64, ns_view_ptr: i64) -> i32;
+    /// Headful e2e: Japanese Kotoeri is installed (may be disabled in the menu).
+    pub(crate) fn nucleus_tao_kotoeri_available() -> i32;
+    /// Headful e2e: enable+select Kotoeri Hiragana, activate [ns_view] input context.
+    pub(crate) fn nucleus_tao_kotoeri_select(ns_view_ptr: i64) -> i32;
+    /// Headful e2e: restore the input source saved by [nucleus_tao_kotoeri_select].
+    pub(crate) fn nucleus_tao_kotoeri_restore();
+    /// Headful e2e: deliver a real `keyDown:` / `keyUp:` to TaoView.
+    pub(crate) fn nucleus_tao_post_key_to_view(
+        ns_view_ptr: i64,
+        key_code: i32,
+        chars: *const std::os::raw::c_char,
+        down: i32,
+    ) -> i32;
+    /// Headful e2e: current TIS keyboard source id into [buf]. Returns 1 on success.
+    pub(crate) fn nucleus_tao_current_input_source_id(
+        buf: *mut std::os::raw::c_char,
+        len: i32,
+    ) -> i32;
     pub(crate) fn nucleus_tao_register_trackpad_gesture_callback(
         cb: extern "C" fn(
             ns_window_ptr: i64,

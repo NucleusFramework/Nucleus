@@ -188,5 +188,19 @@ public object TaoApplication {
         ) {
             lookup(handle)?.dispatchImeReplaceCommit(text)
         }
+
+        override fun onImePreedit(
+            handle: Long,
+            text: String,
+        ) {
+            lookup(handle)?.dispatchImePreedit(text)
+        }
+
+        override fun onImeCommit(
+            handle: Long,
+            text: String,
+        ) {
+            lookup(handle)?.dispatchImeCommit(text)
+        }
     }
 }
