@@ -216,6 +216,7 @@ public fun ApplicationScope.DecoratedWindow(
                 var placement: WindowPlacement? = null
                 var isMinimized: Boolean? = null
                 var wrapSettled: Boolean = !wrapWidth && !wrapHeight
+
                 /** Physical px of the last programmatic [TaoWindow.setInnerSize]; null = user/OS resize. */
                 var pendingProgrammaticPx: IntSize? = null
             }

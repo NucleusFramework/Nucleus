@@ -161,9 +161,7 @@ internal object AnimatedWindowSizeHeadfulCases {
                         .fillMaxWidth()
                         .weight(1f)
                         .background(Color(CONTENT_ARGB))
-                        .drawBehind {
-                            drawRect(Color.Black.copy(alpha = (frameTick % 2f) * 0.01f))
-                        }
+                        .drawBehind { drawRect(Color.Black.copy(alpha = (frameTick % 2f) * 0.01f)) }
                         .onGloballyPositioned { coords ->
                             val p = coords.positionInWindow()
                             content.set(
