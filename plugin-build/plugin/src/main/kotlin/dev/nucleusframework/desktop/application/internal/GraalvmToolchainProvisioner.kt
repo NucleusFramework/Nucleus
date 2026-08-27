@@ -43,7 +43,7 @@ internal fun isOracleGraalvmInstallation(javaHome: File): Boolean =
  * What GraalVM toolchain to provision for the current build machine.
  *
  * @param distribution GraalVM Community Edition (the default) or Oracle GraalVM.
- * @param version GraalVM version: an innovation release (`"25i2"`), a feature
+ * @param version GraalVM version: an innovation release (`"25i3"`), a feature
  *   version tracking the latest CPU (`"25"`), or a pinned patch release (`"25.0.1"`).
  * @param macosIntelFallback use Liberica NIK on macOS x64, which neither distribution
  *   ships any more (dropped after 25.0.1).
@@ -100,8 +100,8 @@ internal abstract class GraalvmToolchainValueSource :
  * - GraalVM Community Edition (the default) from the `graalvm/graalvm-ce-builds` GitHub
  *   releases, resolved through the GitHub API since the innovation asset names embed a
  *   base version that is not derivable from the requested version alone
- *   (`graalvm-community-jdk-25i2-25.0.4_macos-aarch64_bin.tar.gz`).
- * - Oracle GraalVM innovation releases (`25i2`) from
+ *   (`graalvm-community-jdk-25i3-25.0.4.1_macos-aarch64_bin.tar.gz`).
+ * - Oracle GraalVM innovation releases (`25i3`) from
  *   `https://gds.oracle.com/download/graal/<v>/latest/graalvm-jdk-<v>-<base>_<os>-<arch>_bin.<ext>`
  * - Oracle GraalVM LTS/latest (`25`) and pinned (`25.0.1`) releases from
  *   `https://download.oracle.com/graalvm/<feature>/{latest,archive}/graalvm-jdk-<v>_<os>-<arch>_bin.<ext>`
@@ -308,7 +308,7 @@ internal object GraalvmToolchainProvisioner {
      * A pinned patch release ("25.0.2") maps to a deterministic tag and asset name and is
      * resolved offline. Floating versions need the API: for the LTS line ("25") the newest
      * patch is unknown, and innovation assets embed a base version that is not derivable from
-     * the requested version (`graalvm-community-jdk-25i2-25.0.4_…` under tag `graal-25.2.4`).
+     * the requested version (`graalvm-community-jdk-25i3-25.0.4.1_…` under tag `graal-25.3.4.1`).
      */
     private fun resolveCommunityDownload(request: GraalvmToolchainRequest): DownloadSource {
         check(!(request.os == OS.Windows && request.arch == Arch.Arm64)) {
@@ -334,11 +334,11 @@ internal object GraalvmToolchainProvisioner {
 
         val prefix =
             if (version.contains('i')) {
-                // Innovation release ("25i2") — the asset appends the base version.
+                // Innovation release ("25i3") — the asset appends the base version.
                 "$GRAALVM_CE_ASSET_PREFIX$version-"
             } else {
                 // Feature version tracking the latest CPU ("25"); the trailing dot keeps
-                // "25" from also matching the "25i2" innovation assets.
+                // "25" from also matching the "25i3" innovation assets.
                 "$GRAALVM_CE_ASSET_PREFIX$version."
             }
         val chosen =
@@ -421,7 +421,7 @@ internal object GraalvmToolchainProvisioner {
         val ext = if (request.os == OS.Windows) "zip" else "tar.gz"
         val url =
             when {
-                // Innovation releases ("25i2") are distributed through GDS only.
+                // Innovation releases ("25i3") are distributed through GDS only.
                 version.contains('i') -> {
                     val base = version.substringBefore('i')
                     "https://gds.oracle.com/download/graal/$version/latest/" +
@@ -512,7 +512,7 @@ internal object GraalvmToolchainProvisioner {
     private fun javaFeatureVersion(version: String): Int =
         version.takeWhile(Char::isDigit).toIntOrNull()
             ?: error(
-                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i2\"",
+                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i3\"",
             )
 
     private fun archToken(arch: Arch): String =
