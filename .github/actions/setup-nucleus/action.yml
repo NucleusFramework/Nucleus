@@ -31,9 +31,9 @@ inputs:
     required: false
     default: 'false'
   graalvm-version:
-    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i2, 25).'
+    description: 'GraalVM toolchain version, used only as a cache-key component. Keep in sync with the graalvm { toolchain { } } DSL (e.g. 25i3, 25).'
     required: false
-    default: '25i2'
+    default: '25i3'
   graalvm-distribution:
     description: 'GraalVM distribution, used only as a cache-key component. Keep in sync with graalvm { toolchain { distribution } } (community or oracle). Changing it must not restore a cache holding the other distribution.'
     required: false
