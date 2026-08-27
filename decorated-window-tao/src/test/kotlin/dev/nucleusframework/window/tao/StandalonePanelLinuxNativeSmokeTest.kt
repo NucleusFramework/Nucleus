@@ -5,7 +5,13 @@ import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
+import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -153,5 +159,112 @@ class StandalonePanelLinuxNativeSmokeTest {
             // quit pipe hangs here and trips the test timeout.
             PopupNativeBridgeLinux.nativeRelease(panel)
         }
+    }
+
+    /**
+     * End-to-end inbound file drop on the raw X11 panel (#605): a second X
+     * client runs the XDND protocol (`XdndEnter`/`Position`/`Drop` +
+     * `text/uri-list` selection) against the panel and the JNI callback
+     * must see the dropped path. Named callback class — same GraalVM
+     * `GetMethodID` constraint as production.
+     */
+    @Test
+    fun standalonePanelReceivesXdndFileDrop() {
+        if (!System.getProperty("os.name", "").lowercase().contains("linux")) return
+        assertTrue(PopupNativeBridgeLinux.isLoaded, "nucleus_tao_linux_popup failed to load")
+        if (!PopupNativeBridgeLinux.nativeIsAvailable()) {
+            println("SKIP: no X server reachable (DISPLAY unset?)")
+            return
+        }
+
+        val droppedFile = Files.createTempFile("nucleus xdnd", ".txt")
+        Files.writeString(droppedFile, "nucleus-xdnd-e2e")
+        val expectedPath = droppedFile.toAbsolutePath().toString()
+
+        val panel =
+            PopupNativeBridgeLinux.nativeCreatePanel(
+                xPx = 80,
+                yPx = 90,
+                widthPx = 200,
+                heightPx = 120,
+            )
+        assertNotEquals(0L, panel, "standalone panel creation failed")
+
+        val callback = RecordingXdndCallback()
+        try {
+            PopupNativeBridgeLinux.nativeSetDnDCallback(panel, callback)
+            PopupNativeBridgeLinux.nativeSetFrameOnScreen(panel, 80, 90, 200, 120)
+            PopupNativeBridgeLinux.nativeSetPanelVisible(panel, true)
+
+            val rc =
+                PopupNativeBridgeLinux.nativeSmokeXdndDrop(
+                    panel,
+                    arrayOf(expectedPath),
+                )
+            assertEquals(
+                PopupNativeBridgeLinux.DROP_EFFECT_COPY,
+                rc,
+                "XDND round-trip failed (no XdndStatus/Finished). rc=$rc " +
+                    "entered=${callback.entered.get()} dropped=${callback.dropped}",
+            )
+            assertTrue(
+                callback.dropLatch.await(3, TimeUnit.SECONDS),
+                "onDrop was not invoked. entered=${callback.entered.get()} dropped=${callback.dropped}",
+            )
+            assertTrue(callback.entered.get() >= 1, "onDragEnter was not invoked")
+            assertEquals(listOf(expectedPath), callback.dropped.toList())
+        } finally {
+            PopupNativeBridgeLinux.nativeSetDnDCallback(panel, null)
+            PopupNativeBridgeLinux.nativeRelease(panel)
+            Files.deleteIfExists(droppedFile)
+        }
+    }
+}
+
+/**
+ * Named class (not a lambda) so [PopupNativeBridgeLinux.nativeSetDnDCallback]'s
+ * `GetMethodID` lookup succeeds — same GraalVM JNI constraint as production
+ * inbound callbacks.
+ */
+private class RecordingXdndCallback : PopupNativeBridgeLinux.DnDCallback {
+    val entered = AtomicInteger(0)
+    val dropped = CopyOnWriteArrayList<String>()
+    val dropLatch = CountDownLatch(1)
+
+    override fun onDragEnter(
+        handle: Long,
+        x: Int,
+        y: Int,
+        modState: Int,
+        hasFiles: Boolean,
+    ): Int {
+        entered.incrementAndGet()
+        return if (hasFiles) {
+            PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        } else {
+            PopupNativeBridgeLinux.DROP_EFFECT_NONE
+        }
+    }
+
+    override fun onDragOver(
+        handle: Long,
+        x: Int,
+        y: Int,
+        modState: Int,
+        hasFiles: Boolean,
+    ): Int = PopupNativeBridgeLinux.DROP_EFFECT_COPY
+
+    override fun onDragLeave(handle: Long) = Unit
+
+    override fun onDrop(
+        handle: Long,
+        x: Int,
+        y: Int,
+        modState: Int,
+        files: Array<String>?,
+    ): Int {
+        files?.let { dropped.addAll(it) }
+        dropLatch.countDown()
+        return PopupNativeBridgeLinux.DROP_EFFECT_COPY
     }
 }

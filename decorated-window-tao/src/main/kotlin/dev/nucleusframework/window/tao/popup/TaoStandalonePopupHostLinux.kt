@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -11,13 +12,17 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
+import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
@@ -66,7 +71,7 @@ import kotlin.math.roundToInt
  * on the panel's X event thread and hop to the main thread before touching
  * the scene.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override val isValid: Boolean
 
@@ -183,21 +188,22 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
             panel = 0
             return false
         }
+        val dndManager =
+            TaoDragAndDropManager(
+                getRootNode = { scene!!.rootDragAndDropNode },
+            )
         sceneBundle =
             canvasLayersSceneBundle(
                 coroutineContext = flushingDispatcher,
                 density = Density(panelScale),
                 layoutDirection = GlobalLayoutDirection,
                 size = IntSize(1, 1),
-                platformContext = StandalonePopupPlatformContext(),
+                platformContext = StandalonePopupPlatformContext(dndManager),
                 requestFrame = { scheduleRender() },
             )
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, PanelEventCallback())
         publishGlTextureHost()
-        // Inbound OS file drops are not registered here: NativeTaoLinuxDndBridge
-        // binds GTK widgets, and this panel is a raw X11 window. Tray popups
-        // that need DnD on Linux should use the DecoratedWindow fallback path
-        // (TrayAppImplWindow) until an XDND helper exists for this surface.
+        registerInboundDnD()
         logger.fine { "Standalone popup panel ready (panel=$panel, scale=$panelScale)" }
         return true
     }
@@ -308,6 +314,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        revokeInboundDnD()
         PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, null)
         // Teardown binds this panel's context for the Skia frees below and then
@@ -475,9 +482,99 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         }
     }
 
+    // ── Inbound drag-and-drop ─────────────────────────────────────────────
+    //
+    // The panel is a raw X11 window, not a GtkWindow, so NativeTaoLinuxDndBridge
+    // cannot hang gtk_drag_dest_set on it. Register an XDND helper on the
+    // panel XID instead — same TaoSceneDnD dispatch as the Windows/macOS
+    // standalone hosts (#605).
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!PopupNativeBridgeLinux.isLoaded) {
+            TaoDnDDiagnostics.log("linux standalone popup DnD lib not loaded — inbound disabled")
+            return
+        }
+        if (panel == 0L) {
+            TaoDnDDiagnostics.log("linux standalone popup has no panel — inbound disabled")
+            return
+        }
+        PopupNativeBridgeLinux.nativeSetDnDCallback(panel, InboundDnDCallback())
+        TaoDnDDiagnostics.log("linux standalone popup XDND callback installed")
+    }
+
+    private fun revokeInboundDnD() {
+        if (!PopupNativeBridgeLinux.isLoaded || panel == 0L) return
+        PopupNativeBridgeLinux.nativeSetDnDCallback(panel, null)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability metadata
+     * can register it explicitly — same constraint as the DecoratedWindow host.
+     *
+     * JNI arrives on the panel's X event thread. Hop async onto Tao main
+     * like pointer events — the dispatcher queue keeps enter/over/drop in
+     * order. [XdndStatus] uses an optimistic COPY when the source offers
+     * files: a tray popup is a drop zone, and blocking the event thread
+     * for Compose would deadlock dispose.
+     */
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private inner class InboundDnDCallback : PopupNativeBridgeLinux.DnDCallback {
+        private fun node() = scene?.rootDragAndDropNode
+
+        private fun onMain(block: () -> Unit) {
+            TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
+                if (!disposed) block()
+            }
+        }
+
+        override fun onDragEnter(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            TaoDnDDiagnostics.log("linux standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
+            if (!hasFiles) return PopupNativeBridgeLinux.DROP_EFFECT_NONE
+            onMain { TaoSceneDnD.onDragEnter(node(), x, y) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        }
+
+        override fun onDragOver(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            onMain { TaoSceneDnD.onDragOver(node(), x, y) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        }
+
+        override fun onDragLeave(handle: Long) {
+            TaoDnDDiagnostics.log("linux standalone popup onDragLeave")
+            onMain { TaoSceneDnD.onDragLeave(node()) }
+        }
+
+        override fun onDrop(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int {
+            TaoDnDDiagnostics.log("linux standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
+            onMain { TaoSceneDnD.onDrop(node(), x, y, files) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        }
+    }
+
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : TaoPlatformContextBase() {
+    private inner class StandalonePopupPlatformContext(
+        override val dragAndDropManager: PlatformDragAndDropManager,
+    ) : TaoPlatformContextBase() {
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostLinux.windowInfo
 
         // Standalone popup surfaces are always per-pixel transparent, so

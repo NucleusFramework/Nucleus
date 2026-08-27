@@ -136,7 +136,8 @@ build_popup() {
     local OUT="$OUT_DIR/libnucleus_tao_linux_popup.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_linux_popup.c" -ldl -lpthread \
+        "$SCRIPT_DIR/nucleus_tao_linux_popup.c" \
+        "$SCRIPT_DIR/nucleus_tao_linux_popup_xdnd.c" -ldl -lpthread \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }

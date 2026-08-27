@@ -6,8 +6,8 @@ import dev.nucleusframework.core.runtime.NativeLibraryLoader
 
 /**
  * JNI bridge to the Linux standalone popup panel helper
- * (`linux/nucleus_tao_linux_popup.c`, shipped as
- * `libnucleus_tao_linux_popup.so`).
+ * (`linux/nucleus_tao_linux_popup.c` + `nucleus_tao_linux_popup_xdnd.c`,
+ * shipped as `libnucleus_tao_linux_popup.so`).
  *
  * The Linux twin of [PopupNativeBridgeWindows] / [PopupNativeBridge]
  * (macOS), standalone panels only — there is no owner-based variant on
@@ -200,10 +200,86 @@ internal object PopupNativeBridgeLinux {
     external fun nativeUninstallOutsideClickMonitor(panel: Long)
 
     /**
+     * Receives XDND callbacks for this raw X11 panel. Same shape as
+     * [NativeTaoLinuxDndBridge.Callback] / the Windows IDropTarget bridge so
+     * [dev.nucleusframework.window.tao.dnd.TaoSceneDnD] can stay shared.
+     *
+     * Invoked on the panel's X event thread — hop to the Tao main thread
+     * before touching a Compose scene. [handle] is the panel pointer.
+     *
+     * Return values for `onDragEnter`/`onDragOver`/`onDrop`:
+     *   - [DROP_EFFECT_NONE] — reject the drag/drop
+     *   - [DROP_EFFECT_COPY] — accept as a copy
+     *
+     * Must be a named class, not a lambda or anonymous object: GraalVM's
+     * `GetMethodID` does not pick up inherited interface methods on anonymous
+     * classes.
+     */
+    interface DnDCallback {
+        @Suppress("FunctionParameterNaming")
+        fun onDragEnter(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int
+
+        @Suppress("FunctionParameterNaming")
+        fun onDragOver(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int
+
+        fun onDragLeave(handle: Long)
+
+        @Suppress("FunctionParameterNaming")
+        fun onDrop(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int
+    }
+
+    /**
+     * Installs the inbound XDND callback. Pass `null` to remove. The panel
+     * advertises `XdndAware` at creation, so file managers can discover it
+     * even before a callback is set — without one, every Status is a reject.
+     */
+    @JvmStatic
+    external fun nativeSetDnDCallback(
+        panel: Long,
+        callback: DnDCallback?,
+    )
+
+    /**
+     * Test-only XDND source: acts as a second X client and drops [files]
+     * onto [panel] (`XdndEnter` → `XdndPosition` → `XdndDrop`, serving
+     * `text/uri-list` on `SelectionRequest`). Returns [DROP_EFFECT_COPY]
+     * after `XdndFinished`, or [DROP_EFFECT_NONE] on timeout / protocol
+     * failure. Production code must not call this.
+     */
+    @JvmStatic
+    external fun nativeSmokeXdndDrop(
+        panel: Long,
+        files: Array<String>,
+    ): Int
+
+    /**
      * Stops the event thread, destroys the X window and frees the panel.
      * The EGL attachment must have been detached first
      * (`NativeTaoEglBridge.nativeDetach`).
      */
     @JvmStatic
     external fun nativeRelease(panel: Long)
+
+    const val DROP_EFFECT_NONE: Int = 0
+    const val DROP_EFFECT_COPY: Int = 1
+    const val DROP_EFFECT_MOVE: Int = 2
+    const val DROP_EFFECT_LINK: Int = 4
 }
