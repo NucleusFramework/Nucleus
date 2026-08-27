@@ -238,6 +238,24 @@ static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement
     BOOL isRepeat = nucleus_event_is_key_repeat(event);
     BOOL sameAsBase = (g_base_text != nil) && [incoming isEqualToString:g_base_text];
 
+    // Nucleus patch (nucleusframework#595 follow-up): a marked-text IME
+    // (Japanese, Chinese, ...) commits through insertText: while the view
+    // still holds the preedit. That is never PressAndHold: its picker only
+    // engages on a plain committed letter, outside any composition
+    // (JDK-8074882 flow). Without this gate a segment commit that lands
+    // while the next romaji key is down is registered as a "base letter",
+    // the IME's own selectedRange queries then look like the picker
+    // starting, and the *next* commit is hijacked into the replace-commit
+    // path — deleting a code point, skipping ImeCommit, and leaving the
+    // preedit stranded (visible as duplicated segments).
+    if ([(NSView<NSTextInputClient> *)self hasMarkedText]) {
+        nucleus_clear_press_and_hold();
+        if (g_orig_insert_text) {
+            ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
+        }
+        return;
+    }
+
     // First repeat / selectedRange query: PressAndHold re-inserts the base
     // letter. Swallow it or we consume the replace flag and the accent
     // arrives later as a second KEY_TYPED (eé).
