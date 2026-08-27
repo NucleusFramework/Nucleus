@@ -7,6 +7,7 @@ fn main() {
             .file("macos/touchpad_gestures.m")
             .file("macos/dialog_parent.m")
             .file("macos/kotoeri.m")
+            .file("macos/text_input_client_probe.m")
             .flag("-fobjc-arc")
             .flag("-mmacosx-version-min=10.15")
             .compile("nucleus_tao_objc_helpers");
@@ -18,5 +19,6 @@ fn main() {
         println!("cargo:rerun-if-changed=macos/touchpad_gestures.m");
         println!("cargo:rerun-if-changed=macos/dialog_parent.m");
         println!("cargo:rerun-if-changed=macos/kotoeri.m");
+        println!("cargo:rerun-if-changed=macos/text_input_client_probe.m");
     }
 }

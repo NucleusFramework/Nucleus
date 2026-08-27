@@ -127,4 +127,23 @@ class TaoSceneImeTest {
             typeText("ok")
             assertEquals("日本語ok", field.value)
         }
+
+    @Test
+    fun `empty IME commit while composing does not wipe the preedit`() =
+        runTaoSceneTest {
+            val field = focusedField()
+            imePreedit("にほんご")
+            // insertText: of a U+F7xx corporate/function-key char, filtered to
+            // "". Must not run commitText("") — that deletes the composition
+            // and desyncs IMKit (reporter follow-up on #595).
+            imeCommit("")
+            assertEquals("にほんご", field.value)
+            val request = assertNotNull(inputMethodRequest)
+            assertNotNull(
+                request.value().composition,
+                "an empty filtered commit must leave the composing region in place",
+            )
+            imeCommit("日本語")
+            assertEquals("日本語", field.value)
+        }
 }

@@ -153,6 +153,20 @@ static BOOL nucleus_is_letter_key_event(NSEvent *event) {
     return [[NSCharacterSet letterCharacterSet] characterIsMember:c];
 }
 
+/// JBR's `-[NSEvent isARepeat]` throws on non-key events (KitDefined
+/// window-update events are often `currentEvent` when IMKit calls
+/// `insertText:` outside `keyDown:`).
+static BOOL nucleus_event_is_key_repeat(NSEvent *event) {
+    if (event == nil) {
+        return NO;
+    }
+    NSEventType type = event.type;
+    if (type != NSEventTypeKeyDown && type != NSEventTypeKeyUp) {
+        return NO;
+    }
+    return event.isARepeat;
+}
+
 static void nucleus_clear_press_and_hold(void) {
     g_did_insert_base = NO;
     g_letter_key_down = NO;
@@ -167,14 +181,18 @@ static void nucleus_note_press_and_hold_query(void) {
     }
 }
 
-// Tao's `selectedRange` returns `{NSNotFound, 0}` ("no text storage"). Some
-// AppKit code paths interpret that as "this view doesn't host text" and skip
-// IME-related machinery. Returning `{0, 0}` matches AWT-managed text views.
-// PressAndHold also reads this after the base letter is committed — that
-// query is how we detect the picker (Compose AWT uses getSelectedText).
+// PressAndHold reads `selectedRange` after the base letter is committed —
+// that query is how we detect the picker (Compose AWT uses getSelectedText).
+// Forward to TaoView so IMKit sees the real caret / marked-text selection
+// (nucleusframework#595); `{0, 0}` is only the fallback when the original
+// implementation is missing.
+static IMP g_orig_selected_range = NULL;
+
 static NSRange tao_view_selected_range(id self, SEL _cmd) {
-    (void)self; (void)_cmd;
     nucleus_note_press_and_hold_query();
+    if (g_orig_selected_range) {
+        return ((NSRange (*)(id, SEL))g_orig_selected_range)(self, _cmd);
+    }
     return NSMakeRange(0, 0);
 }
 
@@ -217,7 +235,7 @@ static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement
     NSString *incoming = nucleus_string_from_ime_arg(string) ?: @"";
     NSEvent *event = NSApp.currentEvent;
     BOOL isLetterDown = nucleus_is_letter_key_event(event);
-    BOOL isRepeat = event && event.isARepeat;
+    BOOL isRepeat = nucleus_event_is_key_repeat(event);
     BOOL sameAsBase = (g_base_text != nil) && [incoming isEqualToString:g_base_text];
 
     // First repeat / selectedRange query: PressAndHold re-inserts the base
@@ -270,10 +288,13 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
     if (!taoViewClass) return;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        class_replaceMethod(taoViewClass,
-                            @selector(selectedRange),
-                            (IMP)tao_view_selected_range,
-                            "{_NSRange=QQ}@:");
+        Method selectedRange = class_getInstanceMethod(
+            taoViewClass, @selector(selectedRange)
+        );
+        if (selectedRange) {
+            g_orig_selected_range =
+                method_setImplementation(selectedRange, (IMP)tao_view_selected_range);
+        }
         class_replaceMethod(taoViewClass,
                             @selector(firstRectForCharacterRange:actualRange:),
                             (IMP)tao_view_first_rect_for_character_range,

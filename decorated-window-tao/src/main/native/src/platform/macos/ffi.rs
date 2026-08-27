@@ -64,6 +64,26 @@ extern "C" {
         buf: *mut std::os::raw::c_char,
         len: i32,
     ) -> i32;
+    /// Headful e2e: query TaoView NSTextInputClient. [out_ranges] is 5×i64
+    /// (marked loc/len, selected loc/len, characterIndex; NSNotFound → -1).
+    pub(crate) fn nucleus_tao_query_text_input_client(
+        ns_view_ptr: i64,
+        out_ranges: *mut i64,
+        substring_buf: *mut std::os::raw::c_char,
+        substring_buf_len: i32,
+    ) -> i32;
+    /// Headful e2e: `[view setMarkedText:selectedRange:replacementRange:]`.
+    pub(crate) fn nucleus_tao_inject_marked_text(
+        ns_view_ptr: i64,
+        utf8: *const std::os::raw::c_char,
+        selected_loc: i32,
+        selected_len: i32,
+    ) -> i32;
+    /// Headful e2e: `[view insertText:replacementRange:]`.
+    pub(crate) fn nucleus_tao_inject_insert_text(
+        ns_view_ptr: i64,
+        utf8: *const std::os::raw::c_char,
+    ) -> i32;
     pub(crate) fn nucleus_tao_register_trackpad_gesture_callback(
         cb: extern "C" fn(
             ns_window_ptr: i64,

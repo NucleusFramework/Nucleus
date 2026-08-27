@@ -3,16 +3,17 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use jni::objects::{JClass, JString, JValue};
-use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE};
+use jni::objects::{JClass, JLongArray, JString, JValue};
+use jni::sys::{jboolean, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use tao::platform::macos::WindowExtMacOS;
 
 use crate::platform::macos::ffi::{
     nucleus_tao_activate_input_context, nucleus_tao_current_input_source_id,
-    nucleus_tao_kotoeri_available, nucleus_tao_kotoeri_restore, nucleus_tao_kotoeri_select,
-    nucleus_tao_post_key_to_view, nucleus_tao_set_ime_local_rect,
+    nucleus_tao_inject_insert_text, nucleus_tao_inject_marked_text, nucleus_tao_kotoeri_available,
+    nucleus_tao_kotoeri_restore, nucleus_tao_kotoeri_select, nucleus_tao_post_key_to_view,
+    nucleus_tao_query_text_input_client, nucleus_tao_set_ime_local_rect,
 };
 use crate::state::{EVENT_CALLBACK, JAVA_VM, WINDOWS};
 
@@ -215,4 +216,95 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     env.new_string(&id)
         .map(|s| s.into_raw())
         .unwrap_or(std::ptr::null_mut())
+}
+
+/// Headful e2e: one snapshot. Fills [ranges_out] with 5×i64
+/// (`marked loc/len`, `selected loc/len`, `characterIndex`; `NSNotFound` is
+/// `-1`) and returns the marked-range substring.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsQueryTextInputClient(
+    env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    ranges_out: jlongArray,
+) -> jni::sys::jstring {
+    let mut ranges = [-1i64; 5];
+    let mut buf = [0u8; 4096];
+    if let Some(ns_view) = ns_view_for_handle(handle) {
+        unsafe {
+            nucleus_tao_query_text_input_client(
+                ns_view,
+                ranges.as_mut_ptr(),
+                buf.as_mut_ptr() as *mut c_char,
+                buf.len() as i32,
+            );
+        }
+    }
+    let arr = unsafe { JLongArray::from_raw(ranges_out) };
+    if env.get_array_length(&arr).unwrap_or(0) >= 5 {
+        let _ = env.set_long_array_region(&arr, 0, &ranges);
+    }
+    let text = CStr::from_bytes_until_nul(&buf)
+        .ok()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    env.new_string(&text)
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+/// Headful e2e: `setMarkedText:selectedRange:replacementRange:` on TaoView.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsInjectMarkedText(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    text: JString,
+    selected_location: jint,
+    selected_length: jint,
+) -> jboolean {
+    let Some(ns_view) = ns_view_for_handle(handle) else {
+        return JNI_FALSE;
+    };
+    let utf8: String = match env.get_string(&text) {
+        Ok(s) => s.into(),
+        Err(_) => return JNI_FALSE,
+    };
+    let Ok(cstr) = CString::new(utf8) else {
+        return JNI_FALSE;
+    };
+    let ok = unsafe {
+        nucleus_tao_inject_marked_text(ns_view, cstr.as_ptr(), selected_location, selected_length)
+    };
+    if ok != 0 {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
+}
+
+/// Headful e2e: `insertText:replacementRange:` on TaoView.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsInjectInsertText(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    text: JString,
+) -> jboolean {
+    let Some(ns_view) = ns_view_for_handle(handle) else {
+        return JNI_FALSE;
+    };
+    let utf8: String = match env.get_string(&text) {
+        Ok(s) => s.into(),
+        Err(_) => return JNI_FALSE,
+    };
+    let Ok(cstr) = CString::new(utf8) else {
+        return JNI_FALSE;
+    };
+    let ok = unsafe { nucleus_tao_inject_insert_text(ns_view, cstr.as_ptr()) };
+    if ok != 0 {
+        JNI_TRUE
+    } else {
+        JNI_FALSE
+    }
 }

@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -29,7 +30,11 @@ import java.util.concurrent.atomic.AtomicReference
  * from the input-source menu, then restores the previous source.
  */
 internal object ImeHeadfulCases {
-    fun all(): List<TaoWindowTestCase> = listOf(kotoeriNihongoCommitsWithoutNewline())
+    fun all(): List<TaoWindowTestCase> =
+        listOf(
+            kotoeriNihongoCommitsWithoutNewline(),
+            textInputClientAnswersAndEmptyCorporateCommit(),
+        )
 
     private fun kotoeriNihongoCommitsWithoutNewline(): TaoWindowTestCase {
         val value = AtomicReference("")
@@ -122,6 +127,153 @@ internal object ImeHeadfulCases {
             } finally {
                 MacOsKotoeriProbe.restore()
             }
+        }
+    }
+
+    /**
+     * Reporter follow-up on #595: IMKit desyncs when NSTextInputClient lies
+     * (`markedRange` off-by-one, `selectedRange` = NSNotFound, substring nil,
+     * `characterIndexForPoint` = 0) and when a U+F7xx `insertText:` is
+     * forwarded as `ImeCommit("")`, wiping the preedit.
+     *
+     * Drives TaoView's NSTextInputClient directly (no Kotoeri required).
+     */
+    private fun textInputClientAnswersAndEmptyCorporateCommit(): TaoWindowTestCase {
+        val value = AtomicReference("")
+        val composition = AtomicReference<TextRange?>(null)
+        val focused = AtomicBoolean(false)
+        return TaoWindowTestCase(
+            name = "#595 NSTextInputClient answers and empty corporate commit",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+            skip = { macOsOnly() },
+            paintDefaultBackground = false,
+            size = DpSize(480.dp, 360.dp),
+            content = { focusedImeField(value, composition, focused) },
+        ) {
+            driveTextInputClientCase(value, composition, focused)
+        }
+    }
+
+    @Composable
+    private fun focusedImeField(
+        value: AtomicReference<String>,
+        composition: AtomicReference<TextRange?>,
+        focused: AtomicBoolean,
+    ) {
+        val requester = remember { FocusRequester() }
+        var field by remember { mutableStateOf(TextFieldValue("")) }
+        LaunchedEffect(Unit) {
+            requester.requestFocus()
+            focused.set(true)
+        }
+        BasicTextField(
+            value = field,
+            onValueChange = {
+                field = it
+                value.set(it.text)
+                composition.set(it.composition)
+            },
+            modifier =
+                Modifier
+                    .fillMaxSize()
+                    .focusRequester(requester),
+        )
+    }
+
+    private suspend fun TaoWindowTestScope.driveTextInputClientCase(
+        value: AtomicReference<String>,
+        composition: AtomicReference<TextRange?>,
+        focused: AtomicBoolean,
+    ) {
+        val marked = "hello"
+        awaitUntil("window mapped") { bounds() != null }
+        awaitUntil("text field focused") { focused.get() }
+        settle(FOCUS_SETTLE_MILLIS)
+        val handle = window.handle
+        injectMarked(handle, marked)
+        awaitUntil("preedit reached Compose") { value.get() == marked }
+        assertClientSnapshot(handle, marked)
+        check(composition.get() != null) {
+            "setMarkedText must leave an active composing region"
+        }
+        injectMarked(handle, marked + "\uF700")
+        awaitUntil("corporate chars stripped from preedit") {
+            value.get() == marked && '\uF700' !in value.get()
+        }
+        check(composition.get() != null) {
+            "corporate-only extra chars must not cancel the composing region"
+        }
+        check(MacOsTextInputClientProbe.insertText(handle, "\uF700")) {
+            "insertText(U+F700) was not delivered"
+        }
+        settle(POST_TYPE_SETTLE_MILLIS)
+        check(value.get() == marked && composition.get() != null) {
+            "empty filtered commit must not wipe the preedit, got ${value.get().debug()}"
+        }
+        check('\uF700' !in value.get()) {
+            "U+F7xx tofu must not enter the field: ${value.get().debug()}"
+        }
+        check(MacOsTextInputClientProbe.insertText(handle, marked)) {
+            "insertText(\"$marked\") was not delivered"
+        }
+        awaitUntil("composition committed") {
+            composition.get() == null && value.get() == marked
+        }
+        val afterCommit = MacOsTextInputClientProbe.query(handle)
+        check(
+            afterCommit.markedLocation == MacOsTextInputClientProbe.NS_NOT_FOUND ||
+                afterCommit.markedLength == 0L,
+        ) {
+            "successful insertText must clear marked text, got marked=" +
+                "(${afterCommit.markedLocation}, ${afterCommit.markedLength})"
+        }
+        injectMarked(handle, "xyz")
+        awaitUntil("second preedit") {
+            value.get().endsWith("xyz") && composition.get() != null
+        }
+        injectMarked(handle, "")
+        awaitUntil("empty setMarkedText unmarks") {
+            composition.get() == null && value.get() == marked
+        }
+    }
+
+    private fun injectMarked(
+        handle: Long,
+        text: String,
+    ) {
+        check(
+            MacOsTextInputClientProbe.setMarkedText(
+                handle,
+                text,
+                selectedLocation = text.length,
+                selectedLength = 0,
+            ),
+        ) { "setMarkedText(\"$text\") was not delivered" }
+    }
+
+    private fun assertClientSnapshot(
+        handle: Long,
+        marked: String,
+    ) {
+        val snap = MacOsTextInputClientProbe.query(handle)
+        check(snap.markedLocation == 0L && snap.markedLength == marked.length.toLong()) {
+            "markedRange must be (0, ${marked.length}), got " +
+                "(${snap.markedLocation}, ${snap.markedLength})"
+        }
+        check(
+            snap.selectedLocation == marked.length.toLong() &&
+                snap.selectedLength == 0L,
+        ) {
+            "selectedRange must be the caret at marked end " +
+                "(${marked.length}, 0), got (${snap.selectedLocation}, ${snap.selectedLength})"
+        }
+        check(snap.substring == marked) {
+            "attributedSubstringForProposedRange must return the marked text, " +
+                "got ${snap.substring.debug()}"
+        }
+        check(snap.characterIndex == marked.length.toLong()) {
+            "characterIndexForPoint must be the marked length (${marked.length}), " +
+                "got ${snap.characterIndex}"
         }
     }
 

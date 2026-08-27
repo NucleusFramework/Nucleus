@@ -64,10 +64,14 @@ internal class TaoImeSession(
      * Commits [text] in place of the composing region. Called for
      * `insertText:` while marked text is active — not for ordinary typing,
      * which still travels `ReceivedImeText` → KEY_TYPED.
+     *
+     * An empty [text] is ignored: native filters Apple corporate/function-key
+     * characters to `""`, and `commitText("")` would delete the composing
+     * region.
      */
     fun commit(text: String) {
         val request = activeRequest ?: return
-        if (!isComposing && text.isEmpty()) return
+        if (text.isEmpty()) return
         isComposing = false
         request.editText {
             commitText(text, 1)

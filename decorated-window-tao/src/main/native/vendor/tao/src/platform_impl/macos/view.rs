@@ -78,6 +78,11 @@ pub(super) struct ViewState {
   /// The last `keyDown` was consumed by the IME. The matching `keyUp`
   /// must not be forwarded either (Nucleus patch, nucleusframework#595).
   ime_consumed_keydown: bool,
+
+  /// Selection within marked text, as last given by `setMarkedText:`.
+  /// UTF-16 units relative to the start of the marked range. `EMPTY_RANGE`
+  /// when there is no marked text.
+  ime_selected_range: NSRange,
   // Not Needed Anymore
   //raw_characters: Option<String>,
   is_key_down: bool,
@@ -103,6 +108,7 @@ pub fn new_view(ns_window: &NSWindow) -> (Option<Retained<NSView>>, Weak<Mutex<C
     in_ime_preedit: false,
     key_triggered_ime: false,
     ime_consumed_keydown: false,
+    ime_selected_range: util::EMPTY_RANGE,
     is_key_down: false,
     modifiers: Default::default(),
     phys_modifiers: Default::default(),
@@ -157,6 +163,25 @@ fn cancel_preedit(state: &mut ViewState) {
   }
   state.in_ime_preedit = false;
   queue_window_event(state, WindowEvent::ImePreedit(String::new()));
+}
+
+fn reset_marked_text_ivar(this: &mut Object) {
+  unsafe {
+    let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
+    let () = msg_send![(*marked_text_ref), release];
+    *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
+  }
+}
+
+fn clamp_ime_selected_range(selected: NSRange, marked_len: NSUInteger) -> NSRange {
+  if marked_len == 0 {
+    return util::EMPTY_RANGE;
+  }
+  if selected.location == NSNotFound as NSUInteger {
+    return NSRange::new(marked_len, 0);
+  }
+  let loc = selected.location.min(marked_len);
+  NSRange::new(loc, selected.length.min(marked_len.saturating_sub(loc)))
 }
 
 struct ViewClass(&'static Class);
@@ -430,18 +455,37 @@ extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
     let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
     let length = marked_text.length();
     trace!("Completed `markedRange`");
+    // Nucleus patch (nucleusframework#595): IMKit cross-checks this against
+    // the marked string. The previous `length - 1` was off-by-one and made
+    // Kotoeri / ATOK "commit" a function-key character instead of the
+    // composition. Empty marked text is `{NSNotFound, 0}`.
     if length > 0 {
-      NSRange::new(0, length - 1)
+      NSRange::new(0, length)
     } else {
       util::EMPTY_RANGE
     }
   }
 }
 
-extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
-  trace!("Triggered `selectedRange`");
-  trace!("Completed `selectedRange`");
-  util::EMPTY_RANGE
+extern "C" fn selected_range(this: &Object, _sel: Sel) -> NSRange {
+  unsafe {
+    trace!("Triggered `selectedRange`");
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let marked_len = marked_text.length();
+    let state_ptr: *mut c_void = *this.get_ivar("taoState");
+    let state = &*(state_ptr as *const ViewState);
+    // `selectedRange` is an insertion point, never `{NSNotFound, 0}` —
+    // that token is only valid for `markedRange` when nothing is marked.
+    let range = if marked_len == 0 {
+      NSRange::new(0, 0)
+    } else if state.ime_selected_range.location == NSNotFound as NSUInteger {
+      NSRange::new(marked_len, 0)
+    } else {
+      clamp_ime_selected_range(state.ime_selected_range, marked_len)
+    };
+    trace!("Completed `selectedRange`");
+    range
+  }
 }
 
 /// An IME pre-edit operation happened, changing the text that's
@@ -451,7 +495,7 @@ extern "C" fn set_marked_text(
   this: &mut Object,
   _sel: Sel,
   string: id,
-  _selected_range: NSRange,
+  selected_range: NSRange,
   _replacement_range: NSRange,
 ) {
   trace!("Triggered `setMarkedText`");
@@ -471,22 +515,38 @@ extern "C" fn set_marked_text(
     let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
     let () = msg_send![(*marked_text_ref), release];
     *marked_text_ref = Retained::into_raw(marked_text);
+    let marked_len: NSUInteger = msg_send![*marked_text_ref, length];
 
     let state_ptr: *mut c_void = *this.get_ivar("taoState");
     let state = &mut *(state_ptr as *mut ViewState);
-    state.in_ime_preedit = true;
     state.key_triggered_ime = true;
 
     // Nucleus patch (nucleusframework#595): forward the preedit to the app.
     // The IME's inner selection is not representable through Compose's
-    // TextEditingScope and is not forwarded.
+    // TextEditingScope and is not forwarded. Corporate characters stay in
+    // the ivar (IMKit's bookkeeping) but must not reach Compose.
+    // Empty `setMarkedText:` is `unmarkText` — do not collapse it with
+    // corporate-only marked text, which must leave Compose composing.
     let preedit: String = if has_attr {
       let s: &NSString = msg_send![string, string];
       s.to_string()
     } else {
       (*(string as *const NSString)).to_string()
     };
-    queue_window_event(state, WindowEvent::ImePreedit(preedit));
+    let visible: String = preedit
+      .chars()
+      .filter(|c| !is_corporate_character(*c))
+      .collect();
+    if preedit.is_empty() {
+      state.ime_selected_range = util::EMPTY_RANGE;
+      cancel_preedit(state);
+    } else {
+      state.in_ime_preedit = true;
+      state.ime_selected_range = clamp_ime_selected_range(selected_range, marked_len);
+      if !visible.is_empty() {
+        queue_window_event(state, WindowEvent::ImePreedit(visible));
+      }
+    }
   }
   trace!("Completed `setMarkedText`");
 }
@@ -499,10 +559,8 @@ extern "C" fn unmark_text(this: &mut Object, _sel: Sel) {
     let state_ptr: *mut c_void = *this.get_ivar("taoState");
     let state = &mut *(state_ptr as *mut ViewState);
     cancel_preedit(state);
-
-    let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
-    let () = msg_send![(*marked_text_ref), release];
-    *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
+    state.ime_selected_range = util::EMPTY_RANGE;
+    reset_marked_text_ivar(this);
     let input_context: id = msg_send![this, inputContext];
     let _: () = msg_send![input_context, discardMarkedText];
   }
@@ -516,20 +574,43 @@ extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> id 
 }
 
 extern "C" fn attributed_substring_for_proposed_range(
-  _this: &Object,
+  this: &Object,
   _sel: Sel,
-  _range: NSRange,
-  _actual_range: *mut c_void, // *mut NSRange
+  range: NSRange,
+  actual_range: *mut c_void, // *mut NSRange
 ) -> id {
-  trace!("Triggered `attributedSubstringForProposedRange`");
-  trace!("Completed `attributedSubstringForProposedRange`");
-  nil
+  unsafe {
+    trace!("Triggered `attributedSubstringForProposedRange`");
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let length = marked_text.length();
+    if length == 0 || range.location == NSNotFound as NSUInteger || range.location >= length
+    {
+      trace!("Completed `attributedSubstringForProposedRange`");
+      return nil;
+    }
+    let loc = range.location;
+    let len = range.length.min(length - loc);
+    let clamped = NSRange::new(loc, len);
+    if !actual_range.is_null() {
+      *(actual_range as *mut NSRange) = clamped;
+    }
+    trace!("Completed `attributedSubstringForProposedRange`");
+    msg_send![marked_text, attributedSubstringFromRange: clamped]
+  }
 }
 
-extern "C" fn character_index_for_point(_this: &Object, _sel: Sel, _point: NSPoint) -> NSUInteger {
-  trace!("Triggered `characterIndexForPoint`");
-  trace!("Completed `characterIndexForPoint`");
-  0
+extern "C" fn character_index_for_point(this: &Object, _sel: Sel, _point: NSPoint) -> NSUInteger {
+  unsafe {
+    trace!("Triggered `characterIndexForPoint`");
+    // Nucleus patch (nucleusframework#595): IMKit uses this as the caret
+    // index. Returning 0 while composing made live conversion treat the
+    // caret as the start of the marked text. We have no glyph map, so
+    // report the insertion point at the end of the marked range.
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let index = marked_text.length();
+    trace!("Completed `characterIndexForPoint`");
+    index
+  }
 }
 
 extern "C" fn first_rect_for_character_range(
@@ -557,7 +638,7 @@ extern "C" fn first_rect_for_character_range(
 }
 
 extern "C" fn insert_text(
-  this: &Object,
+  this: &mut Object,
   _sel: Sel,
   string: &NSString,
   _replacement_range: NSRange,
@@ -590,11 +671,20 @@ extern "C" fn insert_text(
     // preedit is a composition commit — one event, replaced in place via
     // Compose `commitText`. Ordinary insert (no composition) stays
     // `ReceivedImeText` → KEY_TYPED.
+    //
+    // An empty string after corporate-character filtering is not a real
+    // commit: IMKit is passing through the function-key char of the key
+    // that should have confirmed the composition. Leave the preedit up so
+    // Compose and IMKit stay in sync.
     if state.in_ime_preedit {
-      state.in_ime_preedit = false;
       state.key_triggered_ime = true;
-      queue_window_event(state, WindowEvent::ImeCommit(string));
-    } else {
+      if !string.is_empty() {
+        state.in_ime_preedit = false;
+        state.ime_selected_range = util::EMPTY_RANGE;
+        reset_marked_text_ivar(this);
+        queue_window_event(state, WindowEvent::ImeCommit(string));
+      }
+    } else if !string.is_empty() {
       queue_window_event(state, WindowEvent::ReceivedImeText(string));
     }
   }

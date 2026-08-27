@@ -306,6 +306,40 @@ internal object NativeTaoBridge {
     ): Boolean
 
     /**
+     * macOS only, headful e2e: query TaoView's `NSTextInputClient` in one
+     * snapshot. Fills [rangesOut] (length ≥ 5) with
+     * `[markedLoc, markedLen, selectedLoc, selectedLen, charIndex]`
+     * (`NSNotFound` is `-1`) and returns the marked-range substring, or
+     * empty when the client returns `nil`.
+     */
+    @JvmStatic
+    external fun nativeMacOsQueryTextInputClient(
+        handle: Long,
+        rangesOut: LongArray,
+    ): String
+
+    /**
+     * macOS only, headful e2e: invoke `setMarkedText:selectedRange:replacementRange:`
+     * on TaoView (the same entry IMKit uses).
+     */
+    @JvmStatic
+    external fun nativeMacOsInjectMarkedText(
+        handle: Long,
+        text: String,
+        selectedLocation: Int,
+        selectedLength: Int,
+    ): Boolean
+
+    /**
+     * macOS only, headful e2e: invoke `insertText:replacementRange:` on TaoView.
+     */
+    @JvmStatic
+    external fun nativeMacOsInjectInsertText(
+        handle: Long,
+        text: String,
+    ): Boolean
+
+    /**
      * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM
      * can attach the GL render surface and apply custom decoration. Only resolvable on
      * Windows.
