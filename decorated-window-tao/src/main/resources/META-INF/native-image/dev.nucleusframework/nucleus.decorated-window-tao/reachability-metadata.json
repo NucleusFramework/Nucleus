@@ -449,6 +449,16 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHost$InboundDnDCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge$DragPump",
             "jniAccessible": true,
             "methods": [
@@ -478,6 +488,16 @@
         },
         {
             "type": "dev.nucleusframework.window.tao.scene.TaoComposeSceneHost$InboundDnDCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostMac$InboundDnDCallback",
             "jniAccessible": true,
             "methods": [
                 { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
