@@ -22,6 +22,7 @@ import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+import dev.nucleusframework.window.tao.event.dispatchAppKitScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -435,13 +436,9 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             y: Float,
             dx: Float,
             dy: Float,
+            precise: Boolean,
         ) {
-            scene?.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
-                scrollDelta = Offset(dx, dy),
-                type = PointerType.Mouse,
-            )
+            scene?.dispatchAppKitScroll(x, y, dx, dy, precise, scale)
         }
 
         override fun onKeyEvent(

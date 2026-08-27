@@ -116,13 +116,20 @@ internal object PopupNativeBridge {
             modifiers: Int,
         )
 
-        /** AppKit `scrollingDelta*` units. */
+        /**
+         * Raw AppKit `scrollingDelta*` units. [precise] is
+         * `NSEvent.hasPreciseScrollingDeltas` (trackpad / Magic Mouse).
+         * Callers must map through
+         * [dev.nucleusframework.window.tao.event.dispatchAppKitScroll]
+         * before Compose.
+         */
         @Suppress("FunctionParameterNaming")
         fun onScroll(
             x: Float,
             y: Float,
             dx: Float,
             dy: Float,
+            precise: Boolean,
         )
 
         /** [type] = 1 down, 2 up. */

@@ -49,7 +49,7 @@
 static JavaVM *sJVM = NULL;
 static jclass sCallbackClass = NULL;          // global ref to the Java callback interface
 static jmethodID sOnPointerMethod = NULL;     // (IFFII)V — type, x, y, button, modifiers
-static jmethodID sOnScrollMethod = NULL;      // (FFFF)V  — x, y, dx, dy
+static jmethodID sOnScrollMethod = NULL;      // (FFFFZ)V — x, y, dx, dy, precise
 static jmethodID sOnKeyMethod = NULL;         // (IIII)V  — type, vkCode, codePoint, modifiers
 static jclass sOutsideListenerClass = NULL;
 static jmethodID sOutsideOnClickMethod = NULL; // (II)V  — eventType, button
@@ -70,7 +70,7 @@ static void ensureCallbackCache(JNIEnv *env, jobject cbSample, jobject outsideSa
             sCallbackClass = (*env)->NewGlobalRef(env, local);
             (*env)->DeleteLocalRef(env, local);
             sOnPointerMethod = (*env)->GetMethodID(env, sCallbackClass, "onPointerEvent", "(IFFII)V");
-            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFF)V");
+            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZ)V");
             sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIII)V");
         }
     }
@@ -283,7 +283,8 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
-        x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY);
+        x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY,
+        event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE);
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 

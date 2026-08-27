@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.event.dispatchAppKitScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -264,13 +265,9 @@ internal class TaoPopupSceneLayer(
             y: Float,
             dx: Float,
             dy: Float,
+            precise: Boolean,
         ) {
-            innerScene.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
-                scrollDelta = Offset(dx, dy),
-                type = PointerType.Mouse,
-            )
+            innerScene.dispatchAppKitScroll(x, y, dx, dy, precise, scale)
         }
 
         override fun onKeyEvent(
