@@ -84,7 +84,11 @@ internal class TaoImeSession(
      * `DesktopTextInputService2` / JDK-8074882). Falls back to a typed-key
      * sequence when no text-input session is up yet.
      */
-    fun replaceCommit(text: String) {
+    fun replaceCommit(rawText: String) {
+        // Apple corporate (function-key) characters must never reach the field:
+        // they render as tofu, and `deleteSurroundingTextInCodePoints` would
+        // still remove a real character before "inserting" them (#595).
+        val text = rawText.filterNot { it in '\uF700'..'\uF8FF' }
         if (text.isEmpty()) return
         val request = activeRequest
         if (request != null) {

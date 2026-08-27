@@ -190,6 +190,9 @@ public object TaoSceneTestBattery {
         run("TaoSceneImeTest: cancelled composition removes the preedit") {
             TaoSceneImeTest().`cancelled composition removes the preedit`()
         }
+        run("TaoSceneImeTest: empty IME commit while composing does not wipe the preedit") {
+            TaoSceneImeTest().`empty IME commit while composing does not wipe the preedit`()
+        }
         run("TaoSceneImeTest: typing after a commit works normally") {
             TaoSceneImeTest().`typing after a commit works normally`()
         }
