@@ -10,6 +10,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsOwner
@@ -27,6 +28,7 @@ import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Picture
@@ -206,6 +208,20 @@ internal class TaoSceneTestScope(
     private val platformContext =
         object : TaoPlatformContextBase() {
             override val windowInfo: TaoWindowInfo = this@TaoSceneTestScope.windowInfo
+
+            // Mirrors `TaoPlatformContext.startInputMethod`: publish the text-input
+            // session request so IME callbacks can edit the focused field, clear it
+            // when the session ends (focus loss / field disposal).
+            override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing {
+                inputMethodRequest = request
+                imeSession.onInputSession(request)
+                try {
+                    awaitCancellation()
+                } finally {
+                    inputMethodRequest = null
+                    imeSession.onInputSession(null)
+                }
+            }
 
             override val semanticsOwnerListener =
                 object : PlatformContext.SemanticsOwnerListener {
@@ -454,6 +470,39 @@ internal class TaoSceneTestScope(
             val vk = ch.uppercaseChar().code
             pressKey(vkCode = vk, codePoint = ch.code)
         }
+    }
+
+    // ── IME input (macOS marked-text / NSTextInputClient wire) ──────────────
+
+    /**
+     * The active Compose text-input session request, captured through the same
+     * `startInputMethod` hook the host's `TaoPlatformContext` implements.
+     * Non-null while an editable field is focused.
+     */
+    @Volatile
+    var inputMethodRequest: PlatformTextInputMethodRequest? = null
+
+    /** Production IME routing under test — the host owns the same object. */
+    val imeSession: TaoImeSession = TaoImeSession()
+
+    /**
+     * Simulates the IME updating the marked text (macOS `setMarkedText:`), as
+     * delivered to the JVM by the native side. Mirrors the host's
+     * `window.imePreedit` wiring. An empty [text] is `unmarkText`.
+     */
+    fun imePreedit(text: String) {
+        imeSession.preedit(text)
+        frame()
+    }
+
+    /**
+     * Simulates the IME committing the composition (macOS `insertText:`
+     * while marked text is active). Mirrors the host's `window.imeCommit`
+     * wiring (`TextEditingScope.commitText`).
+     */
+    fun imeCommit(text: String) {
+        imeSession.commit(text)
+        frame()
     }
 
     /**

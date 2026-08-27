@@ -97,23 +97,15 @@ internal class TaoComposeSceneHost(
     // tao `with_transparent` so alpha-0 Skia clears show the desktop.
     private val fullyTransparent: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
-    @Volatile
-    private var activeInputRequest: androidx.compose.ui.platform.PlatformTextInputMethodRequest? = null
+    /** IME preedit / commit / PressAndHold routing (#595). */
+    private val imeSession = TaoImeSession(::emitImeTypedFallback)
 
-    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
-    internal fun applyPressAndHoldCommit(text: String) {
-        if (text.isEmpty()) return
-        val request = activeInputRequest
-        if (request != null) {
-            request.editText {
-                deleteSurroundingTextInCodePoints(1, 0)
-                commitText(text, 1)
-            }
-            return
-        }
-        // CoreTextField session not up yet: same gated sequence Compose AWT
-        // uses (delete one code point, then commit). Never used for ordinary
-        // typing — native only calls this after PressAndHold queried the view.
+    /**
+     * CoreTextField session not up yet: same gated sequence Compose AWT
+     * uses (delete one code point, then commit). Never used for ordinary
+     * typing — native only calls this after PressAndHold queried the view.
+     */
+    private fun emitImeTypedFallback(text: String) {
         onKeyEvent(TaoEventCode.KEY_DOWN, 8, TaoKeyLocation.STANDARD, 0, 0)
         onKeyEvent(TaoEventCode.KEY_UP, 8, TaoKeyLocation.STANDARD, 0, 0)
         for (ch in text) {
@@ -364,7 +356,9 @@ internal class TaoComposeSceneHost(
                 outboundLauncher = ::launchMacOsOutboundDrag,
             )
 
-        window.imeReplaceCommit = { text -> applyPressAndHoldCommit(text) }
+        window.imeReplaceCommit = imeSession::replaceCommit
+        window.imePreedit = imeSession::preedit
+        window.imeCommit = imeSession::commit
         val taoPlatformContext =
             TaoPlatformContext(
                 windowHandle = window.handle,
@@ -387,7 +381,7 @@ internal class TaoComposeSceneHost(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
-                onInputSession = { activeInputRequest = it },
+                onInputSession = { imeSession.onInputSession(it) },
                 isWindowTransparent = fullyTransparent,
             )
 
@@ -1526,7 +1520,9 @@ internal class TaoComposeSceneHost(
 
     fun detach() {
         window.imeReplaceCommit = null
-        activeInputRequest = null
+        window.imePreedit = null
+        window.imeCommit = null
+        imeSession.onInputSession(null)
         shutdownA11yScheduler()
         // Drop the transition hook before the scene goes: a late
         // willEnterFS would otherwise re-enter a torn-down host.

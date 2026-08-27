@@ -1066,6 +1066,27 @@ public class TaoWindow internal constructor(
         imeReplaceCommit?.invoke(text)
     }
 
+    /**
+     * macOS IME composition update (marked text). Empty [String] cancels.
+     * See [NativeTaoBridge.EventCallback.onImePreedit].
+     */
+    @Volatile
+    internal var imePreedit: ((String) -> Unit)? = null
+
+    internal fun dispatchImePreedit(text: String) {
+        imePreedit?.invoke(text)
+    }
+
+    /**
+     * macOS IME composition commit. See [NativeTaoBridge.EventCallback.onImeCommit].
+     */
+    @Volatile
+    internal var imeCommit: ((String) -> Unit)? = null
+
+    internal fun dispatchImeCommit(text: String) {
+        imeCommit?.invoke(text)
+    }
+
     @Suppress("CyclomaticComplexMethod")
     internal fun dispatch(
         code: Int,
