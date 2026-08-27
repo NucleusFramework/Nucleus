@@ -85,6 +85,14 @@ pub unsafe fn set_style_mask_sync(ns_window: &NSWindow, ns_view: &NSView, mask: 
 // `setContentSize:` isn't thread-safe either, though it doesn't log any errors
 // and just fails silently. Anyway, GCD to the rescue!
 pub unsafe fn set_content_size_async(ns_window: &NSWindow, size: LogicalSize<f64>) {
+  // PATCH(nucleus): apply immediately on the main thread so a programmatic
+  // WindowState.size animation (#576) doesn't leave the NSWindow a frame
+  // behind the Compose scene. GCD async is only needed off-thread
+  // (`setContentSize:` is not thread-safe). Mirrors `set_frame_top_left_point_async`.
+  if is_main_thread() {
+    ns_window.setContentSize(NSSize::new(size.width as CGFloat, size.height as CGFloat));
+    return;
+  }
   let ns_window = MainThreadSafe(ns_window.retain());
   DispatchQueue::main().exec_async(move || {
     ns_window.setContentSize(NSSize::new(size.width as CGFloat, size.height as CGFloat));

@@ -659,12 +659,34 @@ pub(crate) fn run_event_loop_blocking() {
                     width,
                     height,
                 } => {
-                    let guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_ref() {
-                        if let Some(w) = map.get(&handle) {
+                    let inner = {
+                        let guard = WINDOWS.lock().unwrap();
+                        guard.as_ref().and_then(|map| {
+                            let w = map.get(&handle)?;
                             w.set_inner_size(LogicalSize::new(width, height));
-                        }
+                            Some(w.inner_size())
+                        })
+                    };
+                    // Win32 `SetWindowPos(SWP_ASYNCWINDOWPOS)` and a GCD-async
+                    // `setContentSize:` both update the live window rect before
+                    // the matching `Resized` event is delivered. Push
+                    // EVENT_RESIZED from the size we just applied so the
+                    // Compose scene/present tracks the HWND/NSWindow in this
+                    // turn — otherwise TitleBar + content tremble against the
+                    // already-resized chrome (#576). GTK queues Size through
+                    // the request channel; `inner_size()` is still the previous
+                    // configure there, so the real `Resized` follows later.
+                    #[cfg(any(target_os = "windows", target_os = "macos"))]
+                    if let Some(size) = inner {
+                        dispatch(
+                            handle,
+                            EVENT_RESIZED,
+                            size.width as jint,
+                            size.height as jint,
+                        );
                     }
+                    #[cfg(target_os = "linux")]
+                    let _ = inner;
                 }
                 UserEvent::SetOuterPosition { handle, x, y } => {
                     let guard = WINDOWS.lock().unwrap();

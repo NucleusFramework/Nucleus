@@ -154,6 +154,9 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     System.getProperty("nucleus.tao.headful.filter")?.let {
         systemProperty("nucleus.tao.headful.filter", it)
     }
+    System.getProperty("nucleus.issue576.samples")?.let {
+        systemProperty("nucleus.issue576.samples", it)
+    }
     // Honor a caller-forced Linux renderer (x11 / wayland) so portal parenting
     // e2es can be launched against XWayland from a native Wayland session.
     providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").orNull?.let {
