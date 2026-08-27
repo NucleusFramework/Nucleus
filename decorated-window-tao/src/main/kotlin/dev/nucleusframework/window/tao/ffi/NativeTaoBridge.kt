@@ -623,9 +623,14 @@ internal object NativeTaoBridge {
     )
 
     /**
-     * Anchors macOS IME UI at the given window-local rect in *physical pixels*
-     * (top-left origin). Tao's stock `firstRectForCharacterRange:` returns
-     * 0×0; we override it so candidate windows can follow the caret.
+     * Anchors the platform IME UI at the given window-local rect in *physical
+     * pixels* (top-left origin), so preedit and candidate windows follow the
+     * caret.
+     *
+     * - **macOS**: tao's stock `firstRectForCharacterRange:` returns 0×0; the
+     *   rect is stored for a swizzled implementation to return.
+     * - **Windows** (#558): forwarded to `Window::set_ime_position`, which
+     *   sets both `COMPOSITIONFORM` and `CANDIDATEFORM` on the input context.
      */
     @JvmStatic
     external fun nativeSetImeRect(

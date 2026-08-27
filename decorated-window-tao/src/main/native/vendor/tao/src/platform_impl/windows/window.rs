@@ -917,9 +917,21 @@ impl Window {
         ptCurrentPos: POINT { x, y },
         rcArea: RECT::default(),
       };
+      // PATCH(nucleus, #558): the composition form alone only moves the
+      // preedit window. The *candidate* list keeps whatever position it was
+      // last given — which is the top-left corner of the window until
+      // something sets it — so conversion candidates appear nowhere near the
+      // text being typed. It has its own form and has to be told separately.
+      let candidate_form = CANDIDATEFORM {
+        dwIndex: 0,
+        dwStyle: CFS_CANDIDATEPOS,
+        ptCurrentPos: POINT { x, y },
+        rcArea: RECT::default(),
+      };
       unsafe {
         let himc = ImmGetContext(self.window.0);
         let _ = ImmSetCompositionWindow(himc, &composition_form);
+        let _ = ImmSetCandidateWindow(himc, &candidate_form);
         let _ = ImmReleaseContext(self.window.0, himc);
       }
     }

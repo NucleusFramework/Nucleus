@@ -342,7 +342,10 @@ pub enum WindowEvent<'a> {
   /// cancelled (`unmarkText` without a commit).
   ///
   /// ## Platform-specific
-  /// - Only emitted on **macOS**.
+  /// - **macOS**: `setMarkedText:` / `unmarkText` (nucleusframework#595).
+  /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_COMPSTR`
+  ///   (nucleusframework#558).
+  /// - Not emitted on other platforms.
   ImePreedit(String),
 
   /// The IME committed the current composition. Nucleus patch for
@@ -352,7 +355,11 @@ pub enum WindowEvent<'a> {
   /// (no composition) and is forwarded as KEY_TYPED.
   ///
   /// ## Platform-specific
-  /// - Only emitted on **macOS**.
+  /// - **macOS**: `insertText:` while marked text is active
+  ///   (nucleusframework#595).
+  /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_RESULTSTR`
+  ///   (nucleusframework#558).
+  /// - Not emitted on other platforms.
   ImeCommit(String),
 
   /// The window gained or lost focus.

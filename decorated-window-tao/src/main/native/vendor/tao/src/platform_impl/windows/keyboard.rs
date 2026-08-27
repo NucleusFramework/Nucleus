@@ -37,6 +37,21 @@ pub fn is_msg_keyboard_related(msg: u32) -> bool {
   is_keyboard_msg || msg == WM_SETFOCUS || msg == WM_KILLFOCUS
 }
 
+/// True when the IME already consumed this keystroke (nucleusframework#558).
+///
+/// Windows reports such a key with `VK_PROCESSKEY` as the virtual key, but the
+/// `lparam` still carries the *physical* scancode. Building a `KeyEvent` from
+/// it — as this module does for every other key — resurrects the key the IME
+/// swallowed, so Enter that ends a conversion also inserts a newline, an arrow
+/// that picks a candidate also moves the caret, and Backspace that edits the
+/// preedit also deletes committed text. The composition itself reaches the app
+/// through `ImePreedit` / `ImeCommit`, so dropping the raw event loses nothing.
+///
+/// Mirrors `ime_consumed_keydown` on macOS (nucleusframework#595).
+fn is_ime_processed(wparam: WPARAM) -> bool {
+  wparam.0 as u16 == VK_PROCESSKEY.0
+}
+
 pub type ExScancode = u16;
 
 pub struct MessageAsKeyEvent {
@@ -104,6 +119,11 @@ impl KeyEventBuilder {
         if msg_kind == WM_SYSKEYDOWN && wparam.0 == usize::from(VK_F4.0) {
           // Don't dispatch Alt+F4 to the application.
           // This is handled in `event_loop.rs`
+          return vec![];
+        }
+
+        if is_ime_processed(wparam) {
+          *result = ProcResult::Value(LRESULT(0));
           return vec![];
         }
 
@@ -271,6 +291,11 @@ impl KeyEventBuilder {
           *result = ProcResult::DefSubclassProc;
         } else {
           *result = ProcResult::Value(LRESULT(0));
+        }
+
+        if is_ime_processed(wparam) {
+          *result = ProcResult::Value(LRESULT(0));
+          return vec![];
         }
 
         let mut layouts = LAYOUT_CACHE.lock();
