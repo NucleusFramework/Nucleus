@@ -31,6 +31,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.toRgbaIcon
 import kotlinx.coroutines.delay
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -215,6 +216,8 @@ public fun ApplicationScope.DecoratedWindow(
                 var placement: WindowPlacement? = null
                 var isMinimized: Boolean? = null
                 var wrapSettled: Boolean = !wrapWidth && !wrapHeight
+                /** Physical px of the last programmatic [TaoWindow.setInnerSize]; null = user/OS resize. */
+                var pendingProgrammaticPx: IntSize? = null
             }
         }
 
@@ -304,14 +307,30 @@ public fun ApplicationScope.DecoratedWindow(
                 if (wPx <= 0 || hPx <= 0) return@onResized
                 val scale = (NativeTaoBridge.nativeScaleFactor(w.handle).coerceAtLeast(1)) / 1000f
                 val newSize = DpSize((wPx / scale).dp, (hPx / scale).dp)
-                if (newSize != applied.size) {
-                    applied.size = newSize
-                    // Keep Unspecified in WindowState until wrap-content
-                    // measurement writes the real size; otherwise the first
-                    // native configure (creation fallback) would freeze the
-                    // requested wrap axis at 600dp.
-                    if (applied.wrapSettled) {
-                        latestState.size = newSize
+                val pending = applied.pendingProgrammaticPx
+                val programmaticEcho =
+                    pending != null &&
+                        abs(wPx - pending.width) <= PROGRAMMATIC_SIZE_ECHO_PX &&
+                        abs(hPx - pending.height) <= PROGRAMMATIC_SIZE_ECHO_PX
+                // In-flight programmatic resize: a stale WM_SIZE from the
+                // previous request must not write WindowState.size backwards
+                // and fight animateDpAsState (#576).
+                if (pending == null || programmaticEcho) {
+                    if (programmaticEcho) {
+                        applied.pendingProgrammaticPx = null
+                    }
+                    if (newSize != applied.size) {
+                        applied.size = newSize
+                        // Keep Unspecified in WindowState until wrap-content
+                        // measurement writes the real size; otherwise the first
+                        // native configure (creation fallback) would freeze the
+                        // requested wrap axis at 600dp.
+                        // Programmatic echoes must not overwrite the size the
+                        // animation/composition just wrote — dp↔px rounding
+                        // would otherwise ping-pong setInnerSize.
+                        if (applied.wrapSettled && !programmaticEcho) {
+                            latestState.size = newSize
+                        }
                     }
                 }
                 // Tao doesn't emit a dedicated "placement changed" event, but
@@ -326,6 +345,9 @@ public fun ApplicationScope.DecoratedWindow(
                         else -> WindowPlacement.Floating
                     }
                 if (placementNow != applied.placement) {
+                    if (placementNow != WindowPlacement.Floating) {
+                        applied.pendingProgrammaticPx = null
+                    }
                     applied.placement = placementNow
                     latestState.placement = placementNow
                 }
@@ -378,6 +400,11 @@ public fun ApplicationScope.DecoratedWindow(
                 measured = measured,
                 scale = scale,
             ) ?: return@LaunchedEffect
+        applied.pendingProgrammaticPx =
+            IntSize(
+                (resolved.width.value * scale).roundToInt(),
+                (resolved.height.value * scale).roundToInt(),
+            )
         window.setInnerSize(
             resolved.width.value.toDouble(),
             resolved.height.value.toDouble(),
@@ -395,6 +422,12 @@ public fun ApplicationScope.DecoratedWindow(
         if (state.placement != WindowPlacement.Floating) return@LaunchedEffect
         if (!state.size.width.isSpecified || !state.size.height.isSpecified) return@LaunchedEffect
         if (state.size != applied.size) {
+            val scale = (NativeTaoBridge.nativeScaleFactor(window.handle).coerceAtLeast(1)) / 1000f
+            applied.pendingProgrammaticPx =
+                IntSize(
+                    (state.size.width.value * scale).roundToInt(),
+                    (state.size.height.value * scale).roundToInt(),
+                )
             window.setInnerSize(
                 state.size.width.value
                     .toDouble(),
@@ -569,6 +602,9 @@ private fun WindowState.applyMacOsInitialMaximizedSize() {
  */
 private const val ALIGNED_POSITION_RETRIES = 10
 private const val ALIGNED_POSITION_RETRY_MS = 16L
+
+/** Native px slop when matching a programmatic setInnerSize echo (#576). */
+private const val PROGRAMMATIC_SIZE_ECHO_PX = 1
 
 /**
  * Resolves a [WindowPosition.Aligned] against the primary monitor's work area
