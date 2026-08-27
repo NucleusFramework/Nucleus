@@ -363,6 +363,26 @@
             ]
         },
         {
+            "type": "dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux$DnDCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
+            "type": "dev.nucleusframework.window.tao.popup.TaoStandalonePopupHostLinux$InboundDnDCallback",
+            "jniAccessible": true,
+            "methods": [
+                { "name": "onDragEnter", "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragOver",  "parameterTypes": ["long","int","int","int","boolean"] },
+                { "name": "onDragLeave", "parameterTypes": ["long"] },
+                { "name": "onDrop",      "parameterTypes": ["long","int","int","int","java.lang.String[]"] }
+            ]
+        },
+        {
             "type": "dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer$PopupEventCallback",
             "jniAccessible": true,
             "methods": [
