@@ -116,6 +116,28 @@ subprojects {
         }
     }
 
+    // Sources are UTF-8, but `javac` and `javadoc` default to the *platform*
+    // encoding, which is only UTF-8 where the JVM's default charset happens to
+    // be. On a Windows machine with a non-Western system locale it is a legacy
+    // code page (windows-31j on Japanese, GBK on Simplified Chinese, ...), and
+    // any non-ASCII character in a Java source file — the em dash in
+    // `TaoTransferableAccess`, for instance — becomes
+    // "unmappable character for encoding", which is a hard error in `javadoc`.
+    // That makes `publishToMavenLocal` fail for those developers even though CI
+    // (Linux/macOS, UTF-8 by default) is green. Stating the encoding explicitly
+    // makes the build reproducible regardless of the host locale.
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.withType<Javadoc>().configureEach {
+        options.encoding = "UTF-8"
+        (options as StandardJavadocDocletOptions).apply {
+            docEncoding = "UTF-8"
+            charSet = "UTF-8"
+        }
+    }
+
     ktlint {
         debug.set(false)
         verbose.set(true)
