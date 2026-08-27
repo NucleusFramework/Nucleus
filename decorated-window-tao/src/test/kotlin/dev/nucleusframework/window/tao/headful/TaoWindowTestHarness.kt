@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.window.WindowState
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
@@ -52,6 +53,13 @@ internal class TaoWindowTestCase(
      * exercise wrap-content sizing (#532).
      */
     val size: DpSize? = null,
+    /**
+     * When non-null, the suite uses this [WindowState] instead of a fresh
+     * [androidx.compose.ui.window.rememberWindowState]. Lets a case animate
+     * or otherwise mutate size the same way an app drives
+     * `DecoratedWindow(state)` (#576).
+     */
+    val windowState: WindowState? = null,
     /**
      * When non-null, the suite also composes a [dev.nucleusframework.window.tao.DecoratedDialog]
      * at application scope (parented to this case's window). [dialogSize]

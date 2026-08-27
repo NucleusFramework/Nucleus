@@ -364,7 +364,8 @@ public object TaoHeadfulTestSuiteMain {
             FramePacingHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
-            ClipboardHeadfulCases.all()
+            ClipboardHeadfulCases.all() +
+            AnimatedWindowSizeHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
@@ -415,12 +416,13 @@ public object TaoHeadfulTestSuiteMain {
 
             if (skipReason == null) {
                 androidx.compose.runtime.key(current) {
+                    val fallbackState =
+                        rememberWindowState(
+                            size = case.size ?: DpSize(800.dp, 600.dp),
+                        )
                     DecoratedWindow(
                         onCloseRequest = { /* cases drive their own lifecycle */ },
-                        state =
-                            rememberWindowState(
-                                size = case.size ?: DpSize(800.dp, 600.dp),
-                            ),
+                        state = case.windowState ?: fallbackState,
                         title = "tao-headful: ${case.name}",
                         transparent = case.transparent,
                         nativePopupLayers = case.nativePopupLayers,
