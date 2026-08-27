@@ -54,9 +54,9 @@ use crate::{
   platform_impl::platform::{
     dark_mode::try_window_theme,
     dpi::{become_dpi_aware, dpi_to_scale_factor, enable_non_client_dpi_scaling},
+    ime::{is_msg_ime_related, ImeEvent},
     keyboard::is_msg_keyboard_related,
     keyboard_layout::LAYOUT_CACHE,
-    minimal_ime::is_msg_ime_related,
     monitor::{self, MonitorHandle},
     raw_input, util,
     window::set_skip_taskbar,
@@ -997,21 +997,26 @@ unsafe fn public_window_callback_inner<T: 'static>(
     .unwrap_or_else(|| result = ProcResult::Value(LRESULT(-1)));
 
   let ime_callback = || {
-    use crate::event::WindowEvent::ReceivedImeText;
+    use crate::event::WindowEvent::{ImeCommit, ImePreedit, ReceivedImeText};
     let is_ime_related = is_msg_ime_related(msg);
     if !is_ime_related {
       return;
     }
-    let text = {
+    let events = {
       let mut window_state = subclass_input.window_state.lock();
       window_state
         .ime_handler
         .process_message(window, msg, wparam, lparam, &mut result)
     };
-    if let Some(str) = text {
+    for ime_event in events {
+      let event = match ime_event {
+        ImeEvent::Preedit(text) => ImePreedit(text),
+        ImeEvent::Commit(text) => ImeCommit(text),
+        ImeEvent::Text(text) => ReceivedImeText(text),
+      };
       subclass_input.send_event(Event::WindowEvent {
         window_id: RootWindowId(WindowId(window.0 as _)),
-        event: ReceivedImeText(str),
+        event,
       });
     }
   };

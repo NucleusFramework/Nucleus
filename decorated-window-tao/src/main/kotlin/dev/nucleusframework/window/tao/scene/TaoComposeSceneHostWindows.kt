@@ -48,7 +48,9 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
@@ -89,6 +91,15 @@ internal class TaoComposeSceneHostWindows(
     // Compose CSD stroke and no DWM caption/border/shadow contour.
     private val borderlessChrome: Boolean = false,
 ) : AbstractTaoComposeSceneHost() {
+    /**
+     * IME preedit / commit routing (#558).
+     *
+     * No typed-key fallback: that argument exists for the macOS PressAndHold
+     * accent picker, which has no Windows counterpart — IMM32 only ever
+     * delivers text while a text-input session is up.
+     */
+    private val imeSession = TaoImeSession()
+
     val titleBarHeightDpState: androidx.compose.runtime.MutableState<Float> =
         androidx.compose.runtime.mutableStateOf(0f)
 
@@ -360,6 +371,8 @@ internal class TaoComposeSceneHostWindows(
         // custom title bar path. NativeView overlay scenes can still opt into
         // TaoComposeSceneContextWindows when they need popups outside their
         // overlay bounds.
+        window.imePreedit = imeSession::preedit
+        window.imeCommit = imeSession::commit
         val platformContext =
             WindowsTaoPlatformContext(
                 windowHandle = window.handle,
@@ -381,6 +394,7 @@ internal class TaoComposeSceneHostWindows(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
+                onInputSession = { imeSession.onInputSession(it) },
                 isWindowTransparent = fullyTransparent,
             )
         sceneBundle =
@@ -1858,6 +1872,9 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        window.imePreedit = null
+        window.imeCommit = null
+        imeSession.onInputSession(null)
         nativeViewBlending.destroyOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
@@ -2009,6 +2026,8 @@ private class WindowsTaoPlatformContext(
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
+    /** Publishes the active text-input session to the host's [TaoImeSession] (#558). */
+    private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit = {},
     // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
     // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
     // created with `transparent = true` — same as Compose Desktop's
@@ -2022,6 +2041,45 @@ private class WindowsTaoPlatformContext(
                     .PlatformInsets(getTop = topInsetPx)
             override val captionBar: androidx.compose.ui.platform.PlatformInsets get() = systemBars
         }
+
+    /**
+     * Keeps IMM32 anchored to the caret for as long as a field owns the input
+     * (#558).
+     *
+     * The macOS twin also has to activate the view's `NSTextInputContext`
+     * first; Windows needs no such step, because the HWND already owns an
+     * input context. So this only mirrors the caret rect, through the same
+     * `nativeSetImeRect` contract.
+     */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    override suspend fun startInputMethod(
+        request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
+    ): Nothing {
+        onInputSession(request)
+        try {
+            coroutineScope {
+                launch {
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            request.focusedRectInRoot()
+                        }.collect { rect ->
+                            if (rect != null) {
+                                NativeTaoBridge.nativeSetImeRect(
+                                    windowHandle,
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.width.toInt().coerceAtLeast(1),
+                                    rect.height.toInt().coerceAtLeast(1),
+                                )
+                            }
+                        }
+                }
+                awaitCancellation()
+            }
+        } finally {
+            onInputSession(null)
+        }
+    }
 
     override fun setPointerIcon(pointerIcon: androidx.compose.ui.input.pointer.PointerIcon) {
         NativeTaoBridge.nativeSetCursorIcon(

@@ -150,7 +150,7 @@ mod event_loop;
 mod icon;
 mod keyboard;
 mod keyboard_layout;
-mod minimal_ime;
+mod ime;
 mod monitor;
 mod raw_input;
 mod window;
