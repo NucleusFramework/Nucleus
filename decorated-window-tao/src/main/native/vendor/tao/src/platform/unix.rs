@@ -22,6 +22,7 @@ pub use crate::platform_impl::x11;
 use crate::platform_impl::x11::xdisplay::XError;
 pub use crate::platform_impl::EventLoop as UnixEventLoop;
 use crate::{
+  dpi::{Position, Size},
   error::{ExternalError, OsError},
   event_loop::{EventLoopBuilder, EventLoopWindowTarget},
   monitor::MonitorHandle,
@@ -86,6 +87,17 @@ pub trait WindowExtUnix {
   fn set_skip_taskbar(&self, skip: bool) -> Result<(), ExternalError>;
 
   fn set_badge_count(&self, count: Option<i64>, desktop_filename: Option<String>);
+
+  /// Tells the input method the rectangle the text caret occupies, in window
+  /// coordinates, so it keeps its preedit and candidate windows clear of the
+  /// text being typed (nucleusframework#558).
+  ///
+  /// The cross-platform [`Window::set_ime_position`] carries only a point,
+  /// which is all IMM32 and AppKit need. GTK is area-based instead: the input
+  /// method is told the region the cursor covers and stays off it, so a bare
+  /// point leaves the candidate window free to sit on top of the composition.
+  /// Callers that know the caret's size should use this.
+  fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S);
 }
 
 impl WindowExtUnix for Window {
@@ -111,6 +123,10 @@ impl WindowExtUnix for Window {
 
   fn set_badge_count(&self, count: Option<i64>, desktop_filename: Option<String>) {
     self.window.set_badge_count(count, desktop_filename);
+  }
+
+  fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
+    self.window.set_ime_cursor_area(position, size);
   }
 }
 

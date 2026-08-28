@@ -501,14 +501,33 @@ impl<T: 'static> EventLoop<T> {
               }
             }
           }
-          // Nucleus patch (nucleusframework#558): anchor the IME candidate
-          // window to the caret. GTK wants the area the cursor occupies; tao's
-          // cross-platform `set_ime_position` carries a point, and the JNI
-          // caller already passes the caret's bottom edge (same contract as
-          // macOS and Windows), so a 1x1 rect there is the whole story.
-          WindowRequest::SetImePosition((x, y)) => {
+          // Nucleus patch (nucleusframework#558): hand the input method the
+          // area the caret covers so its preedit and candidate windows are
+          // placed clear of the text being typed, instead of over it.
+          WindowRequest::SetImeCursorArea((x, y, w, h)) => {
+            // The caret arrives in client-area coordinates — the contract
+            // `set_ime_position` documents. GTK wants it relative to the
+            // toplevel GdkWindow, and on a client-side-decorated window that
+            // window also spans the invisible resize border and drop shadow,
+            // so the two origins are apart by the content widget's allocation.
+            // Skipping the translation puts the caret a shadow's height too
+            // high, and the input method draws its candidate list straight
+            // over the composition it belongs to.
+            let (dx, dy) = window
+              .child()
+              .map(|child| {
+                let alloc = child.allocation();
+                // Before the first allocation the child reports a 1x1 dummy at
+                // the origin; (0, 0) is the right answer then anyway.
+                if alloc.width() > 1 || alloc.height() > 1 {
+                  (alloc.x(), alloc.y())
+                } else {
+                  (0, 0)
+                }
+              })
+              .unwrap_or((0, 0));
             if let Some(ime) = ime_contexts.borrow().get(&id.0) {
-              ime.set_cursor_location(&gdk::Rectangle::new(x, y, 1, 1));
+              ime.set_cursor_location(&gdk::Rectangle::new(x + dx, y + dy, w, h));
             }
           }
           WindowRequest::CursorIgnoreEvents(ignore) => {
