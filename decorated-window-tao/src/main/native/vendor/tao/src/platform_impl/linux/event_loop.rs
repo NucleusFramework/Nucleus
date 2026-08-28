@@ -952,15 +952,29 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
+            let last_modifiers = Rc::new(Cell::new(ModifiersState::empty()));
             let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
-              // if we have a modifier lets send it
-              if !keyboard::get_modifiers(event_key.clone()).is_empty() {
-                // Nucleus patch: emit the FULL modifier state, not just the
-                // pressed key's own bit — upstream sent `{SHIFT}` when Shift
-                // was pressed while Ctrl was held, dropping Ctrl from the
-                // state and breaking every Ctrl+Shift+<key> shortcut.
-                let mods =
-                  keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
+              // Nucleus patch: emit the FULL modifier state, not just the
+              // pressed key's own bit — upstream sent `{SHIFT}` when Shift
+              // was pressed while Ctrl was held, dropping Ctrl from the
+              // state and breaking every Ctrl+Shift+<key> shortcut.
+              //
+              // Nucleus patch (nucleusframework#558): recompute it on *every*
+              // key, not just on modifier keys, and publish it whenever it
+              // changed. GDK reports the live modifier mask on every event, so
+              // deriving the state from the event instead of from press/release
+              // bookkeeping self-heals when a modifier's release goes missing.
+              // That is not hypothetical: on X11 an input method sits in the
+              // event path and re-injects what it forwards (ibus marks those
+              // events with its own reserved bits), and modifier releases are
+              // dropped along the way. The old code only ever revisited the
+              // state on a modifier key, so a lost Control release left Compose
+              // believing Ctrl was held — and a plain Return then read as
+              // Ctrl+Return for the rest of the session.
+              let mods =
+                keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
+              if mods != last_modifiers.get() {
+                last_modifiers.set(mods);
 
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
@@ -971,14 +985,14 @@ impl<T: 'static> EventLoop<T> {
                     e
                   );
                 }
-                // Nucleus patch: fall through and *also* emit `KeyboardInput`
-                // for modifier-only keypresses so the JVM side can observe Alt
-                // / Ctrl / Shift / Super press/release as plain Compose key
-                // events (needed by app-level handlers like
-                // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
-                // Upstream tao stops here, which makes those handlers dead on
-                // the Linux backend.
               }
+              // Nucleus patch: fall through and *also* emit `KeyboardInput`
+              // for modifier-only keypresses so the JVM side can observe Alt
+              // / Ctrl / Shift / Super press/release as plain Compose key
+              // events (needed by app-level handlers like
+              // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
+              // Upstream tao stops here, which makes those handlers dead on
+              // the Linux backend.
 
               // todo: implement repeat?
               let event = keyboard::make_key_event(&event_key, false, None, element_state);
