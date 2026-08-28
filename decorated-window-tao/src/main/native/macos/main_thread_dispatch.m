@@ -176,9 +176,24 @@ static void nucleus_clear_press_and_hold(void) {
 }
 
 static void nucleus_note_press_and_hold_query(void) {
-    if (g_did_insert_base && g_letter_key_down) {
-        g_press_and_hold_queried = YES;
+    if (!g_did_insert_base || !g_letter_key_down) {
+        return;
     }
+    // Nucleus patch (nucleusframework#595 follow-up): the picker only ever
+    // starts while the *base* key is still down, so a query that arrives
+    // while a different key is being processed is ordinary typing. Fast
+    // typists roll over — the previous key is often still physically down
+    // when the next one goes down — and `g_letter_key_down` alone would arm
+    // the picker on every keystroke.
+    NSEvent *event = NSApp.currentEvent;
+    if (event != nil) {
+        NSEventType type = event.type;
+        if ((type == NSEventTypeKeyDown || type == NSEventTypeKeyUp) &&
+            event.keyCode != g_base_key_code) {
+            return;
+        }
+    }
+    g_press_and_hold_queried = YES;
 }
 
 // PressAndHold reads `selectedRange` after the base letter is committed —
@@ -254,6 +269,19 @@ static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement
             ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
         }
         return;
+    }
+
+    // Nucleus patch (nucleusframework#595 follow-up): a *different* letter key
+    // going down is plain typing, never an accent pick — PressAndHold
+    // continues on the same key (its repeats), and the accent itself is
+    // chosen with a number key / arrows / mouse. Fast typists roll over, so
+    // the previous key is often still down when this one arrives; the
+    // `!g_letter_key_down` reset further down never fires then, and the
+    // commit gets hijacked into the replace path, silently eating the
+    // preceding character (typing "Xcode" lands as "Xcde").
+    if (isLetterDown && !isRepeat && event.keyCode != g_base_key_code) {
+        nucleus_clear_press_and_hold();
+        sameAsBase = NO;
     }
 
     // First repeat / selectedRange query: PressAndHold re-inserts the base
