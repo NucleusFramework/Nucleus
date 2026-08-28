@@ -976,8 +976,22 @@ impl Window {
     }
   }
 
-  pub fn set_ime_position<P: Into<Position>>(&self, _position: P) {
-    //TODO
+  /// Nucleus patch (nucleusframework#558): forward the caret position to the
+  /// window's input context so the candidate list follows the text cursor.
+  /// The context itself lives on the event-loop side (it is created when the
+  /// window's events are wired up), so this goes through the request channel
+  /// like every other window mutation.
+  pub fn set_ime_position<P: Into<Position>>(&self, position: P) {
+    let (x, y): (i32, i32) = position
+      .into()
+      .to_physical::<i32>(self.scale_factor())
+      .into();
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImePosition((x, y))))
+    {
+      log::warn!("Fail to send ime position request: {}", e);
+    }
   }
 
   pub fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
@@ -1306,6 +1320,9 @@ pub enum WindowRequest {
   CursorIcon(Option<CursorIcon>),
   CursorPosition((i32, i32)),
   CursorIgnoreEvents(bool),
+  /// Nucleus patch (nucleusframework#558): caret position, in window-local
+  /// physical pixels, for the IME candidate window.
+  SetImePosition((i32, i32)),
   WireUpEvents {
     transparent: bool,
     fullscreen: bool,
