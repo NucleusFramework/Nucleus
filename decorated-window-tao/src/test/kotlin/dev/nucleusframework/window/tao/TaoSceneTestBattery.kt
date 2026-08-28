@@ -150,6 +150,9 @@ public object TaoSceneTestBattery {
         run("StandaloneFramePumpTest: scheduleAfterDisposeIsNoOp") {
             StandaloneFramePumpTest().scheduleAfterDisposeIsNoOp()
         }
+        run("StandaloneFramePumpTest: disposedPostedFrameIsDropped") {
+            StandaloneFramePumpTest().disposedPostedFrameIsDropped()
+        }
         run("TaoWheelPinchZoomTest: fullWheelDeltaProducesModerateZoomStep") {
             TaoWheelPinchZoomTest().fullWheelDeltaProducesModerateZoomStep()
         }

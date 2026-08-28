@@ -15,14 +15,19 @@ import kotlin.coroutines.EmptyCoroutineContext
  * calls from inside [render] are posted, not re-entered.
  */
 internal class StandaloneFramePump(
+    private val isOnMain: () -> Boolean = {
+        Thread.currentThread() === TaoMainDispatcher.taoMainThread
+    },
+    private val post: (Runnable) -> Unit = { block ->
+        TaoMainDispatcher.dispatch(EmptyCoroutineContext, block)
+    },
     private val render: () -> Unit,
 ) {
     private val pending = AtomicBoolean(false)
 
-    // Main-thread only. [schedule] reads this only after proving
-    // `Thread.currentThread() === taoMainThread`, so a nested [schedule]
-    // from inside [render] is posted and drained later on that same thread
-    // (production: `pump()` on MainEventsCleared). Never touch off-main.
+    // Only the thread [isOnMain] accepted for an inline render, and the
+    // thread [post] delivers to (production: both are Tao main). Tests
+    // inject both so they never touch [TaoMainDispatcher.taoMainThread].
     private var rendering = false
 
     @Volatile
@@ -31,11 +36,10 @@ internal class StandaloneFramePump(
     fun schedule() {
         if (disposed) return
         if (!pending.compareAndSet(false, true)) return
-        val onMain = Thread.currentThread() === TaoMainDispatcher.taoMainThread
-        if (onMain && !rendering) {
+        if (isOnMain() && !rendering) {
             runRender()
         } else {
-            TaoMainDispatcher.dispatch(EmptyCoroutineContext) { runRender() }
+            post(Runnable { runRender() })
         }
     }
 

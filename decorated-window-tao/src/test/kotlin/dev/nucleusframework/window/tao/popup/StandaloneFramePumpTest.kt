@@ -1,76 +1,91 @@
 package dev.nucleusframework.window.tao.popup
 
-import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import java.util.ArrayDeque
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class StandaloneFramePumpTest {
     @Test
     fun scheduleOnMainRunsInline() {
-        withPinnedMain {
-            var renders = 0
-            val pump = StandaloneFramePump { renders++ }
-            pump.schedule()
-            assertEquals(1, renders)
-        }
+        val probe = Probe()
+        probe.pump.schedule()
+        assertEquals(1, probe.renders)
+        assertTrue(probe.posted.isEmpty())
     }
 
     @Test
     fun nestedScheduleFromRenderDoesNotReenter() {
-        withPinnedMain {
-            var renders = 0
-            lateinit var pump: StandaloneFramePump
-            pump =
-                StandaloneFramePump {
-                    renders++
-                    if (renders == 1) pump.schedule()
-                }
-            pump.schedule()
-            assertEquals(1, renders)
-            // Nested [schedule] posted a follow-up; drop it so it cannot
-            // run on the dispatcher fallback thread after this test.
-            pump.disposed = true
-        }
+        val probe =
+            Probe { p ->
+                p.renders++
+                if (p.renders == 1) p.pump.schedule()
+            }
+        probe.pump.schedule()
+        assertEquals(1, probe.renders)
+        assertEquals(1, probe.posted.size)
+        probe.drainPosted()
+        assertEquals(2, probe.renders)
+        assertTrue(probe.posted.isEmpty())
     }
 
     @Test
     fun extraSchedulesWhileRenderingCoalesce() {
-        withPinnedMain {
-            var renders = 0
-            lateinit var pump: StandaloneFramePump
-            pump =
-                StandaloneFramePump {
-                    renders++
-                    if (renders == 1) {
-                        pump.schedule()
-                        pump.schedule()
-                    }
+        val probe =
+            Probe { p ->
+                p.renders++
+                if (p.renders == 1) {
+                    p.pump.schedule()
+                    p.pump.schedule()
                 }
-            pump.schedule()
-            assertEquals(1, renders)
-            pump.disposed = true
-        }
+            }
+        probe.pump.schedule()
+        assertEquals(1, probe.renders)
+        assertEquals(1, probe.posted.size)
+        probe.drainPosted()
+        assertEquals(2, probe.renders)
     }
 
     @Test
     fun scheduleAfterDisposeIsNoOp() {
-        withPinnedMain {
-            var renders = 0
-            val pump = StandaloneFramePump { renders++ }
-            pump.schedule()
-            pump.disposed = true
-            pump.schedule()
-            assertEquals(1, renders)
-        }
+        val probe = Probe()
+        probe.pump.schedule()
+        probe.pump.disposed = true
+        probe.pump.schedule()
+        assertEquals(1, probe.renders)
+        assertTrue(probe.posted.isEmpty())
     }
 
-    private fun withPinnedMain(block: () -> Unit) {
-        val previous = TaoMainDispatcher.taoMainThread
-        TaoMainDispatcher.taoMainThread = Thread.currentThread()
-        try {
-            block()
-        } finally {
-            TaoMainDispatcher.taoMainThread = previous
+    @Test
+    fun disposedPostedFrameIsDropped() {
+        val probe =
+            Probe { p ->
+                p.renders++
+                if (p.renders == 1) p.pump.schedule()
+            }
+        probe.pump.schedule()
+        probe.pump.disposed = true
+        probe.drainPosted()
+        assertEquals(1, probe.renders)
+    }
+
+    /**
+     * In-memory pump: [isOnMain] is always true and [post] records runnables
+     * instead of touching [dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher].
+     */
+    private class Probe(
+        onRender: (Probe) -> Unit = { it.renders++ },
+    ) {
+        val posted = ArrayDeque<Runnable>()
+        var renders = 0
+        val pump: StandaloneFramePump =
+            StandaloneFramePump(
+                isOnMain = { true },
+                post = { posted.addLast(it) },
+            ) { onRender(this) }
+
+        fun drainPosted() {
+            while (posted.isNotEmpty()) posted.removeFirst().run()
         }
     }
 }
