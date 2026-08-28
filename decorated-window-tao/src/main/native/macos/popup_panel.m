@@ -459,6 +459,15 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeCreatePanel(
         panel.animationBehavior = NSWindowAnimationBehaviorNone;
         panel.movableByWindowBackground = NO;
         panel.releasedWhenClosed = NO;
+        // Stationary: macOS Sonoma+ "Click wallpaper to reveal desktop" otherwise
+        // Exposé-slides this panel off-screen while the Kotlin outside-click
+        // listener is already fading it — a visible glitch when the desktop is
+        // the only click target. We dismiss ourselves; the system must not.
+        panel.collectionBehavior =
+            NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorStationary |
+            NSWindowCollectionBehaviorFullScreenAuxiliary |
+            NSWindowCollectionBehaviorIgnoresCycle;
         // Standalone tray popups need keyboard focus without activating the
         // app: `becomesKeyOnlyIfNeeded` + the explicit makeKeyWindow we trigger
         // from nativeSetFocusable (no host window to lose its active look).
@@ -729,6 +738,20 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetEventCallbac
     objc_setAssociatedObject(content, &kCallbackEnableKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+/* Status-item button windows and AppKit menu windows. Clicks there are not
+ * "outside" a standalone tray popup: left-click is the tray toggle, right-click
+ * opens the context menu. Treating those mouseDowns as outside-clicks hides
+ * the popup before the menu appears. */
+static BOOL nucleus_isStatusItemOrMenuWindow(NSWindow *window) {
+    if (window == nil) return NO;
+    if (window.level == NSStatusWindowLevel) return YES;
+    Class statusBarWindow = NSClassFromString(@"NSStatusBarWindow");
+    if (statusBarWindow != Nil && [window isKindOfClass:statusBarWindow]) return YES;
+    if ([window isKindOfClass:[NucleusTaoPopupPanel class]]) return NO;
+    NSString *name = NSStringFromClass([window class]);
+    return [name containsString:@"MenuWindow"] || [name containsString:@"MenuPanel"];
+}
+
 /* Installs an NSEvent monitor that fires for every left/right/other
  * mouseDown and calls back into Java's `OutsideClickListener.onOutsideClick`
  * (wired to Compose's `dismissOnClickOutside`) when the click does NOT target
@@ -737,8 +760,9 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetEventCallbac
  * Two scopes:
  *  - A **local** monitor always installed: sees events delivered to *this
  *    app*. Same-window clicks (inside the popup) are skipped; any other
- *    in-app click (e.g. on the tray status item, or another window of the
- *    app) fires the listener. This is what owner-based popups need.
+ *    in-app click (e.g. another window of the app) fires the listener.
+ *    Standalone tray panels also skip the status item and native menu
+ *    windows — those clicks belong to the tray toggle / context menu.
  *  - A **global** monitor installed only for standalone (ownerless) panels:
  *    sees mouseDowns delivered to *other* applications (global monitors never
  *    receive events for our own app). A tray popup with no backing window
@@ -785,6 +809,8 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         // fire the outside listener (Popup content handles it via the
         // event-callback path).
         if (e.window == p) return e;
+        // Tray icon / context menu: the tray callback owns these clicks.
+        if (p.isStandalone && nucleus_isStatusItemOrMenuWindow(e.window)) return e;
         NSValue *box = p.outsideListenerVal;
         if (box == nil) return e;
         jobject cb = (jobject)box.pointerValue;
