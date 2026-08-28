@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoMouseButton
 import dev.nucleusframework.window.tao.TaoWindow
-import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
@@ -505,20 +505,12 @@ internal class TaoPopupSceneLayerLinux(
         }
         popupWindow.onPointerScroll { event ->
             if (released) return@onPointerScroll
-            val modifiers = taoKeyboardModifiers(host.parentWindow.modifierState)
-            innerScene.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = scenePosition(lastX, lastY),
-                scrollDelta = Offset(event.dxAwt, event.dyAwt),
-                type = PointerType.Mouse,
-                keyboardModifiers = modifiers,
-                nativeEvent =
-                    TaoSyntheticMouseWheelEvent.create(
-                        event = event,
-                        x = lastX,
-                        y = lastY,
-                        keyboardModifiers = modifiers,
-                    ),
+            val pos = scenePosition(lastX, lastY)
+            innerScene.dispatchAwtShapedScroll(
+                x = pos.x,
+                y = pos.y,
+                event = event,
+                keyboardModifiers = taoKeyboardModifiers(host.parentWindow.modifierState),
             )
         }
     }

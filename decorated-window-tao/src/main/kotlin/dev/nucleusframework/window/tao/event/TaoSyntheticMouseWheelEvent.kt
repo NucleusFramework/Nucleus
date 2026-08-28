@@ -1,10 +1,15 @@
 package dev.nucleusframework.window.tao.event
 
+import androidx.compose.ui.InternalComposeUiApi
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
+import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.input.pointer.isAltPressed
 import androidx.compose.ui.input.pointer.isCtrlPressed
 import androidx.compose.ui.input.pointer.isMetaPressed
 import androidx.compose.ui.input.pointer.isShiftPressed
+import androidx.compose.ui.scene.ComposeScene
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import java.awt.Component
 import java.awt.event.InputEvent
@@ -51,4 +56,37 @@ internal object TaoSyntheticMouseWheelEvent {
             (if (isCtrlPressed) InputEvent.CTRL_DOWN_MASK else 0) or
             (if (isAltPressed) InputEvent.ALT_DOWN_MASK else 0) or
             (if (isMetaPressed) InputEvent.META_DOWN_MASK else 0)
+}
+
+/**
+ * Feeds an already AWT-shaped [TaoPointerScrollEvent] into the scene, including
+ * the synthetic `MouseWheelEvent` Compose Desktop's scroll config reads for
+ * `scrollAmount` / `preciseWheelRotation`.
+ *
+ * Single Compose entry for wheel input: [dev.nucleusframework.window.tao.TaoWindow]
+ * produces the event; popup WndProcs / NSPanel / X11 Button4–7 skip tao and
+ * must map first ([win32WheelToAwtScrollEvent], [appKitWheelToAwtScrollEvent],
+ * [linuxWheelToAwtScrollEvent]).
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun ComposeScene.dispatchAwtShapedScroll(
+    x: Float,
+    y: Float,
+    event: TaoPointerScrollEvent,
+    keyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers(),
+) {
+    sendPointerEvent(
+        eventType = PointerEventType.Scroll,
+        position = Offset(x, y),
+        scrollDelta = Offset(event.dxAwt, event.dyAwt),
+        type = PointerType.Mouse,
+        keyboardModifiers = keyboardModifiers,
+        nativeEvent =
+            TaoSyntheticMouseWheelEvent.create(
+                event = event,
+                x = x,
+                y = y,
+                keyboardModifiers = keyboardModifiers,
+            ),
+    )
 }

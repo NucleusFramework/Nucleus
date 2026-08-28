@@ -20,4 +20,12 @@ class Win32WheelDeltaTest {
         assertEquals(-1f, delta.x, absoluteTolerance = 0f)
         assertEquals(0f, delta.y, absoluteTolerance = 0f)
     }
+
+    @Test
+    fun popupWndProcNotchCarriesWindowScrollAmount() {
+        val event = win32WheelToAwtScrollEvent(dx = 0f, dy = -1f)
+        assertEquals(0f, event.dxAwt, absoluteTolerance = 0f)
+        assertEquals(1f, event.dyAwt, absoluteTolerance = 0f)
+        assertEquals(1, event.scrollAmount)
+    }
 }

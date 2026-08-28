@@ -31,12 +31,12 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
-import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
-import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
@@ -1392,19 +1392,11 @@ internal class TaoComposeSceneHostWindows(
     private fun sendScrollToScene(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-        scene?.sendPointerEvent(
-            eventType = PointerEventType.Scroll,
-            position = Offset(lastPointerX, lastPointerY),
-            scrollDelta = Offset(event.dxAwt, event.dyAwt),
-            type = PointerType.Mouse,
+        scene?.dispatchAwtShapedScroll(
+            x = lastPointerX,
+            y = lastPointerY,
+            event = event,
             keyboardModifiers = currentKeyboardModifiers,
-            nativeEvent =
-                TaoSyntheticMouseWheelEvent.create(
-                    event = event,
-                    x = lastPointerX,
-                    y = lastPointerY,
-                    keyboardModifiers = currentKeyboardModifiers,
-                ),
         )
     }
 
@@ -1803,15 +1795,12 @@ internal class TaoComposeSceneHostWindows(
         ) {
             lastPointerX = x
             lastPointerY = y
-            // Overlay WndProc reports raw Win32 wheel units. TaoWindow
-            // negates before Compose; match that so TaoWindowsScrollConfig
-            // (which multiplies by -lines-per-notch) agrees with the rest
-            // of the window. Native redispatch replays the original MSG.
-            scene?.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
-                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
-                type = PointerType.Mouse,
+            // Overlay WndProc reports raw Win32 units; map like TaoWindow
+            // then go through the same AWT-shaped dispatch as the window.
+            scene?.dispatchAwtShapedScroll(
+                x = x,
+                y = y,
+                event = win32WheelToAwtScrollEvent(dx, dy),
                 keyboardModifiers = currentKeyboardModifiers,
             )
         }
