@@ -6,6 +6,7 @@
 mod device;
 mod event_loop;
 mod icon;
+mod ime;
 mod keyboard;
 mod keycode;
 mod monitor;

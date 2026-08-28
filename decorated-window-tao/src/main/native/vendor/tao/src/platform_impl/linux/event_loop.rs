@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-  cell::{Cell, RefCell},
+  cell::RefCell,
   collections::{HashSet, VecDeque},
   error::Error,
   process,
@@ -26,6 +26,7 @@ use gtk::{
 
 #[cfg(feature = "x11")]
 use crate::platform_impl::platform::device;
+use crate::platform_impl::platform::ime::{Commit, ImeState};
 use crate::{
   dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
   error::ExternalError,
@@ -952,7 +953,7 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
-            let last_modifiers = Rc::new(Cell::new(ModifiersState::empty()));
+            let modifier_state = Rc::new(RefCell::new(ImeState::new()));
             let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
               // Nucleus patch: emit the FULL modifier state, not just the
               // pressed key's own bit — upstream sent `{SHIFT}` when Shift
@@ -973,9 +974,7 @@ impl<T: 'static> EventLoop<T> {
               // Ctrl+Return for the rest of the session.
               let mods =
                 keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
-              if mods != last_modifiers.get() {
-                last_modifiers.set(mods);
-
+              if let Some(mods) = modifier_state.borrow_mut().modifiers_changed(mods) {
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
                   event: WindowEvent::ModifiersChanged(mods),
@@ -1022,30 +1021,16 @@ impl<T: 'static> EventLoop<T> {
             let ime = gtk::IMMulticontext::new();
             ime.set_client_window(window.window().as_ref());
 
-            // Whether a composition is in flight. Lets `commit` tell an IME
-            // confirmation (-> ImeCommit, which replaces the preedit Compose is
-            // showing) from an ordinary character insert (-> ReceivedImeText,
-            // forwarded as KEY_TYPED). Same split as the Windows backend's
-            // GCS_RESULTSTR vs. a plain WM_CHAR.
-            let composing = Rc::new(Cell::new(false));
-
-            // Hardware keycodes whose *press* we actually forwarded to Compose.
-            //
-            // An input method swallows the keys it consumes, but only the press:
-            // on Wayland the compositor filters them out of the key stream
-            // before the client ever sees them (text-input-v3 has no notion of
-            // "filtered"), and on X11 `filter_keypress` does the same job
-            // in-process. The matching *release* arrives either way. Forwarding
-            // it would hand Compose a KeyUp for a KeyDown it never got — and
-            // Compose fires `clickable`'s onClick on KeyUp, so the Return that
-            // merely confirmed a conversion would go on to activate whatever
-            // holds focus.
-            let pressed_keys: Rc<RefCell<std::collections::HashSet<u16>>> =
-              Rc::new(RefCell::new(std::collections::HashSet::new()));
+            // Everything about this window's input method that is state
+            // rather than plumbing — composition flag, the press/release
+            // pairing gate, and the last published modifier state. Split out
+            // so the behaviour can be unit-tested without a display; see
+            // `platform_impl::linux::ime`.
+            let ime_state = Rc::new(RefCell::new(ImeState::new()));
 
             {
-              let composing = composing.clone();
-              ime.connect_preedit_start(move |_| composing.set(true));
+              let ime_state = ime_state.clone();
+              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
             }
 
             {
@@ -1062,10 +1047,10 @@ impl<T: 'static> EventLoop<T> {
             }
 
             {
-              let composing = composing.clone();
+              let ime_state = ime_state.clone();
               let tx_clone = event_tx.clone();
               ime.connect_preedit_end(move |_| {
-                composing.set(false);
+                ime_state.borrow_mut().preedit_ended();
                 // Empty preedit = "drop the marked text". A commit, when there
                 // is one, has already been delivered by `commit` above.
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
@@ -1078,13 +1063,12 @@ impl<T: 'static> EventLoop<T> {
             }
 
             {
-              let composing = composing.clone();
+              let ime_state = ime_state.clone();
               let tx_clone = event_tx.clone();
               ime.connect_commit(move |_, s| {
-                let event = if composing.get() {
-                  WindowEvent::ImeCommit(s.to_string())
-                } else {
-                  WindowEvent::ReceivedImeText(s.to_string())
+                let event = match ime_state.borrow().commit() {
+                  Commit::Ime => WindowEvent::ImeCommit(s.to_string()),
+                  Commit::Text => WindowEvent::ReceivedImeText(s.to_string()),
                 };
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
@@ -1131,32 +1115,33 @@ impl<T: 'static> EventLoop<T> {
 
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();
-            let pressed_keys_press = pressed_keys.clone();
+            let ime_state_press = ime_state.clone();
             window.connect_key_press_event(move |_, event_key| {
               // The IME gets first refusal, and a key it consumed must not also
               // reach Compose — otherwise the Enter that confirms a conversion
               // also inserts a newline, and the BackSpace that edits the
               // composition also deletes committed text (the Linux twin of the
               // VK_PROCESSKEY leak fixed for Windows in nucleusframework#558).
-              if ime_.filter_keypress(event_key) {
+              let filtered = ime_.filter_keypress(event_key);
+              if !ime_state_press
+                .borrow_mut()
+                .key_pressed(event_key.hardware_keycode(), filtered)
+              {
                 return glib::Propagation::Stop;
               }
-              pressed_keys_press
-                .borrow_mut()
-                .insert(event_key.hardware_keycode());
               handler(event_key.to_owned(), ElementState::Pressed);
 
               glib::Propagation::Proceed
             });
 
             let handler = keyboard_handler.clone();
-            let pressed_keys_release = pressed_keys;
+            let ime_state_release = ime_state;
             window.connect_key_release_event(move |_, event_key| {
               let filtered = ime.filter_keypress(event_key);
-              let was_pressed = pressed_keys_release
+              if !ime_state_release
                 .borrow_mut()
-                .remove(&event_key.hardware_keycode());
-              if filtered || !was_pressed {
+                .key_released(event_key.hardware_keycode(), filtered)
+              {
                 return glib::Propagation::Stop;
               }
               handler(event_key.to_owned(), ElementState::Released);
