@@ -5,9 +5,11 @@
 
 package dev.nucleusframework.desktop.application.tasks
 
+import dev.nucleusframework.desktop.application.dsl.LinuxSystemJava
 import dev.nucleusframework.desktop.application.internal.ExternalToolRunner
 import dev.nucleusframework.desktop.application.internal.JdkVersionProbe
 import dev.nucleusframework.desktop.application.internal.JvmRuntimeProperties
+import dev.nucleusframework.desktop.application.internal.LinuxSystemJavaSupport
 import dev.nucleusframework.desktop.application.internal.NucleusProperties
 import dev.nucleusframework.desktop.tasks.AbstractNucleusTask
 import dev.nucleusframework.internal.utils.OS
@@ -15,6 +17,7 @@ import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.executableName
 import dev.nucleusframework.internal.utils.ioFile
 import dev.nucleusframework.internal.utils.notNullProperty
+import dev.nucleusframework.internal.utils.nullableProperty
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.RegularFile
 import org.gradle.api.provider.Property
@@ -38,6 +41,14 @@ abstract class AbstractCheckNativeDistributionRuntime : AbstractNucleusTask() {
 
     @get:Input
     abstract val checkJdkVendor: Property<Boolean>
+
+    /**
+     * Major version of [LinuxSystemJava] when set. The packaging JDK must not be newer,
+     * otherwise the declared distro JRE cannot load the class files.
+     */
+    @get:Input
+    @get:org.gradle.api.tasks.Optional
+    val linuxSystemJavaMajor: Property<Int> = objects.nullableProperty()
 
     private val taskDir = project.layout.buildDirectory.dir("compose/tmp/$name")
 
@@ -90,6 +101,19 @@ abstract class AbstractCheckNativeDistributionRuntime : AbstractNucleusTask() {
                 "minimum required JDK version is '$MIN_JAVA_RUNTIME_VERSION', " +
                     "but actual version is '$jdkMajorVersion'",
             )
+        }
+
+        val requiredMajor = linuxSystemJavaMajor.orNull
+        if (requiredMajor != null) {
+            val systemJava =
+                LinuxSystemJava.fromMajor(requiredMajor)
+                    ?: error("Unknown linux.systemJava major version: $requiredMajor")
+            logger.lifecycle(
+                "linux.systemJava = ${systemJava.name}, packaging JDK $jdkMajorVersion (${jdkHome.absolutePath})",
+            )
+            LinuxSystemJavaSupport.incompatibleBuildJdkMessage(systemJava, jdkMajorVersion)?.let { message ->
+                error(message)
+            }
         }
 
         if (checkJdkVendor.get()) {

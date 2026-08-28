@@ -1,4 +1,5 @@
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
+import dev.nucleusframework.desktop.application.dsl.LinuxSystemJava
 import dev.nucleusframework.desktop.application.dsl.NativeImageOptimization
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import org.gradle.kotlin.dsl.implementation
@@ -87,6 +88,7 @@ nucleus.application {
 
         linux {
             debMaintainer = "KDroidFilter <dev@kdroidfilter.com>"
+            systemJava = LinuxSystemJava.Java25
         }
     }
 

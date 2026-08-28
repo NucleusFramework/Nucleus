@@ -177,6 +177,22 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     var rpmPackageVersion: String? = null
     var pacmanPackageVersion: String? = null
 
+    /**
+     * Use the JRE already on the machine instead of bundling a jlink runtime.
+     *
+     * When set, **deb / rpm / pacman** packages omit `lib/runtime`, ship a launcher that
+     * execs the host `java`, and declare the matching package dependency so the package
+     * manager installs a full (non-headless) JRE if one is missing. AppImage, Snap and
+     * Flatpak keep the bundled runtime.
+     *
+     * ```kotlin
+     * linux {
+     *     systemJava = LinuxSystemJava.Java21
+     * }
+     * ```
+     */
+    var systemJava: LinuxSystemJava? = null
+
     /** Additional Debian dependencies for .deb packages. */
     var debDepends: List<String> = emptyList()
 

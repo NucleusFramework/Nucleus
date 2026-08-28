@@ -174,6 +174,9 @@ private fun JvmApplicationContext.configureCommonJvmDesktopTasks(): CommonJvmDes
         ) {
             jdkHome.set(app.javaHomeProvider)
             checkJdkVendor.set(NucleusProperties.checkJdkVendor(project.providers))
+            linuxSystemJavaMajor.set(
+                project.provider { app.nativeDistributions.linux.systemJava?.major },
+            )
             jdkVersionProbeJar.from(
                 project
                     .detachedComposeGradleDependency(
@@ -395,8 +398,20 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             )
         }
 
+    val skipAotForSystemJava =
+        LinuxSystemJavaSupport.skipsAotCache(
+            app.nativeDistributions.linux.systemJava,
+            app.nativeDistributions.targetFormats,
+            currentOS,
+        )
+    if (app.nativeDistributions.enableAotCache && skipAotForSystemJava) {
+        project.logger.lifecycle(
+            "linux.systemJava = ${app.nativeDistributions.linux.systemJava}: " +
+                "skipping AOT cache (it is bound to a bundled JVM)",
+        )
+    }
     val generateAotCache =
-        if (app.nativeDistributions.enableAotCache) {
+        if (app.nativeDistributions.enableAotCache && !skipAotForSystemJava) {
             tasks.register<AbstractGenerateAotCacheTask>(
                 taskNameAction = "generate",
                 taskNameObject = "AotCache",
@@ -965,6 +980,9 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
     }
     packageTask.customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
     packageTask.publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
+    app.nativeDistributions.linux.systemJava?.let { systemJava ->
+        packageTask.linuxSystemJavaMajor.set(systemJava.major)
+    }
     packageTask.appxStoreLogo.set(app.nativeDistributions.windows.appx.storeLogo)
     packageTask.appxSquare44x44Logo.set(app.nativeDistributions.windows.appx.square44x44Logo)
     packageTask.appxSquare150x150Logo.set(app.nativeDistributions.windows.appx.square150x150Logo)

@@ -1,6 +1,7 @@
 package dev.nucleusframework.desktop.application.internal.electronbuilder
 
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.desktop.application.dsl.LinuxSystemJava
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.internal.utils.Arch
 import org.gradle.testfixtures.ProjectBuilder
@@ -21,6 +22,7 @@ class ElectronBuilderRpmConfigTest {
     private fun renderLinux(
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
+        systemJava: LinuxSystemJava? = null,
     ): String {
         val yaml = StringBuilder()
         ElectronBuilderConfigGenerator().generateLinuxConfig(
@@ -33,6 +35,7 @@ class ElectronBuilderRpmConfigTest {
             linuxAfterInstallTemplate = null,
             linuxAfterRemoveTemplate = null,
             executableName = "nucleusdemo",
+            systemJava = systemJava,
         )
         return yaml.toString()
     }
@@ -63,5 +66,32 @@ class ElectronBuilderRpmConfigTest {
 
         assertTrue(yaml, yaml.contains("deb:"))
         assertFalse(yaml, yaml.contains("--rpm-auto-add-directories"))
+    }
+
+    @Test
+    fun `systemJava injects a deb Depends and keeps user extras`() {
+        val distributions = distributions()
+        distributions.linux.debDepends = listOf("libgtk-3-0")
+
+        val yaml = renderLinux(distributions, TargetFormat.Deb, LinuxSystemJava.Java21)
+
+        assertTrue(yaml, yaml.contains("- \"java21-runtime | java-runtime (>= 21)\""))
+        assertTrue(yaml, yaml.contains("- \"libgtk-3-0\""))
+    }
+
+    @Test
+    fun `systemJava injects an rpm Requires boolean dep`() {
+        val yaml = renderLinux(distributions(), TargetFormat.Rpm, LinuxSystemJava.Java21)
+
+        assertTrue(yaml, yaml.contains("- \"(java-21-openjdk or java-25-openjdk)\""))
+        assertTrue(yaml, yaml.contains("--rpm-auto-add-directories"))
+    }
+
+    @Test
+    fun `systemJava is not added to AppImage config`() {
+        val yaml = renderLinux(distributions(), TargetFormat.AppImage, LinuxSystemJava.Java21)
+
+        assertFalse(yaml, yaml.contains("java21-runtime"))
+        assertFalse(yaml, yaml.contains("java-21-openjdk"))
     }
 }

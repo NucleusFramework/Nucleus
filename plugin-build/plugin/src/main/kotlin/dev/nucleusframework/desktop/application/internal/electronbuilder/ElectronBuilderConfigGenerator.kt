@@ -12,10 +12,12 @@ import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.FlatpakSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.desktop.application.dsl.JvmMacOSPlatformSettings
+import dev.nucleusframework.desktop.application.dsl.LinuxSystemJava
 import dev.nucleusframework.desktop.application.dsl.NsisSettings
 import dev.nucleusframework.desktop.application.dsl.PublishSettings
 import dev.nucleusframework.desktop.application.dsl.SnapSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.LinuxSystemJavaSupport
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
@@ -72,6 +74,7 @@ internal class ElectronBuilderConfigGenerator {
         dmgWindowOverride: DmgWindowOverride? = null,
         nsisProtocolInclude: File? = null,
         macBundleName: String? = null,
+        systemJava: LinuxSystemJava? = null,
     ): String {
         val yaml = StringBuilder()
 
@@ -143,6 +146,7 @@ internal class ElectronBuilderConfigGenerator {
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
                     linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                     executableName = executableName,
+                    systemJava = systemJava,
                 )
         }
 
@@ -549,6 +553,7 @@ internal class ElectronBuilderConfigGenerator {
         linuxAfterInstallTemplate: File?,
         linuxAfterRemoveTemplate: File?,
         executableName: String?,
+        systemJava: LinuxSystemJava? = null,
     ) {
         yaml.appendLine("linux:")
         yaml.appendLine("  target:")
@@ -572,23 +577,27 @@ internal class ElectronBuilderConfigGenerator {
         when (targetFormat) {
             TargetFormat.Deb -> {
                 yaml.appendLine("deb:")
-                if (distributions.linux.debDepends.isNotEmpty()) {
-                    yaml.appendLine("  depends:")
-                    for (dep in distributions.linux.debDepends) {
-                        yaml.appendLine("    - \"$dep\"")
-                    }
-                }
+                appendDepends(
+                    yaml,
+                    LinuxSystemJavaSupport.mergeDepends(
+                        systemJava,
+                        targetFormat,
+                        distributions.linux.debDepends,
+                    ),
+                )
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
             TargetFormat.Rpm -> {
                 yaml.appendLine("rpm:")
-                if (distributions.linux.rpmRequires.isNotEmpty()) {
-                    yaml.appendLine("  depends:")
-                    for (dep in distributions.linux.rpmRequires) {
-                        yaml.appendLine("    - \"$dep\"")
-                    }
-                }
+                appendDepends(
+                    yaml,
+                    LinuxSystemJavaSupport.mergeDepends(
+                        systemJava,
+                        targetFormat,
+                        distributions.linux.rpmRequires,
+                    ),
+                )
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
                 // fpm-generated RPMs list only files, never %dir entries for the app's own
@@ -604,12 +613,14 @@ internal class ElectronBuilderConfigGenerator {
             }
             TargetFormat.Pacman -> {
                 yaml.appendLine("pacman:")
-                if (distributions.linux.pacmanDepends.isNotEmpty()) {
-                    yaml.appendLine("  depends:")
-                    for (dep in distributions.linux.pacmanDepends) {
-                        yaml.appendLine("    - \"$dep\"")
-                    }
-                }
+                appendDepends(
+                    yaml,
+                    LinuxSystemJavaSupport.mergeDepends(
+                        systemJava,
+                        targetFormat,
+                        distributions.linux.pacmanDepends,
+                    ),
+                )
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
@@ -765,6 +776,17 @@ internal class ElectronBuilderConfigGenerator {
      */
     @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
     private fun resolveInstallerIdentity(macOS: JvmMacOSPlatformSettings): String? = null
+
+    private fun appendDepends(
+        yaml: StringBuilder,
+        depends: List<String>,
+    ) {
+        if (depends.isEmpty()) return
+        yaml.appendLine("  depends:")
+        for (dep in depends) {
+            yaml.appendLine("    - \"${dep.escapeForYamlDoubleQuotes()}\"")
+        }
+    }
 
     private fun appendIfNotNull(
         yaml: StringBuilder,

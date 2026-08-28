@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.desktop.application.dsl.LinuxSystemJava
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -14,6 +15,7 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlChecksums
 import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
+import dev.nucleusframework.desktop.application.internal.LinuxSystemJavaSupport
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
 import dev.nucleusframework.desktop.application.internal.MacSigner
@@ -132,6 +134,15 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val executableName: Property<String> = objects.nullableProperty()
+
+        /**
+         * Major version of [LinuxSystemJava] when the JVM deb/rpm/pacman payload should
+         * depend on the host JRE instead of bundling `lib/runtime`. Unset for GraalVM
+         * packages and when the app still ships a jlink runtime.
+         */
+        @get:Input
+        @get:Optional
+        val linuxSystemJavaMajor: Property<Int> = objects.nullableProperty()
 
         /**
          * Name of the macOS `.app` bundle directory, without the `.app` extension.
@@ -255,6 +266,7 @@ abstract class AbstractElectronBuilderPackageTask
             bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
+            applySystemJavaIfRequested(workingAppDir)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
             val node = detectNode()
@@ -465,6 +477,7 @@ abstract class AbstractElectronBuilderPackageTask
                     dmgWindowOverride = dmgWindowOverride,
                     nsisProtocolInclude = nsisProtocolInclude,
                     macBundleName = macBundleName.orNull,
+                    systemJava = resolvedSystemJava(),
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -1726,6 +1739,26 @@ abstract class AbstractElectronBuilderPackageTask
                 .addFilter(Canvas(width, height, Positions.CENTER, true, Color(0, 0, 0, 0)))
                 .imageType(BufferedImage.TYPE_INT_ARGB)
                 .asBufferedImage()
+
+        private fun resolvedSystemJava(): LinuxSystemJava? =
+            linuxSystemJavaMajor.orNull?.let { LinuxSystemJava.fromMajor(it) }
+
+        private fun applySystemJavaIfRequested(appDir: File) {
+            val systemJava = resolvedSystemJava() ?: return
+            if (!LinuxSystemJavaSupport.appliesTo(targetFormat)) {
+                logger.lifecycle(
+                    "linux.systemJava = ${systemJava.name} is ignored for $targetFormat " +
+                        "(only deb, rpm and pacman omit the bundled JRE)",
+                )
+                return
+            }
+            if (!LinuxSystemJavaSupport.rewriteAppImage(appDir, systemJava, logger)) {
+                throw GradleException(
+                    "linux.systemJava is set but ${appDir.absolutePath} is not a jpackage app-image " +
+                        "(missing lib/app). GraalVM native packages already ship without a JRE.",
+                )
+            }
+        }
 
         private fun resolveExecutableName(): String? =
             resolveLinuxExecutableName(
