@@ -18,7 +18,14 @@ internal class StandaloneFramePump(
     private val render: () -> Unit,
 ) {
     private val pending = AtomicBoolean(false)
+
+    // Main-thread only. [schedule] reads this only after proving
+    // `Thread.currentThread() === taoMainThread`, so a nested [schedule]
+    // from inside [render] is posted and drained later on that same thread
+    // (production: `pump()` on MainEventsCleared). Never touch off-main.
     private var rendering = false
+
+    @Volatile
     var disposed: Boolean = false
 
     fun schedule() {

@@ -41,6 +41,9 @@ internal fun appKitWheelToAwtScrollEvent(
     return TaoPointerScrollEvent(
         dxAwt = delta.x,
         dyAwt = delta.y,
+        // 1, like TaoWindow / Windows: MacOSCocoaConfig does not read a
+        // lines-per-notch multiplier out of scrollAmount the way LinuxGtkConfig
+        // does. Do not copy LINUX_AWT_SCROLL_AMOUNT_DEFAULT here.
         scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
     )
 }

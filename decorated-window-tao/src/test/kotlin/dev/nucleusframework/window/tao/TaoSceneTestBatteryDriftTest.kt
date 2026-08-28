@@ -11,6 +11,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
+import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
@@ -49,6 +50,7 @@ class TaoSceneTestBatteryDriftTest {
             Win32WheelDeltaTest::class.java,
             LinuxWheelDeltaTest::class.java,
             MacOsWheelDeltaTest::class.java,
+            StandaloneFramePumpTest::class.java,
             TaoWheelPinchZoomTest::class.java,
             TaoWindowScrollTest::class.java,
             TaoWindowResizableTest::class.java,

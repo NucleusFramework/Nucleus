@@ -11,6 +11,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
+import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
@@ -130,6 +131,24 @@ public object TaoSceneTestBattery {
         }
         run("MacOsWheelDeltaTest: precisePixelHorizontalMatchesTaoWindowScale") {
             MacOsWheelDeltaTest().precisePixelHorizontalMatchesTaoWindowScale()
+        }
+        run("MacOsWheelDeltaTest: lineDeltaCarriesMacOsScrollAmount") {
+            MacOsWheelDeltaTest().lineDeltaCarriesMacOsScrollAmount()
+        }
+        run("MacOsWheelDeltaTest: preciseDeltaCarriesMacOsScrollAmount") {
+            MacOsWheelDeltaTest().preciseDeltaCarriesMacOsScrollAmount()
+        }
+        run("StandaloneFramePumpTest: scheduleOnMainRunsInline") {
+            StandaloneFramePumpTest().scheduleOnMainRunsInline()
+        }
+        run("StandaloneFramePumpTest: nestedScheduleFromRenderDoesNotReenter") {
+            StandaloneFramePumpTest().nestedScheduleFromRenderDoesNotReenter()
+        }
+        run("StandaloneFramePumpTest: extraSchedulesWhileRenderingCoalesce") {
+            StandaloneFramePumpTest().extraSchedulesWhileRenderingCoalesce()
+        }
+        run("StandaloneFramePumpTest: scheduleAfterDisposeIsNoOp") {
+            StandaloneFramePumpTest().scheduleAfterDisposeIsNoOp()
         }
         run("TaoWheelPinchZoomTest: fullWheelDeltaProducesModerateZoomStep") {
             TaoWheelPinchZoomTest().fullWheelDeltaProducesModerateZoomStep()
