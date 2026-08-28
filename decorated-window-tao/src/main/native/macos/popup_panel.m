@@ -459,6 +459,15 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeCreatePanel(
         panel.animationBehavior = NSWindowAnimationBehaviorNone;
         panel.movableByWindowBackground = NO;
         panel.releasedWhenClosed = NO;
+        // Stationary: macOS Sonoma+ "Click wallpaper to reveal desktop" otherwise
+        // Exposé-slides this panel off-screen while the Kotlin outside-click
+        // listener is already fading it — a visible glitch when the desktop is
+        // the only click target. We dismiss ourselves; the system must not.
+        panel.collectionBehavior =
+            NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorStationary |
+            NSWindowCollectionBehaviorFullScreenAuxiliary |
+            NSWindowCollectionBehaviorIgnoresCycle;
         // Standalone tray popups need keyboard focus without activating the
         // app: `becomesKeyOnlyIfNeeded` + the explicit makeKeyWindow we trigger
         // from nativeSetFocusable (no host window to lose its active look).
