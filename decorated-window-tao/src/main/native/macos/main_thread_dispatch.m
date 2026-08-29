@@ -128,10 +128,18 @@ void nucleus_tao_set_ime_document(
     int64_t sel_end
 ) {
     if (sel_start < 0 || utf16 == NULL) {
+        // Scoped to the owning view: focus moving between windows tears down
+        // the old input session *after* the new one starts, so a blanket
+        // invalidate would wipe the cache the newly focused field just
+        // installed and leave its picker committing against a stale caret.
+        if (ns_view_handle != 0 && ns_view_handle != g_doc_view) {
+            return;
+        }
         g_doc_view = 0;
         g_doc_text = nil;
         g_doc_offset = 0;
         g_doc_selection = NSMakeRange(NSNotFound, 0);
+        g_marked_anchor = 0;
         return;
     }
     g_doc_view = ns_view_handle;
@@ -206,9 +214,12 @@ static NSRange tao_view_marked_range(id self, SEL _cmd) {
 static void tao_view_set_marked_text(
     id self, SEL sel, id string, NSRange selectedRange, NSRange replacementRange
 ) {
+    // A stale `markedText` ivar (Compose cancelled the session without an
+    // `unmarkText` reaching the view) would otherwise pin the anchor from a
+    // previous field, so an invalid cache also forces a re-anchor.
     if (replacementRange.location != NSNotFound) {
         g_marked_anchor = replacementRange.location;
-    } else if (!nucleus_is_composing(self)) {
+    } else if (!nucleus_is_composing(self) || !nucleus_doc_valid_for(self)) {
         g_marked_anchor = nucleus_doc_valid_for(self) ? g_doc_selection.location : 0;
     }
     if (g_orig_set_marked_text) {
@@ -268,6 +279,11 @@ static id nucleus_attributed_substring(
     }
     NSUInteger loc = MAX(range.location, window_start);
     NSUInteger end = MIN(NSMaxRange(range), window_end);
+    // `NSMaxRange` wraps on an overflowing proposed range, which slips past
+    // the guards above and would underflow `end - loc` into a huge length.
+    if (end <= loc) {
+        return nil;
+    }
     NSRange clamped = NSMakeRange(loc, end - loc);
     if (actual) {
         *actual = clamped;

@@ -94,13 +94,33 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     let Some(ns_view) = ns_view_for_handle(handle) else {
         return;
     };
-    // UTF-16 straight from the JVM string — no encoding conversion, so the
-    // offsets the JVM computed stay valid verbatim.
-    let s: String = match env.get_string(&text) {
-        Ok(s) => s.into(),
-        Err(_) => return,
+    // Raw `GetStringRegion` rather than `get_string`: the safe wrapper goes
+    // through modified UTF-8 and a lossy decode, which both costs two extra
+    // copies per keystroke and can change the UTF-16 length (unpaired
+    // surrogates), desynchronising the offsets the JVM computed. This reads
+    // the JVM's UTF-16 verbatim, in one copy.
+    let raw_env = env.get_raw();
+    let jstr = text.as_raw();
+    if raw_env.is_null() || jstr.is_null() {
+        return;
+    }
+    let utf16: Vec<u16> = unsafe {
+        let Some(get_length) = (**raw_env).GetStringLength else {
+            return;
+        };
+        let len = get_length(raw_env, jstr);
+        if len < 0 {
+            return;
+        }
+        let mut buf = vec![0u16; len as usize];
+        if len > 0 {
+            let Some(get_region) = (**raw_env).GetStringRegion else {
+                return;
+            };
+            get_region(raw_env, jstr, 0, len, buf.as_mut_ptr());
+        }
+        buf
     };
-    let utf16: Vec<u16> = s.encode_utf16().collect();
     unsafe {
         nucleus_tao_set_ime_document(
             ns_view,

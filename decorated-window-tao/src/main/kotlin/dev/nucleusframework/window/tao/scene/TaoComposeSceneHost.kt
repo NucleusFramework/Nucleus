@@ -102,12 +102,19 @@ internal class TaoComposeSceneHost(
 
     /**
      * CoreTextField session not up yet: same gated sequence Compose AWT
-     * uses (delete one code point, then commit). Never used for ordinary
-     * typing — native only calls this after PressAndHold queried the view.
+     * uses (delete the replaced characters, then commit). Never used for
+     * ordinary typing — only for a replacement commit that beat the
+     * text-input session, where [deleteBefore] is the length the input
+     * method asked to replace (0 for a pure insertion).
      */
-    private fun emitImeTypedFallback(text: String) {
-        onKeyEvent(TaoEventCode.KEY_DOWN, 8, TaoKeyLocation.STANDARD, 0, 0)
-        onKeyEvent(TaoEventCode.KEY_UP, 8, TaoKeyLocation.STANDARD, 0, 0)
+    private fun emitImeTypedFallback(
+        text: String,
+        deleteBefore: Int,
+    ) {
+        repeat(deleteBefore) {
+            onKeyEvent(TaoEventCode.KEY_DOWN, 8, TaoKeyLocation.STANDARD, 0, 0)
+            onKeyEvent(TaoEventCode.KEY_UP, 8, TaoKeyLocation.STANDARD, 0, 0)
+        }
         for (ch in text) {
             onKeyEvent(TaoEventCode.KEY_TYPED, 0, TaoKeyLocation.STANDARD, 0, ch.code)
         }
@@ -1515,6 +1522,10 @@ internal class TaoComposeSceneHost(
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
+        // The native cache keys on the NSView pointer; leaving it set would
+        // let a later view allocated at the same address inherit this
+        // window's text and caret.
+        NativeTaoBridge.nativeSetImeDocument(window.handle, "", 0L, -1L, -1L)
         shutdownA11yScheduler()
         // Drop the transition hook before the scene goes: a late
         // willEnterFS would otherwise re-enter a torn-down host.
@@ -1746,5 +1757,10 @@ private class TaoPlatformContext(
     }
 }
 
-/** UTF-16 code units of committed text shipped on each side of the selection. */
-private const val IME_DOCUMENT_WINDOW_UTF16 = 512
+/**
+ * UTF-16 code units of committed text shipped on each side of the selection.
+ * This runs on every keystroke and caret move, so it stays close to the ±100
+ * Chromium ships: the only reader is `attributedSubstringForProposedRange:`,
+ * which AppKit only ever asks near the caret.
+ */
+private const val IME_DOCUMENT_WINDOW_UTF16 = 128

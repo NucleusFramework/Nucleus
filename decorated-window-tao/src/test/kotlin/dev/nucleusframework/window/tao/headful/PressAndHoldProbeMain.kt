@@ -142,7 +142,12 @@ object PressAndHoldProbeMain {
         tailKey: Pair<Int, String>?,
     ) {
         postKey(handle, KEY_E, "e", down = true)
-        if (!awaitLayoutSanity()) return
+        if (!awaitLayoutSanity()) {
+            // The key state lives in the window server and outlives this
+            // process — never leave a scenario with a key held down.
+            postKey(handle, KEY_E, "e", down = false)
+            return
+        }
         repeat(REPEATS) {
             delay(REPEAT_GAP_MS)
             postKey(handle, KEY_E, "e", down = true, autorepeat = true)
@@ -176,7 +181,10 @@ object PressAndHoldProbeMain {
      */
     private suspend fun drivePickerReplay(handle: Long) {
         postKey(handle, KEY_E, "e", down = true)
-        if (!awaitLayoutSanity()) return
+        if (!awaitLayoutSanity()) {
+            postKey(handle, KEY_E, "e", down = false)
+            return
+        }
         MacOsTextInputClientProbe.query(handle)
         delay(KEY_GAP_MS)
         postKey(handle, KEY_E, "e", down = false)
@@ -194,6 +202,8 @@ object PressAndHoldProbeMain {
     private suspend fun driveRollover(handle: Long) {
         stroke(handle, KEY_X, "x")
         if (!awaitLayoutSanity(expected = "x")) return
+        // From here on `o` and `d` are held deliberately; both are released
+        // before the scenario ends.
         stroke(handle, KEY_C, "c")
         postKey(handle, KEY_O, "o", down = true)
         delay(KEY_GAP_MS)

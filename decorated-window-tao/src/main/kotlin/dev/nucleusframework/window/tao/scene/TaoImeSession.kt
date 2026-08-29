@@ -20,7 +20,7 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
  */
 @OptIn(ExperimentalComposeUiApi::class)
 internal class TaoImeSession(
-    private val typedFallback: (String) -> Unit = {},
+    private val typedFallback: (String, Int) -> Unit = { _, _ -> },
 ) {
     @Volatile
     private var activeRequest: PlatformTextInputMethodRequest? = null
@@ -81,10 +81,10 @@ internal class TaoImeSession(
     }
 
     /**
-     * Commits [rawText] in place of the committed-text range
-     * [[replacementStart], [replacementStart] + [replacementLength]) \u2014
-     * UTF-16 offsets in the same document-absolute space the host reports
-     * through `nativeSetImeDocument`. This is `insertText:` with a valid
+     * Commits [rawText] over the half-open committed-text range starting at
+     * [replacementStart] and spanning [replacementLength] \u2014 UTF-16 offsets
+     * in the same document-absolute space the host reports through
+     * `nativeSetImeDocument`. This is `insertText:` with a valid
      * `replacementRange` (the press-and-hold accent picker replacing its
      * base letter, #611/#612). Select-then-insert, exactly like Blink's
      * `ReplaceTextAndKeepSelection` / WebKit's `_selectNSRange:` + insert.
@@ -101,7 +101,9 @@ internal class TaoImeSession(
         if (text.isEmpty()) return
         val request = activeRequest
         if (request == null) {
-            typedFallback(text)
+            // No field to address the range against; approximate it with
+            // backspaces, bounded so a bogus range cannot eat the document.
+            typedFallback(text, replacementLength.coerceIn(0L, MAX_FALLBACK_DELETE).toInt())
             return
         }
         val length = request.value().text.length
@@ -110,9 +112,18 @@ internal class TaoImeSession(
             (replacementStart + replacementLength)
                 .coerceIn(start.toLong(), length.toLong())
                 .toInt()
+        // `commitText` replaces the composing region when one exists, which
+        // would silently ignore the selection set here \u2014 end the
+        // composition first, as [commit] does.
+        isComposing = false
         request.editText {
+            finishComposingText()
             setSelection(start, end)
             commitText(text, 1)
         }
+    }
+
+    private companion object {
+        const val MAX_FALLBACK_DELETE = 8L
     }
 }
