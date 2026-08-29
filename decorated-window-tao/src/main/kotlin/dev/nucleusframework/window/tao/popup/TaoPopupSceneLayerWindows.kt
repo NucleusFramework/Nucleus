@@ -22,8 +22,9 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
-import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
@@ -223,12 +224,8 @@ internal class TaoPopupSceneLayerWindows(
             dx: Float,
             dy: Float,
         ) {
-            innerScene.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = scenePosition(x, y),
-                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
-                type = PointerType.Mouse,
-            )
+            val pos = scenePosition(x, y)
+            innerScene.dispatchAwtShapedScroll(pos.x, pos.y, win32WheelToAwtScrollEvent(dx, dy))
         }
 
         override fun onKeyEvent(

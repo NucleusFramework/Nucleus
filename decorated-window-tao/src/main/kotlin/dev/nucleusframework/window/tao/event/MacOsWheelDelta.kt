@@ -1,11 +1,6 @@
 package dev.nucleusframework.window.tao.event
 
-import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
-import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.scene.ComposeScene
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 
 /** Same factor [dev.nucleusframework.window.tao.TaoWindow] uses on `SCROLL_PIXEL`. */
@@ -46,31 +41,9 @@ internal fun appKitWheelToAwtScrollEvent(
     return TaoPointerScrollEvent(
         dxAwt = delta.x,
         dyAwt = delta.y,
+        // 1, like TaoWindow / Windows: MacOSCocoaConfig does not read a
+        // lines-per-notch multiplier out of scrollAmount the way LinuxGtkConfig
+        // does. Do not copy LINUX_AWT_SCROLL_AMOUNT_DEFAULT here.
         scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
-    )
-}
-
-@OptIn(InternalComposeUiApi::class)
-internal fun ComposeScene.dispatchAppKitScroll(
-    x: Float,
-    y: Float,
-    dx: Float,
-    dy: Float,
-    precise: Boolean,
-    scale: Float,
-) {
-    val event = appKitWheelToAwtScrollEvent(dx, dy, precise, scale)
-    sendPointerEvent(
-        eventType = PointerEventType.Scroll,
-        position = Offset(x, y),
-        scrollDelta = Offset(event.dxAwt, event.dyAwt),
-        type = PointerType.Mouse,
-        nativeEvent =
-            TaoSyntheticMouseWheelEvent.create(
-                event = event,
-                x = x,
-                y = y,
-                keyboardModifiers = PointerKeyboardModifiers(),
-            ),
     )
 }

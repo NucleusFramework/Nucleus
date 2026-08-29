@@ -23,7 +23,9 @@ import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.linuxWheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
@@ -43,7 +45,6 @@ import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
@@ -98,7 +99,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
-    private val renderPending = AtomicBoolean(false)
+    private val framePump = StandaloneFramePump { renderNow() }
     private var nextFrameNs = 0L
     private var visible = false
 
@@ -314,6 +315,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        framePump.disposed = true
         revokeInboundDnD()
         PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, null)
@@ -345,13 +347,10 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     // ── Rendering ─────────────────────────────────────────────────────────
 
     private fun scheduleRender() {
-        if (disposed) return
-        if (!renderPending.compareAndSet(false, true)) return
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() }
+        framePump.schedule()
     }
 
     private fun renderNow() {
-        renderPending.set(false)
         if (disposed) return
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
@@ -369,13 +368,11 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         // clock is fed evenly spaced timestamps.
         val now = System.nanoTime()
         if (now < nextFrameNs) {
-            if (renderPending.compareAndSet(false, true)) {
-                pacer.schedule(
-                    { TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() } },
-                    nextFrameNs - now,
-                    TimeUnit.NANOSECONDS,
-                )
-            }
+            pacer.schedule(
+                { scheduleRender() },
+                nextFrameNs - now,
+                TimeUnit.NANOSECONDS,
+            )
             return
         }
         // Resynchronize after an idle gap; otherwise stay on the fixed grid.
@@ -453,12 +450,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
-                scene?.sendPointerEvent(
-                    eventType = PointerEventType.Scroll,
-                    position = Offset(x, y),
-                    scrollDelta = Offset(dx, dy),
-                    type = PointerType.Mouse,
-                )
+                scene?.dispatchAwtShapedScroll(x, y, linuxWheelToAwtScrollEvent(dx, dy))
             }
         }
 

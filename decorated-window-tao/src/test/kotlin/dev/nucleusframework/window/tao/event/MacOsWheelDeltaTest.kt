@@ -40,4 +40,20 @@ class MacOsWheelDeltaTest {
         assertEquals(2f, delta.x, absoluteTolerance = 0f)
         assertEquals(0f, delta.y, absoluteTolerance = 0f)
     }
+
+    @Test
+    fun lineDeltaCarriesMacOsScrollAmount() {
+        val event = appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false, scale = 2f)
+        assertEquals(0f, event.dxAwt, absoluteTolerance = 0f)
+        assertEquals(-1f, event.dyAwt, absoluteTolerance = 0f)
+        assertEquals(MACOS_AWT_SCROLL_AMOUNT, event.scrollAmount)
+    }
+
+    @Test
+    fun preciseDeltaCarriesMacOsScrollAmount() {
+        val event = appKitWheelToAwtScrollEvent(dx = 0f, dy = 10f, precise = true, scale = 2f)
+        assertEquals(0f, event.dxAwt, absoluteTolerance = 0f)
+        assertEquals(-2f, event.dyAwt, absoluteTolerance = 0f)
+        assertEquals(MACOS_AWT_SCROLL_AMOUNT, event.scrollAmount)
+    }
 }

@@ -22,7 +22,8 @@ import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
-import dev.nucleusframework.window.tao.event.dispatchAppKitScroll
+import dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -46,7 +47,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -97,7 +97,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
-    private val renderPending = AtomicBoolean(false)
+    private val framePump = StandaloneFramePump { renderNow() }
     private val replayInFlight = AtomicBoolean(false)
     private var nextFrameNs = 0L
     private var visible = false
@@ -283,6 +283,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        framePump.disposed = true
         revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
@@ -303,13 +304,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     // ── Rendering ─────────────────────────────────────────────────────────
 
     private fun scheduleRender() {
-        if (disposed) return
-        if (!renderPending.compareAndSet(false, true)) return
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() }
+        framePump.schedule()
     }
 
     private fun renderNow() {
-        renderPending.set(false)
         if (disposed) return
         val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
@@ -340,13 +338,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                 if (now < nextFrameNs) nextFrameNs - now else 0L
             }
         if (retryNs > 0L) {
-            if (renderPending.compareAndSet(false, true)) {
-                pacer.schedule(
-                    { TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() } },
-                    retryNs,
-                    TimeUnit.NANOSECONDS,
-                )
-            }
+            pacer.schedule({ scheduleRender() }, retryNs, TimeUnit.NANOSECONDS)
             return
         }
         val now = System.nanoTime()
@@ -438,7 +430,11 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             dy: Float,
             precise: Boolean,
         ) {
-            scene?.dispatchAppKitScroll(x, y, dx, dy, precise, scale)
+            scene?.dispatchAwtShapedScroll(
+                x,
+                y,
+                appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
+            )
         }
 
         override fun onKeyEvent(

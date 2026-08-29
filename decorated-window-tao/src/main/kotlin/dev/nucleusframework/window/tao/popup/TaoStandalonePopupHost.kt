@@ -24,8 +24,10 @@ import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
-import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollDelta
+import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeWindows
@@ -45,9 +47,7 @@ import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -93,7 +93,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
-    private val renderPending = AtomicBoolean(false)
+    private val framePump = StandaloneFramePump { renderNow() }
     private var nextFrameNs = 0L
     private var visible = false
 
@@ -199,8 +199,13 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     /** This panel owns its Skia context, so `TextureView`s inside it must import onto that one. */
     @Composable
     override fun ProvidePanelLocals(content: @Composable () -> Unit) {
-        CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
-            content()
+        // Innermost, so a TrayApp composed next to a DecoratedWindow still
+        // gets the window-host wheel policy instead of Compose's default
+        // (which reads scrollAmount=1 and under-scrolls 3×).
+        ProvideTaoWindowsScrollConfig {
+            CompositionLocalProvider(LocalTaoWindowsTextureHost provides textureHostState.value) {
+                content()
+            }
         }
     }
 
@@ -318,6 +323,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        framePump.disposed = true
         if (visible) {
             visible = false
             PopupNativeBridgeWindows.nativeSetHighResTimer(false)
@@ -356,13 +362,10 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
     // ── Rendering ─────────────────────────────────────────────────────────
 
     private fun scheduleRender() {
-        if (disposed) return
-        if (!renderPending.compareAndSet(false, true)) return
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() }
+        framePump.schedule()
     }
 
     private fun renderNow() {
-        renderPending.set(false)
         if (disposed) return
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
@@ -386,13 +389,11 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
         // are what makes an animation look smooth.
         val now = System.nanoTime()
         if (now < nextFrameNs) {
-            if (renderPending.compareAndSet(false, true)) {
-                pacer.schedule(
-                    { TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() } },
-                    nextFrameNs - now,
-                    TimeUnit.NANOSECONDS,
-                )
-            }
+            pacer.schedule(
+                { scheduleRender() },
+                nextFrameNs - now,
+                TimeUnit.NANOSECONDS,
+            )
             return
         }
         // Resynchronize after an idle gap; otherwise stay on the fixed grid.
@@ -464,12 +465,7 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
             dx: Float,
             dy: Float,
         ) {
-            scene?.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
-                scrollDelta = win32WheelToAwtScrollDelta(dx, dy),
-                type = PointerType.Mouse,
-            )
+            scene?.dispatchAwtShapedScroll(x, y, win32WheelToAwtScrollEvent(dx, dy))
         }
 
         override fun onKeyEvent(
