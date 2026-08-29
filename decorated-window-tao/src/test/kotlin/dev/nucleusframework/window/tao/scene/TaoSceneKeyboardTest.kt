@@ -83,8 +83,11 @@ class TaoSceneKeyboardTest {
             click(100f, 15f)
             typeText("e")
             pressKey(TaoSceneTestScope.NamedKey.Backspace)
-            // Same sequence the macOS PressAndHold path now emits when the
-            // user picks é: Backspace the already-committed e, then KEY_TYPED é.
+            // Same sequence the macOS PressAndHold typed-key fallback emits
+            // when the accent pick arrives before any text-input session is
+            // up: Backspace the already-committed e, then KEY_TYPED é. (With
+            // a session, the pick is a replacement commit — see
+            // TaoSceneImeTest.)
             keyDown(vkCode = 'E'.code, codePoint = 'é'.code)
             assertEquals("é", value)
         }

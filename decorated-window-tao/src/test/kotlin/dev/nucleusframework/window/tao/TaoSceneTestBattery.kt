@@ -245,6 +245,15 @@ public object TaoSceneTestBattery {
         run("TaoSceneImeTest: typing after a commit works normally") {
             TaoSceneImeTest().`typing after a commit works normally`()
         }
+        run("TaoSceneImeTest: replacement commit replaces the range the picker names") {
+            TaoSceneImeTest().`replacement commit replaces the range the picker names`()
+        }
+        run("TaoSceneImeTest: replacement commit leaves surrounding text intact and typing continues") {
+            TaoSceneImeTest().`replacement commit leaves surrounding text intact and typing continues`()
+        }
+        run("TaoSceneImeTest: replacement commit with an out-of-bounds range is clamped") {
+            TaoSceneImeTest().`replacement commit with an out-of-bounds range is clamped`()
+        }
         run("TaoScenePointerTest: click on a clickable box fires exactly once") {
             TaoScenePointerTest().`click on a clickable box fires exactly once`()
         }

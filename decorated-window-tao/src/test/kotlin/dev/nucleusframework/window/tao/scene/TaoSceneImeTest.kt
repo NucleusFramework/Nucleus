@@ -129,6 +129,37 @@ class TaoSceneImeTest {
         }
 
     @Test
+    fun `replacement commit replaces the range the picker names`() =
+        runTaoSceneTest {
+            val field = focusedField()
+            typeText("Xe")
+            // The accent pick as AppKit sends it to a document-backed client
+            // (#611/#612): insertText:"é" replacementRange:{caret-1, 1}.
+            imeReplaceCommit("é", start = 1L, length = 1L)
+            assertEquals("Xé", field.value)
+        }
+
+    @Test
+    fun `replacement commit leaves surrounding text intact and typing continues`() =
+        runTaoSceneTest {
+            val field = focusedField()
+            typeText("abe")
+            imeReplaceCommit("è", start = 2L, length = 1L)
+            typeText("cd")
+            assertEquals("abècd", field.value, "the caret must land after the replacement")
+        }
+
+    @Test
+    fun `replacement commit with an out-of-bounds range is clamped`() =
+        runTaoSceneTest {
+            val field = focusedField()
+            typeText("e")
+            // A stale range (field changed under the pick) must not throw.
+            imeReplaceCommit("é", start = 5L, length = 3L)
+            assertEquals("eé", field.value)
+        }
+
+    @Test
     fun `empty IME commit while composing does not wipe the preedit`() =
         runTaoSceneTest {
             val field = focusedField()

@@ -506,6 +506,22 @@ internal class TaoSceneTestScope(
     }
 
     /**
+     * Simulates a replacement commit (macOS `insertText:` with a valid
+     * `replacementRange`, outside a composition — the press-and-hold accent
+     * picker replacing its base letter, #611/#612). [start] / [length] are
+     * UTF-16 document-absolute offsets. Mirrors the host's
+     * `window.imeReplaceCommit` wiring.
+     */
+    fun imeReplaceCommit(
+        text: String,
+        start: Long,
+        length: Long,
+    ) {
+        imeSession.replaceCommit(text, start, length)
+        frame()
+    }
+
+    /**
      * Named keys at the wire level: the native vk code each platform's event
      * source would actually put on the wire (kVK_* on macOS, XK_* keysyms on
      * Linux, AWT-compatible VK_* on Windows), so tests exercise the real
