@@ -976,8 +976,33 @@ impl Window {
     }
   }
 
-  pub fn set_ime_position<P: Into<Position>>(&self, _position: P) {
-    //TODO
+  /// Nucleus patch (nucleusframework#558): forward the caret position to the
+  /// window's input context so the candidate list follows the text cursor.
+  /// The context itself lives on the event-loop side (it is created when the
+  /// window's events are wired up), so this goes through the request channel
+  /// like every other window mutation.
+  pub fn set_ime_position<P: Into<Position>>(&self, position: P) {
+    self.set_ime_cursor_area(position, LogicalSize::new(0, 0));
+  }
+
+  /// Nucleus patch (nucleusframework#558): tell the input method the rectangle
+  /// the caret occupies, so it can keep its own windows clear of the text.
+  ///
+  /// GTK is area-based where IMM32 is point-based: `set_cursor_location` takes
+  /// the region the cursor covers and the input method keeps its own windows
+  /// off it, which is why the caret's *size* matters here and not on Windows.
+  /// GDK works in logical pixels, so the caller's physical rect is scaled down
+  /// on the way in.
+  pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
+    let scale_factor = self.scale_factor();
+    let (x, y): (i32, i32) = position.into().to_logical::<i32>(scale_factor).into();
+    let (w, h): (i32, i32) = size.into().to_logical::<i32>(scale_factor).into();
+    if let Err(e) = self
+      .window_requests_tx
+      .send((self.window_id, WindowRequest::SetImeCursorArea((x, y, w, h))))
+    {
+      log::warn!("Fail to send ime cursor area request: {}", e);
+    }
   }
 
   pub fn request_user_attention(&self, request_type: Option<UserAttentionType>) {
@@ -1306,6 +1331,9 @@ pub enum WindowRequest {
   CursorIcon(Option<CursorIcon>),
   CursorPosition((i32, i32)),
   CursorIgnoreEvents(bool),
+  /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
+  /// in window-local logical pixels, for the input method to steer clear of.
+  SetImeCursorArea((i32, i32, i32, i32)),
   WireUpEvents {
     transparent: bool,
     fullscreen: bool,

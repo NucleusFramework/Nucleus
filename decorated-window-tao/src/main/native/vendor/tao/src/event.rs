@@ -345,6 +345,8 @@ pub enum WindowEvent<'a> {
   /// - **macOS**: `setMarkedText:` / `unmarkText` (nucleusframework#595).
   /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_COMPSTR`
   ///   (nucleusframework#558).
+  /// - **Linux**: the GTK input context's `preedit-changed`, and
+  ///   `preedit-end` as an empty string (nucleusframework#558).
   /// - Not emitted on other platforms.
   ImePreedit(String),
 
@@ -359,6 +361,8 @@ pub enum WindowEvent<'a> {
   ///   (nucleusframework#595).
   /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_RESULTSTR`
   ///   (nucleusframework#558).
+  /// - **Linux**: the GTK input context's `commit`, when it arrives while a
+  ///   composition is in flight (nucleusframework#558).
   /// - Not emitted on other platforms.
   ImeCommit(String),
 

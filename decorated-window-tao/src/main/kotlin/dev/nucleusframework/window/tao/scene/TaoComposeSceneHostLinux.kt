@@ -52,6 +52,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
@@ -125,6 +127,15 @@ internal class TaoComposeSceneHostLinux(
         androidx.compose.runtime.mutableStateOf(
             if (fullyTransparent) 0 else 0xFFFFFFFF.toInt(),
         )
+
+    /**
+     * IME preedit / commit routing (#558).
+     *
+     * No typed-key fallback: that argument exists for the macOS PressAndHold
+     * accent picker, which has no GTK counterpart — an input method only ever
+     * delivers text while a text-input session is up.
+     */
+    private val imeSession = TaoImeSession()
 
     /** App-level pre-dispatch hook. See [TaoComposeSceneHost.previewKeyHandler]. */
     var previewKeyHandler: ((KeyEvent) -> Boolean)? = null
@@ -455,6 +466,8 @@ internal class TaoComposeSceneHostLinux(
                 getRootNode = { scene!!.rootDragAndDropNode },
                 outboundLauncher = ::launchLinuxOutboundDrag,
             )
+        window.imePreedit = imeSession::preedit
+        window.imeCommit = imeSession::commit
         val platformContext =
             LinuxTaoPlatformContext(
                 windowHandle = window.handle,
@@ -479,6 +492,7 @@ internal class TaoComposeSceneHostLinux(
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
                 textToolbar = textToolbar,
+                onInputSession = { imeSession.onInputSession(it) },
                 isWindowTransparent = fullyTransparent,
             )
         sceneBundle =
@@ -2252,6 +2266,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        window.imePreedit = null
+        window.imeCommit = null
+        imeSession.onInputSession(null)
         shutdownA11yScheduler()
         textToolbar.hide()
         if (dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.isLoaded &&
@@ -2526,6 +2543,8 @@ private class LinuxTaoPlatformContext(
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
     override val textToolbar: androidx.compose.ui.platform.TextToolbar,
+    /** Publishes the active text-input session to the host's [TaoImeSession] (#558). */
+    private val onInputSession: (androidx.compose.ui.platform.PlatformTextInputMethodRequest?) -> Unit = {},
     // #559: forwarded to Compose so `CanvasLayersComposeScene` picks the
     // alpha-aware dialog-scrim blend mode (`BlendMode.SrcAtop`) on windows
     // created with `transparent = true` — same as Compose Desktop's
@@ -2539,6 +2558,45 @@ private class LinuxTaoPlatformContext(
                     .PlatformInsets(getTop = topInsetPx)
             override val captionBar: androidx.compose.ui.platform.PlatformInsets get() = systemBars
         }
+
+    /**
+     * Keeps the GTK input context anchored to the caret for as long as a field
+     * owns the input (#558).
+     *
+     * The macOS twin also has to activate the view's `NSTextInputContext`
+     * first; GTK needs no such step, because the context is created with — and
+     * follows the focus of — the window itself. So this only mirrors the caret
+     * rect, through the same `nativeSetImeRect` contract Windows uses.
+     */
+    @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+    override suspend fun startInputMethod(
+        request: androidx.compose.ui.platform.PlatformTextInputMethodRequest,
+    ): Nothing {
+        onInputSession(request)
+        try {
+            coroutineScope {
+                launch {
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            request.focusedRectInRoot()
+                        }.collect { rect ->
+                            if (rect != null) {
+                                NativeTaoBridge.nativeSetImeRect(
+                                    windowHandle,
+                                    rect.left.toInt(),
+                                    rect.top.toInt(),
+                                    rect.width.toInt().coerceAtLeast(1),
+                                    rect.height.toInt().coerceAtLeast(1),
+                                )
+                            }
+                        }
+                }
+                awaitCancellation()
+            }
+        } finally {
+            onInputSession(null)
+        }
+    }
 
     override fun setPointerIcon(pointerIcon: androidx.compose.ui.input.pointer.PointerIcon) {
         // The Rust side maps the code to a freedesktop cursor name and goes

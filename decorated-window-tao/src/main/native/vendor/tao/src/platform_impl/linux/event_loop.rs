@@ -26,6 +26,7 @@ use gtk::{
 
 #[cfg(feature = "x11")]
 use crate::platform_impl::platform::device;
+use crate::platform_impl::platform::ime::{Commit, ImeState};
 use crate::{
   dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
   error::ExternalError,
@@ -305,6 +306,12 @@ impl<T: 'static> EventLoop<T> {
 
     // Window Request
     let popup_windows_ = popup_windows.clone();
+    // Nucleus patch (nucleusframework#558): input contexts keyed by window id.
+    // The context is created in the `WireUpEvents` arm and read back by the
+    // `SetImePosition` arm, both of which live inside this closure — so it
+    // needs no home on `EventLoopWindowTarget`.
+    let ime_contexts: Rc<RefCell<std::collections::HashMap<u32, gtk::IMMulticontext>>> =
+      Rc::new(RefCell::new(std::collections::HashMap::new()));
     window_requests_rx.attach(Some(&context), move |(id, request)| {
       // Nucleus patch: popup overlay windows are plain gtk::Windows with
       // synthesized ids — resolve them from the popup map when the
@@ -492,6 +499,35 @@ impl<T: 'static> EventLoop<T> {
               if let Some(screen) = GtkWindowExt::screen(&window) {
                 cursor.warp(&screen, x, y);
               }
+            }
+          }
+          // Nucleus patch (nucleusframework#558): hand the input method the
+          // area the caret covers so its preedit and candidate windows are
+          // placed clear of the text being typed, instead of over it.
+          WindowRequest::SetImeCursorArea((x, y, w, h)) => {
+            // The caret arrives in client-area coordinates — the contract
+            // `set_ime_position` documents. GTK wants it relative to the
+            // toplevel GdkWindow, and on a client-side-decorated window that
+            // window also spans the invisible resize border and drop shadow,
+            // so the two origins are apart by the content widget's allocation.
+            // Skipping the translation puts the caret a shadow's height too
+            // high, and the input method draws its candidate list straight
+            // over the composition it belongs to.
+            let (dx, dy) = window
+              .child()
+              .map(|child| {
+                let alloc = child.allocation();
+                // Before the first allocation the child reports a 1x1 dummy at
+                // the origin; (0, 0) is the right answer then anyway.
+                if alloc.width() > 1 || alloc.height() > 1 {
+                  (alloc.x(), alloc.y())
+                } else {
+                  (0, 0)
+                }
+              })
+              .unwrap_or((0, 0));
+            if let Some(ime) = ime_contexts.borrow().get(&id.0) {
+              ime.set_cursor_location(&gdk::Rectangle::new(x + dx, y + dy, w, h));
             }
           }
           WindowRequest::CursorIgnoreEvents(ignore) => {
@@ -936,16 +972,28 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
+            let modifier_state = Rc::new(RefCell::new(ImeState::new()));
             let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
-              // if we have a modifier lets send it
-              if !keyboard::get_modifiers(event_key.clone()).is_empty() {
-                // Nucleus patch: emit the FULL modifier state, not just the
-                // pressed key's own bit — upstream sent `{SHIFT}` when Shift
-                // was pressed while Ctrl was held, dropping Ctrl from the
-                // state and breaking every Ctrl+Shift+<key> shortcut.
-                let mods =
-                  keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
-
+              // Nucleus patch: emit the FULL modifier state, not just the
+              // pressed key's own bit — upstream sent `{SHIFT}` when Shift
+              // was pressed while Ctrl was held, dropping Ctrl from the
+              // state and breaking every Ctrl+Shift+<key> shortcut.
+              //
+              // Nucleus patch (nucleusframework#558): recompute it on *every*
+              // key, not just on modifier keys, and publish it whenever it
+              // changed. GDK reports the live modifier mask on every event, so
+              // deriving the state from the event instead of from press/release
+              // bookkeeping self-heals when a modifier's release goes missing.
+              // That is not hypothetical: on X11 an input method sits in the
+              // event path and re-injects what it forwards (ibus marks those
+              // events with its own reserved bits), and modifier releases are
+              // dropped along the way. The old code only ever revisited the
+              // state on a modifier key, so a lost Control release left Compose
+              // believing Ctrl was held — and a plain Return then read as
+              // Ctrl+Return for the rest of the session.
+              let mods =
+                keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
+              if let Some(mods) = modifier_state.borrow_mut().modifiers_changed(mods) {
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
                   event: WindowEvent::ModifiersChanged(mods),
@@ -955,14 +1003,14 @@ impl<T: 'static> EventLoop<T> {
                     e
                   );
                 }
-                // Nucleus patch: fall through and *also* emit `KeyboardInput`
-                // for modifier-only keypresses so the JVM side can observe Alt
-                // / Ctrl / Shift / Super press/release as plain Compose key
-                // events (needed by app-level handlers like
-                // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
-                // Upstream tao stops here, which makes those handlers dead on
-                // the Linux backend.
               }
+              // Nucleus patch: fall through and *also* emit `KeyboardInput`
+              // for modifier-only keypresses so the JVM side can observe Alt
+              // / Ctrl / Shift / Super press/release as plain Compose key
+              // events (needed by app-level handlers like
+              // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
+              // Upstream tao stops here, which makes those handlers dead on
+              // the Linux backend.
 
               // todo: implement repeat?
               let event = keyboard::make_key_event(&event_key, false, None, element_state);
@@ -982,33 +1030,139 @@ impl<T: 'static> EventLoop<T> {
               glib::ControlFlow::Continue
             });
 
-            let tx_clone = event_tx.clone();
-            // TODO Add actual IME from system
-            let ime = gtk::IMContextSimple::default();
+            // Nucleus patch (nucleusframework#558): the stock backend pinned
+            // `IMContextSimple`, GTK's built-in fallback that only knows
+            // Compose sequences and Ctrl+Shift+U — it never reaches the system
+            // input method, so CJK input was impossible. `IMMulticontext`
+            // resolves the platform module the same way GTK's own text widgets
+            // do (ibus / fcitx5 through the GTK immodule on X11, the
+            // text-input-v3 client on Wayland).
+            let ime = gtk::IMMulticontext::new();
             ime.set_client_window(window.window().as_ref());
-            ime.focus_in();
-            ime.connect_commit(move |_, s| {
-              if let Err(e) = tx_clone.send(Event::WindowEvent {
-                window_id: RootWindowId(id),
-                event: WindowEvent::ReceivedImeText(s.to_string()),
-              }) {
-                log::warn!(
-                  "Failed to send received IME text event to event channel: {}",
-                  e
-                );
-              }
-            });
+
+            // Everything about this window's input method that is state
+            // rather than plumbing — composition flag, the press/release
+            // pairing gate, and the last published modifier state. Split out
+            // so the behaviour can be unit-tested without a display; see
+            // `platform_impl::linux::ime`.
+            let ime_state = Rc::new(RefCell::new(ImeState::new()));
+
+            {
+              let ime_state = ime_state.clone();
+              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
+            }
+
+            {
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_changed(move |ime| {
+                let (text, _, _) = ime.preedit_string();
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ImePreedit(text.to_string()),
+                }) {
+                  log::warn!("Failed to send IME preedit event to event channel: {}", e);
+                }
+              });
+            }
+
+            {
+              let ime_state = ime_state.clone();
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_end(move |_| {
+                ime_state.borrow_mut().preedit_ended();
+                // Empty preedit = "drop the marked text". A commit, when there
+                // is one, has already been delivered by `commit` above.
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ImePreedit(String::new()),
+                }) {
+                  log::warn!("Failed to send IME preedit end event to event channel: {}", e);
+                }
+              });
+            }
+
+            {
+              let ime_state = ime_state.clone();
+              let tx_clone = event_tx.clone();
+              ime.connect_commit(move |_, s| {
+                let event = match ime_state.borrow().commit() {
+                  Commit::Ime => WindowEvent::ImeCommit(s.to_string()),
+                  Commit::Text => WindowEvent::ReceivedImeText(s.to_string()),
+                };
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event,
+                }) {
+                  log::warn!(
+                    "Failed to send received IME text event to event channel: {}",
+                    e
+                  );
+                }
+              });
+            }
+
+            // Follow the window's focus instead of latching `focus_in` once at
+            // construction: an input context that still believes it is focused
+            // keeps receiving key events meant for another window.
+            {
+              let ime = ime.clone();
+              window.connect_focus_in_event(move |_, _| {
+                ime.focus_in();
+                glib::Propagation::Proceed
+              });
+            }
+            {
+              let ime = ime.clone();
+              window.connect_focus_out_event(move |_, _| {
+                ime.focus_out();
+                glib::Propagation::Proceed
+              });
+            }
+            if window.is_active() {
+              ime.focus_in();
+            }
+
+            // Published so `WindowRequest::SetImePosition` can move the
+            // candidate window to the caret; dropped with the window.
+            {
+              let ime_contexts = ime_contexts.clone();
+              window.connect_destroy(move |_| {
+                ime_contexts.borrow_mut().remove(&id.0);
+              });
+            }
+            ime_contexts.borrow_mut().insert(id.0, ime.clone());
 
             let handler = keyboard_handler.clone();
+            let ime_ = ime.clone();
+            let ime_state_press = ime_state.clone();
             window.connect_key_press_event(move |_, event_key| {
+              // The IME gets first refusal, and a key it consumed must not also
+              // reach Compose — otherwise the Enter that confirms a conversion
+              // also inserts a newline, and the BackSpace that edits the
+              // composition also deletes committed text (the Linux twin of the
+              // VK_PROCESSKEY leak fixed for Windows in nucleusframework#558).
+              let filtered = ime_.filter_keypress(event_key);
+              if !ime_state_press
+                .borrow_mut()
+                .key_pressed(event_key.hardware_keycode(), filtered)
+              {
+                return glib::Propagation::Stop;
+              }
               handler(event_key.to_owned(), ElementState::Pressed);
-              ime.filter_keypress(event_key);
 
               glib::Propagation::Proceed
             });
 
             let handler = keyboard_handler.clone();
+            let ime_state_release = ime_state;
             window.connect_key_release_event(move |_, event_key| {
+              let filtered = ime.filter_keypress(event_key);
+              if !ime_state_release
+                .borrow_mut()
+                .key_released(event_key.hardware_keycode(), filtered)
+              {
+                return glib::Propagation::Stop;
+              }
               handler(event_key.to_owned(), ElementState::Released);
               glib::Propagation::Proceed
             });
