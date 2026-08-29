@@ -203,7 +203,8 @@ int nucleus_tao_post_key_to_view(
     int64_t ns_view_ptr,
     int key_code,
     const char *chars,
-    int down
+    int down,
+    int autorepeat
 ) {
     if (ns_view_ptr == 0 || chars == NULL) {
         return 0;
@@ -226,7 +227,7 @@ int nucleus_tao_post_key_to_view(
     if (cg == NULL) {
         return 0;
     }
-    CGEventSetIntegerValueField(cg, kCGKeyboardEventAutorepeat, 0);
+    CGEventSetIntegerValueField(cg, kCGKeyboardEventAutorepeat, autorepeat != 0 ? 1 : 0);
     CGEventPost(kCGSessionEventTap, cg);
     CFRelease(cg);
     return 1;

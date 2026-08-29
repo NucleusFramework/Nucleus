@@ -80,7 +80,9 @@
                     "name": "onImeReplaceCommit",
                     "parameterTypes": [
                         "long",
-                        "java.lang.String"
+                        "java.lang.String",
+                        "long",
+                        "long"
                     ]
                 },
                 {
@@ -150,7 +152,9 @@
                     "name": "onImeReplaceCommit",
                     "parameterTypes": [
                         "long",
-                        "java.lang.String"
+                        "java.lang.String",
+                        "long",
+                        "long"
                     ]
                 },
                 {

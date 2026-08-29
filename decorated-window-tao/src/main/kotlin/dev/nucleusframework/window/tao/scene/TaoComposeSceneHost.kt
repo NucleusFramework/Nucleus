@@ -1672,11 +1672,53 @@ private class TaoPlatformContext(
                             }
                         }
                 }
+                launch {
+                    // macOS document cache (Chromium parity: the renderer
+                    // pushes selection + surrounding text so the browser
+                    // view can answer `selectedRange` /
+                    // `attributedSubstringForProposedRange` locally). This
+                    // is what lets AppKit's press-and-hold picker engage on
+                    // the committed text and commit through
+                    // `insertText:replacementRange:` (#611/#612).
+                    androidx.compose.runtime
+                        .snapshotFlow {
+                            request.value()
+                        }.collect { value ->
+                            pushImeDocument(windowHandle, value)
+                        }
+                }
                 awaitCancellation()
             }
         } finally {
+            NativeTaoBridge.nativeSetImeDocument(windowHandle, "", 0L, -1L, -1L)
             onInputSession(null)
         }
+    }
+
+    /**
+     * Pushes a bounded UTF-16 window of the field text around the selection
+     * (Chromium ships ±100 chars; we ship ±[IME_DOCUMENT_WINDOW_UTF16]) plus
+     * the document-absolute selection. Window edges are nudged off surrogate
+     * pairs so the native `NSString` never receives a half code point.
+     */
+    private fun pushImeDocument(
+        windowHandle: Long,
+        value: androidx.compose.ui.text.input.TextFieldValue,
+    ) {
+        val text = value.text
+        val selMin = value.selection.min
+        val selMax = value.selection.max
+        var start = (selMin - IME_DOCUMENT_WINDOW_UTF16).coerceAtLeast(0)
+        var end = (selMax + IME_DOCUMENT_WINDOW_UTF16).coerceAtMost(text.length)
+        if (start in 1 until text.length && text[start].isLowSurrogate()) start--
+        if (end in 1 until text.length && text[end].isLowSurrogate()) end++
+        NativeTaoBridge.nativeSetImeDocument(
+            windowHandle,
+            text.substring(start, end),
+            start.toLong(),
+            selMin.toLong(),
+            selMax.toLong(),
+        )
     }
 
     private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int {
@@ -1703,3 +1745,6 @@ private class TaoPlatformContext(
         }.getOrDefault(TaoCursorIcon.DEFAULT)
     }
 }
+
+/** UTF-16 code units of committed text shipped on each side of the selection. */
+private const val IME_DOCUMENT_WINDOW_UTF16 = 512

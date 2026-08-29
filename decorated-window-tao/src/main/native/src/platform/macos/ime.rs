@@ -3,7 +3,7 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
-use jni::objects::{JClass, JLongArray, JString, JValue};
+use jni::objects::{JClass, JLongArray, JString};
 use jni::sys::{jboolean, jint, jlong, jlongArray, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
@@ -13,62 +13,16 @@ use crate::platform::macos::ffi::{
     nucleus_tao_activate_input_context, nucleus_tao_current_input_source_id,
     nucleus_tao_inject_insert_text, nucleus_tao_inject_marked_text, nucleus_tao_kotoeri_available,
     nucleus_tao_kotoeri_restore, nucleus_tao_kotoeri_select, nucleus_tao_post_key_to_view,
-    nucleus_tao_query_text_input_client, nucleus_tao_set_ime_local_rect,
+    nucleus_tao_query_text_input_client, nucleus_tao_set_ime_document,
+    nucleus_tao_set_ime_local_rect,
 };
-use crate::state::{EVENT_CALLBACK, JAVA_VM, WINDOWS};
+use crate::state::WINDOWS;
 
 fn ns_view_for_handle(handle: jlong) -> Option<i64> {
     let guard = WINDOWS.lock().ok()?;
     let map = guard.as_ref()?;
     let window = map.get(&(handle as u64))?;
     Some(window.ns_view() as i64)
-}
-
-fn handle_for_ns_view(ns_view_ptr: i64) -> Option<u64> {
-    if ns_view_ptr == 0 {
-        return None;
-    }
-    let target = ns_view_ptr as usize;
-    let guard = WINDOWS.lock().ok()?;
-    let map = guard.as_ref()?;
-    map.iter()
-        .find(|(_, w)| w.ns_view() as usize == target)
-        .map(|(h, _)| *h)
-}
-
-/// PressAndHold picked an accent. Compose Desktop replaces the already-
-/// committed base letter via `TextEditingScope`, not a Backspace key.
-pub(crate) extern "C" fn ime_replace_commit_callback(ns_view: i64, utf8: *const c_char) {
-    if utf8.is_null() {
-        return;
-    }
-    let Some(handle) = handle_for_ns_view(ns_view) else {
-        return;
-    };
-    let text = unsafe { CStr::from_ptr(utf8) }.to_string_lossy();
-    let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(guard) = EVENT_CALLBACK.lock() else {
-        return;
-    };
-    let Some(callback) = guard.as_ref() else {
-        return;
-    };
-    let Ok(mut env) = vm.attach_current_thread_permanently() else {
-        return;
-    };
-    let Ok(jstr) = env.new_string(text.as_ref()) else {
-        return;
-    };
-    let _ = env.call_method(
-        callback.as_obj(),
-        "onImeReplaceCommit",
-        "(JLjava/lang/String;)V",
-        &[JValue::Long(handle as jlong), JValue::Object(&jstr.into())],
-    );
-    if env.exception_check().unwrap_or(false) {
-        let _ = env.exception_describe();
-        let _ = env.exception_clear();
-    }
 }
 
 #[no_mangle]
@@ -121,6 +75,44 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     }
 }
 
+/// Pushes the focused field's committed text (a bounded window), selection
+/// and window offset to the swizzled `NSTextInputClient` cache — all offsets
+/// UTF-16 and document-absolute, the same space `selectedRange` reports and
+/// `insertText:replacementRange:` receives. Chromium parity: the async
+/// renderer→browser selection/±100-chars push (`setTextSelectionText:`).
+/// Negative [sel_start] invalidates the cache (no focused field).
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetImeDocument(
+    mut env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    text: JString,
+    offset: jlong,
+    sel_start: jlong,
+    sel_end: jlong,
+) {
+    let Some(ns_view) = ns_view_for_handle(handle) else {
+        return;
+    };
+    // UTF-16 straight from the JVM string — no encoding conversion, so the
+    // offsets the JVM computed stay valid verbatim.
+    let s: String = match env.get_string(&text) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    let utf16: Vec<u16> = s.encode_utf16().collect();
+    unsafe {
+        nucleus_tao_set_ime_document(
+            ns_view,
+            utf16.as_ptr(),
+            utf16.len() as i64,
+            offset,
+            sel_start,
+            sel_end,
+        );
+    }
+}
+
 /// Headful e2e: Japanese Kotoeri (romaji/hiragana) is installed on this Mac.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsKotoeriAvailable(
@@ -161,6 +153,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 /// Headful e2e: deliver a real AppKit `keyDown:` / `keyUp:` to TaoView.
+/// [autorepeat] marks the event as a key repeat (held key).
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsPostKeyToView(
     mut env: JNIEnv,
@@ -169,6 +162,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     key_code: jint,
     characters: JString,
     down: jboolean,
+    autorepeat: jboolean,
 ) -> jboolean {
     let Some(ns_view) = ns_view_for_handle(handle) else {
         return JNI_FALSE;
@@ -186,6 +180,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
             key_code,
             cstr.as_ptr(),
             if down != JNI_FALSE { 1 } else { 0 },
+            if autorepeat != JNI_FALSE { 1 } else { 0 },
         )
     };
     if ok != 0 {
@@ -283,13 +278,17 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     }
 }
 
-/// Headful e2e: `insertText:replacementRange:` on TaoView.
+/// Headful e2e: `insertText:replacementRange:` on TaoView. A negative
+/// [rr_loc] injects `{NSNotFound, 0}` (ordinary typing); a non-negative one
+/// replays the accent-picker replacement commit.
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeMacOsInjectInsertText(
     mut env: JNIEnv,
     _class: JClass,
     handle: jlong,
     text: JString,
+    rr_loc: jlong,
+    rr_len: jlong,
 ) -> jboolean {
     let Some(ns_view) = ns_view_for_handle(handle) else {
         return JNI_FALSE;
@@ -301,7 +300,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     let Ok(cstr) = CString::new(utf8) else {
         return JNI_FALSE;
     };
-    let ok = unsafe { nucleus_tao_inject_insert_text(ns_view, cstr.as_ptr()) };
+    let ok = unsafe { nucleus_tao_inject_insert_text(ns_view, cstr.as_ptr(), rr_loc, rr_len) };
     if ok != 0 {
         JNI_TRUE
     } else {

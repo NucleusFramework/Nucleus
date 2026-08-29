@@ -10,8 +10,10 @@ import androidx.compose.ui.platform.PlatformTextInputMethodRequest
  * - [preedit] — macOS `setMarkedText:` / `unmarkText` (empty text cancels)
  * - [commit] — `insertText:` while a composition is active, via
  *   `TextEditingScope.commitText` (replaces the composing region in one edit)
- * - [replaceCommit] — PressAndHold accent pick (delete the already-committed
- *   base letter, then commit the accented character)
+ * - [replaceCommit] — `insertText:` with a valid `replacementRange` outside
+ *   a composition (the press-and-hold accent picker replacing the base
+ *   letter); the range is replaced select-then-insert, Chromium's
+ *   `ImeCommitText` semantics (#611/#612)
  *
  * Raw key delivery while the IME owns the keyboard is decided natively
  * (`keyDown`/`keyUp` in tao's macOS view). This object does not filter keys.
@@ -79,25 +81,38 @@ internal class TaoImeSession(
     }
 
     /**
-     * PressAndHold picked an accent. The base letter is already in the
-     * field; replace it via `TextEditingScope` (same as
-     * `DesktopTextInputService2` / JDK-8074882). Falls back to a typed-key
-     * sequence when no text-input session is up yet.
+     * Commits [rawText] in place of the committed-text range
+     * [[replacementStart], [replacementStart] + [replacementLength]) \u2014
+     * UTF-16 offsets in the same document-absolute space the host reports
+     * through `nativeSetImeDocument`. This is `insertText:` with a valid
+     * `replacementRange` (the press-and-hold accent picker replacing its
+     * base letter, #611/#612). Select-then-insert, exactly like Blink's
+     * `ReplaceTextAndKeepSelection` / WebKit's `_selectNSRange:` + insert.
+     * Falls back to a typed-key sequence when no text-input session is up.
      */
-    fun replaceCommit(rawText: String) {
-        // Apple corporate (function-key) characters must never reach the field:
-        // they render as tofu, and `deleteSurroundingTextInCodePoints` would
-        // still remove a real character before "inserting" them (#595).
+    fun replaceCommit(
+        rawText: String,
+        replacementStart: Long,
+        replacementLength: Long,
+    ) {
+        // Apple corporate (function-key) characters must never reach the
+        // field: they render as tofu (#595).
         val text = rawText.filterNot { it in '\uF700'..'\uF8FF' }
         if (text.isEmpty()) return
         val request = activeRequest
-        if (request != null) {
-            request.editText {
-                deleteSurroundingTextInCodePoints(1, 0)
-                commitText(text, 1)
-            }
+        if (request == null) {
+            typedFallback(text)
             return
         }
-        typedFallback(text)
+        val length = request.value().text.length
+        val start = replacementStart.coerceIn(0L, length.toLong()).toInt()
+        val end =
+            (replacementStart + replacementLength)
+                .coerceIn(start.toLong(), length.toLong())
+                .toInt()
+        request.editText {
+            setSelection(start, end)
+            commitText(text, 1)
+        }
     }
 }

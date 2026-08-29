@@ -39,10 +39,23 @@ internal object MacOsTextInputClientProbe {
             selectedLength,
         )
 
+    /**
+     * A negative [replacementLocation] injects `{NSNotFound, 0}` (ordinary
+     * typing); a non-negative one replays the accent-picker replacement
+     * commit (UTF-16 document-absolute range).
+     */
     fun insertText(
         handle: Long,
         text: String,
-    ): Boolean = NativeTaoBridge.nativeMacOsInjectInsertText(handle, text)
+        replacementLocation: Long = -1L,
+        replacementLength: Long = 0L,
+    ): Boolean =
+        NativeTaoBridge.nativeMacOsInjectInsertText(
+            handle,
+            text,
+            replacementLocation,
+            replacementLength,
+        )
 
     data class Snapshot(
         val markedLocation: Long,

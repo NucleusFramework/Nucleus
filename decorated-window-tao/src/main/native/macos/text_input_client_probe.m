@@ -72,7 +72,16 @@ int nucleus_tao_inject_marked_text(
     return 1;
 }
 
-int nucleus_tao_inject_insert_text(int64_t ns_view_ptr, const char *utf8) {
+/// [rr_loc] < 0 means "no replacement range" ({NSNotFound, 0}) — the shape
+/// of ordinary typing. A non-negative [rr_loc] replays the accent-picker
+/// commit AppKit sends to document-backed clients: `insertText:'é'
+/// replacementRange:{caret-1, 1}` (UTF-16, document-absolute).
+int nucleus_tao_inject_insert_text(
+    int64_t ns_view_ptr,
+    const char *utf8,
+    int64_t rr_loc,
+    int64_t rr_len
+) {
     if (ns_view_ptr == 0 || utf8 == NULL) {
         return 0;
     }
@@ -81,7 +90,9 @@ int nucleus_tao_inject_insert_text(int64_t ns_view_ptr, const char *utf8) {
     if (str == nil) {
         return 0;
     }
-    [(id<NSTextInputClient>)view insertText:str
-                           replacementRange:NSMakeRange(NSNotFound, 0)];
+    NSRange replacement = rr_loc < 0
+        ? NSMakeRange(NSNotFound, 0)
+        : NSMakeRange((NSUInteger)rr_loc, (NSUInteger)rr_len);
+    [(id<NSTextInputClient>)view insertText:str replacementRange:replacement];
     return 1;
 }

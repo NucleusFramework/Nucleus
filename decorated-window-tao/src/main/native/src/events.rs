@@ -479,6 +479,41 @@ pub(crate) fn dispatch_ime_commit(handle: u64, text: &str) {
     dispatch_ime_string(handle, "onImeCommit", text);
 }
 
+/// Replacement commit — macOS only (#611/#612). `insertText:` with a valid
+/// `replacementRange` outside a composition (the press-and-hold accent
+/// picker). [start] / [length] are UTF-16 offsets in the document-absolute
+/// space the JVM pushed through `nativeSetImeDocument`.
+pub(crate) fn dispatch_ime_replace_commit(handle: u64, text: &str, start: u64, length: u64) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let Ok(jstr) = env.new_string(text) else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onImeReplaceCommit",
+        "(JLjava/lang/String;JJ)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Object(&jstr.into()),
+            JValue::Long(start as jlong),
+            JValue::Long(length as jlong),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
 #[allow(clippy::too_many_arguments, dead_code)]
 pub(crate) fn dispatch_trackpad_gesture(
     handle: u64,
