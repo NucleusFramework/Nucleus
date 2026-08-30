@@ -47,6 +47,27 @@ class StandaloneFramePumpTest {
     }
 
     @Test
+    fun scheduleInsideNonReentrantBlockIsPosted() {
+        val probe = Probe()
+        probe.pump.nonReentrant {
+            probe.pump.schedule()
+            assertEquals(0, probe.renders)
+        }
+        assertEquals(1, probe.posted.size)
+        probe.drainPosted()
+        assertEquals(1, probe.renders)
+    }
+
+    @Test
+    fun inlineRenderResumesAfterNonReentrantBlock() {
+        val probe = Probe()
+        probe.pump.nonReentrant { }
+        probe.pump.schedule()
+        assertEquals(1, probe.renders)
+        assertTrue(probe.posted.isEmpty())
+    }
+
+    @Test
     fun scheduleAfterDisposeIsNoOp() {
         val probe = Probe()
         probe.pump.schedule()

@@ -169,7 +169,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content = content)
+        // Initial composition dispatches coroutines (LaunchedEffects) into the
+        // scene dispatcher; rendering inline from those would race the apply
+        // pass still on the stack. Same guard as the input entry points below.
+        framePump.nonReentrant { scene?.setContent(content = content) }
         scheduleRender()
     }
 
@@ -394,6 +397,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
     // ── Input ─────────────────────────────────────────────────────────────
 
+    // Every scene dispatch below runs inside framePump.nonReentrant: a drag
+    // gesture can force a measure pass synchronously (scrollbar drag →
+    // LazyListState.onScroll → forceRemeasure), and a coroutine dispatched
+    // from within it must post the next frame instead of rendering inline.
     private inner class PanelEventCallback : PopupNativeBridge.EventCallback {
         override fun onPointerEvent(
             type: Int,
@@ -415,12 +422,14 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
-            sc.sendPointerEvent(
-                eventType = eventType,
-                position = Offset(x, y),
-                type = PointerType.Mouse,
-                button = pointerButton,
-            )
+            framePump.nonReentrant {
+                sc.sendPointerEvent(
+                    eventType = eventType,
+                    position = Offset(x, y),
+                    type = PointerType.Mouse,
+                    button = pointerButton,
+                )
+            }
         }
 
         override fun onScroll(
@@ -430,11 +439,13 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             dy: Float,
             precise: Boolean,
         ) {
-            scene?.dispatchAwtShapedScroll(
-                x,
-                y,
-                appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
-            )
+            framePump.nonReentrant {
+                scene?.dispatchAwtShapedScroll(
+                    x,
+                    y,
+                    appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
+                )
+            }
         }
 
         override fun onKeyEvent(
@@ -443,14 +454,16 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             codePoint: Int,
             modifiers: Int,
         ) {
-            scene?.dispatchNativeKeyEvent(
-                type = type,
-                vkCode = vkCode,
-                codePoint = codePoint,
-                modifiers = modifiers,
-                onPreviewKeyEvent = onPreviewKeyEvent,
-                onKeyEvent = onKeyEvent,
-            )
+            framePump.nonReentrant {
+                scene?.dispatchNativeKeyEvent(
+                    type = type,
+                    vkCode = vkCode,
+                    codePoint = codePoint,
+                    modifiers = modifiers,
+                    onPreviewKeyEvent = onPreviewKeyEvent,
+                    onKeyEvent = onKeyEvent,
+                )
+            }
         }
     }
 

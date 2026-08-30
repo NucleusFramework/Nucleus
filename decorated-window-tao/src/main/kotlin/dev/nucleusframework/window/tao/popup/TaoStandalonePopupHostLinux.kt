@@ -210,7 +210,10 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content = content)
+        // Initial composition dispatches coroutines (LaunchedEffects) into the
+        // scene dispatcher; rendering inline from those would race the apply
+        // pass still on the stack. Same guard as the input entry points below.
+        framePump.nonReentrant { scene?.setContent(content = content) }
         scheduleRender()
     }
 
@@ -408,7 +411,11 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
 
     /**
      * Arrives on the panel's X event thread; every scene interaction hops
-     * to the Tao main thread (the scene is not thread-safe).
+     * to the Tao main thread (the scene is not thread-safe). Once there, the
+     * scene dispatch runs inside `framePump.nonReentrant`: a drag gesture can
+     * force a measure pass synchronously (scrollbar drag →
+     * `LazyListState.onScroll` → `forceRemeasure`), and a coroutine dispatched
+     * from within it must post the next frame instead of rendering inline.
      */
     private inner class PanelEventCallback : PopupNativeBridgeLinux.EventCallback {
         override fun onPointerEvent(
@@ -433,12 +440,14 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                         TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                         else -> PointerEventType.Move
                     }
-                sc.sendPointerEvent(
-                    eventType = eventType,
-                    position = Offset(x, y),
-                    type = PointerType.Mouse,
-                    button = pointerButton,
-                )
+                framePump.nonReentrant {
+                    sc.sendPointerEvent(
+                        eventType = eventType,
+                        position = Offset(x, y),
+                        type = PointerType.Mouse,
+                        button = pointerButton,
+                    )
+                }
             }
         }
 
@@ -450,7 +459,9 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
-                scene?.dispatchAwtShapedScroll(x, y, linuxWheelToAwtScrollEvent(dx, dy))
+                framePump.nonReentrant {
+                    scene?.dispatchAwtShapedScroll(x, y, linuxWheelToAwtScrollEvent(dx, dy))
+                }
             }
         }
 
@@ -462,14 +473,16 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
-                scene?.dispatchNativeKeyEvent(
-                    type = type,
-                    vkCode = vkCode,
-                    codePoint = codePoint,
-                    modifiers = modifiers,
-                    onPreviewKeyEvent = onPreviewKeyEvent,
-                    onKeyEvent = onKeyEvent,
-                )
+                framePump.nonReentrant {
+                    scene?.dispatchNativeKeyEvent(
+                        type = type,
+                        vkCode = vkCode,
+                        codePoint = codePoint,
+                        modifiers = modifiers,
+                        onPreviewKeyEvent = onPreviewKeyEvent,
+                        onKeyEvent = onKeyEvent,
+                    )
+                }
             }
         }
     }

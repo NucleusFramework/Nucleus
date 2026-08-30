@@ -12,7 +12,8 @@ import kotlin.coroutines.EmptyCoroutineContext
  * Runs [render] immediately when already on the Tao main thread and not
  * already inside a frame. A WndProc / NSEvent flood otherwise starves
  * `MainEventsCleared` and a queued frame never paints. Nested [schedule]
- * calls from inside [render] are posted, not re-entered.
+ * calls from inside [render] or a [nonReentrant] block are posted, not
+ * re-entered.
  */
 internal class StandaloneFramePump(
     private val isOnMain: () -> Boolean = {
@@ -40,6 +41,29 @@ internal class StandaloneFramePump(
             runRender()
         } else {
             post(Runnable { runRender() })
+        }
+    }
+
+    /**
+     * Runs [block] with inline rendering suppressed: a [schedule] arriving
+     * while the block is on the stack is posted instead of run re-entrantly.
+     *
+     * Wraps every scene entry point of the standalone hosts (pointer, scroll
+     * and key dispatch, `setContent`): a scrollbar drag forces a measure pass
+     * synchronously inside the pointer event, and a coroutine dispatched from
+     * within that pass (the `LaunchedEffect` of a freshly subcomposed lazy
+     * item) lands in the scene dispatcher, whose dispatch schedules a frame.
+     * Rendering that frame inline would call `measureAndLayout` while the
+     * first pass is still on the stack — Compose throws
+     * `performMeasureAndLayout called during measure layout`.
+     */
+    fun <T> nonReentrant(block: () -> T): T {
+        val outer = rendering
+        rendering = true
+        try {
+            return block()
+        } finally {
+            rendering = outer
         }
     }
 
