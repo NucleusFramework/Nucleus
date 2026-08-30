@@ -235,12 +235,13 @@ internal object NativeTaoBridge {
 
     /**
      * Shows a blocking native error dialog — the no-AWT replacement for
-     * Compose Desktop's Swing default (#622). macOS only for now
+     * Compose Desktop's Swing default (#622). macOS
      * (CFUserNotificationDisplayAlert: out-of-process, callable from any
      * thread, no NSApp/run-loop dependency — safe before, during and after
-     * the Tao loop); Windows and Linux are silent no-ops until their
-     * implementations land. Call it only outside tao callback frames — a
-     * modal pump inside one re-enters tao's non-reentrant handler mutex.
+     * the Tao loop) and Windows (task-modal MessageBoxW, callable from any
+     * thread); Linux is a silent no-op until its implementation lands.
+     * Call it only outside tao callback frames — a modal pump inside one
+     * re-enters tao's non-reentrant handler mutex.
      */
     @JvmStatic
     external fun nativeShowErrorDialog(

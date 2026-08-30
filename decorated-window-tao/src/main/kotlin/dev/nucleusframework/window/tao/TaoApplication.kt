@@ -284,8 +284,8 @@ public object TaoApplication {
  * Shows the blocking, app-modal native fatal-error dialog when the Tao
  * native library is available; no-ops otherwise (the SEVERE log is the
  * fallback). Never throws — this runs on the fatal path, where a secondary
- * failure must not mask the clean shutdown. macOS only for now; Windows and
- * Linux no-op inside the native library (#622).
+ * failure must not mask the clean shutdown. macOS and Windows; Linux still
+ * no-ops inside the native library (#622).
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun showNativeErrorDialog(

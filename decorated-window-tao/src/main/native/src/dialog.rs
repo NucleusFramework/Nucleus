@@ -39,8 +39,42 @@ fn show_error_dialog(title: &str, message: &str) {
     unsafe { nucleus_tao_show_error_dialog(title.as_ptr(), message.as_ptr()) };
 }
 
-// ponytail: macOS only for now (#622) — Windows (MessageBoxW) and Linux
-// (gtk::MessageDialog) are silent no-ops; the SEVERE log on the JVM side
-// is the only signal there until they are implemented.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+fn show_error_dialog(title: &str, message: &str) {
+    // MessageBoxW reads NUL-terminated wide strings, so an interior NUL from
+    // Java would silently truncate — strip them like the macOS path does.
+    let title = title.replace('\0', "");
+    let message = message.replace('\0', "");
+    // Dedicated thread, same reason macOS goes out of process: the calling
+    // thread just ran (and exited) the Tao event loop, and modal loops on it
+    // return immediately — a leftover quit/thread message in its queue makes
+    // MessageBoxW dismiss itself before the user sees anything. A fresh
+    // thread gets a fresh message queue, so the box actually blocks until
+    // dismissed; join() preserves the blocking contract for the caller.
+    std::thread::spawn(move || {
+        use windows::core::HSTRING;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            MessageBoxW, MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TASKMODAL,
+        };
+        // No owner HWND: the Tao loop has exited and every window is
+        // destroyed by the time the fatal path runs. MB_TASKMODAL keeps the
+        // ownerless box modal to the process; MB_SETFOREGROUND raises it
+        // above the corpse of the app so the user actually sees why it is
+        // closing.
+        unsafe {
+            MessageBoxW(
+                None,
+                &HSTRING::from(message),
+                &HSTRING::from(title),
+                MB_OK | MB_ICONERROR | MB_TASKMODAL | MB_SETFOREGROUND,
+            );
+        }
+    })
+    .join()
+    .ok();
+}
+
+// ponytail: Linux (gtk::MessageDialog / zenity) is still a silent no-op;
+// the SEVERE log on the JVM side is the only signal there (#622).
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn show_error_dialog(_title: &str, _message: &str) {}
