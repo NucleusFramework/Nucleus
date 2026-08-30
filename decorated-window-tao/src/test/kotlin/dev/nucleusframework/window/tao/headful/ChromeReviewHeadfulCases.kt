@@ -327,6 +327,27 @@ internal object ChromeReviewHeadfulCases {
     }
 
     /**
+     * Synthetic press-drag at screen coordinates, run off the Tao event loop
+     * by [HeadfulRobot]. Returns null when the host cannot inject input.
+     */
+    private suspend fun pressDrag(
+        startX: Int,
+        startY: Int,
+        dx: Int,
+    ): Unit? =
+        HeadfulRobot.inject { robot ->
+            robot.mouseMove(startX, startY)
+            Thread.sleep(PRESS_SETTLE_MILLIS)
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
+            // Several moves — some hosts only arm after a threshold.
+            for (step in 1..DRAG_STEPS) {
+                robot.mouseMove(startX + dx * step / DRAG_STEPS, startY + step)
+                Thread.sleep(DRAG_STEP_MILLIS)
+            }
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
+        }
+
+    /**
      * Review P0: `noWindowDrag` must stop an ancestor `windowDragArea` from
      * arming a move. Probes: [TaoWindow.onDragWindow] counter + AWT Robot
      * press-drag over the opt-out zone vs the bare drag strip.
@@ -399,28 +420,17 @@ internal object ChromeReviewHeadfulCases {
                 val (noDragX, stripY) = px(8f + 24f, 28f)
                 val (dragX, _) = px(280f, 28f)
 
-                val robot = Robot()
-                robot.autoDelay = 30
-                robot.isAutoWaitForIdle = true
-
-                suspend fun pressDrag(
-                    startX: Int,
-                    startY: Int,
-                    dx: Int,
-                ) {
-                    robot.mouseMove(startX, startY)
-                    settle(80)
-                    robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
-                    // Several moves — some hosts only arm after a threshold.
-                    for (step in 1..6) {
-                        robot.mouseMove(startX + dx * step / 6, startY + step)
-                        settle(40)
-                    }
-                    robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK)
-                }
-
                 // Positive control first: bare strip must arm dragWindow.
-                pressDrag(dragX, stripY, 120)
+                if (pressDrag(dragX, stripY, DRAG_DX_PX) == null) {
+                    // A host that cannot inject input (macOS without the
+                    // Accessibility grant, Wayland with a refused RemoteDesktop
+                    // portal session) proves nothing either way — and must not
+                    // wedge the event loop while it finds out.
+                    System.err.println(
+                        "[VERDICT] INCONCLUSIVE — ${HeadfulRobot.unavailableReason}",
+                    )
+                    return@TaoWindowTestCase
+                }
                 settle(500)
                 val afterBare = dragCount.get()
                 System.err.println(
@@ -442,7 +452,10 @@ internal object ChromeReviewHeadfulCases {
 
                 dragCount.set(0)
                 // Press-drag on the noWindowDrag child — must NOT arm another move.
-                pressDrag(noDragX, stripY, 120)
+                checkNotNull(pressDrag(noDragX, stripY, DRAG_DX_PX)) {
+                    "Robot injection died between the two gestures: " +
+                        "${HeadfulRobot.unavailableReason}"
+                }
                 settle(400)
                 val afterNoDrag = dragCount.get()
                 System.err.println("[probe] dragCount after noWindowDrag child=$afterNoDrag")
@@ -694,4 +707,9 @@ internal object ChromeReviewHeadfulCases {
             }
         }
     }
+
+    private const val DRAG_DX_PX = 120
+    private const val DRAG_STEPS = 6
+    private const val PRESS_SETTLE_MILLIS = 80L
+    private const val DRAG_STEP_MILLIS = 40L
 }

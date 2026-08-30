@@ -283,11 +283,75 @@ internal object AnimatedWindowSizeHeadfulCases {
                 ?.key
                 ?: (samples.first().outerH - samples.first().sceneH)
 
+        val m = measureTremble(animated, chrome)
+
+        System.err.println(
+            "[#576] metric maxTitleY=${m.maxTitleY} maxContentGap=${m.maxContentGap} " +
+                "maxSceneVsInner=${m.maxSceneVsInner} (over ${m.sceneVsInnerSamples} frames) " +
+                "maxLayoutVsScene=${m.maxLayoutVsScene} " +
+                "maxSceneVsOuter=${m.maxSceneVsOuter} (chrome=$chrome) " +
+                "heightReversals=${m.nativeHeightReversals} originOsc=${m.maxOriginOscillation} " +
+                "animatedFrames=${animated.size}",
+        )
+
+        // Without comparable frames the scene-vs-inner gate below is vacuous.
+        check(m.sceneVsInnerSamples >= MIN_ANIM_SAMPLES) {
+            "only ${m.sceneVsInnerSamples} of ${animated.size} animated frames had an " +
+                "onResized inner height matching the live outer size — cannot judge tremble"
+        }
+
+        val failures = mutableListOf<String>()
+        if (m.maxTitleY > PX_TOLERANCE) {
+            failures += "TitleBar origin Y jumped ${m.maxTitleY}px (window-top pin)"
+        }
+        if (m.maxContentGap > PX_TOLERANCE) {
+            failures += "content did not stay immediately under TitleBar (gap ${m.maxContentGap}px)"
+        }
+        if (m.maxLayoutVsScene > PX_TOLERANCE) {
+            failures += "TitleBar+content height drifted from scene by ${m.maxLayoutVsScene}px"
+        }
+        if (m.maxSceneVsInner > PX_TOLERANCE) {
+            failures += "Compose scene height drifted from native inner size by ${m.maxSceneVsInner}px"
+        }
+        if (m.maxSceneVsOuter > PX_TOLERANCE) {
+            failures +=
+                "Compose scene height drifted from native outer size by " +
+                "${m.maxSceneVsOuter}px (chrome $chrome)"
+        }
+        if (m.nativeHeightReversals > 0) {
+            failures += "native height reversed ${m.nativeHeightReversals} time(s) while the animation only grew"
+        }
+        if (m.maxOriginOscillation > PX_TOLERANCE) {
+            failures += "window/content origin oscillated by ${m.maxOriginOscillation}px"
+        }
+        check(failures.isEmpty()) {
+            failures.joinToString("; ")
+        }
+    }
+
+    /** Worst-case drift seen across the animated frames. */
+    private data class TrembleMetrics(
+        val maxTitleY: Int,
+        val maxContentGap: Int,
+        val maxSceneVsInner: Int,
+        val sceneVsInnerSamples: Int,
+        val maxLayoutVsScene: Int,
+        val maxSceneVsOuter: Int,
+        val maxOriginOscillation: Int,
+        val nativeHeightReversals: Int,
+    )
+
+    private fun measureTremble(
+        animated: List<Sample>,
+        chrome: Int,
+    ): TrembleMetrics {
         var maxTitleY = 0
         var maxContentGap = 0
         var maxSceneVsInner = 0
+        var sceneVsInnerSamples = 0
         var maxLayoutVsScene = 0
         var maxSceneVsOuter = 0
+        var outerDriftRun = 0
         var maxOriginOscillation = 0
         var nativeHeightReversals = 0
         var prevInnerH = animated.first().innerH.takeIf { it > 0 } ?: animated.first().sceneH
@@ -304,9 +368,18 @@ internal object AnimatedWindowSizeHeadfulCases {
             val liveInner = s.outerH - chrome
             if (s.innerH > 0 && abs(s.innerH - liveInner) <= PX_TOLERANCE) {
                 maxSceneVsInner = maxOf(maxSceneVsInner, abs(s.sceneH - s.innerH))
+                sceneVsInnerSamples++
             }
-            maxSceneVsInner = maxOf(maxSceneVsInner, abs(s.sceneH - liveInner))
-            maxSceneVsOuter = maxOf(maxSceneVsOuter, abs(s.outerH - s.sceneH - chrome))
+            // `chrome` is a baseline constant, but GTK CSD frame extents are
+            // not: outer bounds can take the new size a frame before the
+            // resize event reaches Compose (52/52/…/56/52 on GNOME Wayland).
+            // A one-frame skew is sampling, tremble is sustained — so only
+            // count a drift that survives consecutive animated frames.
+            val outerDrift = abs(s.outerH - s.sceneH - chrome)
+            outerDriftRun = if (outerDrift > PX_TOLERANCE) outerDriftRun + 1 else 0
+            if (outerDriftRun >= SUSTAINED_FRAMES) {
+                maxSceneVsOuter = maxOf(maxSceneVsOuter, outerDrift)
+            }
             maxOriginOscillation = maxOf(maxOriginOscillation, abs(s.titleX), abs(s.contentX))
 
             val nativeH = if (s.innerH > 0) s.innerH else s.sceneH
@@ -327,39 +400,16 @@ internal object AnimatedWindowSizeHeadfulCases {
             prevOuterY = s.outerY
         }
 
-        System.err.println(
-            "[#576] metric maxTitleY=$maxTitleY maxContentGap=$maxContentGap " +
-                "maxSceneVsInner=$maxSceneVsInner maxLayoutVsScene=$maxLayoutVsScene " +
-                "maxSceneVsOuter=$maxSceneVsOuter (chrome=$chrome) " +
-                "heightReversals=$nativeHeightReversals originOsc=$maxOriginOscillation " +
-                "animatedFrames=${animated.size}",
+        return TrembleMetrics(
+            maxTitleY = maxTitleY,
+            maxContentGap = maxContentGap,
+            maxSceneVsInner = maxSceneVsInner,
+            sceneVsInnerSamples = sceneVsInnerSamples,
+            maxLayoutVsScene = maxLayoutVsScene,
+            maxSceneVsOuter = maxSceneVsOuter,
+            maxOriginOscillation = maxOriginOscillation,
+            nativeHeightReversals = nativeHeightReversals,
         )
-
-        val failures = mutableListOf<String>()
-        if (maxTitleY > PX_TOLERANCE) {
-            failures += "TitleBar origin Y jumped ${maxTitleY}px (window-top pin)"
-        }
-        if (maxContentGap > PX_TOLERANCE) {
-            failures += "content did not stay immediately under TitleBar (gap ${maxContentGap}px)"
-        }
-        if (maxLayoutVsScene > PX_TOLERANCE) {
-            failures += "TitleBar+content height drifted from scene by ${maxLayoutVsScene}px"
-        }
-        if (maxSceneVsInner > PX_TOLERANCE) {
-            failures += "Compose scene height drifted from native inner size by ${maxSceneVsInner}px"
-        }
-        if (maxSceneVsOuter > PX_TOLERANCE) {
-            failures += "Compose scene height drifted from native outer size by ${maxSceneVsOuter}px (chrome $chrome)"
-        }
-        if (nativeHeightReversals > 0) {
-            failures += "native height reversed $nativeHeightReversals time(s) while the animation only grew"
-        }
-        if (maxOriginOscillation > PX_TOLERANCE) {
-            failures += "window/content origin oscillated by ${maxOriginOscillation}px"
-        }
-        check(failures.isEmpty()) {
-            failures.joinToString("; ")
-        }
     }
 
     private const val WINDOW_WIDTH_DP = 420
@@ -372,5 +422,8 @@ internal object AnimatedWindowSizeHeadfulCases {
     private const val MIN_SAMPLES = 20
     private const val MIN_ANIM_SAMPLES = 8
     private const val PX_TOLERANCE = 1
+
+    /** Consecutive animated frames a scene-vs-outer drift must survive to count. */
+    private const val SUSTAINED_FRAMES = 2
     private const val CONTENT_ARGB = 0xFF203040.toInt()
 }
