@@ -12,6 +12,7 @@ import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
+import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
@@ -148,11 +149,31 @@ public object TaoSceneTestBattery {
         run("StandaloneFramePumpTest: extraSchedulesWhileRenderingCoalesce") {
             StandaloneFramePumpTest().extraSchedulesWhileRenderingCoalesce()
         }
+        run("StandaloneFramePumpTest: scheduleInsideNonReentrantBlockIsPosted") {
+            StandaloneFramePumpTest().scheduleInsideNonReentrantBlockIsPosted()
+        }
+        run("StandaloneFramePumpTest: inlineRenderResumesAfterNonReentrantBlock") {
+            StandaloneFramePumpTest().inlineRenderResumesAfterNonReentrantBlock()
+        }
         run("StandaloneFramePumpTest: scheduleAfterDisposeIsNoOp") {
             StandaloneFramePumpTest().scheduleAfterDisposeIsNoOp()
         }
         run("StandaloneFramePumpTest: disposedPostedFrameIsDropped") {
             StandaloneFramePumpTest().disposedPostedFrameIsDropped()
+        }
+        run(
+            "StandalonePopupRenderReentryTest: guarded scrollbar drag posts the frame " +
+                "instead of re-entering the render pass",
+        ) {
+            StandalonePopupRenderReentryTest()
+                .`guarded scrollbar drag posts the frame instead of re-entering the render pass`()
+        }
+        run(
+            "StandalonePopupRenderReentryTest: unguarded scene dispatch re-enters the render pass " +
+                "- the failure mode the guard exists for",
+        ) {
+            StandalonePopupRenderReentryTest()
+                .`unguarded scene dispatch re-enters the render pass - the failure mode the guard exists for`()
         }
         run("TaoWheelPinchZoomTest: fullWheelDeltaProducesModerateZoomStep") {
             TaoWheelPinchZoomTest().fullWheelDeltaProducesModerateZoomStep()
