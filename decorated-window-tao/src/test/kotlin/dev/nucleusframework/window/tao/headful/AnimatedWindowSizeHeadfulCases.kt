@@ -273,15 +273,27 @@ internal object AnimatedWindowSizeHeadfulCases {
                 "(start=$startH, samples=${samples.size}, animated=${animated.size})"
         }
 
-        val baseline = samples.takeWhile { abs(it.requestedH - startH) <= 0 }
+        // A window's outer box always contains the scene it hosts, so a
+        // negative chrome means the outer bounds were not real yet — openbox
+        // under Xvfb reports a 1px outer height for a while after mapping, and
+        // a baseline mode of -359 turned every gate below into noise. Estimate
+        // only from frames where the invariant holds, falling back to the whole
+        // run when the baseline window caught none of them.
+        val realOuter = { s: Sample -> s.outerH >= s.sceneH }
+        val baseline = samples.takeWhile { abs(it.requestedH - startH) <= 0 }.filter(realOuter)
+        val chromeFrames = baseline.ifEmpty { samples.filter(realOuter) }
+        check(chromeFrames.isNotEmpty()) {
+            "no frame where the outer height covers the scene — the window never " +
+                "reported real outer bounds (first sample outerH=${samples.first().outerH} " +
+                "sceneH=${samples.first().sceneH})"
+        }
         val chrome =
-            baseline
+            chromeFrames
                 .map { it.outerH - it.sceneH }
                 .groupingBy { it }
                 .eachCount()
-                .maxByOrNull { it.value }
-                ?.key
-                ?: (samples.first().outerH - samples.first().sceneH)
+                .maxByOrNull { it.value }!!
+                .key
 
         val m = measureTremble(animated, chrome)
 
