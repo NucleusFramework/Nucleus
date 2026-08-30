@@ -567,6 +567,8 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     private inner class StandalonePopupPlatformContext(
         override val dragAndDropManager: PlatformDragAndDropManager,
     ) : TaoPlatformContextBase() {
+        override val sceneScale: Float get() = this@TaoStandalonePopupHostLinux.scale
+
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostLinux.windowInfo
 
         // Standalone popup surfaces are always per-pixel transparent, so

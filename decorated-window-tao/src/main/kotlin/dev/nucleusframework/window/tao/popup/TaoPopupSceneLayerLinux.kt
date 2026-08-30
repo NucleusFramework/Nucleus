@@ -180,6 +180,8 @@ internal class TaoPopupSceneLayerLinux(
             size = sceneLayoutSize,
             platformContext =
                 object : TaoPlatformContextBase() {
+                    override val sceneScale: Float get() = _density.density
+
                     override val windowInfo: androidx.compose.ui.platform.WindowInfo
                         get() = popupWindowInfo
 

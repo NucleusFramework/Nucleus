@@ -17,6 +17,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
+import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
@@ -277,6 +278,24 @@ public object TaoSceneTestBattery {
         }
         run("TaoScenePointerTest: hover exit resets hover state via exitPointer") {
             TaoScenePointerTest().`hover exit resets hover state via exitPointer`()
+        }
+        run("TaoScenePointerSlopTest: sub-pixel jitter between press and release must not eat the click") {
+            TaoScenePointerSlopTest().`sub-pixel jitter between press and release must not eat the click`()
+        }
+        run("TaoScenePointerSlopTest: sub-pixel jitter must not eat the click on a HiDPI display") {
+            TaoScenePointerSlopTest().`sub-pixel jitter must not eat the click on a HiDPI display`()
+        }
+        run("TaoScenePointerSlopTest: real motion past the deadband still drags and cancels the click") {
+            TaoScenePointerSlopTest().`real motion past the deadband still drags and cancels the click`()
+        }
+        run("TaoScenePointerSlopTest: moves below one dp are suppressed and real motion keeps sub-pixel precision") {
+            TaoScenePointerSlopTest().`moves below one dp are suppressed and real motion keeps sub-pixel precision`()
+        }
+        run("TaoScenePointerSlopTest: press after suppressed jitter dispatches at the last dispatched position") {
+            TaoScenePointerSlopTest().`press after suppressed jitter dispatches at the last dispatched position`()
+        }
+        run("TaoScenePointerSlopTest: touch slop is density-scaled like the AWT backend") {
+            TaoScenePointerSlopTest().`touch slop is density-scaled like the AWT backend`()
         }
         run("TitleBarHitTestTest: opaque overlay bar does not leak clicks to the content below") {
             TitleBarHitTestTest().`opaque overlay bar does not leak clicks to the content below`()

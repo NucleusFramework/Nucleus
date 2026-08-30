@@ -204,8 +204,14 @@ internal class TaoComposeSceneHost(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
-    private var lastPointerX: Float = 0f
-    private var lastPointerY: Float = 0f
+    // Sub-pixel deadband (#615): the wire delivers 1/1024-px positions and
+    // macOS emits a CursorMoved before every mouseDown/mouseUp, so click
+    // jitter under 1 dp must not reach the scene — Compose's mouse slop is
+    // 0.125 dp, and a parent drag gesture consuming that phantom move
+    // cancels the child's tap ("buttons need two clicks"). Every event
+    // dispatched to the scene uses the deadband's position, never the raw
+    // one (SyntheticEventSender would re-inject the difference).
+    private val pointerDeadband = TaoPointerDeadband()
 
     // ── Interop transaction (mirrors UIKitInteropTransaction) ────────
     //
@@ -384,6 +390,7 @@ internal class TaoComposeSceneHost(
                 // above content via z-order. Same fix as Linux (commit 2d8ca500)
                 // and Windows (commit 910879d0).
                 topInsetPx = { 0 },
+                scaleProvider = { scale },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
@@ -707,7 +714,7 @@ internal class TaoComposeSceneHost(
             // [isPressed]).
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Release,
-                position = Offset(lastPointerX, lastPointerY),
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
                 keyboardModifiers = currentKeyboardModifiers,
                 button = mapButton(pressedButtonCode),
@@ -956,14 +963,13 @@ internal class TaoComposeSceneHost(
     ) {
         val xPx = aFixed / 1024f
         val yPx = bFixed / 1024f
-        lastPointerX = xPx
-        lastPointerY = yPx
         hasReceivedCursorMove = true
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
-            position = Offset(xPx, yPx),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -974,7 +980,7 @@ internal class TaoComposeSceneHost(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1000,7 +1006,7 @@ internal class TaoComposeSceneHost(
             // See the comment on `isPressed` for the rationale.
             scene?.sendPointerEvent(
                 eventType = PointerEventType.Release,
-                position = Offset(lastPointerX, lastPointerY),
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
                 keyboardModifiers = currentKeyboardModifiers,
                 button = mapButton(pressedButtonCode),
@@ -1014,7 +1020,7 @@ internal class TaoComposeSceneHost(
         if (pressed) nativePointerDispatchedThisEvent = false
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
             button = composeButton,
@@ -1040,8 +1046,8 @@ internal class TaoComposeSceneHost(
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.dispatchAwtShapedScroll(
-            x = lastPointerX,
-            y = lastPointerY,
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
             event = event,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1616,6 +1622,8 @@ internal class TaoComposeSceneHost(
 private class TaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
+    /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
+    private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
@@ -1627,6 +1635,8 @@ private class TaoPlatformContext(
     // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
     override val isWindowTransparent: Boolean = false,
 ) : TaoPlatformContextBase() {
+    override val sceneScale: Float get() = scaleProvider()
+
     // Compose's Popup framework reads `LocalPlatformWindowInsets.current.systemBars`
     // when `usePlatformInsets = true` (the default). The popup positioning logic
     // then operates inside `windowSize - insets`, so a `top` inset matching our
