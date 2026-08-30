@@ -1059,11 +1059,20 @@ public class TaoWindow internal constructor(
         keyListener?.onKey(type, vkCode, keyLocation, modifiers, codePoint)
     }
 
+    /**
+     * macOS replacement commit — `insertText:` with a valid
+     * `replacementRange` (UTF-16, document-absolute) outside a composition.
+     * See [NativeTaoBridge.EventCallback.onImeReplaceCommit].
+     */
     @Volatile
-    internal var imeReplaceCommit: ((String) -> Unit)? = null
+    internal var imeReplaceCommit: ((String, Long, Long) -> Unit)? = null
 
-    internal fun dispatchImeReplaceCommit(text: String) {
-        imeReplaceCommit?.invoke(text)
+    internal fun dispatchImeReplaceCommit(
+        text: String,
+        replacementStart: Long,
+        replacementLength: Long,
+    ) {
+        imeReplaceCommit?.invoke(text, replacementStart, replacementLength)
     }
 
     /**

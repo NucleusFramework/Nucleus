@@ -29,10 +29,12 @@ internal object MacOsKotoeriProbe {
 
     fun currentInputSource(): String = NativeTaoBridge.nativeMacOsCurrentInputSource()
 
+    /** [autorepeat] marks the keyDown as a key repeat (held key). */
     fun postKey(
         handle: Long,
         keyCode: Int,
         characters: String,
         down: Boolean,
-    ): Boolean = NativeTaoBridge.nativeMacOsPostKeyToView(handle, keyCode, characters, down)
+        autorepeat: Boolean = false,
+    ): Boolean = NativeTaoBridge.nativeMacOsPostKeyToView(handle, keyCode, characters, down, autorepeat)
 }

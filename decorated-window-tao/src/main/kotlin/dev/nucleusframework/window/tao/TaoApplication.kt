@@ -185,8 +185,10 @@ public object TaoApplication {
         override fun onImeReplaceCommit(
             handle: Long,
             text: String,
+            replacementStart: Long,
+            replacementLength: Long,
         ) {
-            lookup(handle)?.dispatchImeReplaceCommit(text)
+            lookup(handle)?.dispatchImeReplaceCommit(text, replacementStart, replacementLength)
         }
 
         override fun onImePreedit(

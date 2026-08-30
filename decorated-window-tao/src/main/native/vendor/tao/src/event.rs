@@ -366,6 +366,30 @@ pub enum WindowEvent<'a> {
   /// - Not emitted on other platforms.
   ImeCommit(String),
 
+  /// The input system committed text in place of a committed-text range.
+  /// Nucleus patch for nucleusframework#611/#612 — `insertText:` with a
+  /// valid (non-`NSNotFound`) `replacementRange`, outside any composition.
+  ///
+  /// This is how the macOS press-and-hold accent picker replaces the base
+  /// letter on a document-backed `NSTextInputClient` (Chromium parity:
+  /// `ImeCommitText(text, replacementRange)`): the range carries everything,
+  /// no client-side heuristics. [`ImeReplaceCommit::start`] /
+  /// [`ImeReplaceCommit::length`] are UTF-16 offsets in the same
+  /// document-absolute space the client reports through `selectedRange`.
+  ///
+  /// ## Platform-specific
+  /// - **macOS**: `insertText:replacementRange:` with a valid range while no
+  ///   marked text is active.
+  /// - Not emitted on other platforms.
+  ImeReplaceCommit {
+    /// The committed text.
+    text: String,
+    /// UTF-16 start offset of the range to replace (document-absolute).
+    start: u64,
+    /// UTF-16 length of the range to replace.
+    length: u64,
+  },
+
   /// The window gained or lost focus.
   ///
   /// The parameter is true if the window has gained focus, and false if it has lost focus.
@@ -504,6 +528,15 @@ impl Clone for WindowEvent<'static> {
       ReceivedImeText(c) => ReceivedImeText(c.clone()),
       ImePreedit(text) => ImePreedit(text.clone()),
       ImeCommit(text) => ImeCommit(text.clone()),
+      ImeReplaceCommit {
+        text,
+        start,
+        length,
+      } => ImeReplaceCommit {
+        text: text.clone(),
+        start: *start,
+        length: *length,
+      },
       Focused(f) => Focused(*f),
       KeyboardInput {
         device_id,
@@ -598,6 +631,15 @@ impl<'a> WindowEvent<'a> {
       ReceivedImeText(c) => Some(ReceivedImeText(c)),
       ImePreedit(text) => Some(ImePreedit(text)),
       ImeCommit(text) => Some(ImeCommit(text)),
+      ImeReplaceCommit {
+        text,
+        start,
+        length,
+      } => Some(ImeReplaceCommit {
+        text,
+        start,
+        length,
+      }),
       Focused(focused) => Some(Focused(focused)),
       KeyboardInput {
         device_id,

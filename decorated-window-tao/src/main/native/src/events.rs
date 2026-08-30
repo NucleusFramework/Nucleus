@@ -441,7 +441,15 @@ pub(crate) fn dispatch_key(
     }
 }
 
-fn dispatch_ime_string(handle: u64, method: &str, text: &str) {
+/// Calls an `EventCallback` method whose first two arguments are the window
+/// handle and a string, plus any [extra] trailing arguments.
+fn dispatch_ime_string_with(
+    handle: u64,
+    method: &str,
+    signature: &str,
+    text: &str,
+    extra: &[jlong],
+) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {
         return;
@@ -455,16 +463,18 @@ fn dispatch_ime_string(handle: u64, method: &str, text: &str) {
     let Ok(jstr) = env.new_string(text) else {
         return;
     };
-    let _ = env.call_method(
-        callback.as_obj(),
-        method,
-        "(JLjava/lang/String;)V",
-        &[JValue::Long(handle as jlong), JValue::Object(&jstr.into())],
-    );
+    let jobj = jstr.into();
+    let mut args = vec![JValue::Long(handle as jlong), JValue::Object(&jobj)];
+    args.extend(extra.iter().map(|v| JValue::Long(*v)));
+    let _ = env.call_method(callback.as_obj(), method, signature, &args);
     if env.exception_check().unwrap_or(false) {
         let _ = env.exception_describe();
         let _ = env.exception_clear();
     }
+}
+
+fn dispatch_ime_string(handle: u64, method: &str, text: &str) {
+    dispatch_ime_string_with(handle, method, "(JLjava/lang/String;)V", text, &[]);
 }
 
 /// IME composition (marked text) update — macOS only. Empty [text] cancels
@@ -477,6 +487,20 @@ pub(crate) fn dispatch_ime_preedit(handle: u64, text: &str) {
 /// active; the JVM replaces the composing region via `commitText` (#595).
 pub(crate) fn dispatch_ime_commit(handle: u64, text: &str) {
     dispatch_ime_string(handle, "onImeCommit", text);
+}
+
+/// Replacement commit — macOS only (#611/#612). `insertText:` with a valid
+/// `replacementRange` outside a composition (the press-and-hold accent
+/// picker). [start] / [length] are UTF-16 offsets in the document-absolute
+/// space the JVM pushed through `nativeSetImeDocument`.
+pub(crate) fn dispatch_ime_replace_commit(handle: u64, text: &str, start: u64, length: u64) {
+    dispatch_ime_string_with(
+        handle,
+        "onImeReplaceCommit",
+        "(JLjava/lang/String;JJ)V",
+        text,
+        &[start as jlong, length as jlong],
+    );
 }
 
 #[allow(clippy::too_many_arguments, dead_code)]

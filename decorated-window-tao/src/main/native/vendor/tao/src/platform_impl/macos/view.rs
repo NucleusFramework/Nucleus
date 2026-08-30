@@ -641,7 +641,7 @@ extern "C" fn insert_text(
   this: &mut Object,
   _sel: Sel,
   string: &NSString,
-  _replacement_range: NSRange,
+  replacement_range: NSRange,
 ) {
   trace!("Triggered `insertText`");
   unsafe {
@@ -684,6 +684,30 @@ extern "C" fn insert_text(
         reset_marked_text_ivar(this);
         queue_window_event(state, WindowEvent::ImeCommit(string));
       }
+    } else if replacement_range.location != NSNotFound as NSUInteger && !string.is_empty() {
+      // Nucleus patch (nucleusframework#611/#612): a valid replacementRange
+      // outside a composition is a replacement commit — the press-and-hold
+      // accent picker replacing the base letter on a document-backed client.
+      // Chromium parity (`RenderWidgetHostViewCocoa insertText:`): a valid
+      // range routes to an immediate replace-commit, everything else stays
+      // ordinary insertion. The range is UTF-16, in the document-absolute
+      // space the client reports through `selectedRange`.
+      //
+      // The input method consumed this keystroke, so it must not also be
+      // delivered as a raw key event (#595 invariant): the accent is picked
+      // with a number key, and an app shortcut bound to that digit must not
+      // fire while the user is only choosing an accent. Chromium forwards
+      // the RawKeyDown because the web platform mandates a `keydown`; the
+      // AWT/Compose contract this backend follows does not.
+      state.key_triggered_ime = true;
+      queue_window_event(
+        state,
+        WindowEvent::ImeReplaceCommit {
+          text: string,
+          start: replacement_range.location as u64,
+          length: replacement_range.length as u64,
+        },
+      );
     } else if !string.is_empty() {
       queue_window_event(state, WindowEvent::ReceivedImeText(string));
     }

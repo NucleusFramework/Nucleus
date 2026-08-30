@@ -12,11 +12,20 @@ extern "C" {
     );
     pub(crate) fn nucleus_tao_is_main_thread() -> i32;
     pub(crate) fn nucleus_tao_install_cmd_q_handler();
-    pub(crate) fn nucleus_tao_enable_press_and_hold();
-    pub(crate) fn nucleus_tao_register_ime_replace_commit(
-        cb: extern "C" fn(i64, *const std::os::raw::c_char),
-    );
     pub(crate) fn nucleus_tao_activate_input_context(ns_view_handle: i64);
+    /// Pushes the focused field's committed text (a bounded UTF-16 window),
+    /// selection and composition so the swizzled `NSTextInputClient` getters
+    /// can answer AppKit like a document-backed client (Chromium's
+    /// `setTextSelectionText:offset:range:` cache). Negative selection
+    /// offsets invalidate the cache (no focused field).
+    pub(crate) fn nucleus_tao_set_ime_document(
+        ns_view_handle: i64,
+        utf16: *const u16,
+        utf16_len: i64,
+        offset: i64,
+        sel_start: i64,
+        sel_end: i64,
+    );
     pub(crate) fn nucleus_tao_set_ime_local_rect(
         ns_view_handle: i64,
         x_px: f64,
@@ -53,11 +62,14 @@ extern "C" {
     /// Headful e2e: restore the input source saved by [nucleus_tao_kotoeri_select].
     pub(crate) fn nucleus_tao_kotoeri_restore();
     /// Headful e2e: deliver a real `keyDown:` / `keyUp:` to TaoView.
+    /// [autorepeat] stamps `kCGKeyboardEventAutorepeat` so AppKit sees a held
+    /// key (press-and-hold engages on the first repeat).
     pub(crate) fn nucleus_tao_post_key_to_view(
         ns_view_ptr: i64,
         key_code: i32,
         chars: *const std::os::raw::c_char,
         down: i32,
+        autorepeat: i32,
     ) -> i32;
     /// Headful e2e: current TIS keyboard source id into [buf]. Returns 1 on success.
     pub(crate) fn nucleus_tao_current_input_source_id(
@@ -79,10 +91,13 @@ extern "C" {
         selected_loc: i32,
         selected_len: i32,
     ) -> i32;
-    /// Headful e2e: `[view insertText:replacementRange:]`.
+    /// Headful e2e: `[view insertText:replacementRange:]`. A negative
+    /// [rr_loc] means `{NSNotFound, 0}` (ordinary typing).
     pub(crate) fn nucleus_tao_inject_insert_text(
         ns_view_ptr: i64,
         utf8: *const std::os::raw::c_char,
+        rr_loc: i64,
+        rr_len: i64,
     ) -> i32;
     pub(crate) fn nucleus_tao_register_trackpad_gesture_callback(
         cb: extern "C" fn(

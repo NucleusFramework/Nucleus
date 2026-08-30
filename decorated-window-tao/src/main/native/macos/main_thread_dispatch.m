@@ -12,6 +12,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #include <stdatomic.h>
+#include <stdint.h>
 
 @interface NucleusTaoMainLauncher : NSObject
 {
@@ -62,45 +63,16 @@ void nucleus_tao_install_cmd_q_handler(void) {
 }
 
 // macOS press-and-hold (long-press a key → accent picker) is gated by the
-// `ApplePressAndHoldEnabled` user default. We set it everywhere we can — App
-// domain, Argument volatile domain, CFPreferences, registration domain — both
-// from `+load` (= dyld load time, before any Compose/AWT static init) and at
-// runtime. The picker itself is an input method: it only engages when
-// `interpretKeyEvents:` sees the *repeat* keyDown after the initial press.
-// Tao used to skip those repeats (see vendored `view.rs`); that was the
-// actual blocker, not the NSView class hierarchy. These defaults stay
-// required so a user-level `defaults write -g ApplePressAndHoldEnabled -bool
-// false` cannot silently disable the picker for Nucleus apps.
-static void nucleus_tao_force_press_and_hold(void) {
-    @autoreleasepool {
-        [[NSUserDefaults standardUserDefaults]
-            setVolatileDomain:@{@"ApplePressAndHoldEnabled": @YES}
-                      forName:NSArgumentDomain];
-        [[NSUserDefaults standardUserDefaults]
-            setBool:YES forKey:@"ApplePressAndHoldEnabled"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-        CFPreferencesSetAppValue(CFSTR("ApplePressAndHoldEnabled"),
-                                 kCFBooleanTrue,
-                                 kCFPreferencesCurrentApplication);
-        CFPreferencesAppSynchronize(kCFPreferencesCurrentApplication);
-        [[NSUserDefaults standardUserDefaults] registerDefaults:@{
-            @"ApplePressAndHoldEnabled": @YES,
-        }];
-    }
-}
-
-@interface NucleusTaoPressAndHoldEnabler : NSObject
-@end
-
-@implementation NucleusTaoPressAndHoldEnabler
-+ (void)load {
-    nucleus_tao_force_press_and_hold();
-}
-@end
-
-void nucleus_tao_enable_press_and_hold(void) {
-    nucleus_tao_force_press_and_hold();
-}
+// `ApplePressAndHoldEnabled` user default. Like Chromium (zero occurrences
+// of the key in its tree), Nucleus never reads, sets or registers it — the
+// OS/user decides whether a held letter repeats or opens the picker (#612).
+// Forcing it on used to leave letter keys dead wherever the picker cannot
+// engage (non-Apple keyboards, Karabiner virtual devices): the repeat was
+// suppressed and nothing appeared in its place. The picker works because
+// TaoView answers `selectedRange` / `attributedSubstringForProposedRange`
+// over the committed text (document cache below) and honors
+// `replacementRange` in `insertText:` (vendored view.rs) — and because
+// repeat keyDowns are fed to `interpretKeyEvents:` (also view.rs).
 
 // ── IME caret rect plumbing (used by `firstRectForCharacterRange:` swizzle) ──
 //
@@ -122,78 +94,139 @@ static NSRect tao_view_first_rect_for_character_range(
     return NSMakeRect(g_ime_screen_x, g_ime_screen_y, g_ime_w, g_ime_h);
 }
 
-// PressAndHold (Apple PH11264) is not a marked-text IME on a custom NSView.
-// Compose Desktop documents the same constraint in DesktopTextInputService2
-// (workaround for JDK-8074882):
-//   1. The base letter is committed as a normal insertText:.
-//   2. AppKit then queries selectedRange / attributedSubstring while the
-//      letter key is still down — that is the picker starting.
-//   3. The accent arrives as a later insertText:. We replace the previous
-//      code point via Compose TextEditingScope, not a synthetic Backspace
-//      (those race ordinary typing and erase characters).
-static BOOL g_did_insert_base = NO;
-static BOOL g_letter_key_down = NO;
-static BOOL g_press_and_hold_queried = NO;
-static NSString *g_base_text = nil;
-static unsigned short g_base_key_code = 0xFFFF;
-static IMP g_orig_insert_text = NULL;
-static IMP g_orig_key_up = NULL;
-static IMP g_orig_attributed_substring = NULL;
-static void (*g_ime_replace_commit)(long ns_view, const char *utf8) = NULL;
+// ── Document-backed NSTextInputClient answers (Chromium parity) ─────────────
+//
+// TaoView's own NSTextInputClient (vendored view.rs) only knows the marked
+// text — it has no document. AppKit's press-and-hold picker needs more: it
+// reads `selectedRange` when it engages and commits the accent as
+// `insertText:"é" replacementRange:{caret-1, 1}` — a UTF-16 document-absolute
+// range. Chromium solves this with a cached window of committed text around
+// the selection, pushed asynchronously from the renderer
+// (`setTextSelectionText:offset:range:` in RenderWidgetHostViewCocoa). Same
+// model here: the JVM pushes the focused field's text window, window offset
+// and selection on every field change; the swizzled getters serve those
+// answers. All access is on the AppKit main thread (the Tao event loop *is*
+// `Dispatchers.Main`).
+//
+// During a composition the marked text bookkeeping stays authoritative and
+// synchronous in the view's ivar; only its *location* needs an absolute
+// anchor, maintained optimistically in the `setMarkedText:` swizzle exactly
+// like Chromium's `_markedRange` fallback chain (replacementRange →
+// selection start at composition start → keep).
+static int64_t g_doc_view = 0;
+static NSString *g_doc_text = nil;
+static int64_t g_doc_offset = 0;
+static NSRange g_doc_selection = {NSNotFound, 0};
+static NSUInteger g_marked_anchor = 0;
 
-void nucleus_tao_register_ime_replace_commit(void (*cb)(long, const char *)) {
-    g_ime_replace_commit = cb;
-}
-
-static BOOL nucleus_is_letter_key_event(NSEvent *event) {
-    if (!event || event.type != NSEventTypeKeyDown) return NO;
-    NSString *chars = event.charactersIgnoringModifiers;
-    if (chars.length != 1) return NO;
-    unichar c = [chars characterAtIndex:0];
-    return [[NSCharacterSet letterCharacterSet] characterIsMember:c];
-}
-
-/// JBR's `-[NSEvent isARepeat]` throws on non-key events (KitDefined
-/// window-update events are often `currentEvent` when IMKit calls
-/// `insertText:` outside `keyDown:`).
-static BOOL nucleus_event_is_key_repeat(NSEvent *event) {
-    if (event == nil) {
-        return NO;
+void nucleus_tao_set_ime_document(
+    int64_t ns_view_handle,
+    const uint16_t *utf16,
+    int64_t utf16_len,
+    int64_t offset,
+    int64_t sel_start,
+    int64_t sel_end
+) {
+    if (sel_start < 0 || utf16 == NULL) {
+        // Scoped to the owning view: focus moving between windows tears down
+        // the old input session *after* the new one starts, so a blanket
+        // invalidate would wipe the cache the newly focused field just
+        // installed and leave its picker committing against a stale caret.
+        if (ns_view_handle != 0 && ns_view_handle != g_doc_view) {
+            return;
+        }
+        g_doc_view = 0;
+        g_doc_text = nil;
+        g_doc_offset = 0;
+        g_doc_selection = NSMakeRange(NSNotFound, 0);
+        g_marked_anchor = 0;
+        return;
     }
-    NSEventType type = event.type;
-    if (type != NSEventTypeKeyDown && type != NSEventTypeKeyUp) {
-        return NO;
-    }
-    return event.isARepeat;
+    g_doc_view = ns_view_handle;
+    g_doc_text = [NSString stringWithCharacters:(const unichar *)utf16
+                                         length:(NSUInteger)utf16_len];
+    g_doc_offset = offset;
+    g_doc_selection = NSMakeRange(
+        (NSUInteger)sel_start,
+        (NSUInteger)(sel_end >= sel_start ? sel_end - sel_start : 0)
+    );
 }
 
-static void nucleus_clear_press_and_hold(void) {
-    g_did_insert_base = NO;
-    g_letter_key_down = NO;
-    g_press_and_hold_queried = NO;
-    g_base_text = nil;
-    g_base_key_code = 0xFFFF;
+static BOOL nucleus_doc_valid_for(id view) {
+    return g_doc_view != 0 &&
+        g_doc_view == (int64_t)(intptr_t)(__bridge void *)view &&
+        g_doc_text != nil &&
+        g_doc_selection.location != NSNotFound;
 }
 
-static void nucleus_note_press_and_hold_query(void) {
-    if (g_did_insert_base && g_letter_key_down) {
-        g_press_and_hold_queried = YES;
-    }
-}
-
-// PressAndHold reads `selectedRange` after the base letter is committed —
-// that query is how we detect the picker (Compose AWT uses getSelectedText).
-// Forward to TaoView so IMKit sees the real caret / marked-text selection
-// (nucleusframework#595); `{0, 0}` is only the fallback when the original
-// implementation is missing.
 static IMP g_orig_selected_range = NULL;
+static IMP g_orig_marked_range = NULL;
+static IMP g_orig_attributed_substring = NULL;
+static IMP g_orig_set_marked_text = NULL;
 
+/// Tao's own `markedRange` — `{0, len}` while composing, `{NSNotFound, 0}`
+/// otherwise. The length is authoritative (updated synchronously by IMKit's
+/// own `setMarkedText:`); only the location is view-relative.
+static NSRange nucleus_orig_marked_range(id self) {
+    if (g_orig_marked_range) {
+        return ((NSRange (*)(id, SEL))g_orig_marked_range)(self, @selector(markedRange));
+    }
+    return NSMakeRange(NSNotFound, 0);
+}
+
+static BOOL nucleus_is_composing(id self) {
+    NSRange marked = nucleus_orig_marked_range(self);
+    return marked.location != NSNotFound && marked.length > 0;
+}
+
+/// `selectedRange` is document-absolute, like every document-backed client
+/// (NSTextView, Chromium). While composing, tao reports the IME's selection
+/// relative to the marked text — shift it by the composition anchor.
 static NSRange tao_view_selected_range(id self, SEL _cmd) {
-    nucleus_note_press_and_hold_query();
-    if (g_orig_selected_range) {
-        return ((NSRange (*)(id, SEL))g_orig_selected_range)(self, _cmd);
+    if (nucleus_is_composing(self)) {
+        NSRange rel = g_orig_selected_range
+            ? ((NSRange (*)(id, SEL))g_orig_selected_range)(self, _cmd)
+            : NSMakeRange(0, 0);
+        return NSMakeRange(g_marked_anchor + rel.location, rel.length);
+    }
+    if (nucleus_doc_valid_for(self)) {
+        return g_doc_selection;
     }
     return NSMakeRange(0, 0);
+}
+
+static NSRange tao_view_marked_range(id self, SEL _cmd) {
+    (void)_cmd;
+    NSRange marked = nucleus_orig_marked_range(self);
+    if (marked.location == NSNotFound || marked.length == 0) {
+        return NSMakeRange(NSNotFound, 0);
+    }
+    return NSMakeRange(g_marked_anchor, marked.length);
+}
+
+/// Maintains the absolute anchor of the marked text. A valid
+/// replacementRange wins; otherwise a *starting* composition anchors at the
+/// committed caret; a continuing one keeps its anchor (Chromium's
+/// `_markedRange` fallback chain). The replacement's delete-committed-text
+/// side is not applied — same self-declared limitation as Chromium's
+/// `setMarkedText:` ("hard to support replacementRange without accessing
+/// the full web content"); no mainstream IME depends on it.
+static void tao_view_set_marked_text(
+    id self, SEL sel, id string, NSRange selectedRange, NSRange replacementRange
+) {
+    // A stale `markedText` ivar (Compose cancelled the session without an
+    // `unmarkText` reaching the view) would otherwise pin the anchor from a
+    // previous field, so an invalid cache also forces a re-anchor.
+    if (replacementRange.location != NSNotFound) {
+        g_marked_anchor = replacementRange.location;
+    } else if (!nucleus_is_composing(self) || !nucleus_doc_valid_for(self)) {
+        g_marked_anchor = nucleus_doc_valid_for(self) ? g_doc_selection.location : 0;
+    }
+    if (g_orig_set_marked_text) {
+        ((void (*)(id, SEL, id, NSRange, NSRange))g_orig_set_marked_text)(
+            self, sel, string, selectedRange, replacementRange
+        );
+    }
 }
 
 // Tao's `validAttributesForMarkedText` returns `@[]`, which AppKit treats as
@@ -212,93 +245,66 @@ static NSArray<NSAttributedStringKey> *tao_view_valid_attributes_for_marked_text
     ];
 }
 
-static NSString *nucleus_string_from_ime_arg(id string) {
-    if ([string isKindOfClass:[NSAttributedString class]]) {
-        return [(NSAttributedString *)string string];
-    }
-    return (NSString *)string;
-}
-
+/// While composing, the marked text in the view's ivar is authoritative —
+/// serve requests inside the (absolute) marked range from it. Everything
+/// else is served from the JVM-pushed committed-text window, clamped like
+/// Chromium's `attributedSubstringForProposedRange:` (answer locally, write
+/// the clamped `actualRange`, `nil` outside the window).
 static id nucleus_attributed_substring(
     id self, SEL sel, NSRange range, NSRangePointer actual
 ) {
-    nucleus_note_press_and_hold_query();
-    if (g_orig_attributed_substring) {
-        return ((id (*)(id, SEL, NSRange, NSRangePointer))g_orig_attributed_substring)(
-            self, sel, range, actual
-        );
+    if (nucleus_is_composing(self)) {
+        NSRange marked = nucleus_orig_marked_range(self);
+        NSRange abs = NSMakeRange(g_marked_anchor, marked.length);
+        if (range.location >= abs.location && NSMaxRange(range) <= NSMaxRange(abs) &&
+            g_orig_attributed_substring) {
+            NSRange rel = NSMakeRange(range.location - g_marked_anchor, range.length);
+            NSRange relActual = rel;
+            id result = ((id (*)(id, SEL, NSRange, NSRangePointer))g_orig_attributed_substring)(
+                self, sel, rel, &relActual
+            );
+            if (actual) {
+                *actual = NSMakeRange(relActual.location + g_marked_anchor, relActual.length);
+            }
+            return result;
+        }
     }
-    return nil;
+    if (!nucleus_doc_valid_for(self) || range.location == NSNotFound) {
+        return nil;
+    }
+    NSUInteger window_start = (NSUInteger)g_doc_offset;
+    NSUInteger window_end = window_start + g_doc_text.length;
+    if (range.location >= window_end || NSMaxRange(range) <= window_start) {
+        return nil;
+    }
+    NSUInteger loc = MAX(range.location, window_start);
+    NSUInteger end = MIN(NSMaxRange(range), window_end);
+    // `NSMaxRange` wraps on an overflowing proposed range, which slips past
+    // the guards above and would underflow `end - loc` into a huge length.
+    if (end <= loc) {
+        return nil;
+    }
+    NSRange clamped = NSMakeRange(loc, end - loc);
+    if (actual) {
+        *actual = clamped;
+    }
+    NSRange local = NSMakeRange(clamped.location - window_start, clamped.length);
+    NSString *sub = [g_doc_text substringWithRange:local];
+    return [[NSAttributedString alloc] initWithString:sub];
 }
 
-static void nucleus_insert_text(id self, SEL sel, id string, NSRange replacement) {
-    NSString *incoming = nucleus_string_from_ime_arg(string) ?: @"";
-    NSEvent *event = NSApp.currentEvent;
-    BOOL isLetterDown = nucleus_is_letter_key_event(event);
-    BOOL isRepeat = nucleus_event_is_key_repeat(event);
-    BOOL sameAsBase = (g_base_text != nil) && [incoming isEqualToString:g_base_text];
-
-    // Nucleus patch (nucleusframework#595 follow-up): a marked-text IME
-    // (Japanese, Chinese, ...) commits through insertText: while the view
-    // still holds the preedit. That is never PressAndHold: its picker only
-    // engages on a plain committed letter, outside any composition
-    // (JDK-8074882 flow). Without this gate a segment commit that lands
-    // while the next romaji key is down is registered as a "base letter",
-    // the IME's own selectedRange queries then look like the picker
-    // starting, and the *next* commit is hijacked into the replace-commit
-    // path — deleting a code point, skipping ImeCommit, and leaving the
-    // preedit stranded (visible as duplicated segments).
-    if ([(NSView<NSTextInputClient> *)self hasMarkedText]) {
-        nucleus_clear_press_and_hold();
-        if (g_orig_insert_text) {
-            ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
-        }
-        return;
+/// IMKit uses this as the caret index (#595). No glyph map — report the
+/// insertion point: end of the marked text while composing, the committed
+/// caret otherwise.
+static NSUInteger tao_view_character_index_for_point(id self, SEL _cmd, NSPoint point) {
+    (void)_cmd; (void)point;
+    if (nucleus_is_composing(self)) {
+        return g_marked_anchor + nucleus_orig_marked_range(self).length;
     }
-
-    // First repeat / selectedRange query: PressAndHold re-inserts the base
-    // letter. Swallow it or we consume the replace flag and the accent
-    // arrives later as a second KEY_TYPED (eé).
-    if (g_did_insert_base && sameAsBase && (g_press_and_hold_queried || isRepeat)) {
-        g_press_and_hold_queried = YES;
-        return;
+    if (nucleus_doc_valid_for(self)) {
+        return g_doc_selection.location;
     }
-
-    if (g_press_and_hold_queried && !sameAsBase && incoming.length > 0) {
-        if (g_ime_replace_commit) {
-            const char *utf8 = incoming.UTF8String ?: "";
-            g_ime_replace_commit((long)(__bridge void *)self, utf8);
-        }
-        nucleus_clear_press_and_hold();
-        return;
-    }
-
-    // New letter after the previous hold ended: drop a stale picker flag
-    // so typing the next character is not treated as an accent pick.
-    if (!g_letter_key_down && isLetterDown && !isRepeat) {
-        g_press_and_hold_queried = NO;
-    }
-
-    if (g_orig_insert_text) {
-        ((void (*)(id, SEL, id, NSRange))g_orig_insert_text)(self, sel, string, replacement);
-    }
-    if (isLetterDown && !isRepeat) {
-        g_did_insert_base = YES;
-        g_letter_key_down = YES;
-        g_base_text = [incoming copy];
-        g_base_key_code = event.keyCode;
-    }
-}
-
-static void nucleus_key_up(id self, SEL sel, NSEvent *event) {
-    if (g_orig_key_up) {
-        ((void (*)(id, SEL, NSEvent *))g_orig_key_up)(self, sel, event);
-    }
-    // Only the base letter's keyUp ends the hold. A number-key keyUp
-    // (picker shortcut) must not drop the session before insertText:é.
-    if (event && event.keyCode == g_base_key_code) {
-        g_letter_key_down = NO;
-    }
+    return 0;
 }
 
 static void nucleus_tao_swizzle_view_methods_once(void) {
@@ -312,6 +318,20 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
         if (selectedRange) {
             g_orig_selected_range =
                 method_setImplementation(selectedRange, (IMP)tao_view_selected_range);
+        }
+        Method markedRange = class_getInstanceMethod(
+            taoViewClass, @selector(markedRange)
+        );
+        if (markedRange) {
+            g_orig_marked_range =
+                method_setImplementation(markedRange, (IMP)tao_view_marked_range);
+        }
+        Method setMarkedText = class_getInstanceMethod(
+            taoViewClass, @selector(setMarkedText:selectedRange:replacementRange:)
+        );
+        if (setMarkedText) {
+            g_orig_set_marked_text =
+                method_setImplementation(setMarkedText, (IMP)tao_view_set_marked_text);
         }
         class_replaceMethod(taoViewClass,
                             @selector(firstRectForCharacterRange:actualRange:),
@@ -328,16 +348,10 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
             g_orig_attributed_substring =
                 method_setImplementation(attrSub, (IMP)nucleus_attributed_substring);
         }
-        Method insertText = class_getInstanceMethod(
-            taoViewClass, @selector(insertText:replacementRange:)
-        );
-        if (insertText) {
-            g_orig_insert_text = method_setImplementation(insertText, (IMP)nucleus_insert_text);
-        }
-        Method keyUp = class_getInstanceMethod(taoViewClass, @selector(keyUp:));
-        if (keyUp) {
-            g_orig_key_up = method_setImplementation(keyUp, (IMP)nucleus_key_up);
-        }
+        class_replaceMethod(taoViewClass,
+                            @selector(characterIndexForPoint:),
+                            (IMP)tao_view_character_index_for_point,
+                            "Q@:{CGPoint=dd}");
     });
 }
 

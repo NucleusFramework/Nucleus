@@ -82,6 +82,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
             TaoMetalMissingPoolE2ETest::class.java to
                 "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
+            TaoPressAndHoldE2ETest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",

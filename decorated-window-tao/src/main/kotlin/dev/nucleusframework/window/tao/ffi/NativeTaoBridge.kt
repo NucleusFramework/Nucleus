@@ -107,13 +107,20 @@ internal object NativeTaoBridge {
         }
 
         /**
-         * macOS PressAndHold picked an accent. The base letter is already in
-         * the field; the host must replace it via Compose `TextEditingScope`
-         * (same as `DesktopTextInputService2` / JDK-8074882). Default no-op.
+         * macOS replacement commit: `insertText:` with a valid
+         * `replacementRange` outside a composition — how the press-and-hold
+         * accent picker replaces the base letter on a document-backed client
+         * (#611/#612). [replacementStart] / [replacementLength] are UTF-16
+         * offsets in the same document-absolute space the host pushed
+         * through [nativeSetImeDocument]; the host replaces that range via
+         * Compose `TextEditingScope` (select-then-insert, Chromium's
+         * `ImeCommitText` semantics). Default no-op.
          */
         fun onImeReplaceCommit(
             handle: Long,
             text: String,
+            replacementStart: Long,
+            replacementLength: Long,
         ) {
         }
 
@@ -295,7 +302,8 @@ internal object NativeTaoBridge {
      * to TaoView for [handle]. [keyCode] is a Carbon virtual key
      * (`kVK_ANSI_*`). This is the same path a physical keystroke takes, so
      * Kotoeri's `interpretKeyEvents:` → `setMarkedText:` / `insertText:`
-     * runs for real.
+     * runs for real. [autorepeat] marks the event as a key repeat (held
+     * key) — what AppKit's press-and-hold machinery engages on.
      */
     @JvmStatic
     external fun nativeMacOsPostKeyToView(
@@ -303,6 +311,7 @@ internal object NativeTaoBridge {
         keyCode: Int,
         characters: String,
         down: Boolean,
+        autorepeat: Boolean,
     ): Boolean
 
     /**
@@ -331,12 +340,18 @@ internal object NativeTaoBridge {
     ): Boolean
 
     /**
-     * macOS only, headful e2e: invoke `insertText:replacementRange:` on TaoView.
+     * macOS only, headful e2e: invoke `insertText:replacementRange:` on
+     * TaoView. A negative [replacementLocation] injects `{NSNotFound, 0}`
+     * (ordinary typing); a non-negative one replays the accent-picker
+     * replacement commit (`insertText:"é" replacementRange:{caret-1, 1}`,
+     * UTF-16 document-absolute).
      */
     @JvmStatic
     external fun nativeMacOsInjectInsertText(
         handle: Long,
         text: String,
+        replacementLocation: Long,
+        replacementLength: Long,
     ): Boolean
 
     /**
@@ -639,6 +654,26 @@ internal object NativeTaoBridge {
         y: Int,
         width: Int,
         height: Int,
+    )
+
+    /**
+     * macOS only: pushes the focused field's committed text (a bounded
+     * window), the window's document-absolute offset and the selection to
+     * the native `NSTextInputClient` cache — all offsets in UTF-16 code
+     * units. AppKit reads `selectedRange` / `attributedSubstringForProposedRange`
+     * from this cache (Chromium parity: the renderer→browser selection +
+     * surrounding-text push), which is what lets the press-and-hold accent
+     * picker engage and commit through `insertText:replacementRange:`.
+     *
+     * A negative [selectionStart] invalidates the cache (no focused field).
+     */
+    @JvmStatic
+    external fun nativeSetImeDocument(
+        handle: Long,
+        text: String,
+        offset: Long,
+        selectionStart: Long,
+        selectionEnd: Long,
     )
 
     /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */

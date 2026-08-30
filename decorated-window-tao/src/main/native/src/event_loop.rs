@@ -11,7 +11,8 @@ use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::window::WindowBuilder;
 
 use crate::events::{
-    current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit, dispatch_key,
+    current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
+    dispatch_ime_replace_commit, dispatch_key,
     dispatch_touch_input, handle_for, mouse_button_code, pack_modifiers, UserEvent,
     CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
     EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
@@ -199,15 +200,13 @@ pub(crate) fn run_event_loop_blocking() {
     tao::platform::linux::set_minimized_hook(on_tao_minimized);
 
     // Install the Cmd-Q interceptor once we're on the main thread (NSEvent
-    // local monitors must be added there). Press-and-hold accent picker and
-    // the drag-event latch live alongside it.
+    // local monitors must be added there). The drag-event latch lives
+    // alongside it. `ApplePressAndHoldEnabled` is deliberately not touched:
+    // like Chromium, Nucleus lets the OS/user default decide whether a held
+    // letter repeats or opens the accent picker (#612).
     #[cfg(target_os = "macos")]
     unsafe {
         crate::platform::macos::ffi::nucleus_tao_install_cmd_q_handler();
-        crate::platform::macos::ffi::nucleus_tao_enable_press_and_hold();
-        crate::platform::macos::ffi::nucleus_tao_register_ime_replace_commit(
-            crate::platform::macos::ime::ime_replace_commit_callback,
-        );
         crate::platform::macos::ffi::nucleus_tao_install_drag_monitor();
         crate::platform::macos::ffi::nucleus_tao_register_trackpad_gesture_callback(
             crate::platform::macos::trackpad_gesture_callback,
@@ -862,6 +861,13 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     WindowEvent::ImeCommit(text) => {
                         dispatch_ime_commit(handle, &text);
+                    }
+                    WindowEvent::ImeReplaceCommit {
+                        text,
+                        start,
+                        length,
+                    } => {
+                        dispatch_ime_replace_commit(handle, &text, start, length);
                     }
                     WindowEvent::ModifiersChanged(state) => {
                         let modifiers = pack_modifiers(state);
