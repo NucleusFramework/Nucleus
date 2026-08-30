@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.ffi
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
 import java.util.logging.Level
 import java.util.logging.Logger
@@ -26,11 +27,10 @@ internal object NativeTaoBridge {
     val isLoaded: Boolean get() = loaded
 
     /**
-     * Guard for native → JVM upcalls outside the [EventCallback] surface
-     * (deep links, a11y actions). An exception escaping into JNI is cleared
-     * silently by the Rust side (#622) — log it at SEVERE instead. These are
-     * one-shot handlers, not the render/dispatch path, so a failure is loud
-     * but non-fatal.
+     * Guard for native → JVM upcalls that run framework plumbing only (deep
+     * links). An exception escaping into JNI is cleared silently by the Rust
+     * side (#622) — log it at SEVERE instead. One-shot handlers, not the
+     * render/dispatch path, so a failure is loud but non-fatal.
      */
     @Suppress("TooGenericExceptionCaught")
     private inline fun upcall(block: () -> Unit) {
@@ -38,6 +38,23 @@ internal object NativeTaoBridge {
             block()
         } catch (t: Throwable) {
             logger.log(Level.SEVERE, "Unhandled exception in a native → JVM upcall", t)
+        }
+    }
+
+    /**
+     * Guard for native → JVM upcalls that run **app code** — a11y actions
+     * invoke the same semantics lambdas (e.g. `Modifier.clickable` onClick)
+     * that are fatal when reached via mouse or keyboard (#622). A crash must
+     * behave identically regardless of input modality, so these route to
+     * [TaoApplication.reportFatal] instead of a log-only swallow that would
+     * leave screen-reader users with an app whose state desynced mid-action.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun fatalUpcall(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            TaoApplication.reportFatal(t)
         }
     }
 
@@ -238,8 +255,9 @@ internal object NativeTaoBridge {
      * Compose Desktop's Swing default (#622). macOS
      * (CFUserNotificationDisplayAlert: out-of-process, callable from any
      * thread, no NSApp/run-loop dependency — safe before, during and after
-     * the Tao loop) and Windows (task-modal MessageBoxW, callable from any
-     * thread); Linux is a silent no-op until its implementation lands.
+     * the Tao loop), Windows (task-modal MessageBoxW, callable from any
+     * thread) and Linux (modal GtkMessageDialog — GTK-main-thread only,
+     * i.e. the thread that ran the Tao loop).
      * Call it only outside tao callback frames — a modal pump inside one
      * re-enters tao's non-reentrant handler mutex.
      */
@@ -881,7 +899,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
     }
 
     @JvmStatic
@@ -891,7 +909,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action) }
     }
 
     @JvmStatic
@@ -901,7 +919,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         text: String,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text) }
     }
 
     @JvmStatic
@@ -912,7 +930,7 @@ internal object NativeTaoBridge {
         start: Int,
         end: Int,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end) }
     }
 
     @JvmStatic
@@ -922,7 +940,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         index: Int,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index) }
     }
 
     @JvmStatic
@@ -933,7 +951,7 @@ internal object NativeTaoBridge {
         dx: Float,
         dy: Float,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy) }
     }
 
     /**
@@ -948,6 +966,6 @@ internal object NativeTaoBridge {
         nodeId: Long,
         value: Double,
     ) {
-        upcall { TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value) }
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value) }
     }
 }

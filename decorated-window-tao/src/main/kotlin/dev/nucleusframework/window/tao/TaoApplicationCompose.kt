@@ -13,7 +13,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
@@ -61,6 +60,11 @@ public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
     // keep the dead process alive.
     try {
         runTaoComposeLoop(content)
+        // Recheck: reportFatal can fire from a non-main thread (the coroutine
+        // exception handler runs on the failing coroutine's thread) after
+        // run()'s own post-loop check already passed — without this a genuine
+        // fatal would fall through to exitProcess(0) below.
+        TaoApplication.rethrowPendingFatal()
     } catch (t: Throwable) {
         // Anything that is NOT the already-handled fatal (broken native lib,
         // wrong-thread init failure, …) would otherwise vanish with exit
@@ -87,11 +91,9 @@ private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) 
         // fall to the thread's default handler (stderr only), the shared Job
         // cancels the composition coroutine whose `finally` exits the loop, and
         // the process would end with code 0 as if the user had quit normally.
-        val fatalHandler =
-            CoroutineExceptionHandler { _, t -> TaoApplication.reportFatal(t) }
         val coroutineScope =
             CoroutineScope(
-                TaoMainDispatcher + TaoFrameClock + Job() + fatalHandler,
+                TaoMainDispatcher + TaoFrameClock + Job() + TaoFatalCoroutineExceptionHandler,
             )
 
         // Snapshot apply observer: forwards state writes from any thread back

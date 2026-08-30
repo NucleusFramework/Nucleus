@@ -12,10 +12,15 @@ import androidx.compose.ui.scene.SingleComposeSceneRenderingScope
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
+import dev.nucleusframework.window.tao.TaoApplication
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.jetbrains.skia.Canvas
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.coroutines.CoroutineContext
 
 /**
@@ -49,6 +54,8 @@ internal class TaoSceneBundle(
     private val edtGuard: RectManagerEdtGuard,
     /** Owns [edtGuard]'s debounce wakeups; cancelled with the scene. */
     private val guardScope: CoroutineScope,
+    /** Flipped first thing in [close] — see [sceneFatalHandler]. */
+    private val closed: AtomicBoolean,
 ) : AutoCloseable {
     /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
@@ -66,12 +73,42 @@ internal class TaoSceneBundle(
         edtGuard.afterFrame()
     }
 
+    @Suppress("TooGenericExceptionCaught")
     override fun close() {
+        closed.set(true)
         guardScope.cancel()
-        scene.close()
+        // A DisposableEffect onDispose throwing while the scene is being torn
+        // down must not escalate to the app-fatal path (closing one window
+        // would close the whole app — #622 review) nor skip
+        // frameRecomposer.close().
+        try {
+            scene.close()
+        } catch (t: Throwable) {
+            bundleLogger.log(Level.SEVERE, "Unhandled exception during scene teardown", t)
+        }
         frameRecomposer.close()
     }
 }
+
+private val bundleLogger: Logger = Logger.getLogger(TaoSceneBundle::class.java.name)
+
+/**
+ * Fatal routing (#622) for everything that runs inside this scene's
+ * composition — recomposition, `LaunchedEffect`s, pointer-input coroutines:
+ * a crash takes [TaoApplication.reportFatal] (SEVERE log, native dialog,
+ * clean exit); without a handler it dies in kotlinx's global handler (stderr
+ * only) and the scene silently stops recomposing. Once [closed] is set the
+ * same failures are teardown noise (a cancelled effect's `finally` throwing
+ * while its window closes) and are logged instead of taking the app down.
+ */
+private fun sceneFatalHandler(closed: AtomicBoolean): CoroutineExceptionHandler =
+    CoroutineExceptionHandler { _, t ->
+        if (closed.get()) {
+            bundleLogger.log(Level.SEVERE, "Unhandled exception during scene teardown", t)
+        } else {
+            TaoApplication.reportFatal(t)
+        }
+    }
 
 /**
  * Creates a [CanvasLayersComposeScene] wired to a fresh [FrameRecomposer].
@@ -89,8 +126,10 @@ internal fun canvasLayersSceneBundle(
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
     val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
-    val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
-    val guardScope = CoroutineScope(coroutineContext + SupervisorJob())
+    val closed = AtomicBoolean(false)
+    val sceneContext = coroutineContext + sceneFatalHandler(closed)
+    val frameRecomposer = FrameRecomposer(sceneContext) { requestFrame() }
+    val guardScope = CoroutineScope(sceneContext + SupervisorJob())
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     val scene =
         CanvasLayersComposeScene(
@@ -102,7 +141,7 @@ internal fun canvasLayersSceneBundle(
             invalidateLayout = { renderingScope.onSceneInvalidation() },
             invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope, closed)
 }
 
 /**
@@ -119,8 +158,10 @@ internal fun platformLayersSceneBundle(
     requestFrame: () -> Unit,
 ): TaoSceneBundle {
     val renderingScope = SingleComposeSceneRenderingScope(requestFrame)
-    val frameRecomposer = FrameRecomposer(coroutineContext) { requestFrame() }
-    val guardScope = CoroutineScope(coroutineContext + SupervisorJob())
+    val closed = AtomicBoolean(false)
+    val sceneContext = coroutineContext + sceneFatalHandler(closed)
+    val frameRecomposer = FrameRecomposer(sceneContext) { requestFrame() }
+    val guardScope = CoroutineScope(sceneContext + SupervisorJob())
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
     val scene =
         PlatformLayersComposeScene(
@@ -136,7 +177,7 @@ internal fun platformLayersSceneBundle(
             invalidateLayout = { renderingScope.onSceneInvalidation() },
             invalidateDraw = { renderingScope.onSceneInvalidation() },
         )
-    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope)
+    return TaoSceneBundle(scene, frameRecomposer, renderingScope, edtGuard, guardScope, closed)
 }
 
 /**

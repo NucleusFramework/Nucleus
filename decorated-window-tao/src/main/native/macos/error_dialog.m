@@ -21,17 +21,17 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 void nucleus_tao_show_error_dialog(const char *title, const char *message) {
-    CFStringRef header = CFStringCreateWithCString(
-        NULL, title != NULL ? title : "Error", kCFStringEncodingUTF8);
-    CFStringRef body = CFStringCreateWithCString(
-        NULL, message != NULL ? message : "", kCFStringEncodingUTF8);
+    // The Rust caller never passes NULL; the guards below only cover
+    // CFStringCreateWithCString itself failing (invalid UTF-8, allocation).
+    CFStringRef header = CFStringCreateWithCString(NULL, title, kCFStringEncodingUTF8);
+    CFStringRef body = CFStringCreateWithCString(NULL, message, kCFStringEncodingUTF8);
     CFOptionFlags response = 0;
     // Timeout 0 = no timeout: returns when the user dismisses the alert.
     CFUserNotificationDisplayAlert(
         0, kCFUserNotificationStopAlertLevel,
         NULL, NULL, NULL,
         header != NULL ? header : CFSTR("Error"),
-        body,
+        body != NULL ? body : CFSTR(""),
         NULL /* default button — localized "OK" */, NULL, NULL,
         &response);
     if (header != NULL) {

@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
@@ -992,7 +993,10 @@ internal class TaoComposeSceneHostLinux(
 
     // Ctrl+wheel is a discrete stream with no ENDED phase (unlike a native trackpad
     // gesture), so the synthetic magnify is released by an idle timer on this scope.
-    private val gestureScope = CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
+    // Deliberately NOT on the #622 fatal path: gesture helpers are isolated
+    // (SupervisorJob) — a crash there costs one gesture, logged at SEVERE.
+    private val gestureScope =
+        CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob() + TaoNonFatalCoroutineExceptionHandler)
     private var wheelZoomEndJob: Job? = null
 
     @OptIn(ExperimentalComposeUiApi::class)

@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.dispatch
 
 import androidx.compose.runtime.snapshots.Snapshot
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineDispatcher
 import java.util.concurrent.ConcurrentLinkedQueue
@@ -253,8 +254,11 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
             try {
                 block.run()
             } catch (t: Throwable) {
-                // Match pump(): dispatchers swallow synchronous throwables so a
-                // single failing block never kills the drain.
+                // Unlike pump(), stay log-only: the fallback drain runs while
+                // the loop is NOT running (before it starts or after it
+                // exited), so escalating a leftover block's failure to the
+                // fatal path would race run()'s post-loop rethrow and could
+                // turn a clean quit into exit 1 over teardown noise.
                 logger.log(Level.SEVERE, "Unhandled exception in a block dispatched to the Tao main thread", t)
             }
         }
@@ -287,11 +291,16 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
                 try {
                     block.run()
                 } catch (t: Throwable) {
-                    // Coroutine dispatchers swallow exceptions thrown synchronously
-                    // from `run()`; the runtime reports them via the coroutine
-                    // exception handler (routed to the #622 fatal path by
-                    // taoApplication). Re-throwing here would crash the Tao loop.
-                    logger.log(Level.SEVERE, "Unhandled exception in a block dispatched to the Tao main thread", t)
+                    // Coroutine dispatches never throw here (DispatchedTask
+                    // reports through the coroutine exception handler), so
+                    // this catch fires only for raw Runnables — framework
+                    // internals like the standalone-popup frame pump and the
+                    // Windows/Linux a11y action dispatch. Those must take the
+                    // #622 fatal path like every other dispatch: log-only
+                    // would leave a popup frozen re-throwing every frame.
+                    // reportFatal never throws and is first-report-wins, so
+                    // the drain survives. Re-throwing would crash the Tao loop.
+                    TaoApplication.reportFatal(t)
                 }
                 if (System.nanoTime() >= deadlineNs) {
                     hitDeadline = true
