@@ -25,11 +25,12 @@ class AotArgFileSupportTest {
 
         assertEquals("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}", args[0])
         assertEquals("-Dnucleus.aot.mode=training", args[1])
-        assertEquals("-cp", args[2])
-        assertEquals("/tmp/lib/a.jar:/tmp/lib/b.jar", args[3])
-        assertEquals("-Xmx1g", args[4])
-        assertEquals("-Dfoo=bar", args[5])
-        assertEquals("com.example.Main", args[6])
+        assertEquals("-Dnucleus.tao.fatalErrorDialog=false", args[2])
+        assertEquals("-cp", args[3])
+        assertEquals("/tmp/lib/a.jar:/tmp/lib/b.jar", args[4])
+        assertEquals("-Xmx1g", args[5])
+        assertEquals("-Dfoo=bar", args[6])
+        assertEquals("com.example.Main", args[7])
     }
 
     @Test
@@ -48,6 +49,7 @@ class AotArgFileSupportTest {
         assertEquals("-XX:+UnlockDiagnosticVMOptions", args[1])
         assertEquals("-XX:-AOTAdapterCaching", args[2])
         assertEquals("-Dnucleus.aot.mode=training", args[3])
+        assertEquals("-Dnucleus.tao.fatalErrorDialog=false", args[4])
         assertEquals("com.example.Main", args.last())
     }
 

@@ -118,6 +118,9 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
+    // Unattended: a fatal must fail the suite loudly, not block in the #622
+    // native dialog until the global watchdog halts and eats the real result.
+    systemProperty("nucleus.tao.fatalErrorDialog", "false")
     // Same Kover JVM agent the `test` task uses, so headful window coverage
     // is counted. JavaExec is otherwise invisible to Kover.
     dependsOn(tasks.named("koverFindJar"))
@@ -182,6 +185,8 @@ val taoX11PortalE2E by tasks.registering(JavaExec::class) {
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain")
     systemProperty("nucleus.tao.headful.filter", "x11 XID")
+    // Unattended — see taoHeadfulTest.
+    systemProperty("nucleus.tao.fatalErrorDialog", "false")
     System.getProperty("nucleus.tao.headful.watchdogMillis")?.let {
         systemProperty("nucleus.tao.headful.watchdogMillis", it)
     }
@@ -194,6 +199,8 @@ val smokeStandalonePanelMac by tasks.registering(JavaExec::class) {
     onlyIf { Os.isFamily(Os.FAMILY_MAC) }
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.StandalonePanelMacSmokeMain")
+    // Unattended — see taoHeadfulTest.
+    systemProperty("nucleus.tao.fatalErrorDialog", "false")
     // Run main() on thread 0 (the macOS main thread). The JVM normally runs
     // main() on a spawned pthread, but AppKit only permits NSWindow/NSPanel
     // creation on the true main thread. -XstartOnFirstThread is the same flag
@@ -213,6 +220,8 @@ val taoTransparentSmoke by tasks.registering(JavaExec::class) {
     group = "verification"
     classpath = sourceSets.test.get().runtimeClasspath
     mainClass.set("dev.nucleusframework.window.tao.headful.TransparentWindowSmokeMain")
+    // Unattended — see taoHeadfulTest.
+    systemProperty("nucleus.tao.fatalErrorDialog", "false")
     // Linux: pin the window to XWayland. Robot goes through the X server, so on
     // a native Wayland session it cannot see the Tao surface (both captures come
     // back byte-identical) and xdg-shell drops setOuterPosition, leaving the
@@ -252,6 +261,27 @@ val taoTransparentSmoke by tasks.registering(JavaExec::class) {
     // -Dnucleus.tao.transparent.smoke.holdMs=10000
     System.getProperty("nucleus.tao.transparent.smoke.holdMs")?.let {
         systemProperty("nucleus.tao.transparent.smoke.holdMs", it)
+    }
+}
+
+// Manual smoke for #622: fatal-exception path end to end — SEVERE log, native
+// error dialog, exit code 1. The expected outcome is Gradle failing with
+// "finished with non-zero exit value 1" after the dialog is dismissed.
+// Not part of `check`.
+val taoFatalDialogSmoke by tasks.registering(JavaExec::class) {
+    description = "Manual smoke: fatal-error path — native dialog then exit code 1 (#622)"
+    group = "verification"
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("dev.nucleusframework.window.tao.headful.FatalErrorDialogSmokeMain")
+    // Forward the crash delay so the window can be looked at first, e.g.
+    // -Dnucleus.tao.fatal.smoke.crashAfterMs=10000
+    System.getProperty("nucleus.tao.fatal.smoke.crashAfterMs")?.let {
+        systemProperty("nucleus.tao.fatal.smoke.crashAfterMs", it)
+    }
+    // Forward the #622 escape hatch so the smoke can also exercise the
+    // dialog-less unattended path: -Dnucleus.tao.fatalErrorDialog=false
+    System.getProperty("nucleus.tao.fatalErrorDialog")?.let {
+        systemProperty("nucleus.tao.fatalErrorDialog", it)
     }
 }
 

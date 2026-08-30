@@ -45,6 +45,10 @@ internal fun buildAotJavaArgs(
         add("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}")
         addAll(tuningArgs)
         add("-Dnucleus.aot.mode=training")
+        // Training is unattended: a crash must exit with the SEVERE log, not
+        // block in the Tao fatal-error dialog (#622) until the safety timeout
+        // kills the run.
+        add("-Dnucleus.tao.fatalErrorDialog=false")
         add("-cp")
         add(classpath)
         addAll(javaOptions)

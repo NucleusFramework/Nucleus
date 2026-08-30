@@ -3,8 +3,13 @@ package dev.nucleusframework.window.tao
 import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * Phase 1 entry point for the Tao backend.
@@ -24,19 +29,43 @@ import java.util.concurrent.atomic.AtomicLong
  * [run] does **not** return until [TaoApplication.exit] is called.
  */
 public object TaoApplication {
+    private val logger = Logger.getLogger(TaoApplication::class.java.name)
     private val handleSeq = AtomicLong(1L)
     private val windows = ConcurrentHashMap<Long, TaoWindow>()
     private var onLaunched: ((TaoApplication) -> Unit)? = null
 
     /**
+     * First unhandled [Throwable] that escaped an event dispatch on the Tao
+     * main thread (first report wins). Recorded by [reportFatal]; [run] shows
+     * the native error dialog and rethrows it after the loop exits so the
+     * failure surfaces to the caller instead of vanishing into the JNI
+     * boundary (Rust clears pending exceptions — issue #622).
+     */
+    private val fatalError = AtomicReference<Throwable?>(null)
+
+    /** Ensures the native dialog is shown at most once per recorded fatal. */
+    private val fatalDialogShown = AtomicBoolean(false)
+
+    /**
      * Takes over the calling thread (must be the macOS main thread) and runs
      * the Tao event loop. Calls [block] once on launch with this object.
+     *
+     * If an exception escapes an event dispatch (including [block] itself),
+     * the default fatal path runs — SEVERE log, native error dialog, clean
+     * loop exit — and the throwable is then **rethrown from this function**
+     * (#622). Callers that leave non-daemon threads alive (AWT/Swing) must
+     * catch it and terminate the process themselves; [taoApplication] does.
      */
     public fun run(block: (TaoApplication) -> Unit) {
         check(NativeTaoBridge.isLoaded) {
             "nucleus_tao native library is not available — supported targets: " +
                 "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
         }
+        // Fresh run: the native side supports re-running the loop, so a stale
+        // fatal from a previous run must neither rethrow on a clean one nor
+        // make a genuine new fatal take the log-only branch.
+        fatalError.set(null)
+        fatalDialogShown.set(false)
         // Capture the Tao main thread eagerly, before the native event loop
         // takes over this thread. Required so `Dispatchers.Main` consumers
         // (notably AndroidX Lifecycle's synchronous `MainDispatcherChecker`)
@@ -57,6 +86,72 @@ public object TaoApplication {
         LifecycleMainDispatcherPriming.primeWithCurrentThread()
         onLaunched = block
         NativeTaoBridge.nativeRunBlocking(EventDispatcher)
+        // The loop has exited (reportFatal posted the exit) and every tao
+        // callback frame is unwound — only now is it safe to block in the
+        // app-modal native dialog (a modal pump inside a tao callback
+        // re-enters tao's non-reentrant handler mutex on Dock-reopen /
+        // deep-link events and deadlocks the main thread).
+        rethrowPendingFatal()
+    }
+
+    /**
+     * Shows the native error dialog (once) and rethrows the recorded fatal,
+     * if any. [run] calls it right after the loop exits; [taoApplication]
+     * calls it again just before its clean `exitProcess(0)` to catch a fatal
+     * reported from a non-main thread (the coroutine exception handler runs
+     * on the failing coroutine's thread) after [run]'s check already passed —
+     * without the recheck such a crash would end the process with exit
+     * code 0 as if the user had quit normally.
+     */
+    internal fun rethrowPendingFatal() {
+        val t = fatalError.get() ?: return
+        if (fatalDialogShown.compareAndSet(false, true)) {
+            showNativeErrorDialog(
+                title = "Fatal Error",
+                message = "The application encountered an unrecoverable error and will close.\n\n$t",
+            )
+        }
+        throw t
+    }
+
+    /**
+     * Default fatal-exception path (#622): an exception that escapes an event
+     * dispatch would otherwise be cleared at the JNI boundary, leaving a
+     * frozen, silent, unclosable window. Records [t] and posts a loop exit;
+     * [run] then shows the native error dialog and rethrows. First report
+     * wins — later ones (including any thrown during the shutdown the first
+     * triggered) are only logged. [exit] is posted *before* logging so the
+     * loop unwinds even if log formatting itself throws (e.g. an
+     * OutOfMemoryError materializing the stack trace). Never freeze.
+     *
+     * Internal so the Compose layer (coroutine exception handler, render
+     * loop) routes its own unrecoverable failures through the same path.
+     */
+    internal fun reportFatal(t: Throwable) {
+        if (!fatalError.compareAndSet(null, t)) {
+            // Re-post the exit: the first report's exit() silently no-ops when
+            // it lands before the event-loop proxy is (re-)installed, and
+            // first-report-wins must never leave the loop running with a
+            // recorded fatal nobody will act on.
+            exit()
+            logger.log(Level.SEVERE, "Unhandled exception on the Tao main thread while shutting down", t)
+            return
+        }
+        exit()
+        logger.log(Level.SEVERE, "Unhandled exception on the Tao main thread — closing", t)
+    }
+
+    /** `true` when [t] is the recorded fatal error — already logged and shown. */
+    internal fun isReportedFatal(t: Throwable): Boolean = fatalError.get() === t
+
+    /** Runs [block], routing any escaped [Throwable] to [reportFatal]. */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun guarded(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            reportFatal(t)
+        }
     }
 
     /** Posts an exit request and unblocks [run]. */
@@ -138,14 +233,16 @@ public object TaoApplication {
             a: Int,
             b: Int,
         ) {
-            when (code) {
-                TaoEventCode.LAUNCHED -> {
-                    val cb = onLaunched
-                    onLaunched = null
-                    cb?.invoke(this@TaoApplication)
+            guarded {
+                when (code) {
+                    TaoEventCode.LAUNCHED -> {
+                        val cb = onLaunched
+                        onLaunched = null
+                        cb?.invoke(this@TaoApplication)
+                    }
+                    TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
+                    else -> lookup(handle)?.dispatch(code, a, b)
                 }
-                TaoEventCode.MAIN_EVENTS_CLEARED -> TaoMainDispatcher.pump()
-                else -> lookup(handle)?.dispatch(code, a, b)
             }
         }
 
@@ -157,7 +254,7 @@ public object TaoApplication {
             modifiers: Int,
             codePoint: Int,
         ) {
-            lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint)
+            guarded { lookup(handle)?.dispatchKey(type, vkCode, keyLocation, modifiers, codePoint) }
         }
 
         override fun onTrackpadGesture(
@@ -168,7 +265,7 @@ public object TaoApplication {
             yFixed: Int,
             valueFixed: Int,
         ) {
-            lookup(handle)?.dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed)
+            guarded { lookup(handle)?.dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed) }
         }
 
         override fun onTouchInput(
@@ -179,7 +276,7 @@ public object TaoApplication {
             yFixed: Int,
             forceFixed: Int,
         ) {
-            lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed)
+            guarded { lookup(handle)?.dispatchTouchInput(phase, id, xFixed, yFixed, forceFixed) }
         }
 
         override fun onImeReplaceCommit(
@@ -188,21 +285,74 @@ public object TaoApplication {
             replacementStart: Long,
             replacementLength: Long,
         ) {
-            lookup(handle)?.dispatchImeReplaceCommit(text, replacementStart, replacementLength)
+            guarded { lookup(handle)?.dispatchImeReplaceCommit(text, replacementStart, replacementLength) }
         }
 
         override fun onImePreedit(
             handle: Long,
             text: String,
         ) {
-            lookup(handle)?.dispatchImePreedit(text)
+            guarded { lookup(handle)?.dispatchImePreedit(text) }
         }
 
         override fun onImeCommit(
             handle: Long,
             text: String,
         ) {
-            lookup(handle)?.dispatchImeCommit(text)
+            guarded { lookup(handle)?.dispatchImeCommit(text) }
         }
+    }
+}
+
+/**
+ * Routes unhandled coroutine failures to [TaoApplication.reportFatal] (#622).
+ * Installed by the scene-bundle factories (`TaoSceneBundle.kt` — every scene,
+ * including popup layers and standalone popups, funnels through them, with a
+ * teardown filter), the macOS render loop and the [taoApplication] scope, so
+ * composition-side crashes (LaunchedEffect, recomposition, the render frame)
+ * take the fatal path — without a handler they die in kotlinx's global
+ * handler (stderr only) and the window silently stops recomposing.
+ */
+internal val TaoFatalCoroutineExceptionHandler: CoroutineExceptionHandler =
+    CoroutineExceptionHandler { _, t -> TaoApplication.reportFatal(t) }
+
+/**
+ * Log-only counterpart of [TaoFatalCoroutineExceptionHandler] for scopes
+ * whose children are deliberately isolated (`SupervisorJob` gesture helpers):
+ * a crash there costs one gesture, not the app. SEVERE keeps it loud without
+ * escalating.
+ */
+internal val TaoNonFatalCoroutineExceptionHandler: CoroutineExceptionHandler =
+    CoroutineExceptionHandler { _, t ->
+        Logger
+            .getLogger(TaoApplication::class.java.name)
+            .log(Level.SEVERE, "Unhandled exception in an isolated Tao coroutine", t)
+    }
+
+/**
+ * Shows the blocking, app-modal native fatal-error dialog when the Tao
+ * native library is available; no-ops otherwise (the SEVERE log is the
+ * fallback). Never throws — this runs on the fatal path, where a secondary
+ * failure must not mask the clean shutdown. macOS, Windows and Linux (#622).
+ */
+@Suppress("TooGenericExceptionCaught")
+internal fun showNativeErrorDialog(
+    title: String,
+    message: String,
+) {
+    // `nucleus.tao.fatalErrorDialog=false` is the escape hatch for unattended
+    // runs (CI, AOT training): a blocking modal nobody can dismiss would hang
+    // the process there; the SEVERE log is the signal instead.
+    if (!NativeTaoBridge.isLoaded ||
+        !System.getProperty("nucleus.tao.fatalErrorDialog", "true").toBoolean()
+    ) {
+        return
+    }
+    try {
+        NativeTaoBridge.nativeShowErrorDialog(title, message)
+    } catch (t: Throwable) {
+        Logger
+            .getLogger(TaoApplication::class.java.name)
+            .log(Level.WARNING, "Native error dialog failed", t)
     }
 }

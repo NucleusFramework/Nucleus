@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.system.exitProcess
 
 /**
@@ -35,27 +37,63 @@ import kotlin.system.exitProcess
  * `LaunchedEffect`/`DisposableEffect`, observe `MutableState`, etc. The
  * composition lives until [ApplicationScope.exitApplication] is called.
  *
- * The JVM is terminated with `exitProcess(0)` once the Tao event loop
- * returns. Required because Compose/Skiko initialisation indirectly touches
+ * The JVM is terminated once the Tao event loop returns: `exitProcess(0)`
+ * on a normal quit, `exitProcess(1)` after a fatal error (#622 — already
+ * logged at SEVERE and shown in the native error dialog by then). A forced
+ * exit is required because Compose/Skiko initialisation indirectly touches
  * AWT, which spawns the non-daemon EDT, and that thread keeps the JVM alive
  * long after the Tao loop has shut down. Mirrors Compose Desktop's
  * `application { … }` (which also force-exits the process).
  */
 @OptIn(ExperimentalFoundationApi::class)
+@Suppress("TooGenericExceptionCaught", "SwallowedException")
 public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
     check(NativeTaoBridge.isLoaded) {
         "nucleus_tao native library is not available — supported targets: " +
             "macOS (arm64/x86_64), Windows (x64/aarch64), Linux (x64/aarch64)."
     }
 
+    // A fatal dispatch failure (#622) is rethrown by TaoApplication.run after
+    // the loop exits — it was already logged at SEVERE and shown in the native
+    // error dialog, so here it only needs to become a non-zero exit. A plain
+    // rethrow would skip exitProcess(0) below and the non-daemon AWT EDT would
+    // keep the dead process alive.
+    try {
+        runTaoComposeLoop(content)
+        // Recheck: reportFatal can fire from a non-main thread (the coroutine
+        // exception handler runs on the failing coroutine's thread) after
+        // run()'s own post-loop check already passed — without this a genuine
+        // fatal would fall through to exitProcess(0) below.
+        TaoApplication.rethrowPendingFatal()
+    } catch (t: Throwable) {
+        // Anything that is NOT the already-handled fatal (broken native lib,
+        // wrong-thread init failure, …) would otherwise vanish with exit
+        // code 1 and zero output — log it before exiting.
+        if (!TaoApplication.isReportedFatal(t)) {
+            composeEntryLogger.log(Level.SEVERE, "taoApplication failed", t)
+        }
+        exitProcess(1)
+    }
+    exitProcess(0)
+}
+
+private val composeEntryLogger: Logger = Logger.getLogger(TaoApplication::class.java.name)
+
+@OptIn(ExperimentalFoundationApi::class)
+private fun runTaoComposeLoop(content: @Composable ApplicationScope.() -> Unit) {
     TaoApplication.run { app ->
         val scope = ComposableApplicationScope(app)
         // CoroutineScope pinned to the Tao main thread. Every `launch` posts
         // the block via TaoMainDispatcher, which queues onto the Tao event
         // loop and runs at the next `MainEventsCleared` pump tick.
+        // Route unhandled coroutine failures — recomposition, LaunchedEffects,
+        // the initial setContent — into the #622 fatal path. Without this they
+        // fall to the thread's default handler (stderr only), the shared Job
+        // cancels the composition coroutine whose `finally` exits the loop, and
+        // the process would end with code 0 as if the user had quit normally.
         val coroutineScope =
             CoroutineScope(
-                TaoMainDispatcher + TaoFrameClock + Job(),
+                TaoMainDispatcher + TaoFrameClock + Job() + TaoFatalCoroutineExceptionHandler,
             )
 
         // Snapshot apply observer: forwards state writes from any thread back
@@ -99,7 +137,6 @@ public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
         // Return → Tao event loop continues. Pumps fire MAIN_EVENTS_CLEARED
         // and the Compose machinery resumes between platform events.
     }
-    exitProcess(0)
 }
 
 /**

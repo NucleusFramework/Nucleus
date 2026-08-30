@@ -25,6 +25,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.TaoEventCode
+import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
@@ -1371,8 +1372,14 @@ internal class TaoComposeSceneHost(
      * thread (suspending — the Tao main loop stays free for input meanwhile).
      */
     private fun startRenderLoop(handle: Long) {
+        // FrameDispatcher runs ONE long-lived coroutine: an exception in a
+        // frame kills it for good, and the SupervisorJob would swallow the
+        // failure — the window silently stops repainting (#622). Route it to
+        // the fatal path instead (SEVERE log, native dialog, clean exit).
         val scope =
-            kotlinx.coroutines.CoroutineScope(coroutineContext + TaoMainDispatcher + renderLoopJob)
+            kotlinx.coroutines.CoroutineScope(
+                coroutineContext + TaoMainDispatcher + renderLoopJob + TaoFatalCoroutineExceptionHandler,
+            )
         frameDispatcher =
             org.jetbrains.skiko.FrameDispatcher(scope) {
                 renderFrameSuspending(handle)

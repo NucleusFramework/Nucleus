@@ -38,10 +38,19 @@ import kotlin.system.exitProcess
  * closing a native Tao window from a Swing action just works.
  */
 fun main() {
-    TaoApplication.run { app ->
-        // This callback fires once, on the Tao main thread.
-        val taoThread = Thread.currentThread().name
-        SwingUtilities.invokeLater { buildFrame(app, taoThread) }
+    try {
+        TaoApplication.run { app ->
+            // This callback fires once, on the Tao main thread.
+            val taoThread = Thread.currentThread().name
+            SwingUtilities.invokeLater { buildFrame(app, taoThread) }
+        }
+    } catch (t: Throwable) {
+        // run() rethrows a fatal dispatch failure after logging it and showing
+        // the native error dialog (#622). Without this catch the throwable
+        // would skip exitProcess(0) below and the non-daemon Swing EDT would
+        // keep the dead process alive.
+        t.printStackTrace()
+        exitProcess(1)
     }
     // run() returned: exit() was called and the Tao loop stopped. Once AWT is
     // up, its non-daemon event-dispatch thread keeps the JVM alive even after

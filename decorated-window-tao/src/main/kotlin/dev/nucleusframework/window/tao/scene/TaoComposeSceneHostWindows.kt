@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
@@ -197,10 +198,12 @@ internal class TaoComposeSceneHostWindows(
      * Scope for host-owned gesture work (trackpad-pinch idle-end debounce).
      * Runs on [flushingDispatcher] so resumed continuations land on the
      * event-loop thread; `delay` itself ticks on the shared coroutines
-     * scheduler. Cancelled in [detach].
+     * scheduler. Cancelled in [detach]. Deliberately NOT on the #622 fatal
+     * path: gesture helpers are isolated (SupervisorJob) — a crash there
+     * costs one gesture, logged at SEVERE.
      */
     private val gestureScope =
-        CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob())
+        CoroutineScope(coroutineContext + flushingDispatcher + SupervisorJob() + TaoNonFatalCoroutineExceptionHandler)
 
     /** Floating text-selection bar shown on touch selection. */
     private val textToolbar = TaoTextToolbar()
