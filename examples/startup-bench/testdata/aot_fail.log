@@ -1,0 +1,6 @@
+[0.001s][error][aot] AOT cache has aot-linked classes. It cannot be used because
+                     GC used during dump time (G1) is not the same as runtime (Serial)
+[0.001s][error][aot] An error has occurred while processing the AOT cache.
+[0.001s][error][aot] Unable to map shared spaces
+Error occurred during initialization of VM
+Unable to use AOT cache.

@@ -3,6 +3,7 @@ package dev.nucleusframework.application
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.window.application
+import dev.nucleusframework.application.internal.StartupProbe
 import dev.nucleusframework.application.internal.TaoLauncher
 import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.graalvm.GraalVmInitializer
@@ -56,6 +57,7 @@ public fun nucleusApplication(
     dockIconFollowsWindows: Boolean = false,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
+    StartupProbe.onEntered()
     GraalVmInitializer.initialize()
 
     // Apply the app-forced locale AFTER initialize(). On native-image macOS,

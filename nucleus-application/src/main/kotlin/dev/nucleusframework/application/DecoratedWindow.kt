@@ -8,6 +8,7 @@ import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.application.internal.InstallStartupProbe
 import dev.nucleusframework.application.internal.TaoDecoratedWindowAdapter
 import dev.nucleusframework.window.AwtDecoratedWindowScope
 import dev.nucleusframework.window.DecoratedWindowState
@@ -126,6 +127,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
                     LocalNucleusBackend provides NucleusBackend.Awt,
                     LocalNucleusWindow provides nucleusWindow,
                 ) {
+                    InstallStartupProbe()
                     scope.content()
                 }
             }

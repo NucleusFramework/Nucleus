@@ -1,0 +1,3 @@
+[0.012s][info][aot] Opened AOT cache /tmp/app.aot.
+[0.013s][info][aot,codecache,init] Mapped 652184 bytes at address 0x00007f491005f028 from AOT Code Cache
+[0.013s][info][aot,codecache,init] Loaded 439 AOT code entries from AOT Code Cache

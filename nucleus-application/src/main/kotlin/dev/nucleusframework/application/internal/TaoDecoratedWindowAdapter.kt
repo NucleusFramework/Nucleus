@@ -176,6 +176,7 @@ internal object TaoDecoratedWindowAdapter {
                 ) {
                     TaoTextSelectionAccessibility {
                         NativeContextMenuProvider(enabled = nativeContextMenu) {
+                            InstallStartupProbe()
                             nucleusScope.content()
                         }
                     }
