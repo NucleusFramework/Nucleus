@@ -222,6 +222,15 @@ internal class TaoComposeSceneHostWindows(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    // Sub-pixel deadband (#615): the wire delivers 1/1024-px positions, so
+    // click jitter under 1 dp must not reach the scene — Compose's mouse
+    // slop is 0.125 dp, and a parent drag gesture consuming that phantom
+    // move cancels the child's tap ("buttons need two clicks"). Mouse events
+    // dispatched to the scene use the deadband's position, never the raw
+    // lastPointerX/Y (SyntheticEventSender would re-inject the difference);
+    // the raw position keeps feeding the pinch-gesture centre.
+    private val pointerDeadband = TaoPointerDeadband()
+
     /**
      * Renderers registered by overlay/popup scenes. Drained AFTER the
      * main scene's render in [onRedrawRequested] so each tick paints
@@ -391,6 +400,7 @@ internal class TaoComposeSceneHostWindows(
                 // overlap the title bar zone; popup scene layers naturally float
                 // above content via z-order. Same fix as Linux (commit 2d8ca500).
                 topInsetPx = { 0 },
+                scaleProvider = { scale },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
@@ -1326,9 +1336,10 @@ internal class TaoComposeSceneHostWindows(
         lastPointerY = yPx
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
-            position = Offset(xPx, yPx),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1346,7 +1357,7 @@ internal class TaoComposeSceneHostWindows(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = PointerEventType.Exit,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1361,7 +1372,7 @@ internal class TaoComposeSceneHostWindows(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
@@ -1393,8 +1404,8 @@ internal class TaoComposeSceneHostWindows(
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.dispatchAwtShapedScroll(
-            x = lastPointerX,
-            y = lastPointerY,
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
             event = event,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1778,9 +1789,16 @@ internal class TaoComposeSceneHostWindows(
                     2 -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
+            // Same sub-pixel deadband as the main stream (#615) — the
+            // overlay WndProc shares the scene's single mouse pointer.
+            if (eventType == PointerEventType.Move &&
+                !pointerDeadband.shouldDispatchMove(x, y, scale)
+            ) {
+                return
+            }
             scene?.sendPointerEvent(
                 eventType = eventType,
-                position = Offset(x, y),
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
                 button = pointerButton,
                 keyboardModifiers = currentKeyboardModifiers,
@@ -1795,11 +1813,14 @@ internal class TaoComposeSceneHostWindows(
         ) {
             lastPointerX = x
             lastPointerY = y
+            // Track the position through the deadband so the scroll lands
+            // where the scene last saw the pointer (#615).
+            pointerDeadband.shouldDispatchMove(x, y, scale)
             // Overlay WndProc reports raw Win32 units; map like TaoWindow
             // then go through the same AWT-shaped dispatch as the window.
             scene?.dispatchAwtShapedScroll(
-                x = x,
-                y = y,
+                x = pointerDeadband.x,
+                y = pointerDeadband.y,
                 event = win32WheelToAwtScrollEvent(dx, dy),
                 keyboardModifiers = currentKeyboardModifiers,
             )
@@ -2012,6 +2033,8 @@ internal class TaoComposeSceneHostWindows(
 private class WindowsTaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
+    /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
+    private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener? = null,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
@@ -2024,6 +2047,8 @@ private class WindowsTaoPlatformContext(
     // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
     override val isWindowTransparent: Boolean = false,
 ) : TaoPlatformContextBase() {
+    override val sceneScale: Float get() = scaleProvider()
+
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
             override val systemBars: androidx.compose.ui.platform.PlatformInsets =

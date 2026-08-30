@@ -375,6 +375,15 @@ internal class TaoComposeSceneHostLinux(
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
+    // Sub-pixel deadband (#615): the wire delivers 1/1024-px positions, so
+    // click jitter under 1 dp must not reach the scene — Compose's mouse
+    // slop is 0.125 dp, and a parent drag gesture consuming that phantom
+    // move cancels the child's tap ("buttons need two clicks"). Mouse events
+    // dispatched to the scene use the deadband's position, never the raw
+    // lastPointerX/Y (SyntheticEventSender would re-inject the difference);
+    // the raw position keeps feeding the resize band and gesture centres.
+    private val pointerDeadband = TaoPointerDeadband()
+
     /**
      * Codes of the currently-pressed mouse buttons. While non-empty a drag is
      * in flight: pointer positions may legitimately be OUTSIDE the window (the
@@ -488,6 +497,7 @@ internal class TaoComposeSceneHostLinux(
                 // the page content but popups (rendered in a higher
                 // ComposeSceneLayer) naturally float above both.
                 topInsetPx = { 0 },
+                scaleProvider = { scale },
                 windowInfo = windowInfo,
                 semanticsOwnerListener = semanticsOwnerListener,
                 dragAndDropManager = dndManager,
@@ -1716,9 +1726,10 @@ internal class TaoComposeSceneHostLinux(
         val direction = if (pressedButtons.isEmpty()) currentResizeDirection(xPx, yPx) else null
         if (resizeDecoration.onMove(direction)) return
 
+        if (!pointerDeadband.shouldDispatchMove(xPx, yPx, scale)) return
         scene?.sendPointerEvent(
             eventType = PointerEventType.Move,
-            position = Offset(xPx, yPx),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -1810,7 +1821,7 @@ internal class TaoComposeSceneHostLinux(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scene?.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
@@ -1878,8 +1889,8 @@ internal class TaoComposeSceneHostLinux(
         }
 
         scene?.dispatchAwtShapedScroll(
-            x = lastPointerX,
-            y = lastPointerY,
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
             event = event,
             keyboardModifiers = currentKeyboardModifiers,
         )
@@ -2206,8 +2217,10 @@ internal class TaoComposeSceneHostLinux(
                 onPointerButton(button, pressed)
             },
             scrollDispatcher = { xPx, yPx, dx, dy ->
-                lastPointerX = xPx.toFloat()
-                lastPointerY = yPx.toFloat()
+                // Route the position through the regular move dispatch so the
+                // sub-pixel deadband tracks it — the scroll then lands at the
+                // deadband position like every other scene event (#615).
+                onPointerMove(xPx * 1024, yPx * 1024)
                 onPointerScroll(
                     TaoPointerScrollEvent(dxAwt = dx, dyAwt = dy, scrollAmount = 1),
                 )
@@ -2539,6 +2552,8 @@ internal class TaoComposeSceneHostLinux(
 private class LinuxTaoPlatformContext(
     private val windowHandle: Long,
     private val topInsetPx: () -> Int,
+    /** Live px-per-dp factor of the owning scene — see [TaoPlatformContextBase.sceneScale]. */
+    private val scaleProvider: () -> Float,
     override val windowInfo: androidx.compose.ui.platform.WindowInfo,
     override val semanticsOwnerListener: androidx.compose.ui.platform.PlatformContext.SemanticsOwnerListener?,
     override val dragAndDropManager: androidx.compose.ui.platform.PlatformDragAndDropManager,
@@ -2551,6 +2566,8 @@ private class LinuxTaoPlatformContext(
     // `DesktopPlatformContext` forwarding `windowContext.isWindowTransparent`.
     override val isWindowTransparent: Boolean,
 ) : TaoPlatformContextBase() {
+    override val sceneScale: Float get() = scaleProvider()
+
     override val windowInsets: androidx.compose.ui.platform.PlatformWindowInsets =
         object : androidx.compose.ui.platform.PlatformWindowInsets {
             override val systemBars: androidx.compose.ui.platform.PlatformInsets =
