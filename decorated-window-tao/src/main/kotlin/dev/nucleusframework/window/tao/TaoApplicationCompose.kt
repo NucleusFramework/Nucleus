@@ -14,7 +14,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.first
@@ -55,7 +55,7 @@ public fun taoApplication(content: @Composable ApplicationScope.() -> Unit) {
         // loop and runs at the next `MainEventsCleared` pump tick.
         val coroutineScope =
             CoroutineScope(
-                TaoMainDispatcher + TaoFrameClock + Job(),
+                TaoMainDispatcher + TaoFrameClock + SupervisorJob(),
             )
 
         // Snapshot apply observer: forwards state writes from any thread back
@@ -117,12 +117,17 @@ private val snapshotStarted = AtomicBoolean(false)
 
 private fun startGlobalSnapshotManager(scope: CoroutineScope) {
     if (!snapshotStarted.compareAndSet(false, true)) return
-    val channel = Channel<Unit>(1)
+    val channel = Channel<Unit>(Channel.CONFLATED)
     val sent = AtomicBoolean(false)
     scope.launch {
         channel.consumeAsFlow().collect {
-            sent.set(false)
-            Snapshot.sendApplyNotifications()
+            try {
+                Snapshot.sendApplyNotifications()
+            } catch (ignored: Throwable) {
+                // catch and ignore runtime errors to prevent application deadlock
+            } finally {
+                sent.set(false)
+            }
         }
     }
     Snapshot.registerGlobalWriteObserver {
