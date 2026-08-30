@@ -53,7 +53,8 @@ import kotlin.coroutines.CoroutineContext
  * What is replicated from the host (kept in sync deliberately): the thin
  * `sendPointerEvent` dispatch shapes of `onPointerMove` / `onPointerButton` /
  * `onPointerScroll`, including the cursor-move-before-click and press-dedup
- * guards, so a regression in those contracts fails here first.
+ * guards and the sub-pixel deadband ([TaoPointerDeadband], #615), so a
+ * regression in those contracts fails here first.
  *
  * Time is fully synthetic: [frame] advances a virtual clock, pumps the
  * single-threaded dispatcher, delivers frame-clock ticks and
@@ -188,7 +189,7 @@ private class QueueDispatcher :
 internal class TaoSceneTestScope(
     val width: Int,
     val height: Int,
-    density: Float,
+    val density: Float,
 ) {
     private val dispatcher = QueueDispatcher()
     private var timeNanos = 0L
@@ -207,6 +208,8 @@ internal class TaoSceneTestScope(
 
     private val platformContext =
         object : TaoPlatformContextBase() {
+            override val sceneScale: Float get() = this@TaoSceneTestScope.density
+
             override val windowInfo: TaoWindowInfo = this@TaoSceneTestScope.windowInfo
 
             // Mirrors `TaoPlatformContext.startInputMethod`: publish the text-input
@@ -255,8 +258,7 @@ internal class TaoSceneTestScope(
     val scene: ComposeScene get() = sceneBundle.scene
 
     // ── Host-mirrored pointer state (same guards as TaoComposeSceneHost) ────
-    private var lastPointerX = 0f
-    private var lastPointerY = 0f
+    private val pointerDeadband = TaoPointerDeadband()
     private var hasReceivedCursorMove = false
     private var isPressed = false
     private var modifierState = 0
@@ -337,20 +339,25 @@ internal class TaoSceneTestScope(
         modifierState = modifiers
     }
 
-    /** Mirrors `TaoComposeSceneHost.onPointerMove` (fixed-point 1024 wire format). */
+    /**
+     * Mirrors `TaoComposeSceneHost.onPointerMove` (fixed-point 1024 wire
+     * format), including the sub-pixel deadband (#615).
+     */
     fun moveMouseFixed(
         aFixed: Int,
         bFixed: Int,
     ) {
         val xPx = aFixed / FIXED_POINT_SCALE
         val yPx = bFixed / FIXED_POINT_SCALE
-        lastPointerX = xPx
-        lastPointerY = yPx
         hasReceivedCursorMove = true
         windowInfo.keyboardModifiers = taoKeyboardModifiers(modifierState)
+        if (!pointerDeadband.shouldDispatchMove(xPx, yPx, density)) {
+            frame()
+            return
+        }
         scene.sendPointerEvent(
             eventType = PointerEventType.Move,
-            position = Offset(xPx, yPx),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
@@ -372,7 +379,7 @@ internal class TaoSceneTestScope(
         if (pressed && isPressed) {
             scene.sendPointerEvent(
                 eventType = PointerEventType.Release,
-                position = Offset(lastPointerX, lastPointerY),
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
                 keyboardModifiers = modifiers,
                 button = button,
@@ -383,7 +390,7 @@ internal class TaoSceneTestScope(
         isPressed = pressed
         scene.sendPointerEvent(
             eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = modifiers,
             button = button,
@@ -404,7 +411,7 @@ internal class TaoSceneTestScope(
     fun exitPointer() {
         scene.sendPointerEvent(
             eventType = PointerEventType.Exit,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
@@ -416,15 +423,15 @@ internal class TaoSceneTestScope(
         val modifiers = taoKeyboardModifiers(modifierState)
         scene.sendPointerEvent(
             eventType = PointerEventType.Scroll,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             scrollDelta = Offset(event.dxAwt, event.dyAwt),
             type = PointerType.Mouse,
             keyboardModifiers = modifiers,
             nativeEvent =
                 TaoSyntheticMouseWheelEvent.create(
                     event = event,
-                    x = lastPointerX,
-                    y = lastPointerY,
+                    x = pointerDeadband.x,
+                    y = pointerDeadband.y,
                     keyboardModifiers = modifiers,
                 ),
         )
