@@ -15,6 +15,8 @@ import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
+import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
+import dev.nucleusframework.window.tao.scene.TaoSceneExceptionRouterTest
 import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
 import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
@@ -423,6 +425,61 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneContentSwapTest: clicking a tab remounts the body without a RectList crash") {
             TaoSceneContentSwapTest().`clicking a tab remounts the body without a RectList crash`()
+        }
+
+        run("TaoSceneExceptionHandlerTest: composition failure reaches the handler") {
+            TaoSceneExceptionHandlerTest().`composition failure reaches the handler`()
+        }
+        run("TaoSceneExceptionHandlerTest: a swallowed composition failure leaves the scene unable to recompose") {
+            TaoSceneExceptionHandlerTest()
+                .`a swallowed composition failure leaves the scene unable to recompose`()
+        }
+        run("TaoSceneExceptionHandlerTest: a dead scene does not spin the frame scheduler") {
+            TaoSceneExceptionHandlerTest().`a dead scene does not spin the frame scheduler`()
+        }
+        run("TaoSceneExceptionHandlerTest: layout failure reaches the handler") {
+            TaoSceneExceptionHandlerTest().`layout failure reaches the handler`()
+        }
+        run("TaoSceneExceptionHandlerTest: draw failure reaches the handler and the scene keeps rendering") {
+            TaoSceneExceptionHandlerTest().`draw failure reaches the handler and the scene keeps rendering`()
+        }
+        run("TaoSceneExceptionHandlerTest: a swallowed draw failure keeps state updates flowing") {
+            TaoSceneExceptionHandlerTest().`a swallowed draw failure keeps state updates flowing`()
+        }
+        run("TaoSceneExceptionHandlerTest: a scene that survived a swallowed failure still accepts new content") {
+            TaoSceneExceptionHandlerTest().`a scene that survived a swallowed failure still accepts new content`()
+        }
+        run("TaoSceneExceptionHandlerTest: input dispatch failure reaches the handler") {
+            TaoSceneExceptionHandlerTest().`input dispatch failure reaches the handler`()
+        }
+        run("TaoSceneExceptionHandlerTest: a handler that rethrows propagates the failure") {
+            TaoSceneExceptionHandlerTest().`a handler that rethrows propagates the failure`()
+        }
+        run("TaoSceneExceptionHandlerTest: without a handler the failure propagates") {
+            TaoSceneExceptionHandlerTest().`without a handler the failure propagates`()
+        }
+
+        run("TaoSceneExceptionRouterTest: a failure with no window handler takes the fatal path") {
+            TaoSceneExceptionRouterTest().`a failure with no window handler takes the fatal path`()
+        }
+        run("TaoSceneExceptionRouterTest: a handler that rethrows takes the fatal path") {
+            TaoSceneExceptionRouterTest().`a handler that rethrows takes the fatal path`()
+        }
+        run("TaoSceneExceptionRouterTest: a handler may substitute the throwable it rethrows") {
+            TaoSceneExceptionRouterTest().`a handler may substitute the throwable it rethrows`()
+        }
+        run("TaoSceneExceptionRouterTest: a handler that returns normally swallows the failure") {
+            TaoSceneExceptionRouterTest().`a handler that returns normally swallows the failure`()
+        }
+        run("TaoSceneExceptionRouterTest: swallowing a failure the scene cannot survive is logged") {
+            TaoSceneExceptionRouterTest().`swallowing a failure the scene cannot survive is logged`()
+        }
+        run("TaoSceneExceptionRouterTest: swallowing a survivable failure is not logged") {
+            TaoSceneExceptionRouterTest().`swallowing a survivable failure is not logged`()
+        }
+        run("TaoSceneExceptionRouterTest: a failure during teardown is logged instead of taking the app down") {
+            TaoSceneExceptionRouterTest()
+                .`a failure during teardown is logged instead of taking the app down`()
         }
 
         run("TaoA11yProjectionTest: compose semantics are projected into the a11y node snapshot") {

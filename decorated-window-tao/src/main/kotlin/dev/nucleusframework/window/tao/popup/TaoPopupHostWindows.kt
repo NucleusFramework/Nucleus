@@ -2,9 +2,11 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.WindowExceptionHandler
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
 
@@ -19,6 +21,7 @@ import kotlin.coroutines.CoroutineContext
  * Threading: every call must run on the host HWND's UI thread.
  */
 @Suppress("TooManyFunctions")
+@OptIn(ExperimentalComposeUiApi::class)
 internal interface TaoPopupHostWindows {
     /** HWND of the host (Tao main) window. */
     val parentHwnd: Long
@@ -41,6 +44,13 @@ internal interface TaoPopupHostWindows {
 
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
+
+    /**
+     * The owner window's exception handler, so a popup scene reports failures
+     * through the same channel as the window it belongs to. See
+     * [TaoPopupHost.exceptionHandler].
+     */
+    val exceptionHandler: WindowExceptionHandler? get() = null
 
     /**
      * Offset added to a popup's `boundsInWindow` before positioning the

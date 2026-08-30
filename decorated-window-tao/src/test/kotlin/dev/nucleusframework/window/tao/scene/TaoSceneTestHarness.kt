@@ -1,4 +1,4 @@
-@file:OptIn(InternalComposeUiApi::class)
+@file:OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package dev.nucleusframework.window.tao.scene
 
@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
@@ -257,6 +258,25 @@ internal class TaoSceneTestScope(
 
     val scene: ComposeScene get() = sceneBundle.scene
 
+    /**
+     * Mirrors the scene host's `exceptionHandler` field (#621): installed on the
+     * bundle, so frames go through the production guard in
+     * [TaoSceneBundle.render], and consulted at the input / IME entry points the
+     * host guards in `DecoratedWindow`. `null` — the default — propagates, like
+     * a window whose app installed no factory and whose default one rethrows.
+     */
+    var exceptionHandler: WindowExceptionHandler? = null
+        set(value) {
+            field = value
+            sceneBundle.exceptionHandler = value
+        }
+
+    /** See [TaoSceneBundle.isRecomposerAlive] — false once the scene can no longer recompose. */
+    val isRecomposerAlive: Boolean get() = sceneBundle.isRecomposerAlive
+
+    /** True while the scene has asked for another frame — the host's repaint signal. */
+    val isSceneInvalidated: Boolean get() = invalidated
+
     // ── Host-mirrored pointer state (same guards as TaoComposeSceneHost) ────
     private val pointerDeadband = TaoPointerDeadband()
     private var hasReceivedCursorMove = false
@@ -267,7 +287,7 @@ internal class TaoSceneTestScope(
         private set
 
     fun setContent(content: @Composable () -> Unit) {
-        scene.setContent(content = content)
+        exceptionHandler.catchExceptions { scene.setContent(content = content) }
         frame()
     }
 
@@ -355,12 +375,14 @@ internal class TaoSceneTestScope(
             frame()
             return
         }
-        scene.sendPointerEvent(
-            eventType = PointerEventType.Move,
-            position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
-            keyboardModifiers = taoKeyboardModifiers(modifierState),
-        )
+        exceptionHandler.catchExceptions {
+            scene.sendPointerEvent(
+                eventType = PointerEventType.Move,
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
+                type = PointerType.Mouse,
+                keyboardModifiers = taoKeyboardModifiers(modifierState),
+            )
+        }
         frame()
     }
 
@@ -388,13 +410,15 @@ internal class TaoSceneTestScope(
             return // host guard: stray release
         }
         isPressed = pressed
-        scene.sendPointerEvent(
-            eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(pointerDeadband.x, pointerDeadband.y),
-            type = PointerType.Mouse,
-            keyboardModifiers = modifiers,
-            button = button,
-        )
+        exceptionHandler.catchExceptions {
+            scene.sendPointerEvent(
+                eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
+                type = PointerType.Mouse,
+                keyboardModifiers = modifiers,
+                button = button,
+            )
+        }
         frame()
     }
 
@@ -449,7 +473,9 @@ internal class TaoSceneTestScope(
         codePoint: Int = 0,
         modifiers: Int = modifierState,
     ) {
-        scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_DOWN, vkCode, codePoint, modifiers)
+        exceptionHandler.catchExceptions {
+            scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_DOWN, vkCode, codePoint, modifiers)
+        }
         frame()
     }
 
@@ -458,7 +484,9 @@ internal class TaoSceneTestScope(
         codePoint: Int = 0,
         modifiers: Int = modifierState,
     ) {
-        scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_UP, vkCode, codePoint, modifiers)
+        exceptionHandler.catchExceptions {
+            scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_UP, vkCode, codePoint, modifiers)
+        }
         frame()
     }
 
@@ -498,7 +526,7 @@ internal class TaoSceneTestScope(
      * `window.imePreedit` wiring. An empty [text] is `unmarkText`.
      */
     fun imePreedit(text: String) {
-        imeSession.preedit(text)
+        exceptionHandler.catchExceptions { imeSession.preedit(text) }
         frame()
     }
 
@@ -508,7 +536,7 @@ internal class TaoSceneTestScope(
      * wiring (`TextEditingScope.commitText`).
      */
     fun imeCommit(text: String) {
-        imeSession.commit(text)
+        exceptionHandler.catchExceptions { imeSession.commit(text) }
         frame()
     }
 

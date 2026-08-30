@@ -2,9 +2,11 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import kotlin.coroutines.CoroutineContext
 
@@ -15,6 +17,7 @@ import kotlin.coroutines.CoroutineContext
  *
  * Threading: every call must run on the macOS main thread.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 internal interface TaoPopupHost {
     /** NSView pointer of the host window's content view. */
     val parentNsView: Long
@@ -50,6 +53,14 @@ internal interface TaoPopupHost {
 
     /** Coroutine context to feed inner scenes (parent context + frame clock + flushing dispatcher). */
     val sceneCoroutineContext: CoroutineContext
+
+    /**
+     * The owner window's exception handler, so a popup scene reports failures
+     * through the same channel as the window it belongs to. Mirrors Compose
+     * Desktop's `WindowComposeSceneLayer`, which forwards
+     * `composeContainer.exceptionHandler` into its own mediator.
+     */
+    val exceptionHandler: WindowExceptionHandler? get() = null
 
     /**
      * Offset added to a popup's `boundsInWindow` before positioning the

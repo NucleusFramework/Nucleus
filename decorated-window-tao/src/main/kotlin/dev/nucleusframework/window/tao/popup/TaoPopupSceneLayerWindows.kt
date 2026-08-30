@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
+import dev.nucleusframework.window.tao.scene.catchExceptions
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import org.jetbrains.skia.DirectContext
 
@@ -53,7 +54,7 @@ import org.jetbrains.skia.DirectContext
  *    [innerScene]'s [androidx.compose.ui.platform.LocalDensity], ensuring font rasterization
  *    and container measurement stay synchronized across displays.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 internal class TaoPopupSceneLayerWindows(
     private val host: TaoPopupHostWindows,
     initialDensity: Density,
@@ -184,7 +185,10 @@ internal class TaoPopupSceneLayerWindows(
                     override val isWindowTransparent: Boolean get() = true
                 },
             requestFrame = { host.requestRedraw() },
-        )
+        ).apply {
+            // Report through the owner window's channel — see [TaoPopupHost.exceptionHandler].
+            exceptionHandler = host.exceptionHandler
+        }
 
     private val innerScene: ComposeScene get() = sceneBundle.scene
 
@@ -192,6 +196,10 @@ internal class TaoPopupSceneLayerWindows(
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onOutsidePointerEvent: ((PointerEventType, PointerButton?) -> Unit)? = null
 
+    /**
+     * Every method is guarded: these are WndProc callbacks into the popup's own
+     * scene, not nested inside the owner window's guarded frame pass.
+     */
     private inner class PopupEventCallback : PopupNativeBridgeWindows.EventCallback {
         override fun onPointerEvent(
             type: Int,
@@ -199,7 +207,7 @@ internal class TaoPopupSceneLayerWindows(
             y: Float,
             button: Int,
             modifiers: Int,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             val pointerButton =
                 when (button) {
                     TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
@@ -225,7 +233,7 @@ internal class TaoPopupSceneLayerWindows(
             y: Float,
             dx: Float,
             dy: Float,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             val pos = scenePosition(x, y)
             innerScene.dispatchAwtShapedScroll(pos.x, pos.y, win32WheelToAwtScrollEvent(dx, dy))
         }
@@ -235,7 +243,7 @@ internal class TaoPopupSceneLayerWindows(
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             innerScene.dispatchNativeKeyEvent(
                 type = type,
                 vkCode = vkCode,

@@ -33,6 +33,7 @@ import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
+import dev.nucleusframework.window.tao.scene.catchExceptions
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
 
@@ -73,7 +74,7 @@ import org.jetbrains.skia.DirectContext
  *
  * Threading: every method must run on the macOS main thread.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 internal class TaoPopupSceneLayer(
     private val host: TaoPopupHost,
     initialDensity: Density,
@@ -222,7 +223,10 @@ internal class TaoPopupSceneLayer(
                     }
                 },
             requestFrame = { host.requestRedraw() },
-        )
+        ).apply {
+            // Report through the owner window's channel — see [TaoPopupHost.exceptionHandler].
+            exceptionHandler = host.exceptionHandler
+        }
 
     private val innerScene: ComposeScene get() = sceneBundle.scene
 
@@ -234,6 +238,9 @@ internal class TaoPopupSceneLayer(
      * Named inner class so GraalVM JNI reachability metadata can register
      * it explicitly. Anonymous-object subclasses of a JNI-accessed
      * interface aren't picked up by `GetMethodID` under native-image.
+     *
+     * Every method is guarded: these are AppKit callbacks into the panel's own
+     * scene, not nested inside the owner window's guarded frame pass.
      */
     private inner class PopupEventCallback : PopupNativeBridge.EventCallback {
         override fun onPointerEvent(
@@ -242,7 +249,7 @@ internal class TaoPopupSceneLayer(
             y: Float,
             button: Int,
             modifiers: Int,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             val pointerButton =
                 when (button) {
                     TaoNativeWireFormat.BUTTON_PRIMARY -> PointerButton.Primary
@@ -269,7 +276,7 @@ internal class TaoPopupSceneLayer(
             dx: Float,
             dy: Float,
             precise: Boolean,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             innerScene.dispatchAwtShapedScroll(
                 x,
                 y,
@@ -282,7 +289,7 @@ internal class TaoPopupSceneLayer(
             vkCode: Int,
             codePoint: Int,
             modifiers: Int,
-        ) {
+        ) = host.exceptionHandler.catchExceptions {
             innerScene.dispatchNativeKeyEvent(
                 type = type,
                 vkCode = vkCode,
