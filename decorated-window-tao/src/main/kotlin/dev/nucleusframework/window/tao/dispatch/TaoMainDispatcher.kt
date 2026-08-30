@@ -9,6 +9,8 @@ import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.coroutines.CoroutineContext
 
 private const val FALLBACK_QUIESCE_TIMEOUT_SECONDS = 2L
@@ -26,6 +28,7 @@ private const val FALLBACK_THREAD_NAME = "Nucleus-Tao-Main-Fallback"
  * [TaoApplication] arranges that via the JNI event callback.
  */
 internal object TaoMainDispatcher : CoroutineDispatcher() {
+    private val logger = Logger.getLogger(TaoMainDispatcher::class.java.name)
     private val pending = ConcurrentLinkedQueue<Runnable>()
 
     /**
@@ -246,13 +249,13 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         while (!loopRunning) {
             val block = pending.poll() ?: break
             ranAnything = true
-            @Suppress("TooGenericExceptionCaught", "PrintStackTrace")
+            @Suppress("TooGenericExceptionCaught")
             try {
                 block.run()
             } catch (t: Throwable) {
                 // Match pump(): dispatchers swallow synchronous throwables so a
                 // single failing block never kills the drain.
-                t.printStackTrace()
+                logger.log(Level.SEVERE, "Unhandled exception in a block dispatched to the Tao main thread", t)
             }
         }
         if (ranAnything) {
@@ -273,7 +276,7 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
         // it yield to rendering + the throttled re-arm below.
         val deadlineNs = System.nanoTime() + PUMP_TIME_BUDGET_NS
         var pass = 0
-        @Suppress("TooGenericExceptionCaught", "PrintStackTrace", "LoopWithTooManyJumpStatements")
+        @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
         while (pass++ < MAX_PUMP_PASSES) {
             var remaining = pending.size
             if (remaining == 0) break
@@ -285,9 +288,10 @@ internal object TaoMainDispatcher : CoroutineDispatcher() {
                     block.run()
                 } catch (t: Throwable) {
                     // Coroutine dispatchers swallow exceptions thrown synchronously
-                    // from `run()`; the runtime reports them via the Recomposer's
-                    // exception handler. Re-throwing here would crash the Tao loop.
-                    t.printStackTrace()
+                    // from `run()`; the runtime reports them via the coroutine
+                    // exception handler (routed to the #622 fatal path by
+                    // taoApplication). Re-throwing here would crash the Tao loop.
+                    logger.log(Level.SEVERE, "Unhandled exception in a block dispatched to the Tao main thread", t)
                 }
                 if (System.nanoTime() >= deadlineNs) {
                     hitDeadline = true

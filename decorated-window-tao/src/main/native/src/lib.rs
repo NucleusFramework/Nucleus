@@ -19,6 +19,7 @@
 //   event_loop    — `run_event_loop_blocking()` (Tao loop body)
 //   window_jni    — cross-platform JNI exports for window lifecycle/state
 //   cursor        — cross-platform cursor JNI export
+//   dialog        — native fatal-error dialog JNI export (#622)
 //   keymap        — Tao physical key → AWT VK mapping
 //   platform::macos     — AppKit helpers (FFI, main-thread dance, IME,
 //                         text overlay, Apple events, VoiceOver bridge)
@@ -30,6 +31,7 @@
 mod a11y;
 
 mod cursor;
+mod dialog;
 mod event_loop;
 mod events;
 mod keymap;

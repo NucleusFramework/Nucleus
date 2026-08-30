@@ -3,6 +3,8 @@ package dev.nucleusframework.window.tao.ffi
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import java.util.logging.Level
+import java.util.logging.Logger
 
 private const val LIBRARY_NAME = "nucleus_tao"
 
@@ -18,9 +20,26 @@ private const val LIBRARY_NAME = "nucleus_tao"
  */
 @Suppress("TooManyFunctions")
 internal object NativeTaoBridge {
+    private val logger = Logger.getLogger(NativeTaoBridge::class.java.name)
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
+
+    /**
+     * Guard for native → JVM upcalls outside the [EventCallback] surface
+     * (deep links, a11y actions). An exception escaping into JNI is cleared
+     * silently by the Rust side (#622) — log it at SEVERE instead. These are
+     * one-shot handlers, not the render/dispatch path, so a failure is loud
+     * but non-fatal.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun upcall(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Unhandled exception in a native → JVM upcall", t)
+        }
+    }
 
     /**
      * Receives events dispatched from the Rust event loop, called on the
@@ -215,6 +234,21 @@ internal object NativeTaoBridge {
     external fun nativeExit()
 
     /**
+     * Shows a blocking native error dialog — the no-AWT replacement for
+     * Compose Desktop's Swing default (#622). macOS only for now
+     * (CFUserNotificationDisplayAlert: out-of-process, callable from any
+     * thread, no NSApp/run-loop dependency — safe before, during and after
+     * the Tao loop); Windows and Linux are silent no-ops until their
+     * implementations land. Call it only outside tao callback frames — a
+     * modal pump inside one re-enters tao's non-reentrant handler mutex.
+     */
+    @JvmStatic
+    external fun nativeShowErrorDialog(
+        title: String,
+        message: String,
+    )
+
+    /**
      * Wakes the Tao event loop so a coroutine just posted to
      * [TaoMainDispatcher] runs on the next tick. Required because Tao runs
      * with `ControlFlow::Wait` and would otherwise sleep until an OS event
@@ -230,7 +264,7 @@ internal object NativeTaoBridge {
     @JvmStatic
     @Suppress("unused") // called from JNI (macOS Event::Opened → apple_events::dispatch_deep_link)
     fun dispatchDeepLink(uri: String) {
-        TaoDeepLinkBridge.onUrlFromNative(uri)
+        upcall { TaoDeepLinkBridge.onUrlFromNative(uri) }
     }
 
     /**
@@ -846,7 +880,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action)
+        upcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
     }
 
     @JvmStatic
@@ -856,7 +890,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action)
+        upcall { TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action) }
     }
 
     @JvmStatic
@@ -866,7 +900,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         text: String,
     ) {
-        TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text)
+        upcall { TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text) }
     }
 
     @JvmStatic
@@ -877,7 +911,7 @@ internal object NativeTaoBridge {
         start: Int,
         end: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end)
+        upcall { TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end) }
     }
 
     @JvmStatic
@@ -887,7 +921,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         index: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index)
+        upcall { TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index) }
     }
 
     @JvmStatic
@@ -898,7 +932,7 @@ internal object NativeTaoBridge {
         dx: Float,
         dy: Float,
     ) {
-        TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
+        upcall { TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy) }
     }
 
     /**
@@ -913,6 +947,6 @@ internal object NativeTaoBridge {
         nodeId: Long,
         value: Double,
     ) {
-        TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value)
+        upcall { TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value) }
     }
 }
