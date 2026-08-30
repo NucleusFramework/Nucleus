@@ -474,8 +474,17 @@ public object TaoHeadfulTestSuiteMain {
                                 dialogHolder = dialogHolder,
                                 waitForDialog = running.dialogContent != null,
                             )
-                        running.driver(published)
+                        // Per-case budget: a driver that never completes must
+                        // fail its own case, not run out the global watchdog
+                        // and take every other result down with it.
+                        kotlinx.coroutines.withTimeout(running.timeoutMillis) {
+                            running.driver(published)
+                        }
                         null
+                    } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+                        // Ordered before CancellationException: this one is the
+                        // case's own deadline, not app teardown.
+                        IllegalStateException("case timed out after ${running.timeoutMillis}ms", t)
                     } catch (c: kotlinx.coroutines.CancellationException) {
                         throw c // app teardown — never record as a test failure
                     } catch (
