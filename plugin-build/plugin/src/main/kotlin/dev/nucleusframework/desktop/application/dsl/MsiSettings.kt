@@ -19,4 +19,33 @@ abstract class MsiSettings {
     // Tracks whether the user set the value explicitly, so the deprecated
     // windows.perUserInstall flag can still take effect when this one is untouched.
     internal var explicitPerMachine: Boolean? = null
+
+    /**
+     * One-click installer: install immediately without showing a wizard. Default: true.
+     *
+     * Set to `false` for an assisted installer that shows the usual welcome/progress/finish
+     * pages, which is what jpackage-produced MSI packages did.
+     */
+    var oneClick: Boolean = true
+
+    /** Run the app once the installer finishes. Default: true */
+    var runAfterFinish: Boolean = true
+
+    /** Create a desktop shortcut. Default: true */
+    var createDesktopShortcut: Boolean = true
+
+    /** Create a start menu shortcut. Default: true */
+    var createStartMenuShortcut: Boolean = true
+
+    /**
+     * Start menu submenu (and program files subdirectory) holding the shortcut.
+     *
+     * `null` (default) puts the shortcut directly under the start menu root. When left unset,
+     * [WindowsPlatformSettings.menuGroup] is used instead, so the group declared for
+     * jpackage-based packaging keeps working on the MSI target.
+     */
+    var menuCategory: String? = null
+
+    /** Name used for the shortcuts. Defaults to the application name. */
+    var shortcutName: String? = null
 }
