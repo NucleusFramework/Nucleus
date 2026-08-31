@@ -1,9 +1,11 @@
 package dev.nucleusframework.window.tao.popup
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlin.coroutines.CoroutineContext
 
@@ -19,9 +21,17 @@ import kotlin.coroutines.CoroutineContext
  *
  * Threading: every call must run on the Tao event-loop thread.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 internal interface TaoPopupHostLinux {
     /** Tao window hosting the main scene — the popup windows' `popupOf` parent. */
     val parentWindow: TaoWindow
+
+    /**
+     * The owner window's exception handler, so a popup scene reports failures
+     * through the same channel as the window it belongs to. See
+     * [TaoPopupHost.exceptionHandler].
+     */
+    val exceptionHandler: WindowExceptionHandler? get() = null
 
     /** Backing-scale factor (logical→physical multiplier). */
     val scale: Float

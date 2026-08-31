@@ -55,6 +55,7 @@ import kotlin.math.roundToInt
  *    propagates via snapshot but does not share a CompositionContext.
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 public fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
@@ -196,6 +197,12 @@ public fun ApplicationScope.DecoratedWindow(
                 .toArgb(),
         )
 
+    // Read here, in the parent composition, exactly like Compose Desktop's
+    // `SwingWindow`: the resulting handler is stored as a plain field on the
+    // scene host, so it still applies when the window's own composition is the
+    // thing that failed.
+    val windowExceptionHandlerFactory = LocalWindowExceptionHandlerFactory.current
+
     state.inflateToMinimumSize(minimumSize)
     state.applyMacOsInitialMaximizedSize()
 
@@ -261,6 +268,7 @@ public fun ApplicationScope.DecoratedWindow(
                     hiddenFromDock = hiddenFromDock,
                     initialCompositionLocalContext = compositionLocalContext,
                     forceX11 = forceX11,
+                    exceptionHandlerFactory = windowExceptionHandlerFactory,
                     content = {
                         val backgroundArgb = latestWindowBackgroundArgb.value
                         val clearColorLayers = LocalWindowClearColorLayers.current

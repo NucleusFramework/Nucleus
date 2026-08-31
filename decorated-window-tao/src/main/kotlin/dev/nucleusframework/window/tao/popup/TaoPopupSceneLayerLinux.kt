@@ -36,6 +36,7 @@ import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
 import dev.nucleusframework.window.tao.scene.alignToBufferScale
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
+import dev.nucleusframework.window.tao.scene.catchExceptions
 import dev.nucleusframework.window.tao.scene.preservingEglBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
 import dev.nucleusframework.window.tao.scene.withEglContextCurrent
@@ -79,7 +80,7 @@ import kotlin.math.roundToInt
  *
  * Threading: every method must run on the Tao event-loop thread.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Suppress("TooManyFunctions")
 internal class TaoPopupSceneLayerLinux(
     private val host: TaoPopupHostLinux,
@@ -200,7 +201,10 @@ internal class TaoPopupSceneLayerLinux(
                     }
                 },
             requestFrame = { host.requestRedraw() },
-        )
+        ).apply {
+            // Report through the owner window's channel — see [TaoPopupHost.exceptionHandler].
+            exceptionHandler = host.exceptionHandler
+        }
 
     private val innerScene: ComposeScene get() = sceneBundle.scene
 
@@ -493,6 +497,8 @@ internal class TaoPopupSceneLayerLinux(
 
     // ── Input — the popup window receives its own pointer events ──────────
 
+    // Guarded: these are Tao popup-window callbacks into this popup's own
+    // scene, not nested inside the owner window's guarded frame pass.
     private fun registerInput() {
         popupWindow.onPointerMoved { xFixed, yFixed ->
             sendPointer(PointerEventType.Move, xFixed / POSITION_SCALE, yFixed / POSITION_SCALE, null)
@@ -506,14 +512,16 @@ internal class TaoPopupSceneLayerLinux(
             )
         }
         popupWindow.onPointerScroll { event ->
-            if (released) return@onPointerScroll
-            val pos = scenePosition(lastX, lastY)
-            innerScene.dispatchAwtShapedScroll(
-                x = pos.x,
-                y = pos.y,
-                event = event,
-                keyboardModifiers = taoKeyboardModifiers(host.parentWindow.modifierState),
-            )
+            host.exceptionHandler.catchExceptions {
+                if (released) return@catchExceptions
+                val pos = scenePosition(lastX, lastY)
+                innerScene.dispatchAwtShapedScroll(
+                    x = pos.x,
+                    y = pos.y,
+                    event = event,
+                    keyboardModifiers = taoKeyboardModifiers(host.parentWindow.modifierState),
+                )
+            }
         }
     }
 
@@ -525,8 +533,8 @@ internal class TaoPopupSceneLayerLinux(
         xPx: Float,
         yPx: Float,
         button: PointerButton?,
-    ) {
-        if (released) return
+    ) = host.exceptionHandler.catchExceptions {
+        if (released) return@catchExceptions
         lastX = xPx
         lastY = yPx
         innerScene.sendPointerEvent(

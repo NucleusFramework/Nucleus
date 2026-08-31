@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.WindowTransparencyMode
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.MacOSStyle
@@ -86,7 +87,7 @@ import kotlin.coroutines.CoroutineContext as KCoroutineContext
  * stable on the JVM target of Compose Multiplatform 1.10+. Some are annotated
  * `@InternalComposeUiApi`; we opt-in below.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Suppress("TooManyFunctions", "LargeClass")
 internal class TaoComposeSceneHost(
     private val window: TaoWindow,
@@ -370,9 +371,14 @@ internal class TaoComposeSceneHost(
                 outboundLauncher = ::launchMacOsOutboundDrag,
             )
 
-        window.imeReplaceCommit = imeSession::replaceCommit
-        window.imePreedit = imeSession::preedit
-        window.imeCommit = imeSession::commit
+        // IME callbacks edit the focused field through `TextEditingScope`, i.e.
+        // they run user code straight off a native AppKit callback — the Tao
+        // counterpart of AWT's guarded `inputMethodTextChanged`.
+        window.imeReplaceCommit = { text, start, length ->
+            exceptionHandler.catchExceptions { imeSession.replaceCommit(text, start, length) }
+        }
+        window.imePreedit = { text -> exceptionHandler.catchExceptions { imeSession.preedit(text) } }
+        window.imeCommit = { text -> exceptionHandler.catchExceptions { imeSession.commit(text) } }
         val taoPlatformContext =
             TaoPlatformContext(
                 windowHandle = window.handle,
@@ -449,6 +455,9 @@ internal class TaoComposeSceneHost(
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
+        // Frame failures (recomposition / layout / draw) are caught inside the
+        // bundle, the single seam all three platforms render through.
+        sceneBundle?.exceptionHandler = exceptionHandler
 
         registerInboundDnD()
     }
@@ -620,24 +629,28 @@ internal class TaoComposeSceneHost(
      */
     var onTextSelectionForA11y: ((text: String, editable: Boolean, sourceId: Int) -> Unit)? = null
 
-    fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent {
-            TaoTextToolbarHost(textToolbar) {
-                val onSel = onTextSelectionForA11y
-                // Expose the publisher so themed wrappers (nucleus-application) can
-                // re-install the observer inside their theme's own LocalTextContextMenu.
-                androidx.compose.runtime.CompositionLocalProvider(
-                    LocalTaoTextSelectionA11yPublisher provides onSel,
-                ) {
-                    if (onSel != null) {
-                        TaoSelectionAccessibilityObserver(onSelection = onSel, content = content)
-                    } else {
-                        content()
+    // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
+    // composition runs inside this call, so content that throws while mounting
+    // must reach the window's handler instead of unwinding into the Tao loop.
+    fun setContent(content: @Composable () -> Unit) =
+        exceptionHandler.catchExceptions {
+            scene?.setContent {
+                TaoTextToolbarHost(textToolbar) {
+                    val onSel = onTextSelectionForA11y
+                    // Expose the publisher so themed wrappers (nucleus-application) can
+                    // re-install the observer inside their theme's own LocalTextContextMenu.
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        LocalTaoTextSelectionA11yPublisher provides onSel,
+                    ) {
+                        if (onSel != null) {
+                            TaoSelectionAccessibilityObserver(onSelection = onSel, content = content)
+                        } else {
+                            content()
+                        }
                     }
                 }
             }
         }
-    }
 
     /**
      * Forwards a parent composition's locals into this scene via
@@ -878,6 +891,9 @@ internal class TaoComposeSceneHost(
             }
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
+
+            override val exceptionHandler: WindowExceptionHandler?
+                get() = outer.exceptionHandler
 
             override fun requestRedraw() = outer.window.requestRedraw()
 

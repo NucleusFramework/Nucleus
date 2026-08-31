@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
@@ -384,8 +385,11 @@ internal class TaoComposeSceneHostWindows(
         // custom title bar path. NativeView overlay scenes can still opt into
         // TaoComposeSceneContextWindows when they need popups outside their
         // overlay bounds.
-        window.imePreedit = imeSession::preedit
-        window.imeCommit = imeSession::commit
+        // IME callbacks edit the focused field through `TextEditingScope`, i.e.
+        // they run user code straight off an IMM32 callback — the Tao
+        // counterpart of AWT's guarded `inputMethodTextChanged`.
+        window.imePreedit = { text -> exceptionHandler.catchExceptions { imeSession.preedit(text) } }
+        window.imeCommit = { text -> exceptionHandler.catchExceptions { imeSession.commit(text) } }
         val platformContext =
             WindowsTaoPlatformContext(
                 windowHandle = window.handle,
@@ -446,6 +450,9 @@ internal class TaoComposeSceneHostWindows(
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
+        // Frame failures (recomposition / layout / draw) are caught inside the
+        // bundle, the single seam all three platforms render through.
+        sceneBundle?.exceptionHandler = exceptionHandler
 
         publishWindowsTextureHost()
         registerInboundDnD()
@@ -514,8 +521,12 @@ internal class TaoComposeSceneHostWindows(
     private val activeTouches = LinkedHashMap<Long, ActiveTouch>()
 
     private fun registerTouchInput() {
+        // Touch runs user pointer-input code (clickable, drag) exactly like the
+        // mouse path, so it gets the same guard as the pointer wraps in
+        // DecoratedWindow; a rethrow unwinds into `EventDispatcher.guarded`,
+        // i.e. the fatal path, just like every other input entry.
         window.onTouchInput { phase, id, xFixed, yFixed, forceFixed ->
-            onTouchInput(phase, id, xFixed, yFixed, forceFixed)
+            exceptionHandler.catchExceptions { onTouchInput(phase, id, xFixed, yFixed, forceFixed) }
         }
     }
 
@@ -913,21 +924,25 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
-    fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent {
-            // Stock Compose Desktop Windows wheel behavior; only the
-            // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
-            ProvideTaoWindowsScrollConfig {
-                TaoTextToolbarHost(textToolbar) {
-                    CompositionLocalProvider(
-                        LocalDensity provides Density(scaleState.value),
-                    ) {
-                        content()
+    // Guarded like AWT's `ComposeSceneMediator.setContent`: the first
+    // composition runs inside this call, so content that throws while mounting
+    // must reach the window's handler instead of unwinding into the Tao loop.
+    fun setContent(content: @Composable () -> Unit) =
+        exceptionHandler.catchExceptions {
+            scene?.setContent {
+                // Stock Compose Desktop Windows wheel behavior; only the
+                // lines-per-notch factor is reapplied (see TaoWindowsScrollConfig).
+                ProvideTaoWindowsScrollConfig {
+                    TaoTextToolbarHost(textToolbar) {
+                        CompositionLocalProvider(
+                            LocalDensity provides Density(scaleState.value),
+                        ) {
+                            content()
+                        }
                     }
                 }
             }
         }
-    }
 
     /**
      * Forwards a parent composition's locals into this scene via
@@ -1517,6 +1532,9 @@ internal class TaoComposeSceneHostWindows(
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx
+
+            override val exceptionHandler: WindowExceptionHandler?
+                get() = outer.exceptionHandler
 
             override fun requestRedraw() = outer.window.requestRedraw()
 

@@ -205,6 +205,12 @@ public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
 	public static final fun getLocalTaoWindow ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
+public final class dev/nucleusframework/window/tao/DefaultWindowExceptionHandlerFactory : dev/nucleusframework/window/tao/WindowExceptionHandlerFactory {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/DefaultWindowExceptionHandlerFactory;
+	public fun exceptionHandler (Ldev/nucleusframework/window/tao/TaoWindow;)Landroidx/compose/ui/window/WindowExceptionHandler;
+}
+
 public final class dev/nucleusframework/window/tao/DmaBufTestTextureProducer : java/lang/AutoCloseable {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion;
@@ -801,6 +807,14 @@ public final class dev/nucleusframework/window/tao/TextureViewKt {
 }
 
 public abstract interface class dev/nucleusframework/window/tao/TextureViewSource {
+}
+
+public abstract interface class dev/nucleusframework/window/tao/WindowExceptionHandlerFactory {
+	public abstract fun exceptionHandler (Ldev/nucleusframework/window/tao/TaoWindow;)Landroidx/compose/ui/window/WindowExceptionHandler;
+}
+
+public final class dev/nucleusframework/window/tao/WindowExceptionHandlerFactoryKt {
+	public static final fun getLocalWindowExceptionHandlerFactory ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
 public final class dev/nucleusframework/window/tao/XdgForeignExport : java/lang/AutoCloseable {
