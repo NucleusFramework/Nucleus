@@ -306,11 +306,23 @@ internal class ElectronBuilderConfigGenerator {
         when (targetFormat) {
             TargetFormat.Nsis, TargetFormat.Exe -> {
                 yaml.appendLine("nsis:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
+                generateNsisSettings(
+                    yaml,
+                    distributions.windows.nsis,
+                    "  ",
+                    nsisProtocolInclude,
+                    menuCategoryDefault = distributions.windows.menuGroup,
+                )
             }
             TargetFormat.NsisWeb -> {
                 yaml.appendLine("nsisWeb:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
+                generateNsisSettings(
+                    yaml,
+                    distributions.windows.nsis,
+                    "  ",
+                    nsisProtocolInclude,
+                    menuCategoryDefault = distributions.windows.menuGroup,
+                )
             }
             TargetFormat.Msi -> {
                 val msi = distributions.windows.msi
@@ -431,6 +443,7 @@ internal class ElectronBuilderConfigGenerator {
         nsis: NsisSettings,
         indent: String,
         protocolInclude: File? = null,
+        menuCategoryDefault: String? = null,
     ) {
         yaml.appendLine("${indent}oneClick: ${nsis.oneClick}")
         yaml.appendLine("${indent}allowElevation: ${nsis.allowElevation}")
@@ -439,6 +452,10 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("${indent}createDesktopShortcut: ${nsis.createDesktopShortcut}")
         yaml.appendLine("${indent}createStartMenuShortcut: ${nsis.createStartMenuShortcut}")
         yaml.appendLine("${indent}runAfterFinish: ${nsis.runAfterFinish}")
+        // windows.menuGroup is the jpackage-era name for the same concept, so it acts as
+        // the default here; without it the shortcut lands in the start menu root.
+        appendIfNotNull(yaml, "${indent}menuCategory", nsis.menuCategory ?: menuCategoryDefault)
+        appendIfNotNull(yaml, "${indent}shortcutName", nsis.shortcutName)
         yaml.appendLine("${indent}deleteAppDataOnUninstall: ${nsis.deleteAppDataOnUninstall}")
         yaml.appendLine("${indent}warningsAsErrors: false")
 

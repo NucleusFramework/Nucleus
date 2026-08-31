@@ -93,12 +93,15 @@ class ElectronBuilderMsiConfigTest {
     @Test
     fun `nsis target is unaffected by the msi settings`() {
         val distributions = distributions()
-        distributions.windows.menuGroup = "Acme Apps"
+        distributions.windows.msi.oneClick = false
+        distributions.windows.msi.menuCategory = "From msi"
 
         val yaml = renderWindows(distributions, TargetFormat.Nsis)
 
         assertTrue(yaml, yaml.contains("nsis:"))
         assertFalse(yaml, yaml.contains("msi:"))
-        assertFalse(yaml, yaml.contains("menuCategory"))
+        // the nsis block keeps its own defaults; nothing leaks over from msi {}
+        assertTrue(yaml, yaml.contains("oneClick: true"))
+        assertFalse(yaml, yaml.contains("From msi"))
     }
 }
