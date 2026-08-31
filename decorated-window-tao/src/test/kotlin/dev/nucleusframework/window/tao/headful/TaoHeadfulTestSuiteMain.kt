@@ -366,6 +366,7 @@ public object TaoHeadfulTestSuiteMain {
             PopupScaleHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
+            AlwaysOnTopHeadfulCases.all() +
             ImeHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
