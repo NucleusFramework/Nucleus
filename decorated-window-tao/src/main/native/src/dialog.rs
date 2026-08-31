@@ -30,9 +30,10 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 /// `detail` is `Throwable.stackTraceToString()`: the throwable's `toString()`
-/// (possibly multi-line) followed by "\n\tat ..." frames. macOS and Windows
-/// keep their compact one-shot alert, so they show only the `toString()`
-/// part after the sentence — the frames would not fit a system alert.
+/// (possibly multi-line) followed by "\n\tat ..." frames. Windows and the
+/// macOS CFUserNotification fallback keep their compact one-shot alert, so
+/// they show only the `toString()` part after the sentence — the frames
+/// would not fit a system alert.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn message_with_summary(message: &str, detail: &str) -> String {
     let summary = detail.split("\n\tat ").next().unwrap_or("").trim_end();
@@ -42,6 +43,61 @@ fn message_with_summary(message: &str, detail: &str) -> String {
         format!("{message}\n\n{summary}")
     }
 }
+
+/// NSAlert with the stack trace in a scrollable monospace accessory view and
+/// a Copy button — the macOS twin of the Linux GtkMessageDialog below. Run
+/// by an `osascript -l JavaScript` child: our own NSApp cannot host it (tao
+/// latches [NSApp stop:] on loop exit, so an in-process runModal returns
+/// immediately — see error_dialog.m), while the child gets a fresh NSApp.
+/// argv: title, message, detail.
+///
+/// JXA traps encoded below, in rendering order:
+///   - osascript is an agent process: without the Accessory activation
+///     policy + activate, the panel can open buried behind other apps.
+///   - horizontal scrolling needs the full non-tracking text-container
+///     dance; a bare NSTextView wraps at 560px and hides frame tails.
+///   - `runModal` bridges to a JS *string* ("1001"), so a `===` against the
+///     NSAlertSecondButtonReturn number never matches — coerce first.
+///   - the general pasteboard is held by the pboard server, so the copied
+///     trace survives the child's exit (no X11-style store dance needed).
+#[cfg(target_os = "macos")]
+const FATAL_ALERT_JXA: &str = r#"
+ObjC.import('Cocoa')
+function run(argv) {
+  const title = argv[0], message = argv[1], detail = argv[2]
+  const alert = $.NSAlert.alloc.init
+  alert.alertStyle = $.NSAlertStyleCritical
+  alert.messageText = title
+  alert.informativeText = message
+  alert.addButtonWithTitle('Close')
+  alert.addButtonWithTitle('Copy')
+  if (detail.length > 0) {
+    const view = $.NSTextView.alloc.initWithFrame($.NSMakeRect(0, 0, 560, 160))
+    view.editable = false
+    view.font = $.NSFont.userFixedPitchFontOfSize(11)
+    view.string = detail
+    view.horizontallyResizable = true
+    view.textContainer.widthTracksTextView = false
+    view.textContainer.containerSize = $.NSMakeSize(10000000, 10000000)
+    view.maxSize = $.NSMakeSize(10000000, 10000000)
+    const scroll = $.NSScrollView.alloc.initWithFrame($.NSMakeRect(0, 0, 560, 160))
+    scroll.hasVerticalScroller = true
+    scroll.hasHorizontalScroller = true
+    scroll.borderType = $.NSBezelBorder
+    scroll.documentView = view
+    alert.accessoryView = scroll
+  }
+  const app = $.NSApplication.sharedApplication
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory)
+  app.activateIgnoringOtherApps(true)
+  alert.window.level = 8 // NSModalPanelWindowLevel: above the corpse of the app
+  while (Number(alert.runModal) === 1001) { // NSAlertSecondButtonReturn: Copy
+    const pasteboard = $.NSPasteboard.generalPasteboard
+    pasteboard.clearContents
+    pasteboard.setStringForType($(detail), $.NSPasteboardTypeString)
+  }
+}
+"#;
 
 #[cfg(target_os = "macos")]
 fn show_error_dialog(title: &str, message: &str, detail: &str) {
@@ -53,11 +109,29 @@ fn show_error_dialog(title: &str, message: &str, detail: &str) {
         // (NSAlert cannot run after tao latches [NSApp stop:] — see the .m).
         fn nucleus_tao_show_error_dialog(title: *const c_char, message: *const c_char);
     }
-    let message = message_with_summary(message, detail);
-    // Java strings may carry interior NULs; strip them so CString::new
-    // cannot fail.
-    let title = CString::new(title.replace('\0', "")).expect("NULs stripped");
-    let message = CString::new(message.replace('\0', "")).expect("NULs stripped");
+    // Java strings may carry interior NULs; strip them so neither the child
+    // argv (spawn refuses interior NULs) nor CString::new can fail.
+    let title = title.replace('\0', "");
+    let message = message.replace('\0', "");
+    let detail = detail.replace('\0', "");
+    // Primary path: the JXA NSAlert child. Blocks until dismissed, like the
+    // other platforms. `success()` is only false when the dialog could not
+    // run at all (osascript blocked by MDM policy, no WindowServer session,
+    // JXA exception) — Close and Copy+Close both exit 0.
+    let shown = std::process::Command::new("/usr/bin/osascript")
+        .args(["-l", "JavaScript", "-e", FATAL_ALERT_JXA, "--"])
+        .args([&title, &message, &detail])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if shown {
+        return;
+    }
+    // Fallback: the compact CFUserNotification alert — no scrollable view,
+    // so only the `toString()` summary fits after the sentence.
+    let message = message_with_summary(&message, &detail);
+    let title = CString::new(title).expect("NULs stripped");
+    let message = CString::new(message).expect("NULs stripped");
     unsafe { nucleus_tao_show_error_dialog(title.as_ptr(), message.as_ptr()) };
 }
 

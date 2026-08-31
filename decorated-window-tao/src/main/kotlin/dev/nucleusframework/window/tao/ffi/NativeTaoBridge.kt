@@ -252,15 +252,16 @@ internal object NativeTaoBridge {
 
     /**
      * Shows a blocking native error dialog — the no-AWT replacement for
-     * Compose Desktop's Swing default (#622). macOS
-     * (CFUserNotificationDisplayAlert: out-of-process, callable from any
-     * thread, no NSApp/run-loop dependency — safe before, during and after
-     * the Tao loop), Windows (task-modal MessageBoxW, callable from any
-     * thread) and Linux (modal GtkMessageDialog — GTK-main-thread only,
+     * Compose Desktop's Swing default (#622). macOS (NSAlert run by an
+     * out-of-process osascript child — our own NSApp is unusable after the
+     * Tao loop; falls back to a compact CFUserNotificationDisplayAlert when
+     * the child cannot run), Windows (task-modal MessageBoxW, callable from
+     * any thread) and Linux (modal GtkMessageDialog — GTK-main-thread only,
      * i.e. the thread that ran the Tao loop).
-     * [detail] is the full stack trace: Linux renders it in a scrollable
-     * monospace view with a Copy button; macOS and Windows keep the compact
-     * alert and show only its first `toString()` line after [message].
+     * [detail] is the full stack trace: macOS and Linux render it in a
+     * scrollable monospace view with a Copy button; Windows (and the macOS
+     * fallback) keeps the compact alert and shows only its first
+     * `toString()` line after [message].
      * Call it only outside tao callback frames — a modal pump inside one
      * re-enters tao's non-reentrant handler mutex.
      */
