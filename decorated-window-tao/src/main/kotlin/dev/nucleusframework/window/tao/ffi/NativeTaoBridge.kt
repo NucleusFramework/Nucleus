@@ -258,6 +258,9 @@ internal object NativeTaoBridge {
      * the Tao loop), Windows (task-modal MessageBoxW, callable from any
      * thread) and Linux (modal GtkMessageDialog — GTK-main-thread only,
      * i.e. the thread that ran the Tao loop).
+     * [detail] is the full stack trace: Linux renders it in a scrollable
+     * monospace view with a Copy button; macOS and Windows keep the compact
+     * alert and show only its first `toString()` line after [message].
      * Call it only outside tao callback frames — a modal pump inside one
      * re-enters tao's non-reentrant handler mutex.
      */
@@ -265,6 +268,7 @@ internal object NativeTaoBridge {
     external fun nativeShowErrorDialog(
         title: String,
         message: String,
+        detail: String,
     )
 
     /**

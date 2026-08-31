@@ -12,6 +12,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     _class: JClass,
     title: JString,
     message: JString,
+    detail: JString,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -21,11 +22,29 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         Ok(s) => s.into(),
         Err(_) => return,
     };
-    show_error_dialog(&title, &message);
+    let detail: String = match env.get_string(&detail) {
+        Ok(s) => s.into(),
+        Err(_) => return,
+    };
+    show_error_dialog(&title, &message, &detail);
+}
+
+/// `detail` is `Throwable.stackTraceToString()`: the throwable's `toString()`
+/// (possibly multi-line) followed by "\n\tat ..." frames. macOS and Windows
+/// keep their compact one-shot alert, so they show only the `toString()`
+/// part after the sentence — the frames would not fit a system alert.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn message_with_summary(message: &str, detail: &str) -> String {
+    let summary = detail.split("\n\tat ").next().unwrap_or("").trim_end();
+    if summary.is_empty() {
+        message.to_string()
+    } else {
+        format!("{message}\n\n{summary}")
+    }
 }
 
 #[cfg(target_os = "macos")]
-fn show_error_dialog(title: &str, message: &str) {
+fn show_error_dialog(title: &str, message: &str, detail: &str) {
     use std::ffi::CString;
     use std::os::raw::c_char;
     extern "C" {
@@ -34,6 +53,7 @@ fn show_error_dialog(title: &str, message: &str) {
         // (NSAlert cannot run after tao latches [NSApp stop:] — see the .m).
         fn nucleus_tao_show_error_dialog(title: *const c_char, message: *const c_char);
     }
+    let message = message_with_summary(message, detail);
     // Java strings may carry interior NULs; strip them so CString::new
     // cannot fail.
     let title = CString::new(title.replace('\0', "")).expect("NULs stripped");
@@ -42,11 +62,11 @@ fn show_error_dialog(title: &str, message: &str) {
 }
 
 #[cfg(target_os = "windows")]
-fn show_error_dialog(title: &str, message: &str) {
+fn show_error_dialog(title: &str, message: &str, detail: &str) {
     // MessageBoxW reads NUL-terminated wide strings, so an interior NUL from
     // Java would silently truncate — strip them like the macOS path does.
     let title = title.replace('\0', "");
-    let message = message.replace('\0', "");
+    let message = message_with_summary(message, detail).replace('\0', "");
     // Dedicated thread, same reason macOS goes out of process: the calling
     // thread just ran (and exited) the Tao event loop, and modal loops on it
     // return immediately — a leftover quit/thread message in its queue makes
@@ -80,7 +100,7 @@ fn show_error_dialog(title: &str, message: &str) {
 }
 
 #[cfg(target_os = "linux")]
-fn show_error_dialog(title: &str, message: &str) {
+fn show_error_dialog(title: &str, message: &str, detail: &str) {
     use gtk::prelude::*;
     // The caller is the thread that just ran (and exited) the Tao event loop
     // — the GTK main thread. GTK survives the loop exit: tao iterates
@@ -92,23 +112,73 @@ fn show_error_dialog(title: &str, message: &str) {
     if !gtk::is_initialized() && gtk::init().is_err() {
         return;
     }
+    // glib's &str → C-string conversion panics on interior NULs (Java strings
+    // may carry them) — strip like the macOS/Windows paths do.
+    let title = title.replace('\0', "");
+    let message = message.replace('\0', "");
+    let detail = detail.replace('\0', "");
     // No parent: every Tao window is already destroyed when the fatal path
-    // runs. Title goes into the bold primary line as well — a GtkMessageDialog
-    // shows no titlebar text on GNOME, so `set_title` alone would hide it.
+    // runs. The title goes only to the window title; the bold primary line is
+    // the short sentence — putting the title in both printed "Fatal Error"
+    // twice on WMs that draw dialog titlebars.
     let dialog = gtk::MessageDialog::new(
         None::<&gtk::Window>,
         gtk::DialogFlags::MODAL,
         gtk::MessageType::Error,
-        gtk::ButtonsType::Ok,
-        title,
+        gtk::ButtonsType::None,
+        &message,
     );
-    dialog.set_title(title);
-    dialog.set_secondary_text(Some(message));
+    dialog.set_title(&title);
+    // The stack trace goes in a bounded scrollable monospace view, not the
+    // secondary label — a Compose stack trace in the label used to size the
+    // dialog to the whole screen.
+    let buffer = gtk::TextBuffer::new(None::<&gtk::TextTagTable>);
+    buffer.set_text(&detail);
+    let view = gtk::TextView::with_buffer(&buffer);
+    view.set_editable(false);
+    view.set_cursor_visible(false);
+    view.set_monospace(true);
+    view.set_left_margin(8);
+    view.set_right_margin(8);
+    view.set_top_margin(8);
+    view.set_bottom_margin(8);
+    let scroll = gtk::ScrolledWindow::new(None::<&gtk::Adjustment>, None::<&gtk::Adjustment>);
+    scroll.set_policy(gtk::PolicyType::Automatic, gtk::PolicyType::Automatic);
+    scroll.set_shadow_type(gtk::ShadowType::In);
+    scroll.set_min_content_width(560);
+    scroll.set_min_content_height(160);
+    scroll.set_margin_start(12);
+    scroll.set_margin_end(12);
+    scroll.set_margin_bottom(6);
+    scroll.add(&view);
+    dialog.content_area().pack_start(&scroll, true, true, 0);
+    // MessageDialogs are non-resizable by default; a stack trace is worth
+    // enlarging for.
+    dialog.set_resizable(true);
+
+    let copy_response = gtk::ResponseType::Other(1);
+    dialog.add_button("_Copy", copy_response);
+    dialog.add_button("_Close", gtk::ResponseType::Close);
+    dialog.set_default_response(gtk::ResponseType::Close);
     // X11 only (no-op on Wayland): raise above the corpse of the app, same
     // intent as MB_SETFOREGROUND on Windows.
     dialog.set_keep_above(true);
-    // Blocks in a recursive main loop until OK / close / Escape.
-    dialog.run();
+    // `gtk_dialog_run` only shows the dialog itself, not children added after
+    // construction (the scroller).
+    dialog.show_all();
+    // Blocks in a recursive main loop until Close / titlebar close / Escape.
+    // Copy puts the stack trace on the clipboard and keeps the dialog open.
+    loop {
+        if dialog.run() != copy_response {
+            break;
+        }
+        let clipboard = gtk::Clipboard::get(&gtk::gdk::SELECTION_CLIPBOARD);
+        clipboard.set_text(&detail);
+        // Hand the contents over to the clipboard manager (if one runs): the
+        // process exits right after the dialog closes, and an unstored
+        // X11/Wayland selection dies with its owner.
+        clipboard.store();
+    }
     unsafe { dialog.destroy() };
     // Flush the destroy so the dialog leaves the screen even if a non-daemon
     // JVM thread delays process exit for a moment. Bounded: an always-ready
@@ -126,4 +196,4 @@ fn show_error_dialog(title: &str, message: &str) {
 // Other unixes (BSDs): still a silent no-op; the SEVERE log on the JVM side
 // is the only signal there (#622).
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-fn show_error_dialog(_title: &str, _message: &str) {}
+fn show_error_dialog(_title: &str, _message: &str, _detail: &str) {}
