@@ -27,4 +27,15 @@ class MsiSettingsTest {
         assertTrue(msi.perMachine)
         assertEquals(true, msi.explicitPerMachine)
     }
+
+    @Test
+    fun `installer options default to the electron-builder defaults`() {
+        val msi = msiSettings()
+        assertTrue(msi.oneClick)
+        assertTrue(msi.runAfterFinish)
+        assertTrue(msi.createDesktopShortcut)
+        assertTrue(msi.createStartMenuShortcut)
+        assertNull(msi.menuCategory)
+        assertNull(msi.shortcutName)
+    }
 }

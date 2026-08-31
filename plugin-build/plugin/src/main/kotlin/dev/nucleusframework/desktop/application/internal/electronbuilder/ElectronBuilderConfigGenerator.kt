@@ -277,7 +277,8 @@ internal class ElectronBuilderConfigGenerator {
         val height: Int,
     )
 
-    private fun generateWindowsConfig(
+    // internal (like generateLinuxConfig) so the rendered YAML can be asserted in unit tests
+    internal fun generateWindowsConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
@@ -312,12 +313,21 @@ internal class ElectronBuilderConfigGenerator {
                 generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
             }
             TargetFormat.Msi -> {
+                val msi = distributions.windows.msi
                 yaml.appendLine("msi:")
                 appendIfNotNull(yaml, "  upgradeCode", distributions.windows.upgradeUuid)
                 @Suppress("DEPRECATION")
-                val perMachine = distributions.windows.msi.explicitPerMachine
+                val perMachine = msi.explicitPerMachine
                     ?: !distributions.windows.perUserInstall
                 yaml.appendLine("  perMachine: $perMachine")
+                yaml.appendLine("  oneClick: ${msi.oneClick}")
+                yaml.appendLine("  runAfterFinish: ${msi.runAfterFinish}")
+                yaml.appendLine("  createDesktopShortcut: ${msi.createDesktopShortcut}")
+                yaml.appendLine("  createStartMenuShortcut: ${msi.createStartMenuShortcut}")
+                // windows.menuGroup is the jpackage-era name for the same concept, so it acts as
+                // the default here; without it the shortcut lands in the start menu root.
+                appendIfNotNull(yaml, "  menuCategory", msi.menuCategory ?: distributions.windows.menuGroup)
+                appendIfNotNull(yaml, "  shortcutName", msi.shortcutName)
             }
             TargetFormat.AppX -> generateAppXConfig(yaml, distributions.windows.appx)
             TargetFormat.Portable -> {
