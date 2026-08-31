@@ -521,8 +521,12 @@ internal class TaoComposeSceneHostWindows(
     private val activeTouches = LinkedHashMap<Long, ActiveTouch>()
 
     private fun registerTouchInput() {
+        // Touch runs user pointer-input code (clickable, drag) exactly like the
+        // mouse path, so it gets the same guard as the pointer wraps in
+        // DecoratedWindow; a rethrow unwinds into `EventDispatcher.guarded`,
+        // i.e. the fatal path, just like every other input entry.
         window.onTouchInput { phase, id, xFixed, yFixed, forceFixed ->
-            onTouchInput(phase, id, xFixed, yFixed, forceFixed)
+            exceptionHandler.catchExceptions { onTouchInput(phase, id, xFixed, yFixed, forceFixed) }
         }
     }
 

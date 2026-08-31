@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoModifierMask
@@ -919,60 +920,67 @@ internal class TaoComposeSceneHostLinux(
             ysFixed: LongArray,
             pressedMask: Long,
         ) {
-            val sc = scene ?: return
-            if (count <= 0) return
+            // Touch runs user pointer-input code exactly like the mouse path,
+            // but this bridge calls back outside `EventDispatcher.guarded`, so
+            // both of the mouse wire's layers are reproduced by the guard: the
+            // window's handler gets the first look, and a rethrow takes the
+            // fatal path instead of unwinding into the JNI callback frame.
+            guardBridgeCallback {
+                val sc = scene ?: return
+                if (count <= 0) return
 
-            // Single-finger press in the resize edge band starts a native resize
-            // drag — mirrors the mouse path in [onPointerButton]. The press is
-            // consumed (never forwarded to Compose) so the compositor owns the
-            // whole sequence, exactly like the mouse-driven resize. Positions are
-            // physical px (`/ TOUCH_POSITION_SCALE`), matching what
-            // [currentResizeDirection] expects. `begin_resize_drag` works during a
-            // touch grab the same way `begin_move_drag` does for title-bar touch
-            // drag (see the compositor pointer-grab note in [onNativeWindowDragStarted]).
-            if (eventType == TaoTouchEvent.PRESS && count == 1) {
-                val direction =
-                    currentResizeDirection(
-                        xsFixed[0] / TOUCH_POSITION_SCALE,
-                        ysFixed[0] / TOUCH_POSITION_SCALE,
-                        forTouch = true,
+                // Single-finger press in the resize edge band starts a native resize
+                // drag — mirrors the mouse path in [onPointerButton]. The press is
+                // consumed (never forwarded to Compose) so the compositor owns the
+                // whole sequence, exactly like the mouse-driven resize. Positions are
+                // physical px (`/ TOUCH_POSITION_SCALE`), matching what
+                // [currentResizeDirection] expects. `begin_resize_drag` works during a
+                // touch grab the same way `begin_move_drag` does for title-bar touch
+                // drag (see the compositor pointer-grab note in [onNativeWindowDragStarted]).
+                if (eventType == TaoTouchEvent.PRESS && count == 1) {
+                    val direction =
+                        currentResizeDirection(
+                            xsFixed[0] / TOUCH_POSITION_SCALE,
+                            ysFixed[0] / TOUCH_POSITION_SCALE,
+                            forTouch = true,
+                        )
+                    if (resizeDecoration.onLeftPress(direction)) {
+                        compositorDragActive = true
+                        return
+                    }
+                }
+
+                val pointers = ArrayList<ComposeScenePointer>(count)
+                for (i in 0 until count) {
+                    val pressed = (pressedMask and (1L shl i)) != 0L
+                    pointers.add(
+                        ComposeScenePointer(
+                            id = PointerId(ids[i]),
+                            position =
+                                Offset(
+                                    xsFixed[i] / TOUCH_POSITION_SCALE,
+                                    ysFixed[i] / TOUCH_POSITION_SCALE,
+                                ),
+                            pressed = pressed,
+                            type = PointerType.Touch,
+                        ),
                     )
-                if (resizeDecoration.onLeftPress(direction)) {
-                    compositorDragActive = true
-                    return
                 }
-            }
-
-            val pointers = ArrayList<ComposeScenePointer>(count)
-            for (i in 0 until count) {
-                val pressed = (pressedMask and (1L shl i)) != 0L
-                pointers.add(
-                    ComposeScenePointer(
-                        id = PointerId(ids[i]),
-                        position =
-                            Offset(
-                                xsFixed[i] / TOUCH_POSITION_SCALE,
-                                ysFixed[i] / TOUCH_POSITION_SCALE,
-                            ),
-                        pressed = pressed,
-                        type = PointerType.Touch,
-                    ),
+                val composeType =
+                    when (eventType) {
+                        TaoTouchEvent.PRESS -> PointerEventType.Press
+                        TaoTouchEvent.MOVE -> PointerEventType.Move
+                        TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> PointerEventType.Release
+                        else -> return
+                    }
+                sc.sendPointerEvent(
+                    eventType = composeType,
+                    pointers = pointers,
+                    keyboardModifiers = currentKeyboardModifiers,
                 )
-            }
-            val composeType =
-                when (eventType) {
-                    TaoTouchEvent.PRESS -> PointerEventType.Press
-                    TaoTouchEvent.MOVE -> PointerEventType.Move
-                    TaoTouchEvent.RELEASE, TaoTouchEvent.CANCEL -> PointerEventType.Release
-                    else -> return
+                if (eventType == TaoTouchEvent.CANCEL) {
+                    sc.cancelPointerInput()
                 }
-            sc.sendPointerEvent(
-                eventType = composeType,
-                pointers = pointers,
-                keyboardModifiers = currentKeyboardModifiers,
-            )
-            if (eventType == TaoTouchEvent.CANCEL) {
-                sc.cancelPointerInput()
             }
         }
 
@@ -984,7 +992,20 @@ internal class TaoComposeSceneHostLinux(
             yFixed: Long,
             valueFixed: Long,
         ) {
-            dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed)
+            guardBridgeCallback { dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed) }
+        }
+
+        // The native bridge invokes these callbacks directly from its JNI
+        // thread, outside `EventDispatcher.guarded`, so reproduce the mouse
+        // wire's two layers here: the window's handler first, then the fatal
+        // path for anything it rethrows.
+        @Suppress("TooGenericExceptionCaught") // a rethrowing handler may throw anything
+        private inline fun guardBridgeCallback(block: () -> Unit) {
+            try {
+                exceptionHandler.catchExceptions(block)
+            } catch (t: Throwable) {
+                TaoApplication.reportFatal(t)
+            }
         }
     }
 

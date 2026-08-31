@@ -30,7 +30,7 @@ import java.util.logging.Level
  */
 @ExperimentalComposeUiApi
 public fun interface WindowExceptionHandlerFactory {
-    /** Creates an exception handler for [window]. Handlers run on the Tao main thread. */
+    /** Creates an exception handler for [window]. Handlers are invoked on the thread the failure occurred on. */
     public fun exceptionHandler(window: TaoWindow): WindowExceptionHandler
 }
 
