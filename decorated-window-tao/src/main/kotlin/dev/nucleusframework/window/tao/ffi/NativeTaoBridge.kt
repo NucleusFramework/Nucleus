@@ -255,12 +255,13 @@ internal object NativeTaoBridge {
      * Compose Desktop's Swing default (#622). macOS (NSAlert run by an
      * out-of-process osascript child — our own NSApp is unusable after the
      * Tao loop; falls back to a compact CFUserNotificationDisplayAlert when
-     * the child cannot run), Windows (task-modal MessageBoxW, callable from
-     * any thread) and Linux (modal GtkMessageDialog — GTK-main-thread only,
-     * i.e. the thread that ran the Tao loop).
-     * [detail] is the full stack trace: macOS and Linux render it in a
-     * scrollable monospace view with a Copy button; Windows (and the macOS
-     * fallback) keeps the compact alert and shows only its first
+     * the child cannot run), Windows (in-memory DLGTEMPLATE dialog run on a
+     * fresh thread; falls back to a compact MessageBoxW when the dialog
+     * cannot be created) and Linux (modal GtkMessageDialog —
+     * GTK-main-thread only, i.e. the thread that ran the Tao loop).
+     * [detail] is the full stack trace: all three platforms render it in a
+     * scrollable monospace view with a Copy button; the macOS and Windows
+     * fallbacks keep the compact alert and show only its first
      * `toString()` line after [message].
      * Call it only outside tao callback frames — a modal pump inside one
      * re-enters tao's non-reentrant handler mutex.
