@@ -251,7 +251,13 @@ public fun ApplicationScope.DecoratedWindow(
                     resizable = resizable,
                     enabled = enabled,
                     focusable = focusable,
-                    alwaysOnTop = false,
+                    // The real initial value, not a hardcoded false (#631): the
+                    // reactive LaunchedEffect below only runs once the event
+                    // loop resumes, so an overlay created with the flag set
+                    // would otherwise show non-topmost first — and on Windows
+                    // the late async flag flip can lose the race against the
+                    // creation-time style rewrites (acrylic, skip-taskbar).
+                    alwaysOnTop = alwaysOnTop,
                     // Apply Maximized at builder time. Fullscreen still needs
                     // a post-creation toggle because tao's `WindowBuilder` does
                     // not expose `with_fullscreen` in the same way (it takes a
