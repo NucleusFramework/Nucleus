@@ -43,4 +43,12 @@ abstract class NucleusOptimizationSettings {
      * window is minimized.
      */
     var idleGc: Boolean? = null
+
+    /**
+     * Package and run the app with the current OpenJDK feature release,
+     * auto-downloaded and cached under `<gradle-user-home>/nucleus/jdk` like
+     * the GraalVM toolchain. An explicit [JvmApplication.javaHome] always
+     * wins. Does not change the Gradle compile JDK.
+     */
+    var lastJdk: Boolean? = null
 }

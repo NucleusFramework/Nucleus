@@ -39,8 +39,19 @@ internal open class JvmApplicationData
             set(value) {
                 customJavaHome = value
             }
+
+        internal val hasCustomJavaHome: Boolean
+            get() = customJavaHome != null
+
+        /**
+         * Lazy JDK home used by packaging / `run`. When [optLastJdk] is on
+         * this is a [NucleusJdkToolchainValueSource]; otherwise it reads
+         * [javaHome].
+         */
+        internal var javaHomeOverride: Provider<String>? = null
+
         val javaHomeProvider: Provider<String>
-            get() = providers.provider { javaHome }
+            get() = javaHomeOverride ?: providers.provider { javaHome }
         val args: MutableList<String> = ArrayList()
         val jvmArgs: MutableList<String> = ArrayList()
         var garbageCollector: GarbageCollector? = null

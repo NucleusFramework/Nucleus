@@ -80,6 +80,7 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 // todo: use workers
 internal fun JvmApplicationContext.configureJvmApplication() {
     applyNucleusOptimization(app)
+    applyNucleusOptimizationJdk(project, app)
 
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
@@ -662,7 +663,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? =
         if (currentOS == OS.MacOS && app.nativeDistributions.macOS.macOsSdkVersion != null) {
             registerPatchMacJvmTask(
-                javaHome = app.javaHome,
+                javaHome = app.javaHomeProvider,
                 minVersion = app.nativeDistributions.macOS.minimumSystemVersion ?: "10.13",
                 sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion!!,
             )
@@ -1135,11 +1136,9 @@ private fun JvmApplicationContext.configureRunTask(
     exec.dependsOn(prepareAppResources)
 
     exec.mainClass.set(app.mainClass)
-    exec.executable(javaExecutable(app.javaHome))
     if (currentOS == OS.MacOS) {
         val sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion
         if (sdkVersion != null && patchMacJvmTask != null) {
-            val javaHome = app.javaHome
             exec.dependsOn(patchMacJvmTask)
             // Route the fork through a vtool-patched copy of the JDK so AppKit
             // gates Liquid Glass on. `javaLauncher` is finalized before
@@ -1158,12 +1157,14 @@ private fun JvmApplicationContext.configureRunTask(
                 .asFile
             val patchedJavaHomeFile = patchedBinFile.parentFile.parentFile
             exec.javaLauncher.set(
-                ExternalJavaLauncher(
-                    javaBinary = patchedBinFile,
-                    javaHome = patchedJavaHomeFile,
-                    objects = project.objects,
-                    metadataJavaHome = java.io.File(javaHome),
-                ),
+                app.javaHomeProvider.map { home ->
+                    ExternalJavaLauncher(
+                        javaBinary = patchedBinFile,
+                        javaHome = patchedJavaHomeFile,
+                        objects = project.objects,
+                        metadataJavaHome = java.io.File(home),
+                    )
+                },
             )
             // `executable` isn't Provider-aware in Gradle 9, but it isn't
             // finalized before `doFirst` either — align it with the launcher
@@ -1171,7 +1172,11 @@ private fun JvmApplicationContext.configureRunTask(
             exec.doFirst {
                 (it as JavaExec).executable(patchedBinFile.absolutePath)
             }
+        } else {
+            configureRunJavaHome(exec)
         }
+    } else {
+        configureRunJavaHome(exec)
     }
     exec.jvmArgs =
         arrayListOf<String>().apply {
@@ -1308,8 +1313,24 @@ private fun sandboxingJvmArgs(resourcesPath: String): List<String> =
  * tasks of all build types since inputs (javaHome, SDK/min version) are
  * identical at the project level.
  */
+private fun JvmApplicationContext.configureRunJavaHome(exec: JavaExec) {
+    if (app.javaHomeOverride != null) {
+        exec.javaLauncher.set(
+            app.javaHomeProvider.map { home ->
+                ExternalJavaLauncher(
+                    javaBinary = java.io.File(javaExecutable(home)),
+                    javaHome = java.io.File(home),
+                    objects = project.objects,
+                )
+            },
+        )
+    } else {
+        exec.executable(javaExecutable(app.javaHome))
+    }
+}
+
 private fun JvmApplicationContext.registerPatchMacJvmTask(
-    javaHome: String,
+    javaHome: Provider<String>,
     minVersion: String,
     sdkVersion: String,
 ): TaskProvider<AbstractPatchMacJvmTask> {

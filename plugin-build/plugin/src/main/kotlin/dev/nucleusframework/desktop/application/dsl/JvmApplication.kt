@@ -45,14 +45,16 @@ abstract class JvmApplication {
     /**
      * Master switch for the desktop startup pack: Serial GC, compact heap
      * (`-Xms32m`, `-XX:MaxRAMPercentage=25`), a single JAR in the jpackage
-     * image, and idle GC (3s after last unfocus, immediately on minimize).
+     * image, idle GC (3s after last unfocus, immediately on minimize), and
+     * the current OpenJDK as the jpackage / jlink / `run` JDK (auto-downloaded,
+     * like the GraalVM toolchain).
      *
      * `true` turns on every knob still unset in the [nucleusOptimization]
-     * configure block. An explicit [garbageCollector] or `-Xms` /
+     * configure block. An explicit [garbageCollector], [javaHome], or `-Xms` /
      * `-XX:MaxRAMPercentage` in [jvmArgs] is left unchanged.
      *
      * Does not enable AOT; set [JvmApplicationDistributions.enableAotCache]
-     * separately.
+     * separately. Does not change the Gradle compile JDK.
      */
     abstract var nucleusOptimization: Boolean
 

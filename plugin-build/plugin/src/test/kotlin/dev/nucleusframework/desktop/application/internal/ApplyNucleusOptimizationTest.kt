@@ -1,9 +1,11 @@
 package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.GarbageCollector
+import org.gradle.api.Project
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -120,8 +122,59 @@ class ApplyNucleusOptimizationTest {
         assertFalse(app.optIdleGc)
     }
 
-    private fun applicationData(): JvmApplicationData {
+    @Test
+    fun `disabled does not provision a JDK`() {
         val project = ProjectBuilder.builder().build()
-        return project.objects.newInstance(JvmApplicationData::class.java)
+        val app = applicationData(project)
+        applyNucleusOptimizationJdk(project, app)
+        assertNull(app.javaHomeOverride)
+        assertFalse(app.optLastJdk)
     }
+
+    @Test
+    fun `master on provisions a lazy JDK home`() {
+        val project = ProjectBuilder.builder().build()
+        val app = applicationData(project)
+        app.nucleusOptimization = true
+        applyNucleusOptimizationJdk(project, app)
+        assertTrue(app.optLastJdk)
+        assertNotNull(app.javaHomeOverride)
+    }
+
+    @Test
+    fun `explicit javaHome wins over JDK provisioning`() {
+        val project = ProjectBuilder.builder().build()
+        val app = applicationData(project)
+        app.nucleusOptimization = true
+        app.javaHome = "/custom/jdk"
+        applyNucleusOptimizationJdk(project, app)
+        assertNull(app.javaHomeOverride)
+        assertEquals("/custom/jdk", app.javaHome)
+    }
+
+    @Test
+    fun `master on lastJdk off does not provision`() {
+        val project = ProjectBuilder.builder().build()
+        val app = applicationData(project)
+        app.nucleusOptimization = true
+        app.nucleusOptimizationSettings.lastJdk = false
+        applyNucleusOptimizationJdk(project, app)
+        assertFalse(app.optLastJdk)
+        assertNull(app.javaHomeOverride)
+    }
+
+    @Test
+    fun `only lastJdk provisions without touching JVM flags`() {
+        val project = ProjectBuilder.builder().build()
+        val app = applicationData(project)
+        app.nucleusOptimizationSettings.lastJdk = true
+        applyNucleusOptimization(app)
+        applyNucleusOptimizationJdk(project, app)
+        assertNull(app.garbageCollector)
+        assertTrue(app.jvmArgs.isEmpty())
+        assertNotNull(app.javaHomeOverride)
+    }
+
+    private fun applicationData(project: Project = ProjectBuilder.builder().build()): JvmApplicationData =
+        project.objects.newInstance(JvmApplicationData::class.java)
 }

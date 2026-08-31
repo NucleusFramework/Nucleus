@@ -12,6 +12,7 @@ import dev.nucleusframework.internal.javaSourceSets
 import dev.nucleusframework.internal.mppExt
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.Target
+import dev.nucleusframework.internal.utils.currentArch
 import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.jdkArch
 import dev.nucleusframework.internal.utils.joinDashLowercaseNonEmpty
@@ -50,8 +51,19 @@ internal data class JvmApplicationContext(
         runtimeFiles.configureUsageBy(this, fn)
     }
 
-    /** Architecture of the configured JDK (may differ from the Gradle daemon's arch when cross-building). */
-    val targetArch by lazy { jdkArch(java.io.File(app.javaHome)) }
+    /**
+     * Architecture of the configured JDK (may differ from the Gradle daemon's
+     * arch when cross-building). The auto-downloaded OpenJDK 27 matches the
+     * host, so we must not realize [JvmApplicationData.javaHomeOverride] here
+     * — that would download the JDK at configuration time.
+     */
+    val targetArch by lazy {
+        if (app.javaHomeOverride != null) {
+            currentArch
+        } else {
+            jdkArch(java.io.File(app.javaHome))
+        }
+    }
 
     /** Target combining the current OS with the configured JDK's architecture. */
     val targetTarget by lazy { Target(currentOS, targetArch) }
