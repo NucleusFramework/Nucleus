@@ -44,7 +44,8 @@ abstract class JvmApplication {
 
     /**
      * Opt-in desktop startup pack: Serial GC, `-Xms32m`, `-XX:MaxRAMPercentage=25`,
-     * and a single JAR in the jpackage image.
+     * a single JAR in the jpackage image, and idle GC (3s after the last window
+     * loses focus, immediately when a window is minimized).
      *
      * When ProGuard is enabled for a build type, that JAR is produced with
      * [ProguardSettings.joinOutputJars]. Otherwise the runtime JARs are flattened

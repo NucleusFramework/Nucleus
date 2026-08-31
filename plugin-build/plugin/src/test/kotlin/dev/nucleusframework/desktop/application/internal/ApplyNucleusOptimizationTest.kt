@@ -22,7 +22,10 @@ class ApplyNucleusOptimizationTest {
         app.nucleusOptimization = true
         applyNucleusOptimization(app)
         assertEquals(GarbageCollector.SERIAL, app.garbageCollector)
-        assertEquals(listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE), app.jvmArgs.toList())
+        assertEquals(
+            listOf(OPTIMIZED_XMS, OPTIMIZED_MAX_RAM_PERCENTAGE, OPTIMIZED_RUNTIME_FLAG),
+            app.jvmArgs.toList(),
+        )
     }
 
     @Test
@@ -34,7 +37,20 @@ class ApplyNucleusOptimizationTest {
         app.jvmArgs.add("-XX:MaxRAMPercentage=40")
         applyNucleusOptimization(app)
         assertEquals(GarbageCollector.G1, app.garbageCollector)
-        assertEquals(listOf("-Xms64m", "-XX:MaxRAMPercentage=40"), app.jvmArgs.toList())
+        assertEquals(
+            listOf("-Xms64m", "-XX:MaxRAMPercentage=40", OPTIMIZED_RUNTIME_FLAG),
+            app.jvmArgs.toList(),
+        )
+    }
+
+    @Test
+    fun `enabled does not duplicate an existing runtime flag`() {
+        val app = applicationData()
+        app.nucleusOptimization = true
+        app.jvmArgs.add("-Dnucleus.optimization=false")
+        applyNucleusOptimization(app)
+        assertEquals(1, app.jvmArgs.count { it.startsWith("-Dnucleus.optimization=") })
+        assertTrue(app.jvmArgs.contains("-Dnucleus.optimization=false"))
     }
 
     private fun applicationData(): JvmApplicationData {

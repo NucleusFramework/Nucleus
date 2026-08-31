@@ -79,6 +79,7 @@ val nativePackageVersion = releaseVersion.substringBefore("-")
 
 nucleus.application {
     mainClass = "com.example.demo.MainKt"
+    nucleusOptimization = true
 
     buildTypes {
         release {
