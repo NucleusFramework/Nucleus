@@ -595,9 +595,17 @@ internal class TaoSceneTestScope(
     // ── Pixels ──────────────────────────────────────────────────────────────
 
     /** Rasterizes the last recorded frame (CPU) and returns it as a Skia bitmap. */
-    fun renderToBitmap(clearColor: Int = COLOR_WHITE): Bitmap {
+    fun renderToBitmap(
+        clearColor: Int = COLOR_WHITE,
+        surfaceProps: org.jetbrains.skia.SurfaceProps? = null,
+    ): Bitmap {
         val picture = lastPicture ?: frame()
-        val surface = Surface.makeRasterN32Premul(width, height)
+        val surface =
+            Surface.makeRaster(
+                ImageInfo.makeN32Premul(width, height),
+                0,
+                surfaceProps,
+            )
         surface.canvas.clear(clearColor)
         surface.canvas.drawPicture(picture)
         val bitmap = Bitmap()

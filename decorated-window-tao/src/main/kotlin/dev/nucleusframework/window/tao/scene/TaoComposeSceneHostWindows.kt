@@ -57,15 +57,11 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.skia.BackendRenderTarget
-import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.FramebufferFormat
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.PathBuilder
 import org.jetbrains.skia.Rect
-import org.jetbrains.skia.Surface
-import org.jetbrains.skia.SurfaceColorFormat
-import org.jetbrains.skia.SurfaceOrigin
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import kotlin.coroutines.CoroutineContext
@@ -1253,14 +1249,13 @@ internal class TaoComposeSceneHostWindows(
                 fbId = 0,
                 fbFormat = FramebufferFormat.GR_GL_RGBA8,
             )
+        // Mica/Acrylic backdrops arm transparentBackgroundState at runtime and
+        // the clear becomes a translucent tint over the DWM material — the
+        // surface must drop LCD SurfaceProps then too, not only for
+        // creation-time transparent windows. Re-evaluated every frame since
+        // the surface is recreated per frame.
         val surface =
-            Surface.makeFromBackendRenderTarget(
-                context = ctx,
-                rt = rt,
-                origin = SurfaceOrigin.BOTTOM_LEFT,
-                colorFormat = SurfaceColorFormat.RGBA_8888,
-                colorSpace = ColorSpace.sRGB,
-            ) ?: run {
+            makeTaoGlSurface(ctx, rt, fullyTransparent || transparentBackgroundState.value) ?: run {
                 rt.close()
                 return
             }
@@ -1751,6 +1746,10 @@ internal class TaoComposeSceneHostWindows(
                 heightPx = this@TaoComposeSceneHostWindows.heightPx,
                 directContext = ctx,
                 clearColorArgb = 0,
+                // The blending overlay is unconditionally a per-pixel-alpha
+                // DComp swapchain (DXGI_ALPHA_MODE_PREMULTIPLIED) regardless of
+                // the window's own transparency — no LCD SurfaceProps.
+                windowTransparent = true,
                 present = { NativeTaoWindowsOverlayBridge.nativeSwapBuffers(overlayHandle) },
             ) { canvas, nanoTime ->
                 // Clip to the union of NativeView rects — SetWindowRgn

@@ -480,6 +480,9 @@ internal class TaoPopupSceneLayerLinux(
             heightPx = heightPx,
             directContext = ctx,
             clearColorArgb = 0x00000000,
+            // Per-pixel-alpha popup surface (no-op on Linux today, but the
+            // alpha mode must be stated — see renderGlFrame).
+            windowTransparent = true,
             present = {
                 if (frame != IntRect.Zero) NativeTaoEglBridge.nativePresent(attachment)
             },

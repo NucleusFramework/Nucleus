@@ -13,6 +13,8 @@ import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
+import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
+import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -75,6 +77,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
             TitleBarHitTestTest::class.java,
+            LcdTextTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */
@@ -105,6 +108,8 @@ class TaoSceneTestBatteryDriftTest {
                 "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
             dev.nucleusframework.window.ChromeLogicTest::class.java to
                 "unit tests for chrome helpers; no ComposeScene",
+            LcdTextCaptureTest::class.java to
+                "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =

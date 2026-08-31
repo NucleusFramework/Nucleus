@@ -1938,3 +1938,46 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWin
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+#ifndef SPI_GETFONTSMOOTHINGTYPE
+#define SPI_GETFONTSMOOTHINGTYPE 0x200A
+#endif
+#ifndef FE_FONTSMOOTHINGCLEARTYPE
+#define FE_FONTSMOOTHINGCLEARTYPE 0x0002
+#endif
+#ifndef SPI_GETFONTSMOOTHINGORIENTATION
+#define SPI_GETFONTSMOOTHINGORIENTATION 0x2012
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONBGR
+#define FE_FONTSMOOTHINGORIENTATIONBGR 0x0000
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONRGB
+#define FE_FONTSMOOTHINGORIENTATIONRGB 0x0001
+#endif
+
+/* 0 = grayscale / unknown, 1 = RGB_H, 2 = BGR_H. Used by Tao LCD text. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSmoothingPixelGeometry(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    BOOL smoothing = FALSE;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smoothing, 0) || !smoothing) {
+        return 0;
+    }
+    UINT type = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) ||
+        type != FE_FONTSMOOTHINGCLEARTYPE) {
+        return 0;
+    }
+    UINT orientation = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0)) {
+        /* Unknown stripe order: degrade to grayscale, never assume RGB —
+         * a wrong guess on a BGR panel inverts every fringe. */
+        return 0;
+    }
+    if (orientation == FE_FONTSMOOTHINGORIENTATIONBGR) {
+        return 2;
+    }
+    return 1;
+}
+

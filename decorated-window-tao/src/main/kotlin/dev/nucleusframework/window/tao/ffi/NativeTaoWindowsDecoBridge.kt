@@ -306,4 +306,16 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * Windows ClearType pixel geometry for Skia LCD text.
+     *
+     * `0` = font smoothing off or not ClearType, `1` = RGB_H, `2` = BGR_H.
+     */
+    @JvmStatic
+    external fun nativeFontSmoothingPixelGeometry(): Int
+
+    const val FONT_SMOOTHING_UNKNOWN: Int = 0
+    const val FONT_SMOOTHING_RGB: Int = 1
+    const val FONT_SMOOTHING_BGR: Int = 2
 }
