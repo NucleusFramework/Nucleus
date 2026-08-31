@@ -13,11 +13,11 @@ import java.util.IdentityHashMap
 import java.util.logging.Logger
 
 /**
- * Runtime side of `nucleus.application { nucleusOptimization = true }`.
- * Keep the property name in sync with the plugin's `NUCLEUS_OPTIMIZATION_PROPERTY`.
+ * Runtime side of the `nucleusOptimization { idleGc }` knob.
+ * Keep the property name in sync with the plugin's `NUCLEUS_IDLE_GC_PROPERTY`.
  */
 internal object NucleusOptimization {
-    const val PROPERTY: String = "nucleus.optimization"
+    const val PROPERTY: String = "nucleus.optimization.idleGc"
 
     val isEnabled: Boolean
         get() = System.getProperty(PROPERTY) == "true"

@@ -43,18 +43,31 @@ abstract class JvmApplication {
     abstract var garbageCollector: GarbageCollector?
 
     /**
-     * Opt-in desktop startup pack: Serial GC, `-Xms32m`, `-XX:MaxRAMPercentage=25`,
-     * a single JAR in the jpackage image, and idle GC (3s after the last window
-     * loses focus, immediately when a window is minimized).
+     * Master switch for the desktop startup pack: Serial GC, compact heap
+     * (`-Xms32m`, `-XX:MaxRAMPercentage=25`), a single JAR in the jpackage
+     * image, and idle GC (3s after last unfocus, immediately on minimize).
      *
-     * When ProGuard is enabled for a build type, that JAR is produced with
-     * [ProguardSettings.joinOutputJars]. Otherwise the runtime JARs are flattened
-     * with the existing uber-jar task. An explicit [garbageCollector] or `-Xms` /
+     * `true` turns on every knob still unset in the [nucleusOptimization]
+     * configure block. An explicit [garbageCollector] or `-Xms` /
      * `-XX:MaxRAMPercentage` in [jvmArgs] is left unchanged.
      *
-     * Does not enable AOT; set [JvmApplicationDistributions.enableAotCache] separately.
+     * Does not enable AOT; set [JvmApplicationDistributions.enableAotCache]
+     * separately.
      */
     abstract var nucleusOptimization: Boolean
+
+    /**
+     * Per-knob overrides for [nucleusOptimization]. `null` follows the master
+     * boolean; `true` / `false` force that piece on or off.
+     *
+     * ```
+     * nucleusOptimization = true
+     * nucleusOptimization { idleGc = false }
+     *
+     * nucleusOptimization { singleJar = true }
+     * ```
+     */
+    abstract fun nucleusOptimization(fn: Action<NucleusOptimizationSettings>)
 
     abstract val nativeDistributions: JvmApplicationDistributions
 

@@ -763,7 +763,7 @@ private fun JvmApplicationContext.configureProguardTask(
 
         joinOutputJars.set(
             settings.joinOutputJars.map { enabled ->
-                enabled || app.nucleusOptimization
+                enabled || app.optSingleJar
             },
         )
 
@@ -896,7 +896,7 @@ private fun JvmApplicationContext.configurePackageTask(
             packageTask.mangleJarFilesNames.set(false)
             packageTask.packageFromUberJar.set(runProguard.flatMap { it.joinOutputJars })
         }
-        app.nucleusOptimization && flattenJars != null -> {
+        app.optSingleJar && flattenJars != null -> {
             packageTask.dependsOn(flattenJars)
             val flattened = flattenJars.flatMap { it.flattenedJar }
             packageTask.files.from(flattened)

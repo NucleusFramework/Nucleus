@@ -10,6 +10,7 @@ import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplication
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
+import dev.nucleusframework.desktop.application.dsl.NucleusOptimizationSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.internal.utils.new
 import dev.nucleusframework.desktop.application.dsl.AdditionalLauncher
@@ -78,6 +79,10 @@ internal open class JvmApplicationInternal
         final override var garbageCollector: GarbageCollector? by data::garbageCollector
 
         final override var nucleusOptimization: Boolean by data::nucleusOptimization
+
+        final override fun nucleusOptimization(fn: Action<NucleusOptimizationSettings>) {
+            fn.execute(data.nucleusOptimizationSettings)
+        }
 
         final override val nativeDistributions: JvmApplicationDistributions by data::nativeDistributions
 
