@@ -108,7 +108,8 @@ public object TaoApplication {
         if (fatalDialogShown.compareAndSet(false, true)) {
             showNativeErrorDialog(
                 title = "Fatal Error",
-                message = "The application encountered an unrecoverable error and will close.\n\n$t",
+                message = "The application encountered an unrecoverable error and will close.",
+                detail = t.stackTraceToString(),
             )
         }
         throw t
@@ -334,11 +335,14 @@ internal val TaoNonFatalCoroutineExceptionHandler: CoroutineExceptionHandler =
  * native library is available; no-ops otherwise (the SEVERE log is the
  * fallback). Never throws — this runs on the fatal path, where a secondary
  * failure must not mask the clean shutdown. macOS, Windows and Linux (#622).
+ * [detail] carries the full stack trace — see
+ * [NativeTaoBridge.nativeShowErrorDialog] for the per-platform rendering.
  */
 @Suppress("TooGenericExceptionCaught")
 internal fun showNativeErrorDialog(
     title: String,
     message: String,
+    detail: String,
 ) {
     // `nucleus.tao.fatalErrorDialog=false` is the escape hatch for unattended
     // runs (CI, AOT training): a blocking modal nobody can dismiss would hang
@@ -349,7 +353,7 @@ internal fun showNativeErrorDialog(
         return
     }
     try {
-        NativeTaoBridge.nativeShowErrorDialog(title, message)
+        NativeTaoBridge.nativeShowErrorDialog(title, message, detail)
     } catch (t: Throwable) {
         Logger
             .getLogger(TaoApplication::class.java.name)

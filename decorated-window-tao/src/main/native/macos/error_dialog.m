@@ -1,13 +1,17 @@
 // error_dialog.m
 //
-// Fatal-error dialog (issue #622) — the no-AWT replacement for Compose
-// Desktop's Swing default. Shown AFTER the Tao event loop has exited:
-// showing a modal from inside a tao callback frame deadlocks (tao's
-// Handler.callback std::Mutex is not re-entrant, and a Dock-reopen or
-// deep-link delivered by the modal's event pump re-locks it on the same
-// thread), and post-loop NSApp is left in a stopped state (tao latches
-// [NSApp stop:] on exit, which makes a subsequent -[NSAlert runModal]
-// session return immediately).
+// Fatal-error dialog (issue #622), FALLBACK path — the primary macOS dialog
+// is an NSAlert with a scrollable stack trace run by an osascript child
+// (see dialog.rs); this compact alert only runs when that child cannot
+// (osascript blocked by MDM policy, spawn failure, JXA error).
+//
+// Both are out of process for the same reason: the dialog is shown AFTER
+// the Tao event loop has exited — showing a modal from inside a tao
+// callback frame deadlocks (tao's Handler.callback std::Mutex is not
+// re-entrant, and a Dock-reopen or deep-link delivered by the modal's event
+// pump re-locks it on the same thread), and post-loop NSApp is left in a
+// stopped state (tao latches [NSApp stop:] on exit, which makes a
+// subsequent -[NSAlert runModal] session return immediately).
 //
 // CFUserNotificationDisplayAlert is the one AppKit-free primitive built for
 // exactly this: rendered out of process by the user notification server,
