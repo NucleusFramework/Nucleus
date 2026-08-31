@@ -873,9 +873,20 @@ public class TaoWindow internal constructor(
         if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetStartupBackgroundEraseEnabled(hwnd, enabled)
     }
 
+    /**
+     * Invoked synchronously on every [show] call, before the native visibility
+     * flip. The Windows scene host uses it to force the next present: DWM does
+     * not reliably retain a pre-show swap once ShowWindow composites the
+     * window, so the redraw that follows a show must reach eglSwapBuffers even
+     * when the scene content itself is unchanged (clean frames skip the
+     * present otherwise — see TaoSceneBundle.visualDirty).
+     */
+    internal var showHook: (() -> Unit)? = null
+
     public fun show() {
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
+        showHook?.invoke()
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see

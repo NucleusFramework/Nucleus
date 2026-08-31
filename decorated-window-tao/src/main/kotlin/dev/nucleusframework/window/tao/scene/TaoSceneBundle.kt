@@ -61,7 +61,27 @@ internal class TaoSceneBundle(
     private val exceptionRouter: TaoSceneExceptionRouter,
     /** The owner's coalescing frame scheduler; re-armed after a swallowed frame failure. */
     private val requestFrame: () -> Unit,
+    /** Shared with the scene's invalidation callbacks — see [visualDirty]. */
+    visualDirty: AtomicBoolean,
 ) : AutoCloseable {
+    /**
+     * Set by the scene's `invalidateLayout` / `invalidateDraw` callbacks — i.e.
+     * whenever the content actually needs a new layout/draw pass — and cleared
+     * by the host once the frame is presented.
+     *
+     * Exists to tell a *visual* frame apart from a recomposer-only tick: any
+     * snapshot write anywhere in the process (an animation in a sibling
+     * window, a ViewModel update) wakes every scene's [Recomposer] through the
+     * global apply observer, and the [FrameRecomposer]'s `invalidate` callback
+     * schedules a frame before knowing whether this scene is affected. Such a
+     * frame recomposes to nothing — no layout/draw invalidation fires — and a
+     * host can then skip the present. Presenting those empty frames is what
+     * made every visible window re-present at the animating window's rate,
+     * each present parking the shared event-loop thread on VSync (LapseCompose
+     * dashboard lag while the overlay window was visible).
+     */
+    val visualDirty: AtomicBoolean = visualDirty
+
     /**
      * Catches what user code throws in this scene: [render] covers layout and
      * draw, the [TaoSceneExceptionRouter] in the scene's coroutine context
@@ -170,6 +190,8 @@ internal fun canvasLayersSceneBundle(
     val frameRecomposer = FrameRecomposer(sceneContext) { requestFrame() }
     val guardScope = CoroutineScope(sceneContext + SupervisorJob())
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
+    // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
+    val visualDirty = AtomicBoolean(true)
     val scene =
         CanvasLayersComposeScene(
             frameRecomposer = frameRecomposer,
@@ -177,8 +199,14 @@ internal fun canvasLayersSceneBundle(
             layoutDirection = layoutDirection,
             size = size,
             platformContext = platformContext.withEdtGuard(edtGuard),
-            invalidateLayout = { renderingScope.onSceneInvalidation() },
-            invalidateDraw = { renderingScope.onSceneInvalidation() },
+            invalidateLayout = {
+                visualDirty.set(true)
+                renderingScope.onSceneInvalidation()
+            },
+            invalidateDraw = {
+                visualDirty.set(true)
+                renderingScope.onSceneInvalidation()
+            },
         )
     return TaoSceneBundle(
         scene,
@@ -189,6 +217,7 @@ internal fun canvasLayersSceneBundle(
         closed,
         exceptionRouter,
         requestFrame,
+        visualDirty,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
@@ -213,6 +242,8 @@ internal fun platformLayersSceneBundle(
     val frameRecomposer = FrameRecomposer(sceneContext) { requestFrame() }
     val guardScope = CoroutineScope(sceneContext + SupervisorJob())
     val edtGuard = RectManagerEdtGuard(guardScope, requestFrame)
+    // Starts true: the first frame must always present. See [TaoSceneBundle.visualDirty].
+    val visualDirty = AtomicBoolean(true)
     val scene =
         PlatformLayersComposeScene(
             frameRecomposer = frameRecomposer,
@@ -224,8 +255,14 @@ internal fun platformLayersSceneBundle(
                     override val platformContext: PlatformContext =
                         composeSceneContext.platformContext.withEdtGuard(edtGuard)
                 },
-            invalidateLayout = { renderingScope.onSceneInvalidation() },
-            invalidateDraw = { renderingScope.onSceneInvalidation() },
+            invalidateLayout = {
+                visualDirty.set(true)
+                renderingScope.onSceneInvalidation()
+            },
+            invalidateDraw = {
+                visualDirty.set(true)
+                renderingScope.onSceneInvalidation()
+            },
         )
     return TaoSceneBundle(
         scene,
@@ -236,6 +273,7 @@ internal fun platformLayersSceneBundle(
         closed,
         exceptionRouter,
         requestFrame,
+        visualDirty,
     ).also { bundle -> exceptionRouter.sceneIsAlive = { bundle.isRecomposerAlive } }
 }
 
