@@ -42,6 +42,19 @@ abstract class JvmApplication {
      */
     abstract var garbageCollector: GarbageCollector?
 
+    /**
+     * Opt-in desktop startup pack: Serial GC, `-Xms32m`, `-XX:MaxRAMPercentage=25`,
+     * and a single JAR in the jpackage image.
+     *
+     * When ProGuard is enabled for a build type, that JAR is produced with
+     * [ProguardSettings.joinOutputJars]. Otherwise the runtime JARs are flattened
+     * with the existing uber-jar task. An explicit [garbageCollector] or `-Xms` /
+     * `-XX:MaxRAMPercentage` in [jvmArgs] is left unchanged.
+     *
+     * Does not enable AOT; set [JvmApplicationDistributions.enableAotCache] separately.
+     */
+    abstract var nucleusOptimization: Boolean
+
     abstract val nativeDistributions: JvmApplicationDistributions
 
     abstract fun nativeDistributions(fn: Action<JvmApplicationDistributions>)

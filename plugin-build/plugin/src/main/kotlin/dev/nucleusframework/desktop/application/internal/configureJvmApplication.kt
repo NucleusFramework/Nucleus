@@ -79,6 +79,8 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 // todo: file associations
 // todo: use workers
 internal fun JvmApplicationContext.configureJvmApplication() {
+    applyNucleusOptimization(app)
+
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
     }
@@ -380,6 +382,14 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
+    val flattenJars =
+        tasks.register<AbstractJarsFlattenTask>(
+            taskNameAction = "flatten",
+            taskNameObject = "Jars",
+        ) {
+            configureFlattenJars(this, runProguard)
+        }
+
     // === Non-sandboxed pipeline (direct distribution formats: DMG, ZIP, NSIS, etc.) ===
 
     val createDistributable =
@@ -395,6 +405,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 checkRuntime = commonTasks.checkRuntime,
                 unpackDefaultResources = commonTasks.unpackDefaultResources,
                 runProguard = runProguard,
+                flattenJars = flattenJars,
                 patchCaCertificates = commonTasks.patchCaCertificates,
                 sandboxed = false,
             )
@@ -479,6 +490,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         checkRuntime = commonTasks.checkRuntime,
                         unpackDefaultResources = commonTasks.unpackDefaultResources,
                         runProguard = runProguard,
+                        flattenJars = flattenJars,
                         stripNativeLibs = stripNativeLibsFromJars,
                         patchCaCertificates = commonTasks.patchCaCertificates,
                         sandboxed = true,
@@ -595,14 +607,6 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             }
         }
     }
-
-    val flattenJars =
-        tasks.register<AbstractJarsFlattenTask>(
-            taskNameAction = "flatten",
-            taskNameObject = "Jars",
-        ) {
-            configureFlattenJars(this, runProguard)
-        }
 
     val packageUberJarForCurrentOS =
         tasks.register<Jar>(
@@ -757,7 +761,11 @@ private fun JvmApplicationContext.configureProguardTask(
         dontobfuscate.set(settings.obfuscate.map { !it })
         dontoptimize.set(settings.optimize.map { !it })
 
-        joinOutputJars.set(settings.joinOutputJars)
+        joinOutputJars.set(
+            settings.joinOutputJars.map { enabled ->
+                enabled || app.nucleusOptimization
+            },
+        )
 
         dependsOn(unpackDefaultResources)
         defaultComposeRulesFile.set(unpackDefaultResources.flatMap { it.resources.defaultComposeProguardRules })
@@ -798,6 +806,7 @@ private fun JvmApplicationContext.configurePackageTask(
     checkRuntime: TaskProvider<AbstractCheckNativeDistributionRuntime>? = null,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     runProguard: Provider<AbstractProguardTask>? = null,
+    flattenJars: TaskProvider<AbstractJarsFlattenTask>? = null,
     stripNativeLibs: TaskProvider<AbstractStripNativeLibsFromJarsTask>? = null,
     patchCaCertificates: TaskProvider<AbstractPatchCaCertificatesTask>? = null,
     sandboxed: Boolean = false,
@@ -886,6 +895,14 @@ private fun JvmApplicationContext.configurePackageTask(
             packageTask.launcherMainJar.set(runProguard.flatMap { it.mainJarInDestinationDir })
             packageTask.mangleJarFilesNames.set(false)
             packageTask.packageFromUberJar.set(runProguard.flatMap { it.joinOutputJars })
+        }
+        app.nucleusOptimization && flattenJars != null -> {
+            packageTask.dependsOn(flattenJars)
+            val flattened = flattenJars.flatMap { it.flattenedJar }
+            packageTask.files.from(flattened)
+            packageTask.launcherMainJar.set(flattened)
+            packageTask.mangleJarFilesNames.set(false)
+            packageTask.packageFromUberJar.set(true)
         }
         else -> {
             packageTask.useAppRuntimeFiles { (runtimeJars, mainJar) ->
