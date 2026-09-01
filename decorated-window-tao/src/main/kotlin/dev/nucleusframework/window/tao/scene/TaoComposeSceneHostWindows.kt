@@ -315,6 +315,10 @@ internal class TaoComposeSceneHostWindows(
         hwnd = NativeTaoBridge.nativeHwndHandle(window.handle)
         require(hwnd != 0L) { "HWND unavailable; window not yet realised" }
 
+        // The swap after a show() must always happen, clean scene or not —
+        // see [forcePresentOnce].
+        window.showHook = { forcePresentOnce = true }
+
         // Install custom decoration (WndProc subclass + DwmExtendFrameIntoClientArea).
         // Title-bar height is set later — the value the TitleBar composable publishes
         // via SideEffect arrives after first composition.
@@ -1173,6 +1177,22 @@ internal class TaoComposeSceneHostWindows(
         }
     }
 
+    /**
+     * One-shot present override, armed by [TaoWindow.showHook]: the redraw
+     * following a show must swap even when the scene is clean, because DWM
+     * does not reliably retain a pre-show present once ShowWindow composites
+     * the window (see the matching re-request in event_loop.rs).
+     */
+    private var forcePresentOnce = true
+
+    /**
+     * The clear colour of the last presented frame. The resolved clear
+     * (backdrop tint / transparency / themed background) is read outside the
+     * composition, so a change never raises a scene invalidation — compare it
+     * here so a tint or transparency flip still reaches the screen.
+     */
+    private var lastPresentedClearArgb: Int? = null
+
     fun onRedrawRequested() {
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
@@ -1196,6 +1216,7 @@ internal class TaoComposeSceneHostWindows(
         // present atomic — no exposed-strip black edge (the reason the old
         // onResized painted synchronously). resetGLAll after nativeResize is
         // unnecessary: the ES context/surface stay bound on this thread.
+        val resizeApplied = pendingResizeApply
         if (pendingResizeApply) {
             sc.size = IntSize(widthPx, heightPx)
             updateWindowInfoSize()
@@ -1260,6 +1281,13 @@ internal class TaoComposeSceneHostWindows(
                 return
             }
 
+        // Sampled before the render (and OR-ed with the post-render value
+        // below): an invalidation raised by this frame's own recompose/layout
+        // still counts as visual, while a recomposer-only tick — the global
+        // snapshot wake caused by a state write in ANOTHER window — leaves the
+        // flag untouched. See [TaoSceneBundle.visualDirty].
+        val dirtyBeforeRender = bundle.visualDirty.getAndSet(false)
+        val clearArgb = resolveClientClearArgb()
         try {
             // Clear to the resolved title-bar background (pushed by `TitleBar`
             // via [LocalRequestedClearColor]) so a Compose region without an
@@ -1272,7 +1300,7 @@ internal class TaoComposeSceneHostWindows(
             // Fully transparent without a backdrop: use the resolved clear
             // colour (alpha-0 by default, or a semi-transparent WindowBackground).
             // Opaque windows: themed clear as usual.
-            surface.canvas.clear(resolveClientClearArgb())
+            surface.canvas.clear(clearArgb)
             bundle.render(surface.canvas, now)
 
             // `flushAndSubmit` issues the glFlush that commits the frame to
@@ -1327,10 +1355,35 @@ internal class TaoComposeSceneHostWindows(
             hostContextDirtied = true
         }
 
-        // Present inline. nativePresent defensively re-binds the host's
-        // window surface first (a popup renderer may have left its pbuffer
-        // current) and eglSwapBuffers paces on the display refresh.
-        NativeTaoGlBridge.nativePresent(attachmentHandle)
+        // Present inline — but only when the frame carries visual changes.
+        // A clean frame (recomposer tick with no resulting layout/draw
+        // invalidation) skips eglSwapBuffers entirely: the swapchain already
+        // holds identical content, and the VSync-paced swap would park this
+        // shared event-loop thread until the next VBlank. With several
+        // visible windows, presenting those clean frames made every window
+        // re-present at the animating window's rate, serially blocking a
+        // VBlank each — the whole app then crawled (multi-window lag).
+        // Presents that must happen regardless of scene dirtiness:
+        //  - a size/scale apply (the parent HWND already changed geometry);
+        //  - the OS modal resize/move loop (every WM_SIZE must swap, #476);
+        //  - the first swap after show() (DWM drops pre-show presents);
+        //  - a resolved clear-colour change (read outside the composition,
+        //    so it never raises a scene invalidation).
+        // nativePresent defensively re-binds the host's window surface first
+        // (a popup renderer may have left its pbuffer current) and
+        // eglSwapBuffers paces on the display refresh.
+        val visualFrame = dirtyBeforeRender || bundle.visualDirty.get()
+        val mustPresent =
+            visualFrame ||
+                resizeApplied ||
+                resizeLoopActive ||
+                forcePresentOnce ||
+                lastPresentedClearArgb != clearArgb
+        if (mustPresent) {
+            forcePresentOnce = false
+            lastPresentedClearArgb = clearArgb
+            NativeTaoGlBridge.nativePresent(attachmentHandle)
+        }
 
         // Backstop for a continuation that landed after the post-record drain
         // (a worker slower than the record). Costs it the jitter threshold
@@ -1903,6 +1956,7 @@ internal class TaoComposeSceneHostWindows(
     }
 
     fun detach() {
+        window.showHook = null
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)

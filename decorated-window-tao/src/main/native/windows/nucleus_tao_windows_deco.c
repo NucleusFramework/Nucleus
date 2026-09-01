@@ -1980,4 +1980,36 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSm
     }
     return 1;
 }
+/* Issue #631: apply the requested topmost z-order directly and synchronously.
+ * tao caches its WindowFlags and only issues the z-order SetWindowPos when a
+ * flag *diff* appears (and then with SWP_ASYNCWINDOWPOS), so a WS_EX_TOPMOST
+ * band membership lost to an external rewrite — the fullscreen toggle's
+ * HWND_NOTOPMOST, a DWM backdrop switch, a size apply racing the async
+ * z-order change — is never repaired through that path: the cache still says
+ * ALWAYS_ON_TOP and the diff stays empty. This bypasses the cache entirely
+ * and is idempotent when the z-order already matches. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeApplyTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean topmost)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    SetWindowPos(hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+        0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+/* E2E probe (issue #631 headful regression): whether the HWND is currently a
+ * member of the topmost band. Mirrors nativeIsBackdropActive's role — lets
+ * the headful suite assert the real z-order bit instead of Kotlin caches. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    return (ex & WS_EX_TOPMOST) ? JNI_TRUE : JNI_FALSE;
+}
 

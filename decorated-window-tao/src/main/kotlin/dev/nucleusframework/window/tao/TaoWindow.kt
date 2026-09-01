@@ -657,6 +657,31 @@ public class TaoWindow internal constructor(
         }
         alwaysOnTopRequested = alwaysOnTop
         NativeTaoBridge.nativeSetAlwaysOnTop(handle, alwaysOnTop)
+        // Windows: also apply the z-order directly and synchronously. The tao
+        // path above only updates its WindowFlags cache and posts an async
+        // SetWindowPos on a cache diff, which can lose the race against style
+        // rewrites (#631) — and once the cache and reality disagree, the tao
+        // path never repairs it.
+        applyTopmostDirect(alwaysOnTop)
+    }
+
+    /**
+     * Re-applies the requested topmost z-order when it is set — the repair
+     * half of issue #631. Windows style rewrites (a DWM backdrop switch, the
+     * fullscreen toggle's `HWND_NOTOPMOST`, a size apply racing tao's async
+     * z-order `SetWindowPos`) can silently drop `WS_EX_TOPMOST` while both
+     * tao's flag cache and [alwaysOnTopRequested] still say `true`, so the
+     * regular [setAlwaysOnTop] dedup never repairs it. Idempotent and cheap
+     * when the z-order already matches; no-op off Windows.
+     */
+    internal fun reassertAlwaysOnTop() {
+        if (alwaysOnTopRequested) applyTopmostDirect(true)
+    }
+
+    private fun applyTopmostDirect(topmost: Boolean) {
+        if (Platform.Current != Platform.Windows || !NativeTaoWindowsDecoBridge.isLoaded) return
+        val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+        if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeApplyTopmost(hwnd, topmost)
     }
 
     /**
@@ -873,9 +898,20 @@ public class TaoWindow internal constructor(
         if (hwnd != 0L) NativeTaoWindowsDecoBridge.nativeSetStartupBackgroundEraseEnabled(hwnd, enabled)
     }
 
+    /**
+     * Invoked synchronously on every [show] call, before the native visibility
+     * flip. The Windows scene host uses it to force the next present: DWM does
+     * not reliably retain a pre-show swap once ShowWindow composites the
+     * window, so the redraw that follows a show must reach eglSwapBuffers even
+     * when the scene content itself is unchanged (clean frames skip the
+     * present otherwise — see TaoSceneBundle.visualDirty).
+     */
+    internal var showHook: (() -> Unit)? = null
+
     public fun show() {
         startupEraseActive = true
         setStartupBackgroundEraseEnabled(true)
+        showHook?.invoke()
         NativeTaoBridge.nativeSetVisible(handle, true)
         // Queued behind the show above (both ride the same event loop), so the
         // click-through state lands on the mapped window — see
@@ -1108,6 +1144,10 @@ public class TaoWindow internal constructor(
                 // Win32 emits WM_SIZE/SIZE_MINIMIZED as 0x0. Keep resize
                 // listeners on the last real content size while minimized.
                 if (a <= 0 || b <= 0) return
+                // A size apply can drop WS_EX_TOPMOST (#631) — repair it
+                // before app code observes the resize. Idempotent no-op when
+                // the z-order is already correct or the flag is off.
+                reassertAlwaysOnTop()
                 resizedListeners.forEach { it.invoke(a, b) }
             }
             TaoEventCode.MOVED -> movedListeners.forEach { it.invoke(a, b) }
