@@ -403,6 +403,8 @@ internal class TaoPopupSceneLayerWindows(
             heightPx = heightPx,
             directContext = directContext,
             clearColorArgb = 0x00000000,
+            // Per-pixel-alpha DComp surface — no LCD SurfaceProps.
+            windowTransparent = true,
             present = { PopupNativeBridgeWindows.nativeSwapBuffers(panelHandle) },
         ) { canvas, nanoTime ->
             canvas.save()

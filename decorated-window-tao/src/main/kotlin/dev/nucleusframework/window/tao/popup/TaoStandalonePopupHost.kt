@@ -424,6 +424,8 @@ internal class TaoStandalonePopupHost : StandalonePopupHost {
                 heightPx = heightPx,
                 directContext = ctx,
                 clearColorArgb = 0x00000000,
+                // Per-pixel-alpha DComp surface — no LCD SurfaceProps.
+                windowTransparent = true,
                 present = { PopupNativeBridgeWindows.nativeSwapBuffers(panel) },
             ) { canvas, _ ->
                 bundle.render(canvas, frameNs)
