@@ -131,6 +131,11 @@ public final class dev/nucleusframework/application/NucleusWindowUnsafe$DefaultI
 	public static fun getTaoWindow (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ldev/nucleusframework/window/tao/TaoWindow;
 }
 
+public final class dev/nucleusframework/application/SatelliteWindowKt {
+	public static final fun SatelliteWindow (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun SatelliteWindow (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
 public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
 	public static final fun SingleInstanceRestoreEffect (Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
 }

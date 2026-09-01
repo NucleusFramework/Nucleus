@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.headful
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -16,8 +17,10 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.SatelliteWindow
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.XdgPortalParent
 import dev.nucleusframework.window.tao.taoApplication
@@ -367,12 +370,14 @@ public object TaoHeadfulTestSuiteMain {
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
+            SatelliteWindowHeadfulCases.all() +
             ImeHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
 
     @JvmStatic
+    @Suppress("LongMethod") // one flat harness: window + dialog + satellite hosting, then the driver
     fun main(args: Array<String>) {
         if (cases.isEmpty()) {
             // Distinct from the failure-count exit codes: an unmatched filter
@@ -415,6 +420,7 @@ public object TaoHeadfulTestSuiteMain {
             // level so it survives the window scene's attach/re-composition.
             val windowHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
             val dialogHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
+            val satelliteHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
 
             if (skipReason == null) {
                 androidx.compose.runtime.key(current) {
@@ -439,9 +445,25 @@ public object TaoHeadfulTestSuiteMain {
                         case.content(this)
                         val w = window
                         LaunchedEffect(w) { windowHolder.value = w }
+
+                        // Composed inside the window content so the satellite
+                        // resolves this case's window as its parent through
+                        // LocalTaoWindow — the same call site an app uses.
+                        val satelliteState = case.satelliteState
+                        if (satelliteState != null && case.satelliteOwner == null) {
+                            SatelliteWindow(
+                                onCloseRequest = case.satelliteOnCloseRequest,
+                                state = satelliteState,
+                                title = "tao-headful-satellite: ${case.name}",
+                            ) {
+                                case.satelliteContent(this)
+                                val s = window
+                                LaunchedEffect(s) { satelliteHolder.value = s }
+                            }
+                        }
                     }
                     val dialogContent = case.dialogContent
-                    if (dialogContent != null) {
+                    if (dialogContent != null && case.dialogVisible.value) {
                         DecoratedDialog(
                             onCloseRequest = { /* cases drive their own lifecycle */ },
                             state =
@@ -455,6 +477,12 @@ public object TaoHeadfulTestSuiteMain {
                             LaunchedEffect(w) { dialogHolder.value = w }
                         }
                     }
+                    ApplicationScopeSatellite(
+                        case = case,
+                        windowHolder = windowHolder,
+                        dialogHolder = dialogHolder,
+                        satelliteHolder = satelliteHolder,
+                    )
                 }
             }
 
@@ -473,7 +501,9 @@ public object TaoHeadfulTestSuiteMain {
                             awaitPublishedWindows(
                                 windowHolder = windowHolder,
                                 dialogHolder = dialogHolder,
+                                satelliteHolder = satelliteHolder,
                                 waitForDialog = running.dialogContent != null,
+                                waitForSatellite = running.satelliteState != null,
                             )
                         // Per-case budget: a driver that never completes must
                         // fail its own case, not run out the global watchdog
@@ -507,6 +537,39 @@ public object TaoHeadfulTestSuiteMain {
         // Unreachable: taoApplication never returns (exitProcess inside), and
         // reportAndExit terminates first. Kept as a hard backstop.
         reportAndExit(results)
+    }
+
+    /**
+     * The reparenting call site: an application-scope satellite whose owner is
+     * picked from the case's [TaoWindowTestCase.satelliteOwner] state, exactly
+     * like a shared palette in an app. Composed only once the chosen owner has
+     * published itself; a no-op for cases that host their satellite inside the
+     * window content instead.
+     */
+    @Composable
+    private fun ApplicationScope.ApplicationScopeSatellite(
+        case: TaoWindowTestCase,
+        windowHolder: MutableState<TaoWindow?>,
+        dialogHolder: MutableState<TaoWindow?>,
+        satelliteHolder: MutableState<TaoWindow?>,
+    ) {
+        val satelliteState = case.satelliteState ?: return
+        val satelliteOwner = case.satelliteOwner ?: return
+        val owner =
+            when (satelliteOwner.value) {
+                SatelliteOwner.CaseWindow -> windowHolder.value
+                SatelliteOwner.DialogWindow -> dialogHolder.value
+            } ?: return
+        SatelliteWindow(
+            onCloseRequest = case.satelliteOnCloseRequest,
+            parent = owner,
+            state = satelliteState,
+            title = "tao-headful-satellite: ${case.name}",
+        ) {
+            case.satelliteContent(this)
+            val s = window
+            LaunchedEffect(s) { satelliteHolder.value = s }
+        }
     }
 
     private fun reportAndExit(results: List<TaoWindowTestResult>): Nothing {
@@ -548,7 +611,9 @@ public object TaoHeadfulTestSuiteMain {
     private suspend fun awaitPublishedWindows(
         windowHolder: MutableState<TaoWindow?>,
         dialogHolder: MutableState<TaoWindow?>,
+        satelliteHolder: MutableState<TaoWindow?>,
         waitForDialog: Boolean,
+        waitForSatellite: Boolean,
     ): TaoWindowTestScope {
         val deadline = System.currentTimeMillis() + WINDOW_PUBLISH_TIMEOUT_MILLIS
         while (windowHolder.value == null) {
@@ -561,9 +626,16 @@ public object TaoHeadfulTestSuiteMain {
                 kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
             }
         }
+        if (waitForSatellite) {
+            while (satelliteHolder.value == null) {
+                check(System.currentTimeMillis() < deadline) { "satellite never published its handle" }
+                kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
+            }
+        }
         return TaoWindowTestScope(
             window = windowHolder.value!!,
             dialogWindow = dialogHolder.value,
+            satelliteWindow = satelliteHolder.value,
         )
     }
 

@@ -182,7 +182,12 @@ internal object TaoDecoratedWindowAdapter {
     }
 }
 
-private class TaoNucleusDecoratedWindowScope(
+/**
+ * The Nucleus content scope of a Tao-hosted window. Shared with
+ * [TaoSatelliteWindowAdapter]: a satellite is a decorated window as far as its
+ * content is concerned.
+ */
+internal class TaoNucleusDecoratedWindowScope(
     private val taoScope: TaoDecoratedWindowScope,
     override val nucleusWindow: NucleusWindow,
 ) : NucleusDecoratedWindowScope,

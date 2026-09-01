@@ -370,6 +370,30 @@ public final class dev/nucleusframework/window/tao/OverlayInteractionModifierKt 
 	public static synthetic fun consumeOverlayPointerEvents$default (Landroidx/compose/ui/Modifier;Landroidx/compose/ui/input/pointer/PointerIcon;ILjava/lang/Object;)Landroidx/compose/ui/Modifier;
 }
 
+public final class dev/nucleusframework/window/tao/SatelliteWindowKt {
+	public static final fun SatelliteWindow (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/window/tao/SatelliteWindowState {
+	public static final field $stable I
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getAnchorRect ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getOffsetFromParent-Ctc3-3Q ()Landroidx/compose/ui/unit/DpOffset;
+	public final fun getPositioner ()Ldev/nucleusframework/window/tao/WindowPositioner;
+	public final fun getSize-MYxV2XQ ()J
+	public final fun isActive ()Z
+	public final fun isHiddenByParent ()Z
+	public final fun reanchor ()V
+	public final fun setAnchorRect (Landroidx/compose/ui/unit/DpRect;)V
+	public final fun setPositioner (Ldev/nucleusframework/window/tao/WindowPositioner;)V
+	public final fun setSize-EaSLcWc (J)V
+}
+
+public final class dev/nucleusframework/window/tao/SatelliteWindowStateKt {
+	public static final fun rememberSatelliteWindowState-csNNkCE (JLdev/nucleusframework/window/tao/WindowPositioner;Landroidx/compose/ui/unit/DpRect;Landroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/SatelliteWindowState;
+}
+
 public final class dev/nucleusframework/window/tao/TaoA11yAction {
 	public static final field $stable I
 	public static final field CLICK I
@@ -809,12 +833,80 @@ public final class dev/nucleusframework/window/tao/TextureViewKt {
 public abstract interface class dev/nucleusframework/window/tao/TextureViewSource {
 }
 
+public final class dev/nucleusframework/window/tao/WindowAnchor : java/lang/Enum {
+	public static final field Bottom Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field BottomLeft Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field BottomRight Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field Center Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field Left Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field Right Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field Top Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field TopLeft Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static final field TopRight Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/window/tao/WindowAnchor;
+	public static fun values ()[Ldev/nucleusframework/window/tao/WindowAnchor;
+}
+
+public final class dev/nucleusframework/window/tao/WindowConstraintAdjustment {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/WindowConstraintAdjustment$Companion;
+	public fun <init> ()V
+	public fun <init> (ZZZZZZ)V
+	public synthetic fun <init> (ZZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Z
+	public final fun component2 ()Z
+	public final fun component3 ()Z
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun copy (ZZZZZZ)Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public static synthetic fun copy$default (Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;ZZZZZZILjava/lang/Object;)Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFlipHorizontal ()Z
+	public final fun getFlipVertical ()Z
+	public final fun getResizeHorizontal ()Z
+	public final fun getResizeVertical ()Z
+	public final fun getSlideHorizontal ()Z
+	public final fun getSlideVertical ()Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/WindowConstraintAdjustment$Companion {
+	public final fun getAll ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun getFlip ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun getFlipAndSlide ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun getNone ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun getSlide ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+}
+
 public abstract interface class dev/nucleusframework/window/tao/WindowExceptionHandlerFactory {
 	public abstract fun exceptionHandler (Ldev/nucleusframework/window/tao/TaoWindow;)Landroidx/compose/ui/window/WindowExceptionHandler;
 }
 
 public final class dev/nucleusframework/window/tao/WindowExceptionHandlerFactoryKt {
 	public static final fun getLocalWindowExceptionHandlerFactory ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/window/tao/WindowPositioner {
+	public static final field $stable I
+	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/window/tao/WindowAnchor;
+	public final fun component2 ()Ldev/nucleusframework/window/tao/WindowAnchor;
+	public final fun component3-RKDOV3M ()J
+	public final fun component4 ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun copy-7WlHY6s (Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;)Ldev/nucleusframework/window/tao/WindowPositioner;
+	public static synthetic fun copy-7WlHY6s$default (Ldev/nucleusframework/window/tao/WindowPositioner;Ldev/nucleusframework/window/tao/WindowAnchor;Ldev/nucleusframework/window/tao/WindowAnchor;JLdev/nucleusframework/window/tao/WindowConstraintAdjustment;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/WindowPositioner;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getChildAnchor ()Ldev/nucleusframework/window/tao/WindowAnchor;
+	public final fun getConstraintAdjustment ()Ldev/nucleusframework/window/tao/WindowConstraintAdjustment;
+	public final fun getOffset-RKDOV3M ()J
+	public final fun getParentAnchor ()Ldev/nucleusframework/window/tao/WindowAnchor;
+	public fun hashCode ()I
+	public final fun place-UBP6k7g (JLandroidx/compose/ui/unit/DpRect;Landroidx/compose/ui/unit/DpRect;Landroidx/compose/ui/unit/DpRect;)Landroidx/compose/ui/unit/DpRect;
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class dev/nucleusframework/window/tao/XdgForeignExport : java/lang/AutoCloseable {

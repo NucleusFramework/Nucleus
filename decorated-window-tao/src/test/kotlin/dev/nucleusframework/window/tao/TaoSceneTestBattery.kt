@@ -509,6 +509,43 @@ public object TaoSceneTestBattery {
             LcdTextTest().`Compose LCD text on an RGB surface has chromatic edges`()
         }
 
+        run("WindowPositionerTest: right to left anchoring hangs the child off the right edge of the parent") {
+            WindowPositionerTest().`right to left anchoring hangs the child off the right edge of the parent`()
+        }
+        run("WindowPositionerTest: offset is applied after the anchors meet") {
+            WindowPositionerTest().`offset is applied after the anchors meet`()
+        }
+        run("WindowPositionerTest: centre to centre puts the child on the middle of the parent") {
+            WindowPositionerTest().`centre to centre puts the child on the middle of the parent`()
+        }
+        run("WindowPositionerTest: a sub-rectangle of the parent anchors the child to that rectangle") {
+            WindowPositionerTest().`a sub-rectangle of the parent anchors the child to that rectangle`()
+        }
+        run("WindowPositionerTest: the anchor point is clamped to the parent rectangle") {
+            WindowPositionerTest().`the anchor point is clamped to the parent rectangle`()
+        }
+        run("WindowPositionerTest: no adjustment leaves the child outside the work area") {
+            WindowPositionerTest().`no adjustment leaves the child outside the work area`()
+        }
+        run("WindowPositionerTest: flip mirrors the child to the other side when it would overhang") {
+            WindowPositionerTest().`flip mirrors the child to the other side when it would overhang`()
+        }
+        run("WindowPositionerTest: slide translates the child back inside the work area") {
+            WindowPositionerTest().`slide translates the child back inside the work area`()
+        }
+        run("WindowPositionerTest: flip is preferred over slide") {
+            WindowPositionerTest().`flip is preferred over slide`()
+        }
+        run("WindowPositionerTest: resize shrinks the child when nothing else fits") {
+            WindowPositionerTest().`resize shrinks the child when nothing else fits`()
+        }
+        run("WindowPositionerTest: vertical flip mirrors a bottom anchored child upwards") {
+            WindowPositionerTest().`vertical flip mirrors a bottom anchored child upwards`()
+        }
+        run("WindowPositionerTest: an unconstrained placement is returned untouched by every adjustment") {
+            WindowPositionerTest().`an unconstrained placement is returned untouched by every adjustment`()
+        }
+
         return results
     }
 }
