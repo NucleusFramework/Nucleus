@@ -48,7 +48,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.window.WindowPlacement
+import androidx.compose.ui.window.v2.WindowBoundsProvider
+import androidx.compose.ui.window.v2.WindowSizeProvider
+import androidx.compose.ui.window.v2.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.sampleshared.A11yTab
@@ -233,6 +236,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("CyclomaticComplexMethod")
 private fun runApp() =
     nucleusApplication {
@@ -251,13 +255,19 @@ private fun runApp() =
                 metrics = TitleBarMetrics(height = 36.dp),
             )
 
-        val mainState = rememberWindowState(size = DpSize(1024.dp, 720.dp))
+        val mainState =
+            rememberWindowState(
+                initialBoundsProvider =
+                    WindowBoundsProvider(
+                        sizeProvider = WindowSizeProvider.Fixed(DpSize(1024.dp, 720.dp)),
+                    ),
+            )
         NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = titleBarStyle) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,
                 state = mainState,
                 title = "Tao Backend Demo",
-                minimumSize = DpSize(640.dp, 480.dp),
+                minSize = DpSize(640.dp, 480.dp),
                 onPreviewKeyEvent = { event ->
                     // Demo: consume Cmd/Ctrl+K so it never reaches Compose. Other keys
                     // are still logged but pass through.
@@ -397,8 +407,13 @@ private fun runApp() =
                                 ActionsTab(
                                     modifier = Modifier.fillMaxSize(),
                                     window = taoWindow,
-                                    placement = mainState.placement,
-                                    onPlacementChange = { mainState.placement = it },
+                                    placement =
+                                        if (mainState.isInitialized) {
+                                            mainState.placement
+                                        } else {
+                                            WindowPlacement.Floating
+                                        },
+                                    onPlacementChange = { mainState.requestPlacement(it) },
                                     onLog = { logEvent(events, it) },
                                     onOpenChildWindow = { childEnabled, childFocusable ->
                                         childRequest = childEnabled to childFocusable
@@ -423,7 +438,13 @@ private fun runApp() =
             childRequest?.let { (childEnabled, childFocusable) ->
                 DecoratedWindow(
                     onCloseRequest = { childRequest = null },
-                    state = rememberWindowState(size = DpSize(480.dp, 240.dp)),
+                    state =
+                        rememberWindowState(
+                            initialBoundsProvider =
+                                WindowBoundsProvider(
+                                    sizeProvider = WindowSizeProvider.Fixed(DpSize(480.dp, 240.dp)),
+                                ),
+                        ),
                     title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
                     enabled = childEnabled,
                     focusable = childFocusable,

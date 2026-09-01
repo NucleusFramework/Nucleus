@@ -655,6 +655,14 @@ internal object NativeTaoBridge {
         height: Double,
     )
 
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMaxInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
     /** [pixels] is row-major premultiplied RGBA. Empty array clears the icon. */
     @JvmStatic
     external fun nativeSetWindowIcon(

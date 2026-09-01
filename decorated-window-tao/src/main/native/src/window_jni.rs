@@ -442,6 +442,21 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMaxInnerSize(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jdouble,
+    height: jdouble,
+) {
+    send_user_event(UserEvent::SetMaxInnerSize {
+        handle: handle as u64,
+        width,
+        height,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetWindowIcon(
     env: JNIEnv,
     _class: JClass,

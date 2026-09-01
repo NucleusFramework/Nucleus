@@ -799,6 +799,16 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
     }
 
+    /** Logical pixels. Pass `null` to clear the maximum. */
+    public fun setMaximumSize(
+        widthDp: Double?,
+        heightDp: Double?,
+    ) {
+        val w = widthDp ?: -1.0
+        val h = heightDp ?: -1.0
+        NativeTaoBridge.nativeSetMaxInnerSize(handle, w, h)
+    }
+
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
     public fun setIcon(
         width: Int,

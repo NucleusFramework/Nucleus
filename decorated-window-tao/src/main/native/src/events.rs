@@ -349,6 +349,12 @@ pub(crate) enum UserEvent {
         width: f64,
         height: f64,
     },
+    SetMaxInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the maximum".
+        width: f64,
+        height: f64,
+    },
     SetWindowIcon {
         handle: u64,
         // Premultiplied RGBA pixel buffer, row-major. Empty `pixels` clears.

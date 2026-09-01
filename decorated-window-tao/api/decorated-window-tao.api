@@ -197,12 +197,20 @@ public final class dev/nucleusframework/window/tao/DecoratedDialogKt {
 	public static final fun DecoratedDialog (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
+public final class dev/nucleusframework/window/tao/DecoratedDialogV2Kt {
+	public static final fun DecoratedDialog-imfDCbw (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
 public final class dev/nucleusframework/window/tao/DecoratedWindowComposableKt {
 	public static final fun DecoratedWindow-sYvZbhs (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;Landroidx/compose/ui/unit/DpSize;ZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
 	public static final fun getLocalTaoWindow ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/window/tao/DecoratedWindowV2Kt {
+	public static final fun DecoratedWindow-INFUufI (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/v2/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;JJZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
 public final class dev/nucleusframework/window/tao/DefaultWindowExceptionHandlerFactory : dev/nucleusframework/window/tao/WindowExceptionHandlerFactory {
@@ -758,6 +766,7 @@ public final class dev/nucleusframework/window/tao/TaoWindow {
 	public final fun setIgnoreCursorEvents (Z)V
 	public final fun setInnerSize (DD)V
 	public final fun setMaximized (Z)V
+	public final fun setMaximumSize (Ljava/lang/Double;Ljava/lang/Double;)V
 	public final fun setMinimized (Z)V
 	public final fun setMinimumSize (Ljava/lang/Double;Ljava/lang/Double;)V
 	public final fun setOuterPosition (DD)V
