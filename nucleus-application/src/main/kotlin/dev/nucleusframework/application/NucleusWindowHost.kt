@@ -9,10 +9,13 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.window.tao.rememberSyncedDialogState
+import dev.nucleusframework.window.tao.rememberSyncedWindowState
 import androidx.compose.ui.window.v2.DialogState as DialogStateV2
 import androidx.compose.ui.window.v2.WindowState as WindowStateV2
 
@@ -79,10 +82,16 @@ public fun interface NucleusWindowHost {
 
     /**
      * Opens a window driven by Compose Multiplatform 1.12's experimental
-     * window API v2. Default implementation calls [DecoratedWindow] with
-     * [state]; themed hosts should override to keep their chrome.
+     * window API v2.
+     *
+     * Default implementation converts [state] to v1 and calls
+     * [Window] so existing themed hosts keep their chrome. `maxSize` is
+     * v2-only and is dropped on that fallback. Override to keep max-size
+     * or custom v2 chrome. `requestScreen` / `screenId` are not applied
+     * on Tao (primary work area only).
      */
     @ExperimentalComposeUiApi
+    @Suppress("UnusedParameter")
     @Composable
     public fun Window(
         onCloseRequest: () -> Unit,
@@ -106,9 +115,10 @@ public fun interface NucleusWindowHost {
         alwaysOnBottom: Boolean,
         content: @Composable NucleusDecoratedWindowScope.() -> Unit,
     ) {
-        DecoratedWindow(
+        val v1 = rememberSyncedWindowState(state, visible)
+        Window(
             onCloseRequest = onCloseRequest,
-            state = state,
+            state = v1,
             visible = visible,
             title = title,
             icon = icon,
@@ -121,8 +131,8 @@ public fun interface NucleusWindowHost {
             nativePopupLayers = nativePopupLayers,
             nativeContextMenu = nativeContextMenu,
             hiddenFromDock = hiddenFromDock,
-            minSize = minSize,
-            maxSize = maxSize,
+            minimumSize =
+                if (minSize.width.isSpecified && minSize.height.isSpecified) minSize else null,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
             alwaysOnBottom = alwaysOnBottom,
@@ -158,10 +168,15 @@ public fun interface NucleusDialogHost {
 
     /**
      * Opens a dialog driven by Compose Multiplatform 1.12's experimental
-     * dialog API v2. Default implementation calls [DecoratedDialog] with
-     * [state]; themed hosts should override to keep their chrome.
+     * dialog API v2.
+     *
+     * Default implementation converts [state] to v1 and calls [Dialog]
+     * so existing themed hosts keep their chrome. `minSize` / `maxSize`
+     * are v2-only and are dropped on that fallback. `requestScreen` /
+     * `screenId` are not applied on Tao (primary work area only).
      */
     @ExperimentalComposeUiApi
+    @Suppress("UnusedParameter")
     @Composable
     public fun Dialog(
         onCloseRequest: () -> Unit,
@@ -178,17 +193,16 @@ public fun interface NucleusDialogHost {
         onKeyEvent: (KeyEvent) -> Boolean,
         content: @Composable NucleusDecoratedDialogScope.() -> Unit,
     ) {
-        DecoratedDialog(
+        val v1 = rememberSyncedDialogState(state, visible)
+        Dialog(
             onCloseRequest = onCloseRequest,
-            state = state,
+            state = v1,
             visible = visible,
             title = title,
             icon = icon,
             resizable = resizable,
             enabled = enabled,
             focusable = focusable,
-            minSize = minSize,
-            maxSize = maxSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
             content = content,
@@ -275,6 +289,54 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
             content = content,
         )
     }
+
+    @ExperimentalComposeUiApi
+    @Composable
+    override fun Window(
+        onCloseRequest: () -> Unit,
+        state: WindowStateV2,
+        visible: Boolean,
+        title: String,
+        icon: Painter?,
+        resizable: Boolean,
+        enabled: Boolean,
+        focusable: Boolean,
+        alwaysOnTop: Boolean,
+        undecorated: Boolean,
+        popupFor: NucleusWindow?,
+        nativePopupLayers: Boolean,
+        nativeContextMenu: Boolean,
+        hiddenFromDock: Boolean,
+        minSize: DpSize,
+        maxSize: DpSize,
+        onPreviewKeyEvent: (KeyEvent) -> Boolean,
+        onKeyEvent: (KeyEvent) -> Boolean,
+        alwaysOnBottom: Boolean,
+        content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    ) {
+        DecoratedWindow(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            alwaysOnTop = alwaysOnTop,
+            undecorated = undecorated,
+            popupFor = popupFor,
+            nativePopupLayers = nativePopupLayers,
+            nativeContextMenu = nativeContextMenu,
+            hiddenFromDock = hiddenFromDock,
+            minSize = minSize,
+            maxSize = maxSize,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
+            alwaysOnBottom = alwaysOnBottom,
+            content = content,
+        )
+    }
 }
 
 /**
@@ -305,6 +367,40 @@ public object DefaultNucleusDialogHost : NucleusDialogHost {
             resizable = resizable,
             enabled = enabled,
             focusable = focusable,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
+            content = content,
+        )
+    }
+
+    @ExperimentalComposeUiApi
+    @Composable
+    override fun Dialog(
+        onCloseRequest: () -> Unit,
+        state: DialogStateV2,
+        visible: Boolean,
+        title: String,
+        icon: Painter?,
+        resizable: Boolean,
+        enabled: Boolean,
+        focusable: Boolean,
+        minSize: DpSize,
+        maxSize: DpSize,
+        onPreviewKeyEvent: (KeyEvent) -> Boolean,
+        onKeyEvent: (KeyEvent) -> Boolean,
+        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    ) {
+        DecoratedDialog(
+            onCloseRequest = onCloseRequest,
+            state = state,
+            visible = visible,
+            title = title,
+            icon = icon,
+            resizable = resizable,
+            enabled = enabled,
+            focusable = focusable,
+            minSize = minSize,
+            maxSize = maxSize,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
             content = content,
@@ -408,6 +504,9 @@ public fun HostedDialog(
 /**
  * Opens a secondary window via [LocalNucleusWindowHost] using Compose
  * Multiplatform 1.12's experimental window API v2.
+ *
+ * `requestScreen` / `screenId` are not applied on Tao (primary work area
+ * only).
  */
 @ExperimentalComposeUiApi
 @Suppress("FunctionNaming", "LongParameterList")
@@ -461,6 +560,9 @@ public fun HostedWindow(
 /**
  * Opens a secondary dialog via [LocalNucleusDialogHost] using Compose
  * Multiplatform 1.12's experimental dialog API v2.
+ *
+ * `requestScreen` / `screenId` are not applied on Tao (primary work area
+ * only).
  */
 @ExperimentalComposeUiApi
 @Suppress("FunctionNaming", "LongParameterList")

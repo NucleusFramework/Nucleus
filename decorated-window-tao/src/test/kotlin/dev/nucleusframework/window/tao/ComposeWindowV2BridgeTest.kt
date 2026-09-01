@@ -3,20 +3,21 @@
 package dev.nucleusframework.window.tao
 
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.unit.DpOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.v2.ComposeWindowV2Access
+import androidx.compose.ui.window.v2.WindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowState
-import androidx.compose.ui.window.v2.WindowStateWithBounds
-import java.awt.GraphicsEnvironment
+import androidx.compose.ui.window.v2.inspectableWindowBounds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ComposeWindowV2BridgeTest {
@@ -30,26 +31,48 @@ class ComposeWindowV2BridgeTest {
     }
 
     @Test
-    fun absoluteV2BoundsMapToV1WhenAwtGeometryIsAvailable() {
-        if (GraphicsEnvironment.isHeadless()) return
+    fun absoluteV2BoundsMapToV1WithoutAwt() {
         val v1 =
             windowStateV2ToV1(
-                WindowStateWithBounds(
-                    initialPosition = DpOffset(40.dp, 60.dp),
-                    initialSize = DpSize(400.dp, 200.dp),
+                WindowState(
+                    initialBoundsProvider =
+                        WindowBoundsProvider.Absolute(
+                            DpRect(left = 40.dp, top = 60.dp, right = 440.dp, bottom = 260.dp),
+                        ),
                 ),
             )
-        val position = v1.position
-        if (position is WindowPosition.Absolute) {
-            assertEquals(400.dp, v1.size.width)
-            assertEquals(200.dp, v1.size.height)
-            assertEquals(40.dp, position.x)
-            assertEquals(60.dp, position.y)
-        } else {
-            // Geometry peer construction can still fail on a "non-headless"
-            // environment without a usable default GraphicsConfiguration.
-            assertEquals(WindowPosition.PlatformDefault, position)
-        }
+        val position = assertIs<WindowPosition.Absolute>(v1.position)
+        assertEquals(400.dp, v1.size.width)
+        assertEquals(200.dp, v1.size.height)
+        assertEquals(40.dp, position.x)
+        assertEquals(60.dp, position.y)
+    }
+
+    @Test
+    fun sizeOnlyInspectableBoundsKeepPlatformDefaultPosition() {
+        val v1 =
+            windowStateV2ToV1(
+                WindowState(
+                    initialBoundsProvider =
+                        inspectableWindowBounds(size = DpSize(1024.dp, 720.dp)),
+                ),
+            )
+        assertEquals(DpSize(1024.dp, 720.dp), v1.size)
+        assertEquals(WindowPosition.PlatformDefault, v1.position)
+    }
+
+    @Test
+    fun requestSizeDoesNotClobberCurrentPosition() {
+        val resolved =
+            resolveWindowBounds(
+                inspectableWindowBounds(size = DpSize(400.dp, 300.dp)),
+                currentPosition = WindowPosition.Absolute(40.dp, 60.dp),
+                currentSize = DpSize(1024.dp, 720.dp),
+            )
+        val position = assertIs<WindowPosition.Absolute>(resolved.position)
+        assertEquals(40.dp, position.x)
+        assertEquals(60.dp, position.y)
+        assertEquals(DpSize(400.dp, 300.dp), resolved.size)
     }
 
     @Test
@@ -77,8 +100,10 @@ class ComposeWindowV2BridgeTest {
     }
 
     @Test
-    fun unspecifiedMinSizeIsIgnored() {
-        assertEquals(null, minSizeOrNull(DpSize.Unspecified))
+    fun unspecifiedOrPartialMinSizeIsIgnored() {
+        assertNull(minSizeOrNull(DpSize.Unspecified))
+        assertNull(minSizeOrNull(DpSize(200.dp, Dp.Unspecified)))
+        assertNull(minSizeOrNull(DpSize(Dp.Unspecified, 100.dp)))
         assertEquals(DpSize(200.dp, 100.dp), minSizeOrNull(DpSize(200.dp, 100.dp)))
     }
 }

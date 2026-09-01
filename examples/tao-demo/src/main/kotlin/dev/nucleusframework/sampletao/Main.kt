@@ -49,8 +49,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.v2.WindowBoundsProvider
-import androidx.compose.ui.window.v2.WindowSizeProvider
+import androidx.compose.ui.window.v2.inspectableWindowBounds
 import androidx.compose.ui.window.v2.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
@@ -258,9 +257,7 @@ private fun runApp() =
         val mainState =
             rememberWindowState(
                 initialBoundsProvider =
-                    WindowBoundsProvider(
-                        sizeProvider = WindowSizeProvider.Fixed(DpSize(1024.dp, 720.dp)),
-                    ),
+                    inspectableWindowBounds(size = DpSize(1024.dp, 720.dp)),
             )
         NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = titleBarStyle) {
             DecoratedWindow(
@@ -441,9 +438,7 @@ private fun runApp() =
                     state =
                         rememberWindowState(
                             initialBoundsProvider =
-                                WindowBoundsProvider(
-                                    sizeProvider = WindowSizeProvider.Fixed(DpSize(480.dp, 240.dp)),
-                                ),
+                                inspectableWindowBounds(size = DpSize(480.dp, 240.dp)),
                         ),
                     title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
                     enabled = childEnabled,

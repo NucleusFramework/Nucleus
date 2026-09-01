@@ -131,6 +131,27 @@ class NucleusWindowHostTest {
             assertEquals(DpSize(1600.dp, 900.dp), windowHost.maxSize)
         }
 
+    @Test
+    fun `hosted window v2 falls back to the v1 host surface when v2 is not overridden`() =
+        runComposeUiTest {
+            val windowHost = V1OnlyWindowHost()
+            val v2State = WindowStateV2()
+            setContent {
+                CompositionLocalProvider(LocalNucleusWindowHost provides windowHost) {
+                    HostedWindow(
+                        onCloseRequest = {},
+                        state = v2State,
+                        title = "V2-fallback",
+                        minSize = DpSize(320.dp, 240.dp),
+                    ) {}
+                }
+            }
+            waitForIdle()
+            assertTrue(windowHost.hitV1)
+            assertEquals("V2-fallback", windowHost.title)
+            assertEquals(DpSize(320.dp, 240.dp), windowHost.minimumSize)
+        }
+
     private class RecordingWindowHost : NucleusWindowHost {
         var title: String? = null
         var visible: Boolean = true
@@ -217,6 +238,39 @@ class NucleusWindowHostTest {
             this.title = title
             this.minSize = minSize
             this.maxSize = maxSize
+        }
+    }
+
+    private class V1OnlyWindowHost : NucleusWindowHost {
+        var hitV1: Boolean = false
+        var title: String? = null
+        var minimumSize: DpSize? = null
+
+        @Composable
+        override fun Window(
+            onCloseRequest: () -> Unit,
+            state: WindowState,
+            visible: Boolean,
+            title: String,
+            icon: Painter?,
+            resizable: Boolean,
+            enabled: Boolean,
+            focusable: Boolean,
+            alwaysOnTop: Boolean,
+            undecorated: Boolean,
+            popupFor: NucleusWindow?,
+            nativePopupLayers: Boolean,
+            nativeContextMenu: Boolean,
+            hiddenFromDock: Boolean,
+            minimumSize: DpSize?,
+            onPreviewKeyEvent: (KeyEvent) -> Boolean,
+            onKeyEvent: (KeyEvent) -> Boolean,
+            alwaysOnBottom: Boolean,
+            content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+        ) {
+            hitV1 = true
+            this.title = title
+            this.minimumSize = minimumSize
         }
     }
 

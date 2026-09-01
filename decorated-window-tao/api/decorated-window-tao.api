@@ -178,6 +178,11 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$NativeVi
 	public final fun getLambda$1447510722$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function2;
 }
 
+public final class dev/nucleusframework/window/tao/ComposeWindowV2BridgeKt {
+	public static final fun rememberSyncedDialogState (Landroidx/compose/ui/window/v2/DialogState;ZLandroidx/compose/runtime/Composer;I)Landroidx/compose/ui/window/DialogState;
+	public static final fun rememberSyncedWindowState (Landroidx/compose/ui/window/v2/WindowState;ZLandroidx/compose/runtime/Composer;I)Landroidx/compose/ui/window/WindowState;
+}
+
 public final class dev/nucleusframework/window/tao/D3D11TestTextureProducer : java/lang/AutoCloseable {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/D3D11TestTextureProducer$Companion;

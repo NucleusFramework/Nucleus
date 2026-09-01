@@ -8,11 +8,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.size
@@ -21,15 +19,12 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.v2.ComposeWindowV2Access
+import androidx.compose.ui.window.v2.InspectableWindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowBoundsProvider
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
-import java.awt.GraphicsEnvironment
-import java.awt.Insets
-import java.awt.Rectangle
 import java.util.logging.Level
 import java.util.logging.Logger
-import kotlin.math.roundToInt
 import androidx.compose.ui.window.v2.DialogState as DialogStateV2
 import androidx.compose.ui.window.v2.WindowState as WindowStateV2
 
@@ -37,6 +32,7 @@ private val v2Logger: Logger = Logger.getLogger("dev.nucleusframework.window.tao
 
 private val defaultWindowSize = DpSize(800.dp, 600.dp)
 private val defaultDialogSize = DpSize(800.dp, 600.dp)
+private const val PRIMARY_SCREEN_ID = "primary"
 
 internal data class ResolvedV2Bounds(
     val position: WindowPosition,
@@ -44,12 +40,8 @@ internal data class ResolvedV2Bounds(
 )
 
 /**
- * Drains the v2 [WindowStateV2] request channels into a v1 [WindowState] the
- * existing [DecoratedWindow] plumbing already knows how to apply.
- *
- * Compose 1.12's window API v2 keeps requested geometry on internal channels
- * and observed geometry on `_bounds` / `_placement`. Tao cannot live in
- * `compose-ui`, so a same-package Java accessor reads those internals.
+ * Snapshots pending v2 requests into the v1 [WindowState] the existing window
+ * path consumes.
  */
 internal fun windowStateV2ToV1(state: WindowStateV2): WindowState {
     if (state.isInitialized) {
@@ -117,7 +109,8 @@ internal fun BindWindowStateV2(
         }
         launch {
             for (provider in ComposeWindowV2Access.boundsRequests(latestV2)) {
-                val resolved = resolveWindowBounds(provider)
+                val resolved =
+                    resolveWindowBounds(provider, latestV1.position, latestV1.size)
                 latestV1.placement = WindowPlacement.Floating
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
@@ -140,14 +133,18 @@ internal fun BindDialogStateV2(
     v2: DialogStateV2,
     v1: DialogState,
     visible: Boolean,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
 ) {
     val latestV2 = v2
     val latestV1 = v1
-    LaunchedEffect(v2, v1) {
+    LaunchedEffect(v2, v1, minSize, maxSize) {
         launch {
             for (provider in ComposeWindowV2Access.dialogBoundsRequests(latestV2)) {
-                val resolved = resolveDialogBounds(provider)
-                latestV1.size = resolved.size
+                val resolved =
+                    resolveDialogBounds(provider, latestV1.position, latestV1.size)
+                val clamped = clampSize(resolved.size, minSize, maxSize)
+                latestV1.size = clamped
                 latestV1.position = resolved.position
             }
         }
@@ -166,29 +163,120 @@ internal fun rememberWindowStateV1(state: WindowStateV2): WindowState = remember
 @Composable
 internal fun rememberDialogStateV1(state: DialogStateV2): DialogState = remember(state) { dialogStateV2ToV1(state) }
 
+/**
+ * v1 [WindowState] kept in sync with v2 [state].
+ *
+ * Used so a v2 `HostedWindow` still reaches hosts that only wrap the v1
+ * surface. `maxSize` is v2-only and is dropped on that fallback.
+ */
+@Composable
+public fun rememberSyncedWindowState(
+    state: WindowStateV2,
+    visible: Boolean,
+): WindowState {
+    val v1 = rememberWindowStateV1(state)
+    BindWindowStateV2(state, v1, visible)
+    return v1
+}
+
+/**
+ * v1 [DialogState] kept in sync with v2 [state].
+ *
+ * Same fallback as [rememberSyncedWindowState] for dialog hosts that only
+ * wrap the v1 surface. `minSize` / `maxSize` are dropped on that path.
+ */
+@Composable
+public fun rememberSyncedDialogState(
+    state: DialogStateV2,
+    visible: Boolean,
+): DialogState {
+    val v1 = rememberDialogStateV1(state)
+    BindDialogStateV2(state, v1, visible)
+    return v1
+}
+
 internal fun minSizeOrNull(minSize: DpSize): DpSize? =
-    if (minSize.width.isSpecified || minSize.height.isSpecified) minSize else null
+    if (minSize.width.isSpecified && minSize.height.isSpecified) minSize else null
 
-private fun resolveWindowBounds(provider: WindowBoundsProvider?): ResolvedV2Bounds {
-    if (provider == null || provider === WindowBoundsProvider.Default) {
-        return ResolvedV2Bounds(WindowPosition.PlatformDefault, defaultWindowSize)
+internal fun clampSize(
+    size: DpSize,
+    minSize: DpSize,
+    maxSize: DpSize,
+): DpSize {
+    var width = size.width
+    var height = size.height
+    val min = minSizeOrNull(minSize)
+    if (min != null) {
+        if (width.isSpecified && width < min.width) width = min.width
+        if (height.isSpecified && height < min.height) height = min.height
     }
-    val rect =
-        evaluateBoundsProvider(provider)
-            ?: return ResolvedV2Bounds(WindowPosition.PlatformDefault, defaultWindowSize)
-    return ResolvedV2Bounds(WindowPosition(rect.left, rect.top), wrapUnspecifiedAxes(rect.size))
+    if (maxSize.width.isSpecified && width.isSpecified && width > maxSize.width) width = maxSize.width
+    if (maxSize.height.isSpecified && height.isSpecified && height > maxSize.height) height = maxSize.height
+    return DpSize(width, height)
 }
 
-private fun resolveDialogBounds(provider: WindowBoundsProvider?): ResolvedV2Bounds {
+internal fun resolveWindowBounds(
+    provider: WindowBoundsProvider?,
+    currentPosition: WindowPosition = WindowPosition.PlatformDefault,
+    currentSize: DpSize = defaultWindowSize,
+): ResolvedV2Bounds =
+    resolveBounds(
+        provider = provider,
+        currentPosition = currentPosition,
+        currentSize = currentSize,
+        defaultPosition = WindowPosition.PlatformDefault,
+        defaultSize = defaultWindowSize,
+    )
+
+internal fun resolveDialogBounds(
+    provider: WindowBoundsProvider?,
+    currentPosition: WindowPosition = WindowPosition(Alignment.Center),
+    currentSize: DpSize = defaultDialogSize,
+): ResolvedV2Bounds =
+    resolveBounds(
+        provider = provider,
+        currentPosition = currentPosition,
+        currentSize = currentSize,
+        defaultPosition = WindowPosition(Alignment.Center),
+        defaultSize = defaultDialogSize,
+    )
+
+private fun resolveBounds(
+    provider: WindowBoundsProvider?,
+    currentPosition: WindowPosition,
+    currentSize: DpSize,
+    defaultPosition: WindowPosition,
+    defaultSize: DpSize,
+): ResolvedV2Bounds {
     if (provider == null || provider === WindowBoundsProvider.Default) {
-        // Tao dialogs centre on their owner when the v1 position is not Absolute.
-        return ResolvedV2Bounds(WindowPosition(Alignment.Center), defaultDialogSize)
+        return ResolvedV2Bounds(defaultPosition, defaultSize)
     }
-    val rect =
-        evaluateBoundsProvider(provider)
-            ?: return ResolvedV2Bounds(WindowPosition(Alignment.Center), defaultDialogSize)
-    return ResolvedV2Bounds(WindowPosition(rect.left, rect.top), wrapUnspecifiedAxes(rect.size))
+    if (provider is InspectableWindowBoundsProvider) {
+        val size =
+            provider.size
+                ?: currentSize.takeIf { it.width.isSpecified && it.height.isSpecified }
+                ?: defaultSize
+        val position =
+            provider.position ?: currentOrDefault(currentPosition, defaultPosition)
+        return ResolvedV2Bounds(position, wrapUnspecifiedAxes(size))
+    }
+    ComposeWindowV2Access.constantBoundsOrNull(provider)?.let { rect ->
+        return ResolvedV2Bounds(WindowPosition(rect.left, rect.top), wrapUnspecifiedAxes(rect.size))
+    }
+    v2Logger.log(
+        Level.FINE,
+        "Compose capturing WindowBoundsProvider cannot be read without AWT; using current geometry",
+    )
+    return ResolvedV2Bounds(
+        position = currentOrDefault(currentPosition, defaultPosition),
+        size = currentSize.takeIf { it.width.isSpecified && it.height.isSpecified } ?: defaultSize,
+    )
 }
+
+private fun currentOrDefault(
+    current: WindowPosition,
+    default: WindowPosition,
+): WindowPosition = if (current is WindowPosition.Absolute) current else default
 
 /** Zero axes from a content measure before the scene exists become wrap-content. */
 private fun wrapUnspecifiedAxes(size: DpSize): DpSize {
@@ -196,47 +284,6 @@ private fun wrapUnspecifiedAxes(size: DpSize): DpSize {
     val height = if (size.height.value <= 0f) Dp.Unspecified else size.height
     return DpSize(width, height)
 }
-
-private fun evaluateBoundsProvider(provider: WindowBoundsProvider): DpRect? {
-    val dummy =
-        geometryPeerOrNull(
-            bounds =
-                Rectangle(
-                    0,
-                    0,
-                    defaultWindowSize.width.value.roundToInt(),
-                    defaultWindowSize.height.value.roundToInt(),
-                ),
-            insets = Insets(0, 0, 0, 0),
-        ) ?: return null
-    return try {
-        ComposeWindowV2Access.evaluateBounds(
-            provider,
-            null,
-            dummy,
-        ) { _: Constraints -> IntSize.Zero }
-    } catch (e: Exception) {
-        v2Logger.log(Level.FINE, "Failed to evaluate Compose window v2 bounds provider", e)
-        null
-    } finally {
-        dummy.dispose()
-    }
-}
-
-private fun geometryPeerOrNull(
-    bounds: Rectangle,
-    insets: Insets,
-): java.awt.Window? =
-    try {
-        val gc =
-            GraphicsEnvironment
-                .getLocalGraphicsEnvironment()
-                .defaultScreenDevice
-                .defaultConfiguration
-        ComposeWindowV2Access.createGeometryPeer(gc, bounds, insets)
-    } catch (_: Exception) {
-        null
-    }
 
 private fun publishWindowObserved(
     v2: WindowStateV2,
@@ -260,7 +307,7 @@ private fun publishWindowObserved(
             )
         ComposeWindowV2Access.setBounds(v2, rect)
         if (ComposeWindowV2Access.screenIdOrNull(v2) == null) {
-            ComposeWindowV2Access.setScreenId(v2, currentScreenId())
+            ComposeWindowV2Access.setScreenId(v2, PRIMARY_SCREEN_ID)
         }
         if (visible) {
             ComposeWindowV2Access.setInitialized(v2, true)
@@ -288,23 +335,13 @@ private fun publishDialogObserved(
             )
         ComposeWindowV2Access.setDialogBounds(v2, rect)
         if (ComposeWindowV2Access.dialogScreenIdOrNull(v2) == null) {
-            ComposeWindowV2Access.setDialogScreenId(v2, currentScreenId())
+            ComposeWindowV2Access.setDialogScreenId(v2, PRIMARY_SCREEN_ID)
         }
         if (visible) {
             ComposeWindowV2Access.setDialogInitialized(v2, true)
         }
     }
 }
-
-private fun currentScreenId(): String =
-    try {
-        GraphicsEnvironment
-            .getLocalGraphicsEnvironment()
-            .defaultScreenDevice
-            .iDstring
-    } catch (_: Exception) {
-        "primary"
-    }
 
 private fun drainBounds(channel: Channel<WindowBoundsProvider>): WindowBoundsProvider? {
     var last: WindowBoundsProvider? = null

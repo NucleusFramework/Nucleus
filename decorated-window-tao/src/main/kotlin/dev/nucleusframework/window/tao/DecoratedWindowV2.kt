@@ -22,6 +22,12 @@ import dev.nucleusframework.window.tao.DecoratedWindow as DecoratedWindowV1
  * is published once the native window has been shown. [state] has no default
  * so `DecoratedWindow(onCloseRequest) { }` still resolves to the v1 overload.
  *
+ * `requestScreen` / `screenId` are drained and ignored: Tao only exposes the
+ * primary work area. Size/position providers that capture lambdas cannot be
+ * evaluated without AWT; use
+ * `androidx.compose.ui.window.v2.inspectableWindowBounds` or
+ * `WindowBoundsProvider.Absolute`.
+ *
  * @param minSize Minimum inner size. [DpSize.Unspecified] means no minimum.
  * @param maxSize Maximum inner size. [DpSize.Unspecified] means no maximum.
  */

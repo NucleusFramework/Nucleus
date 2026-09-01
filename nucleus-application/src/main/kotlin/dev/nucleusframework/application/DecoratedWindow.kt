@@ -190,6 +190,9 @@ public fun DecoratedWindow(
  *
  * [state] has no default so `DecoratedWindow(onCloseRequest) { }` still
  * resolves to the v1 overload.
+ *
+ * `requestScreen` / `screenId` are not applied on Tao (primary work area
+ * only).
  */
 @ExperimentalComposeUiApi
 @Suppress("FunctionNaming", "LongParameterList")

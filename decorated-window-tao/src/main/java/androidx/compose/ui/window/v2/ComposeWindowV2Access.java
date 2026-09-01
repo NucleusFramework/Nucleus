@@ -1,14 +1,7 @@
 package androidx.compose.ui.window.v2;
 
-import androidx.compose.ui.unit.Constraints;
 import androidx.compose.ui.unit.DpRect;
-import androidx.compose.ui.unit.IntSize;
 import androidx.compose.ui.window.WindowPlacement;
-import java.awt.GraphicsConfiguration;
-import java.awt.Insets;
-import java.awt.Rectangle;
-import java.awt.Window;
-import kotlin.jvm.functions.Function1;
 import kotlinx.coroutines.channels.Channel;
 
 /**
@@ -19,7 +12,8 @@ import kotlinx.coroutines.channels.Channel;
  * cannot see them; Java in this package can, because {@code internal} compiles
  * to public JVM members with a {@code $ui} name suffix.
  *
- * <p>Same pattern as {@code androidx.compose.ui.draganddrop.TaoTransferableAccess}.
+ * <p>Same pattern as {@code androidx.compose.ui.draganddrop.TaoTransferableAccess}:
+ * static dispatch only — no reflection, no extra GraalVM metadata.
  */
 public final class ComposeWindowV2Access {
     private ComposeWindowV2Access() {}
@@ -122,61 +116,16 @@ public final class ComposeWindowV2Access {
         state.setInitialized$ui(initialized);
     }
 
-    public static DpRect evaluateBounds(
-            WindowBoundsProvider provider,
-            Window parent,
-            Window window,
-            Function1<? super Constraints, IntSize> measureContent) {
-        WindowGeometryProviderScope scope =
-                new WindowGeometryProviderScope(parent, window, measureContent);
-        return scope.getBounds$ui(provider);
-    }
-
-    public static Window createGeometryPeer(
-            GraphicsConfiguration gc, Rectangle bounds, Insets insets) {
-        return new GeometryPeer(gc, bounds, insets);
-    }
-
     /**
-     * Displayable-looking AWT window that never creates a native peer. Used
-     * only so Compose's {@link WindowGeometryProviderScope} can evaluate a
-     * {@link WindowBoundsProvider} on the Tao backend.
+     * Evaluates providers that ignore the geometry scope (e.g.
+     * {@code WindowBoundsProvider.Absolute}). Returns {@code null} when the
+     * provider needs live window metrics.
      */
-    private static final class GeometryPeer extends Window {
-        private final Rectangle bounds;
-        private final Insets insets;
-        private final GraphicsConfiguration gc;
-
-        GeometryPeer(GraphicsConfiguration gc, Rectangle bounds, Insets insets) {
-            super((Window) null, gc);
-            this.gc = gc;
-            this.bounds = new Rectangle(bounds);
-            this.insets = (Insets) insets.clone();
-        }
-
-        @Override
-        public boolean isDisplayable() {
-            return true;
-        }
-
-        @Override
-        public Rectangle getBounds() {
-            return new Rectangle(bounds);
-        }
-
-        @Override
-        public void setBounds(int x, int y, int width, int height) {
-            bounds.setBounds(x, y, width, height);
-        }
-
-        @Override
-        public Insets getInsets() {
-            return (Insets) insets.clone();
-        }
-
-        @Override
-        public GraphicsConfiguration getGraphicsConfiguration() {
-            return gc;
+    public static DpRect constantBoundsOrNull(WindowBoundsProvider provider) {
+        try {
+            return provider.getBounds(null);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 }
