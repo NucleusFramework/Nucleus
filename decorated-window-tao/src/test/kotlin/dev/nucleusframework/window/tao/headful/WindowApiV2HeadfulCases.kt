@@ -49,8 +49,16 @@ internal object WindowApiV2HeadfulCases {
             // platform's placeholder position (32767 on Windows) until the
             // initial geometry effect applies, so a single read right after
             // mapping races the very thing under test.
+            var polls = 0
             awaitUntil("initial provider sized the window") {
                 val outer = outerDp()
+                // Once a second, so a CI timeout leaves the trajectory in the log.
+                if (polls++ % DIAG_EVERY_POLLS == 0) {
+                    System.err.println(
+                        "[v2-e2e] sizing outer=$outer " +
+                            "scale=${window.scaleFactor} initialized=${state.isInitialized}",
+                    )
+                }
                 closeEnough(INITIAL_SIZE.width.value, outer.width) &&
                     closeEnough(INITIAL_SIZE.height.value, outer.height)
             }
@@ -253,6 +261,8 @@ internal object WindowApiV2HeadfulCases {
     ) = check(closeEnough(expected, actual)) { "$what: expected ~${expected}dp, the window reported ${actual}dp" }
 
     private val isLinux: Boolean get() = Platform.Current == Platform.Linux
+
+    private const val DIAG_EVERY_POLLS = 40
 
     private const val RECT_X = 0
     private const val RECT_Y = 1
