@@ -102,6 +102,14 @@ public class TaoWindow internal constructor(
      */
     private val prepareCloseListeners = CopyOnWriteArrayList<() -> Unit>()
 
+    /**
+     * Fires synchronously at the start of [requestClose], right after
+     * [prepareCloseListeners]: windows *owned* by this one (satellites) sever
+     * their native owner link here, so Win32 / GTK don't destroy them together
+     * with their former owner while the app is handing them a new one.
+     */
+    private val closingListeners = CopyOnWriteArrayList<() -> Unit>()
+
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
@@ -244,6 +252,7 @@ public class TaoWindow internal constructor(
         } else {
             for (listener in prepareCloseListeners) listener.invoke()
         }
+        for (listener in closingListeners) listener.invoke()
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -889,6 +898,33 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
     }
 
+    /**
+     * [setOuterPosition] in physical screen pixels — the coordinate space
+     * [outerBoundsPx] reports in, so a caller that computes a target from live
+     * window rects never has to guess a scale factor.
+     *
+     * On Windows this goes straight to `SetWindowPos(SWP_NOSIZE)`: Tao's
+     * logical `set_outer_position` multiplies by the scale the window was
+     * *created* at, which is the wrong factor as soon as the window lives on a
+     * second monitor with a different DPI. macOS and Linux convert with the
+     * window's own scale factor, where logical units and the native frame
+     * (AppKit points / GTK logical pixels) line up.
+     */
+    internal fun setOuterPositionPx(
+        xPx: Int,
+        yPx: Int,
+    ) {
+        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetWindowOuterPositionPx(hwnd, xPx, yPx)
+                return
+            }
+        }
+        val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+        setOuterPosition(xPx / scale.toDouble(), yPx / scale.toDouble())
+    }
+
     /** `true` when the popup parent is a native Wayland surface (kind == 2). */
     private fun parentIsNativeWayland(): Boolean {
         if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
@@ -971,6 +1007,37 @@ public class TaoWindow internal constructor(
         resizedListeners += block
     }
 
+    // ── Multi-cast unsubscribe ────────────────────────────────────────────────
+    // A window that observes *another* window (a satellite following its
+    // parent) has a shorter lifetime than the window it listens to, so it must
+    // be able to detach. Windows that only listen to themselves don't need
+    // this: their listener lists die with the native window.
+
+    /** Detaches a listener registered with [onResized]. */
+    internal fun removeResizedListener(block: (Int, Int) -> Unit) {
+        resizedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onMoved]. */
+    internal fun removeMovedListener(block: (Int, Int) -> Unit) {
+        movedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onDestroyed]. */
+    internal fun removeDestroyedListener(block: () -> Unit) {
+        destroyedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onClosing]. */
+    internal fun removeClosingListener(block: () -> Unit) {
+        closingListeners -= block
+    }
+
+    /** Detaches a listener registered with [onFullscreenPrepare]. */
+    internal fun removeFullscreenPrepareListener(block: (Int, Int, Boolean) -> Unit) {
+        fullscreenPrepareListeners -= block
+    }
+
     public fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
         scaleFactorListener = block
     }
@@ -986,6 +1053,14 @@ public class TaoWindow internal constructor(
      */
     internal fun onPrepareClose(block: () -> Unit) {
         prepareCloseListeners += block
+    }
+
+    /**
+     * Owned-window hook: runs at the start of [requestClose], before the native
+     * destroy. Multi-cast; detach with [removeClosingListener].
+     */
+    internal fun onClosing(block: () -> Unit) {
+        closingListeners += block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
