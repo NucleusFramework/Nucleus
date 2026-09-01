@@ -58,7 +58,9 @@ apiValidation {
     // access). Implementation detail of decorated-window-tao, not public ABI.
     ignoredPackages.add("androidx.compose.ui.draganddrop")
     // ComposeWindowV2Access lives in androidx.compose.ui.window.v2 to reach
-    // Compose 1.12's internal WindowState/DialogState request channels.
+    // Compose 1.12's internal WindowState/DialogState request channels. Nothing
+    // user-facing lives there — inspectableWindowBounds is in
+    // dev.nucleusframework.window.tao precisely so apiCheck still covers it.
     ignoredPackages.add("androidx.compose.ui.window.v2")
 }
 

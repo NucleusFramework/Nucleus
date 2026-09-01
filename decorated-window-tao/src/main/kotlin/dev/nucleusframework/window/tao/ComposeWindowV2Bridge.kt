@@ -19,11 +19,10 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.v2.ComposeWindowV2Access
-import androidx.compose.ui.window.v2.InspectableWindowBoundsProvider
 import androidx.compose.ui.window.v2.WindowBoundsProvider
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.logging.Level
 import java.util.logging.Logger
 import androidx.compose.ui.window.v2.DialogState as DialogStateV2
 import androidx.compose.ui.window.v2.WindowState as WindowStateV2
@@ -33,6 +32,19 @@ private val v2Logger: Logger = Logger.getLogger("dev.nucleusframework.window.tao
 private val defaultWindowSize = DpSize(800.dp, 600.dp)
 private val defaultDialogSize = DpSize(800.dp, 600.dp)
 private const val PRIMARY_SCREEN_ID = "primary"
+
+/** Native geometry is only readable once Tao has realized the window. */
+private const val OBSERVED_BOUNDS_RETRIES = 20
+private const val OBSERVED_BOUNDS_RETRY_MS = 50L
+private const val RECT_ARRAY_SIZE = 4
+
+private const val UNRESOLVABLE_PROVIDER_MESSAGE =
+    "Ignoring a Compose WindowBoundsProvider that needs AWT window metrics. " +
+        "WindowState.requestSize(), requestPosition(), rememberWindowStateWithBounds() and " +
+        "capturing WindowBoundsProvider lambdas all route through an AWT-backed " +
+        "WindowGeometryProviderScope, which the Tao backend has no window to build. " +
+        "Use requestBounds(DpRect), WindowBoundsProvider.Absolute or " +
+        "dev.nucleusframework.window.tao.inspectableWindowBounds instead."
 
 internal data class ResolvedV2Bounds(
     val position: WindowPosition,
@@ -93,6 +105,7 @@ internal fun BindWindowStateV2(
     v2: WindowStateV2,
     v1: WindowState,
     visible: Boolean,
+    nativeWindow: TaoWindow? = null,
 ) {
     val latestV2 = v2
     val latestV1 = v1
@@ -109,8 +122,12 @@ internal fun BindWindowStateV2(
         }
         launch {
             for (provider in ComposeWindowV2Access.boundsRequests(latestV2)) {
+                // Skip the whole request when the provider can't be evaluated:
+                // writing Floating here would drop a maximized/fullscreen window
+                // back to its floating state for a request we then ignore.
                 val resolved =
-                    resolveWindowBounds(provider, latestV1.position, latestV1.size)
+                    resolveWindowBoundsOrNull(provider, latestV1.position, latestV1.size)
+                        ?: continue
                 latestV1.placement = WindowPlacement.Floating
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
@@ -123,8 +140,8 @@ internal fun BindWindowStateV2(
             ComposeWindowV2Access.screenRequests(latestV2).discardForever()
         }
     }
-    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible) {
-        publishWindowObserved(v2, v1, visible)
+    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
+        publishWindowObserved(v2, v1, visible, nativeWindow)
     }
 }
 
@@ -135,6 +152,7 @@ internal fun BindDialogStateV2(
     visible: Boolean,
     minSize: DpSize = DpSize.Unspecified,
     maxSize: DpSize = DpSize.Unspecified,
+    nativeWindow: TaoWindow? = null,
 ) {
     val latestV2 = v2
     val latestV1 = v1
@@ -142,7 +160,8 @@ internal fun BindDialogStateV2(
         launch {
             for (provider in ComposeWindowV2Access.dialogBoundsRequests(latestV2)) {
                 val resolved =
-                    resolveDialogBounds(provider, latestV1.position, latestV1.size)
+                    resolveDialogBoundsOrNull(provider, latestV1.position, latestV1.size)
+                        ?: continue
                 val clamped = clampSize(resolved.size, minSize, maxSize)
                 latestV1.size = clamped
                 latestV1.position = resolved.position
@@ -152,8 +171,8 @@ internal fun BindDialogStateV2(
             ComposeWindowV2Access.dialogScreenRequests(latestV2).discardForever()
         }
     }
-    LaunchedEffect(v1.size, v1.position, visible) {
-        publishDialogObserved(v2, v1, visible)
+    LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
+        publishDialogObserved(v2, v1, visible, nativeWindow)
     }
 }
 
@@ -215,11 +234,30 @@ internal fun clampSize(
     return DpSize(width, height)
 }
 
+/**
+ * Same as [resolveWindowBoundsOrNull] but falls back to the current (or
+ * default) geometry instead of returning `null`. Used on the window-creation
+ * path, which has to produce some geometry.
+ */
 internal fun resolveWindowBounds(
     provider: WindowBoundsProvider?,
     currentPosition: WindowPosition = WindowPosition.PlatformDefault,
     currentSize: DpSize = defaultWindowSize,
 ): ResolvedV2Bounds =
+    resolveWindowBoundsOrNull(provider, currentPosition, currentSize)
+        ?: ResolvedV2Bounds(
+            position = currentOrDefault(currentPosition, WindowPosition.PlatformDefault),
+            size =
+                currentSize.takeIf { it.width.isSpecified && it.height.isSpecified }
+                    ?: defaultWindowSize,
+        )
+
+/** `null` when [provider] cannot be evaluated without AWT window metrics. */
+internal fun resolveWindowBoundsOrNull(
+    provider: WindowBoundsProvider?,
+    currentPosition: WindowPosition = WindowPosition.PlatformDefault,
+    currentSize: DpSize = defaultWindowSize,
+): ResolvedV2Bounds? =
     resolveBounds(
         provider = provider,
         currentPosition = currentPosition,
@@ -233,6 +271,20 @@ internal fun resolveDialogBounds(
     currentPosition: WindowPosition = WindowPosition(Alignment.Center),
     currentSize: DpSize = defaultDialogSize,
 ): ResolvedV2Bounds =
+    resolveDialogBoundsOrNull(provider, currentPosition, currentSize)
+        ?: ResolvedV2Bounds(
+            position = currentOrDefault(currentPosition, WindowPosition(Alignment.Center)),
+            size =
+                currentSize.takeIf { it.width.isSpecified && it.height.isSpecified }
+                    ?: defaultDialogSize,
+        )
+
+/** `null` when [provider] cannot be evaluated without AWT window metrics. */
+internal fun resolveDialogBoundsOrNull(
+    provider: WindowBoundsProvider?,
+    currentPosition: WindowPosition = WindowPosition(Alignment.Center),
+    currentSize: DpSize = defaultDialogSize,
+): ResolvedV2Bounds? =
     resolveBounds(
         provider = provider,
         currentPosition = currentPosition,
@@ -247,7 +299,7 @@ private fun resolveBounds(
     currentSize: DpSize,
     defaultPosition: WindowPosition,
     defaultSize: DpSize,
-): ResolvedV2Bounds {
+): ResolvedV2Bounds? {
     if (provider == null || provider === WindowBoundsProvider.Default) {
         return ResolvedV2Bounds(defaultPosition, defaultSize)
     }
@@ -260,17 +312,14 @@ private fun resolveBounds(
             provider.position ?: currentOrDefault(currentPosition, defaultPosition)
         return ResolvedV2Bounds(position, wrapUnspecifiedAxes(size))
     }
-    ComposeWindowV2Access.constantBoundsOrNull(provider)?.let { rect ->
-        return ResolvedV2Bounds(WindowPosition(rect.left, rect.top), wrapUnspecifiedAxes(rect.size))
+    val rect = ComposeWindowV2Access.constantBoundsOrNull(provider)
+    if (rect == null) {
+        // WARNING, not FINE: the request is dropped entirely, and the API that
+        // produced it (requestSize / requestPosition) gives no other feedback.
+        v2Logger.warning(UNRESOLVABLE_PROVIDER_MESSAGE)
+        return null
     }
-    v2Logger.log(
-        Level.FINE,
-        "Compose capturing WindowBoundsProvider cannot be read without AWT; using current geometry",
-    )
-    return ResolvedV2Bounds(
-        position = currentOrDefault(currentPosition, defaultPosition),
-        size = currentSize.takeIf { it.width.isSpecified && it.height.isSpecified } ?: defaultSize,
-    )
+    return ResolvedV2Bounds(WindowPosition(rect.left, rect.top), wrapUnspecifiedAxes(rect.size))
 }
 
 private fun currentOrDefault(
@@ -285,62 +334,83 @@ private fun wrapUnspecifiedAxes(size: DpSize): DpSize {
     return DpSize(width, height)
 }
 
-private fun publishWindowObserved(
+private suspend fun publishWindowObserved(
     v2: WindowStateV2,
     v1: WindowState,
     visible: Boolean,
+    nativeWindow: TaoWindow?,
 ) {
     ComposeWindowV2Access.setPlacement(v2, v1.placement)
     ComposeWindowV2Access.setMinimized(v2, v1.isMinimized)
-    val pos = v1.position
-    val size = v1.size
-    if (pos is WindowPosition.Absolute &&
-        size.width.isSpecified &&
-        size.height.isSpecified
-    ) {
-        val rect =
-            DpRect(
-                left = pos.x,
-                top = pos.y,
-                right = pos.x + size.width,
-                bottom = pos.y + size.height,
-            )
-        ComposeWindowV2Access.setBounds(v2, rect)
-        if (ComposeWindowV2Access.screenIdOrNull(v2) == null) {
-            ComposeWindowV2Access.setScreenId(v2, PRIMARY_SCREEN_ID)
-        }
-        if (visible) {
-            ComposeWindowV2Access.setInitialized(v2, true)
-        }
+    val rect = observedRect(v1.position, v1.size, nativeWindow) ?: return
+    ComposeWindowV2Access.setBounds(v2, rect)
+    if (ComposeWindowV2Access.screenIdOrNull(v2) == null) {
+        ComposeWindowV2Access.setScreenId(v2, PRIMARY_SCREEN_ID)
+    }
+    if (visible) {
+        ComposeWindowV2Access.setInitialized(v2, true)
     }
 }
 
-private fun publishDialogObserved(
+private suspend fun publishDialogObserved(
     v2: DialogStateV2,
     v1: DialogState,
     visible: Boolean,
+    nativeWindow: TaoWindow?,
 ) {
-    val pos = v1.position
-    val size = v1.size
-    if (pos is WindowPosition.Absolute &&
-        size.width.isSpecified &&
-        size.height.isSpecified
-    ) {
-        val rect =
-            DpRect(
-                left = pos.x,
-                top = pos.y,
-                right = pos.x + size.width,
-                bottom = pos.y + size.height,
-            )
-        ComposeWindowV2Access.setDialogBounds(v2, rect)
-        if (ComposeWindowV2Access.dialogScreenIdOrNull(v2) == null) {
-            ComposeWindowV2Access.setDialogScreenId(v2, PRIMARY_SCREEN_ID)
-        }
-        if (visible) {
-            ComposeWindowV2Access.setDialogInitialized(v2, true)
-        }
+    val rect = observedRect(v1.position, v1.size, nativeWindow) ?: return
+    ComposeWindowV2Access.setDialogBounds(v2, rect)
+    if (ComposeWindowV2Access.dialogScreenIdOrNull(v2) == null) {
+        ComposeWindowV2Access.setDialogScreenId(v2, PRIMARY_SCREEN_ID)
     }
+    if (visible) {
+        ComposeWindowV2Access.setDialogInitialized(v2, true)
+    }
+}
+
+/**
+ * Observed window rectangle, preferring the v1 state and falling back to the
+ * native geometry.
+ *
+ * The v1 position only becomes [WindowPosition.Absolute] once Tao emits a move
+ * event, and a `PlatformDefault` window is never positioned programmatically.
+ * Without the native fallback a window manager that doesn't emit that move
+ * would leave `WindowState.isInitialized` false forever — and `bounds` / `size`
+ * / `position` throwing forever with it.
+ */
+private suspend fun observedRect(
+    position: WindowPosition,
+    size: DpSize,
+    nativeWindow: TaoWindow?,
+): DpRect? {
+    if (position is WindowPosition.Absolute && size.width.isSpecified && size.height.isSpecified) {
+        return DpRect(
+            left = position.x,
+            top = position.y,
+            right = position.x + size.width,
+            bottom = position.y + size.height,
+        )
+    }
+    val window = nativeWindow ?: return null
+    repeat(OBSERVED_BOUNDS_RETRIES) { attempt ->
+        window.outerBoundsDpOrNull()?.let { return it }
+        if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
+    }
+    return null
+}
+
+private fun TaoWindow.outerBoundsDpOrNull(): DpRect? {
+    val rect = outerBoundsPx() ?: return null
+    if (rect.size != RECT_ARRAY_SIZE) return null
+    val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+    val left = rect[0] / scale
+    val top = rect[1] / scale
+    return DpRect(
+        left = left.dp,
+        top = top.dp,
+        right = (left + rect[2] / scale).dp,
+        bottom = (top + rect[3] / scale).dp,
+    )
 }
 
 private fun drainBounds(channel: Channel<WindowBoundsProvider>): WindowBoundsProvider? {

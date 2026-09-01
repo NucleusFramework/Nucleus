@@ -5,6 +5,9 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
@@ -23,10 +26,11 @@ import dev.nucleusframework.window.tao.DecoratedWindow as DecoratedWindowV1
  * so `DecoratedWindow(onCloseRequest) { }` still resolves to the v1 overload.
  *
  * `requestScreen` / `screenId` are drained and ignored: Tao only exposes the
- * primary work area. Size/position providers that capture lambdas cannot be
- * evaluated without AWT; use
- * `androidx.compose.ui.window.v2.inspectableWindowBounds` or
- * `WindowBoundsProvider.Absolute`.
+ * primary work area. Size/position providers that capture lambdas — including
+ * the ones `requestSize` / `requestPosition` build internally — cannot be
+ * evaluated without AWT and are logged and skipped; use
+ * [inspectableWindowBounds], `WindowBoundsProvider.Absolute` or
+ * `requestBounds(DpRect)` instead.
  *
  * @param minSize Minimum inner size. [DpSize.Unspecified] means no minimum.
  * @param maxSize Maximum inner size. [DpSize.Unspecified] means no maximum.
@@ -62,6 +66,7 @@ public fun ApplicationScope.DecoratedWindow(
     content: @Composable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val v1 = rememberWindowStateV1(state)
+    val nativeWindow = remember(state) { mutableStateOf<TaoWindow?>(null) }
     DecoratedWindowV1(
         onCloseRequest = onCloseRequest,
         state = v1,
@@ -89,10 +94,21 @@ public fun ApplicationScope.DecoratedWindow(
         alwaysOnBottom = alwaysOnBottom,
         content = {
             ApplyMaxSize(maxSize)
+            CaptureNativeWindow(nativeWindow)
             content()
         },
     )
-    BindWindowStateV2(state, v1, visible)
+    BindWindowStateV2(state, v1, visible, nativeWindow.value)
+}
+
+/**
+ * Publishes the scope's [TaoWindow] so the v2 bridge can read the real window
+ * geometry when the v1 state never turns [androidx.compose.ui.window.WindowPosition.Absolute].
+ */
+@Composable
+private fun TaoDecoratedWindowScope.CaptureNativeWindow(holder: MutableState<TaoWindow?>) {
+    val window = this.window
+    LaunchedEffect(window) { holder.value = window }
 }
 
 @Composable

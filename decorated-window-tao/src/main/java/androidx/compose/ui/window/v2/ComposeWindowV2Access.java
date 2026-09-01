@@ -120,11 +120,16 @@ public final class ComposeWindowV2Access {
      * Evaluates providers that ignore the geometry scope (e.g.
      * {@code WindowBoundsProvider.Absolute}). Returns {@code null} when the
      * provider needs live window metrics.
+     *
+     * <p>Only {@link NullPointerException} — what dereferencing the {@code null}
+     * scope throws — is treated as "needs live metrics". Anything else comes
+     * from the caller's own provider lambda and is propagated so a real bug
+     * does not turn into a silently dropped geometry request.
      */
     public static DpRect constantBoundsOrNull(WindowBoundsProvider provider) {
         try {
             return provider.getBounds(null);
-        } catch (Throwable ignored) {
+        } catch (NullPointerException needsLiveMetrics) {
             return null;
         }
     }

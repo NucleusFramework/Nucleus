@@ -11,8 +11,9 @@ import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.v2.ComposeWindowV2Access
 import androidx.compose.ui.window.v2.WindowBoundsProvider
+import androidx.compose.ui.window.v2.WindowPositionProvider
+import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.WindowState
-import androidx.compose.ui.window.v2.inspectableWindowBounds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -97,6 +98,33 @@ class ComposeWindowV2BridgeTest {
         val position = assertIs<WindowPosition.Absolute>(v1.position)
         assertEquals(10.dp, position.x)
         assertEquals(20.dp, position.y)
+    }
+
+    @Test
+    fun providerNeedingAwtMetricsIsSkippedRatherThanApplied() {
+        // What WindowState.requestSize(DpSize) builds internally: the two-arg
+        // factory dereferences the (absent) WindowGeometryProviderScope.
+        val provider = WindowBoundsProvider(sizeProvider = WindowSizeProvider.Fixed(400.dp, 300.dp))
+        assertNull(
+            resolveWindowBoundsOrNull(
+                provider,
+                currentPosition = WindowPosition.Absolute(40.dp, 60.dp),
+                currentSize = DpSize(1024.dp, 720.dp),
+            ),
+        )
+        assertNull(resolveDialogBoundsOrNull(provider))
+    }
+
+    @Test
+    fun creationPathFallsBackToCurrentGeometryForUnresolvableProvider() {
+        val resolved =
+            resolveWindowBounds(
+                WindowBoundsProvider(positionProvider = WindowPositionProvider.Absolute(1.dp, 2.dp)),
+                currentPosition = WindowPosition.Absolute(40.dp, 60.dp),
+                currentSize = DpSize(1024.dp, 720.dp),
+            )
+        assertEquals(DpSize(1024.dp, 720.dp), resolved.size)
+        assertEquals(WindowPosition.Absolute(40.dp, 60.dp), resolved.position)
     }
 
     @Test

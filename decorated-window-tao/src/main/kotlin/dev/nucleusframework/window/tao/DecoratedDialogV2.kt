@@ -5,6 +5,9 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
@@ -45,9 +48,14 @@ public fun ApplicationScope.DecoratedDialog(
     content: @Composable TaoDecoratedDialogScope.() -> Unit,
 ) {
     val v1 = rememberDialogStateV1(state)
-    val clamped = clampSize(v1.size, minSize, maxSize)
-    if (clamped != v1.size) {
-        v1.size = clamped
+    val nativeWindow = remember(state) { mutableStateOf<TaoWindow?>(null) }
+    // Clamping is a side effect, not composition output: writing v1.size during
+    // composition schedules a recomposition on every native resize past maxSize.
+    LaunchedEffect(v1, v1.size, minSize, maxSize) {
+        val clamped = clampSize(v1.size, minSize, maxSize)
+        if (clamped != v1.size) {
+            v1.size = clamped
+        }
     }
     DecoratedDialogV1(
         onCloseRequest = onCloseRequest,
@@ -63,10 +71,18 @@ public fun ApplicationScope.DecoratedDialog(
         compositionLocalContext = compositionLocalContext,
         content = {
             ApplySizeConstraints(minSize, maxSize)
+            CaptureNativeWindow(nativeWindow)
             content()
         },
     )
-    BindDialogStateV2(state, v1, visible, minSize, maxSize)
+    BindDialogStateV2(state, v1, visible, minSize, maxSize, nativeWindow.value)
+}
+
+/** See `DecoratedWindowV2`'s counterpart — lets the bridge read real geometry. */
+@Composable
+private fun TaoDecoratedDialogScope.CaptureNativeWindow(holder: MutableState<TaoWindow?>) {
+    val window = this.window
+    LaunchedEffect(window) { holder.value = window }
 }
 
 @Composable

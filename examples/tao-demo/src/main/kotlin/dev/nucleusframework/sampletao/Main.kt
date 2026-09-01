@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.v2.inspectableWindowBounds
 import androidx.compose.ui.window.v2.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
@@ -69,6 +68,7 @@ import dev.nucleusframework.window.macOSLargeCornerRadius
 import dev.nucleusframework.window.styling.TitleBarColors
 import dev.nucleusframework.window.styling.TitleBarMetrics
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.inspectableWindowBounds
 import java.awt.datatransfer.StringSelection
 
 fun main() {

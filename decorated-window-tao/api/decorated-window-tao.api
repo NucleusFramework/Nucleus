@@ -242,6 +242,11 @@ public final class dev/nucleusframework/window/tao/DmaBufTestTextureProducer$Com
 	public static synthetic fun createYuv$default (Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer$Companion;IILdev/nucleusframework/window/tao/NucleusYuvFormat;Ldev/nucleusframework/window/tao/NucleusYuvColorSpace;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/DmaBufTestTextureProducer;
 }
 
+public final class dev/nucleusframework/window/tao/InspectableWindowBoundsKt {
+	public static final fun inspectableWindowBounds-8P0U83o (Landroidx/compose/ui/unit/DpSize;Landroidx/compose/ui/window/WindowPosition;)Landroidx/compose/ui/window/v2/WindowBoundsProvider;
+	public static synthetic fun inspectableWindowBounds-8P0U83o$default (Landroidx/compose/ui/unit/DpSize;Landroidx/compose/ui/window/WindowPosition;ILjava/lang/Object;)Landroidx/compose/ui/window/v2/WindowBoundsProvider;
+}
+
 public final class dev/nucleusframework/window/tao/MacOSStyle : java/lang/Enum {
 	public static final field Auto Ldev/nucleusframework/window/tao/MacOSStyle;
 	public static final field Classic Ldev/nucleusframework/window/tao/MacOSStyle;

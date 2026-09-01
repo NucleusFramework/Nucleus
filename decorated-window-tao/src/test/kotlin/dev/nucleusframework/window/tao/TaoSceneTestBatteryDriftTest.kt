@@ -105,6 +105,8 @@ class TaoSceneTestBatteryDriftTest {
                 "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
             dev.nucleusframework.window.ChromeLogicTest::class.java to
                 "unit tests for chrome helpers; no ComposeScene",
+            ComposeWindowV2BridgeTest::class.java to
+                "pure Compose window API v1↔v2 state mapping, no ComposeScene",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =
