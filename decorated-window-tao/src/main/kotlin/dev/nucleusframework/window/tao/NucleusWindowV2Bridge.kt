@@ -25,6 +25,7 @@ import dev.nucleusframework.window.tao.v2.Screen
 import dev.nucleusframework.window.tao.v2.WindowBoundsProvider
 import dev.nucleusframework.window.tao.v2.WindowGeometryProviderScope
 import dev.nucleusframework.window.tao.v2.WindowMetrics
+import dev.nucleusframework.window.tao.v2.WindowPositionProvider
 import dev.nucleusframework.window.tao.v2.WindowScreenProvider
 import dev.nucleusframework.window.tao.v2.evaluateBounds
 import dev.nucleusframework.window.tao.v2.evaluatePosition
@@ -317,6 +318,17 @@ private fun resolveInitialBounds(
                 ),
             parentWindowMetrics = null,
         )
+    // Before the window exists, "the current position" is the one the window
+    // manager has not chosen yet. `requestSize` / `WindowBoundsProvider(size)`
+    // pair their size with `WindowPositionProvider.Current`, and resolving that
+    // against the placeholder rectangle above would pin the window to an
+    // absolute point — the v1 `size =` idiom this replaces leaves placement to
+    // the platform, so keep that here. (`WindowSizeProvider.Current` reads the
+    // placeholder's default size, which is already the v1 default.)
+    if (provider is CombinedBoundsProvider && provider.positionProvider === WindowPositionProvider.Current) {
+        val size = sanitizeSize(scope.evaluateSize(provider.sizeProvider))
+        return ResolvedV2Bounds(WindowPosition.PlatformDefault, size)
+    }
     return scope.resolve(provider, WindowPosition.PlatformDefault)
 }
 

@@ -62,6 +62,29 @@ class NucleusWindowV2BridgeTest {
     }
 
     @Test
+    fun sizeOnlyProviderLeavesTheInitialPositionToThePlatform() {
+        // `WindowBoundsProvider(sizeProvider = …)` / `requestSize` pair the size
+        // with WindowPositionProvider.Current; before the window exists that
+        // must mean "platform default", not a pinned point — same as v1's
+        // `rememberWindowState(size = …)`.
+        val state = WindowState(initialBoundsProvider = WindowBoundsProvider(WindowSizeProvider.Fixed(1024.dp, 720.dp)))
+        val v1 = nucleusWindowStateToV1(state)
+        assertEquals(DpSize(1024.dp, 720.dp), v1.size)
+        assertEquals(WindowPosition.PlatformDefault, v1.position)
+
+        val requested = WindowState()
+        requested.requestSize(DpSize(1280.dp, 800.dp))
+        assertEquals(WindowPosition.PlatformDefault, nucleusWindowStateToV1(requested).position)
+    }
+
+    @Test
+    fun positionOnlyRequestKeepsTheDefaultSize() {
+        val state = WindowState()
+        state.requestPosition(DpOffset(10.dp, 20.dp))
+        assertEquals(DpSize(800.dp, 600.dp), nucleusWindowStateToV1(state).size)
+    }
+
+    @Test
     fun requestPositionIsHonoured() {
         val state = WindowState()
         state.requestPosition(DpOffset(120.dp, 140.dp))
