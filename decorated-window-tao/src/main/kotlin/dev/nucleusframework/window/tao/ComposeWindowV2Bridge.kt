@@ -6,6 +6,7 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -133,6 +134,31 @@ internal fun dialogStateV2ToV1(state: DialogStateV2): DialogState {
     )
 }
 
+/**
+ * Counter bumped on every native move / resize of [window], for use as an
+ * effect key.
+ *
+ * Keying the observed-geometry effect on the v1 state alone is not enough: the
+ * window manager moves and resizes a window without the v1 state changing —
+ * the initial geometry apply itself lands *after* that effect has run — which
+ * would leave `bounds` reporting a stale rectangle for the rest of the window's
+ * life. The callbacks fire on the Tao event-loop thread, which is also the
+ * Compose dispatcher, so writing snapshot state from them is safe.
+ *
+ * One registration per window instance ([LaunchedEffect] keyed on the window),
+ * matching the listeners' append-only contract.
+ */
+@Composable
+internal fun rememberNativeGeometryTick(window: TaoWindow?): Int {
+    val tick = remember(window) { mutableIntStateOf(0) }
+    LaunchedEffect(window) {
+        val target = window ?: return@LaunchedEffect
+        target.onMoved { _, _ -> tick.value++ }
+        target.onResized { _, _ -> tick.value++ }
+    }
+    return tick.value
+}
+
 @Composable
 internal fun BindWindowStateV2(
     v2: WindowStateV2,
@@ -178,7 +204,8 @@ internal fun BindWindowStateV2(
             ComposeWindowV2Access.screenRequests(latestV2).discardForever()
         }
     }
-    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
+    val geometryTick = rememberNativeGeometryTick(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow, geometryTick) {
         publishWindowObserved(v2, v1, visible, nativeWindow)
     }
 }
@@ -216,7 +243,8 @@ internal fun BindDialogStateV2(
             ComposeWindowV2Access.dialogScreenRequests(latestV2).discardForever()
         }
     }
-    LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
+    val geometryTick = rememberNativeGeometryTick(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, visible, nativeWindow, geometryTick) {
         publishDialogObserved(v2, v1, visible, nativeWindow)
     }
 }

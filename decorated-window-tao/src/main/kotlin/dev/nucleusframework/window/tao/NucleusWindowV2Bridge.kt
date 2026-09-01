@@ -168,7 +168,8 @@ internal fun BindNucleusWindowState(
             }
         }
     }
-    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
+    val geometryTick = rememberNativeGeometryTick(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow, geometryTick) {
         latestV2.placementOrNull = v1.placement
         latestV2.minimizedOrNull = v1.isMinimized
         publishObserved(
@@ -215,7 +216,8 @@ internal fun BindNucleusDialogState(
             }
         }
     }
-    LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
+    val geometryTick = rememberNativeGeometryTick(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, visible, nativeWindow, geometryTick) {
         publishObserved(
             window = nativeWindow,
             position = v1.position,
