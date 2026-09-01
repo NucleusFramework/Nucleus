@@ -1,8 +1,11 @@
 package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
+import dev.nucleusframework.window.tao.SatelliteWindowState
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
@@ -74,6 +77,29 @@ internal class TaoWindowTestCase(
      */
     val dialogSize: DpSize? = null,
     val dialogContent: (@Composable TaoDecoratedDialogScope.() -> Unit)? = null,
+    /**
+     * Whether the dialog is in composition. Defaults to `true`; a driver flips
+     * it to `false` to close the dialog the way an app would — by dropping it.
+     */
+    val dialogVisible: MutableState<Boolean> = mutableStateOf(true),
+    /**
+     * When non-null, the suite composes a
+     * [dev.nucleusframework.window.tao.SatelliteWindow] *inside* this case's
+     * window content — so it picks the case window up as its parent through
+     * `LocalTaoWindow` — driven by this state. The case keeps the reference and
+     * asserts against the anchoring state it publishes.
+     */
+    val satelliteState: SatelliteWindowState? = null,
+    /**
+     * When non-null, the satellite is composed at *application* scope with an
+     * explicit `parent` picked from this state — the reparenting call site —
+     * instead of inside the case window's content. Flip it from the driver.
+     */
+    val satelliteOwner: MutableState<SatelliteOwner>? = null,
+    /** Routed to the satellite's `onCloseRequest`; the suite never drops the satellite itself. */
+    val satelliteOnCloseRequest: () -> Unit = {},
+    /** Content of the satellite window; ignored without a [satelliteState]. */
+    val satelliteContent: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     /** Optional extra window content composed inside the DecoratedWindow. */
     val content: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     val driver: suspend TaoWindowTestScope.() -> Unit,
@@ -83,10 +109,20 @@ internal class TaoWindowTestCase(
     }
 }
 
+/** Which of the suite's windows owns the satellite — see [TaoWindowTestCase.satelliteOwner]. */
+internal enum class SatelliteOwner {
+    CaseWindow,
+    DialogWindow,
+}
+
 internal class TaoWindowTestScope(
     val window: TaoWindow,
     val dialogWindow: TaoWindow? = null,
+    val satelliteWindow: TaoWindow? = null,
 ) {
+    /** Outer bounds of the satellite window as `[x, y, w, h]` physical px. */
+    fun satelliteBounds(): LongArray? = satelliteWindow?.outerBoundsPx()
+
     /**
      * Polls [predicate] on the composition dispatcher (the Tao main thread)
      * until it holds — suspension keeps the event loop running in between.

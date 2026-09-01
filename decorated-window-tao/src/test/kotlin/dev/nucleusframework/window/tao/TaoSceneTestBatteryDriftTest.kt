@@ -78,6 +78,7 @@ class TaoSceneTestBatteryDriftTest {
             TaoA11yProjectionTest::class.java,
             TitleBarHitTestTest::class.java,
             LcdTextTest::class.java,
+            WindowPositionerTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */
