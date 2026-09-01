@@ -6,7 +6,6 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -135,28 +134,34 @@ internal fun dialogStateV2ToV1(state: DialogStateV2): DialogState {
 }
 
 /**
- * Counter bumped on every native move / resize of [window], for use as an
- * effect key.
+ * Signals every native move / resize of [window].
  *
  * Keying the observed-geometry effect on the v1 state alone is not enough: the
  * window manager moves and resizes a window without the v1 state changing —
  * the initial geometry apply itself lands *after* that effect has run — which
  * would leave `bounds` reporting a stale rectangle for the rest of the window's
- * life. The callbacks fire on the Tao event-loop thread, which is also the
- * Compose dispatcher, so writing snapshot state from them is safe.
+ * life.
+ *
+ * A conflated channel rather than snapshot state: the callbacks fire on the
+ * event-loop thread from inside the platform's resize handling, which can be
+ * *within* a Compose measure/layout pass. Writing snapshot state there
+ * re-enters layout through the recomposition it schedules
+ * ("performMeasureAndLayout called during measure layout"); a channel send
+ * carries no such obligation, and the receiving coroutine resumes on the
+ * dispatcher once the native frame has unwound.
  *
  * One registration per window instance ([LaunchedEffect] keyed on the window),
  * matching the listeners' append-only contract.
  */
 @Composable
-internal fun rememberNativeGeometryTick(window: TaoWindow?): Int {
-    val tick = remember(window) { mutableIntStateOf(0) }
+internal fun rememberNativeGeometrySignal(window: TaoWindow?): Channel<Unit> {
+    val signal = remember(window) { Channel<Unit>(Channel.CONFLATED) }
     LaunchedEffect(window) {
         val target = window ?: return@LaunchedEffect
-        target.onMoved { _, _ -> tick.value++ }
-        target.onResized { _, _ -> tick.value++ }
+        target.onMoved { _, _ -> signal.trySend(Unit) }
+        target.onResized { _, _ -> signal.trySend(Unit) }
     }
-    return tick.value
+    return signal
 }
 
 @Composable
@@ -204,9 +209,12 @@ internal fun BindWindowStateV2(
             ComposeWindowV2Access.screenRequests(latestV2).discardForever()
         }
     }
-    val geometryTick = rememberNativeGeometryTick(nativeWindow)
-    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow, geometryTick) {
+    val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
         publishWindowObserved(v2, v1, visible, nativeWindow)
+        for (event in geometrySignal) {
+            publishWindowObserved(v2, v1, visible, nativeWindow)
+        }
     }
 }
 
@@ -243,9 +251,12 @@ internal fun BindDialogStateV2(
             ComposeWindowV2Access.dialogScreenRequests(latestV2).discardForever()
         }
     }
-    val geometryTick = rememberNativeGeometryTick(nativeWindow)
-    LaunchedEffect(v1.size, v1.position, visible, nativeWindow, geometryTick) {
+    val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
         publishDialogObserved(v2, v1, visible, nativeWindow)
+        for (event in geometrySignal) {
+            publishDialogObserved(v2, v1, visible, nativeWindow)
+        }
     }
 }
 

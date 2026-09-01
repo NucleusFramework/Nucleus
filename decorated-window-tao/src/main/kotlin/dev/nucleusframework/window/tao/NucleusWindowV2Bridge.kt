@@ -168,18 +168,24 @@ internal fun BindNucleusWindowState(
             }
         }
     }
-    val geometryTick = rememberNativeGeometryTick(nativeWindow)
-    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow, geometryTick) {
+    val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
         latestV2.placementOrNull = v1.placement
         latestV2.minimizedOrNull = v1.isMinimized
-        publishObserved(
-            window = nativeWindow,
-            position = v1.position,
-            size = v1.size,
-            setBounds = { latestV2.boundsOrNull = it },
-            setScreenId = { latestV2.screenIdOrNull = it },
-            markInitialized = { if (visible) latestV2.isInitialized = true },
-        )
+
+        suspend fun publish() =
+            publishObserved(
+                window = nativeWindow,
+                position = v1.position,
+                size = v1.size,
+                setBounds = { latestV2.boundsOrNull = it },
+                setScreenId = { latestV2.screenIdOrNull = it },
+                markInitialized = { if (visible) latestV2.isInitialized = true },
+            )
+        publish()
+        for (event in geometrySignal) {
+            publish()
+        }
     }
 }
 
@@ -216,16 +222,21 @@ internal fun BindNucleusDialogState(
             }
         }
     }
-    val geometryTick = rememberNativeGeometryTick(nativeWindow)
-    LaunchedEffect(v1.size, v1.position, visible, nativeWindow, geometryTick) {
-        publishObserved(
-            window = nativeWindow,
-            position = v1.position,
-            size = v1.size,
-            setBounds = { latestV2.boundsOrNull = it },
-            setScreenId = { latestV2.screenIdOrNull = it },
-            markInitialized = { if (visible) latestV2.isInitialized = true },
-        )
+    val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
+    LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
+        suspend fun publish() =
+            publishObserved(
+                window = nativeWindow,
+                position = v1.position,
+                size = v1.size,
+                setBounds = { latestV2.boundsOrNull = it },
+                setScreenId = { latestV2.screenIdOrNull = it },
+                markInitialized = { if (visible) latestV2.isInitialized = true },
+            )
+        publish()
+        for (event in geometrySignal) {
+            publish()
+        }
     }
 }
 
