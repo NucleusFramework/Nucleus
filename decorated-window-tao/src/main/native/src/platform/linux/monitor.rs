@@ -113,8 +113,16 @@ fn collect_monitors(handle: jlong) -> Option<Vec<String>> {
     // `Monitor`'s are on MonitorExt, like the primary-monitor helpers above.
     use gtk::prelude::MonitorExt;
 
-    let display =
-        with_window(handle, |w| Some(display_of(w))).or_else(gtk::gdk::Display::default)?;
+    let display = match with_window(handle, |w| Some(display_of(w))) {
+        Some(display) => display,
+        // `Display::default()` is `assert_initialized_main_thread!()`, and a
+        // failed Rust assertion across FFI aborts the process — it took the
+        // whole test JVM down with SIGABRT on a headless CI box. Anything that
+        // reaches here without a realized window (a tray-only app, a unit
+        // test) has to be told "no monitors", not killed.
+        None if gtk::is_initialized_main_thread() => gtk::gdk::Display::default()?,
+        None => return None,
+    };
     let count = display.n_monitors();
     let mut rows = Vec::with_capacity(count.max(0) as usize);
     for index in 0..count {
