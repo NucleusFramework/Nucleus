@@ -140,6 +140,30 @@ internal object NativeTaoWindowsDecoBridge {
     )
 
     /**
+     * Applies the requested topmost z-order directly and synchronously,
+     * bypassing tao's `WindowFlags` cache (issue #631). tao only issues the
+     * z-order `SetWindowPos` on a flag *diff* — and then asynchronously — so
+     * a `WS_EX_TOPMOST` membership lost to an external rewrite (fullscreen
+     * toggle, DWM backdrop switch, size apply) is never repaired through the
+     * regular `setAlwaysOnTop` path. Idempotent when the z-order already
+     * matches.
+     */
+    @JvmStatic
+    external fun nativeApplyTopmost(
+        hwnd: Long,
+        topmost: Boolean,
+    )
+
+    /**
+     * E2E probe: whether [hwnd] is currently a member of the topmost band
+     * (`WS_EX_TOPMOST`). Mirrors [nativeIsBackdropActive]'s role — lets the
+     * headful suite assert the real z-order bit instead of Kotlin caches
+     * (issue #631 regression coverage).
+     */
+    @JvmStatic
+    external fun nativeIsTopmost(hwnd: Long): Boolean
+
+    /**
      * Toggles borderless fullscreen. The geometry change runs inline and
      * its `WM_WINDOWPOSCHANGED` re-enters the JVM synchronously via
      * [onFullscreenSizeChanged], so the new-size frame is rendered and
@@ -315,4 +339,16 @@ internal object NativeTaoWindowsDecoBridge {
         startScreenX: Int,
         startScreenY: Int,
     ): LongArray?
+
+    /**
+     * Windows ClearType pixel geometry for Skia LCD text.
+     *
+     * `0` = font smoothing off or not ClearType, `1` = RGB_H, `2` = BGR_H.
+     */
+    @JvmStatic
+    external fun nativeFontSmoothingPixelGeometry(): Int
+
+    const val FONT_SMOOTHING_UNKNOWN: Int = 0
+    const val FONT_SMOOTHING_RGB: Int = 1
+    const val FONT_SMOOTHING_BGR: Int = 2
 }

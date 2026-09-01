@@ -2067,3 +2067,78 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWin
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+#ifndef SPI_GETFONTSMOOTHINGTYPE
+#define SPI_GETFONTSMOOTHINGTYPE 0x200A
+#endif
+#ifndef FE_FONTSMOOTHINGCLEARTYPE
+#define FE_FONTSMOOTHINGCLEARTYPE 0x0002
+#endif
+#ifndef SPI_GETFONTSMOOTHINGORIENTATION
+#define SPI_GETFONTSMOOTHINGORIENTATION 0x2012
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONBGR
+#define FE_FONTSMOOTHINGORIENTATIONBGR 0x0000
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONRGB
+#define FE_FONTSMOOTHINGORIENTATIONRGB 0x0001
+#endif
+
+/* 0 = grayscale / unknown, 1 = RGB_H, 2 = BGR_H. Used by Tao LCD text. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSmoothingPixelGeometry(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    BOOL smoothing = FALSE;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smoothing, 0) || !smoothing) {
+        return 0;
+    }
+    UINT type = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) ||
+        type != FE_FONTSMOOTHINGCLEARTYPE) {
+        return 0;
+    }
+    UINT orientation = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0)) {
+        /* Unknown stripe order: degrade to grayscale, never assume RGB —
+         * a wrong guess on a BGR panel inverts every fringe. */
+        return 0;
+    }
+    if (orientation == FE_FONTSMOOTHINGORIENTATIONBGR) {
+        return 2;
+    }
+    return 1;
+}
+/* Issue #631: apply the requested topmost z-order directly and synchronously.
+ * tao caches its WindowFlags and only issues the z-order SetWindowPos when a
+ * flag *diff* appears (and then with SWP_ASYNCWINDOWPOS), so a WS_EX_TOPMOST
+ * band membership lost to an external rewrite — the fullscreen toggle's
+ * HWND_NOTOPMOST, a DWM backdrop switch, a size apply racing the async
+ * z-order change — is never repaired through that path: the cache still says
+ * ALWAYS_ON_TOP and the diff stays empty. This bypasses the cache entirely
+ * and is idempotent when the z-order already matches. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeApplyTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean topmost)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    SetWindowPos(hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+        0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+/* E2E probe (issue #631 headful regression): whether the HWND is currently a
+ * member of the topmost band. Mirrors nativeIsBackdropActive's role — lets
+ * the headful suite assert the real z-order bit instead of Kotlin caches. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    return (ex & WS_EX_TOPMOST) ? JNI_TRUE : JNI_FALSE;
+}
+

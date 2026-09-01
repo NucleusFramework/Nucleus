@@ -13,6 +13,7 @@ import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
+import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -490,6 +491,22 @@ public object TaoSceneTestBattery {
         }
         run("TaoA11yProjectionTest: projected snapshot round-trips through the v7 wire format") {
             TaoA11yProjectionTest().`projected snapshot round-trips through the v7 wire format`()
+        }
+
+        run("LcdTextTest: transparent windows disable LCD surface props") {
+            LcdTextTest().`transparent windows disable LCD surface props`()
+        }
+        run("LcdTextTest: opaque windows on Windows keep RGB or BGR geometry") {
+            LcdTextTest().`opaque windows on Windows keep RGB or BGR geometry`()
+        }
+        run("LcdTextTest: macOS and Linux stay grayscale") {
+            LcdTextTest().`macOS and Linux stay grayscale`()
+        }
+        run("LcdTextTest: ClearType off means no LCD surface props") {
+            LcdTextTest().`ClearType off means no LCD surface props`()
+        }
+        run("LcdTextTest: Compose LCD text on an RGB surface has chromatic edges") {
+            LcdTextTest().`Compose LCD text on an RGB surface has chromatic edges`()
         }
 
         return results

@@ -193,6 +193,10 @@ internal object WindowsBackdropMode {
 
         val holder = Holder(style, tint, tier, composeTint = 0, WindowsBackdropAppliedTier.None)
         val applied = applyNative(hwnd, holder)
+        // The backdrop apply rewrites the window's DWM/frame state and can
+        // drop WS_EX_TOPMOST on the way (#631); reassert the requested
+        // z-order after it.
+        window.reassertAlwaysOnTop()
         // A style the OS declined is not stacked at all: transparency over a
         // backdrop that was never drawn renders as black, and an unstacked
         // holder's release can never underflow a survivor's slot.
@@ -230,6 +234,8 @@ internal object WindowsBackdropMode {
                     WindowsBackdropTier.Auto.nativeValue,
                 )
             }
+            // See acquire: backdrop teardown is a style rewrite too (#631).
+            window.reassertAlwaysOnTop()
             return
         }
         if (wasTop) {
@@ -240,6 +246,7 @@ internal object WindowsBackdropMode {
             if (hwnd != 0L) top.appliedTier = applyNative(hwnd, top)
             entry.transparencyState?.value = top.appliedTier != WindowsBackdropAppliedTier.None
             entry.composeTintState?.value = top.composeTint
+            window.reassertAlwaysOnTop()
         }
     }
 

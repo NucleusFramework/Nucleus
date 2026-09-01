@@ -11,6 +11,7 @@ import dev.nucleusframework.desktop.application.dsl.AotCacheCompatibility
 import dev.nucleusframework.desktop.application.dsl.AotCacheSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
 import dev.nucleusframework.desktop.application.internal.validation.validatePackageVersions
 import dev.nucleusframework.desktop.application.tasks.AbstractCheckNativeDistributionRuntime
@@ -85,6 +86,10 @@ internal fun JvmApplicationContext.configureJvmApplication() {
     if (app.nativeDistributions.cleanupNativeLibs) {
         registerCleanNativeLibsTransform(project)
     }
+
+    // LCD / ClearType text on Windows (#875): patch Compose's hardcoded
+    // grayscale PlatformDefault at build time — see LcdTextDefaultTransform.
+    configureLcdTextDefaultTransform(project)
 
     validatePackageVersions()
     validateMacBundleName()

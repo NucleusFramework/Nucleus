@@ -3,7 +3,6 @@ package jewelsample
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEvent
@@ -16,19 +15,14 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
-import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
-import dev.nucleusframework.window.NucleusDecoratedWindowTheme
-import dev.nucleusframework.window.jewel.ProvideJewelSpellcheckMenu
-import dev.nucleusframework.window.jewel.rememberJewelTitleBarStyle
-import dev.nucleusframework.window.jewel.rememberJewelWindowStyle
+import dev.nucleusframework.window.jewel.JewelDecoratedWindow
 import jewelsample.view.TitleBarView
 import jewelsample.viewmodel.MainViewModel
 import jewelsample.viewmodel.MainViewModel.currentView
 import org.jetbrains.compose.resources.ExperimentalResourceApi
 import org.jetbrains.compose.resources.decodeToSvgPainter
-import org.jetbrains.jewel.foundation.ExperimentalJewelApi
 import org.jetbrains.jewel.foundation.theme.JewelTheme
 import org.jetbrains.jewel.foundation.util.JewelLogger
 import org.jetbrains.jewel.intui.markdown.standalone.ProvideMarkdownStyling
@@ -62,57 +56,46 @@ fun main() =
         val contentTheme = if (isDark) darkTheme else lightTheme
         val titleBarTheme = if (isTitleBarDark) darkTheme else lightTheme
 
-        DecoratedWindow(
-            onCloseRequest = { exitApplication() },
-            title = "Jewel standalone sample",
-            icon = icon,
-            state =
-                rememberWindowState(
-                    position = WindowPosition.Aligned(Alignment.Center),
-                ),
-            minimumSize = DpSize(800.dp, 400.dp),
-            onKeyEvent = { keyEvent ->
-                processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
-            },
-            content = {
+        // The title-bar theme wraps the window: JewelDecoratedWindow reads it at
+        // the call site for the native deco + TitleBar styling, and the Tao
+        // scene bridge re-exposes it to the content inside the window.
+        IntUiTheme(
+            theme = titleBarTheme,
+            styling = ComponentStyling.default(),
+            swingCompatMode = MainViewModel.swingCompat,
+        ) {
+            JewelDecoratedWindow(
+                onCloseRequest = { exitApplication() },
+                title = "Jewel standalone sample",
+                icon = icon,
+                state =
+                    rememberWindowState(
+                        position = WindowPosition.Aligned(Alignment.Center),
+                    ),
+                minimumSize = DpSize(800.dp, 400.dp),
+                onKeyEvent = { keyEvent ->
+                    processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
+                },
+            ) {
+                // JewelDecoratedWindow already installs the Jewel spellcheck
+                // text-context menu; capture it before the content theme below
+                // re-provides Jewel's stock one, and restore it inside.
                 @Suppress("DEPRECATION")
-                val defaultTextContextMenu = androidx.compose.foundation.text.LocalTextContextMenu.current
-                IntUiTheme(
-                    theme = titleBarTheme,
-                    styling = ComponentStyling.default(),
-                    swingCompatMode = MainViewModel.swingCompat,
-                ) {
-                    val jewelTitleBarStyle = rememberJewelTitleBarStyle()
-                    val jewelWindowStyle = rememberJewelWindowStyle()
-                    val titleBarIsDark = jewelTitleBarStyle.colors.background.luminance() < 0.5f
-                    NucleusDecoratedWindowTheme(
-                        isDark = titleBarIsDark,
-                        windowStyle = jewelWindowStyle,
-                        titleBarStyle = jewelTitleBarStyle,
-                    ) {
-                        androidx.compose.runtime.CompositionLocalProvider(
-                            androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
-                        ) {
-                            TitleBarView()
-                        }
-                    }
-                }
+                val windowTextContextMenu = androidx.compose.foundation.text.LocalTextContextMenu.current
+                TitleBarView()
                 IntUiTheme(
                     theme = contentTheme,
                     styling = ComponentStyling.default(),
                     swingCompatMode = MainViewModel.swingCompat,
                 ) {
-                    @OptIn(ExperimentalJewelApi::class)
                     androidx.compose.runtime.CompositionLocalProvider(
-                        androidx.compose.foundation.text.LocalTextContextMenu provides defaultTextContextMenu,
+                        androidx.compose.foundation.text.LocalTextContextMenu provides windowTextContextMenu,
                     ) {
-                        ProvideJewelSpellcheckMenu {
-                            ProvideMarkdownStyling { currentView.content() }
-                        }
+                        ProvideMarkdownStyling { currentView.content() }
                     }
                 }
-            },
-        )
+            }
+        }
     }
 
 /*

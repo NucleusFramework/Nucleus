@@ -368,6 +368,7 @@ public object TaoHeadfulTestSuiteMain {
             PopupScaleHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
+            AlwaysOnTopHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()
 
