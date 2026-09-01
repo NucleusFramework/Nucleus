@@ -25,12 +25,17 @@ import dev.nucleusframework.window.tao.DecoratedWindow as DecoratedWindowV1
  * is published once the native window has been shown. [state] has no default
  * so `DecoratedWindow(onCloseRequest) { }` still resolves to the v1 overload.
  *
- * `requestScreen` / `screenId` are drained and ignored: Tao only exposes the
- * primary work area. Size/position providers that capture lambdas — including
- * the ones `requestSize` / `requestPosition` build internally — cannot be
- * evaluated without AWT and are logged and skipped; use
- * [requestInspectableBounds], [inspectableWindowBounds],
- * `WindowBoundsProvider.Absolute` or `requestBounds(DpRect)` instead.
+ * Compose's own v2 types are AWT-anchored, so part of the API is inert here:
+ * `requestScreen` / `screenId` are drained and ignored, and size/position
+ * providers that capture lambdas — including the ones `requestSize` /
+ * `requestPosition` build internally — cannot be evaluated without an AWT
+ * window, so they are logged and skipped.
+ *
+ * For the whole API, switch one import to the AWT-free clone and use the
+ * [dev.nucleusframework.window.tao.v2.WindowState] overload — see
+ * [dev.nucleusframework.window.tao.v2.rememberWindowState]. Staying on the
+ * Compose types, [requestInspectableBounds], [inspectableWindowBounds],
+ * `WindowBoundsProvider.Absolute` and `requestBounds(DpRect)` all work.
  *
  * @param minSize Minimum inner size. [DpSize.Unspecified] means no minimum.
  * @param maxSize Maximum inner size. [DpSize.Unspecified] means no maximum.

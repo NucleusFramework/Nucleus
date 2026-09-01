@@ -23,8 +23,10 @@ import dev.nucleusframework.window.tao.DecoratedDialog as DecoratedDialogV1
  * [state] has no default so `DecoratedDialog(onCloseRequest) { }` still
  * resolves to the v1 overload.
  *
- * `requestScreen` / `screenId` are drained and ignored: Tao only exposes the
- * primary work area.
+ * `requestScreen` / `screenId` are drained and ignored, and scoped geometry
+ * providers cannot be evaluated without an AWT window. The AWT-free clone
+ * ([dev.nucleusframework.window.tao.v2.DialogState], one import away) has no
+ * such gap — see [dev.nucleusframework.window.tao.v2.rememberDialogState].
  *
  * @param minSize Minimum inner size. [DpSize.Unspecified] means no minimum.
  * @param maxSize Maximum inner size. [DpSize.Unspecified] means no maximum.

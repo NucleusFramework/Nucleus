@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.headful
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.XdgPortalParent
 import dev.nucleusframework.window.tao.taoApplication
@@ -366,7 +368,8 @@ public object TaoHeadfulTestSuiteMain {
             PopupScaleHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
-            ImeHeadfulCases.all()
+            ImeHeadfulCases.all() +
+            WindowApiV2HeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
@@ -417,43 +420,7 @@ public object TaoHeadfulTestSuiteMain {
 
             if (skipReason == null) {
                 androidx.compose.runtime.key(current) {
-                    val fallbackState =
-                        rememberWindowState(
-                            size = case.size ?: DpSize(800.dp, 600.dp),
-                        )
-                    DecoratedWindow(
-                        onCloseRequest = { /* cases drive their own lifecycle */ },
-                        state = case.windowState ?: fallbackState,
-                        title = "tao-headful: ${case.name}",
-                        transparent = case.transparent,
-                        nativePopupLayers = case.nativePopupLayers,
-                    ) {
-                        // Default chrome surface; cases may paint over it via
-                        // [TaoWindowTestCase.content] (scaffold, backdrop, …).
-                        // Fully-transparent probes opt out so the Skia clear is
-                        // what the compositor sees in empty regions.
-                        if (case.paintDefaultBackground) {
-                            Box(Modifier.fillMaxSize().background(Color.DarkGray))
-                        }
-                        case.content(this)
-                        val w = window
-                        LaunchedEffect(w) { windowHolder.value = w }
-                    }
-                    val dialogContent = case.dialogContent
-                    if (dialogContent != null) {
-                        DecoratedDialog(
-                            onCloseRequest = { /* cases drive their own lifecycle */ },
-                            state =
-                                rememberDialogState(
-                                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
-                                ),
-                            title = "tao-headful-dialog: ${case.name}",
-                        ) {
-                            dialogContent()
-                            val w = window
-                            LaunchedEffect(w) { dialogHolder.value = w }
-                        }
-                    }
+                    CaseWindow(case, windowHolder, dialogHolder)
                 }
             }
 
@@ -600,4 +567,70 @@ public object TaoHeadfulTestSuiteMain {
     private const val RESIZE_TOLERANCE_PX = 64
     private const val RESTORE_TOLERANCE_PX = 32
     private const val MOVE_DELTA_DP = 60.0
+}
+
+/**
+ * One case's real window (and optional dialog), composed fresh per case.
+ *
+ * Extracted from `main` so the suite loop stays readable: the AWT-free window
+ * API v2 clone needs a second `DecoratedWindow` call site, since its state is a
+ * different type from Compose's.
+ */
+@Composable
+private fun dev.nucleusframework.window.tao.ApplicationScope.CaseWindow(
+    case: TaoWindowTestCase,
+    windowHolder: MutableState<TaoWindow?>,
+    dialogHolder: MutableState<TaoWindow?>,
+) {
+    val fallbackState =
+        rememberWindowState(
+            size = case.size ?: DpSize(800.dp, 600.dp),
+        )
+    // Default chrome surface; cases may paint over it via
+    // [TaoWindowTestCase.content] (scaffold, backdrop, …).
+    // Fully-transparent probes opt out so the Skia clear is
+    // what the compositor sees in empty regions.
+    val windowContent: @Composable TaoDecoratedWindowScope.() -> Unit = {
+        if (case.paintDefaultBackground) {
+            Box(Modifier.fillMaxSize().background(Color.DarkGray))
+        }
+        case.content(this)
+        val w = window
+        LaunchedEffect(w) { windowHolder.value = w }
+    }
+    val nucleusState = case.nucleusWindowState
+    if (nucleusState != null) {
+        DecoratedWindow(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state = nucleusState,
+            title = "tao-headful: ${case.name}",
+            transparent = case.transparent,
+            nativePopupLayers = case.nativePopupLayers,
+            content = windowContent,
+        )
+    } else {
+        DecoratedWindow(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state = case.windowState ?: fallbackState,
+            title = "tao-headful: ${case.name}",
+            transparent = case.transparent,
+            nativePopupLayers = case.nativePopupLayers,
+            content = windowContent,
+        )
+    }
+    val dialogContent = case.dialogContent
+    if (dialogContent != null) {
+        DecoratedDialog(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state =
+                rememberDialogState(
+                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
+                ),
+            title = "tao-headful-dialog: ${case.name}",
+        ) {
+            dialogContent()
+            val w = window
+            LaunchedEffect(w) { dialogHolder.value = w }
+        }
+    }
 }

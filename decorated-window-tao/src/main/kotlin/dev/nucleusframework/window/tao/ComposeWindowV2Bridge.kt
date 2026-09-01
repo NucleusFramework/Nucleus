@@ -429,7 +429,7 @@ private suspend fun publishDialogObserved(
  * shrink a window by its decoration insets on every `requestBounds(bounds)`
  * round-trip, or across a `WindowState.Saver` restore.
  */
-private suspend fun observedRect(
+internal suspend fun observedRect(
     position: WindowPosition,
     size: DpSize,
     nativeWindow: TaoWindow?,
@@ -456,7 +456,7 @@ private suspend fun observedRect(
  * / `size` / `position` from throwing — forever on a window manager that emits
  * no initial move event.
  */
-private fun approximateOuterRect(
+internal fun approximateOuterRect(
     position: WindowPosition,
     size: DpSize,
 ): DpRect? {
@@ -477,7 +477,7 @@ private fun approximateOuterRect(
  * be measured — which is also the right answer for the undecorated CSD windows
  * Tao draws by default.
  */
-private fun TaoWindow?.decorationInsets(innerSize: DpSize): DpSize {
+internal fun TaoWindow?.decorationInsets(innerSize: DpSize): DpSize {
     val window = this ?: return DpSize.Zero
     if (!innerSize.width.isSpecified || !innerSize.height.isSpecified) return DpSize.Zero
     val outer = window.outerBoundsDpOrNull() ?: return DpSize.Zero
@@ -488,20 +488,20 @@ private fun TaoWindow?.decorationInsets(innerSize: DpSize): DpSize {
 }
 
 /** Inner size → outer (v2) size. Unspecified axes stay unspecified. */
-private fun DpSize.plusInsets(insets: DpSize): DpSize =
+internal fun DpSize.plusInsets(insets: DpSize): DpSize =
     DpSize(
         width = if (width.isSpecified) width + insets.width else width,
         height = if (height.isSpecified) height + insets.height else height,
     )
 
 /** Outer (v2) size → inner size. Unspecified axes stay unspecified. */
-private fun DpSize.minusInsets(insets: DpSize): DpSize =
+internal fun DpSize.minusInsets(insets: DpSize): DpSize =
     DpSize(
         width = if (width.isSpecified) (width - insets.width).coerceAtLeast(0.dp) else width,
         height = if (height.isSpecified) (height - insets.height).coerceAtLeast(0.dp) else height,
     )
 
-private fun TaoWindow.outerBoundsDpOrNull(): DpRect? {
+internal fun TaoWindow.outerBoundsDpOrNull(): DpRect? {
     val rect = outerBoundsPx() ?: return null
     if (rect.size != RECT_ARRAY_SIZE) return null
     val scale = scaleFactor.takeIf { it > 0f } ?: 1f

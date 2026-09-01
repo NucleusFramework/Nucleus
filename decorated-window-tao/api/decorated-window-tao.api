@@ -214,6 +214,11 @@ public final class dev/nucleusframework/window/tao/DecoratedWindowKt {
 	public static final fun getLocalTaoWindow ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 }
 
+public final class dev/nucleusframework/window/tao/DecoratedWindowNucleusV2Kt {
+	public static final fun DecoratedDialog-imfDCbw (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Landroidx/compose/runtime/CompositionLocalContext;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedWindow-INFUufI (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;JJZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+}
+
 public final class dev/nucleusframework/window/tao/DecoratedWindowV2Kt {
 	public static final fun DecoratedWindow-INFUufI (Ldev/nucleusframework/window/tao/ApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/v2/WindowState;Ljava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;JJZZZZZZZZLdev/nucleusframework/window/tao/TaoWindow;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLdev/nucleusframework/window/tao/MacOSStyle;ZLandroidx/compose/runtime/CompositionLocalContext;ZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
@@ -367,6 +372,11 @@ public final class dev/nucleusframework/window/tao/NucleusPlatformViewFactoryKt 
 	public static synthetic fun nucleusHwndPlatformView$default (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/NucleusPlatformView$HWnd;
 	public static final fun nucleusNsPlatformView (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;)Ldev/nucleusframework/window/tao/NucleusPlatformView$NsView;
 	public static synthetic fun nucleusNsPlatformView$default (Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function2;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Lkotlin/jvm/functions/Function0;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/NucleusPlatformView$NsView;
+}
+
+public final class dev/nucleusframework/window/tao/NucleusWindowV2BridgeKt {
+	public static final fun rememberSyncedNucleusDialogState (Ldev/nucleusframework/window/tao/v2/DialogState;ZLandroidx/compose/runtime/Composer;I)Landroidx/compose/ui/window/DialogState;
+	public static final fun rememberSyncedNucleusWindowState (Ldev/nucleusframework/window/tao/v2/WindowState;ZLandroidx/compose/runtime/Composer;I)Landroidx/compose/ui/window/WindowState;
 }
 
 public final class dev/nucleusframework/window/tao/NucleusYuvColorSpace : java/lang/Enum {
@@ -659,6 +669,36 @@ public final class dev/nucleusframework/window/tao/TaoModifierMask {
 	public static final field SHIFT I
 }
 
+public final class dev/nucleusframework/window/tao/TaoMonitor {
+	public static final field $stable I
+	public final fun boundsDp (F)Landroidx/compose/ui/unit/DpRect;
+	public static synthetic fun boundsDp$default (Ldev/nucleusframework/window/tao/TaoMonitor;FILjava/lang/Object;)Landroidx/compose/ui/unit/DpRect;
+	public final fun containsPx (II)Z
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBoundsPx ()Landroidx/compose/ui/unit/IntRect;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getName ()Ljava/lang/String;
+	public final fun getScaleFactor ()F
+	public final fun getWorkAreaPx ()Landroidx/compose/ui/unit/IntRect;
+	public fun hashCode ()I
+	public final fun isPrimary ()Z
+	public fun toString ()Ljava/lang/String;
+	public final fun workAreaDp (F)Landroidx/compose/ui/unit/DpRect;
+	public static synthetic fun workAreaDp$default (Ldev/nucleusframework/window/tao/TaoMonitor;FILjava/lang/Object;)Landroidx/compose/ui/unit/DpRect;
+}
+
+public final class dev/nucleusframework/window/tao/TaoMonitors {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoMonitors;
+	public final fun all (Ldev/nucleusframework/window/tao/TaoWindow;)Ljava/util/List;
+	public static synthetic fun all$default (Ldev/nucleusframework/window/tao/TaoMonitors;Ldev/nucleusframework/window/tao/TaoWindow;ILjava/lang/Object;)Ljava/util/List;
+	public final fun byId (Ljava/lang/String;Ldev/nucleusframework/window/tao/TaoWindow;)Ldev/nucleusframework/window/tao/TaoMonitor;
+	public static synthetic fun byId$default (Ldev/nucleusframework/window/tao/TaoMonitors;Ljava/lang/String;Ldev/nucleusframework/window/tao/TaoWindow;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoMonitor;
+	public final fun forWindow (Ldev/nucleusframework/window/tao/TaoWindow;)Ldev/nucleusframework/window/tao/TaoMonitor;
+	public final fun primary (Ldev/nucleusframework/window/tao/TaoWindow;)Ldev/nucleusframework/window/tao/TaoMonitor;
+	public static synthetic fun primary$default (Ldev/nucleusframework/window/tao/TaoMonitors;Ldev/nucleusframework/window/tao/TaoWindow;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TaoMonitor;
+}
+
 public final class dev/nucleusframework/window/tao/TaoMouseButton {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/TaoMouseButton;
@@ -901,5 +941,173 @@ public final class dev/nucleusframework/window/tao/render/MetalFrame {
 public final class dev/nucleusframework/window/tao/render/TaoSelectionAccessibilityKt {
 	public static final fun TaoTextSelectionAccessibility (Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;I)V
 	public static final fun getLocalTaoTextSelectionA11yPublisher ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/window/tao/v2/DialogState {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/DialogState$Companion;
+	public synthetic fun <init> (ZLjava/lang/String;Landroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getBounds ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getPosition-RKDOV3M ()J
+	public final fun getScreenId ()Ljava/lang/String;
+	public final fun getSize-MYxV2XQ ()J
+	public final fun isInitialized ()Z
+	public final fun requestBounds (Landroidx/compose/ui/unit/DpRect;)V
+	public final fun requestBounds (Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;)V
+	public final fun requestBounds (Lkotlin/jvm/functions/Function1;)V
+	public final fun requestPosition (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;)V
+	public final fun requestPosition-YgX7TsA (FF)V
+	public final fun requestPosition-jo-Fl9I (J)V
+	public final fun requestScreen (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;)V
+	public final fun requestSize (Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;)V
+	public final fun requestSize-EaSLcWc (J)V
+	public final fun requestSize-YgX7TsA (FF)V
+}
+
+public final class dev/nucleusframework/window/tao/v2/DialogState$Companion {
+	public final fun getSaver ()Landroidx/compose/runtime/saveable/Saver;
+}
+
+public final class dev/nucleusframework/window/tao/v2/DialogStateKt {
+	public static final fun DialogState (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;)Ldev/nucleusframework/window/tao/v2/DialogState;
+	public static synthetic fun DialogState$default (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/DialogState;
+	public static final fun DialogStateWithBounds-5EYAyq4 (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;)Ldev/nucleusframework/window/tao/v2/DialogState;
+	public static synthetic fun DialogStateWithBounds-5EYAyq4$default (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/DialogState;
+	public static final fun rememberDialogState (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;Landroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/DialogState;
+	public static final fun rememberDialogStateWithBounds-0qe9R64 (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;Landroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/DialogState;
+}
+
+public final class dev/nucleusframework/window/tao/v2/Screen {
+	public static final field $stable I
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAvailableBounds ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getBounds ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getId ()Ljava/lang/String;
+	public final fun getInsets ()Landroidx/compose/ui/unit/DpInsets;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isPrimary ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/v2/WindowBoundsProvider {
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider$Companion;
+	public abstract fun getBounds (Ldev/nucleusframework/window/tao/v2/WindowGeometryProviderScope;)Landroidx/compose/ui/unit/DpRect;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowBoundsProvider$Companion {
+	public final fun Absolute (Landroidx/compose/ui/unit/DpRect;)Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;
+	public final fun getDefault ()Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowGeometryProviderScope {
+	public static final field $stable I
+	public final fun contentToWindowSize-e_xh8Ic (J)J
+	public final fun getParentWindowMetrics ()Ldev/nucleusframework/window/tao/v2/WindowMetrics;
+	public final fun getWindowMetrics ()Ldev/nucleusframework/window/tao/v2/WindowMetrics;
+	public final fun measureWindowContent-KSHjdMI (FFFF)J
+	public static synthetic fun measureWindowContent-KSHjdMI$default (Ldev/nucleusframework/window/tao/v2/WindowGeometryProviderScope;FFFFILjava/lang/Object;)J
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowMetrics {
+	public static final field $stable I
+	public final fun getBounds ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getInsets ()Landroidx/compose/ui/unit/DpInsets;
+	public final fun getScreen ()Ldev/nucleusframework/window/tao/v2/Screen;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/v2/WindowPositionProvider {
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;
+	public abstract fun getPosition-jJlxhZY (Ldev/nucleusframework/window/tao/v2/WindowGeometryProviderScope;J)J
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion {
+	public final fun Absolute-YgX7TsA (FF)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun Absolute-jo-Fl9I (J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun AlignedToParentWindow-7WlHY6s (Landroidx/compose/ui/Alignment;Landroidx/compose/ui/Alignment;JZ)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public static synthetic fun AlignedToParentWindow-7WlHY6s$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;Landroidx/compose/ui/Alignment;Landroidx/compose/ui/Alignment;JZILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun AlignedToScreen-BkVx2pU (Landroidx/compose/ui/Alignment;J)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public static synthetic fun AlignedToScreen-BkVx2pU$default (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider$Companion;Landroidx/compose/ui/Alignment;JILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun getCenteredInParentWindow ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun getCenteredOnScreen ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun getCurrent ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+	public final fun getDefault ()Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowProvidersKt {
+	public static final fun WindowBoundsProvider (Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;)Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;
+	public static final fun WindowBoundsProvider (Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;
+	public static synthetic fun WindowBoundsProvider$default (Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/v2/WindowScreenProvider {
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/WindowScreenProvider$Companion;
+	public abstract fun getScreen (Ldev/nucleusframework/window/tao/v2/WindowScreenProviderScope;)Ldev/nucleusframework/window/tao/v2/Screen;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowScreenProvider$Companion {
+	public final fun ById (Ljava/lang/String;)Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;
+	public final fun getDefault ()Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;
+	public final fun getPrimary ()Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowScreenProviderScope {
+	public static final field $stable I
+	public final fun getDefaultScreen ()Ldev/nucleusframework/window/tao/v2/Screen;
+	public final fun getPrimaryScreen ()Ldev/nucleusframework/window/tao/v2/Screen;
+	public final fun getScreens ()Ljava/util/List;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/v2/WindowSizeProvider {
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/WindowSizeProvider$Companion;
+	public abstract fun getSize-Gh9hcWk (Ldev/nucleusframework/window/tao/v2/WindowGeometryProviderScope;)J
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowSizeProvider$Companion {
+	public final fun Fixed-EaSLcWc (J)Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun Fixed-YgX7TsA (FF)Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun PreferredHeight-0680j_4 (F)Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun PreferredWidth-0680j_4 (F)Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun getCurrent ()Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun getDefault ()Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+	public final fun getUnconstrained ()Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowState {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/v2/WindowState$Companion;
+	public synthetic fun <init> (ZLjava/lang/String;Landroidx/compose/ui/window/WindowPlacement;Ljava/lang/Boolean;Landroidx/compose/ui/unit/DpRect;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getBounds ()Landroidx/compose/ui/unit/DpRect;
+	public final fun getPlacement ()Landroidx/compose/ui/window/WindowPlacement;
+	public final fun getPosition-RKDOV3M ()J
+	public final fun getScreenId ()Ljava/lang/String;
+	public final fun getSize-MYxV2XQ ()J
+	public final fun isInitialized ()Z
+	public final fun isMinimized ()Z
+	public final fun requestBounds (Landroidx/compose/ui/unit/DpRect;)V
+	public final fun requestBounds (Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;)V
+	public final fun requestBounds (Lkotlin/jvm/functions/Function1;)V
+	public final fun requestMinimized (Z)V
+	public final fun requestPlacement (Landroidx/compose/ui/window/WindowPlacement;)V
+	public final fun requestPosition (Ldev/nucleusframework/window/tao/v2/WindowPositionProvider;)V
+	public final fun requestPosition-YgX7TsA (FF)V
+	public final fun requestPosition-jo-Fl9I (J)V
+	public final fun requestScreen (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;)V
+	public final fun requestSize (Ldev/nucleusframework/window/tao/v2/WindowSizeProvider;)V
+	public final fun requestSize-EaSLcWc (J)V
+	public final fun requestSize-YgX7TsA (FF)V
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowState$Companion {
+	public final fun getSaver ()Landroidx/compose/runtime/saveable/Saver;
+}
+
+public final class dev/nucleusframework/window/tao/v2/WindowStateKt {
+	public static final fun WindowState (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Landroidx/compose/ui/window/WindowPlacement;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;Z)Ldev/nucleusframework/window/tao/v2/WindowState;
+	public static synthetic fun WindowState$default (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Landroidx/compose/ui/window/WindowPlacement;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;ZILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowState;
+	public static final fun WindowStateWithBounds-IeCDzbA (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;Z)Ldev/nucleusframework/window/tao/v2/WindowState;
+	public static synthetic fun WindowStateWithBounds-IeCDzbA$default (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ZILjava/lang/Object;)Ldev/nucleusframework/window/tao/v2/WindowState;
+	public static final fun rememberWindowState (Ldev/nucleusframework/window/tao/v2/WindowScreenProvider;Landroidx/compose/ui/window/WindowPlacement;Ldev/nucleusframework/window/tao/v2/WindowBoundsProvider;ZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/WindowState;
+	public static final fun rememberWindowStateWithBounds-dpC4h7o (Landroidx/compose/ui/unit/DpOffset;Landroidx/compose/ui/unit/DpSize;ZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/v2/WindowState;
 }
 

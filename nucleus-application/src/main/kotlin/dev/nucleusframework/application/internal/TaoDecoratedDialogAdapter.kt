@@ -132,6 +132,52 @@ internal object TaoDecoratedDialogAdapter {
             }
         }
     }
+
+    @Suppress("LongParameterList")
+    @Composable
+    fun DialogNucleusV2(
+        scope: TaoNucleusApplicationScope,
+        onCloseRequest: () -> Unit,
+        state: dev.nucleusframework.window.tao.v2.DialogState,
+        visible: Boolean,
+        title: String,
+        icon: Painter?,
+        resizable: Boolean,
+        enabled: Boolean,
+        focusable: Boolean,
+        minSize: androidx.compose.ui.unit.DpSize,
+        maxSize: androidx.compose.ui.unit.DpSize,
+        onPreviewKeyEvent: (KeyEvent) -> Boolean,
+        onKeyEvent: (KeyEvent) -> Boolean,
+        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    ) {
+        val outerLocals = currentCompositionLocalContext
+        val parentLayoutDirection = LocalLayoutDirection.current
+        val parentModalCount = LocalModalDialogCount.current
+        DisposableEffect(Unit) {
+            parentModalCount.value++
+            onDispose { parentModalCount.value-- }
+        }
+        with(scope.taoScope) {
+            TaoDecoratedDialog(
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                compositionLocalContext = outerLocals,
+            ) {
+                bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
+            }
+        }
+    }
 }
 
 @Composable

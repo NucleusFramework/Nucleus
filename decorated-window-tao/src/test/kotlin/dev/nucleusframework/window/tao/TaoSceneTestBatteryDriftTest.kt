@@ -107,6 +107,10 @@ class TaoSceneTestBatteryDriftTest {
                 "unit tests for chrome helpers; no ComposeScene",
             ComposeWindowV2BridgeTest::class.java to
                 "pure Compose window API v1↔v2 state mapping, no ComposeScene",
+            NucleusWindowV2BridgeTest::class.java to
+                "pure state mapping + geometry provider evaluation, no ComposeScene",
+            TaoMonitorsTest::class.java to
+                "parses the native monitor wire format; no ComposeScene",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =

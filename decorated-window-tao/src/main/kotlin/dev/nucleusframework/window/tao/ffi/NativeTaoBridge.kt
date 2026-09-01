@@ -540,6 +540,17 @@ internal object NativeTaoBridge {
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /**
+     * Linux only: returns one descriptor per GDK monitor, encoded as documented
+     * in [dev.nucleusframework.window.tao.TaoMonitor].
+     *
+     * [handle] may be `0` — monitors are a display-wide property, so the
+     * default GDK display is used when no window is available. `null` when GDK
+     * has no display.
+     */
+    @JvmStatic
+    external fun nativeLinuxMonitors(handle: Long): Array<String>?
+
+    /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
      * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
      * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
