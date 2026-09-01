@@ -29,8 +29,8 @@ import dev.nucleusframework.window.tao.DecoratedWindow as DecoratedWindowV1
  * primary work area. Size/position providers that capture lambdas — including
  * the ones `requestSize` / `requestPosition` build internally — cannot be
  * evaluated without AWT and are logged and skipped; use
- * [inspectableWindowBounds], `WindowBoundsProvider.Absolute` or
- * `requestBounds(DpRect)` instead.
+ * [requestInspectableBounds], [inspectableWindowBounds],
+ * `WindowBoundsProvider.Absolute` or `requestBounds(DpRect)` instead.
  *
  * @param minSize Minimum inner size. [DpSize.Unspecified] means no minimum.
  * @param maxSize Maximum inner size. [DpSize.Unspecified] means no maximum.

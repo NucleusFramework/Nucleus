@@ -5,7 +5,9 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.unit.Dp
@@ -23,6 +25,8 @@ import androidx.compose.ui.window.v2.WindowBoundsProvider
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Collections
+import java.util.WeakHashMap
 import java.util.logging.Logger
 import androidx.compose.ui.window.v2.DialogState as DialogStateV2
 import androidx.compose.ui.window.v2.WindowState as WindowStateV2
@@ -44,12 +48,33 @@ private const val UNRESOLVABLE_PROVIDER_MESSAGE =
         "capturing WindowBoundsProvider lambdas all route through an AWT-backed " +
         "WindowGeometryProviderScope, which the Tao backend has no window to build. " +
         "Use requestBounds(DpRect), WindowBoundsProvider.Absolute or " +
-        "dev.nucleusframework.window.tao.inspectableWindowBounds instead."
+        "dev.nucleusframework.window.tao.requestInspectableBounds() instead."
 
 internal data class ResolvedV2Bounds(
     val position: WindowPosition,
     val size: DpSize,
 )
+
+/**
+ * Initial geometry drained out of a not-yet-initialized v2 state.
+ *
+ * Draining is destructive, so the result is memoized per state object: a window
+ * that leaves and re-enters composition before ever becoming visible (or a host
+ * that converts the same hoisted state twice) would otherwise see empty request
+ * channels and fall back to the platform default instead of the geometry the
+ * caller asked for.
+ */
+private class InitialWindowGeometry(
+    val placement: WindowPlacement,
+    val isMinimized: Boolean,
+    val bounds: ResolvedV2Bounds,
+)
+
+private val initialWindowGeometry: MutableMap<WindowStateV2, InitialWindowGeometry> =
+    Collections.synchronizedMap(WeakHashMap())
+
+private val initialDialogGeometry: MutableMap<DialogStateV2, ResolvedV2Bounds> =
+    Collections.synchronizedMap(WeakHashMap())
 
 /**
  * Snapshots pending v2 requests into the v1 [WindowState] the existing window
@@ -65,21 +90,27 @@ internal fun windowStateV2ToV1(state: WindowStateV2): WindowState {
             size = bounds.size,
         )
     }
-    drain(ComposeWindowV2Access.screenRequests(state))
-    val placement =
-        ComposeWindowV2Access.placementRequests(state).tryReceive().getOrNull()
-            ?: ComposeWindowV2Access.placementOrNull(state)
-            ?: WindowPlacement.Floating
-    val minimized =
-        ComposeWindowV2Access.minimizedRequests(state).tryReceive().getOrNull()
-            ?: ComposeWindowV2Access.minimizedOrNull(state)
-            ?: false
-    val resolved = resolveWindowBounds(drainBounds(ComposeWindowV2Access.boundsRequests(state)))
+    val initial = initialWindowGeometry.getOrPut(state) { drainInitialWindowGeometry(state) }
     return WindowState(
-        placement = placement,
-        isMinimized = minimized,
-        position = resolved.position,
-        size = resolved.size,
+        placement = initial.placement,
+        isMinimized = initial.isMinimized,
+        position = initial.bounds.position,
+        size = initial.bounds.size,
+    )
+}
+
+private fun drainInitialWindowGeometry(state: WindowStateV2): InitialWindowGeometry {
+    drain(ComposeWindowV2Access.screenRequests(state))
+    return InitialWindowGeometry(
+        placement =
+            ComposeWindowV2Access.placementRequests(state).tryReceive().getOrNull()
+                ?: ComposeWindowV2Access.placementOrNull(state)
+                ?: WindowPlacement.Floating,
+        isMinimized =
+            ComposeWindowV2Access.minimizedRequests(state).tryReceive().getOrNull()
+                ?: ComposeWindowV2Access.minimizedOrNull(state)
+                ?: false,
+        bounds = resolveWindowBounds(drainBounds(ComposeWindowV2Access.boundsRequests(state))),
     )
 }
 
@@ -91,9 +122,11 @@ internal fun dialogStateV2ToV1(state: DialogStateV2): DialogState {
             size = bounds.size,
         )
     }
-    drain(ComposeWindowV2Access.dialogScreenRequests(state))
     val resolved =
-        resolveDialogBounds(drainBounds(ComposeWindowV2Access.dialogBoundsRequests(state)))
+        initialDialogGeometry.getOrPut(state) {
+            drain(ComposeWindowV2Access.dialogScreenRequests(state))
+            resolveDialogBounds(drainBounds(ComposeWindowV2Access.dialogBoundsRequests(state)))
+        }
     return DialogState(
         position = resolved.position,
         size = resolved.size,
@@ -109,6 +142,7 @@ internal fun BindWindowStateV2(
 ) {
     val latestV2 = v2
     val latestV1 = v1
+    val latestNativeWindow by rememberUpdatedState(nativeWindow)
     LaunchedEffect(v2, v1) {
         launch {
             for (placement in ComposeWindowV2Access.placementRequests(latestV2)) {
@@ -122,14 +156,18 @@ internal fun BindWindowStateV2(
         }
         launch {
             for (provider in ComposeWindowV2Access.boundsRequests(latestV2)) {
+                val insets = latestNativeWindow.decorationInsets(latestV1.size)
                 // Skip the whole request when the provider can't be evaluated:
                 // writing Floating here would drop a maximized/fullscreen window
                 // back to its floating state for a request we then ignore.
                 val resolved =
-                    resolveWindowBoundsOrNull(provider, latestV1.position, latestV1.size)
-                        ?: continue
+                    resolveWindowBoundsOrNull(
+                        provider,
+                        latestV1.position,
+                        latestV1.size.plusInsets(insets),
+                    ) ?: continue
                 latestV1.placement = WindowPlacement.Floating
-                latestV1.size = resolved.size
+                latestV1.size = resolved.size.minusInsets(insets)
                 latestV1.position = resolved.position
             }
         }
@@ -156,14 +194,21 @@ internal fun BindDialogStateV2(
 ) {
     val latestV2 = v2
     val latestV1 = v1
+    val latestNativeWindow by rememberUpdatedState(nativeWindow)
     LaunchedEffect(v2, v1, minSize, maxSize) {
         launch {
             for (provider in ComposeWindowV2Access.dialogBoundsRequests(latestV2)) {
+                val insets = latestNativeWindow.decorationInsets(latestV1.size)
                 val resolved =
-                    resolveDialogBoundsOrNull(provider, latestV1.position, latestV1.size)
-                        ?: continue
-                val clamped = clampSize(resolved.size, minSize, maxSize)
-                latestV1.size = clamped
+                    resolveDialogBoundsOrNull(
+                        provider,
+                        latestV1.position,
+                        latestV1.size.plusInsets(insets),
+                    ) ?: continue
+                // minSize / maxSize are inner sizes (they drive
+                // TaoWindow.setMinimumSize / setMaximumSize), so clamp after
+                // converting the requested outer size back to an inner one.
+                latestV1.size = clampSize(resolved.size.minusInsets(insets), minSize, maxSize)
                 latestV1.position = resolved.position
             }
         }
@@ -186,7 +231,10 @@ internal fun rememberDialogStateV1(state: DialogStateV2): DialogState = remember
  * v1 [WindowState] kept in sync with v2 [state].
  *
  * Used so a v2 `HostedWindow` still reaches hosts that only wrap the v1
- * surface. `maxSize` is v2-only and is dropped on that fallback.
+ * surface. `maxSize` is v2-only and is dropped on that fallback, and the
+ * observed `bounds` are approximate: without the native window there is nothing
+ * to measure the decoration insets against. Hosts that can reach the
+ * [TaoWindow] should call [BindWindowStateV2] with it instead.
  */
 @Composable
 public fun rememberSyncedWindowState(
@@ -202,7 +250,8 @@ public fun rememberSyncedWindowState(
  * v1 [DialogState] kept in sync with v2 [state].
  *
  * Same fallback as [rememberSyncedWindowState] for dialog hosts that only
- * wrap the v1 surface. `minSize` / `maxSize` are dropped on that path.
+ * wrap the v1 surface, with the same approximate `bounds`. `minSize` /
+ * `maxSize` are dropped on that path.
  */
 @Composable
 public fun rememberSyncedDialogState(
@@ -369,35 +418,88 @@ private suspend fun publishDialogObserved(
 }
 
 /**
- * Observed window rectangle, preferring the v1 state and falling back to the
- * native geometry.
+ * Observed window rectangle, preferring the native geometry.
  *
- * The v1 position only becomes [WindowPosition.Absolute] once Tao emits a move
- * event, and a `PlatformDefault` window is never positioned programmatically.
- * Without the native fallback a window manager that doesn't emit that move
- * would leave `WindowState.isInitialized` false forever — and `bounds` / `size`
- * / `position` throwing forever with it.
+ * Compose v2 documents `WindowState.bounds` as the whole window, insets
+ * included ([androidx.compose.ui.window.v2.WindowMetrics.bounds]), which is
+ * exactly [TaoWindow.outerBoundsPx]. The v1 state is *not* a substitute: it
+ * pairs the outer position ([TaoWindow.setOuterPosition]) with the inner size
+ * ([TaoWindow.setInnerSize]), so publishing it would make `bounds.size` mean
+ * one thing before the first native measurement and another after — enough to
+ * shrink a window by its decoration insets on every `requestBounds(bounds)`
+ * round-trip, or across a `WindowState.Saver` restore.
  */
 private suspend fun observedRect(
     position: WindowPosition,
     size: DpSize,
     nativeWindow: TaoWindow?,
 ): DpRect? {
-    if (position is WindowPosition.Absolute && size.width.isSpecified && size.height.isSpecified) {
-        return DpRect(
-            left = position.x,
-            top = position.y,
-            right = position.x + size.width,
-            bottom = position.y + size.height,
-        )
+    if (nativeWindow != null) {
+        repeat(OBSERVED_BOUNDS_RETRIES) { attempt ->
+            nativeWindow.outerBoundsDpOrNull()?.let { return it }
+            if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
+        }
     }
-    val window = nativeWindow ?: return null
-    repeat(OBSERVED_BOUNDS_RETRIES) { attempt ->
-        window.outerBoundsDpOrNull()?.let { return it }
-        if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
-    }
-    return null
+    return approximateOuterRect(position, size)
 }
+
+/**
+ * Best-effort rectangle for hosts that never expose the native window — a
+ * themed [dev.nucleusframework.window.tao.rememberSyncedWindowState] host binds
+ * with `nativeWindow = null` — and for a window the platform bridge can't
+ * measure yet.
+ *
+ * An approximation on two counts: the size is the inner one (insets unknown
+ * without a window to measure), and a position that hasn't become
+ * [WindowPosition.Absolute] yet is reported at the origin. Publishing it anyway
+ * is what keeps `WindowState.isInitialized` from staying `false` — and `bounds`
+ * / `size` / `position` from throwing — forever on a window manager that emits
+ * no initial move event.
+ */
+private fun approximateOuterRect(
+    position: WindowPosition,
+    size: DpSize,
+): DpRect? {
+    if (!size.width.isSpecified || !size.height.isSpecified) return null
+    val absolute = position as? WindowPosition.Absolute
+    val left = absolute?.x ?: 0.dp
+    val top = absolute?.y ?: 0.dp
+    return DpRect(
+        left = left,
+        top = top,
+        right = left + size.width,
+        bottom = top + size.height,
+    )
+}
+
+/**
+ * Decoration insets (outer minus inner size), or [DpSize.Zero] when they can't
+ * be measured — which is also the right answer for the undecorated CSD windows
+ * Tao draws by default.
+ */
+private fun TaoWindow?.decorationInsets(innerSize: DpSize): DpSize {
+    val window = this ?: return DpSize.Zero
+    if (!innerSize.width.isSpecified || !innerSize.height.isSpecified) return DpSize.Zero
+    val outer = window.outerBoundsDpOrNull() ?: return DpSize.Zero
+    return DpSize(
+        width = (outer.right - outer.left - innerSize.width).coerceAtLeast(0.dp),
+        height = (outer.bottom - outer.top - innerSize.height).coerceAtLeast(0.dp),
+    )
+}
+
+/** Inner size → outer (v2) size. Unspecified axes stay unspecified. */
+private fun DpSize.plusInsets(insets: DpSize): DpSize =
+    DpSize(
+        width = if (width.isSpecified) width + insets.width else width,
+        height = if (height.isSpecified) height + insets.height else height,
+    )
+
+/** Outer (v2) size → inner size. Unspecified axes stay unspecified. */
+private fun DpSize.minusInsets(insets: DpSize): DpSize =
+    DpSize(
+        width = if (width.isSpecified) (width - insets.width).coerceAtLeast(0.dp) else width,
+        height = if (height.isSpecified) (height - insets.height).coerceAtLeast(0.dp) else height,
+    )
 
 private fun TaoWindow.outerBoundsDpOrNull(): DpRect? {
     val rect = outerBoundsPx() ?: return null

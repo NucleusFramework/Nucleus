@@ -121,16 +121,39 @@ public final class ComposeWindowV2Access {
      * {@code WindowBoundsProvider.Absolute}). Returns {@code null} when the
      * provider needs live window metrics.
      *
-     * <p>Only {@link NullPointerException} — what dereferencing the {@code null}
-     * scope throws — is treated as "needs live metrics". Anything else comes
-     * from the caller's own provider lambda and is propagated so a real bug
-     * does not turn into a silently dropped geometry request.
+     * <p>Only a {@link NullPointerException} that comes from the {@code null}
+     * scope we pass in is treated as "needs live metrics". An exception raised
+     * by the provider's own body is propagated so a real bug does not turn into
+     * a silently dropped geometry request.
      */
     public static DpRect constantBoundsOrNull(WindowBoundsProvider provider) {
         try {
             return provider.getBounds(null);
-        } catch (NullPointerException needsLiveMetrics) {
-            return null;
+        } catch (NullPointerException e) {
+            if (isAbsentScopeDereference(e)) {
+                return null;
+            }
+            throw e;
         }
+    }
+
+    /**
+     * Whether {@code e} was raised by dereferencing the {@code null}
+     * {@code WindowGeometryProviderScope} rather than by the provider itself.
+     *
+     * <p>Three shapes count: Kotlin's non-null parameter assertion (thrown
+     * before the body runs), a helpful NPE naming a scope or window-metrics
+     * member, and a message-less NPE — the last one because
+     * {@code -XX:-ShowCodeDetailsInExceptionMessages} leaves nothing to
+     * inspect, and dropping the request is safer there than crashing.
+     */
+    private static boolean isAbsentScopeDereference(NullPointerException e) {
+        String message = e.getMessage();
+        if (message == null) {
+            return true;
+        }
+        return message.startsWith("Parameter specified as non-null is null")
+                || message.contains("WindowGeometryProviderScope")
+                || message.contains("WindowMetrics");
     }
 }

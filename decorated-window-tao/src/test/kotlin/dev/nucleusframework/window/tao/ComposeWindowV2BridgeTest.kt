@@ -16,6 +16,7 @@ import androidx.compose.ui.window.v2.WindowSizeProvider
 import androidx.compose.ui.window.v2.WindowState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -125,6 +126,47 @@ class ComposeWindowV2BridgeTest {
             )
         assertEquals(DpSize(1024.dp, 720.dp), resolved.size)
         assertEquals(WindowPosition.Absolute(40.dp, 60.dp), resolved.position)
+    }
+
+    @Test
+    fun initialConversionIsIdempotent() {
+        // Draining the request channels is destructive: a window that leaves and
+        // re-enters composition before ever being shown must still land on the
+        // geometry it asked for.
+        val state =
+            WindowState(
+                initialPlacement = WindowPlacement.Maximized,
+                initialBoundsProvider = inspectableWindowBounds(size = DpSize(640.dp, 480.dp)),
+                initiallyMinimized = true,
+            )
+        val first = windowStateV2ToV1(state)
+        val second = windowStateV2ToV1(state)
+        assertEquals(first.size, second.size)
+        assertEquals(first.position, second.position)
+        assertEquals(first.placement, second.placement)
+        assertEquals(first.isMinimized, second.isMinimized)
+        assertEquals(DpSize(640.dp, 480.dp), second.size)
+        assertEquals(WindowPlacement.Maximized, second.placement)
+        assertTrue(second.isMinimized)
+    }
+
+    @Test
+    fun requestInspectableBoundsAppliesSizeWithoutAwt() {
+        val state = WindowState()
+        state.requestInspectableBounds(size = DpSize(1280.dp, 800.dp))
+        assertEquals(DpSize(1280.dp, 800.dp), windowStateV2ToV1(state).size)
+    }
+
+    @Test
+    fun providerReadingWindowMetricsIsSkipped() {
+        assertNull(resolveWindowBoundsOrNull(WindowBoundsProvider { windowMetrics.bounds }))
+    }
+
+    @Test
+    fun providerFailingWithItsOwnNpeIsNotSwallowed() {
+        assertFailsWith<NullPointerException> {
+            resolveWindowBoundsOrNull(FailingBoundsProvider())
+        }
     }
 
     @Test
