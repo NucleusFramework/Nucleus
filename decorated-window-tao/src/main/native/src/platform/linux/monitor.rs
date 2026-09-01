@@ -109,12 +109,12 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 fn collect_monitors(handle: jlong) -> Option<Vec<String>> {
-    use gtk::gdk::prelude::DisplayExt;
+    // `Display`'s monitor accessors are inherent in gdk3-rs (no DisplayExt);
+    // `Monitor`'s are on MonitorExt, like the primary-monitor helpers above.
     use gtk::prelude::MonitorExt;
 
-    let display = with_window(handle, |w| Some(display_of(w)))
-        .or_else(gtk::gdk::Display::default)?;
-    let primary = display.primary_monitor();
+    let display =
+        with_window(handle, |w| Some(display_of(w))).or_else(gtk::gdk::Display::default)?;
     let count = display.n_monitors();
     let mut rows = Vec::with_capacity(count.max(0) as usize);
     for index in 0..count {
@@ -122,13 +122,20 @@ fn collect_monitors(handle: jlong) -> Option<Vec<String>> {
             continue;
         };
         let scale = monitor.scale_factor().max(1) as i64;
+        // Read the numbers out before picking: `Rectangle` is a boxed inline
+        // type, so selecting between the two rectangles by value would move
+        // `geometry` out from under the bounds array below.
         let geometry = monitor.geometry();
+        let bounds = (
+            geometry.x(),
+            geometry.y(),
+            geometry.width(),
+            geometry.height(),
+        );
         let area = monitor.workarea();
-        let work = if area.width() > 0 && area.height() > 0 {
-            area
-        } else {
-            geometry
-        };
+        let area = (area.x(), area.y(), area.width(), area.height());
+        // Some Wayland compositors report no work area.
+        let work = if area.2 > 0 && area.3 > 0 { area } else { bounds };
         // GDK reports logical pixels on HiDPI; scale up to physical.
         let model = monitor.model().map(|s| s.to_string()).unwrap_or_default();
         let manufacturer = monitor
@@ -146,28 +153,23 @@ fn collect_monitors(handle: jlong) -> Option<Vec<String>> {
             (mf, "") => mf.to_string(),
             (mf, m) => format!("{mf} {m}"),
         };
-        // `Monitor` has no identity comparison in gdk3, so the primary flag is
-        // matched on geometry — two monitors cannot share an origin.
-        let is_primary = primary
-            .as_ref()
-            .map(|p| p.geometry() == geometry)
-            .unwrap_or(index == 0);
+        let is_primary = monitor.is_primary();
         rows.push(encode_monitor(
             &id,
             &name,
             [
-                geometry.x() as i64 * scale,
-                geometry.y() as i64 * scale,
-                geometry.width() as i64 * scale,
-                geometry.height() as i64 * scale,
+                bounds.0 as i64 * scale,
+                bounds.1 as i64 * scale,
+                bounds.2 as i64 * scale,
+                bounds.3 as i64 * scale,
             ],
             [
-                work.x() as i64 * scale,
-                work.y() as i64 * scale,
-                work.width() as i64 * scale,
-                work.height() as i64 * scale,
+                work.0 as i64 * scale,
+                work.1 as i64 * scale,
+                work.2 as i64 * scale,
+                work.3 as i64 * scale,
             ],
-            (scale * 1000) as i64,
+            scale * 1000,
             is_primary,
         ));
     }
