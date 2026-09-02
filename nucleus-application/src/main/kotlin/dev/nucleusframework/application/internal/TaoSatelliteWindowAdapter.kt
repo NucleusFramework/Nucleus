@@ -1,6 +1,7 @@
 package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
@@ -9,6 +10,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.application.LocalNucleusWindow
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.application.NucleusWindow
@@ -75,36 +77,52 @@ internal object TaoSatelliteWindowAdapter {
                 onKeyEvent = onKeyEvent,
                 compositionLocalContext = outerLocals,
             ) {
-                val taoScope: TaoDecoratedWindowScope = this
-                val decoratedState = remember(taoScope) { derivedStateOf { taoScope.state } }
-                val nucleusWindow: NucleusWindow =
-                    remember(taoScope.window) {
-                        TaoNucleusWindow(taoScope.window, decoratedState)
-                    }
-                val nucleusScope =
-                    remember(taoScope, nucleusWindow) {
-                        TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
-                    }
-                val bridge = LocalTaoCompositionLocalContextBridge.current
-                SideEffect { bridge?.invoke(outerLocals) }
-                // Snapshot of this scene's own locals, re-provided below the
-                // bridged outer ones: without LocalTaoWindow bound to *this*
-                // window, windowDragArea() would drag the parent instead.
-                val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
-                val sceneTaoWindow = LocalTaoWindow.current
-                val sceneTitleBarInfo = LocalTitleBarInfo.current
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides parentLayoutDirection,
-                    LocalTaoTextSelectionA11yPublisher provides scenePublisher,
-                    LocalNucleusWindow provides nucleusWindow,
-                    LocalTaoWindow provides sceneTaoWindow,
-                    LocalTitleBarInfo provides sceneTitleBarInfo,
-                ) {
-                    TaoTextSelectionAccessibility {
-                        NativeContextMenuProvider(enabled = nativeContextMenu) {
-                            nucleusScope.content()
-                        }
-                    }
+                NucleusSatelliteScene(outerLocals, parentLayoutDirection, nativeContextMenu, content)
+            }
+        }
+    }
+
+    /**
+     * The Nucleus locals of a satellite window's scene, composed around
+     * [content]: the bridged outer locals, this window as [LocalNucleusWindow],
+     * text-selection accessibility and the native context menu. Shared by the
+     * standalone [Satellite] and the workspace adapter's floating windows.
+     */
+    @Composable
+    fun TaoDecoratedWindowScope.NucleusSatelliteScene(
+        outerLocals: CompositionLocalContext,
+        parentLayoutDirection: LayoutDirection,
+        nativeContextMenu: Boolean,
+        content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    ) {
+        val taoScope: TaoDecoratedWindowScope = this
+        val decoratedState = remember(taoScope) { derivedStateOf { taoScope.state } }
+        val nucleusWindow: NucleusWindow =
+            remember(taoScope.window) {
+                TaoNucleusWindow(taoScope.window, decoratedState)
+            }
+        val nucleusScope =
+            remember(taoScope, nucleusWindow) {
+                TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
+            }
+        val bridge = LocalTaoCompositionLocalContextBridge.current
+        SideEffect { bridge?.invoke(outerLocals) }
+        // Snapshot of this scene's own locals, re-provided below the
+        // bridged outer ones: without LocalTaoWindow bound to *this*
+        // window, windowDragArea() would drag the parent instead.
+        val scenePublisher = LocalTaoTextSelectionA11yPublisher.current
+        val sceneTaoWindow = LocalTaoWindow.current
+        val sceneTitleBarInfo = LocalTitleBarInfo.current
+        CompositionLocalProvider(
+            LocalLayoutDirection provides parentLayoutDirection,
+            LocalTaoTextSelectionA11yPublisher provides scenePublisher,
+            LocalNucleusWindow provides nucleusWindow,
+            LocalTaoWindow provides sceneTaoWindow,
+            LocalTitleBarInfo provides sceneTitleBarInfo,
+        ) {
+            TaoTextSelectionAccessibility {
+                NativeContextMenuProvider(enabled = nativeContextMenu) {
+                    nucleusScope.content()
                 }
             }
         }

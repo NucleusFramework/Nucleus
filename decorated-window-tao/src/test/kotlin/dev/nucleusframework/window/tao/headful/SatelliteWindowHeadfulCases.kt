@@ -43,8 +43,10 @@ internal object SatelliteWindowHeadfulCases {
         listOf(
             anchorsAndFollowsParent(),
             hidesWhileParentIsMaximized(),
+            staysWithTheParentWhenSuppressionIsOff(),
             reanchorSnapsBackToThePositioner(),
             reparentOutlivesOldOwner(),
+            parentFlickKeepsTheFollowOffset(),
         )
 
     /** Parent geometry every case starts from — well inside a 1024×768 work area. */
@@ -201,6 +203,80 @@ internal object SatelliteWindowHeadfulCases {
         )
     }
 
+    /**
+     * The opt-out of [hidesWhileParentIsMaximized]: with
+     * `hideWhileParentFullscreenOrMaximized = false` the satellite floats over
+     * its maximized parent instead of stepping aside. What is easy to get
+     * wrong — and what this pins — is that it survives the transition as a
+     * live, correctly placed, still-owned window: maximizing re-stacks the
+     * parent, and without the owner link being re-asserted the satellite ends
+     * up behind the window it belongs to.
+     *
+     * The z-order itself is not observable through window rects; what is
+     * asserted here is everything that goes with it — the satellite stays
+     * mapped, keeps its parent-relative offset across maximize and restore,
+     * and still follows the parent afterwards, which only holds while the
+     * owner link is intact.
+     */
+    private fun staysWithTheParentWhenSuppressionIsOff(): TaoWindowTestCase {
+        val satellite = rightEdgeState()
+        return TaoWindowTestCase(
+            name = "satellite that does not hide stays with its parent across maximize and restore",
+            skip = ::skipReason,
+            windowState = parentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            satelliteState = satellite,
+            satelliteHideWhileParentFills = false,
+            satelliteContent = { Box(Modifier.fillMaxSize().background(Color(0xFF2D6CDF))) },
+            driver = {
+                awaitSatellite(satellite)
+                val parentRect = requireNotNull(bounds())
+                val satelliteRect = requireNotNull(satelliteBounds())
+                val offsetX = satelliteRect[0] - parentRect[0]
+                val offsetY = satelliteRect[1] - parentRect[1]
+
+                window.setMaximized(true)
+                awaitUntil("parent maximized") {
+                    val now = bounds() ?: return@awaitUntil false
+                    now[2] > parentRect[2]
+                }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+                check(!satellite.isHiddenByParent) { "the satellite must not hide when the app opted out" }
+                val overMaximized =
+                    requireNotNull(satelliteBounds()) { "satellite lost while the parent was maximized" }
+                check(overMaximized[2] > 0 && overMaximized[3] > 0) {
+                    "satellite has no size over the maximized parent: ${overMaximized.toList()}"
+                }
+
+                window.setMaximized(false)
+                awaitUntil("parent restored") {
+                    val now = bounds() ?: return@awaitUntil false
+                    abs(now[2] - parentRect[2]) <= FOLLOW_TOLERANCE_PX
+                }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+                check(!satellite.isHiddenByParent) { "still not hidden after the restore" }
+
+                // Still owned and still following: the offset is preserved and
+                // a later parent move carries the satellite along.
+                val restoredParent = requireNotNull(bounds())
+                val restoredSatellite = requireNotNull(satelliteBounds())
+                check(
+                    abs((restoredSatellite[0] - restoredParent[0]) - offsetX) <= FOLLOW_TOLERANCE_PX &&
+                        abs((restoredSatellite[1] - restoredParent[1]) - offsetY) <= FOLLOW_TOLERANCE_PX,
+                ) {
+                    "satellite lost its offset across maximize/restore: " +
+                        "parent=${restoredParent.toList()} satellite=${restoredSatellite.toList()}"
+                }
+                moveParentBy(MOVE_DELTA_DP, MOVE_DELTA_DP)
+                awaitUntil("parent moved after the restore") {
+                    val now = bounds() ?: return@awaitUntil false
+                    now[0] != restoredParent[0] || now[1] != restoredParent[1]
+                }
+                awaitUntil("satellite still follows its parent") { keepsOffset(offsetX, offsetY) }
+            },
+        )
+    }
+
     private fun reanchorSnapsBackToThePositioner(): TaoWindowTestCase {
         val satellite = rightEdgeState()
         return TaoWindowTestCase(
@@ -329,6 +405,69 @@ internal object SatelliteWindowHeadfulCases {
         )
     }
 
+    /**
+     * A parent thrown across the screen. The follow logic distinguishes its own
+     * catch-up moves from the user dragging the satellite by matching each move
+     * against the position it last commanded, with a small tolerance and a
+     * count of the moves still in flight. A burst of parent moves with no
+     * frame in between is what can desynchronise that bookkeeping: the
+     * satellite would then treat a follow move as a user drag and re-capture a
+     * wrong offset, drifting a little further with every burst.
+     */
+    private fun parentFlickKeepsTheFollowOffset(): TaoWindowTestCase {
+        val satellite = rightEdgeState()
+        return TaoWindowTestCase(
+            name = "satellite keeps its offset through bursts of parent moves",
+            skip = ::skipReason,
+            windowState = parentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            satelliteState = satellite,
+            satelliteContent = { Box(Modifier.fillMaxSize().background(Color(0xFF2D6CDF))) },
+            driver = {
+                awaitSatellite(satellite)
+                val parentRect = requireNotNull(bounds())
+                val satelliteRect = requireNotNull(satelliteBounds())
+                val offsetX = satelliteRect[0] - parentRect[0]
+                val offsetY = satelliteRect[1] - parentRect[1]
+                val scale = window.scaleFactor.toDouble()
+                val originX = parentRect[0] / scale
+                val originY = parentRect[1] / scale
+
+                // Several bursts, each a run of moves issued with no settle in
+                // between, in alternating directions and with big jumps.
+                repeat(FLICK_BURSTS) { burst ->
+                    val direction = if (burst % 2 == 0) 1 else -1
+                    for (step in 1..FLICK_MOVES_PER_BURST) {
+                        val delta = direction * step * FLICK_STEP_DP
+                        window.setOuterPosition(originX + delta, originY + delta / 2)
+                    }
+                    // Back to a known place, still without waiting.
+                    window.setOuterPosition(originX, originY)
+                }
+
+                // Once the burst has drained, the satellite is back where it
+                // belongs relative to its parent — no accumulated drift.
+                awaitUntil("satellite recovered its offset after the bursts") {
+                    keepsOffset(offsetX, offsetY)
+                }
+                val published =
+                    requireNotNull(satellite.offsetFromParent) { "offsetFromParent lost during the bursts" }
+                val satelliteScale = requireNotNull(satelliteWindow).scaleFactor
+                check(abs(published.x.value * satelliteScale - offsetX) <= OFFSET_TOLERANCE_PX) {
+                    "published offset drifted: ${published.x} vs $offsetX px"
+                }
+
+                // And a normal move afterwards is still followed.
+                moveParentBy(MOVE_DELTA_DP, MOVE_DELTA_DP)
+                awaitUntil("parent moved after the bursts") {
+                    val now = bounds() ?: return@awaitUntil false
+                    now[0] != parentRect[0] || now[1] != parentRect[1]
+                }
+                awaitUntil("satellite still follows after the bursts") { keepsOffset(offsetX, offsetY) }
+            },
+        )
+    }
+
     /** Waits until both windows are mapped and the follow offset is captured. */
     private suspend fun TaoWindowTestScope.awaitSatellite(state: SatelliteWindowState) =
         run {
@@ -402,6 +541,9 @@ internal object SatelliteWindowHeadfulCases {
     private const val GAP_DP = 10
 
     private const val MOVE_DELTA_DP = 70.0
+    private const val FLICK_BURSTS = 6
+    private const val FLICK_MOVES_PER_BURST = 12
+    private const val FLICK_STEP_DP = 40.0
     private const val DRAG_DELTA_PX = 60L
 
     /** Logical → physical rounding slack on a single edge. */

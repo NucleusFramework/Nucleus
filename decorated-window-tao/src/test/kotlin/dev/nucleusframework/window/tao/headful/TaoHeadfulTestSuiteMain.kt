@@ -372,6 +372,8 @@ public object TaoHeadfulTestSuiteMain {
             AnimatedWindowSizeHeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
             SatelliteWindowHeadfulCases.all() +
+            SatelliteWorkspaceHeadfulCases.all() +
+            SatelliteWorkspaceStressHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()
 
@@ -433,6 +435,7 @@ public object TaoHeadfulTestSuiteMain {
                         dialogHolder = dialogHolder,
                         satelliteHolder = satelliteHolder,
                     )
+                    case.applicationContent?.invoke(this, HeadfulWindows(windowHolder.value, dialogHolder.value))
                 }
             }
 
@@ -515,6 +518,7 @@ public object TaoHeadfulTestSuiteMain {
             parent = owner,
             state = satelliteState,
             title = "tao-headful-satellite: ${case.name}",
+            hideWhileParentFullscreenOrMaximized = case.satelliteHideWhileParentFills,
         ) {
             case.satelliteContent(this)
             val s = window
@@ -664,6 +668,7 @@ private fun ApplicationScope.CaseWindow(
                 onCloseRequest = case.satelliteOnCloseRequest,
                 state = satelliteState,
                 title = "tao-headful-satellite: ${case.name}",
+                hideWhileParentFullscreenOrMaximized = case.satelliteHideWhileParentFills,
             ) {
                 case.satelliteContent(this)
                 val s = window

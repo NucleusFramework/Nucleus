@@ -43,7 +43,10 @@ import kotlinx.coroutines.delay
  *    and minimisation, and leaves it fully interactive.
  *  - **Steps aside** — while the parent is fullscreen or maximized the
  *    satellite hides itself rather than covering content
- *    ([hideWhileParentFullscreenOrMaximized]).
+ *    ([hideWhileParentFullscreenOrMaximized]). With that turned off it stays
+ *    over its parent instead: the owner link is re-asserted across the
+ *    transition, which is what keeps the platform from re-stacking the
+ *    satellite behind the window it belongs to.
  *  - **Dies with its parent** — closing the parent closes the satellite;
  *    [onCloseRequest] fires so the caller can drop it from composition.
  *  - **Reparentable** — pass a different [parent] and the satellite moves to
@@ -271,8 +274,12 @@ private class SatelliteAnchoring(
     private var inFlight = 0
     private var detached = false
 
+    /** Whether the parent filled the screen last time it was looked at. */
+    private var lastFills: Boolean? = null
+
     private val parentMoved: (Int, Int) -> Unit = { xPx, yPx -> onParentMoved(xPx, yPx) }
     private val parentResized: (Int, Int) -> Unit = { _, _ -> syncSuppression() }
+    private val parentMinimized: (Boolean) -> Unit = { minimized -> if (!minimized) reassertOwnership() }
     private val parentFullscreen: (Int, Int, Boolean) -> Unit = { _, _, entering ->
         // Hide before the transition animates so the satellite is never caught
         // hovering over a fullscreen window. Leaving fullscreen is resolved by
@@ -293,6 +300,7 @@ private class SatelliteAnchoring(
         captureOffset()
         owner.onMoved(parentMoved)
         owner.onResized(parentResized)
+        owner.onMinimizedChanged(parentMinimized)
         owner.onFullscreenPrepare(parentFullscreen)
         owner.onClosing(parentClosing)
         owner.onDestroyed(parentDestroyed)
@@ -306,6 +314,7 @@ private class SatelliteAnchoring(
         val owner = parent ?: return
         owner.removeMovedListener(parentMoved)
         owner.removeResizedListener(parentResized)
+        owner.removeMinimizedListener(parentMinimized)
         owner.removeFullscreenPrepareListener(parentFullscreen)
         owner.removeClosingListener(parentClosing)
         owner.removeDestroyedListener(parentDestroyed)
@@ -410,20 +419,40 @@ private class SatelliteAnchoring(
         if (detached) return
         val owner = parent ?: return
         val fills = force || owner.isFullscreen || owner.isMaximized
+        val fillsChanged = fills != lastFills
+        lastFills = fills
         val hide = hideWhileParentFills && fills
-        if (hide == state.isHiddenByParent) return
-        state.isHiddenByParent = hide
-        if (!hide) {
-            // AppKit drops a child window's parent link when the child is
-            // ordered out; re-assert it so the satellite comes back above its
-            // parent instead of behind it. No-op where the platform keeps the
-            // relationship across hide/show.
-            applyWindowOwnerRelationship(child = satellite, owner = owner, autoCenter = false)
-            // Re-align while still hidden: the parent may have moved during the
-            // fullscreen stint, and the position sticks before the show().
-            val parentRect = owner.outerBoundsPx() ?: return
-            if (captured) command(parentRect[0].toInt() + offsetXPx, parentRect[1].toInt() + offsetYPx)
+        if (hide != state.isHiddenByParent) {
+            state.isHiddenByParent = hide
+            if (!hide) {
+                // AppKit drops a child window's parent link when the child is
+                // ordered out; re-assert it so the satellite comes back above its
+                // parent instead of behind it. No-op where the platform keeps the
+                // relationship across hide/show.
+                reassertOwnership()
+                // Re-align while still hidden: the parent may have moved during the
+                // fullscreen stint, and the position sticks before the show().
+                val parentRect = owner.outerBoundsPx() ?: return
+                if (captured) command(parentRect[0].toInt() + offsetXPx, parentRect[1].toInt() + offsetYPx)
+            }
+            return
         }
+        // Same visibility on both sides of a maximize / fullscreen / restore —
+        // an app that opted out of hiding. The transition re-stacks the owner,
+        // which on every platform can leave the satellite *behind* the window
+        // it belongs to, so put the link back.
+        if (fillsChanged && !state.isHiddenByParent) reassertOwnership()
+    }
+
+    /**
+     * Re-applies the native owner link, which is what keeps the satellite
+     * above its parent. Idempotent, and the platform calls behind it are
+     * cheap, so it is safe to run on every state transition.
+     */
+    private fun reassertOwnership() {
+        if (detached) return
+        val owner = parent ?: return
+        applyWindowOwnerRelationship(child = satellite, owner = owner, autoCenter = false)
     }
 
     private fun publishOffset(

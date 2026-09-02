@@ -223,6 +223,9 @@ public object TaoApplication {
 
     internal fun lookup(handle: Long): TaoWindow? = windows[handle]
 
+    /** Live native windows, by handle. Used by tests to catch leaked windows. */
+    internal fun liveWindowCount(): Int = windows.size
+
     internal fun remove(handle: Long) {
         windows.remove(handle)
     }
