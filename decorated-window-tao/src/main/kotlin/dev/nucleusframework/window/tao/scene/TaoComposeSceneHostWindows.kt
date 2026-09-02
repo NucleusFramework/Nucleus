@@ -39,6 +39,7 @@ import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.event.win32WheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
@@ -2186,35 +2187,5 @@ private class WindowsTaoPlatformContext(
         )
     }
 
-    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int {
-        when {
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Default ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Text ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Hand ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Crosshair ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-        }
-        return runCatching {
-            val cursor = icon.javaClass.getMethod("getCursor").invoke(icon) as? java.awt.Cursor
-            when (cursor?.type) {
-                java.awt.Cursor.TEXT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-                java.awt.Cursor.HAND_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-                java.awt.Cursor.CROSSHAIR_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-                java.awt.Cursor.WAIT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.WAIT
-                java.awt.Cursor.MOVE_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.MOVE
-                java.awt.Cursor.E_RESIZE_CURSOR, java.awt.Cursor.W_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.EW_RESIZE
-                java.awt.Cursor.N_RESIZE_CURSOR, java.awt.Cursor.S_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NS_RESIZE
-                java.awt.Cursor.NE_RESIZE_CURSOR, java.awt.Cursor.SW_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NESW_RESIZE
-                java.awt.Cursor.NW_RESIZE_CURSOR, java.awt.Cursor.SE_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NWSE_RESIZE
-                else -> dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            }
-        }.getOrDefault(dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT)
-    }
+    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int = icon.toTaoCursorIconCode()
 }

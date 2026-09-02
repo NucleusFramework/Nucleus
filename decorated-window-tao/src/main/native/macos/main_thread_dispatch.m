@@ -394,6 +394,8 @@ static NSCursor *nucleus_tao_cursor_for_code(int code) {
             return cursor ?: [NSCursor arrowCursor];
         }
         case 9:  return [NSCursor resizeLeftRightCursor];
+        case 13: return [NSCursor openHandCursor];
+        case 14: return [NSCursor closedHandCursor];
         case 10: return [NSCursor resizeUpDownCursor];
         case 11: {
             NSCursor *cursor = nucleus_tao_cursor_from_selector(
