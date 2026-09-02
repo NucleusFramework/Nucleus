@@ -154,8 +154,17 @@ internal fun BindNucleusWindowState(
         }
         launch {
             for (provider in latestV2.boundsRequests) {
+                if (latestV1.placement != WindowPlacement.Floating) {
+                    // Bounds on a non-floating window make it floating (the v2
+                    // contract) — but the restore is asynchronous, and on macOS
+                    // an animated un-zoom whose final frame lands *after* our
+                    // size would put the pre-zoom frame back over it. Let the
+                    // window actually leave the placement first, then resolve
+                    // against the restored geometry.
+                    latestV1.placement = WindowPlacement.Floating
+                    latestNativeWindow?.let { awaitFloating(it) }
+                }
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
-                latestV1.placement = WindowPlacement.Floating
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
             }
@@ -606,6 +615,21 @@ private suspend fun correctInitialOuterSize(
         if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
     }
 }
+
+/**
+ * Suspends until [window] reports neither maximized nor fullscreen, bounded by
+ * [PLACEMENT_RESTORE_RETRIES] polls (well past macOS's zoom animation). Gives
+ * up silently — the geometry is then applied as before.
+ */
+private suspend fun awaitFloating(window: TaoWindow) {
+    repeat(PLACEMENT_RESTORE_RETRIES) {
+        if (!window.isMaximized && !window.isFullscreen) return
+        delay(PLACEMENT_RESTORE_RETRY_MS)
+    }
+}
+
+private const val PLACEMENT_RESTORE_RETRIES = 60
+private const val PLACEMENT_RESTORE_RETRY_MS = 50L
 
 // ── Fallback for hosts that only wrap the v1 surface ────────────────────────
 
