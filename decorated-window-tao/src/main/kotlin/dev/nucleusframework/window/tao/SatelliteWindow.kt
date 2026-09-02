@@ -189,6 +189,26 @@ public fun ApplicationScope.SatelliteWindow(
                 if (parent != null && parent === destroyedParent) latestOnClose()
             }
 
+            // Hands keyboard focus back to the parent when the satellite goes
+            // away while it is the active window (closed from its own header,
+            // docked on a drag release). Win32 only does this by itself for
+            // dialogs ended through `EndDialog`; destroying an active owned
+            // `WS_OVERLAPPED` window activates the next window in the Z-order,
+            // which can belong to another application and sends the parent to
+            // the background. Both calls are queued on the event loop in order,
+            // so the parent is foreground before the satellite's HWND dies.
+            // Skipped when the parent is the one being destroyed, or when the
+            // satellite was not focused (an app-driven close must not steal
+            // the foreground).
+            val currentParent by rememberUpdatedState(parent)
+            val currentDestroyedParent by rememberUpdatedState(destroyedParent)
+            DisposableEffect(satellite) {
+                onDispose {
+                    val target = currentParent
+                    if (satellite.isFocused && target != null && target !== currentDestroyedParent) target.focus()
+                }
+            }
+
             DisposableEffect(anchoring) {
                 applyWindowOwnerRelationship(child = satellite, owner = parent, autoCenter = false)
                 anchoring.onParentDestroyed = { destroyedParent = it }
