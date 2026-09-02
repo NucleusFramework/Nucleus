@@ -158,7 +158,8 @@ internal fun BindNucleusWindowState(
         }
         launch {
             for (provider in latestV2.boundsRequests) {
-                if (latestV1.placement != WindowPlacement.Floating) {
+                val leftPlacement = latestV1.placement != WindowPlacement.Floating
+                if (leftPlacement) {
                     // Bounds on a non-floating window make it floating (the v2
                     // contract) — but the restore is asynchronous, and on macOS
                     // an animated un-zoom whose final frame lands *after* our
@@ -169,16 +170,9 @@ internal fun BindNucleusWindowState(
                     latestNativeWindow?.let { awaitFloating(it) }
                 }
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
-                v2Logger.fine {
-                    "bounds request -> $resolved (native outer=${latestNativeWindow?.outerBoundsPx()?.toList()}, " +
-                        "maximized=${latestNativeWindow?.isMaximized}, v1.placement=${latestV1.placement})"
-                }
-                System.err.println(
-                    "[v2-bridge] apply $resolved outer=${latestNativeWindow?.outerBoundsPx()?.toList()} " +
-                        "max=${latestNativeWindow?.isMaximized} v1.placement=${latestV1.placement}",
-                )
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
+                if (leftPlacement) latestNativeWindow?.let { confirmBounds(it, latestV1, resolved) }
             }
         }
         launch {
@@ -654,9 +648,67 @@ private suspend fun awaitFloating(window: TaoWindow) {
     }
 }
 
+/**
+ * Apply-and-confirm for geometry applied right after leaving a placement.
+ *
+ * The flag-and-stillness wait above cannot see an un-zoom animation that has
+ * not started yet: AppKit can pause between clearing `isZoomed` and animating,
+ * and its final frame then lands on top of whatever was applied meanwhile. So
+ * after applying, watch the window settle and compare it with the target; if
+ * the animation put the old frame back, the v1 state now carries that observed
+ * size, and re-assigning the target re-runs the apply. Bounded attempts; a
+ * window manager that refuses the size wins.
+ */
+private suspend fun confirmBounds(
+    window: TaoWindow,
+    v1: WindowStateV1,
+    target: ResolvedV2Bounds,
+) {
+    repeat(CONFIRM_ATTEMPTS) {
+        awaitSettled(window)
+        val outer = window.outerBoundsDpOrNull() ?: return
+        val insets = window.decorationInsets(v1.size)
+        val sizeOk =
+            !target.size.width.isSpecified ||
+                !target.size.height.isSpecified ||
+                (
+                    kotlin.math.abs(
+                        (outer.size.width - insets.width - target.size.width).value,
+                    ) <= CONFIRM_TOLERANCE_DP &&
+                        kotlin.math.abs((outer.size.height - insets.height - target.size.height).value) <=
+                        CONFIRM_TOLERANCE_DP
+                )
+        val position = target.position
+        val positionOk =
+            position !is WindowPosition.Absolute ||
+                (
+                    kotlin.math.abs((outer.left - position.x).value) <= CONFIRM_TOLERANCE_DP &&
+                        kotlin.math.abs((outer.top - position.y).value) <= CONFIRM_TOLERANCE_DP
+                )
+        if (sizeOk && positionOk) return
+        v1.size = target.size
+        v1.position = target.position
+    }
+}
+
+/** Waits until the outer rectangle holds still for [PLACEMENT_SETTLED_POLLS] polls. */
+private suspend fun awaitSettled(window: TaoWindow) {
+    var previous: List<Long>? = null
+    var stable = 0
+    repeat(PLACEMENT_RESTORE_RETRIES) {
+        val current = window.outerBoundsPx()?.toList()
+        stable = if (current != null && current == previous) stable + 1 else 0
+        previous = current
+        if (stable >= PLACEMENT_SETTLED_POLLS) return
+        delay(PLACEMENT_RESTORE_RETRY_MS)
+    }
+}
+
 private const val PLACEMENT_RESTORE_RETRIES = 60
 private const val PLACEMENT_RESTORE_RETRY_MS = 50L
 private const val PLACEMENT_SETTLED_POLLS = 3
+private const val CONFIRM_ATTEMPTS = 3
+private const val CONFIRM_TOLERANCE_DP = 2f
 
 // ── Fallback for hosts that only wrap the v1 surface ────────────────────────
 

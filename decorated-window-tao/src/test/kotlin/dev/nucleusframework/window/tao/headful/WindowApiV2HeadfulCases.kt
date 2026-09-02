@@ -311,15 +311,8 @@ internal object WindowApiV2HeadfulCases {
             // The v2 contract: bounds on a non-floating window make it floating.
             state.requestBounds(rect)
             awaitUntil("placement observed Floating") { state.placement == WindowPlacement.Floating }
-            var polls = 0
             awaitUntil("requested bounds applied after leaving Maximized") {
                 val outer = outerDp()
-                if (polls++ % DIAG_EVERY_POLLS == 0) {
-                    System.err.println(
-                        "[v2-e2e] unmaximize outer=$outer placement=${state.placement} " +
-                            "nativeMax=${window.isMaximized} bounds=${state.bounds}",
-                    )
-                }
                 closeEnough(SCOPED_SIZE.width.value, outer.width) && closeEnough(SCOPED_SIZE.height.value, outer.height)
             }
         }
@@ -348,14 +341,8 @@ internal object WindowApiV2HeadfulCases {
                     bottom = available.top + SCOPED_INSET + SCOPED_SIZE.height,
                 )
             state.requestBounds(rect)
-            var polls = 0
             awaitUntil("final bounds applied after the toggling storm", timeoutMillis = LONG_AWAIT_MS) {
                 val outer = outerDp()
-                if (polls++ % DIAG_EVERY_POLLS == 0) {
-                    System.err.println(
-                        "[v2-e2e] toggling outer=$outer placement=${state.placement} nativeMax=${window.isMaximized}",
-                    )
-                }
                 state.placement == WindowPlacement.Floating &&
                     closeEnough(SCOPED_SIZE.width.value, outer.width) &&
                     closeEnough(SCOPED_SIZE.height.value, outer.height)
