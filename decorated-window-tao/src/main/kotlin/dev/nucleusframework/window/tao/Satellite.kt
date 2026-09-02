@@ -29,6 +29,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
@@ -362,23 +363,43 @@ private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
  * strip carries the [satelliteDragHandle] itself; while floating it does not,
  * because the title bar it sits in already is one — a second handle nested
  * inside the first would start two drags for one gesture.
+ *
+ * On a floating satellite whose title bar it shares with the compositor's
+ * window move (native Wayland), the strip is drawn as a rounded chip instead
+ * of blending into the bar: there the part that drags into a dock and the
+ * part that moves the window are two places, and the user has to be able to
+ * see which is which. Chrome's tab strip and GIMP's dock tabs draw the same
+ * distinction for the same reason.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 public fun SatelliteScope.DefaultSatelliteHeader() {
     val colors = LocalTitleBarStyle.current.colors
     var hovered by remember { mutableStateOf(false) }
+    val window = LocalTaoWindow.current
+    val chip = !isDocked && window != null && !window.supportsScreenPlacement
+    val shape = if (chip) RoundedCornerShape(CHIP_CORNER_DP.dp) else RectangleShape
+    val background =
+        when {
+            chip && hovered -> colors.content.copy(alpha = CHIP_HOVER_ALPHA)
+            chip -> colors.content.copy(alpha = CHIP_ALPHA)
+            hovered -> colors.content.copy(alpha = GRIP_HOVER_ALPHA)
+            else -> Color.Transparent
+        }
     Row(
         modifier =
             Modifier
                 .fillMaxWidth()
                 // Full height so the whole header strip is the grip, not just
-                // the band its content happens to occupy.
+                // the band its content happens to occupy. The chip is inset
+                // inside that, so it reads as an object sitting in the bar
+                // while the area a press lands on stays the whole strip.
                 .fillMaxHeight()
+                .then(if (chip) Modifier.padding(vertical = CHIP_INSET_DP.dp) else Modifier)
                 .then(if (isDocked) Modifier.satelliteDragHandle(this) else Modifier)
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
-                .background(if (hovered) colors.content.copy(alpha = GRIP_HOVER_ALPHA) else Color.Transparent)
+                .background(background, shape)
                 .padding(horizontal = HEADER_PADDING_DP.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -440,6 +461,14 @@ private const val HEADER_PADDING_DP = 8
 
 /** Title-bar strip left to the compositor move on native Wayland, beside the window controls. */
 private const val WAYLAND_CAPTION_DP = 56
+
+/** The chip's corner radius, matching the tab strip's own tabs. */
+private const val CHIP_CORNER_DP = 8
+
+/** Gap between the chip and the bar's edges, so it reads as sitting inside it. */
+private const val CHIP_INSET_DP = 4
+private const val CHIP_ALPHA = 0.14f
+private const val CHIP_HOVER_ALPHA = 0.22f
 private const val GRIP_WIDTH_DP = 7
 private const val GRIP_HEIGHT_DP = 13
 private const val GRIP_GAP_DP = 8
