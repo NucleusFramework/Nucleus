@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.size
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowPosition
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.v2.CombinedBoundsProvider
 import dev.nucleusframework.window.tao.v2.DEFAULT_WINDOW_SIZE
 import dev.nucleusframework.window.tao.v2.Screen
@@ -703,7 +704,8 @@ private suspend fun confirmBounds(
                 )
         if (sizeOk && positionOk) return
         // A frame that went back to the zoomed size means the native placement
-        // reasserted itself; clear it before re-applying.
+        // reasserted itself; clear it before re-applying (on macOS by the
+        // re-apply itself — see restoreAndAwaitFloating).
         if (window.isMaximized || window.isFullscreen) restoreAndAwaitFloating(window)
         v1.size = target.size
         v1.position = target.position
@@ -714,11 +716,20 @@ private suspend fun confirmBounds(
  * Clears a native maximized / fullscreen state the v1 bookkeeping does not
  * know about (its `applied.placement` already reads Floating, so its own
  * effect will not act), then waits for the window to leave it.
+ *
+ * Not on macOS for the maximized case: there `setMaximized(false)` is a
+ * `zoom:` *toggle*, and issuing one while AppKit is still draining a queue of
+ * zoom animations keeps the race alive — every corrective toggle can land on a
+ * frame that is already un-zoomed and zoom it again. Setting the frame is what
+ * un-zooms deterministically (`isZoomed` is "frame equals the zoomed frame"),
+ * so the caller applies the target and lets [confirmBounds] re-apply until the
+ * animation queue has drained. Fullscreen is not a toggle and is cleared
+ * everywhere.
  */
 private suspend fun restoreAndAwaitFloating(window: TaoWindow) {
     if (window.isFullscreen) window.setFullscreen(false)
-    if (window.isMaximized) window.setMaximized(false)
-    awaitFloating(window)
+    if (window.isMaximized && Platform.Current != Platform.MacOS) window.setMaximized(false)
+    if (Platform.Current == Platform.MacOS) awaitSettled(window) else awaitFloating(window)
 }
 
 /** Waits until the outer rectangle holds still for [PLACEMENT_SETTLED_POLLS] polls. */
