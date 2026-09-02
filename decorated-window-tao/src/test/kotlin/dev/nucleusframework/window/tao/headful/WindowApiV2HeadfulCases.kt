@@ -43,20 +43,6 @@ internal object WindowApiV2HeadfulCases {
         return TaoWindowTestCase(
             name = "window v2 clone: initial provider centres a fixed size on the screen",
             nucleusWindowState = state,
-            skip = {
-                // Two X11 facts make this case say nothing there. openbox applies
-                // its own placement policy to a client's initial position (the
-                // window lands at 0,0 — the v1 path retries Aligned centring for
-                // the same reason), so the centre is never observable. And this
-                // is the only case whose window gets an absolute position *before*
-                // `show()`: under Xvfb/openbox that window intermittently stays
-                // at GTK's unallocated 1×1 for the whole 15 s budget while the
-                // very next window of the same run maps fine — a pre-map race in
-                // the v1 create → move → show sequence, independent of the clone.
-                // Size / position / screen requests after mapping are covered by
-                // the four cases below on every platform.
-                if (isLinux) "X11 WM overrides the initial position; pre-map move races the map" else null
-            },
         ) {
             awaitMapped()
             // Poll rather than snapshot: a freshly mapped window sits at the
@@ -155,6 +141,13 @@ internal object WindowApiV2HeadfulCases {
             // The shape the Compose v2 path logs and drops: the lambda
             // dereferences the geometry scope.
             state.requestBounds {
+                // A real measure pass against the live scene, not a snapshot:
+                // the DarkGray chrome the suite paints fills the window, so the
+                // unconstrained content measures to the current inner size.
+                val measured = measureWindowContent()
+                check(measured.width.value > 0f && measured.height.value > 0f) {
+                    "measureWindowContent returned an empty size: $measured"
+                }
                 val screen = windowMetrics.screen.availableBounds
                 DpRect(
                     left = screen.left + SCOPED_INSET,

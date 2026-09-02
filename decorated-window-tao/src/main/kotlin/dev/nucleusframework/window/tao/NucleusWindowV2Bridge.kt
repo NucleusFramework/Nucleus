@@ -169,6 +169,15 @@ internal fun BindNucleusWindowState(
             }
         }
     }
+    LaunchedEffect(nativeWindow) {
+        val window = nativeWindow ?: return@LaunchedEffect
+        correctInitialOuterSize(
+            window = window,
+            initialOuterSize = initialWindowGeometry[latestV2]?.bounds?.size,
+            currentSize = { latestV1.size },
+            applySize = { latestV1.size = it },
+        )
+    }
     val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
     LaunchedEffect(v1.size, v1.position, v1.placement, v1.isMinimized, visible, nativeWindow) {
         latestV2.placementOrNull = v1.placement
@@ -199,14 +208,17 @@ internal fun BindNucleusDialogState(
     minSize: DpSize = DpSize.Unspecified,
     maxSize: DpSize = DpSize.Unspecified,
     nativeWindow: TaoWindow? = null,
+    /** The window the dialog was opened from, for `AlignedToParentWindow`. */
+    parentWindow: TaoWindow? = null,
 ) {
     val latestV2 = v2
     val latestV1 = v1
     val latestNativeWindow by rememberUpdatedState(nativeWindow)
+    val latestParentWindow by rememberUpdatedState(parentWindow)
     LaunchedEffect(v2, v1, minSize, maxSize) {
         launch {
             for (provider in latestV2.boundsRequests) {
-                val resolved = resolveDialogBounds(provider, latestV1, latestNativeWindow)
+                val resolved = resolveDialogBounds(provider, latestV1, latestNativeWindow, latestParentWindow)
                 // minSize / maxSize are inner sizes (they drive
                 // TaoWindow.setMinimumSize / setMaximumSize), so clamp the inner
                 // size the outer request converted to.
@@ -222,6 +234,15 @@ internal fun BindNucleusDialogState(
                 latestV2.screenIdOrNull = target.id
             }
         }
+    }
+    LaunchedEffect(nativeWindow) {
+        val window = nativeWindow ?: return@LaunchedEffect
+        correctInitialOuterSize(
+            window = window,
+            initialOuterSize = initialDialogGeometry[latestV2]?.bounds?.size,
+            currentSize = { latestV1.size },
+            applySize = { latestV1.size = clampSize(it, minSize, maxSize) },
+        )
     }
     val geometrySignal = rememberNativeGeometrySignal(nativeWindow)
     LaunchedEffect(v1.size, v1.position, visible, nativeWindow) {
@@ -273,9 +294,10 @@ private fun resolveDialogBounds(
     provider: WindowBoundsProvider,
     v1: DialogStateV1,
     window: TaoWindow?,
+    parentWindow: TaoWindow?,
 ): ResolvedV2Bounds {
     val total = window.decorationInsets(v1.size)
-    val scope = geometryScope(window, v1.position, v1.size, total)
+    val scope = geometryScope(window, v1.position, v1.size, total, parentWindow)
     val resolved = scope.resolve(provider, v1.position)
     return ResolvedV2Bounds(
         position = resolved.position,
@@ -398,6 +420,8 @@ private fun geometryScope(
     currentInnerSize: DpSize,
     /** Total outer-minus-inner difference, as reported by the platform. */
     decorationSize: DpSize,
+    /** The owner a dialog was opened from; popups resolve theirs natively. */
+    parentWindow: TaoWindow? = null,
 ): WindowGeometryProviderScope {
     val scale = TaoMonitors.referenceScale(window)
     val screen = Screen(TaoMonitors.forWindow(window), scale)
@@ -410,13 +434,14 @@ private fun geometryScope(
                 right = screen.availableBounds.left + DEFAULT_WINDOW_SIZE.width,
                 bottom = screen.availableBounds.top + DEFAULT_WINDOW_SIZE.height,
             )
-    // Only popup overlays know their parent natively; a DecoratedDialog's owner
-    // is wired at the platform level, so `parentWindowMetrics` stays null there
-    // and AlignedToParentWindow reports the missing parent instead of guessing.
-    val parent = window?.popupParent
+    // A dialog's owner is wired at the platform level, so the overload that
+    // opens it hands the owner over; popup overlays know theirs natively.
+    val parent = parentWindow ?: window?.popupParent
     return WindowGeometryProviderScope(
         windowMetrics = WindowMetrics(screen = screen, bounds = bounds, insets = splitInsets(decorationSize)),
         parentWindowMetrics = parent?.let { parentMetrics(it, scale) },
+        scale = scale,
+        measureContent = window?.contentMeasurerOrNull(),
     )
 }
 
@@ -528,6 +553,39 @@ private fun <T> drainLast(channel: Channel<T>): T? {
     var last: T? = null
     while (true) {
         last = channel.tryReceive().getOrNull() ?: return last
+    }
+}
+
+/**
+ * Corrects the one geometry the creation path cannot get right on its own.
+ *
+ * A v2 bounds provider returns the *outer* rectangle, but before the window
+ * exists its decoration insets are unknown, so the initial outer size had to be
+ * applied as the inner size — a natively decorated frame then comes out larger
+ * by its chrome. Once the window is mapped the insets are measurable: if the
+ * inner size is still the initial request, shrink it by them so the outer
+ * rectangle matches what was asked. A window the user has already resized
+ * (v1 size no longer the initial one) is left alone.
+ */
+private suspend fun correctInitialOuterSize(
+    window: TaoWindow,
+    initialOuterSize: DpSize?,
+    currentSize: () -> DpSize,
+    applySize: (DpSize) -> Unit,
+) {
+    val requested = initialOuterSize ?: return
+    if (!requested.width.isSpecified || !requested.height.isSpecified) return
+    repeat(OBSERVED_BOUNDS_RETRIES) { attempt ->
+        val outer = window.outerBoundsDpOrNull()
+        if (outer != null && outer.size.width.value > 1f && outer.size.height.value > 1f) {
+            if (currentSize() != requested) return
+            val insets = window.decorationInsets(requested)
+            if (insets.width.value > 0f || insets.height.value > 0f) {
+                applySize(requested.minusInsets(insets))
+            }
+            return
+        }
+        if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
     }
 }
 

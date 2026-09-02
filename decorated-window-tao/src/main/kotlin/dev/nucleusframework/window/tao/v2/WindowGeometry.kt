@@ -4,14 +4,17 @@ package dev.nucleusframework.window.tao.v2
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpInsets
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.plus
 import androidx.compose.ui.unit.size
+import kotlin.math.roundToInt
 
 /**
  * The properties of a window that are useful inside a
@@ -60,6 +63,10 @@ public class WindowGeometryProviderScope internal constructor(
     public val windowMetrics: WindowMetrics,
     /** The metrics of the parent window, if any. */
     public val parentWindowMetrics: WindowMetrics?,
+    /** Scale the window's pixels are expressed in; converts measured px to dp. */
+    private val scale: Float = 1f,
+    /** The live scene's `measureContent`, or `null` before the window has one. */
+    private val measureContent: ((Constraints) -> IntSize?)? = null,
 ) {
     /**
      * Returns the size a window should have, given the size of its content.
@@ -78,18 +85,15 @@ public class WindowGeometryProviderScope internal constructor(
         )
 
     /**
-     * The window's current content size, clamped to the given constraints.
+     * Measures the window content in the given constraints and returns the
+     * resulting size.
      *
-     * **Not a measure pass.** Compose's original re-measures the window content
-     * against arbitrary [androidx.compose.ui.unit.Constraints]; doing that from
-     * outside the scene would mean driving a second measurement of a live
-     * composition on the event-loop thread. Reporting the size the content
-     * currently occupies keeps every provider evaluable, at the cost of being a
-     * lagging value for content that has not settled.
+     * A real measure pass against the live scene (`ComposeScene.measureContent`)
+     * once the window has one. Before that — evaluating an *initial* provider,
+     * or a host that never exposes its window — there is no content to measure,
+     * so the current content size clamped to the constraints stands in.
      *
-     * Prefer [WindowSizeProvider.Unconstrained] / [WindowSizeProvider.PreferredWidth] /
-     * [WindowSizeProvider.PreferredHeight]: those hand sizing to the window's own
-     * wrap-content path, which re-measures continuously and needs no snapshot.
+     * [maxWidth] and [maxHeight] can be [Dp.Infinity] to mean unconstrained.
      */
     public fun measureWindowContent(
         minWidth: Dp = 0.dp,
@@ -97,12 +101,26 @@ public class WindowGeometryProviderScope internal constructor(
         minHeight: Dp = 0.dp,
         maxHeight: Dp = Dp.Infinity,
     ): DpSize {
+        val measured =
+            measureContent?.invoke(
+                Constraints(
+                    minWidth = minWidth.toPxOrInfinity(),
+                    maxWidth = maxWidth.toPxOrInfinity(),
+                    minHeight = minHeight.toPxOrInfinity(),
+                    maxHeight = maxHeight.toPxOrInfinity(),
+                ),
+            )
+        if (measured != null) {
+            return DpSize((measured.width / scale).dp, (measured.height / scale).dp)
+        }
         val content = windowMetrics.contentSize
         return DpSize(
             width = content.width.clampTo(minWidth, maxWidth),
             height = content.height.clampTo(minHeight, maxHeight),
         )
     }
+
+    private fun Dp.toPxOrInfinity(): Int = if (isReal) (value * scale).roundToInt() else Constraints.Infinity
 }
 
 /**

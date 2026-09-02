@@ -127,6 +127,9 @@ public fun ApplicationScope.DecoratedDialog(
 ) {
     val v1 = remember(state) { nucleusDialogStateToV1(state) }
     val nativeWindow = remember(state) { mutableStateOf<TaoWindow?>(null) }
+    // Same capture DecoratedDialog itself uses for the native owner relationship;
+    // here it feeds `parentWindowMetrics` for AlignedToParentWindow.
+    val parentWindow = LocalTaoWindow.current
     // Clamping is a side effect, not composition output: writing v1.size during
     // composition schedules a recomposition on every native resize past maxSize.
     LaunchedEffect(v1, v1.size, minSize, maxSize) {
@@ -153,7 +156,7 @@ public fun ApplicationScope.DecoratedDialog(
             content()
         },
     )
-    BindNucleusDialogState(state, v1, visible, minSize, maxSize, nativeWindow.value)
+    BindNucleusDialogState(state, v1, visible, minSize, maxSize, nativeWindow.value, parentWindow)
 }
 
 /** Publishes the scope's [TaoWindow] so the bridge can read real geometry. */
