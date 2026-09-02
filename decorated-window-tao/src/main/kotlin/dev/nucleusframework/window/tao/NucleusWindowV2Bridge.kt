@@ -163,9 +163,10 @@ internal fun BindNucleusWindowState(
                 // already says Floating (each `zoom:` is a toggle, and the ones
                 // issued mid-animation may not land in order).
                 val window = latestNativeWindow
-                val leftPlacement =
-                    latestV1.placement != WindowPlacement.Floating ||
-                        (window != null && (window.isMaximized || window.isFullscreen))
+                val v1LeavesPlacement = latestV1.placement != WindowPlacement.Floating
+                val nativeStuck =
+                    !v1LeavesPlacement && window != null && (window.isMaximized || window.isFullscreen)
+                val leftPlacement = v1LeavesPlacement || nativeStuck
                 if (leftPlacement) {
                     // Bounds on a non-floating window make it floating (the v2
                     // contract) — but the restore is asynchronous, and on macOS
@@ -173,8 +174,16 @@ internal fun BindNucleusWindowState(
                     // size would put the pre-zoom frame back over it. Let the
                     // window actually leave the placement first, then resolve
                     // against the restored geometry.
+                    //
+                    // Who issues the restore matters: `setMaximized(false)` is a
+                    // `zoom:` toggle on macOS. When v1 is leaving the placement
+                    // its own effect issues it — a second one here re-zooms. Only
+                    // when v1 already reads Floating (its effect stays idle) does
+                    // the bridge clear the native state itself.
                     latestV1.placement = WindowPlacement.Floating
-                    window?.let { restoreAndAwaitFloating(it) }
+                    if (window != null) {
+                        if (nativeStuck) restoreAndAwaitFloating(window) else awaitFloating(window)
+                    }
                 }
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
                 latestV1.size = resolved.size
