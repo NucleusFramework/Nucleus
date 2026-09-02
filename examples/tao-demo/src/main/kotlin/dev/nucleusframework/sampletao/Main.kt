@@ -49,7 +49,6 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.v2.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.sampleshared.A11yTab
@@ -68,7 +67,9 @@ import dev.nucleusframework.window.macOSLargeCornerRadius
 import dev.nucleusframework.window.styling.TitleBarColors
 import dev.nucleusframework.window.styling.TitleBarMetrics
 import dev.nucleusframework.window.styling.TitleBarStyle
-import dev.nucleusframework.window.tao.inspectableWindowBounds
+import dev.nucleusframework.window.tao.v2.WindowBoundsProvider
+import dev.nucleusframework.window.tao.v2.WindowSizeProvider
+import dev.nucleusframework.window.tao.v2.rememberWindowState
 import java.awt.datatransfer.StringSelection
 
 fun main() {
@@ -257,7 +258,7 @@ private fun runApp() =
         val mainState =
             rememberWindowState(
                 initialBoundsProvider =
-                    inspectableWindowBounds(size = DpSize(1024.dp, 720.dp)),
+                    WindowBoundsProvider(WindowSizeProvider.Fixed(DpSize(1024.dp, 720.dp))),
             )
         NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = titleBarStyle) {
             DecoratedWindow(
@@ -438,7 +439,7 @@ private fun runApp() =
                     state =
                         rememberWindowState(
                             initialBoundsProvider =
-                                inspectableWindowBounds(size = DpSize(480.dp, 240.dp)),
+                                WindowBoundsProvider(WindowSizeProvider.Fixed(DpSize(480.dp, 240.dp))),
                         ),
                     title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
                     enabled = childEnabled,

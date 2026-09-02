@@ -22,11 +22,12 @@ import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
  * [DecoratedWindow] overload for the AWT-free window API v2 clone
  * ([dev.nucleusframework.window.tao.v2.WindowState]).
  *
- * The whole v2 surface works here, unlike the
- * [androidx.compose.ui.window.v2.WindowState] overload: `requestBounds`,
- * `requestSize`, `requestPosition` and `requestScreen` are all applied, and
- * `bounds` / `screenId` / `placement` / `isMinimized` are published back from
- * the native window. See
+ * The whole v2 surface is applied — `requestBounds`, `requestSize`,
+ * `requestPosition`, `requestScreen` — and `bounds` / `screenId` / `placement`
+ * / `isMinimized` are published back from the native window. Compose's own
+ * `androidx.compose.ui.window.v2.WindowState` is deliberately not accepted:
+ * its geometry scope needs a displayable `java.awt.Window`, so half of it
+ * would be inert here. See
  * [dev.nucleusframework.window.tao.v2.rememberWindowState] for the one-import
  * migration.
  *

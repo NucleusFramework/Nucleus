@@ -19,7 +19,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import androidx.compose.ui.window.v2.WindowState as WindowStateV2
+import dev.nucleusframework.window.tao.v2.WindowState as WindowStateV2
 
 @OptIn(ExperimentalTestApi::class)
 class NucleusWindowHostTest {
@@ -109,7 +109,7 @@ class NucleusWindowHostTest {
         }
 
     @Test
-    fun `hosted window v2 forwards compose window state v2 to the ambient host`() =
+    fun `hosted window v2 forwards the v2 clone state to the ambient host`() =
         runComposeUiTest {
             val windowHost = RecordingWindowHost()
             val v2State = WindowStateV2()

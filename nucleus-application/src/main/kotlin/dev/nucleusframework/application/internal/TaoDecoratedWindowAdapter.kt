@@ -121,68 +121,6 @@ internal object TaoDecoratedWindowAdapter {
 
     @Suppress("LongParameterList")
     @Composable
-    fun WindowV2(
-        scope: TaoNucleusApplicationScope,
-        onCloseRequest: () -> Unit,
-        state: androidx.compose.ui.window.v2.WindowState,
-        visible: Boolean,
-        title: String,
-        icon: Painter?,
-        resizable: Boolean,
-        enabled: Boolean,
-        focusable: Boolean,
-        alwaysOnTop: Boolean,
-        undecorated: Boolean,
-        transparent: Boolean,
-        clickThrough: Boolean,
-        visibleOnAllWorkspaces: Boolean,
-        forceX11: Boolean,
-        alwaysOnBottom: Boolean,
-        popupFor: NucleusWindow?,
-        nativePopupLayers: Boolean,
-        nativeContextMenu: Boolean,
-        hiddenFromDock: Boolean,
-        minSize: DpSize,
-        maxSize: DpSize,
-        onPreviewKeyEvent: (KeyEvent) -> Boolean,
-        onKeyEvent: (KeyEvent) -> Boolean,
-        content: @Composable NucleusDecoratedWindowScope.() -> Unit,
-    ) {
-        val outerLocals = currentCompositionLocalContext
-        val parentLayoutDirection = LocalLayoutDirection.current
-        with(scope.taoScope) {
-            TaoDecoratedWindow(
-                onCloseRequest = onCloseRequest,
-                state = state,
-                title = title,
-                icon = icon,
-                minSize = minSize,
-                maxSize = maxSize,
-                visible = visible,
-                resizable = resizable,
-                enabled = enabled,
-                focusable = focusable,
-                alwaysOnTop = alwaysOnTop,
-                undecorated = undecorated,
-                transparent = transparent,
-                clickThrough = clickThrough,
-                visibleOnAllWorkspaces = visibleOnAllWorkspaces,
-                forceX11 = forceX11,
-                alwaysOnBottom = alwaysOnBottom,
-                popupFor = popupFor?.unsafe?.taoWindow,
-                nativePopupLayers = nativePopupLayers,
-                hiddenFromDock = hiddenFromDock,
-                onPreviewKeyEvent = onPreviewKeyEvent,
-                onKeyEvent = onKeyEvent,
-                compositionLocalContext = outerLocals,
-            ) {
-                bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu, content)
-            }
-        }
-    }
-
-    @Suppress("LongParameterList")
-    @Composable
     fun WindowNucleusV2(
         scope: TaoNucleusApplicationScope,
         onCloseRequest: () -> Unit,

@@ -33,6 +33,7 @@ import dev.nucleusframework.window.tao.v2.evaluateScreen
 import dev.nucleusframework.window.tao.v2.evaluateSize
 import dev.nucleusframework.window.tao.v2.screenScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.Collections
 import java.util.WeakHashMap
@@ -45,8 +46,7 @@ import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
  * Binds the AWT-free window API v2 clone ([dev.nucleusframework.window.tao.v2])
  * to the v1 [WindowStateV1] the Tao window path consumes.
  *
- * The counterpart of `ComposeWindowV2Bridge` for our own types — and unlike it,
- * nothing is dropped here: every provider is evaluated against a
+ * Nothing is dropped here: every provider is evaluated against a
  * [WindowGeometryProviderScope] built from [TaoMonitors] and the live
  * [TaoWindow], and `requestScreen` really moves the window.
  */
@@ -563,4 +563,165 @@ public fun rememberSyncedNucleusDialogState(
     val v1 = remember(state) { nucleusDialogStateToV1(state) }
     BindNucleusDialogState(state, v1, visible)
     return v1
+}
+
+// ── Shared geometry helpers ─────────────────────────────────────────────────
+
+/** Native geometry is only readable once Tao has realized the window. */
+private const val OBSERVED_BOUNDS_RETRIES = 20
+private const val OBSERVED_BOUNDS_RETRY_MS = 50L
+private const val RECT_ARRAY_SIZE = 4
+
+internal data class ResolvedV2Bounds(
+    val position: WindowPosition,
+    val size: DpSize,
+)
+
+/**
+ * Signals every native move / resize of [window].
+ *
+ * Keying the observed-geometry effect on the v1 state alone is not enough: the
+ * window manager moves and resizes a window without the v1 state changing —
+ * the initial geometry apply itself lands *after* that effect has run — which
+ * would leave `bounds` reporting a stale rectangle for the rest of the window's
+ * life.
+ *
+ * A conflated channel rather than snapshot state: the callbacks fire on the
+ * event-loop thread from inside the platform's resize handling, which can be
+ * *within* a Compose measure/layout pass. Writing snapshot state there
+ * re-enters layout through the recomposition it schedules
+ * ("performMeasureAndLayout called during measure layout"); a channel send
+ * carries no such obligation, and the receiving coroutine resumes on the
+ * dispatcher once the native frame has unwound.
+ *
+ * One registration per window instance ([LaunchedEffect] keyed on the window),
+ * matching the listeners' append-only contract.
+ */
+@Composable
+internal fun rememberNativeGeometrySignal(window: TaoWindow?): Channel<Unit> {
+    val signal = remember(window) { Channel<Unit>(Channel.CONFLATED) }
+    LaunchedEffect(window) {
+        val target = window ?: return@LaunchedEffect
+        target.onMoved { _, _ -> signal.trySend(Unit) }
+        target.onResized { _, _ -> signal.trySend(Unit) }
+    }
+    return signal
+}
+
+internal fun minSizeOrNull(minSize: DpSize): DpSize? =
+    if (minSize.width.isSpecified && minSize.height.isSpecified) minSize else null
+
+internal fun clampSize(
+    size: DpSize,
+    minSize: DpSize,
+    maxSize: DpSize,
+): DpSize {
+    var width = size.width
+    var height = size.height
+    val min = minSizeOrNull(minSize)
+    if (min != null) {
+        if (width.isSpecified && width < min.width) width = min.width
+        if (height.isSpecified && height < min.height) height = min.height
+    }
+    if (maxSize.width.isSpecified && width.isSpecified && width > maxSize.width) width = maxSize.width
+    if (maxSize.height.isSpecified && height.isSpecified && height > maxSize.height) height = maxSize.height
+    return DpSize(width, height)
+}
+
+/**
+ * Observed window rectangle, preferring the native geometry.
+ *
+ * Compose v2 documents `WindowState.bounds` as the whole window, insets
+ * included ([androidx.compose.ui.window.v2.WindowMetrics.bounds]), which is
+ * exactly [TaoWindow.outerBoundsPx]. The v1 state is *not* a substitute: it
+ * pairs the outer position ([TaoWindow.setOuterPosition]) with the inner size
+ * ([TaoWindow.setInnerSize]), so publishing it would make `bounds.size` mean
+ * one thing before the first native measurement and another after — enough to
+ * shrink a window by its decoration insets on every `requestBounds(bounds)`
+ * round-trip, or across a `WindowState.Saver` restore.
+ */
+internal suspend fun observedRect(
+    position: WindowPosition,
+    size: DpSize,
+    nativeWindow: TaoWindow?,
+): DpRect? {
+    if (nativeWindow != null) {
+        repeat(OBSERVED_BOUNDS_RETRIES) { attempt ->
+            nativeWindow.outerBoundsDpOrNull()?.let { return it }
+            if (attempt < OBSERVED_BOUNDS_RETRIES - 1) delay(OBSERVED_BOUNDS_RETRY_MS)
+        }
+    }
+    return approximateOuterRect(position, size)
+}
+
+/**
+ * Best-effort rectangle for hosts that never expose the native window — a
+ * themed [dev.nucleusframework.window.tao.rememberSyncedWindowState] host binds
+ * with `nativeWindow = null` — and for a window the platform bridge can't
+ * measure yet.
+ *
+ * An approximation on two counts: the size is the inner one (insets unknown
+ * without a window to measure), and a position that hasn't become
+ * [WindowPosition.Absolute] yet is reported at the origin. Publishing it anyway
+ * is what keeps `WindowState.isInitialized` from staying `false` — and `bounds`
+ * / `size` / `position` from throwing — forever on a window manager that emits
+ * no initial move event.
+ */
+internal fun approximateOuterRect(
+    position: WindowPosition,
+    size: DpSize,
+): DpRect? {
+    if (!size.width.isSpecified || !size.height.isSpecified) return null
+    val absolute = position as? WindowPosition.Absolute
+    val left = absolute?.x ?: 0.dp
+    val top = absolute?.y ?: 0.dp
+    return DpRect(
+        left = left,
+        top = top,
+        right = left + size.width,
+        bottom = top + size.height,
+    )
+}
+
+/**
+ * Decoration insets (outer minus inner size), or [DpSize.Zero] when they can't
+ * be measured — which is also the right answer for the undecorated CSD windows
+ * Tao draws by default.
+ */
+internal fun TaoWindow?.decorationInsets(innerSize: DpSize): DpSize {
+    val window = this ?: return DpSize.Zero
+    if (!innerSize.width.isSpecified || !innerSize.height.isSpecified) return DpSize.Zero
+    val outer = window.outerBoundsDpOrNull() ?: return DpSize.Zero
+    return DpSize(
+        width = (outer.right - outer.left - innerSize.width).coerceAtLeast(0.dp),
+        height = (outer.bottom - outer.top - innerSize.height).coerceAtLeast(0.dp),
+    )
+}
+
+/** Inner size → outer (v2) size. Unspecified axes stay unspecified. */
+internal fun DpSize.plusInsets(insets: DpSize): DpSize =
+    DpSize(
+        width = if (width.isSpecified) width + insets.width else width,
+        height = if (height.isSpecified) height + insets.height else height,
+    )
+
+/** Outer (v2) size → inner size. Unspecified axes stay unspecified. */
+internal fun DpSize.minusInsets(insets: DpSize): DpSize =
+    DpSize(
+        width = if (width.isSpecified) (width - insets.width).coerceAtLeast(0.dp) else width,
+        height = if (height.isSpecified) (height - insets.height).coerceAtLeast(0.dp) else height,
+    )
+
+internal fun TaoWindow.outerBoundsDpOrNull(): DpRect? {
+    val rect = outerBoundsPx() ?: return null
+    if (rect.size != RECT_ARRAY_SIZE) return null
+    val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+    val left = rect[0] / scale
+    val top = rect[1] / scale
+    return DpRect(
+        left = left.dp,
+        top = top.dp,
+        right = (left + rect[2] / scale).dp,
+        bottom = (top + rect[3] / scale).dp,
+    )
 }
