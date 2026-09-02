@@ -373,6 +373,8 @@ public object TaoHeadfulTestSuiteMain {
             SatelliteWindowHeadfulCases.all() +
             SatelliteWorkspaceHeadfulCases.all() +
             SatelliteWorkspaceStressHeadfulCases.all() +
+            TabWorkspaceHeadfulCases.all() +
+            TabWorkspaceStressHeadfulCases.all() +
             ImeHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =

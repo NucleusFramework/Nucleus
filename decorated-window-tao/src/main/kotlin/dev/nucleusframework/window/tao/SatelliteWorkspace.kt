@@ -3,7 +3,6 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -11,13 +10,18 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.isFinite
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import kotlin.math.roundToInt
+import dev.nucleusframework.window.tao.workspace.DragController
+import dev.nucleusframework.window.tao.workspace.HostGeometry
+import dev.nucleusframework.window.tao.workspace.HostGeometryRegistry
+import dev.nucleusframework.window.tao.workspace.RelocatableSlot
+import dev.nucleusframework.window.tao.workspace.WindowGroup
+import dev.nucleusframework.window.tao.workspace.clientOriginPx
+import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
 
 /**
  * One satellite known to a [SatelliteWorkspace]: identity, placement and the
@@ -79,10 +83,7 @@ public class SatelliteEntry internal constructor(
     internal var header: (@Composable SatelliteScope.() -> Unit)? by mutableStateOf(null)
 
     /** `rememberSaveable` values carried across a dock / undock host change. */
-    internal var savedState: SatelliteSavedState? = null
-
-    /** The registry of the host currently composing the content, if any. */
-    internal var activeRegistry: RelocatingSaveableStateRegistry? = null
+    internal val stateSlot: RelocatableSlot = RelocatableSlot()
 
     /** Last docked panel rect in the host's window coordinates (physical px). */
     internal var dockedBoundsInWindowPx: Rect? = null
@@ -132,9 +133,9 @@ public data class SatelliteLayoutSnapshot(
  *  - **Owner.** Floating satellites are owned by, anchored to and follow the
  *    workspace's [owner]: the most recently focused member when [followFocus]
  *    is on (the default), or the member pinned with [pinTo]. When the owner
- *    closes, the next member takes over and the satellites move on without
- *    changing their position on screen. One palette can serve any number of
- *    document windows this way — no reparenting call needed.
+ *    closes, the previously focused member takes over and the satellites move
+ *    on without changing their position on screen. One palette can serve any
+ *    number of document windows this way — no reparenting call needed.
  *  - **Docking.** [dock] turns a floating satellite into a panel inside the
  *    owner's [DockLayout]; [undock] lifts it back out as a window placed
  *    exactly where the panel was. `rememberSaveable` state inside the
@@ -153,32 +154,35 @@ public data class SatelliteLayoutSnapshot(
 public class SatelliteWorkspace(
     public val followFocus: Boolean = true,
 ) {
-    private class MemberHooks(
-        val focus: (Boolean) -> Unit,
-        val destroyed: () -> Unit,
-    )
-
-    private val memberList = mutableStateListOf<TaoWindow>()
-    private val memberHooks = HashMap<TaoWindow, MemberHooks>()
-    private var lastFocused: TaoWindow? by mutableStateOf(null)
+    private val group =
+        WindowGroup(
+            followFocus = followFocus,
+            onJoined = { window ->
+                // Docked satellites left without a host by an earlier member's
+                // departure (or restored before any window joined) land here.
+                for (entry in entryMap.values) {
+                    if (entry.isDocked && entry.dockHost == null) entry.dockHost = window
+                }
+            },
+            onLeft = { window, fallback ->
+                for (entry in entryMap.values) {
+                    if (entry.dockHost === window) entry.dockHost = fallback
+                }
+            },
+        )
 
     /** The member [pinTo] selected as owner, or `null` when the owner is chosen by focus. */
-    public var pinnedOwner: TaoWindow? by mutableStateOf(null)
-        private set
+    public val pinnedOwner: TaoWindow? get() = group.pinned
 
     /** Windows that have joined, in join order. */
-    public val members: List<TaoWindow> get() = memberList
+    public val members: List<TaoWindow> get() = group.members
 
     /**
      * The window floating satellites currently belong to, or `null` while no
-     * member has joined. Pinned member first, then the last focused member
-     * (with [followFocus]), then the first member.
+     * member has joined. Pinned member first, then the most recently focused
+     * member (with [followFocus]), then the first member.
      */
-    public val owner: TaoWindow?
-        get() =
-            pinnedOwner?.takeIf { it in memberList }
-                ?: lastFocused?.takeIf { followFocus }
-                ?: memberList.firstOrNull()
+    public val owner: TaoWindow? get() = group.owner
 
     private val entryMap = mutableStateMapOf<String, SatelliteEntry>()
 
@@ -226,22 +230,7 @@ public class SatelliteWorkspace(
      * from the window's content; it leaves again when that content is disposed.
      */
     public fun join(window: TaoWindow) {
-        if (window in memberList) return
-        val hooks =
-            MemberHooks(
-                focus = { focused -> if (focused) noteFocus(window) },
-                destroyed = { leave(window) },
-            )
-        window.onFocusChanged(hooks.focus)
-        window.onDestroyed(hooks.destroyed)
-        memberHooks[window] = hooks
-        memberList += window
-        if (window.isFocused) lastFocused = window
-        // Docked satellites left without a host by an earlier member's
-        // departure (or restored before any window joined) land here.
-        for (entry in entryMap.values) {
-            if (entry.isDocked && entry.dockHost == null) entry.dockHost = window
-        }
+        group.join(window)
     }
 
     /**
@@ -249,21 +238,12 @@ public class SatelliteWorkspace(
      * is destroyed. Satellites docked into it move to the next [owner].
      */
     public fun leave(window: TaoWindow) {
-        val hooks = memberHooks.remove(window) ?: return
-        window.removeFocusListener(hooks.focus)
-        window.removeDestroyedListener(hooks.destroyed)
-        memberList -= window
-        if (pinnedOwner === window) pinnedOwner = null
-        if (lastFocused === window) lastFocused = memberList.lastOrNull()
-        val fallback = owner
-        for (entry in entryMap.values) {
-            if (entry.dockHost === window) entry.dockHost = fallback
-        }
+        group.leave(window)
     }
 
     /** Records [window] as the most recently focused member. */
     internal fun noteFocus(window: TaoWindow) {
-        if (window in memberList) lastFocused = window
+        group.noteFocus(window)
     }
 
     /**
@@ -272,7 +252,7 @@ public class SatelliteWorkspace(
      * is ignored.
      */
     public fun pinTo(window: TaoWindow?) {
-        pinnedOwner = window
+        group.pinTo(window)
     }
 
     // ── Satellites ───────────────────────────────────────────────────────
@@ -314,8 +294,8 @@ public class SatelliteWorkspace(
         entry.placement = SatellitePlacement.Docked(side, order ?: nextOrder(side, exclude = entry))
         entry.preferredDockSide = side
         entry.dockHost =
-            host?.takeIf { it in memberList }
-                ?: entry.dockHost?.takeIf { it in memberList }
+            host?.takeIf { it in members }
+                ?: entry.dockHost?.takeIf { it in members }
                 ?: owner
     }
 
@@ -337,7 +317,15 @@ public class SatelliteWorkspace(
 
     // ── Drag and drop ────────────────────────────────────────────────────
 
-    private val dockHosts = LinkedHashMap<TaoWindow, DockHostGeometry>()
+    /** The [DockLayout] geometry every member publishes, for hit-testing and lift-off placement. */
+    internal val dockHosts: HostGeometryRegistry = HostGeometryRegistry()
+
+    private val drags =
+        DragController<SatelliteDragSession> {
+            draggedSatellite = null
+            dockPreview = null
+            dragGhost = null
+        }
 
     /**
      * The satellite being dragged right now, or `null`. While it is set every
@@ -364,50 +352,36 @@ public class SatelliteWorkspace(
     public var dragGhost: DragGhost? by mutableStateOf(null)
         internal set
 
-    /**
-     * The drag currently owning the feedback state. A new [beginDrag] cancels
-     * it: a gesture that was interrupted rather than finished (its pointer
-     * input cancelled by a resize, its window dropped from composition) must
-     * not keep the zone hints and the ghost on screen, nor act on a later
-     * release.
-     */
-    internal var activeDragSession: SatelliteDragSession? = null
-        private set
+    /** The drag currently owning the feedback state, or `null`. */
+    internal val activeDragSession: SatelliteDragSession? get() = drags.active
 
-    /** Clears everything a drag publishes. Idempotent. */
-    internal fun clearDragFeedback(session: SatelliteDragSession?) {
-        if (session != null && activeDragSession !== session) return
-        activeDragSession = null
-        draggedSatellite = null
-        dockPreview = null
-        dragGhost = null
+    /** `true` while [session] is the one the workspace is publishing. */
+    internal fun isLiveDrag(session: SatelliteDragSession): Boolean = drags.isLive(session)
+
+    /** Ends [session] if it is live (`null`: whichever is) and clears everything a drag publishes. Idempotent. */
+    internal fun releaseDrag(session: SatelliteDragSession?) {
+        drags.release(session)
     }
 
-    internal fun registerDockHost(geometry: DockHostGeometry) {
-        dockHosts[geometry.host] = geometry
-    }
-
-    internal fun unregisterDockHost(
-        host: TaoWindow,
-        geometry: DockHostGeometry,
-    ) {
-        if (dockHosts[host] === geometry) dockHosts.remove(host)
-    }
-
-    internal fun dockHostGeometry(host: TaoWindow?): DockHostGeometry? = host?.let(dockHosts::get)
+    internal fun dockHostGeometry(host: TaoWindow?): HostGeometry? = dockHosts[host]
 
     /**
      * The dock zone under [screenPx] (physical screen pixels): the strip of
      * [DockZoneWidth] inside each edge of a member's [DockLayout], the nearest
-     * edge winning where two overlap. The [owner]'s layout is tried first, so
-     * it wins where windows overlap on screen. `null` over content or outside
+     * edge winning where two overlap. Where windows overlap on screen, the
+     * [owner]'s layout is tried first, then the others by focus recency — the
+     * window the user worked in last is the one most likely on top. A
+     * minimized member is never a target: its frame is still on record, but
+     * nothing of it is on screen to drop onto. `null` over content or outside
      * every layout.
      */
     public fun dockTargetAt(screenPx: Offset): DockTarget? {
         val hit =
-            dockHosts.values
-                .sortedByDescending { it.host === owner }
-                .firstNotNullOfOrNull { it.hitTest(screenPx, DockZoneWidth) }
+            dockHosts
+                .ordered(group.membersByRecency)
+                .asSequence()
+                .filter { !it.minimized() }
+                .firstNotNullOfOrNull { it.dockHitTest(screenPx, DockZoneWidth) }
         return (hit as? DockHit.Zone)?.target
     }
 
@@ -431,45 +405,11 @@ public class SatelliteWorkspace(
         val start = pointerScreenPx.sanitizedOrNull() ?: return null
         // Whatever was dragging until now is over: two live sessions would
         // fight over the same published state.
-        activeDragSession?.cancel()
-        val session = createSession(entry, origin, start) ?: return null
-        activeDragSession = session
+        val session = createDragSession(entry, origin, start) ?: return null
+        drags.begin(session)
         draggedSatellite = entry
         return session
     }
-
-    /** The session for [origin], or `null` when its geometry is not available. */
-    private fun createSession(
-        entry: SatelliteEntry,
-        origin: SatelliteDragOrigin,
-        pointerScreenPx: Offset,
-    ): SatelliteDragSession? =
-        when (origin) {
-            is SatelliteDragOrigin.FloatingWindow -> {
-                val outer = origin.outerBoundsPx() ?: return null
-                FloatingDragSession(
-                    workspace = this,
-                    entry = entry,
-                    origin = origin,
-                    grabOffsetPx = pointerScreenPx - Offset(outer[0].toFloat(), outer[1].toFloat()),
-                    pointer = pointerScreenPx,
-                )
-            }
-            is SatelliteDragOrigin.DockedPanel -> {
-                val geometry = dockHosts[origin.host] ?: return null
-                val panel = entry.dockedBoundsInWindowPx ?: return null
-                val clientOrigin = geometry.clientOriginPx() ?: return null
-                DockedDragSession(
-                    workspace = this,
-                    entry = entry,
-                    host = origin.host,
-                    panelScreenRectPx = panel.translate(clientOrigin),
-                    grabOffsetPx = pointerScreenPx - (clientOrigin + panel.topLeft),
-                    pointer = pointerScreenPx,
-                    scaleFactor = geometry.scaleFactor().takeIf { it > 0f } ?: 1f,
-                )
-            }
-        }
 
     /** Floating placement whose window's top-left lands at [screenTopLeftPx], relative to the current [owner]. */
     internal fun floatingAtScreen(
@@ -664,41 +604,6 @@ public class SatelliteWorkspace(
     }
 }
 
-/** The host's side borders are assumed symmetric: half the outer/inner width difference each. */
-private const val SIDE_BORDER_SPLIT = 2f
-
-/**
- * Screen position (physical px) of a window's content origin, derived from its
- * outer frame `[x, y, w, h]` and its content size: side borders split evenly,
- * everything else on top. Exact for Tao's client-side-decorated windows, off
- * by at most a shadow margin elsewhere.
- */
-@Suppress("MagicNumber")
-internal fun clientOriginPx(
-    outer: LongArray,
-    containerSizePx: IntSize,
-): Offset =
-    Offset(
-        outer[0] + (outer[2] - containerSizePx.width) / SIDE_BORDER_SPLIT,
-        outer[1] + (outer[3] - containerSizePx.height).toFloat(),
-    )
-
-/**
- * The pointer position, or `null` when it is not a usable screen coordinate.
- *
- * Compose hands out `Offset.Unspecified` (NaN) for a layout that has been
- * detached, and a synthetic or replayed event can carry an infinity. Feeding
- * either into window geometry produces a window at an undefined position, so
- * a drag drops the sample instead.
- */
-private fun Offset.sanitizedOrNull(): Offset? = takeIf { it.isFinite }
-
-/** Physical pixels → an `Int` window coordinate, clamped to a range no screen exceeds. */
-private fun Float.toWindowCoordinate(): Int = roundToInt().coerceIn(-WINDOW_COORDINATE_LIMIT, WINDOW_COORDINATE_LIMIT)
-
-/** Well past any real multi-monitor desktop, well inside `Int` arithmetic. */
-private const val WINDOW_COORDINATE_LIMIT = 1_000_000
-
 /** A dock zone: the [side] of the [DockLayout] in [host]. */
 public data class DockTarget(
     val host: TaoWindow,
@@ -755,137 +660,40 @@ public sealed interface SatelliteDragOrigin {
  * layout, an infinity) are ignored rather than propagated into window
  * geometry; the last usable position stands.
  */
-public sealed class SatelliteDragSession {
-    internal abstract val workspace: SatelliteWorkspace
-
-    /** `true` while this session is the one the workspace is publishing. */
-    internal val isLive: Boolean get() = workspace.activeDragSession === this
-
+public interface SatelliteDragSession {
     /** The pointer moved. */
-    public abstract fun update(pointerScreenPx: Offset)
+    public fun update(pointerScreenPx: Offset)
 
     /** The pointer was released: dock, re-dock or undock according to where. */
-    public abstract fun end(pointerScreenPx: Offset)
+    public fun end(pointerScreenPx: Offset)
 
     /** The gesture was abandoned: nothing changes placement. */
-    public fun cancel() {
-        workspace.clearDragFeedback(this)
-    }
-}
-
-private class FloatingDragSession(
-    override val workspace: SatelliteWorkspace,
-    private val entry: SatelliteEntry,
-    private val origin: SatelliteDragOrigin.FloatingWindow,
-    /** Pointer offset from the window's outer top-left at the grab. */
-    private val grabOffsetPx: Offset,
-    /** Where the pointer was last seen; a rejected sample leaves it alone. */
-    private var pointer: Offset,
-) : SatelliteDragSession() {
-    override fun update(pointerScreenPx: Offset) {
-        if (!isLive) return
-        pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
-        val topLeft = pointer - grabOffsetPx
-        origin.move(topLeft.x.toWindowCoordinate(), topLeft.y.toWindowCoordinate())
-        workspace.dockPreview = workspace.dockTargetAt(pointer)
-    }
-
-    override fun end(pointerScreenPx: Offset) {
-        if (!isLive) return
-        update(pointerScreenPx)
-        val target = workspace.dockPreview
-        cancel()
-        if (target != null) workspace.dock(entry.id, target.side, host = target.host)
-    }
-}
-
-private class DockedDragSession(
-    override val workspace: SatelliteWorkspace,
-    private val entry: SatelliteEntry,
-    private val host: TaoWindow,
-    /** The panel's rect on screen at the grab; released inside it, the drag is a no-op. */
-    private val panelScreenRectPx: Rect,
-    /** Pointer offset from the panel's top-left at the grab. */
-    private val grabOffsetPx: Offset,
-    /** Where the pointer was last seen; a rejected sample leaves it alone. */
-    private var pointer: Offset,
-    /** The host's px-per-dp, carried to the ghost window. */
-    private val scaleFactor: Float,
-) : SatelliteDragSession() {
-    private val own: DockTarget? = (entry.placement as? SatellitePlacement.Docked)?.let { DockTarget(host, it.side) }
-
-    override fun update(pointerScreenPx: Offset) {
-        if (!isLive) return
-        pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
-        workspace.dockPreview = workspace.dockTargetAt(pointer)?.takeIf { it != own }
-        // Follows the pointer for the whole gesture, including over a dock
-        // zone: the panel is out of the layout as soon as the drag starts, and
-        // seeing it hover is what makes the tear-out read.
-        workspace.dragGhost = DragGhost(entry, Rect(pointer - grabOffsetPx, panelScreenRectPx.size), scaleFactor)
-    }
-
-    override fun end(pointerScreenPx: Offset) {
-        if (!isLive) return
-        pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
-        val drop = pointer
-        val target = workspace.dockTargetAt(drop)?.takeIf { it != own }
-        cancel()
-        when {
-            target != null -> workspace.dock(entry.id, target.side, host = target.host)
-            panelScreenRectPx.contains(drop) -> Unit
-            else -> workspace.undock(entry.id, workspace.floatingAtScreen(drop - grabOffsetPx, panelScreenRectPx.size))
-        }
-    }
+    public fun cancel()
 }
 
 /**
- * What a [DockLayout] publishes about itself so the workspace can hit-test
- * drags against it and place undocked windows over its panels. Geometry is
- * read through lambdas so tests can stand in for the native window.
+ * Where [screenPx] falls on this [DockLayout] geometry: `null` outside it,
+ * [DockHit.Content] inside but clear of the edges, [DockHit.Zone] within
+ * [zoneWidth] of the nearest edge.
  */
-internal class DockHostGeometry(
-    val host: TaoWindow,
-    val outerBoundsPx: () -> LongArray? = host::outerBoundsPx,
-    val scaleFactor: () -> Float = { host.scaleFactor },
-) {
-    /** The layout's bounds in the host window (physical px). */
-    var layoutBoundsInWindowPx: Rect = Rect.Zero
-
-    /** The host's content size when [layoutBoundsInWindowPx] was captured. */
-    var containerSizePx: IntSize = IntSize.Zero
-
-    fun clientOriginPx(): Offset? {
-        if (containerSizePx == IntSize.Zero) return null
-        val outer = outerBoundsPx() ?: return null
-        return clientOriginPx(outer, containerSizePx)
-    }
-
-    fun layoutScreenRectPx(): Rect? = clientOriginPx()?.let { layoutBoundsInWindowPx.translate(it) }
-
-    /**
-     * Where [screenPx] falls on this layout: `null` outside it, [DockHit.Content]
-     * inside but clear of the edges, [DockHit.Zone] within [zoneWidth] of the
-     * nearest edge.
-     */
-    fun hitTest(
-        screenPx: Offset,
-        zoneWidth: Dp,
-    ): DockHit? {
-        val rect = layoutScreenRectPx() ?: return null
-        if (!rect.contains(screenPx)) return null
-        val zonePx = zoneWidth.value * scaleFactor()
-        val (side, distance) =
-            listOf(
-                DockSide.Left to screenPx.x - rect.left,
-                DockSide.Right to rect.right - screenPx.x,
-                DockSide.Top to screenPx.y - rect.top,
-                DockSide.Bottom to rect.bottom - screenPx.y,
-            ).minBy { it.second }
-        return if (distance <= zonePx) DockHit.Zone(DockTarget(host, side)) else DockHit.Content
-    }
+internal fun HostGeometry.dockHitTest(
+    screenPx: Offset,
+    zoneWidth: Dp,
+): DockHit? {
+    val rect = layoutScreenRectPx() ?: return null
+    if (!rect.contains(screenPx)) return null
+    val zonePx = zoneWidth.value * scaleFactor()
+    val (side, distance) =
+        listOf(
+            DockSide.Left to screenPx.x - rect.left,
+            DockSide.Right to rect.right - screenPx.x,
+            DockSide.Top to screenPx.y - rect.top,
+            DockSide.Bottom to rect.bottom - screenPx.y,
+        ).minBy { it.second }
+    return if (distance <= zonePx) DockHit.Zone(DockTarget(host, side)) else DockHit.Content
 }
 
-/** Result of [DockHostGeometry.hitTest]. */
+/** Result of [dockHitTest]. */
 internal sealed interface DockHit {
     /** Inside the layout, over the content: not a drop target, but no other layout is consulted. */
     data object Content : DockHit

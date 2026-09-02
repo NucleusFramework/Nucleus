@@ -37,6 +37,7 @@ Published releases are `2.5.x` (latest tag `v2.5.0`). Do not treat `IDEAL_API.md
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
 - `decorated-window-tao` - **The only window backend** — no-AWT window shell over the Rust `tao` crate via JNI (Metal on macOS, EGL on Linux, ANGLE/GLES on Windows), single native event-loop thread as `Dispatchers.Main`
+- `decorated-window-tao` internals: `window/tao/workspace/` is the shared, `internal` core behind the multi-window archetypes — `WindowGroup` (membership, focus recency, pinning), `RelocatedContentHost` + `RelocatingSaveableStateRegistry` (`rememberSaveable` state that follows content between windows), `HostGeometry` (drop targets in physical screen px), `CrossWindowDrag` (one live drag, screen-space drag handle), `DragGhostWindow`. `SatelliteWorkspace` (docking) and `TabWorkspace` (Chrome-like tabs) are both built on it — put new cross-window gestures there rather than duplicating the geometry or the drag bookkeeping.
 - `decorated-window-jewel` - Jewel (IntelliJ theme) integration
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
