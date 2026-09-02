@@ -425,9 +425,27 @@ private fun geometryScope(
 ): WindowGeometryProviderScope {
     val scale = TaoMonitors.referenceScale(window)
     val screen = Screen(TaoMonitors.forWindow(window), scale)
+    // `Current` must read the geometry already *requested*, not the native
+    // rectangle: applies are asynchronous, so two back-to-back requests —
+    // `requestSize` then `requestPosition`, whose implicit size is Current —
+    // would otherwise have the second one read the not-yet-resized window and
+    // revert the first. The v1 state is that pending truth wherever it has one
+    // (an Absolute position, a specified size); the native window fills the
+    // axes it does not, and everything before the window exists.
+    val native = window?.outerBoundsDpOrNull()
+    val pending = approximateOuterRect(currentPosition, currentInnerSize.plusInsets(decorationSize))
     val bounds =
-        window?.outerBoundsDpOrNull()
-            ?: approximateOuterRect(currentPosition, currentInnerSize.plusInsets(decorationSize))
+        when {
+            native == null -> pending
+            pending == null -> native
+            else -> {
+                val left = if (currentPosition is WindowPosition.Absolute) pending.left else native.left
+                val top = if (currentPosition is WindowPosition.Absolute) pending.top else native.top
+                val width = if (currentInnerSize.width.isSpecified) pending.size.width else native.size.width
+                val height = if (currentInnerSize.height.isSpecified) pending.size.height else native.size.height
+                DpRect(left = left, top = top, right = left + width, bottom = top + height)
+            }
+        }
             ?: DpRect(
                 left = screen.availableBounds.left,
                 top = screen.availableBounds.top,

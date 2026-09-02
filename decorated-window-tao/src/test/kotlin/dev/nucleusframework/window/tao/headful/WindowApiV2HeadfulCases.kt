@@ -4,6 +4,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowPlacement
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoMonitor
 import dev.nucleusframework.window.tao.TaoMonitors
@@ -12,6 +13,8 @@ import dev.nucleusframework.window.tao.v2.WindowPositionProvider
 import dev.nucleusframework.window.tao.v2.WindowScreenProvider
 import dev.nucleusframework.window.tao.v2.WindowSizeProvider
 import dev.nucleusframework.window.tao.v2.WindowState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
 /**
@@ -29,6 +32,12 @@ internal object WindowApiV2HeadfulCases {
             scopedBoundsProviderReadsLiveMetrics(),
             requestScreenMovesTheWindow(),
             observedScreenIdTracksTheHostingMonitor(),
+            burstOfPositionRequestsLandsOnTheLast(),
+            interleavedRequestsInOneTickAllApply(),
+            boundsRequestWhileMaximizedGoesFloating(),
+            rapidPlacementTogglingThenBoundsConverges(),
+            requestsFromABackgroundThreadApply(),
+            animatedMoveTracksTheLastFrame(),
         )
 
     private fun initialBoundsCentreOnScreen(): TaoWindowTestCase {
@@ -141,13 +150,16 @@ internal object WindowApiV2HeadfulCases {
             // The shape the Compose v2 path logs and drops: the lambda
             // dereferences the geometry scope.
             state.requestBounds {
-                // A real measure pass against the live scene, not a snapshot:
-                // the DarkGray chrome the suite paints fills the window, so the
-                // unconstrained content measures to the current inner size.
-                val measured = measureWindowContent()
-                check(measured.width.value > 0f && measured.height.value > 0f) {
-                    "measureWindowContent returned an empty size: $measured"
-                }
+                // A real measure pass against the live scene: the suite's chrome
+                // is a `Box(fillMaxSize())`, which takes whatever finite maximum
+                // it is given (and, correctly, 0×0 under infinite constraints —
+                // the macOS run proved the hook was live by returning exactly
+                // that before this assertion was made deterministic).
+                val measured = measureWindowContent(maxWidth = MEASURE_BOX.width, maxHeight = MEASURE_BOX.height)
+                check(
+                    closeEnough(MEASURE_BOX.width.value, measured.width.value) &&
+                        closeEnough(MEASURE_BOX.height.value, measured.height.value),
+                ) { "measureWindowContent(max=$MEASURE_BOX) returned $measured" }
                 val screen = windowMetrics.screen.availableBounds
                 DpRect(
                     left = screen.left + SCOPED_INSET,
@@ -212,6 +224,192 @@ internal object WindowApiV2HeadfulCases {
             // The enumeration must agree with itself.
             check(TaoMonitors.byId(hosting.id, window) != null) {
                 "the hosting monitor '${hosting.id}' is missing from the enumeration"
+            }
+        }
+    }
+
+    // ── Edge cases: bursts, interleaving, placement, threads ──────────────
+
+    private fun burstOfPositionRequestsLandsOnTheLast(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: a burst of position requests lands on the last one",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            val available = hostMonitor().workAreaDp(window.scaleFactor)
+            // No suspension between sends: everything queues before the bridge
+            // gets a turn, so it must drain to the newest request without
+            // applying stale ones after it.
+            var last = DpOffset.Zero
+            repeat(BURST_COUNT) { i ->
+                last = DpOffset(available.left + (STEP_DP * (i + 1)).dp, available.top + (STEP_DP * (i + 1)).dp)
+                state.requestPosition(last)
+            }
+            awaitUntil("outer position landed on the last of the burst") {
+                val outer = outerDp()
+                closeEnough(last.x.value, outer.left) && closeEnough(last.y.value, outer.top)
+            }
+            // ...and stays there: a stale request applied late would move it back.
+            settle()
+            assertClose(last.x.value, outerDp().left, "position after settling")
+            awaitUntil("observed bounds caught up") { closeEnough(last.x.value, state.bounds.left.value) }
+        }
+    }
+
+    private fun interleavedRequestsInOneTickAllApply(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: size, position and screen requested in one tick all apply",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            val target = hostMonitor()
+            val available = target.workAreaDp(window.scaleFactor)
+            val position = DpOffset(available.left + MOVE_INSET, available.top + MOVE_INSET)
+            // Three different channels, no suspension in between: the bridge
+            // consumes them concurrently and each must land.
+            state.requestSize(RESIZED)
+            state.requestPosition(position)
+            state.requestScreen(WindowScreenProvider.ById(target.id))
+            awaitUntil("size and position both applied") {
+                val outer = outerDp()
+                closeEnough(RESIZED.width.value, outer.width) &&
+                    closeEnough(RESIZED.height.value, outer.height) &&
+                    outer.left >= available.left.value - TOLERANCE_DP &&
+                    outer.top >= available.top.value - TOLERANCE_DP
+            }
+            awaitUntil("state.screenId reports the target") { state.screenId == target.id }
+            val centre = outerCentrePx()
+            check(target.containsPx(centre.first, centre.second)) { "window left its screen: $centre" }
+        }
+    }
+
+    private fun boundsRequestWhileMaximizedGoesFloating(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: a bounds request on a maximized window restores it floating",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            val before = outerDp()
+            state.requestPlacement(WindowPlacement.Maximized)
+            awaitUntil("window maximized") {
+                outerDp().width > before.width && state.isInitialized && state.placement == WindowPlacement.Maximized
+            }
+            val available = hostMonitor().workAreaDp(window.scaleFactor)
+            val rect =
+                DpRect(
+                    left = available.left + MOVE_INSET,
+                    top = available.top + MOVE_INSET,
+                    right = available.left + MOVE_INSET + SCOPED_SIZE.width,
+                    bottom = available.top + MOVE_INSET + SCOPED_SIZE.height,
+                )
+            // The v2 contract: bounds on a non-floating window make it floating.
+            state.requestBounds(rect)
+            awaitUntil("placement observed Floating") { state.placement == WindowPlacement.Floating }
+            awaitUntil("requested bounds applied after leaving Maximized") {
+                val outer = outerDp()
+                closeEnough(SCOPED_SIZE.width.value, outer.width) && closeEnough(SCOPED_SIZE.height.value, outer.height)
+            }
+        }
+    }
+
+    private fun rapidPlacementTogglingThenBoundsConverges(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: rapid maximize/restore toggling then a bounds request converges",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            // Faster than the OS zoom animation on macOS / the WM configure round
+            // trip on X11: requests pile up while the previous one is in flight.
+            repeat(TOGGLE_COUNT) { i ->
+                state.requestPlacement(if (i % 2 == 0) WindowPlacement.Maximized else WindowPlacement.Floating)
+                settle(TOGGLE_GAP_MS)
+            }
+            val available = hostMonitor().workAreaDp(window.scaleFactor)
+            val rect =
+                DpRect(
+                    left = available.left + SCOPED_INSET,
+                    top = available.top + SCOPED_INSET,
+                    right = available.left + SCOPED_INSET + SCOPED_SIZE.width,
+                    bottom = available.top + SCOPED_INSET + SCOPED_SIZE.height,
+                )
+            state.requestBounds(rect)
+            awaitUntil("final bounds applied after the toggling storm", timeoutMillis = LONG_AWAIT_MS) {
+                val outer = outerDp()
+                state.placement == WindowPlacement.Floating &&
+                    closeEnough(SCOPED_SIZE.width.value, outer.width) &&
+                    closeEnough(SCOPED_SIZE.height.value, outer.height)
+            }
+            // Nothing queued behind it may undo it.
+            settle()
+            assertClose(SCOPED_SIZE.width.value, outerDp().width, "width after settling")
+        }
+    }
+
+    private fun requestsFromABackgroundThreadApply(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: requests sent from a background thread are applied",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            val available = hostMonitor().workAreaDp(window.scaleFactor)
+            val position = DpOffset(available.left + MOVE_INSET, available.top + MOVE_INSET)
+            // The request channels are the only thing crossing threads here; the
+            // bridge must pick them up on the dispatcher and never touch native
+            // state from the sender's thread.
+            withContext(Dispatchers.Default) {
+                repeat(BACKGROUND_BURST) { state.requestSize(RESIZED) }
+                state.requestPosition(position)
+            }
+            awaitUntil("background-thread requests applied") {
+                val outer = outerDp()
+                closeEnough(RESIZED.width.value, outer.width) &&
+                    closeEnough(position.x.value, outer.left) &&
+                    closeEnough(position.y.value, outer.top)
+            }
+        }
+    }
+
+    private fun animatedMoveTracksTheLastFrame(): TaoWindowTestCase {
+        val state = WindowState()
+        return TaoWindowTestCase(
+            name = "window v2 clone: a frame-paced move animation ends on its last frame",
+            nucleusWindowState = state,
+        ) {
+            awaitMapped()
+            settle()
+            val available = hostMonitor().workAreaDp(window.scaleFactor)
+            val start = DpOffset(available.left + MOVE_INSET, available.top + MOVE_INSET)
+            state.requestPosition(start)
+            awaitUntil("at the start position") {
+                val outer = outerDp()
+                closeEnough(start.x.value, outer.left) && closeEnough(start.y.value, outer.top)
+            }
+            // Drag-like: one request per ~frame, each a few dp further. Every
+            // request must resolve against the live window, not against the
+            // position of the request before it; otherwise the window either
+            // lags a frame for good or overshoots.
+            var last = start
+            repeat(ANIMATION_FRAMES) { i ->
+                last = DpOffset(start.x + (STEP_DP * (i + 1)).dp, start.y + (STEP_DP * (i + 1)).dp)
+                state.requestPosition(last)
+                settle(FRAME_GAP_MS)
+            }
+            awaitUntil("ended on the last frame") {
+                val outer = outerDp()
+                closeEnough(last.x.value, outer.left) && closeEnough(last.y.value, outer.top)
+            }
+            awaitUntil("observed bounds match the last frame") {
+                closeEnough(last.x.value, state.bounds.left.value) && closeEnough(last.y.value, state.bounds.top.value)
             }
         }
     }
@@ -282,6 +480,16 @@ internal object WindowApiV2HeadfulCases {
     private val INITIAL_SIZE = DpSize(900.dp, 640.dp)
     private val RESIZED = DpSize(1000.dp, 700.dp)
     private val SCOPED_SIZE = DpSize(820.dp, 560.dp)
+    private val MEASURE_BOX = DpSize(400.dp, 300.dp)
+
+    private const val BURST_COUNT = 40
+    private const val BACKGROUND_BURST = 10
+    private const val TOGGLE_COUNT = 6
+    private const val TOGGLE_GAP_MS = 40L
+    private const val ANIMATION_FRAMES = 30
+    private const val FRAME_GAP_MS = 16L
+    private const val STEP_DP = 4f
+    private const val LONG_AWAIT_MS = 30_000L
     private val MOVE_INSET = 120.dp
     private val SCOPED_INSET = 60.dp
 }
