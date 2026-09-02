@@ -33,6 +33,7 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -44,6 +45,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
+import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
@@ -188,6 +190,12 @@ internal class TaoComposeSceneHost(
     private var directContext: DirectContext? = null
     private var sceneBundle: TaoSceneBundle? = null
     private val scene: ComposeScene? get() = sceneBundle?.scene
+
+    init {
+        // Reads `scene` lazily, so it is valid before the bundle exists (null)
+        // and across bundle swaps; cleared in dispose().
+        window.installContentMeasurer { constraints -> scene?.measureContent(constraints) }
+    }
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
@@ -1564,6 +1572,7 @@ internal class TaoComposeSceneHost(
         frameDispatcher = null
         renderLoopJob.cancel()
         textToolbar.hide()
+        window.clearContentMeasurer()
         sceneBundle?.close()
         sceneBundle = null
         // Drop the TextureView handle before the context it points at dies.

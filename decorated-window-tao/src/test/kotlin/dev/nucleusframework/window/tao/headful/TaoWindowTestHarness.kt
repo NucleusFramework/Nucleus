@@ -65,6 +65,13 @@ internal class TaoWindowTestCase(
      */
     val windowState: WindowState? = null,
     /**
+     * When non-null, the suite drives the window through the AWT-free window
+     * API v2 clone ([dev.nucleusframework.window.tao.v2.WindowState]) instead of
+     * a v1 state. Takes precedence over [windowState] / [size]: the clone's own
+     * bounds provider owns the initial geometry.
+     */
+    val nucleusWindowState: dev.nucleusframework.window.tao.v2.WindowState? = null,
+    /**
      * When non-null, the suite also composes a [dev.nucleusframework.window.tao.DecoratedDialog]
      * at application scope (parented to this case's window). [dialogSize]
      * is its [androidx.compose.ui.window.DialogState.size].

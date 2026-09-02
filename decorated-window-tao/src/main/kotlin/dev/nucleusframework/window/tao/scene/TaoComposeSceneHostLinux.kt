@@ -35,6 +35,7 @@ import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.clipboard.ProvideTaoClipboard
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
@@ -49,6 +50,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.hasGlTextureImports
+import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
 import dev.nucleusframework.window.tao.releaseGlTextureImports
@@ -193,6 +195,12 @@ internal class TaoComposeSceneHostLinux(
     private var directContext: DirectContext? = null
     private var sceneBundle: TaoSceneBundle? = null
     private val scene: ComposeScene? get() = sceneBundle?.scene
+
+    init {
+        // Reads `scene` lazily, so it is valid before the bundle exists (null)
+        // and across bundle swaps; cleared in dispose().
+        window.installContentMeasurer { constraints -> scene?.measureContent(constraints) }
+    }
 
     /**
      * Handle `TextureView`s in this window's scene import onto — see
@@ -2338,6 +2346,7 @@ internal class TaoComposeSceneHostLinux(
         // host re-bind below must come after so the host's GPU releases land
         // on the right context.
         sceneBundle?.close()
+        window.clearContentMeasurer()
         sceneBundle = null
 
         // Re-bind THIS window's EGL context before tearing down Skia. The

@@ -119,6 +119,10 @@ class TaoSceneTestBatteryDriftTest {
                 "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
             dev.nucleusframework.window.ChromeLogicTest::class.java to
                 "unit tests for chrome helpers; no ComposeScene",
+            NucleusWindowV2BridgeTest::class.java to
+                "pure state mapping + geometry provider evaluation, no ComposeScene",
+            TaoMonitorsTest::class.java to
+                "parses the native monitor wire format; no ComposeScene",
             LcdTextCaptureTest::class.java to
                 "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
         )

@@ -64,6 +64,14 @@ internal object NativeTaoMacOsDecoBridge {
     external fun nativeGetPrimaryMonitorWorkArea(): LongArray?
 
     /**
+     * Returns one descriptor per `NSScreen`, encoded as documented in
+     * [dev.nucleusframework.window.tao.TaoMonitor]. Index 0 is the primary
+     * screen. `null` when AppKit reports no screen.
+     */
+    @JvmStatic
+    external fun nativeGetMonitors(): Array<String>?
+
+    /**
      * Returns the primary screen's `backingScaleFactor` encoded as
      * `(scale * 1000)`. Used as a scale source while a Tao window's own scale
      * factor is not yet resolvable (the window object exists but the NSWindow

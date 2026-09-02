@@ -50,12 +50,10 @@ class LinuxQuicklistNativeTest {
     }
 
     /**
-     * Whether a session bus is reachable: an explicit address, or the socket
-     * GLib falls back to when `DBUS_SESSION_BUS_ADDRESS` is unset.
+     * Whether GLib will find a session bus. GDBus only honours
+     * `DBUS_SESSION_BUS_ADDRESS` — unlike libdbus it does not probe
+     * `$XDG_RUNTIME_DIR/bus` — and falls back to autolaunch otherwise, which
+     * the native bridge now refuses (see `get_connection`).
      */
-    private fun hasSessionBus(): Boolean {
-        if (!System.getenv("DBUS_SESSION_BUS_ADDRESS").isNullOrBlank()) return true
-        val runtimeDir = System.getenv("XDG_RUNTIME_DIR") ?: return false
-        return java.io.File(runtimeDir, "bus").exists()
-    }
+    private fun hasSessionBus(): Boolean = !System.getenv("DBUS_SESSION_BUS_ADDRESS").isNullOrBlank()
 }

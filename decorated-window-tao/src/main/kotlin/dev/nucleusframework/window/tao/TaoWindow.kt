@@ -833,7 +833,11 @@ public class TaoWindow internal constructor(
     /** Features already reported through [warnIfNativeWayland] for this window. */
     private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
 
-    /** Logical pixels. Pass `null` to clear the minimum. */
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole minimum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
     public fun setMinimumSize(
         widthDp: Double?,
         heightDp: Double?,
@@ -841,6 +845,20 @@ public class TaoWindow internal constructor(
         val w = widthDp ?: -1.0
         val h = heightDp ?: -1.0
         NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
+    }
+
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole maximum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
+    public fun setMaximumSize(
+        widthDp: Double?,
+        heightDp: Double?,
+    ) {
+        val w = widthDp ?: -1.0
+        val h = heightDp ?: -1.0
+        NativeTaoBridge.nativeSetMaxInnerSize(handle, w, h)
     }
 
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */

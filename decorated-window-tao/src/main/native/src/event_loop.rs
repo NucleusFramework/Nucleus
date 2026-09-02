@@ -634,6 +634,29 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetMaxInnerSize {
+                    handle,
+                    width,
+                    height,
+                } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            if width < 0.0 || height < 0.0 {
+                                w.set_max_inner_size::<LogicalSize<f64>>(None);
+                            } else {
+                                w.set_max_inner_size(Some(LogicalSize::new(width, height)));
+                                let scale = w.scale_factor();
+                                let current = w.inner_size().to_logical::<f64>(scale);
+                                let new_w = current.width.min(width);
+                                let new_h = current.height.min(height);
+                                if new_w < current.width || new_h < current.height {
+                                    w.set_inner_size(LogicalSize::new(new_w, new_h));
+                                }
+                            }
+                        }
+                    }
+                }
                 UserEvent::SetWindowIcon {
                     handle,
                     width,

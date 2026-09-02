@@ -1,12 +1,16 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.internal.TaoDecoratedWindowAdapter
+import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
 
 /**
  * Decorated window. Inside [content], `nucleusWindow` is a portable
@@ -169,6 +173,137 @@ public fun DecoratedWindow(
         nativeContextMenu = nativeContextMenu,
         hiddenFromDock = hiddenFromDock,
         minimumSize = minimumSize,
+        onPreviewKeyEvent = onPreviewKeyEvent,
+        onKeyEvent = onKeyEvent,
+        transparent = transparent,
+        clickThrough = clickThrough,
+        visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+        forceX11 = forceX11,
+        alwaysOnBottom = alwaysOnBottom,
+        content = content,
+    )
+}
+
+/**
+ * [DecoratedWindow] overload for the AWT-free window API v2 clone.
+ *
+ * [state] has no default so `DecoratedWindow(onCloseRequest) { }` still
+ * resolves to the v1 overload.
+ *
+ * Every request is applied here, `requestScreen` included — see
+ * [dev.nucleusframework.window.tao.v2.rememberWindowState].
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun NucleusApplicationScope.DecoratedWindow(
+    onCloseRequest: () -> Unit,
+    state: NucleusWindowState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    alwaysOnTop: Boolean = false,
+    undecorated: Boolean = false,
+    popupFor: NucleusWindow? = null,
+    nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
+    hiddenFromDock: Boolean = false,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    transparent: Boolean = false,
+    clickThrough: Boolean = false,
+    visibleOnAllWorkspaces: Boolean = false,
+    forceX11: Boolean = false,
+    alwaysOnBottom: Boolean = false,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+) {
+    when (this) {
+        is TaoNucleusApplicationScope ->
+            TaoDecoratedWindowAdapter.WindowNucleusV2(
+                scope = this,
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                alwaysOnTop = alwaysOnTop,
+                undecorated = undecorated,
+                transparent = transparent,
+                clickThrough = clickThrough,
+                visibleOnAllWorkspaces = visibleOnAllWorkspaces,
+                forceX11 = forceX11,
+                alwaysOnBottom = alwaysOnBottom,
+                popupFor = popupFor,
+                nativePopupLayers = nativePopupLayers,
+                nativeContextMenu = nativeContextMenu,
+                hiddenFromDock = hiddenFromDock,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                content = content,
+            )
+    }
+}
+
+/**
+ * Receiver-less [DecoratedWindow] for the AWT-free window API v2 clone. See the
+ * [NucleusApplicationScope] overload.
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun DecoratedWindow(
+    onCloseRequest: () -> Unit,
+    state: NucleusWindowState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = true,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    alwaysOnTop: Boolean = false,
+    undecorated: Boolean = false,
+    popupFor: NucleusWindow? = null,
+    nativePopupLayers: Boolean = false,
+    nativeContextMenu: Boolean = false,
+    hiddenFromDock: Boolean = false,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    transparent: Boolean = false,
+    clickThrough: Boolean = false,
+    visibleOnAllWorkspaces: Boolean = false,
+    forceX11: Boolean = false,
+    alwaysOnBottom: Boolean = false,
+    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+) {
+    LocalNucleusApplicationScope.current.DecoratedWindow(
+        onCloseRequest = onCloseRequest,
+        state = state,
+        visible = visible,
+        title = title,
+        icon = icon,
+        resizable = resizable,
+        enabled = enabled,
+        focusable = focusable,
+        alwaysOnTop = alwaysOnTop,
+        undecorated = undecorated,
+        popupFor = popupFor,
+        nativePopupLayers = nativePopupLayers,
+        nativeContextMenu = nativeContextMenu,
+        hiddenFromDock = hiddenFromDock,
+        minSize = minSize,
+        maxSize = maxSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
         transparent = transparent,

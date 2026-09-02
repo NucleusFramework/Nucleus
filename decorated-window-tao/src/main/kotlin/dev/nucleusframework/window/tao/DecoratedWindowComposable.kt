@@ -469,6 +469,12 @@ public fun ApplicationScope.DecoratedWindow(
                 // outer origin so the ghost tracks the cursor instead of
                 // landing up/left by the decoration inset + outer offset.
                 val (xDp, yDp) = absolutePositionForPopup(window, pos)
+                // X11: a move issued before the window is mapped raced the map
+                // itself — under Xvfb/openbox the window intermittently stayed at
+                // GTK's unallocated 1×1 for good. The WM applies its own placement
+                // to the initial position anyway, so wait for real outer bounds
+                // and move the mapped window, the same way Aligned retries.
+                if (Platform.Current == Platform.Linux) awaitMappedOnX11(window)
                 window.setOuterPosition(xDp, yDp)
                 applied.position = pos
             }
@@ -831,3 +837,22 @@ private fun actualWindowSizeDp(
     if (w <= 0 || h <= 0) return null
     return w to h
 }
+
+/**
+ * Suspends until [window] reports real outer bounds (both axes past GTK's 1px
+ * unallocated placeholder). Gives up after [X11_MAP_WAIT_RETRIES] polls — the
+ * move is then issued regardless, which is the previous behaviour.
+ */
+private suspend fun awaitMappedOnX11(window: TaoWindow) {
+    repeat(X11_MAP_WAIT_RETRIES) {
+        val b = window.outerBoundsPx()
+        if (b != null && b.size == RECT_ARRAY_LENGTH && b[2] > 1L && b[3] > 1L) return
+        delay(X11_MAP_WAIT_RETRY_MS)
+    }
+}
+
+private const val RECT_ARRAY_LENGTH = 4
+
+/** ~1.5 s: a slow Xvfb maps well within this; a real session in a few polls. */
+private const val X11_MAP_WAIT_RETRIES = 60
+private const val X11_MAP_WAIT_RETRY_MS = 25L

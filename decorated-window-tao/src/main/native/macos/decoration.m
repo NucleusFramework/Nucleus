@@ -19,6 +19,8 @@
 //     Windows `SystemParametersInfo(SPI_GETWORKAREA)` shape).
 //   - nativeGetPrimaryMonitorScaleMilli: backingScaleFactor of the primary
 //     screen as `(scale * 1000)`.
+//   - nativeGetMonitors: one tab-separated descriptor per NSScreen (id, name,
+//     frame, visibleFrame, scale, primary flag) for the multi-monitor API.
 //   - nativeSetHiddenFromDock: hides/shows the app's Dock icon by switching the
 //     shared NSApplication's activation policy (app-wide, macOS only).
 //
@@ -159,6 +161,67 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetPrima
 
     NSRect topLeft = to_top_left_rect(screen.visibleFrame);
     return make_rect_array(env, topLeft, screen.backingScaleFactor);
+}
+
+/* Returns one tab-separated descriptor per screen, in `[NSScreen screens]`
+ * order (index 0 is the primary):
+ *   id \t name \t x \t y \t w \t h \t workX \t workY \t workW \t workH
+ *      \t scaleMilli \t primary
+ * Geometry is physical pixels with a top-left origin — same convention as
+ * nativeGetPrimaryMonitorWorkArea, so the JVM side needs no per-platform math.
+ * `id` is derived from the CGDirectDisplayID, which is stable for as long as
+ * the display stays attached. */
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetMonitors(
+    JNIEnv *env, jclass clazz)
+{
+    (void)clazz;
+    NSArray<NSScreen *> *screens = [NSScreen screens];
+    if (screens.count == 0) return NULL;
+
+    jclass stringClass = (*env)->FindClass(env, "java/lang/String");
+    if (!stringClass) return NULL;
+    jobjectArray arr =
+        (*env)->NewObjectArray(env, (jsize)screens.count, stringClass, NULL);
+    if (!arr) return NULL;
+
+    for (NSUInteger i = 0; i < screens.count; i++) {
+        NSScreen *screen = screens[i];
+        CGFloat scale = screen.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+
+        NSRect bounds = to_top_left_rect(screen.frame);
+        NSRect work = to_top_left_rect(screen.visibleFrame);
+
+        NSNumber *displayId = screen.deviceDescription[@"NSScreenNumber"];
+        NSString *identifier = displayId
+            ? [NSString stringWithFormat:@"display-%u", displayId.unsignedIntValue]
+            : [NSString stringWithFormat:@"screen-%lu", (unsigned long)i];
+        NSString *name = screen.localizedName.length > 0
+            ? screen.localizedName
+            : identifier;
+
+        NSString *row = [NSString stringWithFormat:
+            @"%@\t%@\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\t%ld\t%d",
+            [identifier stringByReplacingOccurrencesOfString:@"\t" withString:@" "],
+            [name stringByReplacingOccurrencesOfString:@"\t" withString:@" "],
+            (long)llround(bounds.origin.x * scale),
+            (long)llround(bounds.origin.y * scale),
+            (long)llround(bounds.size.width * scale),
+            (long)llround(bounds.size.height * scale),
+            (long)llround(work.origin.x * scale),
+            (long)llround(work.origin.y * scale),
+            (long)llround(work.size.width * scale),
+            (long)llround(work.size.height * scale),
+            (long)llround(scale * 1000.0),
+            (i == 0) ? 1 : 0];
+
+        jstring jrow = (*env)->NewStringUTF(env, row.UTF8String);
+        if (!jrow) return NULL;
+        (*env)->SetObjectArrayElement(env, arr, (jsize)i, jrow);
+        (*env)->DeleteLocalRef(env, jrow);
+    }
+    return arr;
 }
 
 JNIEXPORT jint JNICALL
