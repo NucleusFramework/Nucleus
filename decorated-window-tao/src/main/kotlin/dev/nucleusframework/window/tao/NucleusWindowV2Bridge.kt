@@ -158,7 +158,14 @@ internal fun BindNucleusWindowState(
         }
         launch {
             for (provider in latestV2.boundsRequests) {
-                val leftPlacement = latestV1.placement != WindowPlacement.Floating
+                // The native flags decide, not the v1 bookkeeping alone: a burst
+                // of placement toggles can leave AppKit still zoomed while v1
+                // already says Floating (each `zoom:` is a toggle, and the ones
+                // issued mid-animation may not land in order).
+                val window = latestNativeWindow
+                val leftPlacement =
+                    latestV1.placement != WindowPlacement.Floating ||
+                        (window != null && (window.isMaximized || window.isFullscreen))
                 if (leftPlacement) {
                     // Bounds on a non-floating window make it floating (the v2
                     // contract) — but the restore is asynchronous, and on macOS
@@ -167,7 +174,7 @@ internal fun BindNucleusWindowState(
                     // window actually leave the placement first, then resolve
                     // against the restored geometry.
                     latestV1.placement = WindowPlacement.Floating
-                    latestNativeWindow?.let { awaitFloating(it) }
+                    window?.let { restoreAndAwaitFloating(it) }
                 }
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
                 latestV1.size = resolved.size
@@ -686,9 +693,23 @@ private suspend fun confirmBounds(
                         kotlin.math.abs((outer.top - position.y).value) <= CONFIRM_TOLERANCE_DP
                 )
         if (sizeOk && positionOk) return
+        // A frame that went back to the zoomed size means the native placement
+        // reasserted itself; clear it before re-applying.
+        if (window.isMaximized || window.isFullscreen) restoreAndAwaitFloating(window)
         v1.size = target.size
         v1.position = target.position
     }
+}
+
+/**
+ * Clears a native maximized / fullscreen state the v1 bookkeeping does not
+ * know about (its `applied.placement` already reads Floating, so its own
+ * effect will not act), then waits for the window to leave it.
+ */
+private suspend fun restoreAndAwaitFloating(window: TaoWindow) {
+    if (window.isFullscreen) window.setFullscreen(false)
+    if (window.isMaximized) window.setMaximized(false)
+    awaitFloating(window)
 }
 
 /** Waits until the outer rectangle holds still for [PLACEMENT_SETTLED_POLLS] polls. */

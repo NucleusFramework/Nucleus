@@ -322,6 +322,9 @@ internal object WindowApiV2HeadfulCases {
         val state = WindowState()
         return TaoWindowTestCase(
             name = "window v2 clone: rapid maximize/restore toggling then a bounds request converges",
+            // Six zoom animations plus the restore-and-confirm loop legitimately
+            // take a while on macOS; the default budget is sized for one.
+            timeoutMillis = LONG_CASE_MS,
             nucleusWindowState = state,
         ) {
             awaitMapped()
@@ -490,6 +493,7 @@ internal object WindowApiV2HeadfulCases {
     private const val FRAME_GAP_MS = 16L
     private const val STEP_DP = 4f
     private const val LONG_AWAIT_MS = 30_000L
+    private const val LONG_CASE_MS = 60_000L
     private val MOVE_INSET = 120.dp
     private val SCOPED_INSET = 60.dp
 }
