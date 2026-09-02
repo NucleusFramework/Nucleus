@@ -192,11 +192,22 @@ public fun ApplicationScope.Satellite(
             with(windowScope) {
                 WindowScaffold(
                     titleBar = {
+                        // The whole bar is the drag handle, not just the strip
+                        // the header draws: the bar is taller than the header,
+                        // and the platform move that would otherwise own those
+                        // few dp is a compositor grab, so a satellite moved
+                        // there could never dock on release. A palette gives up
+                        // OS snapping for that; see `nativeWindowDrag`.
+                        //
                         // FillCenter hands its single centre child exactly the
                         // width left between the platform controls (traffic
                         // lights inset, caption buttons) — the header is a strip,
                         // not a centred title.
-                        BasicTitleBar(layoutPolicy = TitleBarLayoutPolicy.FillCenter) {
+                        BasicTitleBar(
+                            modifier = Modifier.satelliteDragHandle(scope),
+                            layoutPolicy = TitleBarLayoutPolicy.FillCenter,
+                            nativeWindowDrag = false,
+                        ) {
                             Box(Modifier.fillMaxWidth()) { currentHeader(scope) }
                         }
                     },
@@ -267,6 +278,10 @@ private fun SatelliteGhostCard(title: String) {
  * moved by the workspace so the drop can be decided from the pointer position,
  * at the cost of the OS's own snapping while a satellite is dragged.
  *
+ * A floating satellite's title bar already carries this handle across its
+ * whole surface, so custom chrome for one needs it only on elements *outside*
+ * that bar. A docked panel's header needs it.
+ *
  * No-op outside a Tao window. Drives [SatelliteWorkspace.beginDrag].
  */
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
@@ -294,10 +309,13 @@ private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
 
 /**
  * The stock satellite header: the title, then "Dock" while floating or
- * "Float" and "Close" while docked. The whole strip is a
- * [satelliteDragHandle], so dragging it moves the satellite between windows
- * and docks. Colours come from [LocalTitleBarStyle], so it matches whatever
- * title-bar theme the app installed.
+ * "Float" and "Close" while docked. Colours come from [LocalTitleBarStyle], so
+ * it matches whatever title-bar theme the app installed.
+ *
+ * Dragging it moves the satellite between windows and docks. While docked the
+ * strip carries the [satelliteDragHandle] itself; while floating it does not,
+ * because the title bar it sits in already is one — a second handle nested
+ * inside the first would start two drags for one gesture.
  */
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
@@ -308,7 +326,7 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
         modifier =
             Modifier
                 .fillMaxWidth()
-                .satelliteDragHandle(this)
+                .then(if (isDocked) Modifier.satelliteDragHandle(this) else Modifier)
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
                 .background(if (hovered) colors.content.copy(alpha = GRIP_HOVER_ALPHA) else Color.Transparent)

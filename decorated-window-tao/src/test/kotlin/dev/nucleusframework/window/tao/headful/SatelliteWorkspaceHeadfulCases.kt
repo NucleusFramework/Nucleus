@@ -60,6 +60,7 @@ internal object SatelliteWorkspaceHeadfulCases {
             snapshotRestoresDockedLayout(),
             dockHostDeathRehostsPanel(),
             headerDragDocksAndLiftsOff(),
+            titleBarDragOutsideTheHeaderStripDocks(),
             saveableStateSurvivesRepeatedHostChanges(),
         )
 
@@ -397,6 +398,62 @@ internal object SatelliteWorkspaceHeadfulCases {
                 ) {
                     "undocked window did not land under the pointer: window=${lifted.toList()} " +
                         "expected≈($expectedX, $expectedY)"
+                }
+                check(workspace.dockPreview == null && workspace.dragGhost == null) { "drag feedback left behind" }
+            },
+        )
+    }
+
+    /**
+     * The bar above the header strip. It is a few dp tall, it is where a user
+     * grabs a small palette, and it used to belong to the platform's own
+     * interactive move — which is a compositor grab, so a satellite dragged
+     * from there could never dock on release. The whole bar is the workspace
+     * handle now, and this pins it: a drag started clear of the header strip
+     * has to dock exactly like one started on the strip.
+     */
+    private fun titleBarDragOutsideTheHeaderStripDocks(): TaoWindowTestCase {
+        val fixture = SatelliteWorkspaceFixture()
+        return TaoWindowTestCase(
+            name = "workspace satellite dragged by its title bar above the header strip still docks",
+            skip = ::workspaceSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = { fixture.Body() },
+            applicationContent = { with(fixture) { ToolsSatellite() } },
+            driver = {
+                val floating = awaitFloating(fixture)
+                val workspace = fixture.workspace
+                val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
+                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val outer = requireNotNull(floating.outerBoundsPx())
+                val scale = floating.scaleFactor
+
+                // Deliberately above the strip: the header centres itself in the
+                // bar, so these few dp are the ones the platform used to own.
+                val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + TITLE_BAR_TOP_GRAB_DP * scale)
+                check(grab.y < outer[1] + HEADER_GRAB_Y_DP * scale) {
+                    "this case has to grab above the strip that ${'$'}HEADER_GRAB_Y_DP dp hits"
+                }
+                val dropIn = Offset(layout.right - DROP_INSET_PX, layout.center.y)
+
+                val robot = robotPressAndDrag(grab, dropIn, scale) != null
+                if (robot) {
+                    awaitUntil("the right zone is previewed while the drag is held") {
+                        workspace.dockPreview == DockTarget(window, DockSide.Right)
+                    }
+                    checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
+                } else {
+                    System.err.println("[title-bar-drag] robot unavailable, nothing to assert")
+                    return@TaoWindowTestCase
+                }
+                awaitUntil("the satellite docked from a title-bar drag") {
+                    entry.isDocked && entry.dockHost === window
+                }
+                awaitUntil("panel composed in the case window") { fixture.panelHost.value === window }
+                check((entry.placement as SatellitePlacement.Docked).side == DockSide.Right) {
+                    "docked on ${'$'}{entry.placement}, expected the right zone"
                 }
                 check(workspace.dockPreview == null && workspace.dragGhost == null) { "drag feedback left behind" }
             },

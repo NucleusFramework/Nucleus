@@ -277,6 +277,13 @@ internal const val LIFT_OFF_TOLERANCE_PX = 24.0
 
 /** Vertical grab point inside a header strip, in dp from its top. */
 internal const val HEADER_GRAB_Y_DP = 15f
+
+/**
+ * Vertical grab point in the title bar *above* the header strip, in dp from
+ * the window's top. The header centres itself in the bar, so a few dp down is
+ * bar and not strip.
+ */
+internal const val TITLE_BAR_TOP_GRAB_DP = 3f
 internal const val DROP_INSET_PX = 20f
 internal const val ROBOT_DRAG_STEPS = 12
 internal const val ROBOT_DRAG_STEP_MILLIS = 40L

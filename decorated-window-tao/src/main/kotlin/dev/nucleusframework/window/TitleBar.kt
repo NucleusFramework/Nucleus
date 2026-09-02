@@ -105,6 +105,21 @@ public fun DecoratedWindowScope.TitleBar(
     )
 }
 
+/**
+ * [TitleBar] with the measure policy left open, for chrome that needs a
+ * different arrangement than the platform default — a strip that fills the
+ * space between the platform controls, for instance
+ * ([TitleBarLayoutPolicy.FillCenter]).
+ *
+ * @param nativeWindowDrag whether pressing the bar starts the platform's own
+ *   interactive move. On by default, which is what gives the window the OS
+ *   snapping and tiling. Turn it off for a window that moves *itself* during
+ *   the gesture: the platform move is a compositor grab that swallows every
+ *   pointer event up to and including the release, so a window moved that way
+ *   cannot decide anything when it lands. The caller then supplies its own
+ *   drag through [modifier], which covers the whole bar rather than only the
+ *   part its content happens to occupy.
+ */
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 public fun DecoratedWindowScope.BasicTitleBar(
@@ -113,6 +128,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    nativeWindowDrag: Boolean = true,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -281,7 +297,12 @@ public fun DecoratedWindowScope.BasicTitleBar(
             // Bind drag to [taoWindow] explicitly (not only LocalTaoWindow) so
             // secondary windows stay movable when parent CompositionLocals are
             // bridged into this scene and would otherwise clobber LocalTaoWindow.
-            .windowDragArea(window = taoWindow)
+            //
+            // Opted out of by a window that moves itself, which is the only way
+            // a move can decide anything on release: `windowDragArea` hands the
+            // gesture to the compositor, and the compositor then swallows every
+            // pointer event including the release. See [nativeWindowDrag].
+            .let { if (nativeWindowDrag) it.windowDragArea(window = taoWindow) else it }
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =
