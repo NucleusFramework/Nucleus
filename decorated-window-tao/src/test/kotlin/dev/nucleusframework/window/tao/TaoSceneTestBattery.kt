@@ -546,6 +546,100 @@ public object TaoSceneTestBattery {
             WindowPositionerTest().`an unconstrained placement is returned untouched by every adjustment`()
         }
 
+        run("SatelliteWorkspaceTest: the first member to join owns the satellites until focus moves") {
+            SatelliteWorkspaceTest().`the first member to join owns the satellites until focus moves`()
+        }
+        run("SatelliteWorkspaceTest: pinning overrides focus until released") {
+            SatelliteWorkspaceTest().`pinning overrides focus until released`()
+        }
+        run("SatelliteWorkspaceTest: without follow focus the owner is the pinned or first member") {
+            SatelliteWorkspaceTest().`without follow focus the owner is the pinned or first member`()
+        }
+        run("SatelliteWorkspaceTest: docking a floating satellite seeds the side extent and hosts it in the owner") {
+            SatelliteWorkspaceTest().`docking a floating satellite seeds the side extent and hosts it in the owner`()
+        }
+        run("SatelliteWorkspaceTest: dock order appends after the panels already on that side") {
+            SatelliteWorkspaceTest().`dock order appends after the panels already on that side`()
+        }
+        run("SatelliteWorkspaceTest: undock without host geometry returns to the last floating placement") {
+            SatelliteWorkspaceTest().`undock without host geometry returns to the last floating placement`()
+        }
+        run("SatelliteWorkspaceTest: a member leaving rehosts the satellites docked into it") {
+            SatelliteWorkspaceTest().`a member leaving rehosts the satellites docked into it`()
+        }
+        run("SatelliteWorkspaceTest: open close and toggle only touch the open flag") {
+            SatelliteWorkspaceTest().`open close and toggle only touch the open flag`()
+        }
+        run("SatelliteWorkspaceTest: restore clamps a dock extent that would make the splitter unreachable") {
+            SatelliteWorkspaceTest().`restore clamps a dock extent that would make the splitter unreachable`()
+        }
+        run("SatelliteWorkspaceTest: the planned extent of an untouched side is the satellite's own size") {
+            SatelliteWorkspaceTest().`the planned extent of an untouched side is the satellite's own size`()
+        }
+        run("SatelliteWorkspaceTest: snapshot and restore round trip including a satellite declared later") {
+            SatelliteWorkspaceTest().`snapshot and restore round trip including a satellite declared later`()
+        }
+        run("SatelliteWorkspaceTest: relocated saveable keys resolve across hosts by rotation of the anchor delta") {
+            SatelliteWorkspaceTest().`relocated saveable keys resolve across hosts by rotation of the anchor delta`()
+        }
+        run("SatelliteWorkspaceTest: dock target is the zone strip inside each edge of a registered layout") {
+            SatelliteWorkspaceTest().`dock target is the zone strip inside each edge of a registered layout`()
+        }
+        run("SatelliteWorkspaceTest: a floating drag moves the window along and docks where it is released") {
+            SatelliteWorkspaceTest().`a floating drag moves the window along and docks where it is released`()
+        }
+        run("SatelliteWorkspaceTest: a docked drag released over content lifts the panel out under the pointer") {
+            SatelliteWorkspaceTest().`a docked drag released over content lifts the panel out under the pointer`()
+        }
+        run("SatelliteWorkspaceTest: a docked drag released in another zone re-docks and inside its own panel stays") {
+            SatelliteWorkspaceTest().`a docked drag released in another zone re-docks and inside its own panel stays`()
+        }
+        run("SatelliteWorkspaceTest: a cancelled drag leaves no feedback and no placement change") {
+            SatelliteWorkspaceTest().`a cancelled drag leaves no feedback and no placement change`()
+        }
+        run("SatelliteWorkspaceTest: a teleporting pointer lands on the zone it was released in") {
+            SatelliteWorkspaceTest().`a teleporting pointer lands on the zone it was released in`()
+        }
+        run("SatelliteWorkspaceTest: non-finite pointer samples are ignored and leave the last position standing") {
+            SatelliteWorkspaceTest().`non-finite pointer samples are ignored and leave the last position standing`()
+        }
+        run("SatelliteWorkspaceTest: a superseded drag stops acting and cannot clear the live one") {
+            SatelliteWorkspaceTest().`a superseded drag stops acting and cannot clear the live one`()
+        }
+        run("SatelliteWorkspaceTest: ending or cancelling twice is a no-op") {
+            SatelliteWorkspaceTest().`ending or cancelling twice is a no-op`()
+        }
+        run("SatelliteWorkspaceTest: the tear-out ghost carries the host scale, not the composition's") {
+            SatelliteWorkspaceTest().`the tear-out ghost carries the host scale, not the composition's`()
+        }
+        run("SatelliteWorkspaceTest: a drag whose host leaves mid-gesture still resolves") {
+            SatelliteWorkspaceTest().`a drag whose host leaves mid-gesture still resolves`()
+        }
+        run("SatelliteWorkspaceTest: a drag whose satellite is closed mid-gesture changes nothing") {
+            SatelliteWorkspaceTest().`a drag whose satellite is closed mid-gesture changes nothing`()
+        }
+        run("SatelliteWorkspaceTest: dock and undock churn keeps one consistent placement") {
+            SatelliteWorkspaceTest().`dock and undock churn keeps one consistent placement`()
+        }
+        run("SatelliteWorkspaceTest: interleaved drags of two satellites keep their own placements") {
+            SatelliteWorkspaceTest().`interleaved drags of two satellites keep their own placements`()
+        }
+        run("SatelliteWorkspaceTest: a drop resolves against the state a restore left behind") {
+            SatelliteWorkspaceTest().`a drop resolves against the state a restore left behind`()
+        }
+        run("SatelliteWorkspaceTest: saved values keep composition order when providers unregister in reverse") {
+            SatelliteWorkspaceTest().`saved values keep composition order when providers unregister in reverse`()
+        }
+        run("SatelliteWorkspaceTest: a re-registering provider keeps its place among the values") {
+            SatelliteWorkspaceTest().`a re-registering provider keeps its place among the values`()
+        }
+        run("SatelliteWorkspaceTest: restored values never consumed survive another host change") {
+            SatelliteWorkspaceTest().`restored values never consumed survive another host change`()
+        }
+        run("SatelliteWorkspaceTest: re-registering an id keeps the workspace's memory of it") {
+            SatelliteWorkspaceTest().`re-registering an id keeps the workspace's memory of it`()
+        }
+
         return results
     }
 }

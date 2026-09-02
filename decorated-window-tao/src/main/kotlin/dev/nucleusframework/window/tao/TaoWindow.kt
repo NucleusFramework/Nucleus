@@ -2,7 +2,9 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
@@ -133,6 +135,14 @@ public class TaoWindow internal constructor(
     // on this flag keeps the disable off the per-frame redraw path.
     private var startupEraseActive = false
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    /**
+     * `true` while this window holds the keyboard focus, as last reported by
+     * the native FOCUSED / UNFOCUSED events. Snapshot-backed, so Compose
+     * readers recompose on change.
+     */
+    public var isFocused: Boolean by mutableStateOf(false)
+        private set
 
     @Volatile
     private var willHideListener: (() -> Unit)? = null
@@ -1020,6 +1030,14 @@ public class TaoWindow internal constructor(
         fullscreenPrepareListeners -= block
     }
 
+    internal fun removeFocusListener(block: (Boolean) -> Unit) {
+        focusListeners -= block
+    }
+
+    internal fun removeMinimizedListener(block: (Boolean) -> Unit) {
+        minimizedListeners -= block
+    }
+
     public fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
         scaleFactorListener = block
     }
@@ -1256,9 +1274,13 @@ public class TaoWindow internal constructor(
                 // just yields one extra, idempotent request.
                 redrawPending.set(false)
                 requestRedraw()
+                isFocused = true
                 focusListeners.forEach { it.invoke(true) }
             }
-            TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
+            TaoEventCode.UNFOCUSED -> {
+                isFocused = false
+                focusListeners.forEach { it.invoke(false) }
+            }
             TaoEventCode.MINIMIZED -> {
                 val minimized = a != 0
                 isMinimized = minimized

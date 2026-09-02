@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -21,7 +22,7 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusApplicationScope
 import dev.nucleusframework.application.NucleusDecoratedWindowScope
-import dev.nucleusframework.application.SatelliteWindow
+import dev.nucleusframework.application.Satellite
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode
 import dev.nucleusframework.window.WindowAppearance
@@ -29,6 +30,13 @@ import dev.nucleusframework.window.WindowAppearanceMode
 import dev.nucleusframework.window.WindowBackground
 import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.material.MaterialTitleBar
+import dev.nucleusframework.window.material.rememberMaterialTitleBarStyle
+import dev.nucleusframework.window.material.rememberMaterialWindowStyle
+import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
+import dev.nucleusframework.window.styling.LocalTitleBarStyle
+import dev.nucleusframework.window.tao.DockLayout
+import dev.nucleusframework.window.tao.JoinSatelliteWorkspace
+import dev.nucleusframework.window.tao.SatelliteScope
 
 private val DemoDarkColors =
     darkColorScheme(
@@ -49,26 +57,25 @@ private val DemoLightColors =
     )
 
 /**
- * Satellite window demo.
+ * Satellite workspace demo.
  *
- * Two document windows share **one** inspector satellite. The inspector is
- * composed at application scope with an explicit `parent`, which is what makes
- * reparenting possible: switching the owner moves the inspector from one
- * document to the other without moving it on screen, and it then follows — and
- * closes with — its new owner.
- *
- * A satellite that only ever belongs to one window is simpler: declare it
- * inside that window's content and it picks the window up as its parent on its
- * own, via `LocalNucleusWindow`.
+ * Two document windows join one `SatelliteWorkspace`; an Inspector and a Tools
+ * palette are declared against it, once, at application scope. Floating
+ * satellites belong to whichever document was focused last (or the pinned
+ * one), follow it, and survive its closing by moving on to the other. Either
+ * satellite can be docked into a document's `DockLayout` and lifted off again
+ * in place, with its `rememberSaveable` state intact.
  */
 fun main() =
     nucleusApplication {
         val demo = remember { DemoState() }
         val dark = isSystemInDarkMode()
+        val colors = if (dark) DemoDarkColors else DemoLightColors
 
         DocumentWindow(
             demo = demo,
             documentId = DocumentId.A,
+            colors = colors,
             dark = dark,
             position = WindowPosition.Absolute(DOCUMENT_A_X_DP.dp, DOCUMENT_Y_DP.dp),
             onCloseRequest = ::exitApplication,
@@ -78,41 +85,35 @@ fun main() =
             DocumentWindow(
                 demo = demo,
                 documentId = DocumentId.B,
+                colors = colors,
                 dark = dark,
                 position = WindowPosition.Absolute(DOCUMENT_B_X_DP.dp, DOCUMENT_Y_DP.dp),
-                // Same-frame reparent: if the inspector belongs to this
-                // document it steps out of the owner link before the window
-                // is destroyed and carries on, in place, owned by Document A.
-                onCloseRequest = {
-                    demo.showDocumentB = false
-                    demo.attachedTo = DocumentId.A
-                },
+                onCloseRequest = { demo.showDocumentB = false },
             )
         }
 
-        // Only composed once the owning document has published itself: a
-        // satellite without a parent is just a top-level window, which is not
-        // what this demo is about.
-        val parent = demo.parentWindow
-        if (demo.showInspector && parent != null) {
-            SatelliteWindow(
-                onCloseRequest = { demo.showInspector = false },
-                parent = parent,
-                state = demo.inspector,
+        // The satellites. Declared here, next to the windows, not inside one:
+        // the workspace decides which window hosts them. The theme wrapped
+        // around them is bridged into the floating windows' own scenes, which
+        // is where their chrome comes from; docked, they inherit the host's.
+        DemoTheme(colors) {
+            Satellite(
+                workspace = demo.workspace,
+                id = DemoState.INSPECTOR_ID,
                 title = "Inspector",
-                hideWhileParentFullscreenOrMaximized = demo.hideWhenParentFills,
+                initialPlacement = DemoState.InspectorPlacement,
+                hideWhileOwnerFullscreenOrMaximized = demo.hideWhenParentFills,
             ) {
-                DemoTheme(dark) { colors ->
-                    WindowScaffold(
-                        titleBar = { MaterialTitleBar { Text("Inspector") } },
-                    ) { contentPadding ->
-                        Surface(Modifier.fillMaxSize(), color = colors.surface) {
-                            Box(Modifier.padding(contentPadding)) {
-                                InspectorContent(demo)
-                            }
-                        }
-                    }
-                }
+                SatelliteSurface(colors) { InspectorContent(demo, this) }
+            }
+            Satellite(
+                workspace = demo.workspace,
+                id = DemoState.TOOLS_ID,
+                title = "Tools",
+                initialPlacement = DemoState.ToolsPlacement,
+                hideWhileOwnerFullscreenOrMaximized = demo.hideWhenParentFills,
+            ) {
+                SatelliteSurface(colors) { ToolsContent(this) }
             }
         }
     }
@@ -121,6 +122,7 @@ fun main() =
 private fun NucleusApplicationScope.DocumentWindow(
     demo: DemoState,
     documentId: DocumentId,
+    colors: ColorScheme,
     dark: Boolean,
     position: WindowPosition,
     onCloseRequest: () -> Unit,
@@ -136,23 +138,28 @@ private fun NucleusApplicationScope.DocumentWindow(
             ),
         minimumSize = DpSize(MIN_WIDTH_DP.dp, MIN_HEIGHT_DP.dp),
     ) {
-        // Hand this window to the application state so the satellite can be
-        // parented to it — and drop it again when the window goes away, so a
-        // stale handle can never become somebody's parent.
+        // Member of the workspace for as long as the window lives: a candidate
+        // owner for the floating satellites, and a dock host.
+        JoinSatelliteWorkspace(demo.workspace)
+
+        // Named so the UI can show and pin the owner; dropped with the window
+        // so a stale handle can never be pinned.
         val window = nucleusWindow
         DisposableEffect(window) {
             demo.publish(documentId, window)
             onDispose { demo.forget(documentId) }
         }
 
-        DemoTheme(dark) { colors ->
+        DemoTheme(colors) {
+            // Window-level chrome: the native frame follows the theme too.
+            WindowBackground(colors.background)
+            WindowAppearance(if (dark) WindowAppearanceMode.Dark else WindowAppearanceMode.Light)
             WindowScaffold(
-                titleBar = {
-                    MaterialTitleBar { Text(documentId.title) }
-                },
+                titleBar = { MaterialTitleBar { Text(documentId.title) } },
             ) { contentPadding ->
                 Surface(Modifier.fillMaxSize(), color = colors.background) {
-                    Box(Modifier.padding(contentPadding)) {
+                    // Docked satellites are laid out around the document.
+                    DockLayout(demo.workspace, Modifier.fillMaxSize().padding(contentPadding)) {
                         DocumentContent(demo, documentId)
                     }
                 }
@@ -162,27 +169,41 @@ private fun NucleusApplicationScope.DocumentWindow(
 }
 
 /**
- * Every Tao window owns its own ComposeScene, so the theme — and the chrome
- * colours that go with it — are established per window rather than once around
- * the application.
+ * Material colours plus the window-chrome styles derived from them.
+ *
+ * Every Tao window owns its own ComposeScene, so this is established per
+ * window rather than once around the application — and once more around the
+ * satellites, whose floating windows get it through the bridged locals.
  */
 @Composable
-private fun NucleusDecoratedWindowScope.DemoTheme(
-    dark: Boolean,
-    content: @Composable NucleusDecoratedWindowScope.(ColorScheme) -> Unit,
+private fun DemoTheme(
+    colors: ColorScheme,
+    content: @Composable () -> Unit,
 ) {
-    val colors = if (dark) DemoDarkColors else DemoLightColors
     MaterialTheme(colorScheme = colors) {
-        WindowBackground(colors.background)
-        WindowAppearance(if (dark) WindowAppearanceMode.Dark else WindowAppearanceMode.Light)
-        content(colors)
+        CompositionLocalProvider(
+            LocalTitleBarStyle provides rememberMaterialTitleBarStyle(colors),
+            LocalDecoratedWindowStyle provides rememberMaterialWindowStyle(colors),
+            content = content,
+        )
     }
 }
 
-private const val DOCUMENT_WIDTH_DP = 560
-private const val DOCUMENT_HEIGHT_DP = 720
-private const val MIN_WIDTH_DP = 420
+/** Themed body of a satellite, the same whether it floats or is docked. */
+@Composable
+private fun SatelliteScope.SatelliteSurface(
+    colors: ColorScheme,
+    content: @Composable SatelliteScope.() -> Unit,
+) {
+    Surface(Modifier.fillMaxSize(), color = colors.surface) {
+        Box(Modifier.fillMaxSize()) { content() }
+    }
+}
+
+private const val DOCUMENT_WIDTH_DP = 720
+private const val DOCUMENT_HEIGHT_DP = 760
+private const val MIN_WIDTH_DP = 480
 private const val MIN_HEIGHT_DP = 480
 private const val DOCUMENT_A_X_DP = 80
-private const val DOCUMENT_B_X_DP = 700
+private const val DOCUMENT_B_X_DP = 840
 private const val DOCUMENT_Y_DP = 60

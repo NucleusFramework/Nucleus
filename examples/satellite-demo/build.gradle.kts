@@ -1,9 +1,9 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-// Showcase for the satellite window archetype: two document windows sharing
-// one floating inspector that anchors to a WindowPositioner, follows its
-// parent, reparents between documents, and steps aside when a document is
-// maximized or goes fullscreen.
+// Showcase for the satellite workspace: two document windows sharing an
+// Inspector and a Tools palette that float above whichever document owns them
+// (focus-driven or pinned), follow it, dock into either document's DockLayout
+// and lift off again in place, with a layout snapshot to save and restore.
 
 plugins {
     kotlin("jvm")

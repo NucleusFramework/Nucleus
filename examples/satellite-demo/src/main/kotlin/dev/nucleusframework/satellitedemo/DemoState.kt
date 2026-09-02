@@ -8,12 +8,17 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.application.NucleusWindow
-import dev.nucleusframework.window.tao.SatelliteWindowState
+import dev.nucleusframework.application.pinTo
+import dev.nucleusframework.window.tao.DockSide
+import dev.nucleusframework.window.tao.SatelliteEntry
+import dev.nucleusframework.window.tao.SatelliteLayoutSnapshot
+import dev.nucleusframework.window.tao.SatellitePlacement
+import dev.nucleusframework.window.tao.SatelliteWorkspace
 import dev.nucleusframework.window.tao.WindowAnchor
 import dev.nucleusframework.window.tao.WindowConstraintAdjustment
 import dev.nucleusframework.window.tao.WindowPositioner
 
-/** Which document window a satellite is currently attached to. */
+/** The document windows of the demo. */
 enum class DocumentId(
     val title: String,
 ) {
@@ -48,33 +53,27 @@ enum class AdjustmentPreset(
 
 /**
  * Everything the demo drives, hoisted to the application so both document
- * windows and the shared inspector read the same source of truth.
+ * windows and the satellites read the same source of truth.
  *
- * [inspector] is deliberately built here rather than with
- * `rememberSatelliteWindowState`: the position the user drags the inspector to
- * has to survive closing and reopening it, and a state remembered inside the
- * `if (showInspector)` branch would not.
+ * The [workspace] is the heart of it: both documents join it, the Inspector
+ * and the Tools palette are declared against it, and everything the UI does —
+ * dock, undock, pin, hide, save and restore the layout — is a workspace call.
  */
 class DemoState {
-    /** On from the start: the satellite is what the demo is about. */
-    var showInspector by mutableStateOf(true)
-    var showDocumentB by mutableStateOf(false)
+    val workspace = SatelliteWorkspace()
 
-    /** The document the inspector belongs to — change it to reparent live. */
-    var attachedTo by mutableStateOf(DocumentId.A)
+    var showDocumentB by mutableStateOf(false)
 
     var anchorPreset by mutableStateOf(AnchorPreset.RightEdge)
     var adjustmentPreset by mutableStateOf(AdjustmentPreset.FlipAndSlide)
     var gapDp by mutableStateOf(INITIAL_GAP_DP)
     var hideWhenParentFills by mutableStateOf(true)
 
-    val inspector: SatelliteWindowState =
-        SatelliteWindowState(
-            size = DpSize(INSPECTOR_WIDTH_DP.dp, INSPECTOR_HEIGHT_DP.dp),
-            positioner = positionerFor(AnchorPreset.RightEdge, AdjustmentPreset.FlipAndSlide, INITIAL_GAP_DP),
-        )
+    /** The layout captured by "Save layout", ready for "Restore layout". */
+    var savedLayout: SatelliteLayoutSnapshot? by mutableStateOf(null)
+        private set
 
-    /** Document windows publish themselves here so the satellite can be parented. */
+    /** Document windows publish themselves here so the owner can be named and pinned. */
     private val documents = mutableStateMapOf<DocumentId, NucleusWindow>()
 
     fun publish(
@@ -88,25 +87,60 @@ class DemoState {
         documents.remove(id)
     }
 
-    val parentWindow: NucleusWindow?
-        get() = documents[attachedTo]
+    /** The document currently owning the floating satellites. */
+    val ownerDocument: DocumentId?
+        get() = documents.entries.firstOrNull { it.value.unsafe.taoWindow === workspace.owner }?.key
 
-    /**
-     * Pushes the current picker values into the satellite and re-applies them.
-     *
-     * Placement is a one-shot by design — the satellite keeps the offset the
-     * user gave it — so changing the rule only takes effect on
-     * [SatelliteWindowState.reanchor].
-     */
-    fun applyPositioner() {
-        inspector.positioner = positionerFor(anchorPreset, adjustmentPreset, gapDp)
-        inspector.reanchor()
+    /** The document pinned as owner, or `null` while the owner follows focus. */
+    val pinnedDocument: DocumentId?
+        get() = documents.entries.firstOrNull { it.value.unsafe.taoWindow === workspace.pinnedOwner }?.key
+
+    /** Pins [id] as owner; `null` lets focus decide again. */
+    fun pin(id: DocumentId?) {
+        workspace.pinTo(id?.let { documents[it] })
     }
 
-    private companion object {
+    /** Which document a docked satellite lives in, if it is docked. */
+    fun hostDocument(entry: SatelliteEntry): DocumentId? =
+        documents.entries.firstOrNull { it.value.unsafe.taoWindow === entry.dockHost }?.key
+
+    val inspector: SatelliteEntry? get() = workspace.satellite(INSPECTOR_ID)
+
+    /**
+     * Pushes the picker values into the floating inspector and re-applies them.
+     * Placement is a one-shot by design — the satellite keeps the offset the
+     * user gave it — so a new rule only takes effect through `reanchor()`.
+     */
+    fun applyPositioner() {
+        val entry = inspector ?: return
+        entry.windowState.positioner = positionerFor(anchorPreset, adjustmentPreset, gapDp)
+        entry.windowState.reanchor()
+    }
+
+    fun saveLayout() {
+        savedLayout = workspace.snapshot()
+    }
+
+    fun restoreLayout() {
+        savedLayout?.let(workspace::restore)
+    }
+
+    companion object {
+        const val INSPECTOR_ID = "inspector"
+        const val TOOLS_ID = "tools"
         const val INITIAL_GAP_DP = 12f
-        const val INSPECTOR_WIDTH_DP = 300
-        const val INSPECTOR_HEIGHT_DP = 380
+        private const val INSPECTOR_WIDTH_DP = 300
+        private const val INSPECTOR_HEIGHT_DP = 400
+
+        /** The inspector starts floating off the owner's right edge. */
+        val InspectorPlacement: SatellitePlacement =
+            SatellitePlacement.Floating(
+                positioner = positionerFor(AnchorPreset.RightEdge, AdjustmentPreset.FlipAndSlide, INITIAL_GAP_DP),
+                size = DpSize(INSPECTOR_WIDTH_DP.dp, INSPECTOR_HEIGHT_DP.dp),
+            )
+
+        /** The tools palette starts docked on the left of the owner. */
+        val ToolsPlacement: SatellitePlacement = SatellitePlacement.Docked(DockSide.Left)
 
         fun positionerFor(
             anchor: AnchorPreset,
@@ -121,7 +155,7 @@ class DemoState {
             )
 
         /** The gap has to point *away* from the parent, so its sign follows the anchor. */
-        fun gapOffsetFor(
+        private fun gapOffsetFor(
             anchor: AnchorPreset,
             gapDp: Float,
         ): DpOffset =

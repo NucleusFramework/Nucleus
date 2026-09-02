@@ -5,6 +5,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.WindowState
+import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.SatelliteWindowState
 import dev.nucleusframework.window.tao.TaoDecoratedDialogScope
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
@@ -89,18 +90,33 @@ internal class TaoWindowTestCase(
      * instead of inside the case window's content. Flip it from the driver.
      */
     val satelliteOwner: MutableState<SatelliteOwner>? = null,
+    /** Forwarded to the satellite's `hideWhileParentFullscreenOrMaximized`. */
+    val satelliteHideWhileParentFills: Boolean = true,
     /** Routed to the satellite's `onCloseRequest`; the suite never drops the satellite itself. */
     val satelliteOnCloseRequest: () -> Unit = {},
     /** Content of the satellite window; ignored without a [satelliteState]. */
     val satelliteContent: @Composable TaoDecoratedWindowScope.() -> Unit = {},
     /** Optional extra window content composed inside the DecoratedWindow. */
     val content: @Composable TaoDecoratedWindowScope.() -> Unit = {},
+    /**
+     * Extra application-scope content composed next to the case window and
+     * dialog — for cases whose windows are declared at application level, such
+     * as workspace satellites. Receives the case's published windows and is
+     * recomposed as they appear.
+     */
+    val applicationContent: (@Composable ApplicationScope.(HeadfulWindows) -> Unit)? = null,
     val driver: suspend TaoWindowTestScope.() -> Unit,
 ) {
     private companion object {
         const val DEFAULT_TIMEOUT_MILLIS = 30_000L
     }
 }
+
+/** The suite's windows as published so far, handed to [TaoWindowTestCase.applicationContent]. */
+internal class HeadfulWindows(
+    val window: TaoWindow?,
+    val dialog: TaoWindow?,
+)
 
 /** Which of the suite's windows owns the satellite — see [TaoWindowTestCase.satelliteOwner]. */
 internal enum class SatelliteOwner {

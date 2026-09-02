@@ -3,6 +3,13 @@ public final class dev/nucleusframework/application/AotTrainingKt {
 	public static synthetic fun aotTraining-8Mi8wO0$default (Ldev/nucleusframework/application/NucleusApplicationScope;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
 }
 
+public final class dev/nucleusframework/application/ComposableSingletons$SatelliteKt {
+	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$SatelliteKt;
+	public fun <init> ()V
+	public final fun getLambda$-385624683$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$669526924$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+}
+
 public final class dev/nucleusframework/application/DecoratedDialogKt {
 	public static final fun DecoratedDialog (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun DecoratedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
@@ -129,6 +136,12 @@ public abstract interface class dev/nucleusframework/application/NucleusWindowUn
 public final class dev/nucleusframework/application/NucleusWindowUnsafe$DefaultImpls {
 	public static fun getTaoHandle (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ljava/lang/Long;
 	public static fun getTaoWindow (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ldev/nucleusframework/window/tao/TaoWindow;
+}
+
+public final class dev/nucleusframework/application/SatelliteKt {
+	public static final fun Satellite (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun pinTo (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ldev/nucleusframework/application/NucleusWindow;)V
 }
 
 public final class dev/nucleusframework/application/SatelliteWindowKt {
