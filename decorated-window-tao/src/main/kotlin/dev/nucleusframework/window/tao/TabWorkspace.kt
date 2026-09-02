@@ -18,6 +18,8 @@ import dev.nucleusframework.window.tao.workspace.HostGeometryRegistry
 import dev.nucleusframework.window.tao.workspace.RelocatableSlot
 import dev.nucleusframework.window.tao.workspace.WindowGroup
 import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
+import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
+import dev.nucleusframework.window.tao.workspace.warnScreenPlacementUnsupported
 
 /**
  * One tab known to a [TabWorkspace]: its identity, title and body.
@@ -441,7 +443,7 @@ public class TabWorkspace(
      * whose midpoint is left of it, counting the dragged tab's own slot out so
      * the index it would land at is the one it already has.
      */
-    private fun insertionIndex(
+    internal fun insertionIndex(
         group: TabWindowGroup,
         xInWindowPx: Float,
         exclude: TabEntry?,
@@ -457,8 +459,10 @@ public class TabWorkspace(
      * [pointerScreenPx] (physical screen pixels). Feed the session the pointer
      * as it moves and release it with [TabDragSession.end]; it publishes
      * [dropPreview] / [dragGhost] and moves, reorders or tears the tab off on
-     * release. `null` when [tabId] is unknown or the origin's geometry is not
-     * available.
+     * release. `null` when [tabId] is unknown, the origin's geometry is not
+     * available, or the origin window has no client-side screen placement
+     * (native Wayland: no window position to drag from, no strip to drop
+     * onto — [move] and the snapshot API still work there).
      *
      * [Modifier.tabDragHandle] drives this from a pointer gesture; call it
      * directly to drive the same moves from another input source.
@@ -470,10 +474,60 @@ public class TabWorkspace(
     ): TabDragSession? {
         val entry = entryMap[tabId] ?: return null
         val start = pointerScreenPx.sanitizedOrNull() ?: return null
+        val from =
+            when (origin) {
+                is TabDragOrigin.Strip -> origin.window
+            }
+        if (!from.supportsScreenPlacement) {
+            from.warnScreenPlacementUnsupported("TabWorkspace.beginDrag")
+            return null
+        }
+        transferDrag?.cancel()
         val session = createTabDragSession(entry, origin, start) ?: return null
         drags.begin(session)
         draggedTab = entry
         return session
+    }
+
+    // ── Drag and drop without screen placement (native Wayland) ──────────
+
+    /**
+     * The drag riding the platform's DnD session, or `null`. Started from a
+     * tab in a window without client-side screen placement; every strip is a
+     * drop target for it and records the insertion on it, and the session
+     * acts on that record when it ends. Feedback is the same as for a pointer
+     * drag: [draggedTab] and [dropPreview].
+     */
+    internal var transferDrag: TabTransferDrag? by mutableStateOf(null)
+        private set
+
+    /**
+     * Starts the DnD-carried counterpart of [beginDrag] for [tabId], dragged
+     * from its strip in [window]; `null` when the tab or its group is unknown.
+     * Supersedes whichever drag was live.
+     */
+    internal fun beginTransferDrag(
+        tabId: String,
+        window: TaoWindow,
+    ): TabTransferDrag? {
+        val entry = entryMap[tabId] ?: return null
+        val group = groupOf(window) ?: return null
+        transferDrag?.cancel()
+        releaseDrag(null)
+        val session = createTabTransferDrag(entry, group, window)
+        transferDrag = session
+        draggedTab = entry
+        return session
+    }
+
+    /** `true` while [session] is the transfer drag in flight. */
+    internal fun isLiveTransfer(session: TabTransferDrag): Boolean = transferDrag === session
+
+    /** Ends [session] if it is the one in flight and clears the drag feedback. Idempotent. */
+    internal fun endTransferDrag(session: TabTransferDrag) {
+        if (transferDrag !== session) return
+        transferDrag = null
+        releaseDrag(null)
     }
 
     // ── Layout persistence ───────────────────────────────────────────────

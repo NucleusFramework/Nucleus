@@ -54,8 +54,8 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use jni::objects::{GlobalRef, JClass, JObject, JObjectArray, JString, JValue};
-use jni::sys::{jint, jlong, JNI_FALSE, JNI_TRUE};
+use jni::objects::{GlobalRef, JClass, JIntArray, JObject, JObjectArray, JString, JValue};
+use jni::sys::{jfloat, jint, jlong, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
 
 use gtk::gdk::DragAction;
@@ -73,6 +73,15 @@ const DROP_EFFECT_COPY: jint = 1;
 const DROP_EFFECT_MOVE: jint = 2;
 const DROP_EFFECT_LINK: jint = 4;
 
+/// Target for data that never leaves the process: the JVM's cross-window
+/// gestures (satellite docking, tab tear-off) ride the platform DnD session on
+/// native Wayland, where it is the only pointer grab that crosses windows with
+/// coordinates. Advertised and accepted `SAME_APP` only, so a foreign drop
+/// target never sees it and a foreign source can never spoof it. Must match
+/// Kotlin `TaoPrivateTransfer.MIME`.
+const PRIVATE_TARGET: &str = "application/x-nucleus-private";
+const PRIVATE_TARGET_INFO: u32 = 6;
+
 /// Anti-rebound delay for `drag-leave` → `onExited`/`onEnded` dispatch. The
 /// specialist report cites 250 ms as a safe upper bound on GTK 3's spurious
 /// leave/motion pair latency. Any incoming `drag-motion` cancels the timer.
@@ -83,6 +92,11 @@ const LEAVE_DEBOUNCE_MS: u32 = 250;
 /// display's refresh rate, and anything the swap thread cannot absorb is
 /// coalesced by the host's owed-render gate.
 const DRAG_PUMP_INTERVAL_MS: u64 = 8;
+
+/// How many queued GTK events to drain after `drag-end` so the toolkit can
+/// finish releasing the drag's pointer grab. A handful of iterations: the
+/// teardown is a few events, and the loop stops as soon as none are pending.
+const DRAG_TEARDOWN_ITERATIONS: usize = 64;
 
 // ── Per-window registration ────────────────────────────────────────────────
 
@@ -111,8 +125,22 @@ thread_local! {
 struct OutboundSession {
     files: Vec<String>,
     text: Option<String>,
+    private_data: Option<String>,
     result: Rc<Cell<jint>>,
     done: Rc<Cell<bool>>,
+}
+
+/// The drag icon a session shows under the pointer: premultiplied ARGB32 in
+/// native endianness (cairo's own layout), `width × height` device pixels
+/// rendered at `scale` px per logical pixel, with the pointer at
+/// (`hot_x`, `hot_y`) device pixels.
+pub(crate) struct DragIcon {
+    pub argb: Vec<u32>,
+    pub width: i32,
+    pub height: i32,
+    pub scale: f64,
+    pub hot_x: i32,
+    pub hot_y: i32,
 }
 
 thread_local! {
@@ -121,7 +149,7 @@ thread_local! {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-fn target_entries() -> [TargetEntry; 5] {
+fn target_entries() -> [TargetEntry; 6] {
     // Info codes are forwarded to drag-data-get verbatim; we use them to pick
     // the right serialiser. text/uri-list is the primary inbound target for
     // file drops on Linux (Nautilus, Files, Konqueror, Firefox bookmarks…).
@@ -131,7 +159,32 @@ fn target_entries() -> [TargetEntry; 5] {
         TargetEntry::new("UTF8_STRING", TargetFlags::OTHER_APP, 4),
         TargetEntry::new("STRING", TargetFlags::OTHER_APP, 5),
         TargetEntry::new("text/plain", TargetFlags::OTHER_APP, 3),
+        TargetEntry::new(PRIVATE_TARGET, TargetFlags::SAME_APP, PRIVATE_TARGET_INFO),
     ]
+}
+
+/// Builds the GTK drag icon from [`DragIcon`]: a cairo surface at the source's
+/// device scale, so it stays crisp on HiDPI, with the hotspot expressed as the
+/// surface's device offset (the way `gtk_drag_set_icon_surface` reads it).
+fn drag_icon_surface(icon: DragIcon) -> Option<gtk::cairo::ImageSurface> {
+    use gtk::cairo::{Format, ImageSurface};
+    if icon.width <= 0 || icon.height <= 0 {
+        return None;
+    }
+    let stride = Format::ARgb32.stride_for_width(icon.width as u32).ok()?;
+    if stride != icon.width * 4 || icon.argb.len() != (icon.width * icon.height) as usize {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(icon.argb.len() * 4);
+    for px in icon.argb {
+        bytes.extend_from_slice(&px.to_ne_bytes());
+    }
+    let surface =
+        ImageSurface::create_for_data(bytes, Format::ARgb32, icon.width, icon.height, stride).ok()?;
+    let scale = if icon.scale > 0.0 { icon.scale } else { 1.0 };
+    surface.set_device_scale(scale, scale);
+    surface.set_device_offset(-(icon.hot_x as f64), -(icon.hot_y as f64));
+    Some(surface)
 }
 
 fn map_action_to_effect(action: DragAction) -> jint {
@@ -549,10 +602,15 @@ fn start_outbound(
     handle: u64,
     files: Vec<String>,
     text: Option<String>,
+    private_data: Option<String>,
     allowed: jint,
+    icon: Option<DragIcon>,
     pump: Option<GlobalRef>,
 ) -> jint {
-    if files.is_empty() && text.as_deref().map(str::is_empty).unwrap_or(true) {
+    if files.is_empty()
+        && text.as_deref().map(str::is_empty).unwrap_or(true)
+        && private_data.is_none()
+    {
         return DROP_EFFECT_NONE;
     }
     let Some(widget) = with_window(handle, |w| w.gtk_window().clone()) else {
@@ -567,6 +625,13 @@ fn start_outbound(
         target_list.add(&gtk::gdk::Atom::intern("text/plain;charset=utf-8"), 0, 2);
         target_list.add(&gtk::gdk::Atom::intern("UTF8_STRING"), 0, 4);
     }
+    if private_data.is_some() {
+        target_list.add(
+            &gtk::gdk::Atom::intern(PRIVATE_TARGET),
+            TargetFlags::SAME_APP.bits(),
+            PRIVATE_TARGET_INFO,
+        );
+    }
 
     let result = Rc::new(Cell::new(DROP_EFFECT_NONE));
     let done = Rc::new(Cell::new(false));
@@ -574,6 +639,7 @@ fn start_outbound(
     let session = OutboundSession {
         files: files.clone(),
         text: text.clone(),
+        private_data: private_data.clone(),
         result: Rc::clone(&result),
         done: Rc::clone(&done),
     };
@@ -609,6 +675,11 @@ fn start_outbound(
                         let _ = data.set_text(&joined);
                     }
                 }
+                PRIVATE_TARGET_INFO => {
+                    if let Some(p) = s.private_data.as_deref() {
+                        data.set(&gtk::gdk::Atom::intern(PRIVATE_TARGET), 8, p.as_bytes());
+                    }
+                }
                 _ => {}
             }
         });
@@ -639,7 +710,10 @@ fn start_outbound(
         return DROP_EFFECT_NONE;
     }
     if let Some(ref c) = ctx {
-        c.drag_set_icon_default();
+        match icon.and_then(drag_icon_surface) {
+            Some(surface) => c.drag_set_icon_surface(&surface),
+            None => c.drag_set_icon_default(),
+        }
     }
 
     // Keep the host alive for the session, the Linux counterpart of the Windows
@@ -679,6 +753,25 @@ fn start_outbound(
     // immediately. Mirrors Win32 `DoDragDrop`'s nested message pump.
     while !done.get() {
         gtk::main_iteration_do(true);
+    }
+
+    // `drag-end` is emitted *before* GTK has finished tearing the drag down —
+    // in particular before it releases the implicit pointer grab
+    // `gtk_drag_begin` took on the seat. Returning the instant our own handler
+    // sets the flag (and then disconnecting GTK's handlers underneath it)
+    // leaves that grab in place, and every window of the application goes
+    // deaf to the pointer for good. So drain what GTK still has queued, then
+    // make sure the seat is ungrabbed either way.
+    for _ in 0..DRAG_TEARDOWN_ITERATIONS {
+        if !gtk::events_pending() {
+            break;
+        }
+        gtk::main_iteration_do(false);
+    }
+    if let Some(gdk_window) = WidgetExt::window(&widget) {
+        if let Some(seat) = gdk_window.display().default_seat() {
+            seat.ungrab();
+        }
     }
 
     if let Some(src) = pump_source {
@@ -736,7 +829,14 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     handle: jlong,
     files: JObjectArray,
     text: JString,
+    private_data: JString,
     allowed_effects: jint,
+    icon_argb: JIntArray,
+    icon_width: jint,
+    icon_height: jint,
+    icon_scale: jfloat,
+    icon_hot_x: jint,
+    icon_hot_y: jint,
     pump: JObject,
 ) -> jint {
     if handle == 0 {
@@ -773,6 +873,31 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
     // GlobalRef, unlike the macOS timer's raw jobject: the timeout closure is
     // `'static`, so it cannot borrow this frame's local ref. It fires on this
     // same already-attached thread either way.
+    let private_opt: Option<String> = if !private_data.is_null() {
+        env.get_string(&private_data)
+            .ok()
+            .map(|s| s.to_str().unwrap_or("").to_string())
+    } else {
+        None
+    };
+    let icon: Option<DragIcon> = if icon_argb.is_null() || icon_width <= 0 || icon_height <= 0 {
+        None
+    } else {
+        let len = env.get_array_length(&icon_argb).unwrap_or(0) as usize;
+        let mut buf: Vec<jint> = vec![0; len];
+        if env.get_int_array_region(&icon_argb, 0, &mut buf).is_ok() {
+            Some(DragIcon {
+                argb: buf.into_iter().map(|v| v as u32).collect(),
+                width: icon_width,
+                height: icon_height,
+                scale: icon_scale as f64,
+                hot_x: icon_hot_x,
+                hot_y: icon_hot_y,
+            })
+        } else {
+            None
+        }
+    };
     let pump_ref: Option<GlobalRef> = if pump.is_null() {
         None
     } else {
@@ -782,7 +907,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxDn
         handle as u64,
         files_vec,
         text_opt,
+        private_opt,
         allowed_effects,
+        icon,
         pump_ref,
     )
 }

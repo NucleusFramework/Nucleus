@@ -381,6 +381,8 @@ public object TaoHeadfulTestSuiteMain {
             TabWorkspaceConcurrencyHeadfulCases.all() +
             TabWorkspaceStormHeadfulCases.all() +
             TabWorkspaceStressHeadfulCases.all() +
+            WaylandWorkspaceHeadfulCases.all() +
+            WaylandWorkspaceStressHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()
 

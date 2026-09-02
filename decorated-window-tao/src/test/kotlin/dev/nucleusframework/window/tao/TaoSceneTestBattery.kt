@@ -30,6 +30,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
 import dev.nucleusframework.window.tao.workspace.DragControllerTest
 import dev.nucleusframework.window.tao.workspace.HostGeometryTest
 import dev.nucleusframework.window.tao.workspace.RelocatingSaveableStateRegistryTest
+import dev.nucleusframework.window.tao.workspace.TransferDragTest
 import dev.nucleusframework.window.tao.workspace.WindowGroupTest
 
 /**
@@ -698,6 +699,45 @@ public object TaoSceneTestBattery {
         }
         run("DragControllerTest: release of null ends whichever session is live") {
             DragControllerTest().`release of null ends whichever session is live`()
+        }
+
+        run("TransferDragTest: nearest edge within the zone wins") {
+            TransferDragTest().`nearest edge within the zone wins`()
+        }
+        run("TransferDragTest: a corner resolves to the closer of its two edges") {
+            TransferDragTest().`a corner resolves to the closer of its two edges`()
+        }
+        run("TransferDragTest: content and points outside the layout are no zone") {
+            TransferDragTest().`content and points outside the layout are no zone`()
+        }
+        run("TransferDragTest: a zone wider than the layout still resolves to exactly one side") {
+            TransferDragTest().`a zone wider than the layout still resolves to exactly one side`()
+        }
+        run("TransferDragTest: the private payload round-trips under its own flavor only") {
+            TransferDragTest().`the private payload round-trips under its own flavor only`()
+        }
+        run("TransferDragTest: an ordinary transferable carries no token") {
+            TransferDragTest().`an ordinary transferable carries no token`()
+        }
+
+        run("TransferDragTest: the transfer ends the drag when the platform reports the session over") {
+            TransferDragTest().`the transfer ends the drag when the platform reports the session over`()
+        }
+        run("TransferDragTest: the transfer carries the private token and a Move action only") {
+            TransferDragTest().`the transfer carries the private token and a Move action only`()
+        }
+        run("TransferDragTest: the decoration offset puts the hotspot under the pointer, clamped to the icon") {
+            TransferDragTest().`the decoration offset puts the hotspot under the pointer, clamped to the icon`()
+        }
+
+        run("TransferDragTest: without a picture the icon is the title card, one to one") {
+            TransferDragTest().`without a picture the icon is the title card, one to one`()
+        }
+        run("TransferDragTest: a picture is shown reduced and capped on its longer edge") {
+            TransferDragTest().`a picture is shown reduced and capped on its longer edge`()
+        }
+        run("TransferDragTest: the hotspot follows the grab point into the reduced picture of a region") {
+            TransferDragTest().`the hotspot follows the grab point into the reduced picture of a region`()
         }
 
         run("TabWorkspaceTest: the first tab opens a window and the next ones join it") {

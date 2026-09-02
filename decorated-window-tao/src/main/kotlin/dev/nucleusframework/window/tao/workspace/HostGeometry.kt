@@ -35,9 +35,14 @@ internal class HostGeometry(
     /** Physical pixels per dp on the host, `1` while the window has none yet. */
     fun scaleOrOne(): Float = scaleFactor().takeIf { it > 0f } ?: 1f
 
-    /** Screen position of the host's content origin, `null` before the first layout or while unmapped. */
+    /**
+     * Screen position of the host's content origin, `null` before the first
+     * layout, while unmapped, or on a host whose screen position is not
+     * knowable ([supportsScreenPlacement] — native Wayland), where the origin
+     * GDK reports would place every window at the top-left of the screen.
+     */
     fun clientOriginPx(): Offset? {
-        if (containerSizePx == IntSize.Zero) return null
+        if (containerSizePx == IntSize.Zero || !host.supportsScreenPlacement) return null
         val outer = outerBoundsPx() ?: return null
         return clientOriginPx(outer, containerSizePx)
     }

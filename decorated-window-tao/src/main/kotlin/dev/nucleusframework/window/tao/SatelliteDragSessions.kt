@@ -2,6 +2,9 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import dev.nucleusframework.window.tao.workspace.TransferDrag
+import dev.nucleusframework.window.tao.workspace.TransferGhostSource
 import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
 import dev.nucleusframework.window.tao.workspace.toWindowCoordinate
 
@@ -115,5 +118,60 @@ private class DockedDragSession(
             panelScreenRectPx.contains(drop) -> Unit
             else -> workspace.undock(entry.id, workspace.floatingAtScreen(drop - grabOffsetPx, panelScreenRectPx.size))
         }
+    }
+}
+
+/** What the [DockLayout] under a transfer drag's release recorded for it. */
+internal sealed interface TransferDrop {
+    /** Dock the satellite in [target]. */
+    data class Dock(
+        val target: DockTarget,
+    ) : TransferDrop
+
+    /** Leave everything as it is: released on its own panel, or on the side it already occupies. */
+    data object Stay : TransferDrop
+}
+
+/**
+ * A satellite drag carried by the platform's DnD session (native Wayland,
+ * see [TransferDrag]). The window under the release resolves the drop and
+ * writes it to [drop]; [end] then applies it:
+ *
+ *  - a dock zone docks the satellite there (or re-docks it);
+ *  - no record at all — released over content, another app, the desktop —
+ *    lifts a docked panel out as a window the compositor places, and leaves a
+ *    floating window where it is.
+ */
+internal class SatelliteTransferDrag(
+    private val workspace: SatelliteWorkspace,
+    val entry: SatelliteEntry,
+    val origin: SatelliteDragOrigin,
+    override val ghostSizePx: Size,
+    override val ghostSource: TransferGhostSource,
+) : TransferDrag {
+    override val title: String get() = entry.title
+
+    /** Written by the target that took the drop, read once the session ends. */
+    var drop: TransferDrop? = null
+
+    /** The zone the dragged panel already occupies; dropping back onto it changes nothing. */
+    val own: DockTarget? =
+        (origin as? SatelliteDragOrigin.DockedPanel)?.let { panel ->
+            (entry.placement as? SatellitePlacement.Docked)?.let { DockTarget(panel.host, it.side) }
+        }
+
+    override fun end() {
+        if (!workspace.isLiveTransfer(this)) return
+        val outcome = drop
+        workspace.endTransferDrag(this)
+        when (outcome) {
+            is TransferDrop.Dock -> workspace.dock(entry.id, outcome.target.side, host = outcome.target.host)
+            TransferDrop.Stay -> Unit
+            null -> if (origin is SatelliteDragOrigin.DockedPanel) workspace.undock(entry.id)
+        }
+    }
+
+    override fun cancel() {
+        workspace.endTransferDrag(this)
     }
 }

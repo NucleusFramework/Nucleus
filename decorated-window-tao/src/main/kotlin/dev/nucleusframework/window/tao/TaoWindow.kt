@@ -5,6 +5,8 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
@@ -822,13 +824,31 @@ public class TaoWindow internal constructor(
      * a window opened with `forceX11` reports `false` inside an app whose other
      * windows are Wayland. Only meaningful once the native window exists (after
      * `WINDOW_READY`).
+     *
+     * Cheap to poll: the kind is resolved through JNI once and cached, since a
+     * surface never changes backend for the life of its window. Cross-window
+     * gestures read it on every pointer move.
      */
     public val isNativeWaylandSurface: Boolean
-        get() {
-            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
-            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
-            return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
-        }
+        get() = linuxSurfaceKind() == WAYLAND_HANDLE_KIND
+
+    /**
+     * `nativeLinuxHandles` slot 0, cached from the first call that returns a
+     * realized surface: `0` while the native window does not exist yet (not
+     * cached, so the next read asks again), `1` for Xlib, `2` for Wayland.
+     */
+    @Volatile
+    private var cachedLinuxSurfaceKind = 0L
+
+    private fun linuxSurfaceKind(): Long {
+        val cached = cachedLinuxSurfaceKind
+        if (cached != 0L) return cached
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return 0L
+        val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return 0L
+        val kind = if (handles.isNotEmpty()) handles[0] else 0L
+        if (kind != 0L) cachedLinuxSurfaceKind = kind
+        return kind
+    }
 
     /** Features already reported through [warnIfNativeWayland] for this window. */
     private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
@@ -1227,6 +1247,21 @@ public class TaoWindow internal constructor(
      * See [NativeTaoBridge.EventCallback.onImePreedit].
      */
     @Volatile
+    /**
+     * Renders the current composition of this window's scene into a bitmap —
+     * the whole content area, or the given region of it in physical content
+     * pixels. Installed by the scene host while it is attached; `null` before
+     * and after, and on hosts that do not offer it.
+     *
+     * What a platform drag-and-drop session shows under the pointer where the
+     * window itself cannot follow (native Wayland): a picture of the palette
+     * or panel being dragged rather than a window the client cannot move.
+     */
+    internal var contentSnapshot: ((IntRect?) -> ImageBitmap?)? = null
+
+    /** See [contentSnapshot]; `null` when the host offers none or the scene has no size yet. */
+    internal fun snapshotContent(rectPx: IntRect?): ImageBitmap? = contentSnapshot?.invoke(rectPx)
+
     internal var imePreedit: ((String) -> Unit)? = null
 
     internal fun dispatchImePreedit(text: String) {

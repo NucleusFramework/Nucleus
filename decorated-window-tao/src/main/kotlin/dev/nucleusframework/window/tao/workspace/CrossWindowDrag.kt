@@ -107,17 +107,28 @@ internal interface ScreenDrag {
  * outside the window if need be: the OS captures the pointer for the pressed
  * window, which is what lets a drag leave one window and land on another.
  *
- * No-op outside a Tao window.
+ * No-op outside a Tao window. On a window without client-side screen
+ * placement ([supportsScreenPlacement] — native Wayland) the gesture is a
+ * [TransferDrag] instead, asked of [beginTransfer]: the platform's DnD session
+ * carries it and the window the pointer is over resolves the drop, since no
+ * window can be moved or hit-tested from here. See [transferDragHandle].
  */
 internal fun Modifier.screenDragHandle(
     key: Any?,
     isDragging: () -> Boolean,
     idleIcon: PointerIcon = TaoPointerIcons.Grab,
     draggingIcon: PointerIcon = TaoPointerIcons.Grabbing,
+    beginTransfer: (window: TaoWindow) -> TransferDrag?,
     begin: (window: TaoWindow, pointerScreenPx: Offset) -> ScreenDrag?,
 ): Modifier =
     composed {
         val window = LocalTaoWindow.current ?: return@composed Modifier
+        if (!window.supportsScreenPlacement) {
+            val currentBeginTransfer by rememberUpdatedState(beginTransfer)
+            return@composed Modifier
+                .pointerHoverIcon(if (isDragging()) draggingIcon else idleIcon)
+                .transferDragHandle(key, window) { currentBeginTransfer(window) }
+        }
         val containerSize = LocalWindowInfo.current.containerSize
         var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
         val currentBegin by rememberUpdatedState(begin)

@@ -22,6 +22,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
+import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
 import kotlinx.coroutines.delay
 
 /**
@@ -82,10 +83,14 @@ import kotlinx.coroutines.delay
  * ### Platform notes
  * Positioning a satellite requires the platform to let a client place its own
  * windows. Native **Wayland** does not (xdg-shell gives the compositor full
- * authority), so there the satellite is a plain owned window: correct z-order,
- * ownership and lifetime, compositor-chosen placement, no follow. Run with
- * `NUCLEUS_TAO_LINUX_RENDERER=x11`, or give the window `forceX11`, when the
- * anchoring matters. X11, XWayland, Windows and macOS all follow.
+ * authority — GDK reports every toplevel at `(0, 0)` and ignores moves), so
+ * there the satellite is a plain owned window: correct z-order, ownership,
+ * lifetime and hide-while-maximized, but compositor-chosen placement, no
+ * follow, and [SatelliteWindowState.offsetFromParent] stays `null` rather than
+ * publishing a made-up offset. The window is still draggable, by the
+ * compositor's own move. Run with `NUCLEUS_TAO_LINUX_RENDERER=x11`, or give
+ * the window `forceX11`, when the anchoring matters. X11, XWayland, Windows
+ * and macOS all follow.
  *
  * The work area the [WindowPositioner] keeps the satellite inside is the
  * parent's own monitor on Windows. macOS and Linux fall back to the primary
@@ -239,7 +244,7 @@ public fun ApplicationScope.SatelliteWindow(
             LaunchedEffect(satellite) {
                 repeat(PLACEMENT_SETTLE_ATTEMPTS) {
                     val settling = currentAnchoring
-                    if (!settling.hasParent || settling.reanchor()) return@LaunchedEffect
+                    if (!settling.hasParent || !settling.canPlace || settling.reanchor()) return@LaunchedEffect
                     delay(PLACEMENT_SETTLE_POLL_MILLIS)
                 }
             }
@@ -276,6 +281,15 @@ private class SatelliteAnchoring(
     var onParentDestroyed: (TaoWindow) -> Unit = {}
 
     val hasParent: Boolean get() = parent != null
+
+    /**
+     * Whether the satellite can be placed on screen at all. `false` on native
+     * Wayland, where the follow, the anchoring and the offset capture are all
+     * skipped: the rects they would read put every window at the screen
+     * origin, and the moves they would issue are ignored. Ownership, z-order
+     * and the hide-while-parent-fills rule still apply.
+     */
+    val canPlace: Boolean get() = satellite.supportsScreenPlacement
 
     private var offsetXPx = 0
     private var offsetYPx = 0
@@ -317,14 +331,16 @@ private class SatelliteAnchoring(
 
     fun attach() {
         val owner = parent ?: return
-        captureOffset()
-        owner.onMoved(parentMoved)
+        if (canPlace) {
+            captureOffset()
+            owner.onMoved(parentMoved)
+            satellite.onMoved(satelliteMoved)
+        }
         owner.onResized(parentResized)
         owner.onMinimizedChanged(parentMinimized)
         owner.onFullscreenPrepare(parentFullscreen)
         owner.onClosing(parentClosing)
         owner.onDestroyed(parentDestroyed)
-        satellite.onMoved(satelliteMoved)
         syncSuppression()
     }
 
@@ -350,7 +366,7 @@ private class SatelliteAnchoring(
     /** Reads the parent-relative offset off live geometry. `true` once known. */
     fun captureOffset(): Boolean {
         if (captured) return true
-        if (detached) return false
+        if (detached || !canPlace) return false
         val owner = parent ?: return false
         val parentRect = owner.outerBoundsPx() ?: return false
         val selfRect = satellite.outerBoundsPx() ?: return false
@@ -365,7 +381,7 @@ private class SatelliteAnchoring(
      * yet, so a caller can retry.
      */
     fun reanchor(): Boolean {
-        if (detached) return false
+        if (detached || !canPlace) return false
         val owner = parent ?: return false
         val parentRect = owner.outerBoundsPx() ?: return false
         val selfRect = satellite.outerBoundsPx() ?: return false
@@ -540,6 +556,9 @@ private fun anchoredWindowPosition(
     parent: TaoWindow,
     state: SatelliteWindowState,
 ): WindowPosition {
+    // Native Wayland: the parent rect this would anchor to is the screen
+    // origin, and the compositor places the window anyway.
+    if (!parent.supportsScreenPlacement) return WindowPosition.PlatformDefault
     val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
     val childSizePx = Size(state.size.width.value * scale, state.size.height.value * scale)
     val origin = anchoredOriginPx(parent, state, childSizePx) ?: return WindowPosition.PlatformDefault

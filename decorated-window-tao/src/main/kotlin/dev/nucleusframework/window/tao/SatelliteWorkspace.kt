@@ -15,13 +15,17 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.roundToIntRect
 import dev.nucleusframework.window.tao.workspace.DragController
 import dev.nucleusframework.window.tao.workspace.HostGeometry
 import dev.nucleusframework.window.tao.workspace.HostGeometryRegistry
 import dev.nucleusframework.window.tao.workspace.RelocatableSlot
+import dev.nucleusframework.window.tao.workspace.TransferGhostSource
 import dev.nucleusframework.window.tao.workspace.WindowGroup
 import dev.nucleusframework.window.tao.workspace.clientOriginPx
 import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
+import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
+import dev.nucleusframework.window.tao.workspace.warnScreenPlacementUnsupported
 
 /**
  * One satellite known to a [SatelliteWorkspace]: identity, placement and the
@@ -390,8 +394,10 @@ public class SatelliteWorkspace(
      * [pointerScreenPx] (physical screen pixels). Feed the session the pointer
      * as it moves and release it with [SatelliteDragSession.end]; it moves a
      * floating window along, publishes [dockPreview] / [dragGhost], and docks,
-     * re-docks or undocks on release. `null` when [id] is unknown or the
-     * origin's geometry is not available.
+     * re-docks or undocks on release. `null` when [id] is unknown, the
+     * origin's geometry is not available, or the origin window has no
+     * client-side screen placement (native Wayland: no window position to
+     * drag from, none to drop onto — [dock] and [undock] still work there).
      *
      * [Modifier.satelliteDragHandle] drives this from a pointer gesture; call
      * it directly to drive docking from another input source.
@@ -403,13 +409,112 @@ public class SatelliteWorkspace(
     ): SatelliteDragSession? {
         val entry = entryMap[id] ?: return null
         val start = pointerScreenPx.sanitizedOrNull() ?: return null
+        val from =
+            when (origin) {
+                is SatelliteDragOrigin.FloatingWindow -> origin.window
+                is SatelliteDragOrigin.DockedPanel -> origin.host
+            }
+        if (!from.supportsScreenPlacement) {
+            from.warnScreenPlacementUnsupported("SatelliteWorkspace.beginDrag")
+            return null
+        }
         // Whatever was dragging until now is over: two live sessions would
         // fight over the same published state.
+        transferDrag?.cancel()
         val session = createDragSession(entry, origin, start) ?: return null
         drags.begin(session)
         draggedSatellite = entry
         return session
     }
+
+    // ── Drag and drop without screen placement (native Wayland) ──────────
+
+    /**
+     * The drag riding the platform's DnD session, or `null`. Started from a
+     * grip in a window without client-side screen placement; every
+     * [DockLayout] is a drop target for it and records the outcome on it, and
+     * the session acts on that record when it ends. Feedback is the same as
+     * for a pointer drag: [draggedSatellite] and [dockPreview].
+     */
+    internal var transferDrag: SatelliteTransferDrag? by mutableStateOf(null)
+        private set
+
+    /**
+     * Starts the DnD-carried counterpart of [beginDrag] for the satellite
+     * [id] from [origin]; `null` when [id] is unknown. Supersedes whichever
+     * drag was live.
+     */
+    internal fun beginTransferDrag(
+        id: String,
+        origin: SatelliteDragOrigin,
+    ): SatelliteTransferDrag? {
+        val entry = entryMap[id] ?: return null
+        transferDrag?.cancel()
+        releaseDrag(null)
+        val session =
+            SatelliteTransferDrag(
+                this,
+                entry,
+                origin,
+                transferGhostSizePx(entry, origin),
+                transferGhostSource(entry, origin),
+            )
+        transferDrag = session
+        draggedSatellite = entry
+        return session
+    }
+
+    /** `true` while [session] is the transfer drag in flight. */
+    internal fun isLiveTransfer(session: SatelliteTransferDrag): Boolean = transferDrag === session
+
+    /** Ends [session] if it is the one in flight and clears the drag feedback. Idempotent. */
+    internal fun endTransferDrag(session: SatelliteTransferDrag) {
+        if (transferDrag !== session) return
+        transferDrag = null
+        releaseDrag(null)
+    }
+
+    /**
+     * The drag icon's size: the header strip of the dragged satellite, as wide
+     * as its window or panel. Sizes stay valid where positions do not, so the
+     * frame is read even on native Wayland.
+     */
+    @Suppress("MagicNumber") // outer frame is [x, y, w, h]
+    private fun transferGhostSizePx(
+        entry: SatelliteEntry,
+        origin: SatelliteDragOrigin,
+    ): Size {
+        val window =
+            when (origin) {
+                is SatelliteDragOrigin.FloatingWindow -> origin.window
+                is SatelliteDragOrigin.DockedPanel -> origin.host
+            }
+        val scale = window.scaleFactor.takeIf { it > 0f } ?: 1f
+        val width =
+            when (origin) {
+                is SatelliteDragOrigin.FloatingWindow -> origin.outerBoundsPx()?.get(2)?.toFloat()
+                is SatelliteDragOrigin.DockedPanel -> entry.dockedBoundsInWindowPx?.width
+            } ?: (entry.windowState.size.width.value * scale)
+        return Size(width, DockPanelHeaderHeight.value * scale)
+    }
+
+    /**
+     * What the drag icon pictures: the whole floating window, or the docked
+     * panel's own rect in its host — header included, since that is what the
+     * user grabbed — when the layout has published it.
+     */
+    private fun transferGhostSource(
+        entry: SatelliteEntry,
+        origin: SatelliteDragOrigin,
+    ): TransferGhostSource =
+        when (origin) {
+            is SatelliteDragOrigin.FloatingWindow -> TransferGhostSource.WholeWindow
+            is SatelliteDragOrigin.DockedPanel ->
+                entry.dockedBoundsInWindowPx
+                    ?.takeIf { !it.isEmpty }
+                    ?.let { TransferGhostSource.Region(it.roundToIntRect()) }
+                    ?: TransferGhostSource.None
+        }
 
     /** Floating placement whose window's top-left lands at [screenTopLeftPx], relative to the current [owner]. */
     internal fun floatingAtScreen(
@@ -682,15 +787,30 @@ internal fun HostGeometry.dockHitTest(
 ): DockHit? {
     val rect = layoutScreenRectPx() ?: return null
     if (!rect.contains(screenPx)) return null
-    val zonePx = zoneWidth.value * scaleFactor()
+    val side = dockSideAt(rect, screenPx, zoneWidth.value * scaleFactor())
+    return if (side != null) DockHit.Zone(DockTarget(host, side)) else DockHit.Content
+}
+
+/**
+ * The dock zone of [rect] that [point] falls in: the nearest edge when the
+ * point is within [zonePx] of it, else `null` (over the content, or outside
+ * the rect altogether). Coordinate-space agnostic: screen pixels for a pointer
+ * drag, window pixels for a drop the window itself reports.
+ */
+internal fun dockSideAt(
+    rect: Rect,
+    point: Offset,
+    zonePx: Float,
+): DockSide? {
+    if (!rect.contains(point)) return null
     val (side, distance) =
         listOf(
-            DockSide.Left to screenPx.x - rect.left,
-            DockSide.Right to rect.right - screenPx.x,
-            DockSide.Top to screenPx.y - rect.top,
-            DockSide.Bottom to rect.bottom - screenPx.y,
+            DockSide.Left to point.x - rect.left,
+            DockSide.Right to rect.right - point.x,
+            DockSide.Top to point.y - rect.top,
+            DockSide.Bottom to rect.bottom - point.y,
         ).minBy { it.second }
-    return if (distance <= zonePx) DockHit.Zone(DockTarget(host, side)) else DockHit.Content
+    return side.takeIf { distance <= zonePx }
 }
 
 /** Result of [dockHitTest]. */

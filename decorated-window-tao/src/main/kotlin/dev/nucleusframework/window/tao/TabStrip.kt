@@ -1,8 +1,10 @@
 package dev.nucleusframework.window.tao
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.draganddrop.dragAndDropTarget
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -23,6 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
+import androidx.compose.ui.draganddrop.DragAndDropEvent
+import androidx.compose.ui.draganddrop.DragAndDropTarget
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
@@ -40,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
+import dev.nucleusframework.window.tao.workspace.positionInWindowPx
 import dev.nucleusframework.window.tao.workspace.publishHostGeometry
 import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
 import dev.nucleusframework.window.tao.workspace.screenDragHandle
@@ -129,8 +134,72 @@ public fun Modifier.tabStripGeometry(
     composed {
         val containerSize = LocalWindowInfo.current.containerSize
         val geometry = rememberHostGeometry(workspace.stripHosts, group.window)
-        Modifier.publishHostGeometry(geometry, containerSize)
+        Modifier
+            .publishHostGeometry(geometry, containerSize)
+            .tabTransferTarget(workspace, group)
     }
+
+/**
+ * Makes the strip the drop target of a [TabWorkspace.transferDrag]: the drag
+ * that rides the platform's DnD session where strips cannot be hit-tested
+ * from the source (native Wayland). The insertion index is resolved here, in
+ * this window's coordinates — previewed while hovering, recorded on the
+ * session at the drop for the source to act on when the session ends.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun Modifier.tabTransferTarget(
+    workspace: TabWorkspace,
+    group: TabWindowGroup,
+): Modifier {
+    val target = remember(workspace, group) { TabTransferTarget(workspace, group) }
+    return dragAndDropTarget(
+        shouldStartDragAndDrop = { workspace.transferDrag != null },
+        target = target,
+    )
+}
+
+private class TabTransferTarget(
+    private val workspace: TabWorkspace,
+    private val group: TabWindowGroup,
+) : DragAndDropTarget {
+    override fun onEntered(event: DragAndDropEvent) = preview(event)
+
+    override fun onMoved(event: DragAndDropEvent) = preview(event)
+
+    override fun onExited(event: DragAndDropEvent) = clearPreview()
+
+    override fun onEnded(event: DragAndDropEvent) = clearPreview()
+
+    override fun onDrop(event: DragAndDropEvent): Boolean {
+        val drag = workspace.transferDrag ?: return false
+        drag.drop = insertion(drag, event) ?: return false
+        clearPreview()
+        return true
+    }
+
+    /**
+     * Where the dragged tab would land in this strip; `null` for the only tab
+     * of this very window, which has no "in" here — its own strip moves with
+     * it on the other platforms and is no target there either.
+     */
+    private fun insertion(
+        drag: TabTransferDrag,
+        event: DragAndDropEvent,
+    ): TabDropTarget? {
+        if (drag.entry.group === group && group.tabIds.size == 1) return null
+        return TabDropTarget(group, workspace.insertionIndex(group, event.positionInWindowPx().x, exclude = drag.entry))
+    }
+
+    private fun preview(event: DragAndDropEvent) {
+        val drag = workspace.transferDrag ?: return
+        workspace.dropPreview = insertion(drag, event)
+    }
+
+    private fun clearPreview() {
+        if (workspace.dropPreview?.group === group) workspace.dropPreview = null
+    }
+}
 
 /**
  * Marks this element as the slot of the tab at [index] in [group], which is
@@ -172,6 +241,14 @@ public fun Modifier.tabSlot(
  * workspace so the drop can be decided from the pointer position, at the cost
  * of the OS's own snapping while a tab is dragged.
  *
+ * On native **Wayland** the gesture rides the platform's drag-and-drop
+ * session instead, since the workspace can neither move a window nor hit-test
+ * a strip from the source: a card with the tab's title follows the pointer,
+ * the strip under it previews the insertion, and releasing there inserts the
+ * tab; releasing anywhere else tears one of several tabs into a window the
+ * compositor places, and leaves the only tab of a window where it is (that
+ * window moves by its title bar's compositor drag).
+ *
  * No-op outside a Tao window. Drives [TabWorkspace.beginDrag].
  */
 public fun Modifier.tabDragHandle(
@@ -181,6 +258,7 @@ public fun Modifier.tabDragHandle(
     screenDragHandle(
         key = tab,
         isDragging = { workspace.draggedTab === tab },
+        beginTransfer = { window -> workspace.beginTransferDrag(tab.id, window) },
     ) { window, pointerScreenPx ->
         workspace.beginDrag(tab.id, TabDragOrigin.Strip(window), pointerScreenPx)?.asScreenDrag()
     }
@@ -297,7 +375,7 @@ internal fun TabGhostCard(title: String) {
     }
 }
 
-private val TabMaxWidth: Dp = 220.dp
+internal val TabMaxWidth: Dp = 220.dp
 private val TabHorizontalPadding: Dp = 8.dp
 private val TabCornerRadius: Dp = 8.dp
 private val TabCloseInset: Dp = 3.dp

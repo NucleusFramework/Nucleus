@@ -6,10 +6,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import dev.nucleusframework.window.tao.workspace.DragGhostWindow
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
 import dev.nucleusframework.window.tao.workspace.screenDragHandle
+import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
 
 /**
  * What a satellite's `header` and `content` lambdas get to see: the satellite
@@ -109,6 +113,14 @@ internal class SatelliteScopeImpl(
  * the workspace carries it from one host to the next. Plain `remember` state
  * does not, exactly as when any composable moves between windows — hoist it
  * or make it saveable.
+ *
+ * On native **Wayland** the dock drag rides the platform's drag-and-drop
+ * session from the header strip: a reduced picture of the palette follows the
+ * pointer instead of the window, and releasing it in a dock zone docks the
+ * satellite (see [Modifier.satelliteDragHandle]). The palette is moved by the
+ * caption strip beside its window controls, the compositor's own drag.
+ * `NUCLEUS_TAO_LINUX_RENDERER=x11` restores the window-following gesture of
+ * the other platforms.
  *
  * The workspace remembers the satellite ([SatelliteEntry]) after this
  * composable leaves composition, so [initialPlacement] and [initiallyOpen]
@@ -188,6 +200,14 @@ public fun ApplicationScope.Satellite(
         compositionLocalContext = compositionLocalContext,
     ) {
         val windowScope: TaoDecoratedWindowScope = this
+        // Native Wayland: the workspace cannot move the window itself (no
+        // client-side placement), so the bar keeps the compositor's move —
+        // the only way the palette stays draggable there. The header strip
+        // then carries the dock drag over the platform DnD session, and a
+        // caption strip next to the window controls is left to the compositor
+        // move: the split Chrome's tab strip makes between a tab and the empty
+        // strip beside it.
+        val workspaceDrag = window.supportsScreenPlacement
         floatingContentWrapper {
             with(windowScope) {
                 WindowScaffold(
@@ -204,11 +224,28 @@ public fun ApplicationScope.Satellite(
                         // lights inset, caption buttons) — the header is a strip,
                         // not a centred title.
                         BasicTitleBar(
-                            modifier = Modifier.satelliteDragHandle(scope),
+                            modifier = if (workspaceDrag) Modifier.satelliteDragHandle(scope) else Modifier,
                             layoutPolicy = TitleBarLayoutPolicy.FillCenter,
-                            nativeWindowDrag = false,
+                            nativeWindowDrag = !workspaceDrag,
                         ) {
-                            Box(Modifier.fillMaxWidth()) { currentHeader(scope) }
+                            if (workspaceDrag) {
+                                Box(Modifier.fillMaxWidth()) { currentHeader(scope) }
+                            } else {
+                                Row(Modifier.fillMaxWidth().fillMaxHeight()) {
+                                    // Full height on purpose: the header strip
+                                    // wraps its content and would leave the rest
+                                    // of the bar to the compositor move, so half
+                                    // a press aimed at the strip would move the
+                                    // window instead of starting the dock drag.
+                                    Box(
+                                        modifier = Modifier.weight(1f).fillMaxHeight().satelliteDragHandle(scope),
+                                        contentAlignment = Alignment.Center,
+                                    ) { currentHeader(scope) }
+                                    // Unclaimed on purpose: the bar's compositor
+                                    // move is what a press here starts.
+                                    Spacer(Modifier.width(WAYLAND_CAPTION_DP.dp).fillMaxHeight())
+                                }
+                            }
                         }
                     },
                 ) { padding ->
@@ -282,21 +319,30 @@ private fun SatelliteGhostCard(title: String) {
  * whole surface, so custom chrome for one needs it only on elements *outside*
  * that bar. A docked panel's header needs it.
  *
+ * On native **Wayland** the gesture rides the platform's drag-and-drop
+ * session instead, since xdg-shell gives a client neither its windows' screen
+ * position nor a way to place them: a reduced picture of the palette follows
+ * the pointer, the dock zones of the window the pointer is over light up, and
+ * releasing in one docks the satellite there. The floating window itself does
+ * not follow — it stays where it is. There the handle covers the header strip
+ * of the floating title bar rather than the whole bar, and the caption strip
+ * beside the window controls keeps the compositor's move, so the palette can
+ * still be moved. Custom floating chrome gets the same split for free: it is
+ * composed inside that handle.
+ *
  * No-op outside a Tao window. Drives [SatelliteWorkspace.beginDrag].
  */
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
     screenDragHandle(
         key = scope,
         isDragging = { scope.workspace.draggedSatellite === scope.satellite },
+        beginTransfer = { window -> scope.workspace.beginTransferDrag(scope.satellite.id, scope.dragOrigin(window)) },
     ) { window, pointerScreenPx ->
-        val origin =
-            if (scope.isDocked) {
-                SatelliteDragOrigin.DockedPanel(window)
-            } else {
-                SatelliteDragOrigin.FloatingWindow(window)
-            }
-        scope.workspace.beginDrag(scope.satellite.id, origin, pointerScreenPx)?.asScreenDrag()
+        scope.workspace.beginDrag(scope.satellite.id, scope.dragOrigin(window), pointerScreenPx)?.asScreenDrag()
     }
+
+private fun SatelliteScope.dragOrigin(window: TaoWindow): SatelliteDragOrigin =
+    if (isDocked) SatelliteDragOrigin.DockedPanel(window) else SatelliteDragOrigin.FloatingWindow(window)
 
 private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
     object : ScreenDrag {
@@ -326,6 +372,9 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
         modifier =
             Modifier
                 .fillMaxWidth()
+                // Full height so the whole header strip is the grip, not just
+                // the band its content happens to occupy.
+                .fillMaxHeight()
                 .then(if (isDocked) Modifier.satelliteDragHandle(this) else Modifier)
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
@@ -388,6 +437,9 @@ private fun HeaderAction(
 }
 
 private const val HEADER_PADDING_DP = 8
+
+/** Title-bar strip left to the compositor move on native Wayland, beside the window controls. */
+private const val WAYLAND_CAPTION_DP = 56
 private const val GRIP_WIDTH_DP = 7
 private const val GRIP_HEIGHT_DP = 13
 private const val GRIP_GAP_DP = 8

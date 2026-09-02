@@ -103,8 +103,16 @@ internal class SatelliteWorkspaceFixture {
                     composedHosts.value--
                     // Cleared on the way out, so a case waiting for the panel
                     // cannot pass on a host published by an earlier dock — and
-                    // the same for the floating window.
-                    if (docked) panelHost.value = null else floatingWindow.value = null
+                    // the same for the floating window. Only when the value
+                    // still names *this* host, though: a panel moved from one
+                    // window's dock straight into another's keeps `docked`
+                    // true on both sides, and the new host publishes itself
+                    // before the old one is disposed.
+                    if (docked) {
+                        if (panelHost.value === window) panelHost.value = null
+                    } else if (floatingWindow.value === window) {
+                        floatingWindow.value = null
+                    }
                 }
             }
             Box(
