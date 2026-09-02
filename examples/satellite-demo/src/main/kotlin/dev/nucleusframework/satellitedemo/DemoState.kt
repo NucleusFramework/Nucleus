@@ -67,7 +67,7 @@ class DemoState {
     var anchorPreset by mutableStateOf(AnchorPreset.RightEdge)
     var adjustmentPreset by mutableStateOf(AdjustmentPreset.FlipAndSlide)
     var gapDp by mutableStateOf(INITIAL_GAP_DP)
-    var hideWhenParentFills by mutableStateOf(true)
+    var hideWhenParentFills by mutableStateOf(false)
 
     /** The layout captured by "Save layout", ready for "Restore layout". */
     var savedLayout: SatelliteLayoutSnapshot? by mutableStateOf(null)
