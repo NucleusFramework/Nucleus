@@ -135,6 +135,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeSetOwner
     }
 
     [owner addChildWindow:child ordered:NSWindowAbove];
+    // Re-stack explicitly: a zoom / fullscreen transition re-orders the owner
+    // and can leave an already-attached child behind it; `addChildWindow:`
+    // on its own does not always move a visible child back above.
+    [child orderWindow:NSWindowAbove relativeTo:owner.windowNumber];
 }
 
 JNIEXPORT jlongArray JNICALL

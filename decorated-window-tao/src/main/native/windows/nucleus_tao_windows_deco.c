@@ -1632,6 +1632,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwn
 #else
     SetWindowLongW(child, GWLP_HWNDPARENT, (LONG)(LONG_PTR)owner);
 #endif
+    if (!owner) return;
+    /* Re-stack the child above its owner. Win32 only enforces "owned windows
+     * sit above their owner" when the owner gets *activated*; SW_MAXIMIZE /
+     * SW_RESTORE / a fullscreen SetWindowPos on an already-active owner puts
+     * it at HWND_TOP, above its own satellites. Re-setting the same
+     * GWLP_HWNDPARENT alone moves nothing. Async: this often runs from inside
+     * the owner's WM_SIZE, i.e. nested in its own SetWindowPos. */
+    SetWindowPos(child, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
 /* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back

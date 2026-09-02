@@ -460,8 +460,12 @@ private class SatelliteAnchoring(
         // Same visibility on both sides of a maximize / fullscreen / restore —
         // an app that opted out of hiding. The transition re-stacks the owner,
         // which on every platform can leave the satellite *behind* the window
-        // it belongs to, so put the link back.
-        if (fillsChanged && !state.isHiddenByParent) reassertOwnership()
+        // it belongs to, so put the link back. While the owner fills the
+        // screen this runs on every resize, not only on the flip: the
+        // fullscreen prepare hook flips `lastFills` *before* the native
+        // transition, so the resize that lands afterwards is the one that
+        // has to re-stack.
+        if ((fills || fillsChanged) && !state.isHiddenByParent) reassertOwnership()
     }
 
     /**
