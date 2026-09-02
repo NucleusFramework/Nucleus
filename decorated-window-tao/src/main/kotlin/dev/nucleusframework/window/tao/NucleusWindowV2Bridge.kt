@@ -617,19 +617,34 @@ private suspend fun correctInitialOuterSize(
 }
 
 /**
- * Suspends until [window] reports neither maximized nor fullscreen, bounded by
- * [PLACEMENT_RESTORE_RETRIES] polls (well past macOS's zoom animation). Gives
- * up silently — the geometry is then applied as before.
+ * Suspends until [window] has actually left its maximized / fullscreen
+ * placement: the flag is down *and* the outer rectangle has stopped moving for
+ * [PLACEMENT_SETTLED_POLLS] consecutive polls. The flag alone is not enough —
+ * macOS clears `isZoomed` at the start of the un-zoom animation, whose final
+ * frame would still land on top of anything applied meanwhile. Bounded by
+ * [PLACEMENT_RESTORE_RETRIES] polls; gives up silently, and the geometry is
+ * then applied as before.
  */
 private suspend fun awaitFloating(window: TaoWindow) {
+    var previous: List<Long>? = null
+    var stable = 0
     repeat(PLACEMENT_RESTORE_RETRIES) {
-        if (!window.isMaximized && !window.isFullscreen) return
+        if (!window.isMaximized && !window.isFullscreen) {
+            val current = window.outerBoundsPx()?.toList()
+            stable = if (current != null && current == previous) stable + 1 else 0
+            previous = current
+            if (stable >= PLACEMENT_SETTLED_POLLS) return
+        } else {
+            stable = 0
+            previous = null
+        }
         delay(PLACEMENT_RESTORE_RETRY_MS)
     }
 }
 
 private const val PLACEMENT_RESTORE_RETRIES = 60
 private const val PLACEMENT_RESTORE_RETRY_MS = 50L
+private const val PLACEMENT_SETTLED_POLLS = 3
 
 // ── Fallback for hosts that only wrap the v1 surface ────────────────────────
 
