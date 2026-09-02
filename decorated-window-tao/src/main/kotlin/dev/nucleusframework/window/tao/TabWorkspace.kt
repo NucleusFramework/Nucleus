@@ -318,10 +318,12 @@ public class TabWorkspace(
         val position = DpOffset((screenRectPx.left / scale).dp, (screenRectPx.top / scale).dp)
         val size = DpSize((screenRectPx.width / scale).dp, (screenRectPx.height / scale).dp)
         entry.group?.takeIf { it.tabIds.size == 1 }?.let { alone ->
-            // Already a window of its own: this is a move, not a tear-off. The
-            // drag has moved the window there already, so this only records it.
-            alone.position = position
-            alone.size = size
+            // Already a window of its own: this is a move, not a tear-off.
+            // Requested rather than merely recorded, so a caller driving the
+            // gesture itself really moves the window — a drag never reaches
+            // here, since the only tab of a window is dragged by moving that
+            // window ([TabDragOrigin.Strip] takes the window-drag path).
+            alone.requestPlacement(position, size)
             return alone
         }
         val group = TabWindowGroup(nextGroupId(), position, size)
@@ -410,10 +412,17 @@ public class TabWorkspace(
      *
      * [exclude] is left out of the search — the tab being dragged, so hovering
      * its own position is not an insertion.
+     *
+     * [excludeGroup] is skipped entirely, and the search carries on to the
+     * strip below it. That is what a single-tab window being dragged needs:
+     * its own strip travels with the pointer and covers whatever it is being
+     * dropped on, and it is also the focused window, so it would otherwise
+     * answer every query and no merge could ever resolve.
      */
     public fun dropTargetAt(
         screenPx: Offset,
         exclude: TabEntry? = null,
+        excludeGroup: TabWindowGroup? = null,
     ): TabDropTarget? =
         stripHosts
             .ordered(windows.membersByRecency)
@@ -422,7 +431,7 @@ public class TabWorkspace(
             .mapNotNull { geometry ->
                 val strip = geometry.layoutScreenRectPx() ?: return@mapNotNull null
                 if (!strip.contains(screenPx)) return@mapNotNull null
-                val group = groupOf(geometry.host) ?: return@mapNotNull null
+                val group = groupOf(geometry.host)?.takeIf { it !== excludeGroup } ?: return@mapNotNull null
                 val client = geometry.clientOriginPx() ?: return@mapNotNull null
                 TabDropTarget(group, insertionIndex(group, screenPx.x - client.x, exclude))
             }.firstOrNull()

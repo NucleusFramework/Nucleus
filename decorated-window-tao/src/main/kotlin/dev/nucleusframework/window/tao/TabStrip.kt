@@ -73,9 +73,16 @@ internal class TabStripScopeImpl(
  *
  * Colours come from [LocalTitleBarStyle], so the strip matches whatever
  * title-bar theme the app installed.
+ *
+ * @param trailing chrome placed right after the last tab — a new-tab button,
+ *   typically. It sits inside the strip, so the strip stays a single drop
+ *   target and a tab released over it is appended.
  */
 @Composable
-public fun TabStripScope.TabStrip(modifier: Modifier = Modifier) {
+public fun TabStripScope.TabStrip(
+    modifier: Modifier = Modifier,
+    trailing: @Composable TabStripScope.() -> Unit = {},
+) {
     val entries = tabs
     val dragged = workspace.draggedTab
     val preview = workspace.dropPreview?.takeIf { it.group === group }
@@ -94,10 +101,16 @@ public fun TabStripScope.TabStrip(modifier: Modifier = Modifier) {
                 selected = entry.id == group.selectedId,
                 // Dimmed while its ghost is being dragged: it is on its way out.
                 leaving = dragged === entry && workspace.dragGhost != null,
-                modifier = Modifier.tabSlot(group, index),
+                // An equal share of whatever the chrome leaves, capped at
+                // [TabMaxWidth] — so tabs shrink together as more open, the way
+                // a browser's do. Without the weight the strip would serve the
+                // first tabs their full width and leave the last ones zero-wide:
+                // present in the model, unclickable on screen.
+                modifier = Modifier.tabSlot(group, index).weight(1f, fill = false),
             )
         }
         if (preview != null && preview.index >= entries.size) DropIndicator()
+        trailing()
     }
 }
 
@@ -203,7 +216,7 @@ private fun TabItem(
     Row(
         modifier =
             modifier
-                .widthIn(min = TabMinWidth, max = TabMaxWidth)
+                .widthIn(max = TabMaxWidth)
                 .fillMaxHeight()
                 .alpha(if (leaving) TAB_LEAVING_ALPHA else 1f)
                 .background(background, shape)
@@ -284,7 +297,6 @@ internal fun TabGhostCard(title: String) {
     }
 }
 
-private val TabMinWidth: Dp = 90.dp
 private val TabMaxWidth: Dp = 220.dp
 private val TabHorizontalPadding: Dp = 8.dp
 private val TabCornerRadius: Dp = 8.dp

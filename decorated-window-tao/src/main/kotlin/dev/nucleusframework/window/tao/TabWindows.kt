@@ -9,9 +9,13 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.WindowPosition
@@ -116,7 +120,9 @@ public fun ApplicationScope.Tab(
  * @param windowContentWrapper composed around each window's chrome and
  *   content, inside that window's scene — the hook framework layers use to
  *   provide their per-window locals. Must invoke the lambda it is given.
- * @param onLastWindowClosed called once the workspace holds no group at all.
+ * @param onLastWindowClosed called every time the workspace goes from holding
+ *   groups to holding none — never for the empty workspace this composable
+ *   first sees, since the tabs are declared after it.
  */
 @Suppress("LongParameterList", "FunctionNaming")
 @Composable
@@ -140,10 +146,33 @@ public fun ApplicationScope.TabWindows(
     }
 
     val currentOnLastClosed = rememberUpdatedState(onLastWindowClosed)
-    val groups = workspace.groups
+
+    // The groups to compose, mirrored out of the workspace by an effect rather
+    // than read straight from it.
+    //
+    // The tabs are declared next to this call, so the first group is created by
+    // a write that lands *during* the composition that has already read the
+    // list here — and Compose drops an invalidation aimed at a scope it has
+    // just composed, taking it for an imminent one. Read directly, the very
+    // first window would then never be composed at all: an application whose
+    // only windows come from the workspace would never open one. Written from
+    // an effect, outside composition, every change lands.
+    var groups by remember(workspace) { mutableStateOf(workspace.groups.toList()) }
+    LaunchedEffect(workspace) {
+        snapshotFlow { workspace.groups.toList() }.collect { groups = it }
+    }
+
+    // Only a real close fires the callback: the workspace is empty on the
+    // first composition too, and firing then would close an application that
+    // has not opened a window yet.
     val empty = groups.isEmpty()
+    val everOpened = remember { mutableStateOf(false) }
     LaunchedEffect(empty) {
-        if (empty) currentOnLastClosed.value()
+        if (!empty) {
+            everOpened.value = true
+        } else if (everOpened.value) {
+            currentOnLastClosed.value()
+        }
     }
 
     for (group in groups) {

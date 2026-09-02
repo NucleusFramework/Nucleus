@@ -102,8 +102,9 @@ private class TabWindowDragSession(
         val topLeft = pointer - grabOffsetPx
         origin.move(topLeft.x.toWindowCoordinate(), topLeft.y.toWindowCoordinate())
         // Its own strip moved with the window and is under the pointer the
-        // whole time; only another window's strip is a target.
-        workspace.dropPreview = workspace.dropTargetAt(pointer, exclude = entry)?.takeIf { it.group !== entry.group }
+        // whole time; only another window's strip is a target, and the search
+        // has to look *past* its own rather than stop at it.
+        workspace.dropPreview = workspace.dropTargetAt(pointer, exclude = entry, excludeGroup = entry.group)
     }
 
     override fun end(pointerScreenPx: Offset) {

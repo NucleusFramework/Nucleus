@@ -757,6 +757,9 @@ public object TaoSceneTestBattery {
         run("TabWorkspaceTest: overlapping strips resolve to the window focused most recently") {
             TabWorkspaceTest().`overlapping strips resolve to the window focused most recently`()
         }
+        run("TabWorkspaceTest: an excluded group is skipped for the strip underneath it") {
+            TabWorkspaceTest().`an excluded group is skipped for the strip underneath it`()
+        }
         run("TabWorkspaceTest: a strip with no slots published yet resolves to index zero") {
             TabWorkspaceTest().`a strip with no slots published yet resolves to index zero`()
         }

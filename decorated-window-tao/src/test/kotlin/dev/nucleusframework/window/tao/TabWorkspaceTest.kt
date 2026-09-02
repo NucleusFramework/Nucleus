@@ -379,6 +379,36 @@ class TabWorkspaceTest {
     }
 
     @Test
+    fun `an excluded group is skipped for the strip underneath it`() {
+        val workspace = TabWorkspace()
+        workspace.register("a", "Alpha", groupId = "left")
+        workspace.register("x", "Xray", groupId = "right")
+        val left = requireNotNull(workspace.group("left"))
+        val right = requireNotNull(workspace.group("right"))
+        workspace.attachWindow(left, firstWindow)
+        workspace.attachWindow(right, secondWindow)
+        // Exactly on top of each other, with the excluded one in front: the
+        // shape of a single-tab window being dragged over another window's
+        // strip — its own strip travels under the pointer, and it is the
+        // focused window, so it answers first.
+        workspace.publishStrip(left, FirstWindowFrame, tabCount = 1)
+        workspace.publishStrip(right, FirstWindowFrame, tabCount = 1)
+        secondWindow.let(workspace::noteWindowFocus)
+
+        val onTheStrip = Offset(20f, 20f)
+        assertEquals(right, workspace.dropTargetAt(onTheStrip)?.group, "the focused window answers")
+        assertEquals(
+            left,
+            workspace.dropTargetAt(onTheStrip, excludeGroup = right)?.group,
+            "excluding it must look past it, not give up",
+        )
+        assertNull(
+            workspace.dropTargetAt(onTheStrip, excludeGroup = left)?.group?.takeIf { it === left },
+            "the excluded group is never the answer",
+        )
+    }
+
+    @Test
     fun `a strip with no slots published yet resolves to index zero`() {
         val workspace = TabWorkspace()
         workspace.register("a", "Alpha", groupId = null)
