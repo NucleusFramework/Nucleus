@@ -7,6 +7,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.workspace.HostGeometry
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -233,50 +234,19 @@ class SatelliteWorkspaceTest {
         assertEquals(WindowConstraintAdjustment.Slide, floating.positioner.constraintAdjustment)
     }
 
-    @Test
-    fun `relocated saveable keys resolve across hosts by rotation of the anchor delta`() {
-        val anchorA = 0x1234_5678_9ABC_DEF0L
-        val anchorB = -0x0FED_CBA9_8765_4322L
-        val delta = anchorA xor anchorB
-        // Two call sites at depths 2 and 7 below the anchor: their hashes differ
-        // between hosts by the delta rotated by the accumulated shifts.
-        val siteA1 = 0x0000_00AB_CDEF_0123L
-        val siteA2 = -0x7777_0000_1111_2222L
-        val siteB1 = siteA1 xor delta.rotateLeft(6)
-        val siteB2 = siteA2 xor delta.rotateLeft(21)
-        val saved =
-            SatelliteSavedState(
-                anchor = anchorA,
-                values =
-                    mapOf(
-                        siteA1.toString(36) to listOf<Any?>("first"),
-                        siteA2.toString(36) to listOf<Any?>(42),
-                        "explicit" to listOf<Any?>("named"),
-                    ),
-            )
-
-        val registry = RelocatingSaveableStateRegistry(saved, anchorB)
-
-        assertEquals("first", registry.consumeRestored(siteB1.toString(36)))
-        assertEquals(42, registry.consumeRestored(siteB2.toString(36)))
-        assertEquals("named", registry.consumeRestored("explicit"))
-        assertNull(registry.consumeRestored(siteB1.toString(36)))
-        assertNull(registry.consumeRestored(0x5555L.toString(36)))
-    }
-
     /**
      * Host `a` as the drag tests see it: outer frame at (100, 100), 800×600,
      * content the same size (client origin = outer origin), DockLayout below a
      * 40 px bar — so its screen rect is (100, 140)–(900, 700), scale 1.
      */
-    private fun SatelliteWorkspace.registerHostA(): DockHostGeometry {
+    private fun SatelliteWorkspace.registerHostA(): HostGeometry {
         join(a)
         val geometry =
-            DockHostGeometry(a, outerBoundsPx = { longArrayOf(100L, 100L, 800L, 600L) }, scaleFactor = { 1f }).apply {
+            HostGeometry(a, outerBoundsPx = { longArrayOf(100L, 100L, 800L, 600L) }, scaleFactor = { 1f }).apply {
                 layoutBoundsInWindowPx = Rect(0f, 40f, 800f, 600f)
                 containerSizePx = IntSize(800, 600)
             }
-        registerDockHost(geometry)
+        dockHosts.register(geometry)
         return geometry
     }
 
@@ -533,11 +503,11 @@ class SatelliteWorkspaceTest {
         // A 2x host: the panel rect is in physical pixels, and the ghost window
         // is placed in logical ones, so the scale has to travel with the rect.
         val geometry =
-            DockHostGeometry(a, outerBoundsPx = { longArrayOf(100L, 100L, 1600L, 1200L) }, scaleFactor = { 2f }).apply {
+            HostGeometry(a, outerBoundsPx = { longArrayOf(100L, 100L, 1600L, 1200L) }, scaleFactor = { 2f }).apply {
                 layoutBoundsInWindowPx = Rect(0f, 80f, 1600f, 1200f)
                 containerSizePx = IntSize(1600, 1200)
             }
-        workspace.registerDockHost(geometry)
+        workspace.dockHosts.register(geometry)
         val entry = workspace.register("tools", "Tools", floatingRight, initiallyOpen = true)
         workspace.dock("tools", DockSide.Left)
         entry.dockedBoundsInWindowPx = Rect(0f, 80f, 440f, 1200f)
@@ -563,7 +533,7 @@ class SatelliteWorkspaceTest {
         session.update(Offset(500f, 400f))
 
         // The window the panel is being torn out of goes away underneath.
-        workspace.unregisterDockHost(a, geometry)
+        workspace.dockHosts.unregister(geometry)
         workspace.leave(a)
 
         session.end(Offset(500f, 400f))
@@ -689,49 +659,6 @@ class SatelliteWorkspaceTest {
         )
 
     @Test
-    fun `saved values keep composition order when providers unregister in reverse`() {
-        val registry = RelocatingSaveableStateRegistry(saved = null, anchor = 1L)
-        // Three call sites sharing one key — what Compose does with sibling
-        // rememberSaveable / rememberScrollState calls in the same group.
-        val entries =
-            listOf<Any>("tool", 33f, 0).map { value ->
-                registry.registerProvider("shared") { value }
-            }
-
-        // Compose forgets in reverse composition order, before the host's own
-        // disposable effect gets to save.
-        entries.asReversed().forEach { it.unregister() }
-
-        assertEquals(mapOf("shared" to listOf<Any?>("tool", 33f, 0)), registry.performSave())
-    }
-
-    @Test
-    fun `a re-registering provider keeps its place among the values`() {
-        val registry = RelocatingSaveableStateRegistry(saved = null, anchor = 1L)
-        registry.registerProvider("shared") { "first" }
-        val second = registry.registerProvider("shared") { "second" }
-        registry.registerProvider("shared") { "third" }
-
-        // A recomposing rememberSaveable: unregisters, then registers again.
-        second.unregister()
-        registry.registerProvider("shared") { "second-again" }
-
-        assertEquals(mapOf("shared" to listOf<Any?>("first", "second-again", "third")), registry.performSave())
-    }
-
-    @Test
-    fun `restored values never consumed survive another host change`() {
-        val saved = SatelliteSavedState(anchor = 1L, values = mapOf("kept" to listOf<Any?>("value")))
-        val registry = RelocatingSaveableStateRegistry(saved, anchor = 2L)
-        registry.registerProvider("other") { "live" }
-
-        assertEquals(
-            mapOf("kept" to listOf<Any?>("value"), "other" to listOf<Any?>("live")),
-            registry.performSave(),
-        )
-    }
-
-    @Test
     fun `re-registering an id keeps the workspace's memory of it`() {
         val workspace = SatelliteWorkspace()
         workspace.join(a)
@@ -745,5 +672,61 @@ class SatelliteWorkspaceTest {
         assertEquals("Renamed", again.title)
         assertTrue(again.isOpen)
         assertTrue(again.isDocked)
+    }
+
+    @Test
+    fun `a minimized member is skipped as a drop target`() {
+        val workspace = SatelliteWorkspace()
+        var minimized = false
+        workspace.join(a)
+        workspace.dockHosts.register(
+            HostGeometry(
+                a,
+                outerBoundsPx = { longArrayOf(100L, 100L, 800L, 600L) },
+                scaleFactor = { 1f },
+                minimized = { minimized },
+            ).apply {
+                layoutBoundsInWindowPx = Rect(0f, 40f, 800f, 600f)
+                containerSizePx = IntSize(800, 600)
+            },
+        )
+        val rightZone = Offset(880f, 400f)
+        assertEquals(DockTarget(a, DockSide.Right), workspace.dockTargetAt(rightZone))
+
+        // The frame is still on record while minimized, but nothing of it is on
+        // screen: a drop there must not dock into an invisible window.
+        minimized = true
+        assertNull(workspace.dockTargetAt(rightZone))
+        minimized = false
+        assertEquals(DockTarget(a, DockSide.Right), workspace.dockTargetAt(rightZone))
+    }
+
+    @Test
+    fun `overlapping layouts resolve to the owner then the last focused member`() {
+        val workspace = SatelliteWorkspace()
+        workspace.registerHostA()
+        workspace.join(b)
+        // Same screen rect as host a: two windows exactly on top of each other.
+        workspace.dockHosts.register(
+            HostGeometry(b, outerBoundsPx = { longArrayOf(100L, 100L, 800L, 600L) }, scaleFactor = { 1f }).apply {
+                layoutBoundsInWindowPx = Rect(0f, 40f, 800f, 600f)
+                containerSizePx = IntSize(800, 600)
+            },
+        )
+        val rightZone = Offset(880f, 400f)
+        assertEquals(DockTarget(a, DockSide.Right), workspace.dockTargetAt(rightZone), "the first member owns")
+
+        workspace.noteFocus(b)
+        assertEquals(DockTarget(b, DockSide.Right), workspace.dockTargetAt(rightZone), "focus moved the owner")
+
+        workspace.pinTo(a)
+        assertEquals(DockTarget(a, DockSide.Right), workspace.dockTargetAt(rightZone), "the pin wins")
+        workspace.pinTo(null)
+
+        // Neither window is the owner's layout at this point, so recency decides:
+        // b was focused after a joined.
+        workspace.join(TaoWindow(handle = 3L))
+        workspace.noteFocus(TaoWindow(handle = 3L))
+        assertEquals(DockTarget(b, DockSide.Right), workspace.dockTargetAt(rightZone))
     }
 }

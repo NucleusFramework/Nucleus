@@ -27,6 +27,10 @@ import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.workspace.DragControllerTest
+import dev.nucleusframework.window.tao.workspace.HostGeometryTest
+import dev.nucleusframework.window.tao.workspace.RelocatingSaveableStateRegistryTest
+import dev.nucleusframework.window.tao.workspace.WindowGroupTest
 
 /**
  * Programmatic, reflection-free registry of the stage-1 offscreen battery so
@@ -36,6 +40,7 @@ import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
  * entry is missing, stale, or a new test class is neither registered here
  * nor declared JVM-only.
  */
+@Suppress("LargeClass") // flat generated registry
 public object TaoSceneTestBattery {
     public class CaseResult(
         public val name: String,
@@ -579,9 +584,6 @@ public object TaoSceneTestBattery {
         run("SatelliteWorkspaceTest: snapshot and restore round trip including a satellite declared later") {
             SatelliteWorkspaceTest().`snapshot and restore round trip including a satellite declared later`()
         }
-        run("SatelliteWorkspaceTest: relocated saveable keys resolve across hosts by rotation of the anchor delta") {
-            SatelliteWorkspaceTest().`relocated saveable keys resolve across hosts by rotation of the anchor delta`()
-        }
         run("SatelliteWorkspaceTest: dock target is the zone strip inside each edge of a registered layout") {
             SatelliteWorkspaceTest().`dock target is the zone strip inside each edge of a registered layout`()
         }
@@ -627,17 +629,190 @@ public object TaoSceneTestBattery {
         run("SatelliteWorkspaceTest: a drop resolves against the state a restore left behind") {
             SatelliteWorkspaceTest().`a drop resolves against the state a restore left behind`()
         }
-        run("SatelliteWorkspaceTest: saved values keep composition order when providers unregister in reverse") {
-            SatelliteWorkspaceTest().`saved values keep composition order when providers unregister in reverse`()
-        }
-        run("SatelliteWorkspaceTest: a re-registering provider keeps its place among the values") {
-            SatelliteWorkspaceTest().`a re-registering provider keeps its place among the values`()
-        }
-        run("SatelliteWorkspaceTest: restored values never consumed survive another host change") {
-            SatelliteWorkspaceTest().`restored values never consumed survive another host change`()
-        }
         run("SatelliteWorkspaceTest: re-registering an id keeps the workspace's memory of it") {
             SatelliteWorkspaceTest().`re-registering an id keeps the workspace's memory of it`()
+        }
+        run("SatelliteWorkspaceTest: a minimized member is skipped as a drop target") {
+            SatelliteWorkspaceTest().`a minimized member is skipped as a drop target`()
+        }
+        run("SatelliteWorkspaceTest: overlapping layouts resolve to the owner then the last focused member") {
+            SatelliteWorkspaceTest().`overlapping layouts resolve to the owner then the last focused member`()
+        }
+
+        run("RelocatingSaveableStateRegistryTest: keys relocate across hosts by rotation of the anchor delta") {
+            RelocatingSaveableStateRegistryTest().`keys relocate across hosts by rotation of the anchor delta`()
+        }
+        run("RelocatingSaveableStateRegistryTest: values keep their order when providers unregister in reverse") {
+            RelocatingSaveableStateRegistryTest().`values keep their order when providers unregister in reverse`()
+        }
+        run("RelocatingSaveableStateRegistryTest: a re-registering provider keeps its place among the values") {
+            RelocatingSaveableStateRegistryTest().`a re-registering provider keeps its place among the values`()
+        }
+        run("RelocatingSaveableStateRegistryTest: restored values never consumed survive another host change") {
+            RelocatingSaveableStateRegistryTest().`restored values never consumed survive another host change`()
+        }
+        run("RelocatingSaveableStateRegistryTest: a slot snapshot prefers the live registry over the last save") {
+            RelocatingSaveableStateRegistryTest().`a slot snapshot prefers the live registry over the last save`()
+        }
+
+        run("WindowGroupTest: the owner is the pinned member, else the last focused, else the first joined") {
+            WindowGroupTest().`the owner is the pinned member, else the last focused, else the first joined`()
+        }
+        run("WindowGroupTest: a leaving owner hands over to the member focused before it") {
+            WindowGroupTest().`a leaving owner hands over to the member focused before it`()
+        }
+        run("WindowGroupTest: members by recency put the owner first and never-focused members last in join order") {
+            WindowGroupTest().`members by recency put the owner first and never-focused members last in join order`()
+        }
+        run("WindowGroupTest: a pin to a non-member is kept but ignored until it joins") {
+            WindowGroupTest().`a pin to a non-member is kept but ignored until it joins`()
+        }
+        run("WindowGroupTest: join is idempotent, leaving a stranger is a no-op, and the hooks see both") {
+            WindowGroupTest().`join is idempotent, leaving a stranger is a no-op, and the hooks see both`()
+        }
+        run("WindowGroupTest: without follow focus the owner ignores focus and takes the pin or the first member") {
+            WindowGroupTest().`without follow focus the owner ignores focus and takes the pin or the first member`()
+        }
+
+        run("HostGeometryTest: client origin splits the side borders evenly and puts the rest on top") {
+            HostGeometryTest().`client origin splits the side borders evenly and puts the rest on top`()
+        }
+        run("HostGeometryTest: screen rect is unknown until both the container size and the outer frame are") {
+            HostGeometryTest().`screen rect is unknown until both the container size and the outer frame are`()
+        }
+        run("HostGeometryTest: scale falls back to one while the window reports none") {
+            HostGeometryTest().`scale falls back to one while the window reports none`()
+        }
+        run("HostGeometryTest: the registry keeps one geometry per window and only that one can unregister") {
+            HostGeometryTest().`the registry keeps one geometry per window and only that one can unregister`()
+        }
+        run("HostGeometryTest: ordered lists the given hosts first and the rest in registration order") {
+            HostGeometryTest().`ordered lists the given hosts first and the rest in registration order`()
+        }
+
+        run("DragControllerTest: begin supersedes the live session and clears the feedback once") {
+            DragControllerTest().`begin supersedes the live session and clears the feedback once`()
+        }
+        run("DragControllerTest: release ignores a session that is not live and is idempotent for the live one") {
+            DragControllerTest().`release ignores a session that is not live and is idempotent for the live one`()
+        }
+        run("DragControllerTest: release of null ends whichever session is live") {
+            DragControllerTest().`release of null ends whichever session is live`()
+        }
+
+        run("TabWorkspaceTest: the first tab opens a window and the next ones join it") {
+            TabWorkspaceTest().`the first tab opens a window and the next ones join it`()
+        }
+        run("TabWorkspaceTest: a named group is created on demand and keeps its name") {
+            TabWorkspaceTest().`a named group is created on demand and keeps its name`()
+        }
+        run("TabWorkspaceTest: re-registering an id keeps its place and only refreshes the title") {
+            TabWorkspaceTest().`re-registering an id keeps its place and only refreshes the title`()
+        }
+        run("TabWorkspaceTest: closing the selected tab selects its right neighbour, then its left") {
+            TabWorkspaceTest().`closing the selected tab selects its right neighbour, then its left`()
+        }
+        run("TabWorkspaceTest: closing an unselected tab leaves the selection alone") {
+            TabWorkspaceTest().`closing an unselected tab leaves the selection alone`()
+        }
+        run("TabWorkspaceTest: the last tab of a window takes the window with it") {
+            TabWorkspaceTest().`the last tab of a window takes the window with it`()
+        }
+        run("TabWorkspaceTest: closing an unknown tab is a no-op") {
+            TabWorkspaceTest().`closing an unknown tab is a no-op`()
+        }
+        run("TabWorkspaceTest: a move to another group inserts at the index and selects there") {
+            TabWorkspaceTest().`a move to another group inserts at the index and selects there`()
+        }
+        run("TabWorkspaceTest: a move index beyond the strip appends and a negative one prepends") {
+            TabWorkspaceTest().`a move index beyond the strip appends and a negative one prepends`()
+        }
+        run("TabWorkspaceTest: a move within its own group is a reorder and keeps the selection") {
+            TabWorkspaceTest().`a move within its own group is a reorder and keeps the selection`()
+        }
+        run("TabWorkspaceTest: a move into a dropped group and of an unknown tab are both no-ops") {
+            TabWorkspaceTest().`a move into a dropped group and of an unknown tab are both no-ops`()
+        }
+        run("TabWorkspaceTest: tearing a tab off a multi-tab window opens a window at the rect") {
+            TabWorkspaceTest().`tearing a tab off a multi-tab window opens a window at the rect`()
+        }
+        run("TabWorkspaceTest: tearing off the only tab of a window moves that window instead") {
+            TabWorkspaceTest().`tearing off the only tab of a window moves that window instead`()
+        }
+        run("TabWorkspaceTest: a tear-off rect measured at an unusable scale falls back to one") {
+            TabWorkspaceTest().`a tear-off rect measured at an unusable scale falls back to one`()
+        }
+        run("TabWorkspaceTest: tearing off an unknown tab changes nothing") {
+            TabWorkspaceTest().`tearing off an unknown tab changes nothing`()
+        }
+        run("TabWorkspaceTest: a drop resolves to the strip under the pointer and the index it falls at") {
+            TabWorkspaceTest().`a drop resolves to the strip under the pointer and the index it falls at`()
+        }
+        run("TabWorkspaceTest: the dragged tab's own slot is counted out of the index") {
+            TabWorkspaceTest().`the dragged tab's own slot is counted out of the index`()
+        }
+        run("TabWorkspaceTest: a minimized window is never a drop target") {
+            TabWorkspaceTest().`a minimized window is never a drop target`()
+        }
+        run("TabWorkspaceTest: overlapping strips resolve to the window focused most recently") {
+            TabWorkspaceTest().`overlapping strips resolve to the window focused most recently`()
+        }
+        run("TabWorkspaceTest: a strip with no slots published yet resolves to index zero") {
+            TabWorkspaceTest().`a strip with no slots published yet resolves to index zero`()
+        }
+        run("TabWorkspaceTest: dragging one of several tabs shows a ghost and inserts where it is dropped") {
+            TabWorkspaceTest().`dragging one of several tabs shows a ghost and inserts where it is dropped`()
+        }
+        run("TabWorkspaceTest: dragging one of several tabs into empty space tears off a window under the pointer") {
+            TabWorkspaceTest().`dragging one of several tabs into empty space tears off a window under the pointer`()
+        }
+        run("TabWorkspaceTest: dragging the only tab of a window moves the window and shows no ghost") {
+            TabWorkspaceTest().`dragging the only tab of a window moves the window and shows no ghost`()
+        }
+        run("TabWorkspaceTest: dropping the only tab of a window on another strip merges and closes it") {
+            TabWorkspaceTest().`dropping the only tab of a window on another strip merges and closes it`()
+        }
+        run("TabWorkspaceTest: a teleporting pointer lands on the strip it was released over") {
+            TabWorkspaceTest().`a teleporting pointer lands on the strip it was released over`()
+        }
+        run("TabWorkspaceTest: non-finite samples are ignored and leave the last position standing") {
+            TabWorkspaceTest().`non-finite samples are ignored and leave the last position standing`()
+        }
+        run("TabWorkspaceTest: a beginDrag with a non-finite pointer is refused") {
+            TabWorkspaceTest().`a beginDrag with a non-finite pointer is refused`()
+        }
+        run("TabWorkspaceTest: a drag is refused while the strip has published no geometry") {
+            TabWorkspaceTest().`a drag is refused while the strip has published no geometry`()
+        }
+        run("TabWorkspaceTest: a superseded drag stops acting and cannot clear the live one") {
+            TabWorkspaceTest().`a superseded drag stops acting and cannot clear the live one`()
+        }
+        run("TabWorkspaceTest: ending or cancelling twice is a no-op") {
+            TabWorkspaceTest().`ending or cancelling twice is a no-op`()
+        }
+        run("TabWorkspaceTest: a drag whose window closes mid-gesture still resolves") {
+            TabWorkspaceTest().`a drag whose window closes mid-gesture still resolves`()
+        }
+        run("TabWorkspaceTest: a drag whose tab is closed mid-gesture leaves the workspace alone") {
+            TabWorkspaceTest().`a drag whose tab is closed mid-gesture leaves the workspace alone`()
+        }
+        run("TabWorkspaceTest: tear-off and merge churn keeps every tab in exactly one window") {
+            TabWorkspaceTest().`tear-off and merge churn keeps every tab in exactly one window`()
+        }
+        run("TabWorkspaceTest: snapshot and restore round trip including a tab declared later") {
+            TabWorkspaceTest().`snapshot and restore round trip including a tab declared later`()
+        }
+        run("TabWorkspaceTest: a restore rebuilds strip order whatever order the tabs are declared in") {
+            TabWorkspaceTest().`a restore rebuilds strip order whatever order the tabs are declared in`()
+        }
+        run("TabWorkspaceTest: a restore moves a window that is already open and bumps its placement") {
+            TabWorkspaceTest().`a restore moves a window that is already open and bumps its placement`()
+        }
+        run("TabWorkspaceTest: a snapshot falls back to the recorded placement without a live window") {
+            TabWorkspaceTest().`a snapshot falls back to the recorded placement without a live window`()
+        }
+        run("TabWorkspaceTest: restoring an empty snapshot leaves the workspace alone") {
+            TabWorkspaceTest().`restoring an empty snapshot leaves the workspace alone`()
         }
 
         return results

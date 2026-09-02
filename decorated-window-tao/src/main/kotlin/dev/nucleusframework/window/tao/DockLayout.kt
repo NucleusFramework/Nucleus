@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +39,9 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
+import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
+import dev.nucleusframework.window.tao.workspace.publishHostGeometry
+import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
 
 /**
  * Lays [content] out with the satellites docked into this window around it.
@@ -74,13 +76,7 @@ public fun DockLayout(
     val containerSize = LocalWindowInfo.current.containerSize
     // Published so drags can be hit-tested against this layout on screen and
     // undocked windows placed over their panel.
-    val geometry = remember(workspace, host) { host?.let { DockHostGeometry(it) } }
-    if (geometry != null) {
-        DisposableEffect(workspace, geometry) {
-            workspace.registerDockHost(geometry)
-            onDispose { workspace.unregisterDockHost(geometry.host, geometry) }
-        }
-    }
+    val geometry = rememberHostGeometry(workspace.dockHosts, host)
     val docked =
         if (host == null || !workspace.visible) {
             emptyList()
@@ -89,14 +85,7 @@ public fun DockLayout(
                 entry.isOpen && entry.content != null && entry.dockHost === host && entry.isDocked
             }
         }
-    Box(
-        modifier.onGloballyPositioned { coordinates ->
-            geometry?.let {
-                it.layoutBoundsInWindowPx = coordinates.boundsInWindow()
-                it.containerSizePx = containerSize
-            }
-        },
-    ) {
+    Box(modifier.publishHostGeometry(geometry, containerSize)) {
         DockScaffold(workspace, docked, containerSize, content)
         if (host != null) DockZoneHints(workspace, host)
     }
@@ -274,7 +263,7 @@ private fun DockPanel(
             if (header != null) header(scope) else scope.DefaultSatelliteHeader()
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
-            SatelliteStateHost(entry, scope)
+            RelocatedContentHost(entry.stateSlot, scope, entry.content)
         }
     }
 }

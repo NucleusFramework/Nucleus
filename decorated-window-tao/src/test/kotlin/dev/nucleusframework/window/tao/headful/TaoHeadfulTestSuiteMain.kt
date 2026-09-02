@@ -374,6 +374,8 @@ public object TaoHeadfulTestSuiteMain {
             SatelliteWindowHeadfulCases.all() +
             SatelliteWorkspaceHeadfulCases.all() +
             SatelliteWorkspaceStressHeadfulCases.all() +
+            TabWorkspaceHeadfulCases.all() +
+            TabWorkspaceStressHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()
 
@@ -381,7 +383,7 @@ public object TaoHeadfulTestSuiteMain {
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
 
     @JvmStatic
-    @Suppress("LongMethod") // one flat harness: window + dialog + satellite hosting, then the driver
+    @Suppress("LongMethod") // one flat harness: case hosting, then the driver
     fun main(args: Array<String>) {
         if (cases.isEmpty()) {
             // Distinct from the failure-count exit codes: an unmatched filter
