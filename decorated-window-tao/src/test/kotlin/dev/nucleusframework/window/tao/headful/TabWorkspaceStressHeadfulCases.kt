@@ -2,8 +2,6 @@ package dev.nucleusframework.window.tao.headful
 
 import androidx.compose.ui.geometry.Offset
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.TabWindowGroup
-import dev.nucleusframework.window.tao.TaoWindow
 import kotlin.math.abs
 
 /**
@@ -528,22 +526,6 @@ internal object TabWorkspaceStressHeadfulCases {
                 }
             },
         )
-    }
-
-    /** Waits until [group]'s window is mapped with a laid-out strip, and returns it. */
-    private suspend fun TaoWindowTestScope.awaitMappedStrip(
-        fixture: TabWorkspaceFixture,
-        group: TabWindowGroup,
-    ): TaoWindow {
-        awaitUntil("the group's window is mapped with a real size") {
-            val rect = group.window?.outerBoundsPx() ?: return@awaitUntil false
-            rect[2] > 0 && rect[3] > 0
-        }
-        awaitUntil("its strip published its geometry and slots") {
-            fixture.stripRectPx(group) != null && group.slotsInWindowPx.size >= group.ids.size
-        }
-        settle(SETTLE_AFTER_MAP_MILLIS)
-        return requireNotNull(group.window)
     }
 
     private const val JUMP_INSET_PX = 20f

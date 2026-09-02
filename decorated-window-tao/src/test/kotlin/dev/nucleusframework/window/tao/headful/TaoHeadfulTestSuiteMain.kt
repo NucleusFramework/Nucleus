@@ -375,6 +375,11 @@ public object TaoHeadfulTestSuiteMain {
             SatelliteWorkspaceHeadfulCases.all() +
             SatelliteWorkspaceStressHeadfulCases.all() +
             TabWorkspaceHeadfulCases.all() +
+            TabWorkspaceLifecycleHeadfulCases.all() +
+            TabWorkspaceMotionHeadfulCases.all() +
+            TabWorkspaceMouseHeadfulCases.all() +
+            TabWorkspaceConcurrencyHeadfulCases.all() +
+            TabWorkspaceStormHeadfulCases.all() +
             TabWorkspaceStressHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()

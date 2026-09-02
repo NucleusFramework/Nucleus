@@ -36,6 +36,7 @@ import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.WindowAnchor
 import dev.nucleusframework.window.tao.WindowConstraintAdjustment
 import dev.nucleusframework.window.tao.WindowPositioner
+import java.awt.MouseInfo
 import java.awt.event.InputEvent
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -178,6 +179,37 @@ internal suspend fun robotPressAndDrag(
             val t = step / steps.toFloat()
             robot.mouseMove(x(from + (to - from) * t), y(from + (to - from) * t))
             if (stepDelayMillis > 0) Thread.sleep(stepDelayMillis)
+        }
+        true
+    }
+
+/**
+ * Continues the gesture [robotPressAndDrag] is holding: interpolates from
+ * wherever the pointer is now to [to] (physical screen px) without touching
+ * the button, so a case can hover one target and then another before dropping.
+ * `null` when the host cannot inject input.
+ */
+internal suspend fun robotDragTo(
+    to: Offset,
+    scale: Float,
+    steps: Int = ROBOT_DRAG_STEPS,
+    stepDelayMillis: Long = ROBOT_DRAG_STEP_MILLIS,
+): Boolean? =
+    HeadfulRobot.inject { robot ->
+        val targetX = (to.x / scale).roundToInt()
+        val targetY = (to.y / scale).roundToInt()
+        val start = MouseInfo.getPointerInfo()?.location
+        if (start == null) {
+            robot.mouseMove(targetX, targetY)
+        } else {
+            for (step in 1..steps) {
+                val t = step / steps.toFloat()
+                robot.mouseMove(
+                    (start.x + (targetX - start.x) * t).roundToInt(),
+                    (start.y + (targetY - start.y) * t).roundToInt(),
+                )
+                if (stepDelayMillis > 0) Thread.sleep(stepDelayMillis)
+            }
         }
         true
     }

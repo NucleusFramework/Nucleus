@@ -51,6 +51,10 @@ internal object TabWorkspaceHeadfulCases {
                 val first = awaitTabWindows(fixture, "Alpha", "Beta")
                 val workspace = fixture.workspace
                 check(workspace.groups.size == 1) { "two tabs must open one window, got ${workspace.groups.size}" }
+                // The workspace is empty on the composition that declares the
+                // tabs, which must not read as "every window is gone" — an app
+                // wiring this to exitApplication would never open at all.
+                check(!fixture.lastWindowClosed.value) { "onLastWindowClosed fired before a window ever opened" }
                 requireNotNull(fixture.counters.value[fixture.tabId("Beta")]).value = TAB_SAVED_CLICKS
                 settle()
 

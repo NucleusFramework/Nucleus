@@ -72,6 +72,14 @@ internal class TabWorkspaceFixture(
     /** Set once [TabWindows] reports the last window gone. */
     val lastWindowClosed = mutableStateOf(false)
 
+    /**
+     * How many times [TabWindows] has reported the last window gone. The
+     * callback fires per non-empty → empty transition, so a workspace that is
+     * emptied, filled and emptied again reports twice — and never for the
+     * empty workspace of the first composition.
+     */
+    val lastWindowClosedCount = mutableIntStateOf(0)
+
     fun tabId(title: String): String = "tab-${title.lowercase()}"
 
     /** The group of the tab titled [title], or `null` while it has none. */
@@ -82,6 +90,15 @@ internal class TabWorkspaceFixture(
 
     /** Strip rect of [group] on screen (physical px), or `null` before its first layout. */
     fun stripRectPx(group: TabWindowGroup): Rect? = workspace.stripGeometry(group)?.layoutScreenRectPx()
+
+    /** Slot of the tab titled [title] on screen (physical px), or `null` before its first layout. */
+    fun tabRectPx(title: String): Rect? {
+        val group = groupOf(title) ?: return null
+        val index = group.ids.indexOf(tabId(title)).takeIf { it >= 0 } ?: return null
+        val slot = group.slotsInWindowPx.getOrNull(index) ?: return null
+        val client = workspace.stripGeometry(group)?.clientOriginPx() ?: return null
+        return slot.translate(client)
+    }
 
     /** Screen position (physical px) of the centre of the tab titled [title] in its strip. */
     fun tabCenterPx(title: String): Offset? {
@@ -96,7 +113,10 @@ internal class TabWorkspaceFixture(
     fun ApplicationScope.Windows() {
         TabWindows(
             workspace = workspace,
-            onLastWindowClosed = { lastWindowClosed.value = true },
+            onLastWindowClosed = {
+                lastWindowClosed.value = true
+                lastWindowClosedCount.value++
+            },
         )
         for (title in titles) {
             val id = tabId(title)
@@ -203,6 +223,46 @@ internal suspend fun TaoWindowTestScope.awaitTabWindows(
             .window,
     )
 }
+
+/** Waits until [group]'s window is mapped with a laid-out strip, and returns it. */
+internal suspend fun TaoWindowTestScope.awaitMappedStrip(
+    fixture: TabWorkspaceFixture,
+    group: TabWindowGroup,
+): TaoWindow {
+    awaitUntil("the group's window is mapped with a real size") {
+        val rect = group.window?.outerBoundsPx() ?: return@awaitUntil false
+        rect[2] > 0 && rect[3] > 0
+    }
+    awaitUntil("its strip published its geometry and slots") {
+        fixture.stripRectPx(group) != null && group.slotsInWindowPx.size >= group.ids.size
+    }
+    settle(SETTLE_AFTER_MAP_MILLIS)
+    return requireNotNull(group.window)
+}
+
+/** Screen point on [group]'s strip, [fraction] of the way along it. */
+internal fun TabWorkspaceFixture.stripPointPx(
+    group: TabWindowGroup,
+    fraction: Float,
+): Offset? {
+    val strip = stripRectPx(group) ?: return null
+    return Offset(strip.left + strip.width * fraction, strip.center.y)
+}
+
+/** A point far below [group]'s strip: a drop there can only mean "tear off". */
+internal fun TabWorkspaceFixture.farFromStripPx(group: TabWindowGroup): Offset? {
+    val strip = stripRectPx(group) ?: return null
+    return Offset(strip.center.x, strip.bottom + TAB_DROP_FAR_PX)
+}
+
+/** Skip reason for a case that needs the AWT Robot, or `null` when input can be injected. */
+internal fun robotSkipReason(): String? = HeadfulRobot.unavailableReason?.let { "no input injection: $it" }
+
+/** Inside the first tab of a strip, so a drop there inserts at the head. */
+internal const val STRIP_HEAD_FRACTION = 0.02f
+
+/** A little further along a strip, past the first tab's midpoint. */
+internal const val STRIP_MID_FRACTION = 0.2f
 
 private const val IDLE_CASE_X_DP = 40
 private const val IDLE_CASE_Y_DP = 620
