@@ -50,6 +50,10 @@ import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
  * [WindowGeometryProviderScope] built from [TaoMonitors] and the live
  * [TaoWindow], and `requestScreen` really moves the window.
  */
+private val v2Logger: java.util.logging.Logger =
+    java.util.logging.Logger
+        .getLogger("dev.nucleusframework.window.tao.windowV2")
+
 private class InitialGeometry(
     val placement: WindowPlacement,
     val isMinimized: Boolean,
@@ -165,6 +169,14 @@ internal fun BindNucleusWindowState(
                     latestNativeWindow?.let { awaitFloating(it) }
                 }
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
+                v2Logger.fine {
+                    "bounds request -> $resolved (native outer=${latestNativeWindow?.outerBoundsPx()?.toList()}, " +
+                        "maximized=${latestNativeWindow?.isMaximized}, v1.placement=${latestV1.placement})"
+                }
+                System.err.println(
+                    "[v2-bridge] apply $resolved outer=${latestNativeWindow?.outerBoundsPx()?.toList()} " +
+                        "max=${latestNativeWindow?.isMaximized} v1.placement=${latestV1.placement}",
+                )
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
             }
