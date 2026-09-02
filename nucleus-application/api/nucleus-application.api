@@ -6,10 +6,14 @@ public final class dev/nucleusframework/application/AotTrainingKt {
 public final class dev/nucleusframework/application/DecoratedDialogKt {
 	public static final fun DecoratedDialog (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun DecoratedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog-4gHVL9c (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog-cRDJ8gY (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
 public final class dev/nucleusframework/application/DecoratedWindowKt {
 	public static final fun DecoratedWindow-Ar7Y484 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-OVDzFno (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-PI_BK1o (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 	public static final fun DecoratedWindow-oXav3jA (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
 }
 
@@ -17,11 +21,13 @@ public final class dev/nucleusframework/application/DefaultNucleusDialogHost : d
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/application/DefaultNucleusDialogHost;
 	public fun Dialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public fun Dialog-uUwftkQ (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
 public final class dev/nucleusframework/application/DefaultNucleusWindowHost : dev/nucleusframework/application/NucleusWindowHost {
 	public static final field $stable I
 	public static final field INSTANCE Ldev/nucleusframework/application/DefaultNucleusWindowHost;
+	public fun Window-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public fun Window-ghhko4k (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
@@ -58,6 +64,11 @@ public abstract interface class dev/nucleusframework/application/NucleusDecorate
 
 public abstract interface class dev/nucleusframework/application/NucleusDialogHost {
 	public abstract fun Dialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public fun Dialog-uUwftkQ (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/NucleusDialogHost$DefaultImpls {
+	public static fun Dialog-uUwftkQ (Ldev/nucleusframework/application/NucleusDialogHost;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusWindow {
@@ -107,11 +118,18 @@ public final class dev/nucleusframework/application/NucleusWindowBounds {
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusWindowHost {
+	public fun Window-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public abstract fun Window-ghhko4k (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/NucleusWindowHost$DefaultImpls {
+	public static fun Window-AnPh9MI (Ldev/nucleusframework/application/NucleusWindowHost;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 }
 
 public final class dev/nucleusframework/application/NucleusWindowHostKt {
 	public static final fun HostedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun HostedDialog-4gHVL9c (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun HostedWindow-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun HostedWindow-rSwaGlE (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
 	public static final fun getLocalNucleusDialogHost ()Landroidx/compose/runtime/ProvidableCompositionLocal;
 	public static final fun getLocalNucleusWindowHost ()Landroidx/compose/runtime/ProvidableCompositionLocal;

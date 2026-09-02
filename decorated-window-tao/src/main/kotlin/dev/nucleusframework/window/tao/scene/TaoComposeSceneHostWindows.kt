@@ -32,6 +32,7 @@ import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
@@ -44,6 +45,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoGlBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
+import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
@@ -186,6 +188,12 @@ internal class TaoComposeSceneHostWindows(
 
     private var sceneBundle: TaoSceneBundle? = null
     private val scene: ComposeScene? get() = sceneBundle?.scene
+
+    init {
+        // Reads `scene` lazily, so it is valid before the bundle exists (null)
+        // and across bundle swaps; cleared in dispose().
+        window.installContentMeasurer { constraints -> scene?.measureContent(constraints) }
+    }
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
@@ -1980,6 +1988,7 @@ internal class TaoComposeSceneHostWindows(
             NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         }
         sceneBundle?.close()
+        window.clearContentMeasurer()
         sceneBundle = null
         if (directContext != null) {
             // Belt for TextureView imports a leaked composition may still hold:

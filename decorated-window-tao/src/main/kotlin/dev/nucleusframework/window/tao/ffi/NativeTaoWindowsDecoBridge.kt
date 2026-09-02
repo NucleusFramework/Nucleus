@@ -267,6 +267,15 @@ internal object NativeTaoWindowsDecoBridge {
     external fun nativeGetPrimaryMonitorWorkArea(): LongArray?
 
     /**
+     * Returns one descriptor per attached monitor
+     * (`EnumDisplayMonitors` + `GetMonitorInfoW`), encoded as documented in
+     * [dev.nucleusframework.window.tao.TaoMonitor]. `null` when the
+     * enumeration fails.
+     */
+    @JvmStatic
+    external fun nativeGetMonitors(): Array<String>?
+
+    /**
      * Returns the primary monitor's scale factor encoded as `(scale * 1000)`.
      * Falls back gracefully when `GetDpiForSystem` is unavailable. Used as a
      * scale source while a Tao window's own scale factor is not yet

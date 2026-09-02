@@ -57,6 +57,11 @@ apiValidation {
     // reach Compose's internal AwtDragAndDropTransferable (Java friend-package
     // access). Implementation detail of decorated-window-tao, not public ABI.
     ignoredPackages.add("androidx.compose.ui.draganddrop")
+    // ComposeWindowV2Access lives in androidx.compose.ui.window.v2 to reach
+    // Compose 1.12's internal WindowState/DialogState request channels. Nothing
+    // user-facing lives there — inspectableWindowBounds is in
+    // dev.nucleusframework.window.tao precisely so apiCheck still covers it.
+    ignoredPackages.add("androidx.compose.ui.window.v2")
 }
 
 // The per-module `buildNative*` tasks themselves are wired by the

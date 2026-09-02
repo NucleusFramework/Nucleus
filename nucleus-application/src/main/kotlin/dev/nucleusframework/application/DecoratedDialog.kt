@@ -1,11 +1,16 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.rememberDialogState
 import dev.nucleusframework.application.internal.TaoDecoratedDialogAdapter
+import dev.nucleusframework.window.tao.v2.DialogState as NucleusDialogState
 
 /**
  * Decorated dialog. Mirrors [DecoratedWindow] but for modal / secondary
@@ -75,6 +80,93 @@ public fun DecoratedDialog(
         resizable = resizable,
         enabled = enabled,
         focusable = focusable,
+        onPreviewKeyEvent = onPreviewKeyEvent,
+        onKeyEvent = onKeyEvent,
+        content = content,
+    )
+}
+
+/**
+ * [DecoratedDialog] overload for the AWT-free dialog API v2 clone.
+ *
+ * [state] has no default so `DecoratedDialog(onCloseRequest) { }` still
+ * resolves to the v1 overload.
+ *
+ * `requestScreen` / `screenId` are not applied on Tao (primary work area
+ * only).
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun NucleusApplicationScope.DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: NucleusDialogState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = false,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    when (this) {
+        is TaoNucleusApplicationScope ->
+            TaoDecoratedDialogAdapter.DialogNucleusV2(
+                scope = this,
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                content = content,
+            )
+    }
+}
+
+/**
+ * Receiver-less [DecoratedDialog] for Compose window API v2. See the
+ * [NucleusApplicationScope] overload.
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: NucleusDialogState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = false,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    LocalNucleusApplicationScope.current.DecoratedDialog(
+        onCloseRequest = onCloseRequest,
+        state = state,
+        visible = visible,
+        title = title,
+        icon = icon,
+        resizable = resizable,
+        enabled = enabled,
+        focusable = focusable,
+        minSize = minSize,
+        maxSize = maxSize,
         onPreviewKeyEvent = onPreviewKeyEvent,
         onKeyEvent = onKeyEvent,
         content = content,
