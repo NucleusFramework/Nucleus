@@ -178,7 +178,12 @@ public class SatelliteWorkspace(
     /** The member [pinTo] selected as owner, or `null` when the owner is chosen by focus. */
     public val pinnedOwner: TaoWindow? get() = group.pinned
 
-    /** Windows that have joined, in join order. */
+    /**
+     * Windows that have joined, in join order.
+     *
+     * A snapshot of the live list, so reading it in composition subscribes to
+     * it and comparing it with `==` means what it says.
+     */
     public val members: List<TaoWindow> get() = group.members
 
     /**
@@ -317,6 +322,26 @@ public class SatelliteWorkspace(
         val docked = entry.placement as? SatellitePlacement.Docked ?: return
         entry.preferredDockSide = docked.side
         applyFloating(entry, placement ?: liftOffPlacement(entry) ?: entry.lastFloating)
+    }
+
+    /**
+     * Bakes where [entry]'s floating window currently is into its placement, so
+     * a satellite that goes away and comes back — [close] then [open], or the
+     * [visible] sweep — reappears where the user left it instead of at the rule
+     * it was declared with. A no-op for a docked satellite, whose placement is
+     * the dock.
+     *
+     * Driven by [Satellite] as the floating window leaves composition, which is
+     * the last moment the live offset is known.
+     */
+    internal fun recordFloatingPlacement(entry: SatelliteEntry) {
+        val floating = entry.placement as? SatellitePlacement.Floating ?: return
+        val current = currentFloating(entry, floating)
+        entry.lastFloating = current
+        entry.placement = current
+        entry.windowState.size = current.size
+        entry.windowState.positioner = current.positioner
+        entry.windowState.anchorRect = current.anchorRect
     }
 
     // ── Drag and drop ────────────────────────────────────────────────────

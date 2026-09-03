@@ -191,6 +191,16 @@ public fun ApplicationScope.Satellite(
     if (!entry.isOpen || !workspace.visible || placement !is SatellitePlacement.Floating || owner == null) return
 
     val currentHeader by rememberUpdatedState(header)
+
+    // Where the satellite actually is, recorded as its placement the moment
+    // its window goes away. Closing one keeps "its placement and state" — and
+    // the placement a user recognises is where they dragged it to, not the rule
+    // it was declared with. Same for the workspace-wide `visible` sweep, which
+    // takes every palette down and brings it back.
+    DisposableEffect(workspace, entry) {
+        onDispose { workspace.recordFloatingPlacement(entry) }
+    }
+
     SatelliteWindow(
         onCloseRequest = { workspace.close(id) },
         parent = owner,
