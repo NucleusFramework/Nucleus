@@ -552,15 +552,22 @@ internal object NativeTaoBridge {
 
     /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
-     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
-     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
-     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
-     * [ownerHandle] to clear the relationship.
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint`). Mirrors the Win32
+     * `GWLP_HWNDPARENT` and AppKit `addChildWindow:` paths used by
+     * `DecoratedDialog`. Pass `0` for [ownerHandle] to clear the relationship.
+     *
+     * [destroyWithOwner] adds `gtk_window_set_destroy_with_parent`, which is
+     * the JDialog behaviour a dialog wants and the opposite of what a
+     * satellite wants: a satellite outlives the window it is anchored to (the
+     * workspace hands it to another one). GTK destroying it behind tao's back
+     * leaves a live `TaoWindow` whose toplevel is gone — a window that reports
+     * no geometry and can never be shown again.
      */
     @JvmStatic
     external fun nativeLinuxSetDialogOwner(
         childHandle: Long,
         ownerHandle: Long,
+        destroyWithOwner: Boolean,
     )
 
     /**

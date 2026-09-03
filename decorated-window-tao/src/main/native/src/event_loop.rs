@@ -345,6 +345,19 @@ pub(crate) fn run_event_loop_blocking() {
                         let logical_w = width as jint;
                         let logical_h = height as jint;
 
+                        // GTK takes a transient window down with its owner
+                        // (`gtk_window_set_destroy_with_parent`), behind tao's
+                        // back: nothing else records that the toplevel is gone.
+                        // See `state::GTK_DESTROYED`.
+                        #[cfg(target_os = "linux")]
+                        {
+                            use gtk::prelude::WidgetExt;
+                            use tao::platform::unix::WindowExtUnix;
+                            window.gtk_window().connect_destroy(move |_| {
+                                crate::state::mark_gtk_destroyed(handle);
+                            });
+                        }
+
                         {
                             let mut guard = WINDOWS.lock().unwrap();
                             if let Some(map) = guard.as_mut() {
@@ -381,7 +394,14 @@ pub(crate) fn run_event_loop_blocking() {
                                     {
                                         use gtk::prelude::WidgetExt;
                                         use tao::platform::unix::WindowExtUnix;
-                                        w.gtk_window().show_all();
+                                        // Never on a toplevel GTK already
+                                        // destroyed with its owner: showing it
+                                        // re-realizes a disposed
+                                        // GtkApplicationWindow and crashes
+                                        // inside GTK. See `state::GTK_DESTROYED`.
+                                        if !crate::state::is_gtk_destroyed(handle) {
+                                            w.gtk_window().show_all();
+                                        }
                                     }
                                     // Force a fresh frame into the now-composited surface.
                                     // The first frame is rendered (SwapBuffers) while the
@@ -449,6 +469,8 @@ pub(crate) fn run_event_loop_blocking() {
                         if let Some(map) = guard.as_mut() {
                             map.remove(&handle);
                         }
+                        #[cfg(target_os = "linux")]
+                        crate::state::forget_gtk_destroyed(handle);
                     }
                 }
                 UserEvent::SetMaximized { handle, maximized } => {

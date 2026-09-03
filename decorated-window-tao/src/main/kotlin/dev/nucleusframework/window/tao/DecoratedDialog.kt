@@ -245,6 +245,13 @@ internal fun applyWindowOwnerRelationship(
     child: TaoWindow,
     owner: TaoWindow?,
     autoCenter: Boolean,
+    /**
+     * Whether the platform may take [child] down together with [owner] — the
+     * JDialog behaviour a dialog wants. A satellite passes `false`: it outlives
+     * the window it is anchored to, since the workspace hands it to another
+     * one when that window closes.
+     */
+    destroyWithOwner: Boolean = true,
 ) {
     if (owner == null) return
 
@@ -270,7 +277,7 @@ internal fun applyWindowOwnerRelationship(
             // actual positioning is already done synchronously on the JVM side
             // (see [centerOnParentLinux]) before the child window is shown,
             // so we don't need a native pre-position step like macOS.
-            NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, owner.handle)
+            NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, owner.handle, destroyWithOwner)
         }
         else -> Unit
     }
@@ -300,7 +307,7 @@ internal fun clearWindowOwnerRelationship(child: TaoWindow) {
             if (childView == 0L) return
             NativeTaoMacOsDecoBridge.nativeSetOwner(childView, 0L, false)
         }
-        Platform.Linux -> NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, 0L)
+        Platform.Linux -> NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, 0L, false)
         else -> Unit
     }
 }
