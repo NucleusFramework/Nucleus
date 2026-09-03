@@ -438,6 +438,8 @@ internal object SatelliteWorkspaceHeadfulCases {
                 }
                 val dropIn = Offset(layout.right - DROP_INSET_PX, layout.center.y)
 
+                floating.focus()
+                awaitUntil("floating window is focused") { floating.isFocused }
                 val robot = robotPressAndDrag(grab, dropIn, scale) != null
                 if (robot) {
                     awaitUntil("the right zone is previewed while the drag is held") {

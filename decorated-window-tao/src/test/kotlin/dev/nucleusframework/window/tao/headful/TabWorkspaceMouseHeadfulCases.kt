@@ -58,6 +58,8 @@ internal object TabWorkspaceMouseHeadfulCases {
                 // Past Beta's midpoint, short of Gamma's: index 1.
                 val dropAt = Offset((betaCenter.x + gammaCenter.x) / 2f, grab.y)
 
+                first.focus()
+                awaitUntil("first window is focused") { first.isFocused }
                 if (robotPressAndDrag(grab, dropAt, first.scaleFactor) == null) {
                     System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
                     return@TaoWindowTestCase
@@ -110,6 +112,8 @@ internal object TabWorkspaceMouseHeadfulCases {
                 awaitUntil("Beta is the composed body") { fixture.windowOf("Beta") === first }
                 val idsBefore = requireNotNull(fixture.groupOf("Alpha")).ids
 
+                first.focus()
+                awaitUntil("first window is focused") { first.isFocused }
                 val grab = requireNotNull(fixture.tabCenterPx("Alpha"))
                 if (robotPressAndDrag(grab, grab, first.scaleFactor, steps = 1, stepDelayMillis = 0) == null) {
                     System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
@@ -166,6 +170,8 @@ internal object TabWorkspaceMouseHeadfulCases {
                         "past the label" to Offset(SLOT_MID_X, SLOT_MID_Y),
                     )
                 for ((where, fractions) in spots) {
+                    first.focus()
+                    awaitUntil("first window is focused") { first.isFocused }
                     workspace.select(beta)
                     awaitUntil("$where: Beta is the composed body") { fixture.windowOf("Beta") === first }
                     val slot = requireNotNull(fixture.tabRectPx("Alpha")) { "$where: Alpha has no slot" }

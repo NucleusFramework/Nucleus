@@ -10,6 +10,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import java.io.File
 
 /**
  * Files dragged in from outside the application, on real windows.
@@ -268,9 +269,9 @@ internal object WorkspaceFileDropHeadfulCases {
         val log = FileDropLog()
         val ghosts =
             listOf(
-                "/nucleus/does/not/exist/one.txt",
-                "/nucleus/does/not/exist/two with spaces.txt",
-                "/nucleus/does/not/exist/three-é-ü.txt",
+                File("/nucleus/does/not/exist/one.txt").absolutePath,
+                File("/nucleus/does/not/exist/two with spaces.txt").absolutePath,
+                File("/nucleus/does/not/exist/three-é-ü.txt").absolutePath,
             )
         return TaoWindowTestCase(
             name = "file drop of paths that do not exist arrives verbatim",
@@ -352,7 +353,7 @@ internal object WorkspaceFileDropHeadfulCases {
             driver = {
                 awaitDropTarget()
                 val point = contentPointPx(window, HALF, HALF)
-                val batches = (1..DROP_BURST).map { listOf("/nucleus/burst/$it.txt") }
+                val batches = (1..DROP_BURST).map { listOf(File("/nucleus/burst/$it.txt").absolutePath) }
                 for ((index, batch) in batches.withIndex()) {
                     check(window.fileDragAndDrop(point, batch)) { "drop $index was refused" }
                 }
@@ -577,7 +578,10 @@ internal object WorkspaceFileDropHeadfulCases {
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
 
-                val payloads = titles.associateWith { listOf("/nucleus/spread/${it.lowercase()}.txt") }
+                val payloads =
+                    titles.associateWith { title ->
+                        listOf(File("/nucleus/spread/${title.lowercase()}.txt").absolutePath)
+                    }
                 for (title in titles) {
                     val host = requireNotNull(fixture.windowOf(title)) { "$title has no window" }
                     val point = contentPointPx(host, HALF, BOTTOM_QUARTER)

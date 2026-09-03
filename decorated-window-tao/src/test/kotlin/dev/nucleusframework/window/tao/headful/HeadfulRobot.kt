@@ -46,6 +46,7 @@ internal object HeadfulRobot {
      * [gesture] runs on an IO thread, so blocking `Thread.sleep` pauses between
      * synthetic events are fine (and are what Robot's own autoDelay does).
      */
+    @Suppress("SwallowedException")
     suspend fun <T : Any> inject(
         timeoutMillis: Long = INJECT_TIMEOUT_MILLIS,
         gesture: (Robot) -> T,
@@ -57,11 +58,13 @@ internal object HeadfulRobot {
             val future = CompletableFuture.supplyAsync { gesture(robot()) }
             try {
                 future.get(timeoutMillis, TimeUnit.MILLISECONDS)
-            } catch (_: TimeoutException) {
+            } catch (t: TimeoutException) {
                 unavailable = "AWT Robot injection blocked for ${timeoutMillis}ms (see HeadfulRobot)"
+                System.err.println("[HeadfulRobot] unavailable: $unavailable")
                 null
             } catch (e: ExecutionException) {
                 unavailable = "AWT Robot injection failed: ${e.cause ?: e}"
+                System.err.println("[HeadfulRobot] unavailable: $unavailable")
                 null
             }
         }
@@ -71,7 +74,7 @@ internal object HeadfulRobot {
         cached ?: Robot()
             .apply {
                 autoDelay = AUTO_DELAY_MILLIS
-                isAutoWaitForIdle = true
+                isAutoWaitForIdle = false
             }.also { cached = it }
 
     private const val INJECT_TIMEOUT_MILLIS = 5_000L

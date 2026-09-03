@@ -249,6 +249,8 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * scale)
                 val drop = Offset(layout.left + DROP_INSET_PX, layout.center.y)
 
+                floating.focus()
+                awaitUntil("floating window is focused") { floating.isFocused }
                 val flicked =
                     robotPressAndDrag(grab, drop, scale, steps = FLICK_STEPS, stepDelayMillis = 0L)
                 if (flicked == null) {
@@ -277,6 +279,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
      * own is an interleaving the drag sessions have to survive; together they
      * are the worst frame this API can be handed.
      */
+    @Suppress("LongMethod")
     private fun overlappingDragsAndClosuresStaySane(): TaoWindowTestCase {
         val fixture = SatelliteWorkspaceFixture()
         val dialogVisible = mutableStateOf(true)
@@ -300,8 +303,11 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
+                awaitUntil("both members joined and layout published") {
+                    workspace.members.size == 2 &&
+                        workspace.dockHostGeometry(window)?.layoutScreenRectPx() != null
+                }
                 val dialog = requireNotNull(dialogWindow)
-                awaitUntil("both members joined") { workspace.members.size == 2 }
                 val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
@@ -331,7 +337,11 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 dialog.focus()
                 awaitUntil("dialog is the owner") { workspace.owner === dialog }
                 workspace.dock(SATELLITE_ID, DockSide.Bottom, host = dialog)
-                awaitUntil("panel hosted by the dialog") { fixture.panelHost.value === dialog }
+                awaitUntil("panel hosted by the dialog and geometry ready") {
+                    fixture.panelHost.value === dialog &&
+                        workspace.dockHostGeometry(dialog)?.clientOriginPx() != null &&
+                        entry.dockedBoundsInWindowPx != null
+                }
                 settle()
                 val panelGrab =
                     requireNotNull(workspace.dockHostGeometry(dialog)?.clientOriginPx()) +

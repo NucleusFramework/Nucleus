@@ -275,12 +275,12 @@ internal object TabWorkspaceMotionHeadfulCases {
                 check(preview.index == 0) { "dropped at the head of the strip, previewed index ${preview.index}" }
 
                 session.end(target)
-                awaitUntil("the windows merged") {
-                    workspace.groups.size == 1 && fixture.groupOf("Beta") === home
+                awaitUntil("the windows merged and Beta composes in the first window") {
+                    workspace.groups.size == 1 &&
+                        fixture.groupOf("Beta") === home &&
+                        fixture.windowOf("Beta") === first
                 }
-                settle(SETTLE_AFTER_MAP_MILLIS)
                 check(home.ids.first() == beta) { "dropped at the head, landed at ${home.ids}" }
-                check(fixture.windowOf("Beta") === first) { "the merged tab composes in the wrong window" }
                 check(workspace.draggedTab == null && workspace.dropPreview == null) { "drag feedback left behind" }
             },
         )
@@ -390,12 +390,13 @@ internal object TabWorkspaceMotionHeadfulCases {
                 }
 
                 session.end(stripNow)
-                awaitUntil("the tab merged into the disturbed window") {
-                    fixture.groupOf("Beta") === target && target.ids.contains(beta)
+                awaitUntil("the tab merged into the disturbed window and composes there") {
+                    fixture.groupOf("Beta") === target &&
+                        target.ids.contains(beta) &&
+                        fixture.windowOf("Beta") === targetWindow
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 check(workspace.groups.size == 2) { "the window count changed: ${workspace.groups.size}" }
-                check(fixture.windowOf("Beta") === targetWindow) { "the tab composes in the wrong window" }
                 check(workspace.dragGhost == null && workspace.dropPreview == null) { "drag feedback left behind" }
             },
         )

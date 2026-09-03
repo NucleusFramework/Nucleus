@@ -84,17 +84,18 @@ internal object SatelliteWindowHeadfulCases {
             satelliteContent = { Box(Modifier.fillMaxSize().background(Color(0xFF2D6CDF))) },
             driver = {
                 val satelliteWindow = awaitSatellite(satellite)
+                val scale = window.scaleFactor
+                awaitUntil("satellite reached anchored position") {
+                    val pRect = bounds() ?: return@awaitUntil false
+                    val sRect = satelliteBounds() ?: return@awaitUntil false
+                    val expLeft = pRect[0] + pRect[2] + (GAP_DP * scale).toLong()
+                    abs(sRect[0] - expLeft) <= ANCHOR_TOLERANCE_PX
+                }
                 val parentRect = requireNotNull(bounds())
                 val satelliteRect = requireNotNull(satelliteBounds())
 
                 // ── 1. anchored placement ──
-                val scale = window.scaleFactor
                 val expectedLeft = parentRect[0] + parentRect[2] + (GAP_DP * scale).toLong()
-                check(abs(satelliteRect[0] - expectedLeft) <= ANCHOR_TOLERANCE_PX) {
-                    "satellite left ${satelliteRect[0]} is not anchored to the parent's " +
-                        "right edge + gap ($expectedLeft); parent=${parentRect.toList()} " +
-                        "satellite=${satelliteRect.toList()} scale=$scale"
-                }
                 // The initial placement predates the native window, so it uses
                 // the *requested* height; the real frame may include a CSD
                 // shadow margin. Fold that difference into the tolerance

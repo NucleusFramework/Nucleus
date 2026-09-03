@@ -76,6 +76,8 @@ internal object TabWorkspaceHeadfulCases {
         val strip = requireNotNull(fixture.stripRectPx(requireNotNull(fixture.groupOf("Beta"))))
         val dropOut = Offset(strip.center.x, strip.bottom + TAB_DROP_FAR_PX)
         val scale = first.scaleFactor
+        first.focus()
+        awaitUntil("first window is focused") { first.isFocused }
         val robot = robotPressAndDrag(grab, dropOut, scale) != null
         if (robot) {
             // Button still down: the ghost is the whole affordance, and only
@@ -140,6 +142,8 @@ internal object TabWorkspaceHeadfulCases {
         // Past the midpoint of the only tab there, so Beta is appended after it.
         val mergeAt = Offset(alphaStrip.left + alphaStrip.width * MERGE_X_FRACTION, alphaStrip.center.y)
         if (robot) {
+            tornWindow.focus()
+            awaitUntil("torn window is focused") { tornWindow.isFocused }
             checkNotNull(robotPressAndDrag(betaGrab, mergeAt, first.scaleFactor)) {
                 "robot became unavailable mid-case"
             }

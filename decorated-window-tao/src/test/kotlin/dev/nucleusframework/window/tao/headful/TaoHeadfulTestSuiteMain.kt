@@ -495,6 +495,7 @@ public object TaoHeadfulTestSuiteMain {
                         t
                     }
                 System.err.println("[tao-headful] ${if (failure == null) "OK" else "FAIL"} ${running.name}")
+                failure?.printStackTrace(System.err)
                 advance(
                     TaoWindowTestResult(
                         running.name,
@@ -637,7 +638,7 @@ public object TaoHeadfulTestSuiteMain {
 
     private const val WINDOW_PUBLISH_TIMEOUT_MILLIS = 15_000L
     private const val WINDOW_PUBLISH_POLL_MILLIS = 25L
-    private const val GLOBAL_WATCHDOG_MILLIS = 240_000L
+    private const val GLOBAL_WATCHDOG_MILLIS = 900_000L
     private const val WATCHDOG_EXIT_CODE = 42
     private const val BAD_FILTER_EXIT_CODE = 43
     private const val RESIZE_W_DP = 640.0

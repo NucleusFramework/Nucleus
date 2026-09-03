@@ -366,8 +366,9 @@ private class SatelliteAnchoring(
 
     private val parentMoved: (Int, Int) -> Unit = { xPx, yPx -> onParentMoved(xPx, yPx) }
     private val parentResized: (Int, Int) -> Unit = { _, _ ->
+        val wasPending = realignPending
         syncSuppression()
-        realignAfterSteppingBack()
+        if (wasPending) realignAfterSteppingBack()
     }
     private val parentMinimized: (Boolean) -> Unit = { minimized -> if (!minimized) reassertOwnership() }
     private val parentFullscreen: (Int, Int, Boolean) -> Unit = { _, _, entering ->
@@ -554,7 +555,9 @@ private class SatelliteAnchoring(
     private fun realignAfterSteppingBack() {
         if (!realignPending || detached || !canPlace || !captured) return
         if (state.isHiddenByParent) return
-        val parentRect = parent?.outerBoundsPx() ?: return
+        val owner = parent ?: return
+        val parentRect = owner.outerBoundsPx() ?: return
+        if (owner.isMaximized || owner.isFullscreen) return
         realignPending = false
         command(parentRect[0].toInt() + offsetXPx, parentRect[1].toInt() + offsetYPx)
     }
