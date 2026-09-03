@@ -257,7 +257,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                     System.err.println("[workspace-flick] robot unavailable — skipping the real-mouse half")
                     return@TaoWindowTestCase
                 }
-                awaitUntil("left zone previewed after the flick") {
+                awaitUntil("left zone previewed after the flick — ${robotAim()}") {
                     workspace.dockPreview == DockTarget(window, DockSide.Left)
                 }
                 checkNotNull(robotRelease()) { "robot became unavailable mid-case" }

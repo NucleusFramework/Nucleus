@@ -82,7 +82,7 @@ internal object TabWorkspaceHeadfulCases {
         if (robot) {
             // Button still down: the ghost is the whole affordance, and only
             // while it is held is the drop position certain.
-            awaitUntil("the press-drag started a drag of Beta") { workspace.draggedTab?.id == beta }
+            awaitUntil("the press-drag started a drag of Beta — ${robotAim()}") { workspace.draggedTab?.id == beta }
             // Tracks the pointer within a drag step: the robot's last sample may
             // still be in flight, and pinning the exact pixel would race it.
             awaitUntil("the ghost follows the pointer down to the drop") {

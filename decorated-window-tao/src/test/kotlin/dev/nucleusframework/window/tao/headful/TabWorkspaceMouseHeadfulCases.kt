@@ -64,7 +64,7 @@ internal object TabWorkspaceMouseHeadfulCases {
                     System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
                     return@TaoWindowTestCase
                 }
-                awaitUntil("the drag started") { workspace.draggedTab?.id == alpha }
+                awaitUntil("the drag started — ${robotAim()}") { workspace.draggedTab?.id == alpha }
                 awaitUntil("its own strip previews the new index") {
                     val preview = workspace.dropPreview
                     preview != null && preview.group === fixture.groupOf("Alpha") && preview.index == 1
@@ -124,7 +124,7 @@ internal object TabWorkspaceMouseHeadfulCases {
                 check(workspace.dragGhost == null) { "a press without movement produced a ghost" }
                 checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
 
-                awaitUntil("the click selected the tab") { fixture.windowOf("Alpha") === first }
+                awaitUntil("the click selected the tab — ${robotAim()}") { fixture.windowOf("Alpha") === first }
                 settle()
                 check(requireNotNull(fixture.groupOf("Alpha")).ids == idsBefore) {
                     "a click reordered the strip: ${fixture.groupOf("Alpha")?.ids}"
@@ -232,7 +232,7 @@ internal object TabWorkspaceMouseHeadfulCases {
                     System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
                     return@TaoWindowTestCase
                 }
-                awaitUntil("the other window's strip previews the drop") {
+                awaitUntil("the other window's strip previews the drop — ${robotAim()}") {
                     workspace.draggedTab?.id == beta && workspace.dropPreview?.group === second
                 }
 
@@ -286,7 +286,7 @@ internal object TabWorkspaceMouseHeadfulCases {
                     System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
                     return@TaoWindowTestCase
                 }
-                awaitUntil("the flick started the window drag") { workspace.draggedTab?.id == beta }
+                awaitUntil("the flick started the window drag — ${robotAim()}") { workspace.draggedTab?.id == beta }
                 checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
 
                 awaitUntil("the flicked tab merged into the first window") {

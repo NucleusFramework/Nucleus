@@ -128,7 +128,9 @@ internal object TabWorkspaceStressHeadfulCases {
                     System.err.println("[tab-flick] robot became unavailable, nothing to assert")
                     return@TaoWindowTestCase
                 }
-                awaitUntil("the flick started a drag") { workspace.draggedTab?.id == fixture.tabId("Beta") }
+                awaitUntil("the flick started a drag — ${robotAim()}") {
+                    workspace.draggedTab?.id == fixture.tabId("Beta")
+                }
                 checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
 
                 awaitUntil("the flicked tab landed in its own window") {

@@ -291,22 +291,39 @@ private fun SettleInitialPlacement(
     val current by rememberUpdatedState(anchoring)
     LaunchedEffect(satellite) {
         var placedWith: SatelliteAnchoring? = null
-        var lastParentFrame: List<Long>? = null
+        var anchoredAgainst: List<Long>? = null
         var stablePolls = 0
+        var pollsSincePlaced = 0
         repeat(PLACEMENT_SETTLE_ATTEMPTS) {
             val settling = current
             if (!settling.hasParent || !settling.canPlace) return@LaunchedEffect
+            // Hard stop once the satellite has been placed: this covers the
+            // window manager's map-time placement, which lands within a few
+            // frames, and nothing else. A loop still running when the app —
+            // or the user — moves the owner would re-anchor instead of
+            // letting the follow logic preserve the offset it captured.
+            if (placedWith != null && ++pollsSincePlaced > PLACEMENT_SETTLE_POLLS_AFTER_PLACED) {
+                return@LaunchedEffect
+            }
             // Stop as soon as the anchoring that placed it is no longer the
             // live one. Before the first placement the loop still follows the
             // swap: a satellite reparented before it ever landed has to be
             // placed against whoever owns it now.
             if (placedWith != null && placedWith !== settling) return@LaunchedEffect
             val frame = settling.parentFramePx()
-            if (frame != null && settling.reanchor()) {
-                placedWith = settling
-                stablePolls = if (frame == lastParentFrame) stablePolls + 1 else 0
-                lastParentFrame = frame
-                if (stablePolls >= PLACEMENT_SETTLE_STABLE_POLLS) return@LaunchedEffect
+            if (frame != null && frame != anchoredAgainst) {
+                // Only a parent frame this satellite has not been anchored
+                // against yet is worth another move. Re-anchoring on every
+                // poll would keep overriding a placement someone else owns —
+                // a satellite reopened where the user had dragged it is
+                // positioned by the workspace, not by the positioner.
+                if (settling.reanchor()) {
+                    placedWith = settling
+                    anchoredAgainst = frame
+                    stablePolls = 0
+                }
+            } else if (frame != null && ++stablePolls >= PLACEMENT_SETTLE_STABLE_POLLS) {
+                return@LaunchedEffect
             }
             delay(PLACEMENT_SETTLE_POLL_MILLIS)
         }
@@ -800,3 +817,6 @@ private const val PLACEMENT_SETTLE_POLL_MILLIS = 16L
 
 /** Consecutive identical parent frames that count as "the WM is done placing it". */
 private const val PLACEMENT_SETTLE_STABLE_POLLS = 3
+
+/** Upper bound on the settle window once the satellite has been placed once (~190 ms). */
+private const val PLACEMENT_SETTLE_POLLS_AFTER_PLACED = 12

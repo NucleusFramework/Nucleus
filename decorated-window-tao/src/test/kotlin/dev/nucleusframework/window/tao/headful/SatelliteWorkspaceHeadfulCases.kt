@@ -429,7 +429,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                     // Button still down: the zone under the pointer must be
                     // previewed before the drop — that highlight is the whole
                     // affordance — and only then is the drop position certain.
-                    awaitUntil("the right zone is previewed while the drag is held") {
+                    awaitUntil("the right zone is previewed while the drag is held — ${robotAim()}") {
                         workspace.dockPreview == DockTarget(window, DockSide.Right)
                     }
                     checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
@@ -543,7 +543,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 awaitUntil("floating window is focused") { floating.isFocused }
                 val robot = robotPressAndDrag(grab, dropIn, scale) != null
                 if (robot) {
-                    awaitUntil("the right zone is previewed while the drag is held") {
+                    awaitUntil("the right zone is previewed while the drag is held — ${robotAim()}") {
                         workspace.dockPreview == DockTarget(window, DockSide.Right)
                     }
                     checkNotNull(robotRelease()) { "robot became unavailable mid-case" }

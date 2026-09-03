@@ -2,6 +2,7 @@ package dev.nucleusframework.window.tao.headful
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.awt.MouseInfo
 import java.awt.Robot
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -33,6 +34,32 @@ internal object HeadfulRobot {
 
     @Volatile
     private var cached: Robot? = null
+
+    @Volatile
+    private var lastAim: String? = null
+
+    /**
+     * Where the last gesture aimed and where the pointer actually ended up, or
+     * `null` before any gesture.
+     *
+     * A headful pointer case that times out says nothing on its own — "the
+     * drag started" never held — and the two ways it gets there look the same
+     * from the outside: the point was computed wrong (a window frame read
+     * before the platform had one), or the point was right and the press
+     * never reached the window. Reporting both the requested and the observed
+     * position tells them apart from a CI log.
+     */
+    val lastAimReport: String
+        get() = lastAim ?: "no gesture yet"
+
+    /** Records where [point] was aimed and where the pointer landed. */
+    fun noteAim(
+        x: Int,
+        y: Int,
+    ) {
+        val landed = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()
+        lastAim = "aimed ($x, $y), pointer at ${landed?.let { "(${it.x}, ${it.y})" } ?: "unknown"}"
+    }
 
     /** Why input injection is unusable on this host, or null while it works. */
     val unavailableReason: String?

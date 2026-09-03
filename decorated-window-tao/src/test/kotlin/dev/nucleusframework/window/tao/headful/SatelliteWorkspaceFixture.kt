@@ -181,6 +181,7 @@ internal suspend fun robotPressAndDrag(
         fun y(p: Offset) = (p.y / scale).roundToInt()
         robot.mouseMove(x(from), y(from))
         Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
+        HeadfulRobot.noteAim(x(from), y(from))
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
         Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
         for (step in 1..steps) {
@@ -221,6 +222,14 @@ internal suspend fun robotDragTo(
         }
         true
     }
+
+/**
+ * Where the last robot gesture aimed and where the pointer landed — worth
+ * putting in the description of anything a robot-driven case waits for, so a
+ * timeout on a runner nobody can attach to still says which of the two went
+ * wrong.
+ */
+internal fun robotAim(): String = HeadfulRobot.lastAimReport
 
 /** Drops what [robotPressAndDrag] is holding. */
 internal suspend fun robotRelease(): Boolean? =
