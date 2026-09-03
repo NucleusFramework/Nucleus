@@ -15,12 +15,16 @@ class HostGeometryTest {
     private val b = TaoWindow(handle = 2L)
 
     @Test
-    fun `client origin splits the side borders evenly and puts the rest on top`() {
+    fun `client origin splits the side borders evenly and matches them at the bottom`() {
         // A 820×660 frame around 800×600 of content: 10 px borders left and
-        // right, the remaining 60 px is title bar and top border.
+        // right, 10 px assumed below, the remaining 50 px title bar and top
+        // border.
         val origin = clientOriginPx(longArrayOf(100L, 200L, 820L, 660L), IntSize(800, 600))
 
-        assertEquals(Offset(110f, 260f), origin)
+        assertEquals(Offset(110f, 250f), origin)
+        // A plain resize frame — Win32's invisible borders — adds the same
+        // 8 px on every side, so the content starts 8 px in on both axes.
+        assertEquals(Offset(108f, 208f), clientOriginPx(longArrayOf(100L, 200L, 816L, 616L), IntSize(800, 600)))
         // Client-side decorated: frame == content, origin == frame origin.
         assertEquals(Offset(100f, 200f), clientOriginPx(longArrayOf(100L, 200L, 800L, 600L), IntSize(800, 600)))
     }

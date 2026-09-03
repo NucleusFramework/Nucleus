@@ -88,19 +88,31 @@ private const val SIDE_BORDER_SPLIT = 2f
 
 /**
  * Screen position (physical px) of a window's content origin, derived from its
- * outer frame `[x, y, w, h]` and its content size: side borders split evenly,
- * everything else on top. Exact for Tao's client-side-decorated windows, off
- * by at most a shadow margin elsewhere.
+ * outer frame `[x, y, w, h]` and its content size.
+ *
+ * Side borders are split evenly, the bottom border is assumed to match them,
+ * and whatever vertical difference is left sits above the content — a title
+ * bar, the top margin of a client-side-decorated shadow.
+ *
+ * Attributing the bottom border rather than putting the whole vertical
+ * difference on top is what makes this right on Win32, whose `GetWindowRect`
+ * includes the invisible resize border below the content as well as beside it:
+ * a pointer aimed through a frame modelled as "all chrome on top" lands one
+ * border too low, which is enough to miss the bottom of a tab. It is a no-op
+ * for a frame that adds nothing horizontally (a Tao window on X11), and stays
+ * exact for a symmetric shadow and for macOS's title bar.
  */
 @Suppress("MagicNumber")
 internal fun clientOriginPx(
     outer: LongArray,
     containerSizePx: IntSize,
-): Offset =
-    Offset(
-        outer[0] + (outer[2] - containerSizePx.width) / SIDE_BORDER_SPLIT,
-        outer[1] + (outer[3] - containerSizePx.height).toFloat(),
+): Offset {
+    val sideBorder = (outer[2] - containerSizePx.width) / SIDE_BORDER_SPLIT
+    return Offset(
+        outer[0] + sideBorder,
+        outer[1] + (outer[3] - containerSizePx.height) - sideBorder,
     )
+}
 
 /**
  * A [HostGeometry] for [host], registered with [registry] for as long as the

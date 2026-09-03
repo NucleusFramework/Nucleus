@@ -318,7 +318,7 @@ public class TabWorkspace(
         val entry = entryMap[tabId] ?: return null
         val scale = scaleFactor.takeIf { it > 0f } ?: 1f
         val position = DpOffset((screenRectPx.left / scale).dp, (screenRectPx.top / scale).dp)
-        val size = DpSize((screenRectPx.width / scale).dp, (screenRectPx.height / scale).dp)
+        val size = contentSizeDp(screenRectPx, scale, entry.group)
         entry.group?.takeIf { it.tabIds.size == 1 }?.let { alone ->
             // Already a window of its own: this is a move, not a tear-off.
             // Requested rather than merely recorded, so a caller driving the
@@ -332,6 +332,40 @@ public class TabWorkspace(
         groupList += group
         move(tabId, group)
         return group
+    }
+
+    /**
+     * The size to request for a window whose *frame* should cover [rectPx].
+     *
+     * A window is sized in content pixels while a tear-off rect is an outer
+     * frame, so a window created straight from the rect is one chrome too big.
+     * On Win32 that is the invisible resize border, and it compounds: a tab
+     * dragged out, merged back and dragged out again gains it every round.
+     *
+     * [source] is the group the rect was measured on; the difference between
+     * its own frame and the content its strip published is the best estimate
+     * of the chrome the new window will get. Without one — nothing composed
+     * yet, no screen placement — the rect is taken as-is, which is what this
+     * always did.
+     */
+    @Suppress("MagicNumber") // outer frame is [x, y, w, h]
+    private fun contentSizeDp(
+        rectPx: Rect,
+        scale: Float,
+        source: TabWindowGroup?,
+    ): DpSize {
+        val geometry = source?.let { stripHosts[it.window] }
+        val content = geometry?.containerSizePx?.takeIf { it.width > 0 && it.height > 0 }
+        val outer = source?.window?.outerBoundsPx()
+        if (content == null || outer == null) {
+            return DpSize((rectPx.width / scale).dp, (rectPx.height / scale).dp)
+        }
+        val chromeW = (outer[2] - content.width).coerceAtLeast(0L)
+        val chromeH = (outer[3] - content.height).coerceAtLeast(0L)
+        return DpSize(
+            ((rectPx.width - chromeW) / scale).dp,
+            ((rectPx.height - chromeH) / scale).dp,
+        )
     }
 
     /** Removes [tabId] from [group], reselecting and dropping the group as needed. */

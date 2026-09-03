@@ -675,8 +675,8 @@ public object TaoSceneTestBattery {
             WindowGroupTest().`without follow focus the owner ignores focus and takes the pin or the first member`()
         }
 
-        run("HostGeometryTest: client origin splits the side borders evenly and puts the rest on top") {
-            HostGeometryTest().`client origin splits the side borders evenly and puts the rest on top`()
+        run("HostGeometryTest: client origin splits the side borders evenly and matches them at the bottom") {
+            HostGeometryTest().`client origin splits the side borders evenly and matches them at the bottom`()
         }
         run("HostGeometryTest: screen rect is unknown until both the container size and the outer frame are") {
             HostGeometryTest().`screen rect is unknown until both the container size and the outer frame are`()
