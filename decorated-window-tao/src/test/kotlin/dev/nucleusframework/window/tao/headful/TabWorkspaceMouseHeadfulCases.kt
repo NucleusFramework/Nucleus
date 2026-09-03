@@ -189,7 +189,9 @@ internal object TabWorkspaceMouseHeadfulCases {
                         return@TaoWindowTestCase
                     }
                     checkNotNull(robotRelease()) { "$where: robot became unavailable mid-case" }
-                    awaitUntil("$where selected Alpha") { fixture.windowOf("Alpha") === first }
+                    awaitUntil(
+                        "$where selected Alpha — ${robotAim()}; ${fixture.geometryReport("Alpha")}",
+                    ) { fixture.windowOf("Alpha") === first }
                     settle()
                     check(workspace.groups.size == 1) { "$where opened a window" }
                     check(requireNotNull(fixture.groupOf("Alpha")).ids == listOf(alpha, beta)) {
