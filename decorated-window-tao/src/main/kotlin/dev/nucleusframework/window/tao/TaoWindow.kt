@@ -1262,6 +1262,19 @@ public class TaoWindow internal constructor(
     /** See [contentSnapshot]; `null` when the host offers none or the scene has no size yet. */
     internal fun snapshotContent(rectPx: IntRect?): ImageBitmap? = contentSnapshot?.invoke(rectPx)
 
+    /**
+     * This window's scene root as a drag-and-drop target, installed by the
+     * scene host while it is attached; `null` before and after.
+     *
+     * The platform inbound callbacks (`NativeTao*DndBridge.Callback`) resolve
+     * the node through the very same lambda, so a driver inside the process —
+     * the headful suite — can hand a drag to
+     * [dev.nucleusframework.window.tao.dnd.TaoSceneDnD] along the path the OS
+     * takes, rather than a parallel one that could drift from it.
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    internal var inboundDragAndDropNode: (() -> androidx.compose.ui.scene.ComposeSceneDragAndDropNode?)? = null
+
     internal var imePreedit: ((String) -> Unit)? = null
 
     internal fun dispatchImePreedit(text: String) {

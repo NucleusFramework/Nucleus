@@ -464,6 +464,9 @@ internal class TaoComposeSceneHostWindows(
         sceneBundle?.exceptionHandler = exceptionHandler
 
         publishWindowsTextureHost()
+        // One source of truth for the scene's drop target: the callback below
+        // resolves it through here, and so does an in-process driver.
+        window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouchInput()
 
@@ -867,7 +870,7 @@ internal class TaoComposeSceneHostWindows(
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback :
         dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.Callback {
-        private fun node() = scene?.rootDragAndDropNode
+        private fun node() = window.inboundDragAndDropNode?.invoke()
 
         override fun onDragEnter(
             hwnd: Long,
@@ -1966,6 +1969,7 @@ internal class TaoComposeSceneHostWindows(
 
     fun detach() {
         window.showHook = null
+        window.inboundDragAndDropNode = null
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)

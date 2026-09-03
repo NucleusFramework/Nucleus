@@ -572,6 +572,9 @@ internal class TaoComposeSceneHostLinux(
             }
         }
 
+        // One source of truth for the scene's drop target: the callback below
+        // resolves it through here, and so does an in-process driver.
+        window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouch()
     }
@@ -963,7 +966,7 @@ internal class TaoComposeSceneHostLinux(
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
-        private fun node() = scene?.rootDragAndDropNode
+        private fun node() = window.inboundDragAndDropNode?.invoke()
 
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
         // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
@@ -2448,6 +2451,7 @@ internal class TaoComposeSceneHostLinux(
     fun detach() {
         liveHosts -= this
         window.contentSnapshot = null
+        window.inboundDragAndDropNode = null
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)

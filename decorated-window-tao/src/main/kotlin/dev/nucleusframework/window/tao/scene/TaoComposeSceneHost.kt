@@ -467,6 +467,9 @@ internal class TaoComposeSceneHost(
         // bundle, the single seam all three platforms render through.
         sceneBundle?.exceptionHandler = exceptionHandler
 
+        // One source of truth for the scene's drop target: the callback below
+        // resolves it through here, and so does an in-process driver.
+        window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
     }
 
@@ -563,7 +566,7 @@ internal class TaoComposeSceneHost(
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge.Callback {
-        private fun node() = scene?.rootDragAndDropNode
+        private fun node() = window.inboundDragAndDropNode?.invoke()
 
         override fun onDragEnter(
             nsView: Long,
@@ -1555,6 +1558,7 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        window.inboundDragAndDropNode = null
         window.imeReplaceCommit = null
         window.imePreedit = null
         window.imeCommit = null
