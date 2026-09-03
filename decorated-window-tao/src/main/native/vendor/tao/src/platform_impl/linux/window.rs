@@ -539,7 +539,29 @@ impl Window {
           let rect = w.frame_extents();
           (rect.x(), rect.y(), rect.width(), rect.height())
         })
-        .unwrap_or((x, y, w as i32, h as i32));
+        // PATCH(nucleus): `gdk_window_get_frame_extents` answers with its
+        // (0, 0, 1, 1) placeholder until the window is mapped and — under a
+        // reparenting WM — framed. A configure that lands inside that window
+        // latches the placeholder into `outer_*`, where it stays until the
+        // *next* configure: on a software-rendered X server under a
+        // lightweight WM (Xvfb + openbox) that is seconds away, or never.
+        // Every consumer of `outer_position` / `outer_size` then reads a 1x1
+        // window at the screen origin.
+        //
+        // Fall back to the window's own frame origin plus its client size.
+        // NOT to `event.position()`: for a window a reparenting WM has framed,
+        // the configure event carries coordinates relative to that frame, so
+        // using it publishes a window at (0, 0). `root_origin` is the frame's
+        // top-left in root coordinates, which is what `frame_extents` would
+        // have said.
+        .filter(|(_, _, w, h)| *w > 1 && *h > 1)
+        .unwrap_or_else(|| {
+          let (rx, ry) = window
+            .window()
+            .map(|w| w.root_origin())
+            .unwrap_or((x, y));
+          (rx, ry, w as i32, h as i32)
+        });
 
       outer_position_clone.0.store(x, Ordering::Release);
       outer_position_clone.1.store(y, Ordering::Release);
