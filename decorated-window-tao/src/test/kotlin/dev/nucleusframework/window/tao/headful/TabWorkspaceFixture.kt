@@ -135,6 +135,42 @@ internal class TabWorkspaceFixture(
     /** Centre of [tabSlotInWindowPx]. */
     fun tabPointInWindowPx(title: String): Offset? = tabSlotInWindowPx(title)?.center
 
+    /**
+     * What the aim of a robot gesture was derived from, for a case that timed
+     * out: the frame the platform reported, the content size the strip was
+     * measured in, the client origin those two imply, and the slot itself.
+     *
+     * `aimed (x, y), pointer at (x, y)` on its own only proves the pointer
+     * went where the case asked. Whether *that* was the right place is this.
+     */
+    fun geometryReport(title: String): String {
+        val group = groupOf(title) ?: return "no group for $title"
+        val geometry = workspace.stripGeometry(group) ?: return "no strip geometry for $title"
+        val outer = group.window?.outerBoundsPx()?.toList()
+        return "outer=$outer content=${geometry.containerSizePx} client=${geometry.clientOriginPx()} " +
+            "strip=${geometry.layoutBoundsInWindowPx} slot=${tabSlotInWindowPx(title)} " +
+            "scale=${group.window?.scaleFactor} focused=${group.window?.isFocused} " +
+            "windowsOverAim=${groupsCovering(HeadfulRobot.lastAimPoint)}"
+    }
+
+    /**
+     * Which groups' windows cover [point] (logical screen points), in
+     * workspace order — a press lands in whichever of them the platform has on
+     * top, so a case that aimed right and saw nothing has its answer here.
+     */
+    private fun groupsCovering(point: java.awt.Point?): List<String> {
+        if (point == null) return emptyList()
+        return workspace.groups
+            .filter { group ->
+                val window = group.window ?: return@filter false
+                val outer = window.outerBoundsPx() ?: return@filter false
+                val scale = window.scaleFactor.takeIf { it > 0f } ?: 1f
+                val x = point.x * scale
+                val y = point.y * scale
+                x >= outer[0] && x < outer[0] + outer[2] && y >= outer[1] && y < outer[1] + outer[3]
+            }.map { it.id }
+    }
+
     /** Screen position (physical px) of the centre of the tab titled [title] in its strip. */
     fun tabCenterPx(title: String): Offset? {
         val group = groupOf(title) ?: return null

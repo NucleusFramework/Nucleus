@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.headful
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.awt.MouseInfo
+import java.awt.Point
 import java.awt.Robot
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
@@ -52,12 +53,18 @@ internal object HeadfulRobot {
     val lastAimReport: String
         get() = lastAim ?: "no gesture yet"
 
-    /** Records where [point] was aimed and where the pointer landed. */
+    /** Where the last gesture aimed, in logical screen points, or `null`. */
+    @Volatile
+    var lastAimPoint: Point? = null
+        private set
+
+    /** Records where [x] / [y] was aimed and where the pointer landed. */
     fun noteAim(
         x: Int,
         y: Int,
     ) {
         val landed = runCatching { MouseInfo.getPointerInfo()?.location }.getOrNull()
+        lastAimPoint = Point(x, y)
         lastAim = "aimed ($x, $y), pointer at ${landed?.let { "(${it.x}, ${it.y})" } ?: "unknown"}"
     }
 
