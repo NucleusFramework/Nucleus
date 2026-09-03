@@ -226,7 +226,12 @@ public fun ApplicationScope.SatelliteWindow(
             }
 
             DisposableEffect(anchoring) {
-                applyWindowOwnerRelationship(child = satellite, owner = parent, autoCenter = false)
+                applyWindowOwnerRelationship(
+                    child = satellite,
+                    owner = parent,
+                    autoCenter = false,
+                    destroyWithOwner = false,
+                )
                 anchoring.onParentDestroyed = { destroyedParent = it }
                 anchoring.attach()
                 state.reanchorRequest = { anchoring.reanchor() }
@@ -242,23 +247,8 @@ public fun ApplicationScope.SatelliteWindow(
                 anchoring.setHideWhileParentFills(hideWhileParentFullscreenOrMaximized)
             }
 
-            // Settles the *initial* placement. A satellite declared inside its
-            // parent's content composes in the same frame the parent window is
-            // created, before the parent's own position effect has run — so the
-            // position resolved above can be anchored to a parent rect that is
-            // about to change, or to none at all. Re-read real geometry as soon
-            // as both windows are mapped; from then on the offset the follow
-            // logic preserves is the anchored one. Keyed on the satellite, not
-            // the anchoring: a reparent swaps the anchoring but must leave the
-            // satellite where it is on screen.
-            val currentAnchoring by rememberUpdatedState(anchoring)
-            LaunchedEffect(satellite) {
-                repeat(PLACEMENT_SETTLE_ATTEMPTS) {
-                    val settling = currentAnchoring
-                    if (!settling.hasParent || !settling.canPlace || settling.reanchor()) return@LaunchedEffect
-                    delay(PLACEMENT_SETTLE_POLL_MILLIS)
-                }
-            }
+            SettleInitialPlacement(satellite, anchoring)
+            RealignAfterSteppingBack(satellite, anchoring, state.isHiddenByParent)
 
             DisposableEffect(satellite) {
                 val listener: (Boolean) -> Unit = { focused -> state.isActive = focused }
@@ -269,6 +259,93 @@ public fun ApplicationScope.SatelliteWindow(
             latestContent()
         },
     )
+}
+
+/**
+ * Settles the *initial* placement of [satellite]. A satellite declared inside
+ * its parent's content composes in the same frame the parent window is
+ * created, before the parent's own position effect has run — so the position
+ * it was given can be anchored to a parent rect that is about to change, or to
+ * none at all. Re-read real geometry as soon as both windows are mapped; from
+ * then on the offset the follow logic preserves is the anchored one.
+ *
+ * One successful re-anchor is not enough: a window manager can report a real
+ * frame at the origin and apply the requested position several frames later
+ * (openbox under Xvfb takes tens of milliseconds; a loaded desktop longer).
+ * Anchoring to that frame latches an offset measured against a parent that was
+ * never there, and the follow logic then preserves it forever — the satellite
+ * trails its parent by exactly the distance the parent moved after the map. So
+ * keep re-anchoring until the parent's frame has held still for
+ * [PLACEMENT_SETTLE_STABLE_POLLS] polls, the only signal a WM gives that
+ * placement is done.
+ *
+ * Keyed on the satellite, not on [anchoring]: a reparent swaps the anchoring
+ * but must leave the satellite where it is on screen.
+ */
+@Suppress("FunctionNaming")
+@Composable
+private fun SettleInitialPlacement(
+    satellite: TaoWindow,
+    anchoring: SatelliteAnchoring,
+) {
+    val current by rememberUpdatedState(anchoring)
+    LaunchedEffect(satellite) {
+        var placedWith: SatelliteAnchoring? = null
+        var lastParentFrame: List<Long>? = null
+        var stablePolls = 0
+        repeat(PLACEMENT_SETTLE_ATTEMPTS) {
+            val settling = current
+            if (!settling.hasParent || !settling.canPlace) return@LaunchedEffect
+            // Stop as soon as the anchoring that placed it is no longer the
+            // live one. Before the first placement the loop still follows the
+            // swap: a satellite reparented before it ever landed has to be
+            // placed against whoever owns it now.
+            if (placedWith != null && placedWith !== settling) return@LaunchedEffect
+            val frame = settling.parentFramePx()
+            if (frame != null && settling.reanchor()) {
+                placedWith = settling
+                stablePolls = if (frame == lastParentFrame) stablePolls + 1 else 0
+                lastParentFrame = frame
+                if (stablePolls >= PLACEMENT_SETTLE_STABLE_POLLS) return@LaunchedEffect
+            }
+            delay(PLACEMENT_SETTLE_POLL_MILLIS)
+        }
+    }
+}
+
+/**
+ * Puts [satellite] back at its offset after it stepped aside for a maximized
+ * or fullscreen parent.
+ *
+ * Coming back re-shows the window, and the single move the step-back path
+ * issues races that re-map. When it loses, the satellite stays exactly where
+ * it was before it stepped aside — right for a parent that never moved, wrong
+ * for one that was restored somewhere else. Re-assert the offset until it
+ * holds, the same way the first placement settles.
+ */
+@Suppress("FunctionNaming")
+@Composable
+private fun RealignAfterSteppingBack(
+    satellite: TaoWindow,
+    anchoring: SatelliteAnchoring,
+    hiddenByParent: Boolean,
+) {
+    val current by rememberUpdatedState(anchoring)
+    var steppedAside by remember(satellite) { mutableStateOf(false) }
+    LaunchedEffect(satellite, hiddenByParent) {
+        if (hiddenByParent) {
+            steppedAside = true
+            return@LaunchedEffect
+        }
+        if (!steppedAside) return@LaunchedEffect
+        repeat(PLACEMENT_SETTLE_ATTEMPTS) {
+            val settling = current
+            if (!settling.hasParent || !settling.canPlace || settling.realignToOffset()) {
+                return@LaunchedEffect
+            }
+            delay(PLACEMENT_SETTLE_POLL_MILLIS)
+        }
+    }
 }
 
 /**
@@ -420,11 +497,15 @@ private class SatelliteAnchoring(
         syncSuppression()
     }
 
+    /** The parent's frame as `[x, y, w, h]` physical px, or `null` while it has none. */
+    fun parentFramePx(): List<Long>? = parent?.takeIf { it.hasRealFrame() }?.outerBoundsPx()?.toList()
+
     /** Reads the parent-relative offset off live geometry. `true` once known. */
     fun captureOffset(): Boolean {
         if (captured) return true
         if (detached || !canPlace) return false
         val owner = parent ?: return false
+        if (!owner.hasRealFrame() || !satellite.hasRealFrame()) return false
         val parentRect = owner.outerBoundsPx() ?: return false
         val selfRect = satellite.outerBoundsPx() ?: return false
         publishOffset((selfRect[0] - parentRect[0]).toInt(), (selfRect[1] - parentRect[1]).toInt())
@@ -442,7 +523,11 @@ private class SatelliteAnchoring(
         val owner = parent ?: return false
         val parentRect = owner.outerBoundsPx() ?: return false
         val selfRect = satellite.outerBoundsPx() ?: return false
-        if (selfRect[2] <= 0L || selfRect[3] <= 0L) return false
+        // GTK maps a window at 1x1 until its first allocation, so "has a size"
+        // is `> 1`, not `> 0`: anchoring against a 1px-tall satellite centres
+        // its *top* on the parent instead of its middle, and the wrong offset
+        // is then latched for the lifetime of the pairing.
+        if (!satellite.hasRealFrame()) return false
         val childSize = Size(selfRect[2].toFloat(), selfRect[3].toFloat())
         val origin = anchoredOriginPx(owner, state, childSize) ?: return false
         val xPx = origin.x.toInt()
@@ -548,6 +633,29 @@ private class SatelliteAnchoring(
     }
 
     /**
+     * Puts the satellite back at its captured offset, and reports whether it
+     * is there. Unlike [realignAfterSteppingBack] this can be called
+     * repeatedly: a move issued while the platform is still re-mapping the
+     * window it just re-showed can be dropped outright — GTK carries a move
+     * into the map only when it is issued *before* it — so the one command the
+     * step-back path sends is not always enough.
+     */
+    fun realignToOffset(): Boolean {
+        if (detached || !canPlace || !captured) return false
+        if (state.isHiddenByParent) return false
+        val owner = parent ?: return false
+        if (owner.isMaximized || owner.isFullscreen) return false
+        if (!owner.hasRealFrame() || !satellite.hasRealFrame()) return false
+        val parentRect = owner.outerBoundsPx() ?: return false
+        val selfRect = satellite.outerBoundsPx() ?: return false
+        val targetX = parentRect[0].toInt() + offsetXPx
+        val targetY = parentRect[1].toInt() + offsetYPx
+        if (closeEnough(selfRect[0].toInt(), targetX) && closeEnough(selfRect[1].toInt(), targetY)) return true
+        command(targetX, targetY)
+        return false
+    }
+
+    /**
      * Puts the satellite back at its offset once the parent's frame has
      * settled after a maximize / fullscreen stint. A no-op unless the
      * satellite has just stepped back in — see [realignPending].
@@ -570,7 +678,7 @@ private class SatelliteAnchoring(
     private fun reassertOwnership() {
         if (detached) return
         val owner = parent ?: return
-        applyWindowOwnerRelationship(child = satellite, owner = owner, autoCenter = false)
+        applyWindowOwnerRelationship(child = satellite, owner = owner, autoCenter = false, destroyWithOwner = false)
     }
 
     private fun publishOffset(
@@ -599,10 +707,11 @@ private fun anchoredOriginPx(
     childSizePx: Size,
 ): Offset? {
     val parentRectPx = parent.outerBoundsPx() ?: return null
-    // A frame with no size is a window the platform has not laid out yet:
-    // anchoring to its right edge would put the satellite on its left one.
-    // `null` makes the caller retry rather than latch onto that.
-    if (parentRectPx[2] <= 0L || parentRectPx[3] <= 0L) return null
+    // A frame with no size is a window the platform has not laid out yet —
+    // 1x1 being GTK's placeholder for it, not a size. Anchoring to its right
+    // edge would put the satellite on its left one; `null` makes the caller
+    // retry rather than latch onto that.
+    if (!parent.hasRealFrame()) return null
     val workAreaPx = parentMonitorWorkAreaPx(parent) ?: return null
     val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
     val parentRect = parentRectPx.toRect()
@@ -688,3 +797,6 @@ private const val COMMAND_ECHO_SLOP_PX = 2
 /** ~1.6 s at 60 Hz — far past any observed map latency, then given up on. */
 private const val PLACEMENT_SETTLE_ATTEMPTS = 100
 private const val PLACEMENT_SETTLE_POLL_MILLIS = 16L
+
+/** Consecutive identical parent frames that count as "the WM is done placing it". */
+private const val PLACEMENT_SETTLE_STABLE_POLLS = 3
