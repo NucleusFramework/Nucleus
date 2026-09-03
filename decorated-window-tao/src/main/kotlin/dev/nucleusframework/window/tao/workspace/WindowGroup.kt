@@ -45,8 +45,15 @@ internal class WindowGroup(
     var pinned: TaoWindow? by mutableStateOf(null)
         private set
 
-    /** Windows that have joined, in join order. */
-    val members: List<TaoWindow> get() = memberList
+    /**
+     * Windows that have joined, in join order.
+     *
+     * A snapshot of the live list, so reading it in composition subscribes to
+     * it and comparing it with `==` means what it says — the observable list
+     * Compose keeps underneath compares by identity, and would also change
+     * shape under a caller iterating it while a window opens or closes.
+     */
+    val members: List<TaoWindow> get() = memberList.toList()
 
     /**
      * The pinned member if it is one, else the most recently focused member

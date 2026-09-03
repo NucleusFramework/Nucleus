@@ -69,7 +69,13 @@ public class TaoMonitor internal constructor(
     public val workAreaPx: IntRect,
     /** The monitor's own scale factor (`1.0` on non-HiDPI displays). */
     public val scaleFactor: Float,
-    /** Whether this is the primary monitor — the one owning the origin. */
+    /**
+     * Whether this is the primary monitor — the one owning the origin.
+     *
+     * Exactly one monitor of [TaoMonitors.all] carries it: where the platform
+     * names no primary (GDK's Wayland backend does not), the first monitor is
+     * flagged, so filtering the list by this always finds one.
+     */
     public val isPrimary: Boolean,
 ) {
     /**
@@ -132,10 +138,35 @@ public object TaoMonitors {
                 else -> null
             }
         val monitors = rows?.mapNotNull(::parseMonitor).orEmpty()
-        return monitors.ifEmpty { listOf(syntheticMonitor(window)) }
+        return monitors.ifEmpty { listOf(syntheticMonitor(window)) }.withOnePrimary()
     }
 
-    /** The primary monitor, or the first one when no monitor claims the flag. */
+    /**
+     * Exactly one monitor carrying [TaoMonitor.isPrimary]: the one the platform
+     * named, else the first.
+     *
+     * Not every platform names one — GDK's Wayland backend reports no primary
+     * monitor at all — and a list where the flag is nowhere makes
+     * `all().first { it.isPrimary }` throw for a caller doing the obvious
+     * thing. The fallback is the same one [primary] already applies; applying
+     * it here makes the flag mean something on every platform.
+     */
+    private fun List<TaoMonitor>.withOnePrimary(): List<TaoMonitor> {
+        if (any { it.isPrimary }) return this
+        val chosen = first()
+        return listOf(
+            TaoMonitor(
+                id = chosen.id,
+                name = chosen.name,
+                boundsPx = chosen.boundsPx,
+                workAreaPx = chosen.workAreaPx,
+                scaleFactor = chosen.scaleFactor,
+                isPrimary = true,
+            ),
+        ) + drop(1)
+    }
+
+    /** The primary monitor — see [TaoMonitor.isPrimary]. */
     public fun primary(window: TaoWindow? = null): TaoMonitor {
         val monitors = all(window)
         return monitors.firstOrNull { it.isPrimary } ?: monitors.first()
