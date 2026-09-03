@@ -98,6 +98,22 @@ const DRAG_PUMP_INTERVAL_MS: u64 = 8;
 /// teardown is a few events, and the loop stops as soon as none are pending.
 const DRAG_TEARDOWN_ITERATIONS: usize = 64;
 
+/// How long the session may run on with no pointer button held before it is
+/// declared dead and cancelled.
+///
+/// A legitimate session ends within a frame or two of the release — `drag-end`
+/// follows the compositor's `dnd_finished` / `cancelled` immediately. Waiting a
+/// full second past the release costs a correct drag nothing and only ever
+/// fires for a session the compositor never took (see [`buttons_held`]).
+const DRAG_DEAD_SESSION_GRACE_MS: u128 = 1_000;
+
+/// Watchdog wake interval while a session is in flight.
+///
+/// `main_iteration_do(true)` blocks until GTK has something to dispatch, so the
+/// deadline check needs a source that wakes the loop on its own — the pump
+/// cannot be relied on for it, since a session may run with `pump = None`.
+const DRAG_WATCHDOG_INTERVAL_MS: u64 = 50;
+
 // ── Per-window registration ────────────────────────────────────────────────
 
 #[allow(dead_code)]
@@ -237,6 +253,24 @@ fn translate_to_content_phys(window: &gtk::Window, x: i32, y: i32) -> (i32, i32)
         None => (x, y),
     };
     (lx * scale, ly * scale)
+}
+
+/// Whether the seat still reports a pointer button held down over `widget`.
+///
+/// Read straight off GDK's device state rather than tracked from the events we
+/// forward: it is precisely a *stale* view of the button that this answers,
+/// and only GDK's own state is in step with the serial `gtk_drag_begin` is
+/// about to spend. `None` when the state cannot be read (window not realised,
+/// no seat), which callers treat as "cannot vouch for it" and let through.
+fn buttons_held(widget: &gtk::Window) -> Option<bool> {
+    let gdk_window = WidgetExt::window(widget)?;
+    let pointer = gdk_window.display().default_seat()?.pointer()?;
+    let (_, _, _, mask) = gdk_window.device_position(&pointer);
+    Some(mask.intersects(
+        gtk::gdk::ModifierType::BUTTON1_MASK
+            | gtk::gdk::ModifierType::BUTTON2_MASK
+            | gtk::gdk::ModifierType::BUTTON3_MASK,
+    ))
 }
 
 fn with_window<R, F: FnOnce(&tao::window::Window) -> R>(handle: u64, f: F) -> Option<R> {
@@ -617,6 +651,24 @@ fn start_outbound(
         return DROP_EFFECT_NONE;
     };
 
+    // Refuse a session the compositor is guaranteed to drop on the floor.
+    //
+    // `wl_data_device.start_drag` is validated against the serial of the last
+    // input event *and* a still-pressed button (Mutter:
+    // `meta_wayland_pointer_get_grab_info(require_pressed = TRUE)`). With the
+    // button already up it is silently ignored — no protocol error, no grab,
+    // and therefore no `cancelled` / `dnd_finished` on the source, so GTK
+    // never emits `drag-end` and the cooperative pump below would spin for the
+    // rest of the process's life with the pointer frozen mid-gesture.
+    //
+    // We get there whenever the client falls behind the compositor: Compose
+    // crosses the touch slop on a *queued* motion that tao dispatches after
+    // the real release has already been delivered. A maximized window with
+    // satellites is the easy way to see it, since it is the slowest to render.
+    if buttons_held(&widget) == Some(false) {
+        return DROP_EFFECT_NONE;
+    }
+
     let target_list = TargetList::new(&[]);
     if !files.is_empty() {
         target_list.add(&gtk::gdk::Atom::intern("text/uri-list"), 0, 1);
@@ -748,12 +800,53 @@ fn start_outbound(
         )
     });
 
+    // Wakes the blocking loop below so its deadline check runs even while the
+    // compositor sends nothing at all — which is the state a dead session is
+    // in. Does no work of its own; the check itself stays in the loop body,
+    // where cancelling is safe (a `gtk_drag_cancel` from inside a glib
+    // callback would re-enter GTK's drag teardown under our own pump).
+    let watchdog = glib::timeout_add_local(
+        std::time::Duration::from_millis(DRAG_WATCHDOG_INTERVAL_MS),
+        || glib::ControlFlow::Continue,
+    );
+
     // Cooperatively pump the GTK main loop until drag-end fires. The session
     // runs through the same loop we're already on; drag_begin returned
     // immediately. Mirrors Win32 `DoDragDrop`'s nested message pump.
+    //
+    // Bounded past the release, never during the drag: the user may hold a
+    // legitimate drag for as long as they like, so the deadline only starts
+    // once no button is held any more. A session still alive then is one the
+    // compositor never took, and spinning on it is the freeze this guards.
+    let mut released_at: Option<std::time::Instant> = None;
     while !done.get() {
         gtk::main_iteration_do(true);
+        if done.get() {
+            break;
+        }
+        if buttons_held(&widget) == Some(false) {
+            let since = released_at.get_or_insert_with(std::time::Instant::now);
+            if since.elapsed().as_millis() >= DRAG_DEAD_SESSION_GRACE_MS {
+                // Emits drag-failed + drag-end synchronously, which sets
+                // `done` through our own handlers and lets the ordinary
+                // teardown below run. A no-op if GTK already dropped the
+                // session's source info.
+                if let Some(ref c) = ctx {
+                    unsafe {
+                        gtk::ffi::gtk_drag_cancel(
+                            glib::translate::ToGlibPtr::to_glib_none(c).0,
+                        );
+                    }
+                }
+                break;
+            }
+        } else {
+            // A button came back down (a second gesture, or a state we simply
+            // could not read): the grace period is not running.
+            released_at = None;
+        }
     }
+    watchdog.remove();
 
     // `drag-end` is emitted *before* GTK has finished tearing the drag down —
     // in particular before it releases the implicit pointer grab
