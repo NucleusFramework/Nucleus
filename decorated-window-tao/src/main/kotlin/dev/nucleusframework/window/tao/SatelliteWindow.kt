@@ -129,6 +129,17 @@ public fun ApplicationScope.SatelliteWindow(
     val latestContent by rememberUpdatedState(content)
     val latestOnClose by rememberUpdatedState(onCloseRequest)
 
+    // The anchor is computed from the parent's frame, so the satellite waits
+    // for the parent to have one. A satellite declared inside its parent's
+    // content composes in the very frame the parent window is created: an
+    // anchor resolved then is measured against a frame the parent has not been
+    // given yet, and the platform maps the satellite there — visibly, at the
+    // wrong place, until the settle loop below drags it across. One frame of
+    // waiting costs nothing; a palette that flashes in the middle of the screen
+    // before snapping beside its document is what users report.
+    val parentPlaced = parentHasFrame(parent)
+    if (!parentPlaced) return
+
     // Resolved synchronously, before the native window exists, so
     // DecoratedWindow's position effect applies it *before* show() — the same
     // no-flash ordering DecoratedDialog relies on for its centring. Computed
@@ -261,6 +272,40 @@ public fun ApplicationScope.SatelliteWindow(
 }
 
 /**
+ * Whether [parent] has a real frame to anchor against yet — `true` at once for
+ * a parentless satellite, and for a parent that is already on screen.
+ *
+ * Polled rather than driven by `onMoved` / `onResized`: the frame can be there
+ * before either fires (a satellite opened over a window that has been up for
+ * minutes), and the wait is bounded so a parent that never maps — hidden, or
+ * on a platform that reports no frame at all — still gets its satellite rather
+ * than none.
+ */
+@Composable
+private fun parentHasFrame(parent: TaoWindow?): Boolean {
+    if (parent == null) return true
+    var placed by remember(parent) { mutableStateOf(parent.hasRealFrame()) }
+    LaunchedEffect(parent) {
+        var attempt = 0
+        while (!placed && attempt < PLACEMENT_SETTLE_ATTEMPTS) {
+            delay(PLACEMENT_SETTLE_POLL_MILLIS)
+            attempt++
+            placed = parent.hasRealFrame()
+        }
+        // Out of patience: show the satellite anyway, wherever the platform
+        // puts it, rather than never showing it at all.
+        placed = true
+    }
+    return placed
+}
+
+/** `true` once the platform reports a frame with a real size for this window. */
+private fun TaoWindow.hasRealFrame(): Boolean {
+    val rect = outerBoundsPx() ?: return false
+    return rect[2] > 1L && rect[3] > 1L
+}
+
+/**
  * Keeps a satellite pinned to its parent.
  *
  * Everything here runs on the Tao event-loop thread (= the Compose dispatcher),
@@ -311,8 +356,19 @@ private class SatelliteAnchoring(
     /** Whether the parent filled the screen last time it was looked at. */
     private var lastFills: Boolean? = null
 
+    /**
+     * Set when the satellite is shown again after stepping aside: the parent
+     * is on its way out of a maximized or fullscreen frame, and the geometry
+     * read at that instant can still be the old one. Cleared by the first
+     * parent geometry that lands afterwards, which is the settled one.
+     */
+    private var realignPending = false
+
     private val parentMoved: (Int, Int) -> Unit = { xPx, yPx -> onParentMoved(xPx, yPx) }
-    private val parentResized: (Int, Int) -> Unit = { _, _ -> syncSuppression() }
+    private val parentResized: (Int, Int) -> Unit = { _, _ ->
+        syncSuppression()
+        realignAfterSteppingBack()
+    }
     private val parentMinimized: (Boolean) -> Unit = { minimized -> if (!minimized) reassertOwnership() }
     private val parentFullscreen: (Int, Int, Boolean) -> Unit = { _, _, entering ->
         // Hide before the transition animates so the satellite is never caught
@@ -405,6 +461,8 @@ private class SatelliteAnchoring(
         // A hidden satellite is repositioned when it comes back, against the
         // parent's geometry at that point — no need to chase it meanwhile.
         if (state.isHiddenByParent) return
+        // This *is* the settled geometry the re-show was waiting for.
+        realignPending = false
         command(parentXPx + offsetXPx, parentYPx + offsetYPx)
     }
 
@@ -470,6 +528,10 @@ private class SatelliteAnchoring(
                 // fullscreen stint, and the position sticks before the show().
                 val parentRect = owner.outerBoundsPx() ?: return
                 if (captured) command(parentRect[0].toInt() + offsetXPx, parentRect[1].toInt() + offsetYPx)
+                // That frame can still be the maximized one — the platform
+                // reports the restore in pieces, and every move it made while
+                // the satellite was away was skipped. Re-align on the next one.
+                realignPending = true
             }
             return
         }
@@ -482,6 +544,19 @@ private class SatelliteAnchoring(
         // transition, so the resize that lands afterwards is the one that
         // has to re-stack.
         if ((fills || fillsChanged) && !state.isHiddenByParent) reassertOwnership()
+    }
+
+    /**
+     * Puts the satellite back at its offset once the parent's frame has
+     * settled after a maximize / fullscreen stint. A no-op unless the
+     * satellite has just stepped back in — see [realignPending].
+     */
+    private fun realignAfterSteppingBack() {
+        if (!realignPending || detached || !canPlace || !captured) return
+        if (state.isHiddenByParent) return
+        val parentRect = parent?.outerBoundsPx() ?: return
+        realignPending = false
+        command(parentRect[0].toInt() + offsetXPx, parentRect[1].toInt() + offsetYPx)
     }
 
     /**
@@ -521,6 +596,10 @@ private fun anchoredOriginPx(
     childSizePx: Size,
 ): Offset? {
     val parentRectPx = parent.outerBoundsPx() ?: return null
+    // A frame with no size is a window the platform has not laid out yet:
+    // anchoring to its right edge would put the satellite on its left one.
+    // `null` makes the caller retry rather than latch onto that.
+    if (parentRectPx[2] <= 0L || parentRectPx[3] <= 0L) return null
     val workAreaPx = parentMonitorWorkAreaPx(parent) ?: return null
     val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
     val parentRect = parentRectPx.toRect()

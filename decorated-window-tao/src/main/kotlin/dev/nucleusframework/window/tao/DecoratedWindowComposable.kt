@@ -469,13 +469,22 @@ public fun ApplicationScope.DecoratedWindow(
                 // outer origin so the ghost tracks the cursor instead of
                 // landing up/left by the decoration inset + outer offset.
                 val (xDp, yDp) = absolutePositionForPopup(window, pos)
-                // X11: a move issued before the window is mapped raced the map
-                // itself — under Xvfb/openbox the window intermittently stayed at
-                // GTK's unallocated 1×1 for good. The WM applies its own placement
-                // to the initial position anyway, so wait for real outer bounds
-                // and move the mapped window, the same way Aligned retries.
-                if (Platform.Current == Platform.Linux) awaitMappedOnX11(window)
+                // Asked for before the window is shown, so the platform can map
+                // it where it belongs: GTK and Win32 both carry a move issued
+                // ahead of the map into the initial placement. Without this the
+                // window is mapped wherever the WM felt like and only then
+                // moved — a satellite visibly flashes at the screen's default
+                // spot before snapping beside its parent.
                 window.setOuterPosition(xDp, yDp)
+                // X11: the WM applies its own placement at map time regardless,
+                // and a move issued before the map has been seen to race it
+                // (under Xvfb/openbox the window intermittently stayed at GTK's
+                // unallocated 1×1). Re-apply once the frame is real — that both
+                // overrides the WM and repairs an early move that was lost.
+                if (Platform.Current == Platform.Linux) {
+                    awaitMappedOnX11(window)
+                    window.setOuterPosition(xDp, yDp)
+                }
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
