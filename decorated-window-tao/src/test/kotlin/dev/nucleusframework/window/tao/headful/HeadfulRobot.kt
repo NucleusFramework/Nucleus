@@ -5,6 +5,7 @@ import kotlinx.coroutines.withContext
 import java.awt.MouseInfo
 import java.awt.Point
 import java.awt.Robot
+import java.awt.event.InputEvent
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -104,12 +105,37 @@ internal object HeadfulRobot {
         }
     }
 
+    /**
+     * Lets go of every mouse button, whatever the case that held one did.
+     *
+     * A case that fails between its press and its release leaves the button
+     * down *at the X server*, and a `mousePress` on an already-pressed button
+     * is a no-op: every later robot case then aims correctly, moves the
+     * pointer correctly, and receives nothing. One red case turns the whole
+     * rest of the robot suite red with it, and the log gives no hint that the
+     * first one is the only real failure. Run after every case.
+     */
+    suspend fun releaseEveryButton() {
+        if (unavailable != null) return
+        inject { robot ->
+            for (mask in BUTTON_MASKS) robot.mouseRelease(mask)
+            true
+        }
+    }
+
     private fun robot(): Robot =
         cached ?: Robot()
             .apply {
                 autoDelay = AUTO_DELAY_MILLIS
                 isAutoWaitForIdle = false
             }.also { cached = it }
+
+    private val BUTTON_MASKS =
+        intArrayOf(
+            InputEvent.BUTTON1_DOWN_MASK,
+            InputEvent.BUTTON2_DOWN_MASK,
+            InputEvent.BUTTON3_DOWN_MASK,
+        )
 
     private const val INJECT_TIMEOUT_MILLIS = 5_000L
     private const val AUTO_DELAY_MILLIS = 30

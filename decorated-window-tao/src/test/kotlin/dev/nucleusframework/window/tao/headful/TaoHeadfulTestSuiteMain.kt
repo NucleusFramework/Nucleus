@@ -494,6 +494,9 @@ public object TaoHeadfulTestSuiteMain {
                     ) {
                         t
                     }
+                // Whatever the case did, it does not get to hand the next one
+                // a held mouse button — see [HeadfulRobot.releaseEveryButton].
+                HeadfulRobot.releaseEveryButton()
                 System.err.println("[tao-headful] ${if (failure == null) "OK" else "FAIL"} ${running.name}")
                 failure?.printStackTrace(System.err)
                 advance(
