@@ -383,6 +383,15 @@ public object TaoHeadfulTestSuiteMain {
             TabWorkspaceStressHeadfulCases.all() +
             WaylandWorkspaceHeadfulCases.all() +
             WaylandWorkspaceStressHeadfulCases.all() +
+            WorkspaceFileDropHeadfulCases.all() +
+            TabSatellitesHeadfulCases.all() +
+            TabSatellitesChaosHeadfulCases.all() +
+            TabWorkspacePointerHeadfulCases.all() +
+            SatellitePlacementHeadfulCases.all() +
+            WindowExtremesHeadfulCases.all() +
+            WorkspaceLoadHeadfulCases.all() +
+            MonitorAndScaleHeadfulCases.all() +
+            WorkspaceRaceHeadfulCases.all() +
             ImeHeadfulCases.all() +
             WindowApiV2HeadfulCases.all()
 

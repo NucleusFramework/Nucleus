@@ -44,8 +44,20 @@ import dev.nucleusframework.window.tao.TaoWindow
 internal class TabWorkspaceFixture(
     initialTitles: List<String> = listOf("Alpha", "Beta"),
     private val windowSize: DpSize = DpSize(TAB_WINDOW_W_DP.dp, TAB_WINDOW_H_DP.dp),
+    /**
+     * When `true`, every tab body is also an inbound file-drop target and what
+     * it receives is recorded in [dropLog]. Off by default: it adds a
+     * drag-and-drop node to the body, which no case that is not about file
+     * drops should have to reason about.
+     */
+    private val fileDropTargets: Boolean = false,
 ) {
     val workspace = TabWorkspace(defaultWindowSize = windowSize)
+
+    private val dropLogs = HashMap<String, FileDropLog>()
+
+    /** What the body of the tab titled [title] received from inbound file drags. */
+    fun dropLog(title: String): FileDropLog = dropLogs.getOrPut(tabId(title)) { FileDropLog() }
 
     /** Ids in declaration order; a case may add to this to open a tab mid-run. */
     val titles = mutableStateListOf(*initialTitles.toTypedArray())
@@ -100,6 +112,20 @@ internal class TabWorkspaceFixture(
         return slot.translate(client)
     }
 
+    /**
+     * Slot of the tab titled [title] in its **window's** content space
+     * (physical px) — where a pointer event aims, and the one space that is
+     * meaningful on every platform, screen placement or not.
+     */
+    fun tabSlotInWindowPx(title: String): Rect? {
+        val group = groupOf(title) ?: return null
+        val index = group.ids.indexOf(tabId(title)).takeIf { it >= 0 } ?: return null
+        return group.slotsInWindowPx.getOrNull(index)
+    }
+
+    /** Centre of [tabSlotInWindowPx]. */
+    fun tabPointInWindowPx(title: String): Offset? = tabSlotInWindowPx(title)?.center
+
     /** Screen position (physical px) of the centre of the tab titled [title] in its strip. */
     fun tabCenterPx(title: String): Offset? {
         val group = groupOf(title) ?: return null
@@ -143,7 +169,13 @@ internal class TabWorkspaceFixture(
                         if (composedIn.value[id] === window) composedIn.value = composedIn.value - id
                     }
                 }
-                Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+                val body =
+                    if (fileDropTargets) {
+                        Modifier.fillMaxSize().fileDropRecorder(dropLog(title)).verticalScroll(scroll)
+                    } else {
+                        Modifier.fillMaxSize().verticalScroll(scroll)
+                    }
+                Column(body) {
                     Box(Modifier.fillMaxSize().background(Color(0xFF2D6CDF)))
                     Box(Modifier.fillMaxSize().background(Color(0xFF1F4E9C)))
                 }
@@ -285,3 +317,38 @@ internal const val TAB_CHURN_CYCLES = 2
  * assertion runs.
  */
 internal const val GHOST_FOLLOW_TOLERANCE_PX = 60f
+
+/**
+ * Waits until every named tab is declared, its window mapped and its strip has
+ * published a slot per tab.
+ *
+ * The counterpart of [awaitTabWindows] for cases that aim at a tab in **window**
+ * coordinates: it asks for nothing that native Wayland cannot answer, so a
+ * pointer case built on it runs on every backend.
+ */
+internal suspend fun TaoWindowTestScope.awaitTabSlots(
+    fixture: TabWorkspaceFixture,
+    vararg titles: String,
+): TaoWindow {
+    awaitUntil("case window mapped") { bounds() != null }
+    awaitUntil("every tab declared") { titles.all { fixture.workspace.tab(fixture.tabId(it)) != null } }
+    awaitUntil("a tab window is mapped with a real size") {
+        val rect =
+            fixture.workspace.groups
+                .firstOrNull()
+                ?.window
+                ?.outerBoundsPx() ?: return@awaitUntil false
+        rect[2] > 0 && rect[3] > 0
+    }
+    awaitUntil("the selected tab's body is composed") { fixture.composedBodies.value > 0 }
+    awaitUntil("the strip published a slot per tab with a real width") {
+        val group = fixture.workspace.groups.firstOrNull() ?: return@awaitUntil false
+        group.slotsInWindowPx.size >= group.ids.size && group.slotsInWindowPx.all { it.width > 1f }
+    }
+    settle(SETTLE_AFTER_MAP_MILLIS)
+    return requireNotNull(
+        fixture.workspace.groups
+            .first()
+            .window,
+    )
+}
