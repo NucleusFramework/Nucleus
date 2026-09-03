@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -288,7 +289,17 @@ private fun Modifier.dashedOutline(
         )
     }
 
-/** The panels docked on one side, sharing the side equally along its length. Empty when none are. */
+/**
+ * The panels docked on one side, sharing the side equally along its length.
+ * Empty when none are.
+ *
+ * Each panel is [key]ed on its satellite, because Compose otherwise identifies
+ * them by their position on the side: undocking the first of two panels would
+ * dispose the *second* one's subtree and hand the first one's — its
+ * `remember`s, its saveable registry, the content of a satellite that has just
+ * left — to the panel that survives. The satellite that stays would keep
+ * composing under the identity of the one that went.
+ */
 @Composable
 private fun DockSideStack(
     workspace: SatelliteWorkspace,
@@ -302,15 +313,19 @@ private fun DockSideStack(
     if (side.isVertical) {
         Column(Modifier.fillMaxHeight().width(extent)) {
             entries.forEachIndexed { index, entry ->
-                if (index > 0) Box(Modifier.fillMaxWidth().height(PanelDividerThickness).background(divider))
-                DockPanel(workspace, entry, containerSize, Modifier.fillMaxWidth().weight(1f))
+                key(entry.id) {
+                    if (index > 0) Box(Modifier.fillMaxWidth().height(PanelDividerThickness).background(divider))
+                    DockPanel(workspace, entry, containerSize, Modifier.fillMaxWidth().weight(1f))
+                }
             }
         }
     } else {
         Row(Modifier.fillMaxWidth().height(extent)) {
             entries.forEachIndexed { index, entry ->
-                if (index > 0) Box(Modifier.fillMaxHeight().width(PanelDividerThickness).background(divider))
-                DockPanel(workspace, entry, containerSize, Modifier.fillMaxHeight().weight(1f))
+                key(entry.id) {
+                    if (index > 0) Box(Modifier.fillMaxHeight().width(PanelDividerThickness).background(divider))
+                    DockPanel(workspace, entry, containerSize, Modifier.fillMaxHeight().weight(1f))
+                }
             }
         }
     }

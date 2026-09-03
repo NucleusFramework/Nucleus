@@ -6,9 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -24,6 +28,7 @@ import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.Satellite
 import dev.nucleusframework.window.tao.SatelliteDragOrigin
 import dev.nucleusframework.window.tao.SatellitePlacement
+import dev.nucleusframework.window.tao.SatelliteWorkspace
 import dev.nucleusframework.window.tao.TaoWindow
 import kotlin.math.abs
 
@@ -62,7 +67,103 @@ internal object SatelliteWorkspaceHeadfulCases {
             headerDragDocksAndLiftsOff(),
             titleBarDragOutsideTheHeaderStripDocks(),
             saveableStateSurvivesRepeatedHostChanges(),
+            panelsOnOneSideKeepTheirOwnSubtree(),
         )
+
+    /**
+     * Two panels on one side, the first undocked: the one that stays keeps its
+     * own body.
+     *
+     * Compose identifies siblings by their position, so without a key per
+     * satellite the stack disposes the *last* slot and hands the first
+     * panel's subtree — its `remember`s, its saveable registry, the content
+     * lambda of the satellite that just left — to whichever panel takes its
+     * place. On screen the survivor then shows the departed satellite's
+     * content, and its own body is the one that was destroyed.
+     *
+     * Each body publishes the identity of the satellite it was composed for
+     * plus a `remember` marker; after the undock the survivor has to answer
+     * with *its* id and *its* marker, and the leaver's body must be gone.
+     * Found by `SatelliteWorkspaceMonkeyHeadfulCases`, pinned here.
+     */
+    private fun panelsOnOneSideKeepTheirOwnSubtree(): TaoWindowTestCase {
+        val workspace = SatelliteWorkspace()
+        // id of the satellite each live panel body was composed for, by the
+        // marker its own `remember` handed out — so a body reused under
+        // another satellite shows up as a marker whose id has changed.
+        val bodies = mutableStateOf<Map<Int, String>>(emptyMap())
+        val markers = mutableStateOf<Map<String, Int>>(emptyMap())
+        var nextMarker = 0
+
+        @Composable
+        fun PanelBody(id: String) {
+            val marker = remember { nextMarker++ }
+            SideEffect {
+                bodies.value = bodies.value + (marker to id)
+                markers.value = markers.value + (id to marker)
+            }
+            DisposableEffect(marker) {
+                onDispose { bodies.value = bodies.value - marker }
+            }
+            Box(Modifier.fillMaxSize().background(Color(0xFF2D6CDF)))
+        }
+        return TaoWindowTestCase(
+            name = "workspace panels sharing a dock side keep their own subtree when one leaves",
+            skip = ::workspaceSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = {
+                JoinSatelliteWorkspace(workspace)
+                DockLayout(workspace, Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().background(Color.DarkGray))
+                }
+            },
+            applicationContent = {
+                for (id in PANEL_IDS) {
+                    key(id) {
+                        Satellite(
+                            workspace = workspace,
+                            id = id,
+                            title = "Panel $id",
+                            initialPlacement = SatellitePlacement.Docked(DockSide.Right),
+                        ) { PanelBody(id) }
+                    }
+                }
+            },
+            driver = {
+                awaitUntil("owner window mapped") { bounds() != null }
+                awaitUntil("both panels are composed on the right side") {
+                    PANEL_IDS.all { id ->
+                        val marker = markers.value[id]
+                        marker != null && bodies.value[marker] == id
+                    }
+                }
+                settle()
+                val leaving = PANEL_IDS.first()
+                val staying = PANEL_IDS.last()
+                val stayingMarker = requireNotNull(markers.value[staying])
+                val leavingMarker = requireNotNull(markers.value[leaving])
+
+                workspace.undock(leaving)
+                awaitUntil("$leaving floats") { workspace.satellite(leaving)?.isDocked == false }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+
+                // The survivor's own body, not the one the leaver was using.
+                check(bodies.value[stayingMarker] == staying) {
+                    "the panel that stayed lost its body: marker $stayingMarker is now " +
+                        "${bodies.value[stayingMarker]}, live bodies ${bodies.value}"
+                }
+                check(bodies.value.values.count { it == staying } == 1) {
+                    "$staying is composed by ${bodies.value.values.count { it == staying }} bodies at once"
+                }
+                // And the leaver's panel body is gone, not transplanted.
+                check(bodies.value[leavingMarker] != staying) {
+                    "the panel that left handed its body to $staying (marker $leavingMarker)"
+                }
+            },
+        )
+    }
 
     private fun dockAndUndockRoundTrip(): TaoWindowTestCase {
         val fixture = SatelliteWorkspaceFixture()
@@ -548,3 +649,6 @@ internal object SatelliteWorkspaceHeadfulCases {
         )
     }
 }
+
+/** Two satellites sharing one dock side, in declaration order. */
+private val PANEL_IDS = listOf("first", "second")
