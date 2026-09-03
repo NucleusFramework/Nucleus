@@ -273,7 +273,7 @@ internal object MonitorAndScaleHeadfulCases {
                 awaitUntil("the layout published its geometry") {
                     workspace.dockHostGeometry(window)?.layoutScreenRectPx() != null
                 }
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val scale = window.scaleFactor
                 val bandPx = SatelliteWorkspace.DockZoneWidth.value * scale
 

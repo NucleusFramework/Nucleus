@@ -413,10 +413,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
-                val layout =
-                    requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx()) {
-                        "the case window's DockLayout never published its geometry"
-                    }
+                val layout = awaitDockLayout(workspace, window)
 
                 // ── 1. floating header → right zone ──
                 val outer = requireNotNull(floating.outerBoundsPx())
@@ -527,7 +524,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val scale = floating.scaleFactor
 

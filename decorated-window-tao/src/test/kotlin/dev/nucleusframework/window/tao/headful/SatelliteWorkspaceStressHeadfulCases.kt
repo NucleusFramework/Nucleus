@@ -66,7 +66,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
                 val session =
@@ -129,7 +129,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
                 val session =
@@ -158,7 +158,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                     requireNotNull(
                         workspace.beginDrag(SATELLITE_ID, SatelliteDragOrigin.FloatingWindow(floating), grab),
                     ) { "the workspace refuses a new drag after an interrupted one" }
-                val liveLayout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val liveLayout = awaitDockLayout(workspace, window)
                 next.update(Offset(liveLayout.right - DROP_INSET_PX, liveLayout.center.y))
                 next.end(Offset(liveLayout.right - DROP_INSET_PX, liveLayout.center.y))
                 awaitUntil("the new drag docked the satellite") { entry.isDocked }
@@ -243,7 +243,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 val floating = awaitFloating(fixture)
                 val workspace = fixture.workspace
                 val entry = requireNotNull(workspace.satellite(SATELLITE_ID))
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val scale = floating.scaleFactor
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * scale)
@@ -308,7 +308,7 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                         workspace.dockHostGeometry(window)?.layoutScreenRectPx() != null
                 }
                 val dialog = requireNotNull(dialogWindow)
-                val layout = requireNotNull(workspace.dockHostGeometry(window)?.layoutScreenRectPx())
+                val layout = awaitDockLayout(workspace, window)
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
 

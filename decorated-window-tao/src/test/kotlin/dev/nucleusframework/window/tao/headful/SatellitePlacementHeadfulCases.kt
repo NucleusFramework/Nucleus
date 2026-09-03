@@ -63,7 +63,7 @@ internal object SatellitePlacementHeadfulCases {
             driver = {
                 val satellite = requireNotNull(satelliteWindow) { "the satellite never published itself" }
                 val trajectory = sampleUntilAnchored(satellite, window)
-                assertNoFlash(trajectory, satellite, window)
+                assertNoFlash(trajectory, window)
             },
         )
     }
@@ -97,7 +97,7 @@ internal object SatellitePlacementHeadfulCases {
                 awaitUntil("a new satellite window appeared") { fixture.floatingWindow.value != null }
                 val satellite = requireNotNull(fixture.floatingWindow.value)
                 val trajectory = sampleUntilAnchored(satellite, window)
-                assertNoFlash(trajectory, satellite, window)
+                assertNoFlash(trajectory, window)
             },
         )
     }
@@ -239,18 +239,23 @@ internal object SatellitePlacementHeadfulCases {
         val dwell = LinkedHashMap<Pair<Long, Long>, Long>()
         var stable = 0
         var last: Pair<Long, Long>? = null
+        var lastReal: LongArray? = null
         repeat(SAMPLE_ROUNDS) {
-            val rect = window.outerBoundsPx()
-            if (rect != null && rect[RECT_W] > 0L && rect[RECT_H] > 0L) {
+            // `hasRealFramePx`, not `> 0`: a frame the platform has not
+            // published yet reads as the screen origin, and sampling it makes
+            // the window look like it flashed there.
+            val rect = window.outerBoundsPx()?.takeIf { window.hasRealFramePx() }
+            if (rect != null) {
+                lastReal = rect
                 val at = rect[0] to rect[1]
                 dwell[at] = (dwell[at] ?: 0L) + SAMPLE_INTERVAL_MILLIS
                 stable = if (at == last) stable + 1 else 0
                 last = at
-                if (stable >= STABLE_SAMPLES && settled(rect)) return Trajectory(dwell)
+                if (stable >= STABLE_SAMPLES && settled(rect)) return Trajectory(dwell, rect)
             }
             settle(SAMPLE_INTERVAL_MILLIS)
         }
-        return Trajectory(dwell)
+        return Trajectory(dwell, lastReal)
     }
 
     /**
@@ -260,11 +265,10 @@ internal object SatellitePlacementHeadfulCases {
      */
     private fun assertNoFlash(
         trajectory: Trajectory,
-        satellite: TaoWindow,
         parent: TaoWindow,
     ) {
         check(trajectory.dwell.isNotEmpty()) { "the satellite was never seen with a real frame" }
-        val settled = requireNotNull(satellite.outerBoundsPx())
+        val settled = requireNotNull(trajectory.settled) { "the satellite was never seen with a real frame" }
         val parentRect = requireNotNull(parent.outerBoundsPx())
         // The positioner puts it off the parent's right edge; if the settled
         // state is not that, the case is not measuring what it thinks.
@@ -292,9 +296,15 @@ internal object SatellitePlacementHeadfulCases {
                 (abs(at.first - settled[0]) > FLASH_TOLERANCE_PX || abs(at.second - settled[1]) > FLASH_TOLERANCE_PX)
         }
 
-    /** How long a window was seen at each position it occupied. */
+    /**
+     * How long a window was seen at each position it occupied, and the last
+     * frame it was seen with — the position the case treats as settled, taken
+     * from the sampling rather than re-read afterwards so it can never be a
+     * frame the platform had already taken away again.
+     */
     private class Trajectory(
         val dwell: Map<Pair<Long, Long>, Long>,
+        val settled: LongArray?,
     )
 
     /** How far a sampled position may differ from the settled one and still be the same place. */

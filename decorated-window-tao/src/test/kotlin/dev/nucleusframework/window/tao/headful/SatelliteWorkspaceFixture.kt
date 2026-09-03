@@ -238,6 +238,30 @@ internal suspend fun robotRelease(): Boolean? =
         true
     }
 
+/**
+ * Waits until [host]'s dock layout is published *with a usable size*, and
+ * returns it.
+ *
+ * Published is not the same as measured: a layout that has been placed once
+ * but is still a fraction of its final size answers a point near its right
+ * edge with the *top* zone, because the nearest edge to its own centre is then
+ * the top one. A case that aims at a named zone has to wait for a layout whose
+ * edges are far enough apart to be told apart, which is what this is.
+ */
+internal suspend fun TaoWindowTestScope.awaitDockLayout(
+    workspace: SatelliteWorkspace,
+    host: TaoWindow,
+): Rect {
+    awaitUntil("dock layout of the host is measured") {
+        val rect = workspace.dockHostGeometry(host)?.layoutScreenRectPx() ?: return@awaitUntil false
+        rect.width > MIN_DOCK_LAYOUT_PX && rect.height > MIN_DOCK_LAYOUT_PX
+    }
+    return requireNotNull(workspace.dockHostGeometry(host)?.layoutScreenRectPx())
+}
+
+/** Smallest dock layout whose four edge zones are far enough apart to aim at one of them. */
+private const val MIN_DOCK_LAYOUT_PX = 80f
+
 /** Waits until the floating satellite window is mapped and anchored to the current owner. */
 internal suspend fun TaoWindowTestScope.awaitFloating(fixture: SatelliteWorkspaceFixture): TaoWindow {
     awaitUntil("owner window mapped") { bounds() != null }
