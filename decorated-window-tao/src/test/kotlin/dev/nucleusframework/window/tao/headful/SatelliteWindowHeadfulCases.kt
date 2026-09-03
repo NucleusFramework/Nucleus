@@ -474,8 +474,7 @@ internal object SatelliteWindowHeadfulCases {
         run {
             awaitUntil("parent mapped") { bounds() != null }
             awaitUntil("satellite mapped with a real size") {
-                val rect = satelliteBounds() ?: return@awaitUntil false
-                rect[2] > 0 && rect[3] > 0
+                satelliteWindow?.hasRealFramePx() == true
             }
             awaitUntil("satellite captured its parent offset") { state.offsetFromParent != null }
             settle(SETTLE_AFTER_MAP_MILLIS)

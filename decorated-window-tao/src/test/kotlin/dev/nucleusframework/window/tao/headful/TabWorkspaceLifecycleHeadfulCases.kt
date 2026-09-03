@@ -417,7 +417,7 @@ internal object TabWorkspaceLifecycleHeadfulCases {
                     workspace.groups.size == 3 && workspace.groups.all { it.ids.size == 1 }
                 }
                 awaitUntil("every restored window is mapped") {
-                    workspace.groups.all { (it.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L }
+                    workspace.groups.all { it.window?.hasRealFramePx() == true }
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 check(workspace.groups.map { it.id }.toSet() == savedOf.keys) {
@@ -480,7 +480,7 @@ internal object TabWorkspaceLifecycleHeadfulCases {
                 check(workspace.groups.all { it.ids.isNotEmpty() }) { "an empty group survived" }
                 for (group in workspace.groups) {
                     awaitUntil("group ${group.id} is mapped") {
-                        (group.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                        group.window?.hasRealFramePx() == true
                     }
                 }
                 awaitUntil("one body per window composes") {

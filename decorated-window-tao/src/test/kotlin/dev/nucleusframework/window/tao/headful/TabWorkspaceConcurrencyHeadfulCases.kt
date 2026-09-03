@@ -146,7 +146,7 @@ internal object TabWorkspaceConcurrencyHeadfulCases {
                     workspace.tabs.size == expected && workspace.tabs.all { it.group != null }
                 }
                 awaitUntil("every group has a mapped window") {
-                    workspace.groups.all { (it.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L }
+                    workspace.groups.all { it.window?.hasRealFramePx() == true }
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 check(workspace.groups.sumOf { it.ids.size } == expected) {

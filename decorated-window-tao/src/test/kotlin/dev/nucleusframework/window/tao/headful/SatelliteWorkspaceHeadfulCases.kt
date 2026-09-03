@@ -239,7 +239,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 fixture.workspace.undock(SATELLITE_ID)
                 awaitUntil("floating window recreated") {
                     val now = fixture.floatingWindow.value
-                    now != null && now !== floating && (now.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                    now != null && now !== floating && now.hasRealFramePx()
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 val lifted = requireNotNull(requireNotNull(fixture.floatingWindow.value).outerBoundsPx())
@@ -327,7 +327,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 fixture.workspace.undock(SATELLITE_ID)
                 awaitUntil("floating again") {
                     val now = fixture.floatingWindow.value
-                    now != null && now !== floating && (now.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                    now != null && now !== floating && now.hasRealFramePx()
                 }
                 val refloated = requireNotNull(fixture.floatingWindow.value)
                 var destroyed = false
@@ -486,7 +486,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 check(workspace.dragGhost == null) { "the ghost must be gone once the drag ends" }
                 awaitUntil("floating window recreated") {
                     val now = fixture.floatingWindow.value
-                    now != null && now !== floating && (now.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                    now != null && now !== floating && now.hasRealFramePx()
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 val lifted = requireNotNull(requireNotNull(fixture.floatingWindow.value).outerBoundsPx())
@@ -619,7 +619,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 workspace.undock(SATELLITE_ID)
                 awaitUntil("palette floating") {
                     val w = fixture.floatingWindow.value
-                    w != null && composedIn.value === w && (w.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                    w != null && composedIn.value === w && w.hasRealFramePx()
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 assertValues("after undock")
@@ -641,7 +641,7 @@ internal object SatelliteWorkspaceHeadfulCases {
                 workspace.undock(SATELLITE_ID)
                 awaitUntil("palette floating again") {
                     val w = fixture.floatingWindow.value
-                    w != null && composedIn.value === w && (w.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                    w != null && composedIn.value === w && w.hasRealFramePx()
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 assertValues("after second undock")

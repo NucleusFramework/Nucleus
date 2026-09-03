@@ -331,10 +331,14 @@ internal class TabSatellitesFixture(
     fun groupOf(title: String): TabWindowGroup? = tabs.tab(tabId(title))?.group
 
     /** The window showing the tab titled [title], or `null` while it is not composed. */
-    fun windowOf(title: String): TaoWindow? = composedIn.value[tabId(title)]
+    fun windowOf(title: String): TaoWindow? = composedIn.value[tabId(title)]?.lastOrNull()
 
-    /** The window each tab's body is composed in, by tab id. */
-    val composedIn = mutableStateOf<Map<String, TaoWindow>>(emptyMap())
+    /**
+     * The windows each tab's body is composed in, by tab id, oldest host
+     * first — see the same field on [TabWorkspaceFixture] for why a tab can
+     * legitimately have two hosts at once.
+     */
+    val composedIn = mutableStateOf<Map<String, List<TaoWindow>>>(emptyMap())
 
     /** The `rememberSaveable` counter of each tab's current composition, by tab id. */
     val counters = mutableStateOf<Map<String, MutableState<Int>>>(emptyMap())
@@ -401,13 +405,13 @@ internal class TabSatellitesFixture(
 
         SideEffect {
             counters.value = counters.value + (id to clicks)
-            if (window != null) composedIn.value = composedIn.value + (id to window)
         }
         DisposableEffect(Unit) {
             composedBodies.value++
+            if (window != null) composedIn.value = composedIn.value.plusHost(id, window)
             onDispose {
                 composedBodies.value--
-                if (composedIn.value[id] === window) composedIn.value = composedIn.value - id
+                if (window != null) composedIn.value = composedIn.value.minusHost(id, window)
             }
         }
         val group = tab.group

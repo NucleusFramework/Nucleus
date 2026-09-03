@@ -213,7 +213,7 @@ internal object TabWorkspaceStressHeadfulCases {
                     }
                     val torn = requireNotNull(fixture.groupOf("Beta"))
                     awaitUntil("the torn-off window is mapped") {
-                        (torn.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L
+                        torn.window?.hasRealFramePx() == true
                     }
                     settle(SETTLE_AFTER_MAP_MILLIS)
                     val tornWindow = requireNotNull(torn.window)
@@ -292,9 +292,19 @@ internal object TabWorkspaceStressHeadfulCases {
 
                 // Restored, it is a target again.
                 tornWindow.setMinimized(false)
-                tornWindow.focus()
                 awaitUntil("the window reports restored") { !minimized && !tornWindow.isMinimized }
                 settle(SETTLE_AFTER_MAP_MILLIS)
+                // Both other windows cover this strip — the one Beta was torn
+                // into landed on the very point that was dropped on — so which
+                // of them answers a point on it is decided by focus recency,
+                // not by geometry. Make the restored window the most recent
+                // one and wait for the platform to agree: an activation asked
+                // for while the window is still being re-mapped is dropped by
+                // more than one window manager.
+                awaitUntil("the restored window took focus") {
+                    if (!tornWindow.isFocused) tornWindow.focus()
+                    tornWindow.isFocused
+                }
                 awaitUntil("its strip takes drops again") {
                     val strip = fixture.stripRectPx(torn) ?: return@awaitUntil false
                     workspace.dropTargetAt(strip.center)?.group === torn

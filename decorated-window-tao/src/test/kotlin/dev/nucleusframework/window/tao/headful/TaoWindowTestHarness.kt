@@ -168,6 +168,21 @@ internal class TaoWindowTestScope(
     }
 }
 
+/**
+ * `true` once the platform reports a frame with a real size for this window.
+ *
+ * `> 1`, not `> 0`: GTK maps a window at 1x1 until its first allocation, so a
+ * gate that only rules out zero lets a case measure the placeholder — a
+ * torn-off window "1 dp wide", a satellite anchored against a 1px-tall child.
+ * Slow, software-rendered hosts (the CI Xvfb runner) hold that placeholder for
+ * several frames where a real session passes through it in one.
+ */
+@Suppress("MagicNumber") // outer frame is [x, y, w, h]
+internal fun TaoWindow.hasRealFramePx(): Boolean {
+    val rect = outerBoundsPx() ?: return false
+    return rect[2] > 1L && rect[3] > 1L
+}
+
 internal class TaoWindowTestResult(
     val name: String,
     val failure: Throwable?,

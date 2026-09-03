@@ -286,7 +286,7 @@ internal object TabWorkspaceStormHeadfulCases {
                         workspace.groups.all { savedOf[it.id] == it.ids }
                 }
                 awaitUntil("both restored windows are mapped") {
-                    workspace.groups.all { (it.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L }
+                    workspace.groups.all { it.window?.hasRealFramePx() == true }
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 for (group in workspace.groups) {

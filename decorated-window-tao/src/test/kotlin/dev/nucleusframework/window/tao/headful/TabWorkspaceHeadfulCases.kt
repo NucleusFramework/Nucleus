@@ -106,7 +106,7 @@ internal object TabWorkspaceHeadfulCases {
         val torn = requireNotNull(fixture.groupOf("Beta"))
         awaitUntil("the torn-off window is mapped and composing Beta") {
             val window = torn.window ?: return@awaitUntil false
-            window !== first && (window.outerBoundsPx()?.get(2) ?: 0L) > 0L && fixture.windowOf("Beta") != null
+            window !== first && window.hasRealFramePx() && fixture.windowOf("Beta") != null
         }
         settle(SETTLE_AFTER_MAP_MILLIS)
         check(fixture.groupOf("Alpha")?.ids == listOf(fixture.tabId("Alpha"))) {

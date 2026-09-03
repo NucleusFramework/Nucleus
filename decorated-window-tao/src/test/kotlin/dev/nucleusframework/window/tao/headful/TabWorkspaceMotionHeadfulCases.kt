@@ -459,7 +459,7 @@ internal object TabWorkspaceMotionHeadfulCases {
                 }
                 awaitUntil("both windows are still mapped") {
                     workspace.groups.size == 2 &&
-                        workspace.groups.all { (it.window?.outerBoundsPx()?.get(2) ?: 0L) > 0L }
+                        workspace.groups.all { it.window?.hasRealFramePx() == true }
                 }
                 settle(SETTLE_AFTER_MAP_MILLIS)
                 check(workspace.groups.sumOf { it.ids.size } == 3) {

@@ -48,8 +48,7 @@ public object TaoHeadfulTestSuiteMain {
         listOf(
             TaoWindowTestCase("window maps, paints and reports a real size") {
                 awaitUntil("window mapped with non-zero outer bounds") {
-                    val b = bounds()
-                    b != null && b[2] > 0 && b[3] > 0
+                    window.hasRealFramePx()
                 }
             },
             TaoWindowTestCase("setInnerSize fires onResized with the requested size") {

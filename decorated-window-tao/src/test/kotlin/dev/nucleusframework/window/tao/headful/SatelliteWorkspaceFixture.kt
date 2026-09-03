@@ -233,8 +233,7 @@ internal suspend fun robotRelease(): Boolean? =
 internal suspend fun TaoWindowTestScope.awaitFloating(fixture: SatelliteWorkspaceFixture): TaoWindow {
     awaitUntil("owner window mapped") { bounds() != null }
     awaitUntil("floating satellite mapped with a real size") {
-        val rect = fixture.floatingWindow.value?.outerBoundsPx() ?: return@awaitUntil false
-        rect[2] > 0 && rect[3] > 0
+        fixture.floatingWindow.value?.hasRealFramePx() == true
     }
     awaitUntil("satellite captured its owner offset") {
         fixture.workspace

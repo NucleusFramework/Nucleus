@@ -62,8 +62,17 @@ internal class TabWorkspaceFixture(
     /** Ids in declaration order; a case may add to this to open a tab mid-run. */
     val titles = mutableStateListOf(*initialTitles.toTypedArray())
 
-    /** The window each tab's body is composed in, by tab id. */
-    val composedIn = mutableStateOf<Map<String, TaoWindow>>(emptyMap())
+    /**
+     * The windows each tab's body is composed in, by tab id, oldest host first.
+     *
+     * A list, not a single window: a tab that leaves a multi-tab window is
+     * composed in *both* windows until the window it left renders again, and
+     * Compose coalesces frames — so the two hosts genuinely overlap for as long
+     * as the source window has a frame pending. Recording one window per tab
+     * made the arriving host overwrite the departing one, and the departing
+     * one's disposal then erased the entry for a body that was still composed.
+     */
+    val composedIn = mutableStateOf<Map<String, List<TaoWindow>>>(emptyMap())
 
     /** The `rememberSaveable` counter of each tab's current composition, by tab id. */
     val counters = mutableStateOf<Map<String, MutableState<Int>>>(emptyMap())
@@ -98,7 +107,7 @@ internal class TabWorkspaceFixture(
     fun groupOf(title: String): TabWindowGroup? = workspace.tab(tabId(title))?.group
 
     /** The window showing the tab titled [title], or `null` while it is not composed. */
-    fun windowOf(title: String): TaoWindow? = composedIn.value[tabId(title)]
+    fun windowOf(title: String): TaoWindow? = composedIn.value[tabId(title)]?.lastOrNull()
 
     /** Strip rect of [group] on screen (physical px), or `null` before its first layout. */
     fun stripRectPx(group: TabWindowGroup): Rect? = workspace.stripGeometry(group)?.layoutScreenRectPx()
@@ -157,16 +166,18 @@ internal class TabWorkspaceFixture(
                 SideEffect {
                     counters.value = counters.value + (id to clicks)
                     scrolls.value = scrolls.value + (id to scroll.value)
-                    if (window != null) composedIn.value = composedIn.value + (id to window)
                 }
+                // The host is published for exactly this body's lifetime, not
+                // on every recomposition: a body that outlives its selection
+                // for a frame never recomposes again, so a SideEffect would
+                // never get to republish it.
                 DisposableEffect(incarnation) {
                     composedBodies.value++
                     bodyIncarnations.value = bodyIncarnations.value + (id to (bodyIncarnations.value[id] ?: 0) + 1)
+                    if (window != null) composedIn.value = composedIn.value.plusHost(id, window)
                     onDispose {
                         composedBodies.value--
-                        // Only if this window is still the one on record: the
-                        // next host may already have published itself.
-                        if (composedIn.value[id] === window) composedIn.value = composedIn.value - id
+                        if (window != null) composedIn.value = composedIn.value.minusHost(id, window)
                     }
                 }
                 val body =
@@ -182,6 +193,21 @@ internal class TabWorkspaceFixture(
             }
         }
     }
+}
+
+/** [window] added as the newest host composing the body of [id]. */
+internal fun Map<String, List<TaoWindow>>.plusHost(
+    id: String,
+    window: TaoWindow,
+): Map<String, List<TaoWindow>> = this + (id to ((this[id] ?: emptyList()) + window))
+
+/** [window] dropped as a host of [id], leaving whatever other host is still composing it. */
+internal fun Map<String, List<TaoWindow>>.minusHost(
+    id: String,
+    window: TaoWindow,
+): Map<String, List<TaoWindow>> {
+    val rest = (this[id] ?: return this).filterNot { it === window }
+    return if (rest.isEmpty()) this - id else this + (id to rest)
 }
 
 internal const val TAB_WINDOW_W_DP = 560
@@ -240,8 +266,7 @@ internal suspend fun TaoWindowTestScope.awaitTabWindows(
             fixture.workspace.groups
                 .firstOrNull()
                 ?.window ?: return@awaitUntil false
-        val rect = window.outerBoundsPx() ?: return@awaitUntil false
-        rect[2] > 0 && rect[3] > 0
+        window.hasRealFramePx()
     }
     awaitUntil("the selected tab's body is composed") { fixture.composedBodies.value > 0 }
     awaitUntil("the strip published its slots") {
@@ -262,8 +287,7 @@ internal suspend fun TaoWindowTestScope.awaitMappedStrip(
     group: TabWindowGroup,
 ): TaoWindow {
     awaitUntil("the group's window is mapped with a real size") {
-        val rect = group.window?.outerBoundsPx() ?: return@awaitUntil false
-        rect[2] > 0 && rect[3] > 0
+        group.window?.hasRealFramePx() == true
     }
     awaitUntil("its strip published its geometry and slots") {
         fixture.stripRectPx(group) != null && group.slotsInWindowPx.size >= group.ids.size
@@ -333,12 +357,10 @@ internal suspend fun TaoWindowTestScope.awaitTabSlots(
     awaitUntil("case window mapped") { bounds() != null }
     awaitUntil("every tab declared") { titles.all { fixture.workspace.tab(fixture.tabId(it)) != null } }
     awaitUntil("a tab window is mapped with a real size") {
-        val rect =
-            fixture.workspace.groups
-                .firstOrNull()
-                ?.window
-                ?.outerBoundsPx() ?: return@awaitUntil false
-        rect[2] > 0 && rect[3] > 0
+        fixture.workspace.groups
+            .firstOrNull()
+            ?.window
+            ?.hasRealFramePx() == true
     }
     awaitUntil("the selected tab's body is composed") { fixture.composedBodies.value > 0 }
     awaitUntil("the strip published a slot per tab with a real width") {
