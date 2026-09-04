@@ -309,6 +309,27 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                 }
                 val dialog = requireNotNull(dialogWindow)
                 val layout = awaitDockLayout(workspace, window)
+                // The dialog is a dock host of its own, and a drop is answered
+                // by the topmost layout under the pointer. Its default
+                // placement centres it over the parent, so on a display small
+                // enough for the two to overlap it sits astride the very zone
+                // these drags aim at and previews *its* edge — this case is
+                // about two drags racing, not about which window is under
+                // them. Park it off the parent's right edge first.
+                val parked = requireNotNull(window.outerBoundsPx())
+                dialog.setOuterPositionPx(
+                    (parked[0] + parked[RECT_W] + DIALOG_PARK_GAP_PX).toInt(),
+                    parked[1].toInt(),
+                )
+                val dropPoints =
+                    listOf(
+                        Offset(layout.left + DROP_INSET_PX, layout.center.y),
+                        Offset(layout.right - DROP_INSET_PX, layout.center.y),
+                    )
+                awaitUntil("the dialog is parked clear of the zones the drags aim at") {
+                    val elsewhere = workspace.dockHostGeometry(dialog)?.layoutScreenRectPx() ?: return@awaitUntil false
+                    dropPoints.none { elsewhere.contains(it) }
+                }
                 val outer = requireNotNull(floating.outerBoundsPx())
                 val grab = Offset(outer[0] + outer[2] / 2f, outer[1] + HEADER_GRAB_Y_DP * window.scaleFactor)
 
@@ -317,18 +338,18 @@ internal object SatelliteWorkspaceStressHeadfulCases {
                     requireNotNull(
                         workspace.beginDrag(SATELLITE_ID, SatelliteDragOrigin.FloatingWindow(floating), grab),
                     )
-                first.update(Offset(layout.left + DROP_INSET_PX, layout.center.y))
+                first.update(dropPoints[0])
                 val second =
                     requireNotNull(
                         workspace.beginDrag(SATELLITE_ID, SatelliteDragOrigin.FloatingWindow(floating), grab),
                     )
-                second.update(Offset(layout.right - DROP_INSET_PX, layout.center.y))
-                first.end(Offset(layout.left + DROP_INSET_PX, layout.center.y))
+                second.update(dropPoints[1])
+                first.end(dropPoints[0])
                 check(!entry.isDocked) { "the superseded drag docked the satellite" }
                 check(workspace.dockPreview == DockTarget(window, DockSide.Right)) {
                     "the superseded drag stole the live preview: ${workspace.dockPreview}"
                 }
-                second.end(Offset(layout.right - DROP_INSET_PX, layout.center.y))
+                second.end(dropPoints[1])
                 awaitUntil("docked right by the surviving drag") {
                     (entry.placement as? SatellitePlacement.Docked)?.side == DockSide.Right
                 }

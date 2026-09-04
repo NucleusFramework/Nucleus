@@ -384,3 +384,6 @@ internal const val DRAG_AWAY_PX = 180f
 
 /** Far enough right of a layout that no dock zone of any window is under it. */
 internal const val DROP_FAR_PX = 420f
+
+/** Gap left between a window and a second dock host parked beside it. */
+internal const val DIALOG_PARK_GAP_PX = 12L
