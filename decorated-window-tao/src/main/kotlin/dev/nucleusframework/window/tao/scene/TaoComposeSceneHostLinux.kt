@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
@@ -20,6 +21,7 @@ import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -45,6 +47,7 @@ import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
+import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
@@ -482,7 +485,12 @@ internal class TaoComposeSceneHostLinux(
             dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager(
                 getRootNode = { scene!!.rootDragAndDropNode },
                 outboundLauncher = ::launchLinuxOutboundDrag,
+                // The cross-window gestures ride the DnD session on native
+                // Wayland; their token-only payload is meaningful here.
+                acceptsPrivateData = true,
             )
+        liveHosts += this
+        window.contentSnapshot = ::snapshotContent
         // IME callbacks edit the focused field through `TextEditingScope`, i.e.
         // they run user code straight off a GTK IM callback — the Tao
         // counterpart of AWT's guarded `inputMethodTextChanged`.
@@ -564,6 +572,9 @@ internal class TaoComposeSceneHostLinux(
             }
         }
 
+        // One source of truth for the scene's drop target: the callback below
+        // resolves it through here, and so does an in-process driver.
+        window.inboundDragAndDropNode = { scene?.rootDragAndDropNode }
         registerInboundDnD()
         registerTouch()
     }
@@ -766,16 +777,131 @@ internal class TaoComposeSceneHostLinux(
                 // no tao event, so the `REDRAW_REQUESTED` matching a latched
                 // `redrawPending` still sits in tao's draw channel when the drag
                 // ends and the latch un-wedges itself on delivery.
+                val icon = rasterizeDragDecoration(request)
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.nativeStartDrag(
                     handle = window.handle,
                     files = files,
                     text = text,
+                    privateData = request.privateData,
                     allowedEffects = allowedEffects,
+                    iconArgb = icon?.argb,
+                    iconWidth = icon?.width ?: 0,
+                    iconHeight = icon?.height ?: 0,
+                    iconScale = icon?.scale ?: 1f,
+                    iconHotX = icon?.hotX ?: 0,
+                    iconHotY = icon?.hotY ?: 0,
                     pump = OutboundDragPump(),
                 )
             }
         onCompleted(action)
         return true
+    }
+
+    /**
+     * Draws the scene's current composition into a raster bitmap and returns
+     * [rectPx] of it (content pixels), or the whole content when `null`. The
+     * same recompose-layout-draw pass the GL frame runs, aimed at a CPU
+     * surface, so it costs one extra frame and needs no context. Cleared to
+     * the chrome colour like a real frame, so regions without an explicit
+     * background come out as the window looks and not transparent.
+     */
+    private fun snapshotContent(rectPx: IntRect?): androidx.compose.ui.graphics.ImageBitmap? {
+        val bundle = sceneBundle ?: return null
+        val width = widthPx
+        val height = heightPx
+        if (width <= 0 || height <= 0) return null
+        val full =
+            androidx.compose.ui.graphics
+                .ImageBitmap(width, height)
+        val canvas = Canvas(full.asSkiaBitmap())
+        canvas.clear(clearColorArgbState.value)
+        bundle.render(canvas, System.nanoTime())
+        val crop = rectPx?.intersect(IntRect(0, 0, width, height)) ?: return full
+        if (crop.width <= 0 || crop.height <= 0) return null
+        if (crop == IntRect(0, 0, width, height)) return full
+        val region =
+            androidx.compose.ui.graphics
+                .ImageBitmap(crop.width, crop.height)
+        androidx.compose.ui.graphics.Canvas(region).drawImageRect(
+            image = full,
+            srcOffset = crop.topLeft,
+            srcSize = IntSize(crop.width, crop.height),
+            dstSize = IntSize(crop.width, crop.height),
+            paint =
+                androidx.compose.ui.graphics
+                    .Paint(),
+        )
+        return region
+    }
+
+    /** A rasterized drag decoration, in the shape `nativeStartDrag` takes. */
+    private class DragIcon(
+        val argb: IntArray,
+        val width: Int,
+        val height: Int,
+        val scale: Float,
+        val hotX: Int,
+        val hotY: Int,
+    )
+
+    /**
+     * Renders the request's drag decoration to premultiplied ARGB device
+     * pixels for GTK's drag icon, at this window's scale so it stays crisp on
+     * HiDPI. `null` for an empty decoration, which leaves GTK's default icon.
+     *
+     * Compose only ever hands a decoration to the manager — the source node
+     * draws it into whatever the platform provides — so this is where the
+     * Linux host turns it into pixels; the other two hosts still show their
+     * platform default.
+     */
+    private fun rasterizeDragDecoration(
+        request: dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager.OutboundRequest,
+    ): DragIcon? {
+        val width = request.decorationSize.width.toInt()
+        val height = request.decorationSize.height.toInt()
+        if (width <= 0 || height <= 0 || width > MAX_DRAG_ICON_PX || height > MAX_DRAG_ICON_PX) return null
+        val scale = window.scaleFactor.takeIf { it > 0f } ?: 1f
+        val bitmap =
+            androidx.compose.ui.graphics
+                .ImageBitmap(width, height)
+        androidx.compose.ui.graphics.drawscope
+            .CanvasDrawScope()
+            .draw(
+                Density(scale),
+                androidx.compose.ui.unit.LayoutDirection.Ltr,
+                androidx.compose.ui.graphics
+                    .Canvas(bitmap),
+                request.decorationSize,
+            ) { with(request) { drawDragDecoration() } }
+        val pixels = IntArray(width * height)
+        bitmap.readPixels(pixels)
+        // readPixels is straight (un-premultiplied) ARGB; cairo wants premultiplied.
+        for (i in pixels.indices) {
+            val px = pixels[i]
+            val a = px ushr ALPHA_SHIFT
+            if (a == 0) {
+                pixels[i] = 0
+            } else if (a != CHANNEL_MAX) {
+                val r = ((px shr RED_SHIFT) and CHANNEL_MAX) * a / CHANNEL_MAX
+                val g = ((px shr GREEN_SHIFT) and CHANNEL_MAX) * a / CHANNEL_MAX
+                val b = (px and CHANNEL_MAX) * a / CHANNEL_MAX
+                pixels[i] = (a shl ALPHA_SHIFT) or (r shl RED_SHIFT) or (g shl GREEN_SHIFT) or b
+            }
+        }
+        return DragIcon(
+            argb = pixels,
+            width = width,
+            height = height,
+            scale = scale,
+            hotX =
+                request.decorationHotspot.x
+                    .toInt()
+                    .coerceIn(0, width),
+            hotY =
+                request.decorationHotspot.y
+                    .toInt()
+                    .coerceIn(0, height),
+        )
     }
 
     /**
@@ -814,6 +940,14 @@ internal class TaoComposeSceneHostLinux(
             dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
                 .pump()
             onRedrawRequested()
+            // The other windows are frozen by the same dead draw channel, and
+            // they are where a cross-window drag shows its feedback — the dock
+            // zones lighting up in the window the pointer is over. Paint the
+            // ones that asked to; their latched `redrawPending` is exactly the
+            // request tao could not deliver.
+            for (host in liveHosts) {
+                if (host !== this@TaoComposeSceneHostLinux && host.redrawPending.get()) host.onRedrawRequested()
+            }
         }
     }
 
@@ -832,7 +966,7 @@ internal class TaoComposeSceneHostLinux(
      */
     @OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     private inner class InboundDnDCallback : dev.nucleusframework.window.tao.ffi.NativeTaoLinuxDndBridge.Callback {
-        private fun node() = scene?.rootDragAndDropNode
+        private fun node() = window.inboundDragAndDropNode?.invoke()
 
         // Linux keeps neither the macOS/Windows diagnostic logging nor their
         // `if (!hasFiles) return NONE` guard, so its overrides delegate straight
@@ -2315,6 +2449,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun detach() {
+        liveHosts -= this
+        window.contentSnapshot = null
+        window.inboundDragAndDropNode = null
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
@@ -2382,6 +2519,21 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /**
+         * Every attached Linux host, so an outbound drag session can keep
+         * painting the windows it is *not* running in (see [OutboundDragPump]).
+         * Touched on the event-loop thread only; copy-on-write so the pump can
+         * iterate while a drop closes a window.
+         */
+        val liveHosts = java.util.concurrent.CopyOnWriteArrayList<TaoComposeSceneHostLinux>()
+
+        /** A drag icon larger than this is not a decoration, it is a bug (or a fullscreen source). */
+        const val MAX_DRAG_ICON_PX = 4096
+        const val ALPHA_SHIFT = 24
+        const val RED_SHIFT = 16
+        const val GREEN_SHIFT = 8
+        const val CHANNEL_MAX = 0xFF
+
         /** Keep swap-interval 0 briefly after the last pixel of resize motion. */
         private const val RESIZE_BURST_HOLD_NS = 100_000_000L // 100 ms
 
@@ -2660,37 +2812,7 @@ private class LinuxTaoPlatformContext(
         NativeTaoBridge.nativeSetCursorIcon(windowHandle, mapPointerIcon(pointerIcon))
     }
 
-    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int {
-        when {
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Default ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Text ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Hand ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-            icon === androidx.compose.ui.input.pointer.PointerIcon.Crosshair ->
-                return dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-        }
-        return runCatching {
-            val cursor = icon.javaClass.getMethod("getCursor").invoke(icon) as? java.awt.Cursor
-            when (cursor?.type) {
-                java.awt.Cursor.TEXT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.TEXT
-                java.awt.Cursor.HAND_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.HAND
-                java.awt.Cursor.CROSSHAIR_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.CROSSHAIR
-                java.awt.Cursor.WAIT_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.WAIT
-                java.awt.Cursor.MOVE_CURSOR -> dev.nucleusframework.window.tao.TaoCursorIcon.MOVE
-                java.awt.Cursor.E_RESIZE_CURSOR, java.awt.Cursor.W_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.EW_RESIZE
-                java.awt.Cursor.N_RESIZE_CURSOR, java.awt.Cursor.S_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NS_RESIZE
-                java.awt.Cursor.NE_RESIZE_CURSOR, java.awt.Cursor.SW_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NESW_RESIZE
-                java.awt.Cursor.NW_RESIZE_CURSOR, java.awt.Cursor.SE_RESIZE_CURSOR ->
-                    dev.nucleusframework.window.tao.TaoCursorIcon.NWSE_RESIZE
-                else -> dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT
-            }
-        }.getOrDefault(dev.nucleusframework.window.tao.TaoCursorIcon.DEFAULT)
-    }
+    private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int = icon.toTaoCursorIconCode()
 }
 
 private val linuxHostLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.scene")

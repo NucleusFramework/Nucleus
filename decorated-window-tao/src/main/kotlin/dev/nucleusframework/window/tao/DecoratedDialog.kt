@@ -157,9 +157,9 @@ public fun ApplicationScope.DecoratedDialog(
             // without an owner never receives a configure, so setContent
             // never runs and wrap-content deadlocks (#532).
             DisposableEffect(windowScope.window, parent) {
-                applyDialogOwnerRelationship(
-                    dialog = windowScope.window,
-                    parent = parent,
+                applyWindowOwnerRelationship(
+                    child = windowScope.window,
+                    owner = parent,
                     autoCenter = autoCenterRequested && sizeSpecified,
                 )
                 onDispose { /* native handle destruction restores focus to owner */ }
@@ -191,27 +191,6 @@ public fun ApplicationScope.DecoratedDialog(
     }
 }
 
-/**
- * Wires the native owner relationship between [dialog] and [parent].
- *
- * Mirrors the legacy AWT backend's `DecoratedDialog`, which uses Compose
- * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
- * parent as owner but **not** `APPLICATION_MODAL`, so the parent stays
- * interactive.
- *
- * On Win32 we never call `EnableWindow(parent, false)`: disabling the parent
- * strips its keyboard focus and Win32 won't restore it cleanly when the
- * dialog closes (`SetForegroundWindow` gets rejected once we lose the
- * foreground role), leaving the user having to click the parent to revive it.
- * On macOS `addChildWindow:ordered:` gives us the right behaviour (parent
- * stays usable, child stays above) but it also makes the child visible at
- * its current frame — we therefore pass [autoCenter] through so the native
- * side can pre-position the child on the owner's centre atomically right
- * before `addChildWindow:` makes it appear, avoiding a one-frame flash at
- * Tao's default origin.
- *
- * No-op when the relevant bridge or the parent is unavailable.
- */
 private fun recenterAfterWrapContent(
     autoCenterRequested: Boolean,
     parent: TaoWindow?,
@@ -232,37 +211,103 @@ private fun recenterAfterWrapContent(
     state.position = centered
 }
 
-private fun applyDialogOwnerRelationship(
-    dialog: TaoWindow,
-    parent: TaoWindow?,
+/**
+ * Wires the native owner relationship between [child] and [owner].
+ *
+ * Shared by [DecoratedDialog] and [SatelliteWindow]: both want the same
+ * secondary-window semantics — the child sits above its owner in z-order,
+ * follows it across minimisation / Spaces / workspace switches, stays out of
+ * the taskbar, and disappears with it — while the owner stays interactive.
+ *
+ * For dialogs this mirrors the legacy AWT backend, which uses Compose
+ * Desktop's `DialogWindow` → AWT `JDialog`: the JDialog is created with the
+ * parent as owner but **not** `APPLICATION_MODAL`.
+ *
+ * On Win32 we never call `EnableWindow(owner, false)`: disabling the owner
+ * strips its keyboard focus and Win32 won't restore it cleanly when the
+ * child closes (`SetForegroundWindow` gets rejected once we lose the
+ * foreground role), leaving the user having to click the owner to revive it.
+ * On macOS `addChildWindow:ordered:` gives us the right behaviour (owner
+ * stays usable, child stays above) but it also makes the child visible at
+ * its current frame — we therefore pass [autoCenter] through so the native
+ * side can pre-position the child on the owner's centre atomically right
+ * before `addChildWindow:` makes it appear, avoiding a one-frame flash at
+ * Tao's default origin. Satellites resolve their own anchored position
+ * instead and pass `false`.
+ *
+ * Re-invoking with a different [owner] reparents the child (AppKit tears the
+ * previous `addChildWindow:` down itself, Win32 and GTK overwrite the owner),
+ * without moving it.
+ *
+ * No-op when the relevant bridge or the owner is unavailable.
+ */
+internal fun applyWindowOwnerRelationship(
+    child: TaoWindow,
+    owner: TaoWindow?,
     autoCenter: Boolean,
+    /**
+     * Whether the platform may take [child] down together with [owner] — the
+     * JDialog behaviour a dialog wants. A satellite passes `false`: it outlives
+     * the window it is anchored to, since the workspace hands it to another
+     * one when that window closes.
+     */
+    destroyWithOwner: Boolean = true,
 ) {
-    if (parent == null) return
+    if (owner == null) return
 
     when (Platform.Current) {
         Platform.Windows -> {
             if (!NativeTaoWindowsDecoBridge.isLoaded) return
-            val dialogHwnd = dialog.nativeHandle
-            val parentHwnd = parent.nativeHandle
-            if (dialogHwnd == 0L || parentHwnd == 0L) return
-            NativeTaoWindowsDecoBridge.nativeSetOwner(dialogHwnd, parentHwnd)
+            val childHwnd = child.nativeHandle
+            val ownerHwnd = owner.nativeHandle
+            if (childHwnd == 0L || ownerHwnd == 0L) return
+            NativeTaoWindowsDecoBridge.nativeSetOwner(childHwnd, ownerHwnd)
         }
         Platform.MacOS -> {
             if (!NativeTaoMacOsDecoBridge.isLoaded) return
-            val dialogView = dialog.nativeHandle
-            val parentView = parent.nativeHandle
-            if (dialogView == 0L || parentView == 0L) return
-            NativeTaoMacOsDecoBridge.nativeSetOwner(dialogView, parentView, autoCenter)
+            val childView = child.nativeHandle
+            val ownerView = owner.nativeHandle
+            if (childView == 0L || ownerView == 0L) return
+            NativeTaoMacOsDecoBridge.nativeSetOwner(childView, ownerView, autoCenter)
         }
         Platform.Linux -> {
             // GTK route: `gtk_window_set_transient_for` covers z-order /
             // minimisation / focus return; `skip_taskbar_hint` and
             // `destroy_with_parent` round out the JDialog semantics. The
-            // actual centring is already done synchronously on the JVM side
-            // (see [centerOnParentLinux]) before the dialog window is shown,
+            // actual positioning is already done synchronously on the JVM side
+            // (see [centerOnParentLinux]) before the child window is shown,
             // so we don't need a native pre-position step like macOS.
-            NativeTaoBridge.nativeLinuxSetDialogOwner(dialog.handle, parent.handle)
+            NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, owner.handle, destroyWithOwner)
         }
+        else -> Unit
+    }
+}
+
+/**
+ * Severs the native owner link of [child] — the inverse of
+ * [applyWindowOwnerRelationship] — leaving it a plain top-level window.
+ *
+ * Used by [SatelliteWindow] right before its owner is destroyed: Win32
+ * destroys owned windows together with their owner and GTK does the same for
+ * `destroy_with_parent` transients, which would take down a satellite the app
+ * is reparenting in that very frame. AppKit only orphans child windows, so
+ * there this merely keeps the three platforms on one code path.
+ */
+internal fun clearWindowOwnerRelationship(child: TaoWindow) {
+    when (Platform.Current) {
+        Platform.Windows -> {
+            if (!NativeTaoWindowsDecoBridge.isLoaded) return
+            val childHwnd = child.nativeHandle
+            if (childHwnd == 0L) return
+            NativeTaoWindowsDecoBridge.nativeSetOwner(childHwnd, 0L)
+        }
+        Platform.MacOS -> {
+            if (!NativeTaoMacOsDecoBridge.isLoaded) return
+            val childView = child.nativeHandle
+            if (childView == 0L) return
+            NativeTaoMacOsDecoBridge.nativeSetOwner(childView, 0L, false)
+        }
+        Platform.Linux -> NativeTaoBridge.nativeLinuxSetDialogOwner(child.handle, 0L, false)
         else -> Unit
     }
 }

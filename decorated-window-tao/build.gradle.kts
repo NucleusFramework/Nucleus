@@ -157,6 +157,10 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     System.getProperty("nucleus.tao.headful.filter")?.let {
         systemProperty("nucleus.tao.headful.filter", it)
     }
+    // Replays a red monkey run: the case prints the seed it used.
+    System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
+        systemProperty("nucleus.tao.headful.monkeySeed", it)
+    }
     System.getProperty("nucleus.issue576.samples")?.let {
         systemProperty("nucleus.issue576.samples", it)
     }

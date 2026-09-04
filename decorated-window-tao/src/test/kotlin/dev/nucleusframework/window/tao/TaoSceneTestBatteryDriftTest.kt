@@ -29,6 +29,11 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.workspace.DragControllerTest
+import dev.nucleusframework.window.tao.workspace.HostGeometryTest
+import dev.nucleusframework.window.tao.workspace.RelocatingSaveableStateRegistryTest
+import dev.nucleusframework.window.tao.workspace.TransferDragTest
+import dev.nucleusframework.window.tao.workspace.WindowGroupTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -78,6 +83,14 @@ class TaoSceneTestBatteryDriftTest {
             TaoA11yProjectionTest::class.java,
             TitleBarHitTestTest::class.java,
             LcdTextTest::class.java,
+            WindowPositionerTest::class.java,
+            SatelliteWorkspaceTest::class.java,
+            RelocatingSaveableStateRegistryTest::class.java,
+            WindowGroupTest::class.java,
+            HostGeometryTest::class.java,
+            DragControllerTest::class.java,
+            TransferDragTest::class.java,
+            TabWorkspaceTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */

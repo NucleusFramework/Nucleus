@@ -182,8 +182,16 @@ internal object TaoDecoratedWindowAdapter {
     }
 }
 
+/**
+ * The Nucleus locals of a window scene, composed around [content]: the bridged
+ * outer locals, this window as [LocalNucleusWindow], single-instance restore,
+ * text-selection accessibility and the native context menu.
+ *
+ * Shared with [TaoTabWorkspaceAdapter], whose windows are opened by the tab
+ * workspace rather than by this adapter but are decorated windows all the same.
+ */
 @Composable
-private fun TaoDecoratedWindowScope.bindNucleusContent(
+internal fun TaoDecoratedWindowScope.bindNucleusContent(
     outerLocals: androidx.compose.runtime.CompositionLocalContext,
     parentLayoutDirection: androidx.compose.ui.unit.LayoutDirection,
     nativeContextMenu: Boolean,
@@ -256,7 +264,12 @@ private fun TaoDecoratedWindowScope.bindNucleusContent(
     }
 }
 
-private class TaoNucleusDecoratedWindowScope(
+/**
+ * The Nucleus content scope of a Tao-hosted window. Shared with
+ * [TaoSatelliteWindowAdapter]: a satellite is a decorated window as far as its
+ * content is concerned.
+ */
+internal class TaoNucleusDecoratedWindowScope(
     private val taoScope: TaoDecoratedWindowScope,
     override val nucleusWindow: NucleusWindow,
 ) : NucleusDecoratedWindowScope,
