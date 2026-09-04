@@ -54,7 +54,7 @@ use crate::{
   platform_impl::platform::{
     dark_mode::try_window_theme,
     dpi::{become_dpi_aware, dpi_to_scale_factor, enable_non_client_dpi_scaling},
-    ime::{is_msg_ime_related, ImeEvent},
+    ime::{is_msg_ime_related, peek_commit_queued, ImeEvent},
     keyboard::is_msg_keyboard_related,
     keyboard_layout::LAYOUT_CACHE,
     monitor::{self, MonitorHandle},
@@ -972,12 +972,43 @@ unsafe fn public_window_callback_inner<T: 'static>(
       return;
     }
     let events = {
-      let mut key_event_builders =
-        crate::platform_impl::platform::keyboard::KEY_EVENT_BUILDERS.lock();
-      if let Some(key_event_builder) = key_event_builders.get_mut(&WindowId(window.0 as _)) {
-        key_event_builder.process_message(window, msg, wparam, lparam, &mut result)
-      } else {
-        Vec::new()
+      use crate::platform_impl::platform::keyboard::KEY_EVENT_BUILDERS;
+      let window_id = WindowId(window.0 as _);
+
+      // Take the builder OUT of the map for the duration of
+      // `process_message` rather than holding the map lock across it.
+      // `process_message` calls `PeekMessageW`, and PeekMessage delivers
+      // pending cross-thread *sent* messages inline — the kernel re-enters
+      // this very window procedure through `KiUserCallbackDispatcher`.
+      // Holding the non-reentrant `KEY_EVENT_BUILDERS` mutex across that
+      // re-entry deadlocks the event-loop thread against itself: it parks in
+      // `WaitOnAddress` and never pumps a message again, so the window goes
+      // "Not Responding" for good (NucleusFramework/Nucleus#640, hit while
+      // moving a window between Windows 11 virtual desktops — that path is
+      // keyboard-triggered and makes the shell send messages to the window
+      // mid-peek).
+      //
+      // While the builder is taken, a nested key message finds an empty slot
+      // and is dropped. That is the right trade-off: only injected or sent
+      // key messages can nest here, since real keyboard input is posted to
+      // the queue rather than sent, and `process_message` peeks with
+      // PM_NOREMOVE so it never dispatches queued messages itself.
+      let taken = KEY_EVENT_BUILDERS
+        .lock()
+        .get_mut(&window_id)
+        .and_then(Option::take);
+
+      match taken {
+        Some(mut key_event_builder) => {
+          let events = key_event_builder.process_message(window, msg, wparam, lparam, &mut result);
+          // Put it back only if the slot still exists: the window may have
+          // been dropped (which removes its slot) while we were processing.
+          if let Some(slot) = KEY_EVENT_BUILDERS.lock().get_mut(&window_id) {
+            *slot = Some(key_event_builder);
+          }
+          events
+        }
+        None => Vec::new(),
       }
     };
     for event in events {
@@ -1002,11 +1033,20 @@ unsafe fn public_window_callback_inner<T: 'static>(
     if !is_ime_related {
       return;
     }
+    // Peek the queue BEFORE taking the window-state lock. `process_message`
+    // used to do this peek itself, with the lock held, which deadlocks the
+    // event-loop thread against itself: `PeekMessageW` delivers pending
+    // cross-thread sent messages inline (the kernel re-enters this window
+    // procedure through `KiUserCallbackDispatcher`), and nearly every arm
+    // below locks the window state. Same bug class as the keyboard one in
+    // #640, and a wider one — there only the keyboard arm took the lock,
+    // here almost everything does. Fixed upstream in tauri-apps/tao#1215.
+    let commit_queued = peek_commit_queued(window, msg);
     let events = {
       let mut window_state = subclass_input.window_state.lock();
       window_state
         .ime_handler
-        .process_message(window, msg, wparam, lparam, &mut result)
+        .process_message(window, msg, wparam, lparam, commit_queued, &mut result)
     };
     for ime_event in events {
       let event = match ime_event {
@@ -2316,8 +2356,14 @@ unsafe fn public_window_callback_inner<T: 'static>(
         update_theme(subclass_input, window, false);
         result = ProcResult::Value(LRESULT(0));
       } else if msg == *S_U_TASKBAR_RESTART {
-        let window_state = subclass_input.window_state.lock();
-        let _ = set_skip_taskbar(window, window_state.skip_taskbar);
+        // Read the flag out and release the lock before the COM call.
+        // `set_skip_taskbar` goes through `CoCreateInstance` +
+        // `ITaskbarList`, and an STA COM call pumps the message queue while
+        // it waits — so the window procedure is re-entered and any arm that
+        // locks the window state deadlocks. Fixed upstream in
+        // tauri-apps/tao#1264.
+        let skip_taskbar = subclass_input.window_state.lock().skip_taskbar;
+        let _ = set_skip_taskbar(window, skip_taskbar);
       }
     }
   };
