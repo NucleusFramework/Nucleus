@@ -2293,6 +2293,10 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                 executableName.set(imageName)
                 customNodePath.set(NucleusProperties.electronBuilderNodePath(project.providers))
                 publishMode.set(NucleusProperties.electronBuilderPublishMode(project.providers))
+                linuxAfterInstall.set(app.nativeDistributions.linux.afterInstall)
+                linuxAfterRemove.set(app.nativeDistributions.linux.afterRemove)
+                linuxBeforeInstall.set(app.nativeDistributions.linux.beforeInstall)
+                linuxBeforeRemove.set(app.nativeDistributions.linux.beforeRemove)
                 distributions = app.nativeDistributions
             }
 

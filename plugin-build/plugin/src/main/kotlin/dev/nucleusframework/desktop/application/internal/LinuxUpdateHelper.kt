@@ -171,4 +171,51 @@ internal object LinuxUpdateHelper {
         # --- Nucleus passwordless self-update cleanup ---
         rm -f '/usr/share/polkit-1/actions/dev.nucleusframework.${executable}.update.policy' 2>/dev/null || true
         """.trimIndent() + "\n"
+
+    /**
+     * Concatenates Nucleus's after-install template, the optional polkit helper fragment,
+     * and a user-supplied script. User content always runs last so it can rely on the
+     * `/usr/bin` symlink and `/opt` payload already being in place.
+     */
+    fun composeAfterInstallScript(
+        baseScript: String,
+        silentUpdate: Boolean,
+        userScript: String?,
+    ): String =
+        buildString {
+            append(baseScript.trimEnd())
+            append('\n')
+            if (silentUpdate) {
+                append(polkitAfterInstallFragment())
+            }
+            appendUserScript(userScript)
+        }
+
+    /**
+     * Builds the after-remove template. Returns `null` when there is nothing to emit
+     * (silent update off and no user script), so electron-builder keeps its default
+     * unlink behaviour.
+     */
+    fun composeAfterRemoveScript(
+        silentUpdate: Boolean,
+        userScript: String?,
+    ): String? {
+        val extra = userScript?.trim().orEmpty()
+        if (!silentUpdate && extra.isEmpty()) return null
+        return buildString {
+            append("#!/bin/bash\n")
+            if (silentUpdate) {
+                append(polkitAfterRemoveFragment())
+            }
+            appendUserScript(userScript)
+        }
+    }
+
+    private fun StringBuilder.appendUserScript(userScript: String?) {
+        val extra = userScript?.trim().orEmpty()
+        if (extra.isEmpty()) return
+        append('\n')
+        append(extra)
+        if (!extra.endsWith('\n')) append('\n')
+    }
 }

@@ -113,6 +113,14 @@ abstract class AbstractJPackageTask
         val files: ConfigurableFileCollection = objects.fileCollection()
 
         /**
+         * Extra files copied into the application image root via jpackage `--app-content`.
+         */
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val appContent: ConfigurableFileCollection = objects.fileCollection()
+
+        /**
          * A hack to avoid conflicts between jar files in a flat dir.
          * We receive input jar files as a list (FileCollection) of files.
          * At that point we don't have access to jar files' coordinates.
@@ -460,6 +468,18 @@ abstract class AbstractJPackageTask
                     val propertiesFile = workingDir.ioFile.resolve("launcher_${launcher.name}.properties")
                     val escapedPath = if (currentTarget.os == OS.Windows) propertiesFile.absolutePath.replace("\\", "\\\\") else propertiesFile.absolutePath
                     cliArg("--add-launcher", "${launcher.name}=${escapedPath}")
+                }
+
+                appContent.files.forEach { extra ->
+                    val files =
+                        if (extra.isDirectory) {
+                            extra.listFiles()?.filter { it.isFile } ?: emptyList()
+                        } else if (extra.isFile) {
+                            listOf(extra)
+                        } else {
+                            emptyList()
+                        }
+                    files.forEach { cliArg("--app-content", it) }
                 }
             }
 
