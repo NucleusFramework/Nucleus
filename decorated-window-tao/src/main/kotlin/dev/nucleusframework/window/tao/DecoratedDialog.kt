@@ -1,15 +1,22 @@
-@file:Suppress("MagicNumber")
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("MagicNumber", "ktlint:standard:annotation")
 
 package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.dp
@@ -45,6 +52,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
+@ComposableOpenTarget(-1)
 public fun ApplicationScope.DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
@@ -61,7 +69,7 @@ public fun ApplicationScope.DecoratedDialog(
     // dialog content sees the parent window's theme/user locals without
     // hijacking popup routing. See [LocalTaoCompositionLocalContextBridge].
     compositionLocalContext: CompositionLocalContext? = null,
-    content: @Composable TaoDecoratedDialogScope.() -> Unit,
+    content: @Composable @UiComposable TaoDecoratedDialogScope.() -> Unit,
 ) {
     // Captured in the parent's composition: `LocalTaoWindow.current` here is
     // the enclosing DecoratedWindow's TaoWindow, not the dialog's own window

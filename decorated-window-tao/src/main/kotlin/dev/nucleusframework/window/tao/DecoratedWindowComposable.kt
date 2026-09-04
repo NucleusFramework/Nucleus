@@ -1,8 +1,14 @@
-@file:Suppress("MagicNumber")
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("MagicNumber", "ktlint:standard:annotation")
 
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -11,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.key.KeyEvent
@@ -57,6 +64,7 @@ import kotlin.math.roundToInt
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod", "CyclomaticComplexMethod")
 @OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
+@ComposableOpenTarget(-1)
 public fun ApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
@@ -184,7 +192,7 @@ public fun ApplicationScope.DecoratedWindow(
      * does *not* give you (it is not `_NET_WM_WINDOW_TYPE_DESKTOP`).
      */
     alwaysOnBottom: Boolean = false,
-    content: @Composable TaoDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestOnClose by rememberUpdatedState(onCloseRequest)
     val latestPreview by rememberUpdatedState(onPreviewKeyEvent)
