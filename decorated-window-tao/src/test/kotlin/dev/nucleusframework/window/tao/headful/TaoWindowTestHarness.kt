@@ -146,11 +146,16 @@ internal class TaoWindowTestScope(
     suspend fun awaitUntil(
         description: String,
         timeoutMillis: Long = AWAIT_TIMEOUT_MILLIS,
+        // Read when the wait times out, not when it starts: a snapshot of the
+        // state that was still missing is what makes a timeout diagnosable.
+        detail: (() -> String)? = null,
         predicate: () -> Boolean,
     ) {
         val deadline = System.currentTimeMillis() + timeoutMillis
         while (!predicate()) {
-            check(System.currentTimeMillis() < deadline) { "timed out waiting for: $description" }
+            check(System.currentTimeMillis() < deadline) {
+                "timed out waiting for: $description" + (detail?.let { " — ${it()}" } ?: "")
+            }
             delay(POLL_MILLIS)
         }
     }

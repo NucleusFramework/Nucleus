@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -140,125 +141,149 @@ public fun ApplicationScope.SatelliteWindow(
     val parentPlaced = parentHasFrame(parent)
     if (!parentPlaced) return
 
-    // Resolved synchronously, before the native window exists, so
-    // DecoratedWindow's position effect applies it *before* show() — the same
-    // no-flash ordering DecoratedDialog relies on for its centring. Computed
-    // once: WindowState only ever reads its initial position, and a satellite
-    // never re-runs its placement on recomposition or reparenting anyway (see
-    // [SatelliteWindowState.reanchor]).
-    val initialPosition =
-        remember {
-            parent?.let { anchoredWindowPosition(it, state) } ?: WindowPosition.PlatformDefault
+    // Win32 and GTK destroy owned windows with their owner. The anchoring
+    // below steps out of the link when the owner announces its close, but a
+    // satellite created in the very frame its owner is being taken down never
+    // hears that announcement — and is destroyed with it. The composable is
+    // still declared, its remembered window is dead, and nothing would ever
+    // bring the palette back: it stays open, floating, and invisible for the
+    // rest of the session. Rebuilding on this key re-creates the window
+    // against whoever owns the satellite now — at its anchor, since the
+    // placement it had died with the window that was showing it.
+    var generation by remember(state) { mutableStateOf(0) }
+
+    key(generation) {
+        // Resolved synchronously, before the native window exists, so
+        // DecoratedWindow's position effect applies it *before* show() — the same
+        // no-flash ordering DecoratedDialog relies on for its centring. Computed
+        // once: WindowState only ever reads its initial position, and a satellite
+        // never re-runs its placement on recomposition or reparenting anyway (see
+        // [SatelliteWindowState.reanchor]).
+        val initialPosition =
+            remember {
+                parent?.let { anchoredWindowPosition(it, state) } ?: WindowPosition.PlatformDefault
+            }
+        val windowState =
+            rememberWindowState(
+                size = state.size,
+                position = initialPosition,
+            )
+        LaunchedEffect(state.size) {
+            if (windowState.size != state.size) windowState.size = state.size
         }
-    val windowState =
-        rememberWindowState(
-            size = state.size,
-            position = initialPosition,
-        )
-    LaunchedEffect(state.size) {
-        if (windowState.size != state.size) windowState.size = state.size
-    }
 
-    DecoratedWindow(
-        onCloseRequest = { latestOnClose() },
-        state = windowState,
-        title = title,
-        icon = icon,
-        minimumSize = null,
-        // The suppression flag is folded in here rather than pushed to the
-        // window imperatively, so a satellite that is *also* toggled by the app
-        // has one single source of truth for visibility.
-        visible = visible && !state.isHiddenByParent,
-        resizable = resizable,
-        focusable = focusable,
-        alwaysOnTop = false,
-        // Utility-window chrome: no maximize affordance, dialog-flavoured
-        // border. The owner relationship below is what keeps it off the
-        // taskbar and above its parent.
-        isDialog = true,
-        onPreviewKeyEvent = onPreviewKeyEvent,
-        onKeyEvent = onKeyEvent,
-        compositionLocalContext = compositionLocalContext,
-        content = {
-            val satellite = window
+        DecoratedWindow(
+            onCloseRequest = { latestOnClose() },
+            state = windowState,
+            title = title,
+            icon = icon,
+            minimumSize = null,
+            // The suppression flag is folded in here rather than pushed to the
+            // window imperatively, so a satellite that is *also* toggled by the app
+            // has one single source of truth for visibility.
+            visible = visible && !state.isHiddenByParent,
+            resizable = resizable,
+            focusable = focusable,
+            alwaysOnTop = false,
+            // Utility-window chrome: no maximize affordance, dialog-flavoured
+            // border. The owner relationship below is what keeps it off the
+            // taskbar and above its parent.
+            isDialog = true,
+            onPreviewKeyEvent = onPreviewKeyEvent,
+            onKeyEvent = onKeyEvent,
+            compositionLocalContext = compositionLocalContext,
+            content = {
+                val satellite = window
 
-            // Runs inside the satellite's own composition, so `window` is the
-            // satellite's TaoWindow and its native handle is resolvable.
-            val anchoring =
-                remember(satellite, parent) {
-                    SatelliteAnchoring(
-                        satellite = satellite,
-                        parent = parent,
-                        state = state,
-                        hideWhileParentFills = hideWhileParentFullscreenOrMaximized,
+                // The satellite's own window, destroyed by the platform rather than
+                // by this composition — the owned-window teardown described on
+                // [generation]. Rebuild against the current owner; the listener is
+                // detached before our own close, so an ordinary dispose never
+                // rebuilds. Nothing else can tell the two apart from in here.
+                DisposableEffect(satellite) {
+                    val destroyed: () -> Unit = { generation++ }
+                    satellite.onDestroyed(destroyed)
+                    onDispose { satellite.removeDestroyedListener(destroyed) }
+                }
+
+                // Runs inside the satellite's own composition, so `window` is the
+                // satellite's TaoWindow and its native handle is resolvable.
+                val anchoring =
+                    remember(satellite, parent) {
+                        SatelliteAnchoring(
+                            satellite = satellite,
+                            parent = parent,
+                            state = state,
+                            hideWhileParentFills = hideWhileParentFullscreenOrMaximized,
+                        )
+                    }
+
+                // The parent's death is observed natively but acted on from
+                // composition, so a reparent that lands in the same frame as the
+                // old owner's close — "close the document the palette is attached
+                // to" — is not mistaken for the satellite's own end of life: by the
+                // time this scene recomposes, [parent] already names the new owner.
+                // Dying with the parent is the case where it still names the old one.
+                var destroyedParent by remember(satellite) { mutableStateOf<TaoWindow?>(null) }
+                LaunchedEffect(parent, destroyedParent) {
+                    if (parent != null && parent === destroyedParent) latestOnClose()
+                }
+
+                // Hands keyboard focus back to the parent when the satellite goes
+                // away while it is the active window (closed from its own header,
+                // docked on a drag release). Win32 only does this by itself for
+                // dialogs ended through `EndDialog`; destroying an active owned
+                // `WS_OVERLAPPED` window activates the next window in the Z-order,
+                // which can belong to another application and sends the parent to
+                // the background. Both calls are queued on the event loop in order,
+                // so the parent is foreground before the satellite's HWND dies.
+                // Skipped when the parent is the one being destroyed, or when the
+                // satellite was not focused (an app-driven close must not steal
+                // the foreground).
+                val currentParent by rememberUpdatedState(parent)
+                val currentDestroyedParent by rememberUpdatedState(destroyedParent)
+                DisposableEffect(satellite) {
+                    onDispose {
+                        val target = currentParent
+                        if (satellite.isFocused && target != null && target !== currentDestroyedParent) target.focus()
+                    }
+                }
+
+                DisposableEffect(anchoring) {
+                    applyWindowOwnerRelationship(
+                        child = satellite,
+                        owner = parent,
+                        autoCenter = false,
+                        destroyWithOwner = false,
                     )
+                    anchoring.onParentDestroyed = { destroyedParent = it }
+                    anchoring.attach()
+                    state.reanchorRequest = { anchoring.reanchor() }
+                    onDispose {
+                        anchoring.detach()
+                        state.reanchorRequest = null
+                    }
                 }
 
-            // The parent's death is observed natively but acted on from
-            // composition, so a reparent that lands in the same frame as the
-            // old owner's close — "close the document the palette is attached
-            // to" — is not mistaken for the satellite's own end of life: by the
-            // time this scene recomposes, [parent] already names the new owner.
-            // Dying with the parent is the case where it still names the old one.
-            var destroyedParent by remember(satellite) { mutableStateOf<TaoWindow?>(null) }
-            LaunchedEffect(parent, destroyedParent) {
-                if (parent != null && parent === destroyedParent) latestOnClose()
-            }
-
-            // Hands keyboard focus back to the parent when the satellite goes
-            // away while it is the active window (closed from its own header,
-            // docked on a drag release). Win32 only does this by itself for
-            // dialogs ended through `EndDialog`; destroying an active owned
-            // `WS_OVERLAPPED` window activates the next window in the Z-order,
-            // which can belong to another application and sends the parent to
-            // the background. Both calls are queued on the event loop in order,
-            // so the parent is foreground before the satellite's HWND dies.
-            // Skipped when the parent is the one being destroyed, or when the
-            // satellite was not focused (an app-driven close must not steal
-            // the foreground).
-            val currentParent by rememberUpdatedState(parent)
-            val currentDestroyedParent by rememberUpdatedState(destroyedParent)
-            DisposableEffect(satellite) {
-                onDispose {
-                    val target = currentParent
-                    if (satellite.isFocused && target != null && target !== currentDestroyedParent) target.focus()
+                // Re-synced on change so flipping the flag while the parent is
+                // already maximized takes effect at once, not on its next resize.
+                LaunchedEffect(anchoring, hideWhileParentFullscreenOrMaximized) {
+                    anchoring.setHideWhileParentFills(hideWhileParentFullscreenOrMaximized)
                 }
-            }
 
-            DisposableEffect(anchoring) {
-                applyWindowOwnerRelationship(
-                    child = satellite,
-                    owner = parent,
-                    autoCenter = false,
-                    destroyWithOwner = false,
-                )
-                anchoring.onParentDestroyed = { destroyedParent = it }
-                anchoring.attach()
-                state.reanchorRequest = { anchoring.reanchor() }
-                onDispose {
-                    anchoring.detach()
-                    state.reanchorRequest = null
+                SettleInitialPlacement(satellite, anchoring)
+                RealignAfterSteppingBack(satellite, anchoring, state.isHiddenByParent)
+
+                DisposableEffect(satellite) {
+                    val listener: (Boolean) -> Unit = { focused -> state.isActive = focused }
+                    satellite.onFocusChanged(listener)
+                    onDispose { state.isActive = false }
                 }
-            }
 
-            // Re-synced on change so flipping the flag while the parent is
-            // already maximized takes effect at once, not on its next resize.
-            LaunchedEffect(anchoring, hideWhileParentFullscreenOrMaximized) {
-                anchoring.setHideWhileParentFills(hideWhileParentFullscreenOrMaximized)
-            }
-
-            SettleInitialPlacement(satellite, anchoring)
-            RealignAfterSteppingBack(satellite, anchoring, state.isHiddenByParent)
-
-            DisposableEffect(satellite) {
-                val listener: (Boolean) -> Unit = { focused -> state.isActive = focused }
-                satellite.onFocusChanged(listener)
-                onDispose { state.isActive = false }
-            }
-
-            latestContent()
-        },
-    )
+                latestContent()
+            },
+        )
+    }
 }
 
 /**
@@ -322,8 +347,17 @@ private fun SettleInitialPlacement(
                     anchoredAgainst = frame
                     stablePolls = 0
                 }
-            } else if (frame != null && ++stablePolls >= PLACEMENT_SETTLE_STABLE_POLLS) {
-                return@LaunchedEffect
+            } else if (frame != null) {
+                // The parent's frame has not moved, but the satellite's own can
+                // still be moved out from under this placement: its
+                // `WindowState` carries the position resolved before the native
+                // window existed, and [DecoratedWindow] applies that *after* the
+                // map — which is after the re-anchor above when the parent was
+                // itself placed late. Re-assert the anchored offset until the
+                // satellite holds it, then count the poll as stable.
+                val holds = placedWith == null || settling.realignToOffset()
+                stablePolls = if (holds) stablePolls + 1 else 0
+                if (holds && stablePolls >= PLACEMENT_SETTLE_STABLE_POLLS) return@LaunchedEffect
             }
             delay(PLACEMENT_SETTLE_POLL_MILLIS)
         }
@@ -378,13 +412,28 @@ private fun RealignAfterSteppingBack(
 @Composable
 private fun parentHasFrame(parent: TaoWindow?): Boolean {
     if (parent == null) return true
-    var placed by remember(parent) { mutableStateOf(parent.hasRealFrame()) }
+    // Not keyed on the parent: this gate is about the *first* placement. A
+    // satellite that is already on screen must not be taken down and rebuilt
+    // when it is handed to another owner — reparenting keeps the window.
+    var placed by remember { mutableStateOf(false) }
     LaunchedEffect(parent) {
+        // A frame is not enough: the parent's own [WindowState] position is
+        // applied *after* its window is mapped, so a parent asked for one
+        // corner is reported at the platform's cascade position first. A
+        // satellite anchored to that frame is placed beside a window that was
+        // never there — and the stale placement its own WindowState carries
+        // then lands after this one's correction. Two identical frames in a
+        // row is the only signal the platform gives that it is done placing.
+        var last: List<Long>? = null
+        var stable = 0
         var attempt = 0
         while (!placed && attempt < PLACEMENT_SETTLE_ATTEMPTS) {
+            val frame = parent.outerBoundsPx()?.toList()?.takeIf { parent.hasRealFrame() }
+            stable = if (frame != null && frame == last) stable + 1 else 0
+            last = frame
+            if (stable >= PARENT_PLACEMENT_STABLE_POLLS) break
             delay(PLACEMENT_SETTLE_POLL_MILLIS)
             attempt++
-            placed = parent.hasRealFrame()
         }
         // Out of patience: show the satellite anyway, wherever the platform
         // puts it, rather than never showing it at all.
@@ -823,6 +872,13 @@ private const val PLACEMENT_SETTLE_POLL_MILLIS = 16L
 
 /** Consecutive identical parent frames that count as "the WM is done placing it". */
 private const val PLACEMENT_SETTLE_STABLE_POLLS = 3
+
+/**
+ * Consecutive identical parent frames before a satellite is composed at all.
+ * Two, not three: this one is paid before the palette is on screen, and the
+ * settle loop above corrects whatever a slower platform still gets wrong.
+ */
+private const val PARENT_PLACEMENT_STABLE_POLLS = 2
 
 /** Upper bound on the settle window once the satellite has been placed once (~190 ms). */
 private const val PLACEMENT_SETTLE_POLLS_AFTER_PLACED = 12

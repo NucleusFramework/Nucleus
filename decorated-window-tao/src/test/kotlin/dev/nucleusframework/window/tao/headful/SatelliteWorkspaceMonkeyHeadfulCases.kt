@@ -781,6 +781,8 @@ private class Monkey(
 
     private fun describe(): String =
         "members=${workspace.members.size} hostWindows=${fixture.declaredWindows} " +
+            "owner=${workspace.owner?.handle?.toString(HEX)}" +
+            "/maximized=${workspace.owner?.isMaximized}/fullscreen=${workspace.owner?.isFullscreen} " +
             "live=${TaoApplication.liveWindowCount()} visible=${workspace.visible} " +
             "dragging=${workspace.draggedSatellite?.id} preview=${workspace.dockPreview} " +
             workspace.satellites.joinToString(prefix = "satellites=[", postfix = "]") { entry ->
@@ -789,6 +791,7 @@ private class Monkey(
                     if (placement is SatellitePlacement.Docked) "docked(${placement.side})" else "floating"
                 "${entry.id}:${if (entry.isOpen) "open" else "closed"}/$where" +
                     "/dockHost=${entry.dockHost?.handle?.toString(HEX)}" +
+                    "/hiddenByOwner=${entry.windowState.isHiddenByParent}" +
                     "/hosts=${fixture.composedHostsOf(entry.id)}"
             }
 }

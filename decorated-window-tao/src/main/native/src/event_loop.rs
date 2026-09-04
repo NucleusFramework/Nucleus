@@ -430,10 +430,36 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::RequestRedraw { handle } => {
-                    let guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_ref() {
-                        if let Some(w) = map.get(&handle) {
-                            w.request_redraw();
+                    // Windows: answer the request here instead of asking the OS
+                    // for one. `request_redraw` is `RedrawWindow(RDW_INTERNALPAINT)`,
+                    // and Win32 only synthesises WM_PAINT once the thread's
+                    // message queue is otherwise empty — so a window animating
+                    // flat out (each frame posts the next request as a queued
+                    // user event) starves the paints of every *other* window in
+                    // the app. They stop being scheduled for good: their next
+                    // frame waits on a WM_PAINT that only arrives when the
+                    // animation stops. Dispatching the redraw as the queued
+                    // event it already is puts every window on the same
+                    // priority, and the JVM's own coalescing latch (see
+                    // TaoWindow.requestRedraw) keeps one request per frame.
+                    // OS-driven repaints still arrive as Event::RedrawRequested.
+                    #[cfg(target_os = "windows")]
+                    {
+                        let alive = {
+                            let guard = WINDOWS.lock().unwrap();
+                            guard.as_ref().is_some_and(|map| map.contains_key(&handle))
+                        };
+                        if alive {
+                            dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
+                        }
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(map) = guard.as_ref() {
+                            if let Some(w) = map.get(&handle) {
+                                w.request_redraw();
+                            }
                         }
                     }
                 }

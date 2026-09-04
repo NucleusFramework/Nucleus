@@ -68,7 +68,7 @@ internal object WorkspaceLoadHeadfulCases {
                 val first = awaitTabSatellites(fixture.archetype, *titles.toTypedArray())
                 val groups = fixture.spread(this, first, titles.drop(1))
                 check(groups.size + 1 == WINDOW_CROWD) { "expected $WINDOW_CROWD windows" }
-                awaitUntil("every window is animating") {
+                awaitUntil("every window is animating", detail = { fixture.frameReport() }) {
                     fixture.workspace.groups.all { fixture.frames(it.id) > MIN_FRAMES }
                 }
 
@@ -183,7 +183,10 @@ internal object WorkspaceLoadHeadfulCases {
                     fixture.workspace.reorder(fixture.archetype.tabId(title), round % TABS_PER_WINDOW)
                 }
 
-                awaitUntil("every strip republished a slot per tab, in order") {
+                awaitUntil(
+                    "every strip republished a slot per tab, in order",
+                    detail = { fixture.stripReport() },
+                ) {
                     fixture.workspace.groups.all { group ->
                         val slots = group.slotsInWindowPx
                         slots.size >= group.ids.size &&
@@ -331,7 +334,7 @@ internal object WorkspaceLoadHeadfulCases {
             driver = {
                 val first = awaitTabSatellites(fixture.archetype, *titles.toTypedArray())
                 fixture.spread(this, first, titles.drop(1))
-                awaitUntil("every window is animating") {
+                awaitUntil("every window is animating", detail = { fixture.frameReport() }) {
                     fixture.workspace.groups.all { fixture.frames(it.id) > MIN_FRAMES }
                 }
 
@@ -478,6 +481,17 @@ internal object WorkspaceLoadHeadfulCases {
 
         /** Frames the window of [groupId] has painted since it opened. */
         fun frames(groupId: String): Long = frameCounts[groupId]?.get() ?: 0L
+
+        /** Frames per group, so a starved window names itself in a failure. */
+        fun frameReport(): String =
+            workspace.groups.joinToString { "${it.id}=${frames(it.id)}" } +
+                " | counted=" + frameCounts.entries.joinToString { "${it.key}=${it.value.get()}" }
+
+        /** Tabs and published slots per group, for a strip that never converges. */
+        fun stripReport(): String =
+            workspace.groups.joinToString { group ->
+                "${group.id}: tabs=${group.ids.size} slots=${group.slotsInWindowPx.map { it.left.toInt() }}"
+            }
 
         fun satellites(groupId: String) = archetype.palettesOf(groupId)
 
