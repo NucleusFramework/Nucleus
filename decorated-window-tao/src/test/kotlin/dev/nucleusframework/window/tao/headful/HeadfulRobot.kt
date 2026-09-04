@@ -59,6 +59,15 @@ internal object HeadfulRobot {
     var lastAimPoint: Point? = null
         private set
 
+    /** Whether a press has been injected since the last release — see [releaseEveryButton]. */
+    @Volatile
+    private var buttonMayBeHeld = false
+
+    /** Records that a press is about to be injected. */
+    fun notePress() {
+        buttonMayBeHeld = true
+    }
+
     /** Records where [x] / [y] was aimed and where the pointer landed. */
     fun noteAim(
         x: Int,
@@ -114,9 +123,15 @@ internal object HeadfulRobot {
      * pointer correctly, and receives nothing. One red case turns the whole
      * rest of the robot suite red with it, and the log gives no hint that the
      * first one is the only real failure. Run after every case.
+     *
+     * Only after a press, though: `CRobot.mouseEvent` segfaults the JVM on
+     * macOS when it is asked to release a button that was never pressed, and
+     * that would take down a suite where most cases never touch the robot at
+     * all.
      */
     suspend fun releaseEveryButton() {
-        if (unavailable != null) return
+        if (unavailable != null || !buttonMayBeHeld) return
+        buttonMayBeHeld = false
         inject { robot ->
             for (mask in BUTTON_MASKS) robot.mouseRelease(mask)
             true

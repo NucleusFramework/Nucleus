@@ -182,6 +182,7 @@ internal suspend fun robotPressAndDrag(
         robot.mouseMove(x(from), y(from))
         Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
         HeadfulRobot.noteAim(x(from), y(from))
+        HeadfulRobot.notePress()
         robot.mousePress(InputEvent.BUTTON1_DOWN_MASK)
         Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
         for (step in 1..steps) {
