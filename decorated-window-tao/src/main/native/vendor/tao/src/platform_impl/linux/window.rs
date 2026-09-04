@@ -533,34 +533,40 @@ impl Window {
       inner_size_clone.0.store(w as i32, Ordering::Release);
       inner_size_clone.1.store(h as i32, Ordering::Release);
 
+      // PATCH(nucleus): `gdk_window_get_frame_extents` answers with its
+      // (0, 0, 1, 1) placeholder until the window is mapped and — under a
+      // reparenting WM — framed. Storing it pins a 1x1 window at the screen
+      // origin in `outer_position` / `outer_size` until the *next* configure,
+      // which on a software-rendered X server under a lightweight WM (Xvfb +
+      // openbox, the CI Linux leg) is seconds away or never comes at all.
+      // Every consumer of the outer frame reads that instead: a torn-off
+      // window 1 dp wide, a satellite anchored against a 1px-tall child, a
+      // pointer aimed at a negative screen coordinate.
+      //
+      // Take the size from the configure event itself — its own size is the
+      // whole surface, shadow included, which is what the frame is for a
+      // client-side-decorated window, and unlike `configure_client_size` below
+      // it subtracts no decoration insets. Keep the last known *position*:
+      // every substitute for it is wrong in a way that is worse than being
+      // stale. `event.position()` is frame-relative under a reparenting WM
+      // (so it reads (0, 0)), `root_origin` is implemented through
+      // `frame_extents` and answers the placeholder too, and
+      // `gdk_window_get_origin` names the client rather than the frame, so
+      // anchoring one window against another mixes two different rectangles.
       let (x, y, w, h) = window
         .window()
         .map(|w| {
           let rect = w.frame_extents();
           (rect.x(), rect.y(), rect.width(), rect.height())
         })
-        // PATCH(nucleus): `gdk_window_get_frame_extents` answers with its
-        // (0, 0, 1, 1) placeholder until the window is mapped and — under a
-        // reparenting WM — framed. A configure that lands inside that window
-        // latches the placeholder into `outer_*`, where it stays until the
-        // *next* configure: on a software-rendered X server under a
-        // lightweight WM (Xvfb + openbox) that is seconds away, or never.
-        // Every consumer of `outer_position` / `outer_size` then reads a 1x1
-        // window at the screen origin.
-        //
-        // Fall back to the window's own frame origin plus its client size.
-        // NOT to `event.position()`: for a window a reparenting WM has framed,
-        // the configure event carries coordinates relative to that frame, so
-        // using it publishes a window at (0, 0). `root_origin` is the frame's
-        // top-left in root coordinates, which is what `frame_extents` would
-        // have said.
         .filter(|(_, _, w, h)| *w > 1 && *h > 1)
         .unwrap_or_else(|| {
-          let (rx, ry) = window
-            .window()
-            .map(|w| w.root_origin())
-            .unwrap_or((x, y));
-          (rx, ry, w as i32, h as i32)
+          (
+            outer_position_clone.0.load(Ordering::Acquire),
+            outer_position_clone.1.load(Ordering::Acquire),
+            ew as i32,
+            eh as i32,
+          )
         });
 
       outer_position_clone.0.store(x, Ordering::Release);

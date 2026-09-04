@@ -578,19 +578,25 @@ private class SatelliteAnchoring(
             captureOffset()
             return
         }
-        if (awaitingCommand &&
-            closeEnough(xPx, commandedXPx) &&
-            closeEnough(yPx, commandedYPx)
-        ) {
-            // Caught up with the last follow move.
-            awaitingCommand = false
-            inFlight = 0
-            return
-        }
-        if (inFlight > 0) {
-            // Stale echo from an earlier follow move in the same drag burst.
-            inFlight--
-            return
+        if (awaitingCommand) {
+            if (closeEnough(xPx, commandedXPx) && closeEnough(yPx, commandedYPx)) {
+                // Caught up with the last follow move.
+                awaitingCommand = false
+                inFlight = 0
+                return
+            }
+            if (inFlight > 0) {
+                // Still travelling to where we put it. A position that is not
+                // the one we asked for is the platform reporting an
+                // intermediate frame — or one it had not published yet when
+                // the move was issued — and not the user moving the window;
+                // taking it for one latches an offset nobody chose, and the
+                // follow logic then preserves it for the lifetime of the
+                // pairing. Bounded, so a move the platform never confirms
+                // cannot make the satellite deaf to a real drag.
+                inFlight--
+                return
+            }
         }
         val parentRect = parent?.outerBoundsPx() ?: return
         publishOffset(xPx - parentRect[0].toInt(), yPx - parentRect[1].toInt())
