@@ -1,9 +1,17 @@
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
 @file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:Suppress("ktlint:standard:annotation")
 
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
@@ -18,6 +26,7 @@ import dev.nucleusframework.window.tao.v2.DialogState as NucleusDialogState
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun NucleusApplicationScope.DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
@@ -29,7 +38,7 @@ public fun NucleusApplicationScope.DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
 ) {
     when (this) {
         is TaoNucleusApplicationScope ->
@@ -58,6 +67,7 @@ public fun NucleusApplicationScope.DecoratedDialog(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun DecoratedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
@@ -69,7 +79,7 @@ public fun DecoratedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.DecoratedDialog(
         onCloseRequest = onCloseRequest,

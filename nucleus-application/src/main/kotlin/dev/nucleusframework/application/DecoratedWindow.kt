@@ -1,9 +1,17 @@
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
 @file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+@file:Suppress("ktlint:standard:annotation")
 
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
@@ -19,6 +27,7 @@ import dev.nucleusframework.window.tao.v2.WindowState as NucleusWindowState
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun NucleusApplicationScope.DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
@@ -87,7 +96,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
     // desktop widgets. Mutually exclusive with [alwaysOnTop] — last one set
     // wins. Reactive.
     alwaysOnBottom: Boolean = false,
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     when (this) {
         is TaoNucleusApplicationScope ->
@@ -132,6 +141,7 @@ public fun NucleusApplicationScope.DecoratedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun DecoratedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
@@ -155,7 +165,7 @@ public fun DecoratedWindow(
     visibleOnAllWorkspaces: Boolean = false,
     forceX11: Boolean = false,
     alwaysOnBottom: Boolean = false,
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.DecoratedWindow(
         onCloseRequest = onCloseRequest,

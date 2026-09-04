@@ -55,6 +55,13 @@ kotlin {
     }
 }
 
+// #636 regression guard: the Compose applier-mismatch diagnostic is a warning,
+// so ComposableTargetIsolationFixture would silently rot. Escalate it to an
+// error for the test compilation, where that fixture lives.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlin") {
+    compilerOptions.freeCompilerArgs.add("-Xwarning-level=COMPOSE_APPLIER_CALL_MISMATCH:error")
+}
+
 /**
  * Live process E2E for the system-theme bridge (needs a display / D-Bus on Linux).
  * Not part of `check` — run explicitly: `./gradlew :nucleus-application:systemThemeE2E`

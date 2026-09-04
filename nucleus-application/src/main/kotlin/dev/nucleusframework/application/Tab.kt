@@ -1,6 +1,15 @@
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
+import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoTabWorkspaceAdapter
 import dev.nucleusframework.window.tao.TabScope
 import dev.nucleusframework.window.tao.TabStrip
@@ -103,12 +112,13 @@ public fun TabWindows(
  */
 @Suppress("FunctionNaming")
 @Composable
+@ComposableOpenTarget(-1)
 public fun NucleusApplicationScope.Tab(
     workspace: TabWorkspace,
     id: String,
     title: String,
     group: String? = null,
-    content: @Composable TabScope.() -> Unit,
+    content: @Composable @UiComposable TabScope.() -> Unit,
 ) {
     when (this) {
         is TaoNucleusApplicationScope ->
@@ -129,12 +139,13 @@ public fun NucleusApplicationScope.Tab(
  */
 @Suppress("FunctionNaming")
 @Composable
+@ComposableOpenTarget(-1)
 public fun Tab(
     workspace: TabWorkspace,
     id: String,
     title: String,
     group: String? = null,
-    content: @Composable TabScope.() -> Unit,
+    content: @Composable @UiComposable TabScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.Tab(
         workspace = workspace,

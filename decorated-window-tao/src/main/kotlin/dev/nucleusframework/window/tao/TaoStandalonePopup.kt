@@ -1,6 +1,14 @@
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -8,6 +16,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -65,6 +74,7 @@ public fun isTaoStandalonePopupAvailable(): Boolean =
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun TaoStandalonePopup(
     visible: Boolean,
     position: WindowPosition.Absolute,
@@ -73,7 +83,7 @@ public fun TaoStandalonePopup(
     onOutsideClick: (() -> Unit)? = null,
     onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null,
     onKeyEvent: ((KeyEvent) -> Boolean)? = null,
-    content: @Composable () -> Unit,
+    content: @Composable @UiComposable () -> Unit,
 ) {
     if (Platform.Current != Platform.Windows &&
         Platform.Current != Platform.MacOS &&

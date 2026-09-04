@@ -1,6 +1,15 @@
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
+import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoSatelliteWorkspaceAdapter
 import dev.nucleusframework.window.tao.DefaultSatelliteHeader
 import dev.nucleusframework.window.tao.SatellitePlacement
@@ -42,6 +51,7 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun NucleusApplicationScope.Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -51,8 +61,8 @@ public fun NucleusApplicationScope.Satellite(
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
-    header: @Composable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
-    content: @Composable SatelliteScope.() -> Unit,
+    header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     when (this) {
         is TaoNucleusApplicationScope ->
@@ -78,6 +88,7 @@ public fun NucleusApplicationScope.Satellite(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -87,8 +98,8 @@ public fun Satellite(
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
-    header: @Composable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
-    content: @Composable SatelliteScope.() -> Unit,
+    header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.Satellite(
         workspace = workspace,

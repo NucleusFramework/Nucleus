@@ -1,6 +1,15 @@
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter
@@ -51,6 +60,7 @@ import dev.nucleusframework.window.tao.rememberSatelliteWindowState
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun NucleusApplicationScope.SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: NucleusWindow? = null,
@@ -64,7 +74,7 @@ public fun NucleusApplicationScope.SatelliteWindow(
     nativeContextMenu: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     when (this) {
         is TaoNucleusApplicationScope ->
@@ -95,6 +105,7 @@ public fun NucleusApplicationScope.SatelliteWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: NucleusWindow? = null,
@@ -108,7 +119,7 @@ public fun SatelliteWindow(
     nativeContextMenu: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.SatelliteWindow(
         onCloseRequest = onCloseRequest,

@@ -13,7 +13,5 @@
     <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun setMinimumSize</ID>
     <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun show</ID>
     <ID>UndocumentedPublicFunction:NucleusWindow.kt:NucleusWindow$public fun toFront</ID>
-    <ID>UndocumentedPublicFunction:NucleusWindowHost.kt:NucleusDialogHost$@Composable public fun Dialog</ID>
-    <ID>UndocumentedPublicFunction:NucleusWindowHost.kt:NucleusWindowHost$@Composable public fun Window</ID>
   </CurrentIssues>
 </SmellBaseline>

@@ -1,3 +1,10 @@
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.Canvas
@@ -16,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -27,6 +35,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -147,6 +156,7 @@ internal class SatelliteScopeImpl(
  */
 @Suppress("LongParameterList", "FunctionNaming")
 @Composable
+@ComposableOpenTarget(-1)
 public fun ApplicationScope.Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -156,9 +166,11 @@ public fun ApplicationScope.Satellite(
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     compositionLocalContext: CompositionLocalContext? = null,
-    floatingContentWrapper: @Composable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
-    header: @Composable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
-    content: @Composable SatelliteScope.() -> Unit,
+    floatingContentWrapper:
+        @Composable @UiComposable TaoDecoratedWindowScope.(content: @Composable @UiComposable () -> Unit) -> Unit =
+        { it() },
+    header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     val entry = remember(workspace, id) { workspace.register(id, title, initialPlacement, initiallyOpen) }
     val scope = remember(entry) { SatelliteScopeImpl(workspace, entry, isDocked = false) }
