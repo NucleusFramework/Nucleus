@@ -344,7 +344,14 @@ internal object WindowApiV2HeadfulCases {
                     bottom = available.top + SCOPED_INSET + SCOPED_SIZE.height,
                 )
             state.requestBounds(rect)
-            awaitUntil("final bounds applied after the toggling storm", timeoutMillis = LONG_AWAIT_MS) {
+            awaitUntil(
+                "final bounds applied after the toggling storm",
+                timeoutMillis = LONG_AWAIT_MS,
+                detail = {
+                    "placement=${state.placement} outer=${outerDp()} wanted=$SCOPED_SIZE " +
+                        "maximized=${window.isMaximized} fullscreen=${window.isFullscreen}"
+                },
+            ) {
                 val outer = outerDp()
                 state.placement == WindowPlacement.Floating &&
                     closeEnough(SCOPED_SIZE.width.value, outer.width) &&
