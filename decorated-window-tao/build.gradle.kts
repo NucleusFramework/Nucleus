@@ -52,6 +52,13 @@ kotlin {
     }
 }
 
+// #636 regression guard: the Compose applier-mismatch diagnostic is a warning,
+// so ComposableTargetIsolationFixture would silently rot. Escalate it to an
+// error for the test compilation, where that fixture lives.
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>("compileTestKotlin") {
+    compilerOptions.freeCompilerArgs.add("-Xwarning-level=COMPOSE_APPLIER_CALL_MISMATCH:error")
+}
+
 // ── Native build ────────────────────────────────────────────────────────────
 // Tao + jni crate + per-platform helpers (Metal on macOS, WGL + WndProc deco
 // on Windows). Native binaries ship in src/main/resources/nucleus/native/.

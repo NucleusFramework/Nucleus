@@ -1,8 +1,17 @@
+// #636: the window/dialog openers below are `@ComposableOpenTarget(-1)` with a
+// `@UiComposable` content lambda — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.unit.DpSize
@@ -49,7 +58,13 @@ import androidx.compose.ui.window.rememberWindowState
  * `visibleOnAllWorkspaces`, `forceX11`) are not routed through the host.
  */
 public fun interface NucleusWindowHost {
+    /**
+     * Opens a window hosting [content] on the active backend. Callable from
+     * any applier — [content] is always composed as UI, in the new window's
+     * own composition.
+     */
     @Composable
+    @ComposableOpenTarget(-1)
     public fun Window(
         onCloseRequest: () -> Unit,
         state: WindowState,
@@ -69,7 +84,7 @@ public fun interface NucleusWindowHost {
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
         alwaysOnBottom: Boolean,
-        content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+        content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
     )
 }
 
@@ -83,7 +98,12 @@ public fun interface NucleusWindowHost {
  * Parameter surface matches [DecoratedDialog].
  */
 public fun interface NucleusDialogHost {
+    /**
+     * Opens a dialog hosting [content] on the active backend. Same applier
+     * contract as [NucleusWindowHost.Window].
+     */
     @Composable
+    @ComposableOpenTarget(-1)
     public fun Dialog(
         onCloseRequest: () -> Unit,
         state: DialogState,
@@ -95,7 +115,7 @@ public fun interface NucleusDialogHost {
         focusable: Boolean,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
-        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+        content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
     )
 }
 
@@ -135,6 +155,7 @@ public val LocalNucleusDialogHost: ProvidableCompositionLocal<NucleusDialogHost>
  */
 public object DefaultNucleusWindowHost : NucleusWindowHost {
     @Composable
+    @ComposableOpenTarget(-1)
     override fun Window(
         onCloseRequest: () -> Unit,
         state: WindowState,
@@ -154,7 +175,7 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
         alwaysOnBottom: Boolean,
-        content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+        content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
     ) {
         DecoratedWindow(
             onCloseRequest = onCloseRequest,
@@ -186,6 +207,7 @@ public object DefaultNucleusWindowHost : NucleusWindowHost {
  */
 public object DefaultNucleusDialogHost : NucleusDialogHost {
     @Composable
+    @ComposableOpenTarget(-1)
     override fun Dialog(
         onCloseRequest: () -> Unit,
         state: DialogState,
@@ -197,7 +219,7 @@ public object DefaultNucleusDialogHost : NucleusDialogHost {
         focusable: Boolean,
         onPreviewKeyEvent: (KeyEvent) -> Boolean,
         onKeyEvent: (KeyEvent) -> Boolean,
-        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+        content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
     ) {
         DecoratedDialog(
             onCloseRequest = onCloseRequest,
@@ -226,6 +248,7 @@ public object DefaultNucleusDialogHost : NucleusDialogHost {
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun HostedWindow(
     onCloseRequest: () -> Unit,
     state: WindowState = rememberWindowState(),
@@ -245,7 +268,7 @@ public fun HostedWindow(
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
     alwaysOnBottom: Boolean = false,
-    content: @Composable NucleusDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     LocalNucleusWindowHost.current.Window(
         onCloseRequest = onCloseRequest,
@@ -280,6 +303,7 @@ public fun HostedWindow(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ComposableOpenTarget(-1)
 public fun HostedDialog(
     onCloseRequest: () -> Unit,
     state: DialogState = rememberDialogState(),
@@ -291,7 +315,7 @@ public fun HostedDialog(
     focusable: Boolean = true,
     onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
     onKeyEvent: (KeyEvent) -> Boolean = { false },
-    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
 ) {
     LocalNucleusDialogHost.current.Dialog(
         onCloseRequest = onCloseRequest,
