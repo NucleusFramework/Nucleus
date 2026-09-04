@@ -54,7 +54,7 @@ use crate::{
   platform_impl::platform::{
     dark_mode::try_window_theme,
     dpi::{become_dpi_aware, dpi_to_scale_factor, enable_non_client_dpi_scaling},
-    ime::{is_msg_ime_related, ImeEvent},
+    ime::{is_msg_ime_related, peek_commit_queued, ImeEvent},
     keyboard::is_msg_keyboard_related,
     keyboard_layout::LAYOUT_CACHE,
     monitor::{self, MonitorHandle},
@@ -1033,11 +1033,20 @@ unsafe fn public_window_callback_inner<T: 'static>(
     if !is_ime_related {
       return;
     }
+    // Peek the queue BEFORE taking the window-state lock. `process_message`
+    // used to do this peek itself, with the lock held, which deadlocks the
+    // event-loop thread against itself: `PeekMessageW` delivers pending
+    // cross-thread sent messages inline (the kernel re-enters this window
+    // procedure through `KiUserCallbackDispatcher`), and nearly every arm
+    // below locks the window state. Same bug class as the keyboard one in
+    // #640, and a wider one — there only the keyboard arm took the lock,
+    // here almost everything does. Fixed upstream in tauri-apps/tao#1215.
+    let commit_queued = peek_commit_queued(window, msg);
     let events = {
       let mut window_state = subclass_input.window_state.lock();
       window_state
         .ime_handler
-        .process_message(window, msg, wparam, lparam, &mut result)
+        .process_message(window, msg, wparam, lparam, commit_queued, &mut result)
     };
     for ime_event in events {
       let event = match ime_event {
@@ -2347,8 +2356,14 @@ unsafe fn public_window_callback_inner<T: 'static>(
         update_theme(subclass_input, window, false);
         result = ProcResult::Value(LRESULT(0));
       } else if msg == *S_U_TASKBAR_RESTART {
-        let window_state = subclass_input.window_state.lock();
-        let _ = set_skip_taskbar(window, window_state.skip_taskbar);
+        // Read the flag out and release the lock before the COM call.
+        // `set_skip_taskbar` goes through `CoCreateInstance` +
+        // `ITaskbarList`, and an STA COM call pumps the message queue while
+        // it waits — so the window procedure is re-entered and any arm that
+        // locks the window state deadlocks. Fixed upstream in
+        // tauri-apps/tao#1264.
+        let skip_taskbar = subclass_input.window_state.lock().skip_taskbar;
+        let _ = set_skip_taskbar(window, skip_taskbar);
       }
     }
   };

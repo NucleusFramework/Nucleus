@@ -59,8 +59,13 @@ pub(crate) trait ImeSource {
 }
 
 /// Reads the live input context of `hwnd`.
+///
+/// `commit_queued` is passed in rather than peeked on demand: the peek must
+/// happen before the caller takes the window-state lock — see
+/// [`peek_commit_queued`].
 struct Imm32Source {
   hwnd: HWND,
+  commit_queued: bool,
 }
 
 impl ImeSource for Imm32Source {
@@ -75,22 +80,44 @@ impl ImeSource for Imm32Source {
   }
 
   fn commit_is_queued(&self) -> bool {
-    let mut msg = MaybeUninit::uninit();
-    let has_message = unsafe {
-      PeekMessageW(
-        msg.as_mut_ptr(),
-        Some(self.hwnd),
-        win32wm::WM_IME_COMPOSITION,
-        win32wm::WM_IME_COMPOSITION,
-        PM_NOREMOVE,
-      )
-    };
-    if !has_message.as_bool() {
-      return false;
-    }
-    let msg = unsafe { msg.assume_init() };
-    msg.lParam.0 as u32 & GCS_RESULTSTR.0 != 0
+    self.commit_queued
   }
+}
+
+/// Answers [`ImeSource::commit_is_queued`] for a real window, by peeking the
+/// message queue.
+///
+/// **Must be called before the window-state lock is taken.** `PeekMessageW`
+/// delivers pending cross-thread *sent* messages inline — the kernel re-enters
+/// the window procedure through `KiUserCallbackDispatcher` before the peek
+/// returns — and nearly every window-procedure arm locks the window state.
+/// Peeking while that lock is held therefore deadlocks the event-loop thread
+/// against itself: it parks in `WaitOnAddress` and never pumps a message
+/// again. Same bug class as the keyboard one in
+/// NucleusFramework/Nucleus#640, fixed upstream in tauri-apps/tao#1215.
+///
+/// Only `WM_IME_ENDCOMPOSITION` consults the queue (see the matching arm in
+/// [`ImeHandler::process_message_with`]), so every other message skips the
+/// syscall — and the inline message delivery it would trigger.
+pub(crate) fn peek_commit_queued(hwnd: HWND, msg_kind: u32) -> bool {
+  if msg_kind != win32wm::WM_IME_ENDCOMPOSITION {
+    return false;
+  }
+  let mut msg = MaybeUninit::uninit();
+  let has_message = unsafe {
+    PeekMessageW(
+      msg.as_mut_ptr(),
+      Some(hwnd),
+      win32wm::WM_IME_COMPOSITION,
+      win32wm::WM_IME_COMPOSITION,
+      PM_NOREMOVE,
+    )
+  };
+  if !has_message.as_bool() {
+    return false;
+  }
+  let msg = unsafe { msg.assume_init() };
+  msg.lParam.0 as u32 & GCS_RESULTSTR.0 != 0
 }
 
 pub fn is_msg_ime_related(msg_kind: u32) -> bool {
@@ -228,12 +255,15 @@ impl ImeHandler {
 }
 
 impl ImeHandler {
+  /// `commit_queued` must come from [`peek_commit_queued`], called *before*
+  /// the caller locked the window state.
   pub(crate) fn process_message(
     &mut self,
     hwnd: HWND,
     msg_kind: u32,
     wparam: WPARAM,
     lparam: LPARAM,
+    commit_queued: bool,
     result: &mut ProcResult,
   ) -> Vec<ImeEvent> {
     // `WM_IME_SETCONTEXT` is the one message whose handling *is* the Win32
@@ -248,7 +278,10 @@ impl ImeHandler {
       return Vec::new();
     }
 
-    let source = Imm32Source { hwnd };
+    let source = Imm32Source {
+      hwnd,
+      commit_queued,
+    };
     self.process_message_with(&source, msg_kind, wparam, lparam, result)
   }
 
