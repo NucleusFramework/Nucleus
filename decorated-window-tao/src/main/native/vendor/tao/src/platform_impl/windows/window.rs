@@ -1357,7 +1357,7 @@ unsafe fn init<T: 'static>(
 
   KEY_EVENT_BUILDERS
     .lock()
-    .insert(win.id(), KeyEventBuilder::default());
+    .insert(win.id(), Some(KeyEventBuilder::default()));
 
   let _ = win.set_skip_taskbar(pl_attribs.skip_taskbar);
   win.set_window_icon(attributes.window_icon);
