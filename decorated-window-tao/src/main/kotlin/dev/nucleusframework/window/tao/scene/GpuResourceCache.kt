@@ -48,21 +48,9 @@ internal const val GPU_RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
  */
 internal const val GPU_RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
 
-/**
- * Quiet period after the last resize event, standing in for a drag-end signal
- * on backends that have none. Windows is told exactly when the drag ends
- * (`WM_EXITSIZEMOVE`); AppKit's `viewDidEndLiveResize` is not bridged through
- * the Metal helper, so the macOS host settles on a timer instead. Long enough
- * that a human pausing mid-drag rarely pays the re-raster of a full purge,
- * short enough that the drag's dead scratch does not stay resident.
+/*
+ * There is deliberately no "settle" constant here. A drag-end purge needs a
+ * drag-end signal, and only Windows has one (`WM_EXITSIZEMOVE`); standing a
+ * timer in for it on the other hosts was measured to be a bad trade — see
+ * `TaoComposeSceneHost.purgeResizeScratchIfDue`.
  */
-internal const val GPU_RESIZE_SETTLE_MS: Long = 500L
-
-/**
- * Resize events a burst must have carried before its settle is allowed to nudge
- * a `System.gc()`. A border drag streams dozens; a zoom, a snap, a display hop
- * or a programmatic resize streams one or two, and those must not each buy a
- * stop-the-world collection. Only the hosts without a real drag-end signal need
- * this — Windows is told when the drag ends and can nudge unconditionally.
- */
-internal const val GPU_RESIZE_GC_MIN_EVENTS: Int = 8
