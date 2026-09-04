@@ -59,7 +59,14 @@ pub struct MessageAsKeyEvent {
   pub is_synthetic: bool,
 }
 
-pub(crate) static KEY_EVENT_BUILDERS: Lazy<Mutex<HashMap<WindowId, KeyEventBuilder>>> =
+/// Per-window key event builders.
+///
+/// The value is an `Option` slot so a message handler can *take* the builder
+/// out for the duration of `KeyEventBuilder::process_message` instead of
+/// holding this mutex across it — see the take/put-back in
+/// `event_loop::public_window_callback` and issue
+/// NucleusFramework/Nucleus#640.
+pub(crate) static KEY_EVENT_BUILDERS: Lazy<Mutex<HashMap<WindowId, Option<KeyEventBuilder>>>> =
   Lazy::new(|| Mutex::new(HashMap::new()));
 
 /// Stores information required to make `KeyEvent`s.
@@ -133,9 +140,21 @@ impl KeyEventBuilder {
           *result = ProcResult::Value(LRESULT(0));
         }
 
-        let mut layouts = LAYOUT_CACHE.lock();
-        let event_info =
-          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Pressed, &mut layouts);
+        // The LAYOUT_CACHE guard is deliberately scoped to end before the
+        // `PeekMessageW` below and re-acquired after it. `PeekMessageW`
+        // delivers pending cross-thread `SendMessage`s inline (the kernel
+        // re-enters this window procedure through
+        // `KiUserCallbackDispatcher`), and every other arm of this function
+        // locks LAYOUT_CACHE too. Holding a non-reentrant `parking_lot::Mutex`
+        // across the peek therefore deadlocks the whole event loop against
+        // itself — the thread parks in `WaitOnAddress` and never pumps again
+        // (NucleusFramework/Nucleus#640: reproducible while switching Windows
+        // 11 virtual desktops, which is keyboard-triggered and makes the shell
+        // send messages to the window mid-peek).
+        let event_info = {
+          let mut layouts = LAYOUT_CACHE.lock();
+          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Pressed, &mut layouts)
+        };
 
         let mut next_msg = MaybeUninit::uninit();
         let peek_retval = unsafe {
@@ -150,6 +169,7 @@ impl KeyEventBuilder {
         let has_next_key_message = peek_retval.as_bool();
         self.event_info = None;
         let mut finished_event_info = Some(event_info);
+        let mut layouts = LAYOUT_CACHE.lock();
         if has_next_key_message {
           let next_msg = unsafe { next_msg.assume_init() };
           let next_msg_kind = next_msg.message;
@@ -298,9 +318,12 @@ impl KeyEventBuilder {
           return vec![];
         }
 
-        let mut layouts = LAYOUT_CACHE.lock();
-        let event_info =
-          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Released, &mut layouts);
+        // Same reentrancy hazard as the key-press arm above: never hold
+        // LAYOUT_CACHE across `PeekMessageW`.
+        let event_info = {
+          let mut layouts = LAYOUT_CACHE.lock();
+          PartialKeyEventInfo::from_message(wparam, lparam, ElementState::Released, &mut layouts)
+        };
         let mut next_msg = MaybeUninit::uninit();
         let peek_retval = unsafe {
           PeekMessageW(
@@ -313,6 +336,7 @@ impl KeyEventBuilder {
         };
         let has_next_key_message = peek_retval.as_bool();
         let mut valid_event_info = Some(event_info);
+        let mut layouts = LAYOUT_CACHE.lock();
         if has_next_key_message {
           let next_msg = unsafe { next_msg.assume_init() };
           let (_, layout) = layouts.get_current_layout();

@@ -972,12 +972,43 @@ unsafe fn public_window_callback_inner<T: 'static>(
       return;
     }
     let events = {
-      let mut key_event_builders =
-        crate::platform_impl::platform::keyboard::KEY_EVENT_BUILDERS.lock();
-      if let Some(key_event_builder) = key_event_builders.get_mut(&WindowId(window.0 as _)) {
-        key_event_builder.process_message(window, msg, wparam, lparam, &mut result)
-      } else {
-        Vec::new()
+      use crate::platform_impl::platform::keyboard::KEY_EVENT_BUILDERS;
+      let window_id = WindowId(window.0 as _);
+
+      // Take the builder OUT of the map for the duration of
+      // `process_message` rather than holding the map lock across it.
+      // `process_message` calls `PeekMessageW`, and PeekMessage delivers
+      // pending cross-thread *sent* messages inline — the kernel re-enters
+      // this very window procedure through `KiUserCallbackDispatcher`.
+      // Holding the non-reentrant `KEY_EVENT_BUILDERS` mutex across that
+      // re-entry deadlocks the event-loop thread against itself: it parks in
+      // `WaitOnAddress` and never pumps a message again, so the window goes
+      // "Not Responding" for good (NucleusFramework/Nucleus#640, hit while
+      // moving a window between Windows 11 virtual desktops — that path is
+      // keyboard-triggered and makes the shell send messages to the window
+      // mid-peek).
+      //
+      // While the builder is taken, a nested key message finds an empty slot
+      // and is dropped. That is the right trade-off: only injected or sent
+      // key messages can nest here, since real keyboard input is posted to
+      // the queue rather than sent, and `process_message` peeks with
+      // PM_NOREMOVE so it never dispatches queued messages itself.
+      let taken = KEY_EVENT_BUILDERS
+        .lock()
+        .get_mut(&window_id)
+        .and_then(Option::take);
+
+      match taken {
+        Some(mut key_event_builder) => {
+          let events = key_event_builder.process_message(window, msg, wparam, lparam, &mut result);
+          // Put it back only if the slot still exists: the window may have
+          // been dropped (which removes its slot) while we were processing.
+          if let Some(slot) = KEY_EVENT_BUILDERS.lock().get_mut(&window_id) {
+            *slot = Some(key_event_builder);
+          }
+          events
+        }
+        None => Vec::new(),
       }
     };
     for event in events {
