@@ -306,11 +306,21 @@ internal object TabWorkspaceMouseHeadfulCases {
         )
     }
 
-    /** Fractions of a tab's slot the click case aims at: clear of the close button, hard against the edges. */
+    /**
+     * Fractions of a tab's slot the click case aims at: clear of the close
+     * button, hard against the edges — but past the resize band.
+     *
+     * A strip sits flush with the top of its window, and the top 5 logical px
+     * of a resizable window belong to `ResizeFrameDecoration`, rightly: a
+     * press there is a resize grip in every browser too. On a frame that adds
+     * nothing above its content (Tao on X11, Win32) that band covers the first
+     * eighth of a 40 dp tab, so "hard against the top edge" has to mean the
+     * first pixel of the tab that is the tab's to claim.
+     */
     private const val SLOT_NEAR_X = 0.25f
     private const val SLOT_MID_X = 0.5f
     private const val SLOT_EDGE_X = 0.06f
-    private const val SLOT_NEAR_Y = 0.12f
+    private const val SLOT_NEAR_Y = 0.2f
     private const val SLOT_MID_Y = 0.5f
     private const val SLOT_FAR_Y = 0.88f
 }
