@@ -228,6 +228,10 @@ pub(crate) fn run_event_loop_blocking() {
     // guards against duplicate callbacks.
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let mut last_minimized: HashMap<u64, bool> = HashMap::new();
+    // Windows: handles that asked for a redraw during the batch being
+    // processed, served at `MainEventsCleared`. See UserEvent::RequestRedraw.
+    #[cfg(target_os = "windows")]
+    let mut pending_redraws: Vec<u64> = Vec::new();
     event_loop.run_return(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -430,27 +434,26 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::RequestRedraw { handle } => {
-                    // Windows: answer the request here instead of asking the OS
-                    // for one. `request_redraw` is `RedrawWindow(RDW_INTERNALPAINT)`,
-                    // and Win32 only synthesises WM_PAINT once the thread's
-                    // message queue is otherwise empty — so a window animating
-                    // flat out (each frame posts the next request as a queued
-                    // user event) starves the paints of every *other* window in
-                    // the app. They stop being scheduled for good: their next
-                    // frame waits on a WM_PAINT that only arrives when the
-                    // animation stops. Dispatching the redraw as the queued
-                    // event it already is puts every window on the same
-                    // priority, and the JVM's own coalescing latch (see
-                    // TaoWindow.requestRedraw) keeps one request per frame.
+                    // Windows: queue the request for the end of this batch
+                    // instead of asking the OS for a paint. `request_redraw` is
+                    // `RedrawWindow(RDW_INTERNALPAINT)`, and Win32 only
+                    // synthesises WM_PAINT once the thread's message queue is
+                    // otherwise empty — so a window animating flat out (each
+                    // frame posting the next request as a queued user event)
+                    // starves the paints of every *other* window in the app.
+                    // They stop being scheduled for good: their next frame
+                    // waits on a WM_PAINT that only arrives when the animation
+                    // stops. Answering it here, on the other hand, re-enters
+                    // rendering from inside the event batch and `MainEventsCleared`
+                    // — the tick that drains `TaoMainDispatcher` — is never
+                    // reached at all. So the requests are collected and served
+                    // below, once per batch, after that drain: every window is
+                    // painted at the same priority, in request order.
                     // OS-driven repaints still arrive as Event::RedrawRequested.
                     #[cfg(target_os = "windows")]
                     {
-                        let alive = {
-                            let guard = WINDOWS.lock().unwrap();
-                            guard.as_ref().is_some_and(|map| map.contains_key(&handle))
-                        };
-                        if alive {
-                            dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
+                        if !pending_redraws.contains(&handle) {
+                            pending_redraws.push(handle);
                         }
                     }
                     #[cfg(not(target_os = "windows"))]
@@ -1025,6 +1028,25 @@ pub(crate) fn run_event_loop_blocking() {
             }
             Event::MainEventsCleared => {
                 dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
+                // The redraws asked for during this batch (Windows only — see
+                // UserEvent::RequestRedraw), served after the dispatcher drain
+                // above so a frame sees the work that produced it. A window
+                // destroyed meanwhile is skipped; one that asks again while
+                // being painted lands in the next batch, which the request
+                // itself wakes the loop for.
+                #[cfg(target_os = "windows")]
+                if !pending_redraws.is_empty() {
+                    let serving: Vec<u64> = pending_redraws.drain(..).collect();
+                    for handle in serving {
+                        let alive = {
+                            let guard = WINDOWS.lock().unwrap();
+                            guard.as_ref().is_some_and(|map| map.contains_key(&handle))
+                        };
+                        if alive {
+                            dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
+                        }
+                    }
+                }
             }
             // macOS deep links: AppKit installs its own `kAEGetURL` handler
             // during `finishLaunching` (routing to `application:openURLs:`).
