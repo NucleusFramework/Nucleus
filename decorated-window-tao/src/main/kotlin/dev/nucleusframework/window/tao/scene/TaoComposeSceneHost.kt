@@ -52,9 +52,12 @@ import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
 import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -356,8 +359,18 @@ internal class TaoComposeSceneHost(
         val devicePtr = NativeMetalBridge.nativeDevicePtr(handle)
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
         // The Skia Metal DirectContext is thread-affine: create it on the render
-        // thread that will use it for every frame's GPU encode + present.
-        directContext = runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
+        // thread that will use it for every frame's GPU encode + present. The
+        // resource-cache budget is anchored in the same hop — writing it purges
+        // to fit, so it belongs on the owning thread like every other use of
+        // the context. See GPU_RESOURCE_CACHE_LIMIT_BYTES for why the value
+        // itself changes nothing today, and [purgeGpuResourceCache] for what
+        // actually reclaims.
+        directContext =
+            runOnRenderThread {
+                DirectContext.makeMetal(devicePtr, queuePtr).also {
+                    it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+                }
+            }
 
         scale = initialMacOsScaleFactor(window)
 
@@ -685,6 +698,87 @@ internal class TaoComposeSceneHost(
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
         window.requestRedraw()
+        onResizeStreamAdvanced()
+    }
+
+    private var lastResizePurgeNs: Long = 0
+    private var resizeSettleJob: Job? = null
+    private var resizeBurstEvents: Int = 0
+
+    /**
+     * Reclaims the per-size GPU scratch a live resize mints — the macOS half of
+     * what [TaoComposeSceneHostWindows.onResizeLoopChanged] does for the OS
+     * modal resize/move loop.
+     *
+     * Two purges, for the two halves of a drag. The periodic one keeps a long
+     * drag's peak bounded while sizes are still streaming (Skia's budget caps
+     * the cache, but a capped cache full of scratch no frame will ever ask for
+     * again is still 256 MiB resident). The settle one stands in for the
+     * `WM_EXITSIZEMOVE` macOS never sends us: [GPU_RESIZE_SETTLE_MS] after the
+     * last size, the drag is over for all practical purposes, so drop what it
+     * accumulated and nudge one GC so the skiko `Cleaner` can release the
+     * Compose layers/pictures every remeasure minted — the purge cannot touch
+     * those while they are still locked, and a settled scene allocates nothing,
+     * so no collection would otherwise come on its own.
+     *
+     * Re-armed on every resize, so a continuous drag only ever pays the
+     * periodic purge; the expensive pair lands once, after the user lets go.
+     *
+     * The GC half is gated on the burst having been a real drag
+     * ([GPU_RESIZE_GC_MIN_EVENTS]). Windows can be unconditional because
+     * `WM_EXITSIZEMOVE` only arrives after one; here every size change settles,
+     * including the single event a zoom, a snap or a programmatic resize
+     * produces — and a stop-the-world collection half a second after every such
+     * resize costs far more than the handful of layers one of them minted.
+     */
+    private fun onResizeStreamAdvanced() {
+        val now = System.nanoTime()
+        resizeBurstEvents++
+        if (now - lastResizePurgeNs >= GPU_RESIZE_PURGE_INTERVAL_NS) {
+            lastResizePurgeNs = now
+            purgeGpuResourceCache()
+        }
+        resizeSettleJob?.cancel()
+        resizeSettleJob =
+            hostScope.launch {
+                delay(GPU_RESIZE_SETTLE_MS)
+                val wasDrag = resizeBurstEvents >= GPU_RESIZE_GC_MIN_EVENTS
+                resizeBurstEvents = 0
+                purgeGpuResourceCache()
+                if (wasDrag) {
+                    @Suppress("ExplicitGarbageCollectionCall")
+                    System.gc()
+                }
+            }
+    }
+
+    /**
+     * Frees the GPU resource cache: toggling the limit to 0 runs Skia's
+     * `purgeAsNeeded` inline, releasing every unlocked resource, and restoring
+     * the budget lets the next frame re-mint only what it needs. The only purge
+     * primitive skiko exposes — see [GPU_RESOURCE_CACHE_LIMIT_BYTES].
+     *
+     * Metal has no notion of a *current* context, so none of the foreign-context
+     * hazard the ANGLE/EGL hosts guard against (#514) applies here: the danger
+     * on this backend is thread affinity instead. The `DirectContext` is created
+     * on, and only ever touched from, [renderExecutor], so the toggle hops
+     * there — submitted rather than awaited, because the caller is the Tao main
+     * thread on the resize path and blocking it would park the drag behind the
+     * in-flight replay. FIFO ordering puts the purge cleanly between two frames,
+     * where nothing the host caches is live (each frame wraps the drawable's
+     * texture in a fresh `BackendRenderTarget`), and once [detach] has nulled
+     * the context this returns before submitting anything.
+     */
+    private fun purgeGpuResourceCache() {
+        val ctx = directContext ?: return
+        // Rejected once detach() shut the executor down; a purge is never worth
+        // routing to the fatal handler.
+        runCatching {
+            renderExecutor.submit {
+                ctx.resourceCacheLimit = 0
+                ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+            }
+        }
     }
 
     /**
@@ -1385,6 +1479,17 @@ internal class TaoComposeSceneHost(
     private var frameDispatcher: org.jetbrains.skiko.FrameDispatcher? = null
     private val renderLoopJob = kotlinx.coroutines.SupervisorJob()
 
+    /**
+     * Main-thread scope for the host's own deferred work (today: the resize
+     * settle in [onResizeStreamAdvanced]). Shares [renderLoopJob], so
+     * [detach]'s cancel takes it down with the render loop and nothing can fire
+     * against a torn-down host.
+     */
+    private val hostScope =
+        CoroutineScope(
+            coroutineContext + TaoMainDispatcher + renderLoopJob + TaoFatalCoroutineExceptionHandler,
+        )
+
     /** Schedules a single coalesced frame on the render loop. The sole entry
      *  point for "please repaint" — both Compose `invalidate` and Tao
      *  `RedrawRequested` events funnel through here so frames stay serialized. */
@@ -1401,14 +1506,12 @@ internal class TaoComposeSceneHost(
     private fun startRenderLoop(handle: Long) {
         // FrameDispatcher runs ONE long-lived coroutine: an exception in a
         // frame kills it for good, and the SupervisorJob would swallow the
-        // failure — the window silently stops repainting (#622). Route it to
-        // the fatal path instead (SEVERE log, native dialog, clean exit).
-        val scope =
-            kotlinx.coroutines.CoroutineScope(
-                coroutineContext + TaoMainDispatcher + renderLoopJob + TaoFatalCoroutineExceptionHandler,
-            )
+        // failure — the window silently stops repainting (#622). [hostScope]
+        // carries TaoFatalCoroutineExceptionHandler for exactly that: the
+        // failure takes the fatal path (SEVERE log, native dialog, clean exit)
+        // instead of being dropped.
         frameDispatcher =
-            org.jetbrains.skiko.FrameDispatcher(scope) {
+            org.jetbrains.skiko.FrameDispatcher(hostScope) {
                 renderFrameSuspending(handle)
             }
     }
