@@ -147,9 +147,14 @@ internal fun BindNucleusWindowState(
     val latestV1 = v1
     val latestNativeWindow by rememberUpdatedState(nativeWindow)
     LaunchedEffect(v2, v1) {
+        // When the last placement was handed to v1. Both consumers below run on
+        // this effect's dispatcher (the Tao main thread), so a plain var is the
+        // whole synchronisation story.
+        var placementAppliedNs = Long.MIN_VALUE
         launch {
             for (placement in latestV2.placementRequests) {
                 latestV1.placement = placement
+                placementAppliedNs = System.nanoTime()
             }
         }
         launch {
@@ -168,6 +173,16 @@ internal fun BindNucleusWindowState(
                 val nativeStuck =
                     !v1LeavesPlacement && window != null && (window.isMaximized || window.isFullscreen)
                 val leftPlacement = v1LeavesPlacement || nativeStuck
+                // …and even the native flags are only a sample. AppKit clears
+                // `isZoomed` *before* it animates, so right after a toggle both
+                // the v1 bookkeeping and the flags can read Floating while the
+                // zoom that will re-assert the old frame has not landed yet —
+                // and then it lands on top of the bounds we are about to apply,
+                // with nobody watching, because `leftPlacement` said there was
+                // nothing to leave. A placement applied moments ago is therefore
+                // its own reason to confirm the result.
+                val placementInFlight =
+                    System.nanoTime() - placementAppliedNs < PLACEMENT_IN_FLIGHT_GRACE_NS
                 if (leftPlacement) {
                     // Bounds on a non-floating window make it floating (the v2
                     // contract) — but the restore is asynchronous, and on macOS
@@ -189,7 +204,9 @@ internal fun BindNucleusWindowState(
                 val resolved = resolveBounds(provider, latestV1, latestNativeWindow)
                 latestV1.size = resolved.size
                 latestV1.position = resolved.position
-                if (leftPlacement) latestNativeWindow?.let { confirmBounds(it, latestV1, resolved) }
+                if (leftPlacement || placementInFlight) {
+                    latestNativeWindow?.let { confirmBounds(it, latestV1, resolved) }
+                }
             }
         }
         launch {
@@ -702,11 +719,30 @@ private suspend fun confirmBounds(
                     kotlin.math.abs((outer.left - position.x).value) <= CONFIRM_TOLERANCE_DP &&
                         kotlin.math.abs((outer.top - position.y).value) <= CONFIRM_TOLERANCE_DP
                 )
-        if (sizeOk && positionOk) return
-        // A frame that went back to the zoomed size means the native placement
-        // reasserted itself; clear it before re-applying (on macOS by the
-        // re-apply itself — see restoreAndAwaitFloating).
-        if (window.isMaximized || window.isFullscreen) restoreAndAwaitFloating(window)
+        // A re-asserted placement is a failure to converge in its own right, and
+        // it has to be tested *before* the geometry: a maximized window ignores
+        // v1's size, so `decorationInsets` derives the insets from a target that
+        // never landed (2560 outer - 820 target = 1740 of "decoration"), and the
+        // subtraction above then reports `sizeOk` for any outer rectangle at all.
+        val placementClear = !window.isMaximized && !window.isFullscreen
+        if (placementClear && sizeOk && positionOk) return
+        if (!placementClear) {
+            // Clearing it is v1's job, not ours. `setMaximized(false)` is a
+            // `zoom:` toggle on macOS, and the window composable's placement
+            // effect issues exactly one when v1 goes Floating while its own
+            // `applied` bookkeeping still reads Maximized — which is precisely
+            // what a late zoom leaves behind, since the resize it triggers
+            // writes Maximized into both. Poking the native flag here instead
+            // would race that effect and re-zoom. Only when v1 already reads
+            // Floating (its effect stays idle) does the bridge clear the native
+            // state itself.
+            if (v1.placement != WindowPlacement.Floating) {
+                v1.placement = WindowPlacement.Floating
+                awaitFloating(window)
+            } else {
+                restoreAndAwaitFloating(window)
+            }
+        }
         v1.size = target.size
         v1.position = target.position
     }
@@ -744,6 +780,15 @@ private suspend fun awaitSettled(window: TaoWindow) {
         delay(PLACEMENT_RESTORE_RETRY_MS)
     }
 }
+
+/**
+ * How long after a placement was applied a bounds request still has to confirm
+ * its result. Covers a queued `zoom:` animation whose final frame lands after
+ * the bounds were applied; long enough for a burst of them to drain, short
+ * enough that ordinary geometry requests — a frame-paced move sends one per
+ * frame through the same channel — never pay for the confirmation.
+ */
+private const val PLACEMENT_IN_FLIGHT_GRACE_NS = 1_000_000_000L
 
 private const val PLACEMENT_RESTORE_RETRIES = 60
 private const val PLACEMENT_RESTORE_RETRY_MS = 50L
