@@ -53,6 +53,7 @@ import kotlin.math.abs
  *     ended up;
  *  4. nothing above leaks when the content is added and removed over and over.
  */
+@Suppress("LargeClass") // one method per real-window case, by design
 internal object WindowExtremesHeadfulCases {
     fun all(): List<TaoWindowTestCase> =
         listOf(
@@ -410,7 +411,14 @@ internal object WindowExtremesHeadfulCases {
                 window.setInnerSize(END_W_DP, END_H_DP)
                 awaitSettledAt(probe, window, END_W_DP, END_H_DP)
                 check(probe.view.worstRect() == null) { "the storm handed the embed ${probe.view.worstRect()}" }
-                awaitUntil("the embed caught up with the composable") {
+                awaitUntil(
+                    "the embed caught up with the composable",
+                    detail = {
+                        "embed=${probe.view.bounds()} laid out=${probe.childBounds.value} " +
+                            "scene=${probe.sceneSize.value} outer=${window.outerBoundsPx()?.toList()} " +
+                            "frames=${probe.frames.get()} content=${probe.rootBounds.value}"
+                    },
+                ) {
                     val given = probe.view.bounds() ?: return@awaitUntil false
                     val laid = probe.childBounds.value ?: return@awaitUntil false
                     abs(given.width - laid.width) <= EMBED_TOLERANCE_PX
@@ -639,6 +647,9 @@ internal object WindowExtremesHeadfulCases {
         /** Bounds of the probe's child, in window px. */
         val childBounds = mutableStateOf<Size?>(null)
 
+        /** Size of the probe's own root, to compare against the scene it sits in. */
+        val rootBounds = mutableStateOf<Size?>(null)
+
         /** Frame-clock ticks since the content was composed. */
         val frames = AtomicLong()
 
@@ -662,6 +673,7 @@ internal object WindowExtremesHeadfulCases {
             Box(
                 Modifier
                     .fillMaxSize()
+                    .onGloballyPositioned { rootBounds.value = Size(it.size.width.toFloat(), it.size.height.toFloat()) }
                     .background(if (opaque) Color.DarkGray else Color.Transparent),
             ) {
                 when {
@@ -688,8 +700,13 @@ internal object WindowExtremesHeadfulCases {
     @Composable
     private fun FrameTicker(frames: AtomicLong) {
         val phase = remember { mutableFloatStateOf(0f) }
+        // Deliberately the smallest node that can draw: the ticker is a
+        // sibling of the probe's content in the window's scene column, and a
+        // `fillMaxSize` here takes the whole height with it — leaving the
+        // content the case is about measured at zero and every geometry
+        // assertion comparing two stale rects.
         Box(
-            Modifier.fillMaxSize().drawBehind {
+            Modifier.size(TICKER_DP.dp).drawBehind {
                 @Suppress("UNUSED_EXPRESSION")
                 phase.value
             },
@@ -826,12 +843,25 @@ internal object WindowExtremesHeadfulCases {
             val scene = probe.sceneSize.value
             abs(scene.width - (wDp * scale).toInt()) <= SIZE_TOLERANCE_PX
         }
+        // The scene having the right size does not mean the content was laid
+        // out in it: a sibling that eats the window's height leaves every
+        // geometry assertion below comparing two stale rects, and passing.
+        awaitUntil(
+            "the content filled the scene",
+            detail = { "content=${probe.rootBounds.value} scene=${probe.sceneSize.value}" },
+        ) {
+            val root = probe.rootBounds.value ?: return@awaitUntil false
+            abs(root.height.toInt() - probe.sceneSize.value.height) <= SIZE_TOLERANCE_PX
+        }
         awaitUntil("the window is still mapped with a real frame") {
             val rect = window.outerBoundsPx() ?: return@awaitUntil false
             rect[RECT_W] >= probe.sceneSize.value.width - SIZE_TOLERANCE_PX && rect[RECT_H] > 0L
         }
         settle(SETTLE_AFTER_MAP_MILLIS)
     }
+
+    /** The frame ticker's own size — big enough to draw, small enough to ignore. */
+    private const val TICKER_DP = 1
 
     private const val START_W_DP = 520.0
     private const val START_H_DP = 380.0
