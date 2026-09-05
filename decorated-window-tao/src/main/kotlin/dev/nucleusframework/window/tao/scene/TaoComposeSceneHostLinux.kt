@@ -571,18 +571,7 @@ internal class TaoComposeSceneHostLinux(
                     coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
-                    composeSceneContext =
-                        TaoComposeSceneContext(
-                            platformContext = platformContext,
-                        ) { density, layoutDirection, focusable, consumeOutside ->
-                            TaoPopupSceneLayerLinux(
-                                host = popupHost(),
-                                initialDensity = density,
-                                initialLayoutDirection = layoutDirection,
-                                initialFocusable = focusable,
-                                initialConsumePointerInputOutside = consumeOutside,
-                            )
-                        },
+                    composeSceneContext = TaoComposeSceneContext(platformContext, nativePopupLayerFactory()),
                     requestFrame = { requestRedrawCoalesced() },
                 )
             } else {
@@ -2178,8 +2167,27 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Plumbing handed to [TaoPopupSceneLayerLinux] instances when
-     * [nativePopupLayers] is enabled. Mirrors the Windows
+     * Builds this window's native popup layers ([TaoPopupSceneLayerLinux]).
+     * The factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
+     * hands to a subtree that wants native surfaces while the window's own
+     * popups stay in-scene. [popupHost] is resolved per layer, as it always
+     * was: a Wayland hide/show rebuilds the EGL pair and the host reads the
+     * live one.
+     */
+    fun nativePopupLayerFactory(): TaoPopupLayerFactory =
+        { density, layoutDirection, focusable, consumeOutside ->
+            TaoPopupSceneLayerLinux(
+                host = popupHost(),
+                initialDensity = density,
+                initialLayoutDirection = layoutDirection,
+                initialFocusable = focusable,
+                initialConsumePointerInputOutside = consumeOutside,
+            )
+        }
+
+    /**
+     * Plumbing handed to [TaoPopupSceneLayerLinux] instances by
+     * [nativePopupLayerFactory]. Mirrors the Windows
      * [TaoComposeSceneHostWindows.popupHost] contract, adapted to the Linux
      * backend: layers are Tao popup windows keyed on [parentWindow], and each
      * owns a private EGL context so there is no shared DirectContext.

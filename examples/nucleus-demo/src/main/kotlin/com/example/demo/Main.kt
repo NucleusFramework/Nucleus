@@ -148,7 +148,7 @@ fun main(args: Array<String>) =
                 title = "Nucleus Demo",
                 minimumSize = DpSize(1300.dp, 480.dp),
                 nativeContextMenu = true,
-                nativePopupLayers = true
+                nativePopupLayers = false
             ) {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,

@@ -468,24 +468,14 @@ internal class TaoComposeSceneHostWindows(
                 // Opt-in path (e.g. tray popups): every Popup becomes a
                 // transparent WS_POPUP HWND owned by this window, so popup
                 // content can extend beyond — and float independently of —
-                // the window bounds. popupHost() is non-null here: hwnd and
+                // the window bounds. The factory is non-null here: hwnd and
                 // directContext were both set above.
                 platformLayersSceneBundle(
                     coroutineContext = coroutineContext + flushingDispatcher,
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     composeSceneContext =
-                        TaoComposeSceneContext(
-                            platformContext = platformContext,
-                        ) { density, layoutDirection, focusable, consumeOutside ->
-                            TaoPopupSceneLayerWindows(
-                                host = requireNotNull(popupHost()),
-                                initialDensity = density,
-                                initialLayoutDirection = layoutDirection,
-                                initialFocusable = focusable,
-                                initialConsumePointerInputOutside = consumeOutside,
-                            )
-                        },
+                        TaoComposeSceneContext(platformContext, requireNotNull(nativePopupLayerFactory())),
                     requestFrame = { window.requestRedraw() },
                 )
             } else {
@@ -1628,6 +1618,25 @@ internal class TaoComposeSceneHostWindows(
             parentContentOriginPx = IntOffset(origin[0], origin[1]),
             workAreasPx = areas,
         )
+    }
+
+    /**
+     * Builds this window's native popup layers ([TaoPopupSceneLayerWindows]).
+     * The factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
+     * hands to a subtree that wants native surfaces while the window's own
+     * popups stay in-scene. `null` until the HWND and its Skia context exist.
+     */
+    fun nativePopupLayerFactory(): TaoPopupLayerFactory? {
+        val popupHost = popupHost() ?: return null
+        return { density, layoutDirection, focusable, consumeOutside ->
+            TaoPopupSceneLayerWindows(
+                host = popupHost,
+                initialDensity = density,
+                initialLayoutDirection = layoutDirection,
+                initialFocusable = focusable,
+                initialConsumePointerInputOutside = consumeOutside,
+            )
+        }
     }
 
     fun popupHost(): TaoPopupHostWindows? {
