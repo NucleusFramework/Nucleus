@@ -1,3 +1,10 @@
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation")
+
 package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.layout.Box
@@ -5,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -17,6 +25,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
@@ -80,12 +89,13 @@ internal class TabScopeImpl(
  */
 @Suppress("FunctionNaming")
 @Composable
+@ComposableOpenTarget(-1)
 public fun ApplicationScope.Tab(
     workspace: TabWorkspace,
     id: String,
     title: String,
     group: String? = null,
-    content: @Composable TabScope.() -> Unit,
+    content: @Composable @UiComposable TabScope.() -> Unit,
 ) {
     val entry = remember(workspace, id) { workspace.register(id, title, group) }
     // Published as snapshot state so the window hosting the tab picks up a new

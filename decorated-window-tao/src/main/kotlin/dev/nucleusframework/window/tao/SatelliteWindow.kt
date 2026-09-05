@@ -1,8 +1,14 @@
-@file:Suppress("MagicNumber")
+// #636: the window openers below are `@ComposableOpenTarget(-1)` with
+// `@UiComposable` content lambdas — callable from any applier, always composing
+// UI — so a non-UI composable called in the caller's scope cannot reclassify
+// the window content. ktlint's `annotation` and `function-type-modifier-spacing`
+// rules contradict each other on the resulting two-annotation parameter type.
+@file:Suppress("ktlint:standard:annotation", "MagicNumber")
 
 package dev.nucleusframework.window.tao
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -12,6 +18,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.UiComposable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -110,6 +117,7 @@ import kotlinx.coroutines.delay
  */
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
+@ComposableOpenTarget(-1)
 public fun ApplicationScope.SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: TaoWindow? = LocalTaoWindow.current,
@@ -125,7 +133,7 @@ public fun ApplicationScope.SatelliteWindow(
     // Parent composition locals bridged into the satellite's own ComposeScene
     // from its first composition, exactly like [DecoratedDialog].
     compositionLocalContext: CompositionLocalContext? = null,
-    content: @Composable TaoDecoratedWindowScope.() -> Unit,
+    content: @Composable @UiComposable TaoDecoratedWindowScope.() -> Unit,
 ) {
     val latestContent by rememberUpdatedState(content)
     val latestOnClose by rememberUpdatedState(onCloseRequest)
