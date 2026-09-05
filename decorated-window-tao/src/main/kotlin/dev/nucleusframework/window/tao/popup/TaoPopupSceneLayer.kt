@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -12,6 +14,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
@@ -64,6 +67,13 @@ import org.jetbrains.skia.DirectContext
  *     what makes `MaterialTheme.colorScheme` etc. flow into the popup
  *     content automatically.
  *
+ * The frame pushed to the panel is clamped into the hosting display's work
+ * area ([popupScreenClampOffset], #569) every time `boundsInWindow` changes.
+ * Unlike the Windows and Linux layers there is no re-clamp on owner move: the
+ * panel is an AppKit child window and rides along with the NSWindow, so a
+ * window dragged past a screen edge with a popup already open takes it along
+ * — the same thing AppKit's own menus avoid by closing on window move.
+ *
  * Phase 3 deliberately omits:
  *  - `setOutsidePointerEventListener` — outside-click dismissal lands
  *    in Phase 4 (NSEvent local monitor on the parent window).
@@ -86,7 +96,7 @@ internal class TaoPopupSceneLayer(
     private var _layoutDirection = initialLayoutDirection
     private var _focusable = initialFocusable
     private var _bounds: IntRect = IntRect.Zero
-    private var _scrimColor: Color? = null
+    private val scrimColorState: MutableState<Color?> = mutableStateOf(null)
     private var _compositionLocalContext: CompositionLocalContext? = null
 
     private val rendererToken: Any = Any()
@@ -106,6 +116,38 @@ internal class TaoPopupSceneLayer(
         host.workAreaSize.let {
             IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
         }
+
+    /**
+     * Compose's box for placing this layer's content, as reported through
+     * `LocalWindowInfo` inside the layer's own composition (#569).
+     *
+     * Two answers, because two very different things end up in a scene layer:
+     *
+     *  - A **popup** (`Popup`, `DropdownMenu`, context menu, tooltip, Jewel's
+     *    combo-box flyout) belongs to the *display*. It gets the work area
+     *    ([sceneLayoutSize]), so `Popup.skiko.kt` lays it out at full size and
+     *    flips it against a screen-sized box instead of against the owner
+     *    window — the point of native popup layers. That box is still rooted at
+     *    the window; the origin is what the screen clamp corrects when the
+     *    frame is pushed.
+     *  - A **dialog** (`Dialog`, Material `AlertDialog`) belongs to its
+     *    *window*: `Dialog.skiko.kt` places it at `containerSize.center`, and a
+     *    window-owned dialog centred on the display would sit visibly
+     *    off-centre — and drift further as the user moved the window. It gets
+     *    the owner window's content size, exactly as before #569.
+     *
+     * `scrimColor` is the discriminator, and a sound one: only
+     * `Dialog.skiko.kt` ever writes it, from
+     * `DialogAppearanceController.properties` — assigned while `DialogLayout`
+     * composes, *before* `layer.Content { }` and so before this is read.
+     * `Popup.skiko.kt` never touches it. Held as snapshot state so a later
+     * write recomposes the content that read it.
+     */
+    private val dialogContainerSize: IntSize
+        get() =
+            host.parentWindowSize.let {
+                IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+            }
 
     /**
      * Panel created at parent-window-size offscreen so the inner scene
@@ -197,7 +239,8 @@ internal class TaoPopupSceneLayer(
     private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
         object : androidx.compose.ui.platform.WindowInfo {
             override val isWindowFocused: Boolean = true
-            override val containerSize: IntSize get() = sceneLayoutSize
+            override val containerSize: IntSize
+                get() = if (scrimColorState.value != null) dialogContainerSize else sceneLayoutSize
         }
 
     private val sceneBundle: TaoSceneBundle =
@@ -347,13 +390,44 @@ internal class TaoPopupSceneLayer(
             // is zero; for `NativeView`'s overlay scene it is the overlay's
             // own position within the host NSWindow.
             val offset = host.coordinateOffset
+            val frameInParent =
+                IntRect(
+                    left = value.left + offset.x,
+                    top = value.top + offset.y,
+                    right = value.right + offset.x,
+                    bottom = value.bottom + offset.y,
+                )
+            // Screen clamp (#569): Compose decided this position inside a
+            // work-area-sized virtual screen rooted at the window's content
+            // origin, so it can point off the real display. Only the panel's
+            // frame moves — `_bounds` stays what Compose believes, which is
+            // what [calculateLocalPosition] and the panel-local pointer
+            // coordinates are expressed in (the scene draws at the panel's
+            // own top-left, so the content follows the panel for free).
+            val clamp = popupScreenClampOffset(frameInParent, host.popupScreenGeometry)
             PopupNativeBridge.nativeSetFrameInWindow(
                 panel = panelHandle,
-                xPx = value.left + offset.x,
-                yPx = value.top + offset.y,
+                xPx = frameInParent.left + clamp.x,
+                yPx = frameInParent.top + clamp.y,
                 widthPx = value.width.coerceAtLeast(1),
                 heightPx = value.height.coerceAtLeast(1),
             )
+            host.popupScreenGeometry?.let { geometry ->
+                TaoPopupDiagnostics.record(
+                    PopupFrameRecord(
+                        boundsInWindowPx = value,
+                        frameOnScreenPx =
+                            IntRect(
+                                left = geometry.parentContentOriginPx.x + frameInParent.left + clamp.x,
+                                top = geometry.parentContentOriginPx.y + frameInParent.top + clamp.y,
+                                right = geometry.parentContentOriginPx.x + frameInParent.right + clamp.x,
+                                bottom = geometry.parentContentOriginPx.y + frameInParent.bottom + clamp.y,
+                            ),
+                        clampOffsetPx = clamp,
+                        panelHandle = panelHandle,
+                    ),
+                )
+            }
             // Resize the CAMetalLayer's drawable to match the popup's
             // actual size. We DON'T resize the inner scene — its size
             // stays at parent window size so layout has real constraints.
@@ -375,9 +449,9 @@ internal class TaoPopupSceneLayer(
         }
 
     override var scrimColor: Color?
-        get() = _scrimColor
+        get() = scrimColorState.value
         set(value) {
-            _scrimColor = value // TODO Phase 4: third surface
+            scrimColorState.value = value
         }
 
     override var focusable: Boolean
@@ -442,7 +516,19 @@ internal class TaoPopupSceneLayer(
             // Our texture host goes *inside* the replayed locals: those carry
             // the window scene's host, which would otherwise shadow ours.
             val body: @Composable () -> Unit = {
-                CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost) {
+                CompositionLocalProvider(
+                    LocalTaoMetalTextureHost provides metalTextureHost,
+                    // Inside the replayed parent locals, and deliberately so
+                    // (#569): `Popup.skiko.kt` reads `LocalWindowInfo` from
+                    // *this* composition to size the box it flips and clips the
+                    // popup inside. The replayed snapshot carries the owner
+                    // window's WindowInfo, which would pin every popup to the
+                    // window — the opposite of what native popup layers exist
+                    // for. `popupWindowInfo` reports the work area, so Compose
+                    // flips against a screen-sized box (still rooted at the
+                    // window; the origin is what the clamp corrects).
+                    LocalWindowInfo provides popupWindowInfo,
+                ) {
                     content()
                 }
             }

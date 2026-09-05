@@ -14,6 +14,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeSceneLayer
 import androidx.compose.ui.unit.Density
@@ -93,7 +94,7 @@ internal class TaoPopupSceneLayerLinux(
     private var _layoutDirection = initialLayoutDirection
     private var _focusable = initialFocusable
     private var _bounds: IntRect = IntRect.Zero
-    private var _scrimColor: Color? = null
+    private val scrimColorState: MutableState<Color?> = mutableStateOf(null)
     private var _compositionLocalContext: CompositionLocalContext? = null
 
     private val rendererToken: Any = Any()
@@ -143,6 +144,38 @@ internal class TaoPopupSceneLayerLinux(
         }
 
     /**
+     * Compose's box for placing this layer's content, as reported through
+     * `LocalWindowInfo` inside the layer's own composition (#569).
+     *
+     * Two answers, because two very different things end up in a scene layer:
+     *
+     *  - A **popup** (`Popup`, `DropdownMenu`, context menu, tooltip, Jewel's
+     *    combo-box flyout) belongs to the *display*. It gets the work area
+     *    ([sceneLayoutSize]), so `Popup.skiko.kt` lays it out at full size and
+     *    flips it against a screen-sized box instead of against the owner
+     *    window — the point of native popup layers. That box is still rooted at
+     *    the window; the origin is what the screen clamp corrects when the
+     *    frame is pushed.
+     *  - A **dialog** (`Dialog`, Material `AlertDialog`) belongs to its
+     *    *window*: `Dialog.skiko.kt` places it at `containerSize.center`, and a
+     *    window-owned dialog centred on the display would sit visibly
+     *    off-centre — and drift further as the user moved the window. It gets
+     *    the owner window's content size, exactly as before #569.
+     *
+     * `scrimColor` is the discriminator, and a sound one: only
+     * `Dialog.skiko.kt` ever writes it, from
+     * `DialogAppearanceController.properties` — assigned while `DialogLayout`
+     * composes, *before* `layer.Content { }` and so before this is read.
+     * `Popup.skiko.kt` never touches it. Held as snapshot state so a later
+     * write recomposes the content that read it.
+     */
+    private val dialogContainerSize: IntSize
+        get() =
+            host.parentWindowSize.let {
+                IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
+            }
+
+    /**
      * Physical size of the popup's native surface and render target. Always
      * a multiple of [bufferScale]; the content occupies its top-left and the
      * ≤ `bufferScale - 1` px edge stays transparent.
@@ -170,7 +203,8 @@ internal class TaoPopupSceneLayerLinux(
     private val popupWindowInfo: androidx.compose.ui.platform.WindowInfo =
         object : androidx.compose.ui.platform.WindowInfo {
             override val isWindowFocused: Boolean = true
-            override val containerSize: IntSize get() = sceneLayoutSize
+            override val containerSize: IntSize
+                get() = if (scrimColorState.value != null) dialogContainerSize else sceneLayoutSize
         }
 
     private val sceneBundle: TaoSceneBundle =
@@ -320,9 +354,9 @@ internal class TaoPopupSceneLayerLinux(
         }
 
     override var scrimColor: Color?
-        get() = _scrimColor
+        get() = scrimColorState.value
         set(value) {
-            _scrimColor = value
+            scrimColorState.value = value
         }
 
     override var focusable: Boolean
@@ -382,7 +416,19 @@ internal class TaoPopupSceneLayerLinux(
             // this popup window renders through its own EGL + Skia context, so
             // a TextureView here must import onto that one.
             val body: @Composable () -> Unit = {
-                CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHost) {
+                CompositionLocalProvider(
+                    LocalTaoGlTextureHost provides glTextureHost,
+                    // Inside the replayed parent locals, and deliberately so
+                    // (#569): `Popup.skiko.kt` reads `LocalWindowInfo` from
+                    // *this* composition to size the box it flips and clips the
+                    // popup inside. The replayed snapshot carries the owner
+                    // window's WindowInfo, which would pin every popup to the
+                    // window — the opposite of what native popup layers exist
+                    // for. `popupWindowInfo` reports the work area, so Compose
+                    // flips against a screen-sized box (still rooted at the
+                    // window; the origin is what the clamp corrects).
+                    LocalWindowInfo provides popupWindowInfo,
+                ) {
                     content()
                 }
             }
@@ -428,13 +474,48 @@ internal class TaoPopupSceneLayerLinux(
      * CSD content origin for `popupOf` windows, so we pass content-space
      * coords here ([TaoPopupHostLinux.parentScreenOriginPx] is zero on
      * Wayland).
+     *
+     * The position is clamped into the hosting display's work area
+     * ([popupScreenClampOffset], #569) — Compose picked it inside a
+     * work-area-sized virtual screen rooted at the window, so it can point off
+     * the real display. Only the window position moves: `_bounds` stays what
+     * Compose believes, and it is also the space [renderFrame] translates by
+     * and [scenePosition] maps pointers back through, so the surface content
+     * and hit-testing are unaffected. Re-clamped on every call, so the
+     * owner-move listener keeps an open popup on screen during an X11 drag.
+     * No-op on Wayland, where the host reports no screen geometry.
      */
     private fun updateNativeFrame() {
         if (_bounds == IntRect.Zero || released) return
         val origin = host.parentScreenOriginPx
         val offset = host.coordinateOffset
-        val xPx = _bounds.left + offset.x + origin.x
-        val yPx = _bounds.top + offset.y + origin.y
+        val frameInParent =
+            IntRect(
+                left = _bounds.left + offset.x,
+                top = _bounds.top + offset.y,
+                right = _bounds.right + offset.x,
+                bottom = _bounds.bottom + offset.y,
+            )
+        val geometry = host.popupScreenGeometry
+        val clamp = popupScreenClampOffset(frameInParent, geometry)
+        val xPx = frameInParent.left + clamp.x + origin.x
+        val yPx = frameInParent.top + clamp.y + origin.y
+        geometry?.let {
+            TaoPopupDiagnostics.record(
+                PopupFrameRecord(
+                    boundsInWindowPx = _bounds,
+                    frameOnScreenPx =
+                        IntRect(
+                            left = it.parentContentOriginPx.x + frameInParent.left + clamp.x,
+                            top = it.parentContentOriginPx.y + frameInParent.top + clamp.y,
+                            right = it.parentContentOriginPx.x + frameInParent.right + clamp.x,
+                            bottom = it.parentContentOriginPx.y + frameInParent.bottom + clamp.y,
+                        ),
+                    clampOffsetPx = clamp,
+                    panelHandle = popupWindow.handle,
+                ),
+            )
+        }
         // Aligned to the surface scale: Compose bounds are arbitrary physical
         // pixels (odd widths come out of text measurement and half-dp padding
         // all the time), and a buffer that isn't a multiple of the announced

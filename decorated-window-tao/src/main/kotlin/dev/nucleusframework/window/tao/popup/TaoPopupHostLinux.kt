@@ -59,6 +59,17 @@ internal interface TaoPopupHostLinux {
      */
     val parentScreenOriginPx: IntOffset
 
+    /**
+     * [parentScreenOriginPx] paired with every display's work area, so a layer
+     * can clamp its native frame into the real screen instead of the
+     * window-rooted virtual one Compose positions against. See
+     * [TaoPopupHost.popupScreenGeometry].
+     *
+     * `null` on Wayland: a popup there is a `wl_subsurface` placed relative to
+     * the parent surface, and no global position exists to clamp against.
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
+
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
 

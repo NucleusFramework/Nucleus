@@ -148,13 +148,14 @@ fun main(args: Array<String>) =
                 title = "Nucleus Demo",
                 minimumSize = DpSize(1300.dp, 480.dp),
                 nativeContextMenu = true,
+                nativePopupLayers = true
             ) {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                 ) {
                     val tabs =
                         buildList {
-                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar", "Scroll Test"))
+                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar", "Scroll Test", "Popups"))
                             add("Notifications (Common)")
                             add("Notifications")
                             add("Launcher")
@@ -280,6 +281,7 @@ fun main(args: Array<String>) =
                         }
                         "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
                         "Scroll Test" -> ScrollTestScreen()
+                        "Popups" -> PopupPlacementScreen(nucleusWindow.unsafe.taoWindow)
                         "Notifications" -> {
                             when (Platform.Current) {
                                 Platform.MacOS -> NotificationsScreen()

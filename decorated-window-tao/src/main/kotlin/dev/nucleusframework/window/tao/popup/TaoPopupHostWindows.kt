@@ -42,6 +42,14 @@ internal interface TaoPopupHostWindows {
      */
     val workAreaSize: IntSize get() = parentWindowSize
 
+    /**
+     * Owner client origin on screen + every display's work area, so a layer
+     * can clamp its native frame into the real screen instead of the
+     * window-rooted virtual one Compose positions against. See
+     * [TaoPopupHost.popupScreenGeometry].
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
+
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
 

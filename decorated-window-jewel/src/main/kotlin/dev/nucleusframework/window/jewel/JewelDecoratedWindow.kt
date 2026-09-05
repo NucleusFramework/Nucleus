@@ -66,6 +66,17 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
     // native Wayland session, for the window management Wayland has no protocol
     // for (stacking, positioning, workspace stickiness). Creation-time only.
     forceX11: Boolean = false,
+    // Materialise Compose Popup layers as native transparent windows
+    // (NSPanel / WS_POPUP HWND) instead of drawing them inline in this
+    // window's render target, so a popup can leave the window bounds.
+    //
+    // Jewel's own components get this for free: `LocalPopupRenderer`'s default
+    // renderer delegates to `androidx.compose.ui.window.Popup`, so every
+    // `ListComboBox`, `PopupMenu`, `Dropdown` and tooltip in this window flows
+    // through the native layers — including their screen-aware placement
+    // (#569), which keeps a combo box popup on the display when the window
+    // sits at its bottom edge. Supported on all three platforms.
+    nativePopupLayers: Boolean = false,
     content: @Composable NucleusDecoratedWindowScope.() -> Unit,
 ) {
     val windowStyle = rememberJewelWindowStyle()
@@ -94,6 +105,7 @@ public fun NucleusApplicationScope.JewelDecoratedWindow(
             forceX11 = forceX11,
             undecorated = undecorated,
             popupFor = popupFor,
+            nativePopupLayers = nativePopupLayers,
             nativeContextMenu = nativeContextMenu,
             hiddenFromDock = hiddenFromDock,
             minimumSize = minimumSize,

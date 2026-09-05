@@ -22,12 +22,14 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
@@ -47,6 +49,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsOverlayBridge
 import dev.nucleusframework.window.tao.hasWindowsTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
+import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostWindows
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerWindows
 import dev.nucleusframework.window.tao.releaseWindowsTextureImports
@@ -1569,6 +1572,30 @@ internal class TaoComposeSceneHostWindows(
             }
     }
 
+    /**
+     * #569: the client origin `nativeSetFrameInWindow` adds via
+     * `ClientToScreen`, paired with every display's work area — so a popup
+     * layer can clamp against the display it actually lands on instead of the
+     * work-area-sized virtual screen Compose positions it in.
+     *
+     * Both halves are live reads rather than a cached snapshot: the layers
+     * re-clamp on every owner move, so a window dragged to another monitor
+     * re-resolves the display too.
+     */
+    private fun resolvePopupScreenGeometry(): PopupScreenGeometry? {
+        if (!NativeTaoWindowsDecoBridge.isLoaded) return null
+        val origin =
+            NativeTaoWindowsDecoBridge
+                .nativeClientToScreen(hwnd, 0, 0)
+                ?.takeIf { it.size >= 2 }
+                ?: return null
+        val areas = TaoMonitors.all(window).map { it.workAreaPx }.ifEmpty { return null }
+        return PopupScreenGeometry(
+            parentContentOriginPx = IntOffset(origin[0], origin[1]),
+            workAreasPx = areas,
+        )
+    }
+
     fun popupHost(): TaoPopupHostWindows? {
         if (hwnd == 0L) return null
         val ctx = directContext ?: return null
@@ -1589,6 +1616,9 @@ internal class TaoComposeSceneHostWindows(
                 val h = area[3].toInt().coerceAtLeast(1)
                 return IntSize(w, h)
             }
+
+            override val popupScreenGeometry: PopupScreenGeometry?
+                get() = outer.resolvePopupScreenGeometry()
             override val sceneCoroutineContext: kotlin.coroutines.CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
             override val hostDirectContext: DirectContext get() = ctx

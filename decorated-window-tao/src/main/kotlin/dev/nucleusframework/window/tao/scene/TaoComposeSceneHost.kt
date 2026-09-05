@@ -18,6 +18,7 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -28,6 +29,7 @@ import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
@@ -46,6 +48,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.installContentMeasurer
+import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
@@ -885,6 +888,26 @@ internal class TaoComposeSceneHost(
         window.requestRedraw()
     }
 
+    /**
+     * #569: the NSView's own origin on screen — not the window frame's, a
+     * native title bar sits between them — paired with every screen's
+     * `visibleFrame`, so a popup layer can clamp against the display it lands
+     * on instead of the work-area-sized virtual screen Compose positions it in.
+     */
+    private fun resolvePopupScreenGeometry(): PopupScreenGeometry? {
+        if (!NativeTaoMacOsDecoBridge.isLoaded) return null
+        val content =
+            NativeTaoMacOsDecoBridge
+                .nativeGetContentRect(nsViewHandle)
+                ?.takeIf { it.size >= 2 }
+                ?: return null
+        val areas = TaoMonitors.all(window).map { it.workAreaPx }.ifEmpty { return null }
+        return PopupScreenGeometry(
+            parentContentOriginPx = IntOffset(content[0].toInt(), content[1].toInt()),
+            workAreasPx = areas,
+        )
+    }
+
     fun popupHost(): TaoPopupHost? {
         if (nsViewHandle == 0L) return null
         val outer = this
@@ -900,6 +923,9 @@ internal class TaoComposeSceneHost(
                 val h = (packed and 0xFFFFFFFFL).toInt()
                 return if (w > 0 && h > 0) IntSize(w, h) else parentWindowSize
             }
+
+            override val popupScreenGeometry: PopupScreenGeometry?
+                get() = outer.resolvePopupScreenGeometry()
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
 

@@ -51,6 +51,21 @@ internal interface TaoPopupHost {
      */
     val workAreaSize: IntSize get() = parentWindowSize
 
+    /**
+     * Where the owner window sits on screen, and where the displays' work
+     * areas are — the origin [workAreaSize] deliberately throws away.
+     *
+     * [workAreaSize] gives the popup room to lay out at full size, but Compose
+     * then flips and clips inside that size *rooted at the window*, so the
+     * decision is made against a virtual screen rather than the real one.
+     * Layers use this to clamp their native frame back into the display's work
+     * area at the point they push it. `null` when the platform cannot resolve
+     * it (early init, no screen), which restores the unclamped behaviour.
+     *
+     * Read on every frame push; implementations must stay cheap.
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
+
     /** Coroutine context to feed inner scenes (parent context + frame clock + flushing dispatcher). */
     val sceneCoroutineContext: CoroutineContext
 

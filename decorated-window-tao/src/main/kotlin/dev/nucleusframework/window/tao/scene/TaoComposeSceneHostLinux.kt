@@ -31,6 +31,7 @@ import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoGpuRenderContextConsumers
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTouchEvent
@@ -53,6 +54,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.hasGlTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
+import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
 import dev.nucleusframework.window.tao.releaseGlTextureImports
@@ -2176,6 +2178,18 @@ internal class TaoComposeSceneHostLinux(
                         ?.let { IntOffset(it[0].toInt(), it[1].toInt()) }
                         ?: IntOffset.Zero
                 }
+
+            // #569: clamp popups into the real display's work area instead of
+            // the work-area-sized virtual screen Compose positions against.
+            // Null on Wayland for the same reason parentScreenOriginPx is zero
+            // there — a subsurface has no global position to clamp.
+            override val popupScreenGeometry: PopupScreenGeometry? get() {
+                if (!outer.isX11) return null
+                val origin = parentScreenOriginPx
+                val areas = TaoMonitors.all(outer.window).map { it.workAreaPx }
+                if (areas.isEmpty()) return null
+                return PopupScreenGeometry(parentContentOriginPx = origin, workAreasPx = areas)
+            }
 
             /**
              * Nested-scene origin only. The hidden-titlebar CSD content origin
