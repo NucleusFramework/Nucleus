@@ -127,6 +127,14 @@ class TaoSceneTestBatteryDriftTest {
                 "parses the native monitor wire format; no ComposeScene",
             dev.nucleusframework.window.tao.popup.PopupScreenClampTest::class.java to
                 "pure-function popup screen clamp geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupDrawInflateTest::class.java to
+                "pure-function popup draw margin geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScrimRegistryTest::class.java to
+                "scrim bookkeeping + raster blend on a CPU bitmap (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupDrawInflateTest::class.java to
+                "pure-function popup draw margin geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScrimRegistryTest::class.java to
+                "scrim bookkeeping + raster blend on a CPU bitmap (#569); no ComposeScene",
             LcdTextCaptureTest::class.java to
                 "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
         )

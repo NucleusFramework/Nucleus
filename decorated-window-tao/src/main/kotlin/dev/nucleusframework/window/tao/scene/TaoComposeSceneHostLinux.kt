@@ -55,6 +55,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.hasGlTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
+import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHostLinux
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayerLinux
 import dev.nucleusframework.window.tao.releaseGlTextureImports
@@ -173,6 +174,40 @@ internal class TaoComposeSceneHostLinux(
      * swap interval 0 and releases, so no state leaks into the host context.
      */
     private val popupRenderers: MutableMap<Any, () -> Unit> = LinkedHashMap()
+
+    /**
+     * Dialog scrims of the native popup layers, painted over the main scene at
+     * the end of every frame — see [PopupScrimRegistry].
+     */
+    private val popupScrims =
+        PopupScrimRegistry {
+            sceneBundle?.visualDirty?.set(true)
+            requestRedrawCoalesced()
+        }
+
+    /**
+     * Dialog scrims of native popup layers land on the owner window's surface,
+     * after its content — Compose Desktop's `onRenderOverlay`.
+     */
+    private fun paintPopupScrims(canvas: Canvas) {
+        popupScrims.paintAll(
+            canvas,
+            Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+            transparent = fullyTransparent,
+        )
+    }
+
+    /**
+     * Hooks every main-scene bundle gets: frame failures (recomposition /
+     * layout / draw) go to the window's exception handler — the single seam
+     * all three platforms render through — and popup scrims paint after the
+     * content.
+     */
+    private fun configureSceneBundle() {
+        val bundle = sceneBundle ?: return
+        bundle.exceptionHandler = exceptionHandler
+        bundle.renderOverlay = ::paintPopupScrims
+    }
 
     /**
      * Key handlers consulted before the main scene's key dispatch. Popup
@@ -562,9 +597,7 @@ internal class TaoComposeSceneHostLinux(
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
-        // Frame failures (recomposition / layout / draw) are caught inside the
-        // bundle, the single seam all three platforms render through.
-        sceneBundle?.exceptionHandler = exceptionHandler
+        configureSceneBundle()
 
         // Notify popup layers when the host window moves on screen — X11
         // popups are positioned in root coordinates and don't auto-track.
@@ -2159,6 +2192,7 @@ internal class TaoComposeSceneHostLinux(
             override val exceptionHandler: WindowExceptionHandler?
                 get() = outer.exceptionHandler
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val parentWindowInfo: androidx.compose.ui.platform.WindowInfo get() = outer.windowInfo
             override val workAreaSize: IntSize get() =
                 NativeTaoBridge
                     .nativeLinuxPrimaryMonitorWorkArea(outer.window.handle)
@@ -2202,6 +2236,8 @@ internal class TaoComposeSceneHostLinux(
 
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
+
+            override val popupScrims: PopupScrimRegistry get() = outer.popupScrims
 
             override fun requestRedraw() = outer.requestRedrawCoalesced()
 

@@ -4,6 +4,7 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -31,6 +32,9 @@ internal interface TaoPopupHostWindows {
 
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
+
+    /** The owner window's live `WindowInfo` — see [TaoPopupHost.parentWindowInfo]. */
+    val parentWindowInfo: WindowInfo
 
     /**
      * Screen work area in physical pixels. Used as the inner scene's
@@ -87,6 +91,9 @@ internal interface TaoPopupHostWindows {
      * eglMakeCurrent swaps surfaces.
      */
     val hostDirectContext: DirectContext
+
+    /** The dialog scrims of this host's layers — see [TaoPopupHost.popupScrims]. */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 

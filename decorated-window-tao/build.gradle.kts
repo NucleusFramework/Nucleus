@@ -168,6 +168,9 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
         systemProperty("nucleus.tao.headful.monkeySeed", it)
     }
+    System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
+        systemProperty(it, System.getProperty(it))
+    }
     System.getProperty("nucleus.issue576.samples")?.let {
         systemProperty("nucleus.issue576.samples", it)
     }

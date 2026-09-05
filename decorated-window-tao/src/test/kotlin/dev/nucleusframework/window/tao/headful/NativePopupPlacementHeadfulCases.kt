@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntOffset
@@ -80,6 +81,7 @@ internal object NativePopupPlacementHeadfulCases {
             nativeWindowRectMatchesTheClampedFrame(),
             dialogStaysCentredInItsWindow(),
             dialogNearTheScreenEdgeIsStillClamped(),
+            dialogSurfaceCoversItsShadow(),
         )
 
     // ── 1. no gratuitous shifting ─────────────────────────────────────────
@@ -149,9 +151,9 @@ internal object NativePopupPlacementHeadfulCases {
             // behaviour, only from the other side) would drag it back in.
             val record = openPopup(offset = IntOffset(windowWidthDp() + POPUP_ESCAPE_DP, 0))
             checkOnWorkArea(record)
-            check(record.frameOnScreenPx.left > windowRight) {
+            check(record.contentOnScreenPx.left > windowRight) {
                 "popup must be allowed outside the owner window: " +
-                    "frame=${record.frameOnScreenPx} windowRight=$windowRight"
+                    "content=${record.contentOnScreenPx} windowRight=$windowRight"
             }
             check(record.clampOffsetPx == IntOffset.Zero) {
                 "nothing to clamp here — the popup is off the window, not off the screen; " +
@@ -181,7 +183,7 @@ internal object NativePopupPlacementHeadfulCases {
             val work = workArea()
             val tallDp = (work.height / scale()).toInt() + OVERSIZE_SLACK_DP
             val record = openPopup(heightDp = tallDp)
-            val frame = record.frameOnScreenPx
+            val frame = record.contentOnScreenPx
             // It cannot fit; the contract is that the *top* stays visible (a
             // menu's first items, a tooltip's first line).
             check(frame.top == work.top) {
@@ -234,8 +236,8 @@ internal object NativePopupPlacementHeadfulCases {
             // — the shape #569 broke worst, since the clamp reference used to
             // be a work-area-sized box rooted at this tiny window.
             val minWidthPx = (POPUP_W_DP * scale()).toInt()
-            check(record.frameOnScreenPx.width >= minWidthPx) {
-                "popup collapsed toward the owner window size: ${record.frameOnScreenPx}"
+            check(record.contentOnScreenPx.width >= minWidthPx) {
+                "popup collapsed toward the owner window size: ${record.contentOnScreenPx}"
             }
         }
 
@@ -323,9 +325,15 @@ internal object NativePopupPlacementHeadfulCases {
                 check(actual == record.frameOnScreenPx) {
                     "OS rect $actual disagrees with the reported frame ${record.frameOnScreenPx}"
                 }
+                // The surface carries the draw margin past the content, so the
+                // OS rect may hang off the work area — the content must not.
                 val work = workArea()
-                check(actual.top >= work.top && actual.bottom <= work.bottom) {
-                    "the OS placed the popup outside the work area: $actual vs $work"
+                val content =
+                    record.contentOnScreenPx.translate(
+                        IntOffset(actual.left - record.frameOnScreenPx.left, actual.top - record.frameOnScreenPx.top),
+                    )
+                check(content.top >= work.top && content.bottom <= work.bottom) {
+                    "the OS placed the popup outside the work area: $content vs $work"
                 }
             } finally {
                 popupRequest.value = null
@@ -351,7 +359,9 @@ internal object NativePopupPlacementHeadfulCases {
             dialogShown.value = true
             try {
                 val record = awaitSettledRecord()
-                val frame = record.frameOnScreenPx
+                // The content, not the surface: the dialog's appearance animation
+                // inflates the surface below the layout bounds.
+                val frame = record.contentOnScreenPx
                 val rect = requireNotNull(bounds()) { "window not mapped" }
                 val windowCentreX = (rect[0] + rect[2] / 2).toInt()
                 val windowCentreY = (rect[1] + rect[3] / 2).toInt()
@@ -369,6 +379,43 @@ internal object NativePopupPlacementHeadfulCases {
                 }
             } finally {
                 dialogShown.value = false
+            }
+        }
+
+    private fun dialogSurfaceCoversItsShadow(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#569 a Dialog's surface is inflated around the shadow it draws",
+            skip = ::skipReason,
+            nativePopupLayers = true,
+            content = { DialogSlot() },
+        ) {
+            awaitUntil("window mapped") { window.hasRealFramePx() }
+            centerWindow()
+            TaoPopupDiagnostics.reset()
+            dialogShadow.value = true
+            dialogShown.value = true
+            try {
+                val record = awaitSettledRecord()
+                val frame = record.frameOnScreenPx
+                val content = record.contentOnScreenPx
+                // The layout bounds are the content; an in-scene layer draws its
+                // elevation shadow past them into the window canvas, and a
+                // separate OS surface must grow to hold it or clip it away.
+                val coversEverySide =
+                    frame.left < content.left &&
+                        frame.top < content.top &&
+                        frame.right > content.right &&
+                        frame.bottom > content.bottom
+                check(coversEverySide) {
+                    "the surface must extend past the content on every side to hold the shadow: " +
+                        "frame=$frame content=$content"
+                }
+                check(record.boundsInWindowPx.size == content.size) {
+                    "the content frame must keep Compose's layout size; ${describe(record)}"
+                }
+            } finally {
+                dialogShown.value = false
+                dialogShadow.value = false
             }
         }
 
@@ -418,6 +465,7 @@ internal object NativePopupPlacementHeadfulCases {
     private val popupRequest = mutableStateOf<PopupRequest?>(null)
     private val dropdownExpanded = mutableStateOf(false)
     private val dialogShown = mutableStateOf(false)
+    private val dialogShadow = mutableStateOf(false)
 
     @Composable
     private fun PopupSlot() {
@@ -459,9 +507,15 @@ internal object NativePopupPlacementHeadfulCases {
     @Composable
     private fun DialogSlot() {
         val shown by dialogShown
+        val shadow by dialogShadow
         if (shown) {
             Dialog(onDismissRequest = { }) {
-                Box(Modifier.size(DIALOG_W_DP.dp, DIALOG_H_DP.dp).background(Color.Cyan))
+                Box(
+                    Modifier
+                        .size(DIALOG_W_DP.dp, DIALOG_H_DP.dp)
+                        .then(if (shadow) Modifier.shadow(DIALOG_SHADOW_DP.dp) else Modifier)
+                        .background(Color.Cyan),
+                )
             }
         }
     }
@@ -521,12 +575,16 @@ internal object NativePopupPlacementHeadfulCases {
 
     // ── Assertions ────────────────────────────────────────────────────────
 
-    /** The #569 contract: the popup is fully inside its display's work area. */
+    /**
+     * The #569 contract: the popup is fully inside its display's work area.
+     * Judged on the content — the surface may carry a shadow margin past the
+     * edge, exactly as an in-scene layer's shadow would.
+     */
     private fun TaoWindowTestScope.checkOnWorkArea(record: PopupFrameRecord) {
-        val frame = record.frameOnScreenPx
+        val frame = record.contentOnScreenPx
         val areas = TaoMonitors.all(window).map { it.workAreaPx }
         check(areas.any { frame.fitsIn(it) }) {
-            "popup landed outside every work area: frame=$frame areas=$areas " +
+            "popup landed outside every work area: content=$frame areas=$areas " +
                 "clamp=${record.clampOffsetPx} composeBounds=${record.boundsInWindowPx}"
         }
     }
@@ -546,7 +604,7 @@ internal object NativePopupPlacementHeadfulCases {
     }
 
     private fun TaoWindowTestScope.describe(record: PopupFrameRecord): String =
-        "frame=${record.frameOnScreenPx} clamp=${record.clampOffsetPx} " +
+        "frame=${record.frameOnScreenPx} content=${record.contentOnScreenPx} clamp=${record.clampOffsetPx} " +
             "composeBounds=${record.boundsInWindowPx} window=${bounds()?.toList()} " +
             "work=${workArea()} scale=${scale()}"
 
@@ -651,6 +709,7 @@ internal object NativePopupPlacementHeadfulCases {
     private const val ABOVE_SCREEN_PX = 260
     private const val DIALOG_W_DP = 320
     private const val DIALOG_H_DP = 220
+    private const val DIALOG_SHADOW_DP = 16
     private const val DIALOG_CENTRE_TOLERANCE_PX = 24
     private const val DIALOG_WINDOW_INSET_FACTOR = 2
     private const val DIALOG_ABOVE_FACTOR = 2

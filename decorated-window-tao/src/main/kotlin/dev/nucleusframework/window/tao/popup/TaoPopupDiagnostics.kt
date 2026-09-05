@@ -16,8 +16,15 @@ import java.util.concurrent.atomic.AtomicReference
 internal class PopupFrameRecord(
     /** `boundsInWindow` as Compose computed it, unclamped. Window-rooted physical px. */
     val boundsInWindowPx: IntRect,
-    /** Where the popup was placed, in global screen physical px. */
+    /**
+     * The native surface's frame, in global screen physical px. Inflated past
+     * [contentOnScreenPx] by whatever the popup draws outside its layout
+     * bounds (shadows, the dialog appearance animation) — see
+     * [PopupDrawInflate].
+     */
     val frameOnScreenPx: IntRect,
+    /** Where [boundsInWindowPx] landed, in global screen physical px: the popup as the user sees it. */
+    val contentOnScreenPx: IntRect,
     /** [popupScreenClampOffset]'s verdict — [IntOffset.Zero] when nothing had to move. */
     val clampOffsetPx: IntOffset,
     /**

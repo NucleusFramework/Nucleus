@@ -4,6 +4,7 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -33,6 +34,14 @@ internal interface TaoPopupHost {
      * never updates.
      */
     val parentWindowSize: IntSize
+
+    /**
+     * The owner window's live `WindowInfo`. Its `containerSize` is snapshot
+     * state, so a dialog that centres itself in it (`Dialog.skiko.kt` reads
+     * `LocalWindowInfo.current.containerSize`) re-measures when the window is
+     * resized — [parentWindowSize] is a plain read and would leave it frozen.
+     */
+    val parentWindowInfo: WindowInfo
 
     /**
      * Visible-frame size (screen minus menu bar + dock) of the NSScreen
@@ -95,6 +104,14 @@ internal interface TaoPopupHost {
      * the alpha-aware dialog-scrim blend mode (#559).
      */
     val isOwnerWindowTransparent: Boolean get() = false
+
+    /**
+     * The dialog scrims of this host's layers. A layer registers its
+     * `scrimColor` here for its whole lifetime; the host paints them all over
+     * the owner window's scene, and every layer paints the ones above it into
+     * its own surface — see [PopupScrimRegistry].
+     */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 

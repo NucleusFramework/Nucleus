@@ -120,6 +120,15 @@ internal class TaoSceneBundle(
             }
 
     /**
+     * Painted over the scene at the end of every [render], on the same canvas
+     * and in the same coordinates the scene drew in. This is where the dialog
+     * scrims of native popup layers land — the owner window paints every
+     * layer's scrim, each layer paints the scrims of the layers above it
+     * (Compose Desktop's `onRenderOverlay`). `null` paints nothing.
+     */
+    var renderOverlay: ((Canvas) -> Unit)? = null
+
+    /**
      * Recomposes, lays out, and draws one frame into [canvas] — the drop-in
      * replacement for the pre-1.12 `scene.render(canvas.asComposeCanvas(), nanoTime)`.
      * [nanoTime] is fed to the recomposer's frame clock, so `withFrameNanos`
@@ -134,6 +143,7 @@ internal class TaoSceneBundle(
             with(renderingScope) {
                 scene.render(frameRecomposer, canvas.asComposeCanvas(), nanoTime)
             }
+            renderOverlay?.invoke(canvas)
             edtGuard.afterFrame()
             swallowed = false
         }

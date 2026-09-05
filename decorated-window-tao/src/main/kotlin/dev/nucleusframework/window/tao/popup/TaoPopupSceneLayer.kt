@@ -39,6 +39,7 @@ import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.catchExceptions
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import org.jetbrains.skia.DirectContext
+import org.jetbrains.skia.Rect
 
 /**
  * `ComposeSceneLayer` implementation used by macOS overlay scenes to back
@@ -74,13 +75,9 @@ import org.jetbrains.skia.DirectContext
  * window dragged past a screen edge with a popup already open takes it along
  * — the same thing AppKit's own menus avoid by closing on window move.
  *
- * Phase 3 deliberately omits:
- *  - `setOutsidePointerEventListener` — outside-click dismissal lands
- *    in Phase 4 (NSEvent local monitor on the parent window).
- *  - `setKeyEventListener` — key forwarding lands in Phase 4 too.
- *  - `scrimColor` — would need a third surface (full-window-sized
- *    overlay between main scene and popup). Not relevant for context
- *    menus / dropdowns.
+ * `scrimColor` is not painted here: a dialog's scrim covers what lies *under*
+ * the layer, so the owner window's scene paints every layer's scrim and each
+ * layer paints the ones of the layers above it — see [PopupScrimRegistry].
  *
  * Threading: every method must run on the macOS main thread.
  */
@@ -145,9 +142,18 @@ internal class TaoPopupSceneLayer(
      */
     private val dialogContainerSize: IntSize
         get() =
-            host.parentWindowSize.let {
+            host.parentWindowInfo.containerSize.let {
                 IntSize(it.width.coerceAtLeast(1), it.height.coerceAtLeast(1))
             }
+
+    /**
+     * The rectangle the panel covers, in scene coordinates: [_bounds] inflated
+     * by [popupDrawBounds] so shadows and the dialog appearance animation are
+     * not clipped at the layout edge. The panel's interactive region stays
+     * [_bounds], so a click in the margin falls through to the parent window
+     * and reaches the outside-click monitor like any other outside click.
+     */
+    private var drawBounds: IntRect = IntRect.Zero
 
     /**
      * Panel created at parent-window-size offscreen so the inner scene
@@ -215,11 +221,11 @@ internal class TaoPopupSceneLayer(
 
     /**
      * Inner scene at screen work-area size — see "measurement chicken-
-     * and-egg" in the class doc. The CAMetalLayer is sized to the popup's
-     * actual bounds (smaller); render writes scene content (positioned
-     * at 0,0 by `Popup.skiko.kt`'s `RootMeasurePolicy`) into the smaller
-     * surface — content fits because the popup framework lays out at
-     * `IntSize(widthPx, heightPx)` matching `boundsInWindow.size`.
+     * and-egg" in the class doc. The CAMetalLayer is sized to [drawBounds]
+     * (smaller); the scene is laid out in window coordinates
+     * ([calculateLocalPosition] is the identity) and replayed into the
+     * surface translated by `-drawBounds.topLeft`, the same model as the
+     * Windows and Linux layers.
      *
      * Custom WindowInfo with `isWindowFocused = true`. Compose's
      * `BasicTextField` (and other focus-aware widgets) gate the visible
@@ -269,9 +275,40 @@ internal class TaoPopupSceneLayer(
         ).apply {
             // Report through the owner window's channel — see [TaoPopupHost.exceptionHandler].
             exceptionHandler = host.exceptionHandler
+            // Dim this popup under the dialogs stacked above it. The scene draws
+            // at the panel's own top-left, so the visible surface is the origin
+            // plus the drawable size.
+            renderOverlay = { canvas ->
+                host.popupScrims.paintAbove(
+                    rendererToken,
+                    canvas,
+                    Rect.makeXYWH(
+                        drawBounds.left.toFloat(),
+                        drawBounds.top.toFloat(),
+                        widthPx.toFloat(),
+                        heightPx.toFloat(),
+                    ),
+                )
+            }
         }
 
     private val innerScene: ComposeScene get() = sceneBundle.scene
+
+    /**
+     * Keeps the inner scene's size on the box the layer's content lays out in
+     * (#569). A dialog's root `Layout` fills the scene's constraints, and
+     * `Dialog.skiko.kt` puts its appearance animation's `GraphicsLayer` on
+     * that very Layout — so the scale pivots around the *scene's* centre. In
+     * the window's own scene that box is the window, whose centre is the
+     * dialog's; a work-area-sized scene would make the dialog slide towards
+     * the display's centre while it scales in. Popups keep the work area so a
+     * tall menu can lay out at full height. Re-checked every frame: the window
+     * may have been resized since.
+     */
+    private fun syncSceneSize() {
+        val want = if (scrimColorState.value != null) dialogContainerSize else sceneLayoutSize
+        if (innerScene.size != want) innerScene.size = want
+    }
 
     private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
@@ -307,7 +344,7 @@ internal class TaoPopupSceneLayer(
                 }
             innerScene.sendPointerEvent(
                 eventType = eventType,
-                position = Offset(x, y),
+                position = scenePosition(x, y),
                 type = PointerType.Mouse,
                 button = pointerButton,
             )
@@ -320,9 +357,10 @@ internal class TaoPopupSceneLayer(
             dy: Float,
             precise: Boolean,
         ) = host.exceptionHandler.catchExceptions {
+            val pos = scenePosition(x, y)
             innerScene.dispatchAwtShapedScroll(
-                x,
-                y,
+                pos.x,
+                pos.y,
                 appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
             )
         }
@@ -362,7 +400,9 @@ internal class TaoPopupSceneLayer(
     init {
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, PopupEventCallback())
+        PopupNativeBridge.nativeSetRegionHitTestEnabled(panelHandle, true)
         host.registerRenderer(rendererToken) { recordSurface() }
+        host.popupScrims.register(rendererToken) { scrimColorState.value }
     }
 
     // ── ComposeSceneLayer surface ──────────────────────────────────────
@@ -385,62 +425,80 @@ internal class TaoPopupSceneLayer(
         get() = _bounds
         set(value) {
             _bounds = value
-            // `value` is in the parent scene's coordinate system
-            // (top-left origin). For host-window-rooted scenes the offset
-            // is zero; for `NativeView`'s overlay scene it is the overlay's
-            // own position within the host NSWindow.
-            val offset = host.coordinateOffset
-            val frameInParent =
-                IntRect(
-                    left = value.left + offset.x,
-                    top = value.top + offset.y,
-                    right = value.right + offset.x,
-                    bottom = value.bottom + offset.y,
-                )
-            // Screen clamp (#569): Compose decided this position inside a
-            // work-area-sized virtual screen rooted at the window's content
-            // origin, so it can point off the real display. Only the panel's
-            // frame moves — `_bounds` stays what Compose believes, which is
-            // what [calculateLocalPosition] and the panel-local pointer
-            // coordinates are expressed in (the scene draws at the panel's
-            // own top-left, so the content follows the panel for free).
-            val clamp = popupScreenClampOffset(frameInParent, host.popupScreenGeometry)
-            PopupNativeBridge.nativeSetFrameInWindow(
-                panel = panelHandle,
-                xPx = frameInParent.left + clamp.x,
-                yPx = frameInParent.top + clamp.y,
-                widthPx = value.width.coerceAtLeast(1),
-                heightPx = value.height.coerceAtLeast(1),
-            )
-            host.popupScreenGeometry?.let { geometry ->
-                TaoPopupDiagnostics.record(
-                    PopupFrameRecord(
-                        boundsInWindowPx = value,
-                        frameOnScreenPx =
-                            IntRect(
-                                left = geometry.parentContentOriginPx.x + frameInParent.left + clamp.x,
-                                top = geometry.parentContentOriginPx.y + frameInParent.top + clamp.y,
-                                right = geometry.parentContentOriginPx.x + frameInParent.right + clamp.x,
-                                bottom = geometry.parentContentOriginPx.y + frameInParent.bottom + clamp.y,
-                            ),
-                        clampOffsetPx = clamp,
-                        panelHandle = panelHandle,
-                    ),
-                )
-            }
-            // Resize the CAMetalLayer's drawable to match the popup's
-            // actual size. We DON'T resize the inner scene — its size
-            // stays at parent window size so layout has real constraints.
-            // Only the visible draw area is constrained to `boundsInWindow`.
-            val w = value.width.coerceAtLeast(1)
-            val h = value.height.coerceAtLeast(1)
-            if (w != widthPx || h != heightPx) {
-                widthPx = w
-                heightPx = h
-                NativeMetalBridge.nativeResize(attachmentHandle, w, h, scale)
-            }
+            updateNativeFrame()
             host.requestRedraw()
         }
+
+    /**
+     * Pushes the panel frame — [drawBounds], screen-clamped (#569).
+     *
+     * `boundsInWindow` is in the parent scene's coordinate system (top-left
+     * origin). For host-window-rooted scenes [TaoPopupHost.coordinateOffset]
+     * is zero; for `NativeView`'s overlay scene it is the overlay's own
+     * position within the host NSWindow.
+     *
+     * The clamp is decided on the content, not the inflated surface: what must
+     * stay on screen is the popup the user sees, and a shadow margin hanging
+     * past the edge is what the in-scene layer does too. Only the panel's frame
+     * moves — [_bounds] and [drawBounds] stay what Compose believes, which is
+     * what the scene draws in and what [scenePosition] maps pointers back to.
+     */
+    private fun updateNativeFrame() {
+        if (_bounds == IntRect.Zero || disposed) return
+        drawBounds = popupDrawBounds(_bounds, _density.density)
+        val offset = host.coordinateOffset
+        val contentInParent = _bounds.translate(offset)
+        val frameInParent = drawBounds.translate(offset)
+        val geometry = host.popupScreenGeometry
+        val clamp = popupScreenClampOffset(contentInParent, geometry)
+        val w = drawBounds.width.coerceAtLeast(1)
+        val h = drawBounds.height.coerceAtLeast(1)
+        PopupNativeBridge.nativeSetFrameInWindow(
+            panel = panelHandle,
+            xPx = frameInParent.left + clamp.x,
+            yPx = frameInParent.top + clamp.y,
+            widthPx = w,
+            heightPx = h,
+        )
+        // Only the content answers hit-tests; the inflated margin falls through
+        // to the parent window — where the outside-click monitor picks it up.
+        PopupNativeBridge.nativeSetInteractiveRegions(
+            panelHandle,
+            floatArrayOf(
+                (_bounds.left - drawBounds.left).toFloat(),
+                (_bounds.top - drawBounds.top).toFloat(),
+                _bounds.width.toFloat(),
+                _bounds.height.toFloat(),
+            ),
+            1,
+        )
+        geometry?.let {
+            val onScreen = it.parentContentOriginPx + clamp
+            TaoPopupDiagnostics.record(
+                PopupFrameRecord(
+                    boundsInWindowPx = _bounds,
+                    frameOnScreenPx = frameInParent.translate(onScreen),
+                    contentOnScreenPx = contentInParent.translate(onScreen),
+                    clampOffsetPx = clamp,
+                    panelHandle = panelHandle,
+                ),
+            )
+        }
+        // Resize the CAMetalLayer's drawable to match the surface. We DON'T
+        // resize the inner scene — its size stays at work-area size so layout
+        // has real constraints. Only the visible draw area follows [drawBounds].
+        if (w != widthPx || h != heightPx) {
+            widthPx = w
+            heightPx = h
+            NativeMetalBridge.nativeResize(attachmentHandle, w, h, scale)
+        }
+    }
+
+    /** Panel-local physical px → inner-scene (parent-window) coordinates. */
+    private fun scenePosition(
+        x: Float,
+        y: Float,
+    ): Offset = Offset(x + drawBounds.left, y + drawBounds.top)
 
     override var compositionLocalContext: CompositionLocalContext?
         get() = _compositionLocalContext
@@ -452,6 +510,10 @@ internal class TaoPopupSceneLayer(
         get() = scrimColorState.value
         set(value) {
             scrimColorState.value = value
+            syncSceneSize()
+            // The scrim is painted by the owner window's scene and by the layers
+            // below, none of which observe this state — repaint them.
+            host.popupScrims.notifyChanged()
         }
 
     override var focusable: Boolean
@@ -474,6 +536,7 @@ internal class TaoPopupSceneLayer(
 
     override fun close() {
         host.unregisterRenderer(rendererToken)
+        host.popupScrims.unregister(rendererToken)
         // Mark disposed before any teardown so a surface already recorded this
         // frame is skipped at replay time (TaoRecordedSurface.isAlive).
         disposed = true
@@ -560,14 +623,10 @@ internal class TaoPopupSceneLayer(
         }
     }
 
-    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset {
-        // boundsInWindow is in parent-window pixels with a top-left origin;
-        // popup-local = position - bounds.topLeft.
-        return IntOffset(
-            positionInWindow.x - _bounds.left,
-            positionInWindow.y - _bounds.top,
-        )
-    }
+    // The scene is laid out in parent-window coordinates and translated at
+    // replay time (see [recordSurface]), so the popup-local position is the
+    // window position itself — same contract as the Windows and Linux layers.
+    override fun calculateLocalPosition(positionInWindow: IntOffset): IntOffset = positionInWindow
 
     // ── Per-frame record — driven by host's record pass (main thread) ──────
 
@@ -580,12 +639,16 @@ internal class TaoPopupSceneLayer(
         if (disposed) return null
         if (widthPx <= 0 || heightPx <= 0) return null
         if (attachmentHandle == 0L) return null
+        syncSceneSize()
+        // The scene is recorded in window coordinates and replayed translated
+        // into the surface, which is rooted at [drawBounds].
         return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = directContext,
             picture = recordSceneToPicture(sceneBundle, widthPx, heightPx),
             clearColor = 0x00000000,
             isAlive = { !disposed },
+            pictureOffset = IntOffset(-drawBounds.left, -drawBounds.top),
         )
     }
 

@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.popup
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -38,6 +39,9 @@ internal interface TaoPopupHostLinux {
 
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
+
+    /** The owner window's live `WindowInfo` — see [TaoPopupHost.parentWindowInfo]. */
+    val parentWindowInfo: WindowInfo
 
     /**
      * Screen work area in physical pixels. Used as the inner scene's
@@ -83,6 +87,9 @@ internal interface TaoPopupHostLinux {
      * window so drag ghosts and in-scene layers share one code path.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
+
+    /** The dialog scrims of this host's layers — see [TaoPopupHost.popupScrims]. */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 

@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao.scene
 
+import androidx.compose.ui.unit.IntOffset
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
@@ -79,6 +80,12 @@ internal fun replayPictureToFrame(
     directContext: DirectContext,
     picture: Picture,
     clearColor: Int,
+    /**
+     * Where the picture's origin lands on the surface. A popup layer records
+     * its scene in window coordinates and draws it into a surface rooted at
+     * the layer's draw bounds, so it passes `-drawBounds.topLeft`.
+     */
+    pictureOffset: IntOffset = IntOffset.Zero,
     present: (handle: Long, drawablePtr: Long) -> Unit = { h, d ->
         NativeMetalBridge.nativePresent(h, d)
     },
@@ -100,6 +107,7 @@ internal fun replayPictureToFrame(
             }
         try {
             surface.canvas.clear(clearColor)
+            surface.canvas.translate(pictureOffset.x.toFloat(), pictureOffset.y.toFloat())
             surface.canvas.drawPicture(picture)
             surface.flushAndSubmit(syncCpu = false)
             present(attachmentHandle, frame.drawablePtr)
@@ -138,4 +146,6 @@ internal class TaoRecordedSurface(
         NativeMetalBridge.nativePresent(h, d)
     },
     val isAlive: () -> Boolean = { true },
+    /** Translation applied before the picture is drawn — see [replayPictureToFrame]. */
+    val pictureOffset: IntOffset = IntOffset.Zero,
 )

@@ -49,6 +49,7 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
+import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
@@ -61,7 +62,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.DirectContext
+import org.jetbrains.skia.Rect
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.locks.LockSupport
@@ -466,9 +469,7 @@ internal class TaoComposeSceneHost(
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
-        // Frame failures (recomposition / layout / draw) are caught inside the
-        // bundle, the single seam all three platforms render through.
-        sceneBundle?.exceptionHandler = exceptionHandler
+        configureSceneBundle()
 
         // One source of truth for the scene's drop target: the callback below
         // resolves it through here, and so does an in-process driver.
@@ -768,6 +769,40 @@ internal class TaoComposeSceneHost(
     // each other when multiple popups are active.
     private val popupRenderers: MutableMap<Any, () -> TaoRecordedSurface?> = LinkedHashMap()
 
+    /**
+     * Dialog scrims of the native popup layers, painted over the main scene at
+     * the end of every frame — see [PopupScrimRegistry].
+     */
+    private val popupScrims =
+        PopupScrimRegistry {
+            sceneBundle?.visualDirty?.set(true)
+            window.requestRedraw()
+        }
+
+    /**
+     * Dialog scrims of native popup layers land on the owner window's surface,
+     * after its content — Compose Desktop's `onRenderOverlay`.
+     */
+    private fun paintPopupScrims(canvas: Canvas) {
+        popupScrims.paintAll(
+            canvas,
+            Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+            transparent = fullyTransparent,
+        )
+    }
+
+    /**
+     * Hooks every main-scene bundle gets: frame failures (recomposition /
+     * layout / draw) go to the window's exception handler — the single seam
+     * all three platforms render through — and popup scrims paint after the
+     * content.
+     */
+    private fun configureSceneBundle() {
+        val bundle = sceneBundle ?: return
+        bundle.exceptionHandler = exceptionHandler
+        bundle.renderOverlay = ::paintPopupScrims
+    }
+
     // Tao's macOS pipeline intercepts keys before AppKit's responder
     // chain, so an overlay NSView can't receive `keyDown:` natively. The
     // host's `onKeyEvent` consults these handlers first; returning `true`
@@ -916,6 +951,7 @@ internal class TaoComposeSceneHost(
             override val scale: Float get() = outer.scale
             override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val parentWindowInfo: androidx.compose.ui.platform.WindowInfo get() = outer.windowInfo
             override val workAreaSize: IntSize get() {
                 val packed = NativeMetalBridge.nativeOwnerWorkAreaSize(outer.nsViewHandle)
                 if (packed == 0L) return parentWindowSize
@@ -931,6 +967,8 @@ internal class TaoComposeSceneHost(
 
             override val exceptionHandler: WindowExceptionHandler?
                 get() = outer.exceptionHandler
+
+            override val popupScrims: PopupScrimRegistry get() = outer.popupScrims
 
             override fun requestRedraw() = outer.window.requestRedraw()
 
@@ -1549,6 +1587,7 @@ internal class TaoComposeSceneHost(
                         s.directContext,
                         s.picture,
                         s.clearColor,
+                        s.pictureOffset,
                         s.present,
                     )
                 }
