@@ -42,6 +42,9 @@ internal object DialogAppearanceHeadfulCases {
             film(native = false),
             film(native = true),
             compare(),
+            film(native = false, material = true),
+            film(native = true, material = true),
+            compare(material = true),
             translated(native = false),
             translated(native = true),
             compareTranslated(),
@@ -82,6 +85,21 @@ internal object DialogAppearanceHeadfulCases {
                             it.scrimRed != rest.scrimRed
                     }?.tMs
                     ?.minus(hideAtMs)
+            }
+
+        /**
+         * The smallest height the dialog's colour spanned while fading out,
+         * as a fraction of its resting height. `Dialog.skiko.kt` reports a
+         * zero-size `boundsInWindow` during the fade-out; a native surface that
+         * followed it shrank the dialog to a square of margin around a point.
+         */
+        val hideMinHeightRatio: Float?
+            get() {
+                val rest = visible.lastOrNull() ?: return null
+                val restHeight = (rest.dialogBottom!! - rest.dialogTop!!).coerceAtLeast(1)
+                val fading = hiding.filter { it.dialogTop != null && it.dialogBottom != null }
+                if (fading.isEmpty()) return null
+                return fading.minOf { it.dialogBottom!! - it.dialogTop!! }.toFloat() / restHeight
             }
 
         /** First moment after the hide request where the dialog was gone. */
@@ -128,6 +146,14 @@ internal object DialogAppearanceHeadfulCases {
                 return first - last
             }
 
+        /** How long the appearance animated on screen, from its first frame to its last change. */
+        val animationMs: Long?
+            get() {
+                val first = firstVisibleMs ?: return null
+                val end = settledMs ?: return null
+                return end - first
+            }
+
         /** First moment after which position, content alpha and scrim all stay at their final values. */
         val settledMs: Long?
             get() {
@@ -165,12 +191,15 @@ internal object DialogAppearanceHeadfulCases {
             }
 
         fun summary(): String =
-            "show: firstVisible=${firstVisibleMs}ms settled=${settledMs}ms slideIn=${slideInPx}px " +
+            "show: firstVisible=${firstVisibleMs}ms settled=${settledMs}ms animated=${animationMs}ms " +
+                "slideIn=${slideInPx}px " +
                 "scrimRamp=$scrimRamp finalScrimRed=$finalScrimRed finalBlueness=$finalBlueness " +
-                "stalls=$showStalls | hide: start=${hideStartMs}ms gone=${hideGoneMs}ms stalls=$hideStalls"
+                "stalls=$showStalls | hide: start=${hideStartMs}ms gone=${hideGoneMs}ms " +
+                "minHeight=${hideMinHeightRatio?.let { "%.2f".format(it) }} stalls=$hideStalls"
     }
 
-    private val measured = HashMap<Boolean, Curve>()
+    /** Keyed by (material, native). */
+    private val measured = HashMap<Pair<Boolean, Boolean>, Curve>()
     private val measuredTranslated = HashMap<Boolean, Sample>()
     private val dialogShown = mutableStateOf(false)
     private val translatedShown = mutableStateOf(false)
@@ -193,6 +222,51 @@ internal object DialogAppearanceHeadfulCases {
         if (shown) {
             Dialog(onDismissRequest = { }) {
                 Box(Modifier.size(DIALOG_W_DP.dp, DIALOG_H_DP.dp).background(DIALOG_COLOR))
+            }
+        }
+    }
+
+    /**
+     * The dialog nucleus-demo's Containment gallery opens: a Material 3
+     * `AlertDialog` — `Surface` with shape, tonal and shadow elevation, title,
+     * body text and two text buttons — under a Material 3 theme. The container
+     * is painted [DIALOG_COLOR] so the sampler finds it the same way.
+     */
+    @Composable
+    private fun MaterialContent() {
+        androidx.compose.material3.MaterialTheme {
+            androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().background(Color.White)) {
+                repeat(HEAVY_ROWS) { row ->
+                    androidx.compose.material3.Text(
+                        text = "Row $row - " + "lorem ipsum dolor sit amet ".repeat(HEAVY_REPEATS),
+                        color = Color.DarkGray,
+                        maxLines = 1,
+                    )
+                }
+            }
+            val shown by dialogShown
+            if (shown) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { },
+                    containerColor = DIALOG_COLOR,
+                    titleContentColor = Color.White,
+                    textContentColor = Color.White,
+                    title = { androidx.compose.material3.Text("What is a dialog?") },
+                    text = {
+                        androidx.compose.material3.Text(
+                            "A dialog is a type of modal window that appears in front of app content " +
+                                "to provide critical information, or prompt for a decision to be made.",
+                        )
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = { }) { androidx.compose.material3.Text("Okay") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = { },
+                        ) { androidx.compose.material3.Text("Dismiss") }
+                    },
+                )
             }
         }
     }
@@ -280,12 +354,17 @@ internal object DialogAppearanceHeadfulCases {
             }
         }
 
-    private fun film(native: Boolean): TaoWindowTestCase =
+    private fun film(
+        native: Boolean,
+        material: Boolean = false,
+    ): TaoWindowTestCase =
         TaoWindowTestCase(
-            name = "dialog appearance filmed — ${if (native) "native popup layer" else "in-scene layer"}",
+            name =
+                "${if (material) "Material 3 AlertDialog" else "dialog"} appearance filmed — " +
+                    "${if (native) "native popup layer" else "in-scene layer"}",
             skip = ::skipReason,
             nativePopupLayers = native,
-            content = { Content() },
+            content = { if (material) MaterialContent() else Content() },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
             // The screen grab sees whatever is on top; the suite's window is not.
@@ -313,6 +392,12 @@ internal object DialogAppearanceHeadfulCases {
                         frames += System.nanoTime() to robot.createScreenCapture(region)
                     }
                 }
+            // Warm-up: the first composition of a dialog loads fonts and theme
+            // tokens; that would be filmed as a slow appearance.
+            dialogShown.value = true
+            settle(SETTLE_BEFORE_MILLIS)
+            dialogShown.value = false
+            settle(SETTLE_BEFORE_MILLIS)
             settle(WARMUP_MILLIS)
             val shownNs = System.nanoTime()
             dialogShown.value = true
@@ -335,8 +420,8 @@ internal object DialogAppearanceHeadfulCases {
                         .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
                     hideAtMs = (hiddenNs - shownNs) / 1_000_000,
                 )
-            measured[native] = curve
-            val mode = if (native) "native" else "in-scene"
+            measured[material to native] = curve
+            val mode = (if (material) "m3-" else "") + if (native) "native" else "in-scene"
             // Keep the first and last grabbed frames on disk: when a curve reads
             // wrong, the pictures say whether the region or the dialog is off.
             val dir = java.io.File(System.getProperty("java.io.tmpdir"), "dialog-appearance").apply { mkdirs() }
@@ -378,14 +463,23 @@ internal object DialogAppearanceHeadfulCases {
             check(curve.firstVisibleMs != null) { "the dialog never showed up on screen; ${curve.summary()}" }
         }
 
-    private fun compare(): TaoWindowTestCase =
+    private fun compare(material: Boolean = false): TaoWindowTestCase =
         TaoWindowTestCase(
-            name = "dialog appearance — native popup layer matches the in-scene layer",
-            skip = { skipReason() ?: if (measured.size < 2) "both filming cases must run first" else null },
+            name =
+                "${if (material) "Material 3 AlertDialog" else "dialog"} appearance — " +
+                    "native popup layer matches the in-scene layer",
+            skip = {
+                skipReason()
+                    ?: if (measured[material to false] == null || measured[material to true] == null) {
+                        "both filming cases must run first"
+                    } else {
+                        null
+                    }
+            },
             content = { Content() },
         ) {
-            val inScene = requireNotNull(measured[false])
-            val native = requireNotNull(measured[true])
+            val inScene = requireNotNull(measured[material to false])
+            val native = requireNotNull(measured[material to true])
             System.err.println("[dialog-appearance] in-scene: ${inScene.summary()}")
             System.err.println("[dialog-appearance] native:   ${native.summary()}")
             val problems = mutableListOf<String>()
@@ -414,13 +508,14 @@ internal object DialogAppearanceHeadfulCases {
                 problems +=
                     "first visible (ms): in-scene=$inSceneFirst native=$nativeFirst (tolerance $FIRST_VISIBLE_TOLERANCE_MS)"
             }
-            near("settled (ms)", inScene.settledMs, native.settledMs, SETTLE_TOLERANCE_MS)
+            near("appearance duration (ms)", inScene.animationMs, native.animationMs, SETTLE_TOLERANCE_MS)
             near("slide-in (px)", inScene.slideInPx, native.slideInPx, SLIDE_TOLERANCE_PX)
             near("scrim ramp", inScene.scrimRamp, native.scrimRamp, COLOR_TOLERANCE)
             near("final scrim", inScene.finalScrimRed, native.finalScrimRed, COLOR_TOLERANCE)
             near("final content", inScene.finalBlueness, native.finalBlueness, COLOR_TOLERANCE)
             near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
             near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
+            near("hide min height ratio", inScene.hideMinHeightRatio, native.hideMinHeightRatio, HEIGHT_RATIO_TOLERANCE)
             if (native.showStalls > inScene.showStalls + STALL_TOLERANCE) {
                 problems +=
                     "appearance drops frames: in-scene stalls=${inScene.showStalls} native stalls=${native.showStalls}"
@@ -486,6 +581,7 @@ internal object DialogAppearanceHeadfulCases {
     private const val HEAVY_ROWS = 40
     private const val HEAVY_REPEATS = 6
     private const val STALL_TOLERANCE = 3
+    private const val HEIGHT_RATIO_TOLERANCE = 0.15f
     private const val MAX_FRAMES = 200
     private const val DUMP_UNTIL_MS = 1_300L
     private const val SETTLE_PX = 1

@@ -120,6 +120,17 @@ internal class TaoPopupSceneLayerLinux(
      */
     private var drawBounds: IntRect = IntRect.Zero
 
+    /**
+     * The last non-empty [_bounds]: what the native surface is sized and placed
+     * on. `Dialog.skiko.kt`'s disappearance swaps the layer's content for an
+     * empty `Layout` that only replays the recorded picture, so Compose reports
+     * a zero-size `boundsInWindow` at the window centre for the whole fade-out.
+     * An in-scene layer does not care — it draws into the window canvas — but
+     * this surface must keep covering where the dialog was, or the fade-out
+     * shows as a square of margin around a point.
+     */
+    private var contentBounds: IntRect = IntRect.Zero
+
     /** EGL attachment ready — flips on WINDOW_READY once the GPU side is up. */
     private var attachment: Long = 0
     private var directContext: DirectContext? = null
@@ -296,7 +307,7 @@ internal class TaoPopupSceneLayerLinux(
         host.popupScrims.register(rendererToken) { scrimColorState.value }
         host.registerKeyHandler(keyHandlerToken) { dispatchKey(it) }
         host.registerOwnerMoveListener(moveListenerToken) {
-            if (_bounds != IntRect.Zero) updateNativeFrame()
+            if (!contentBounds.isEmpty) updateNativeFrame()
         }
     }
 
@@ -361,7 +372,7 @@ internal class TaoPopupSceneLayerLinux(
                 override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachment, block)
             }
         // Re-push any frame set before the window was ready, and paint.
-        if (_bounds != IntRect.Zero) updateNativeFrame()
+        if (!contentBounds.isEmpty) updateNativeFrame()
         host.requestRedraw()
     }
 
@@ -385,6 +396,7 @@ internal class TaoPopupSceneLayerLinux(
         get() = _bounds
         set(value) {
             _bounds = value
+            if (!value.isEmpty) contentBounds = value
             updateNativeFrame()
             host.requestRedraw()
         }
@@ -533,14 +545,14 @@ internal class TaoPopupSceneLayerLinux(
      * No-op on Wayland, where the host reports no screen geometry.
      */
     private fun updateNativeFrame() {
-        if (_bounds == IntRect.Zero || released) return
-        drawBounds = popupDrawBounds(_bounds, _density.density)
+        if (contentBounds.isEmpty || released) return
+        drawBounds = popupDrawBounds(contentBounds, _density.density)
         val origin = host.parentScreenOriginPx
         val offset = host.coordinateOffset
         // The clamp is decided on the content, not the inflated surface: what
         // must stay on screen is the popup the user sees, and a shadow margin
         // hanging past the edge is what the in-scene layer does too.
-        val contentInParent = _bounds.translate(offset)
+        val contentInParent = contentBounds.translate(offset)
         val frameInParent = drawBounds.translate(offset)
         val geometry = host.popupScreenGeometry
         val clamp = popupScreenClampOffset(contentInParent, geometry)

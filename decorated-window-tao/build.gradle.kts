@@ -39,6 +39,8 @@ dependencies {
     testImplementation(kotlin("test"))
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)
+    // The Material 3 AlertDialog the headful appearance film compares against nucleus-demo
+    testImplementation(libs.compose.material3)
 }
 
 java {

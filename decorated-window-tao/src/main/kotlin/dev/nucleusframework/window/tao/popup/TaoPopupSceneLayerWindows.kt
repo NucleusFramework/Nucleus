@@ -135,6 +135,17 @@ internal class TaoPopupSceneLayerWindows(
      * content rect, so a click in the margin is an outside click.
      */
     private var drawBounds: IntRect = IntRect(0, 0, 1, 1)
+
+    /**
+     * The last non-empty [_bounds]: what the native surface is sized and placed
+     * on. `Dialog.skiko.kt`'s disappearance swaps the layer's content for an
+     * empty `Layout` that only replays the recorded picture, so Compose reports
+     * a zero-size `boundsInWindow` at the window centre for the whole fade-out.
+     * An in-scene layer does not care — it draws into the window canvas — but
+     * this surface must keep covering where the dialog was, or the fade-out
+     * shows as a square of margin around a point.
+     */
+    private var contentBounds: IntRect = IntRect.Zero
     private var widthPx: Int = 1
     private var heightPx: Int = 1
 
@@ -353,7 +364,7 @@ internal class TaoPopupSceneLayerWindows(
         host.registerRenderer(rendererToken) { renderFrame() }
         host.popupScrims.register(rendererToken) { scrimColorState.value }
         host.registerOwnerMoveListener(moveListenerToken) {
-            if (panelHandle != 0L && _bounds != IntRect.Zero) {
+            if (panelHandle != 0L && !contentBounds.isEmpty) {
                 updateNativeFrame()
             }
         }
@@ -379,6 +390,7 @@ internal class TaoPopupSceneLayerWindows(
         get() = _bounds
         set(value) {
             _bounds = value
+            if (!value.isEmpty) contentBounds = value
             updateDrawBoundsFromBounds()
             host.requestRedraw()
         }
@@ -514,8 +526,8 @@ internal class TaoPopupSceneLayerWindows(
     ): Offset = Offset(x + drawBounds.left, y + drawBounds.top)
 
     private fun updateDrawBoundsFromBounds(): Boolean {
-        if (_bounds == IntRect.Zero) return false
-        val nextDrawBounds = popupDrawBounds(_bounds, _density.density)
+        if (contentBounds.isEmpty) return false
+        val nextDrawBounds = popupDrawBounds(contentBounds, _density.density)
         val changed = nextDrawBounds != drawBounds
         drawBounds = nextDrawBounds
         widthPx = drawBounds.width.coerceAtLeast(1)
@@ -542,12 +554,12 @@ internal class TaoPopupSceneLayerWindows(
      */
     private fun updateNativeFrame() {
         if (panelHandle == 0L) return
-        if (drawBounds == IntRect.Zero || _bounds == IntRect.Zero) return
+        if (drawBounds == IntRect.Zero || contentBounds.isEmpty) return
         val offset = host.coordinateOffset
         // The clamp is decided on the content, not the inflated surface: what
         // must stay on screen is the popup the user sees, and a shadow margin
         // hanging past the edge is what the in-scene layer does too.
-        val contentInParent = _bounds.translate(offset)
+        val contentInParent = contentBounds.translate(offset)
         val frameInParent = drawBounds.translate(offset)
         val geometry = host.popupScreenGeometry
         val clamp = popupScreenClampOffset(contentInParent, geometry)
@@ -571,10 +583,10 @@ internal class TaoPopupSceneLayerWindows(
             yPx = finalY,
             widthPx = drawBounds.width.coerceAtLeast(1),
             heightPx = drawBounds.height.coerceAtLeast(1),
-            contentXPx = _bounds.left - drawBounds.left,
-            contentYPx = _bounds.top - drawBounds.top,
-            contentWidthPx = _bounds.width.coerceAtLeast(1),
-            contentHeightPx = _bounds.height.coerceAtLeast(1),
+            contentXPx = contentBounds.left - drawBounds.left,
+            contentYPx = contentBounds.top - drawBounds.top,
+            contentWidthPx = contentBounds.width.coerceAtLeast(1),
+            contentHeightPx = contentBounds.height.coerceAtLeast(1),
         )
     }
 

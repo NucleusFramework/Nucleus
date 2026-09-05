@@ -156,6 +156,17 @@ internal class TaoPopupSceneLayer(
     private var drawBounds: IntRect = IntRect.Zero
 
     /**
+     * The last non-empty [_bounds]: what the native surface is sized and placed
+     * on. `Dialog.skiko.kt`'s disappearance swaps the layer's content for an
+     * empty `Layout` that only replays the recorded picture, so Compose reports
+     * a zero-size `boundsInWindow` at the window centre for the whole fade-out.
+     * An in-scene layer does not care — it draws into the window canvas — but
+     * this surface must keep covering where the dialog was, or the fade-out
+     * shows as a square of margin around a point.
+     */
+    private var contentBounds: IntRect = IntRect.Zero
+
+    /**
      * Panel created at parent-window-size offscreen so the inner scene
      * has real layout constraints, while the user doesn't see a 1×1
      * artifact. Compose's `Popup` framework will write [boundsInWindow]
@@ -425,6 +436,7 @@ internal class TaoPopupSceneLayer(
         get() = _bounds
         set(value) {
             _bounds = value
+            if (!value.isEmpty) contentBounds = value
             updateNativeFrame()
             host.requestRedraw()
         }
@@ -444,10 +456,10 @@ internal class TaoPopupSceneLayer(
      * what the scene draws in and what [scenePosition] maps pointers back to.
      */
     private fun updateNativeFrame() {
-        if (_bounds == IntRect.Zero || disposed) return
-        drawBounds = popupDrawBounds(_bounds, _density.density)
+        if (contentBounds.isEmpty || disposed) return
+        drawBounds = popupDrawBounds(contentBounds, _density.density)
         val offset = host.coordinateOffset
-        val contentInParent = _bounds.translate(offset)
+        val contentInParent = contentBounds.translate(offset)
         val frameInParent = drawBounds.translate(offset)
         val geometry = host.popupScreenGeometry
         val clamp = popupScreenClampOffset(contentInParent, geometry)
@@ -465,10 +477,10 @@ internal class TaoPopupSceneLayer(
         PopupNativeBridge.nativeSetInteractiveRegions(
             panelHandle,
             floatArrayOf(
-                (_bounds.left - drawBounds.left).toFloat(),
-                (_bounds.top - drawBounds.top).toFloat(),
-                _bounds.width.toFloat(),
-                _bounds.height.toFloat(),
+                (contentBounds.left - drawBounds.left).toFloat(),
+                (contentBounds.top - drawBounds.top).toFloat(),
+                contentBounds.width.toFloat(),
+                contentBounds.height.toFloat(),
             ),
             1,
         )
