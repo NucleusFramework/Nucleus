@@ -60,9 +60,61 @@ internal object DialogAppearanceHeadfulCases {
     )
 
     internal class Curve(
-        val samples: List<Sample>,
+        val all: List<Sample>,
+        /** When the dialog was asked to close; samples from here on film the disappearance. */
+        val hideAtMs: Long,
     ) {
+        /** The appearance: from the show request until the hide request. */
+        val samples: List<Sample> get() = all.filter { it.tMs < hideAtMs }
+
+        /** The disappearance: from the hide request on. */
+        val hiding: List<Sample> get() = all.filter { it.tMs >= hideAtMs }
         val visible: List<Sample> get() = samples.filter { it.dialogTop != null }
+
+        /** First moment after the hide request where the dialog started to change. */
+        val hideStartMs: Long?
+            get() {
+                val rest = hiding.firstOrNull() ?: return null
+                return hiding
+                    .firstOrNull {
+                        it.dialogTop != rest.dialogTop ||
+                            it.blueness != rest.blueness ||
+                            it.scrimRed != rest.scrimRed
+                    }?.tMs
+                    ?.minus(hideAtMs)
+            }
+
+        /** First moment after the hide request where the dialog was gone. */
+        val hideGoneMs: Long? get() = hiding.firstOrNull { it.dialogTop == null }?.tMs?.minus(hideAtMs)
+
+        /**
+         * Grabs during an animation that show exactly the frame before them.
+         * The screen is grabbed faster than the display refreshes, so a few
+         * repeats are normal; many more than the in-scene layer shows means
+         * frames were dropped.
+         */
+        fun stalls(phase: List<Sample>): Int =
+            phase
+                .zipWithNext()
+                .count { (a, b) ->
+                    a.dialogTop == b.dialogTop &&
+                        a.dialogBottom == b.dialogBottom &&
+                        a.blueness == b.blueness &&
+                        a.scrimRed == b.scrimRed
+                }
+
+        val showStalls: Int
+            get() {
+                val end = settledMs ?: return 0
+                return stalls(visible.filter { it.tMs <= end })
+            }
+
+        val hideStalls: Int
+            get() {
+                val start = hideStartMs ?: return 0
+                val end = hideGoneMs ?: return 0
+                return stalls(hiding.filter { it.tMs - hideAtMs in start..end })
+            }
         val firstVisibleMs: Long? get() = visible.firstOrNull()?.tMs
         val finalTop: Int? get() = visible.lastOrNull()?.dialogTop
         val finalBlueness: Int get() = visible.lastOrNull()?.blueness ?: 0
@@ -98,8 +150,8 @@ internal object DialogAppearanceHeadfulCases {
 
         fun table(): String =
             buildString {
-                appendLine("    t(ms)  scrimR  top  bottom  blueness")
-                for (s in samples) {
+                appendLine("    t(ms)  scrimR  top  bottom  blueness   (hide requested at ${hideAtMs}ms)")
+                for (s in all) {
                     appendLine(
                         "    %5d  %6d  %4s  %6s  %8d".format(
                             s.tMs,
@@ -113,8 +165,9 @@ internal object DialogAppearanceHeadfulCases {
             }
 
         fun summary(): String =
-            "firstVisible=${firstVisibleMs}ms settled=${settledMs}ms slideIn=${slideInPx}px " +
-                "scrimRamp=$scrimRamp finalScrimRed=$finalScrimRed finalBlueness=$finalBlueness"
+            "show: firstVisible=${firstVisibleMs}ms settled=${settledMs}ms slideIn=${slideInPx}px " +
+                "scrimRamp=$scrimRamp finalScrimRed=$finalScrimRed finalBlueness=$finalBlueness " +
+                "stalls=$showStalls | hide: start=${hideStartMs}ms gone=${hideGoneMs}ms stalls=$hideStalls"
     }
 
     private val measured = HashMap<Boolean, Curve>()
@@ -124,7 +177,18 @@ internal object DialogAppearanceHeadfulCases {
 
     @Composable
     private fun Content() {
-        Box(Modifier.fillMaxSize().background(Color.White))
+        // Enough text under the dialog for the owner window's frame to cost
+        // something: a scrim fade re-presents the owner every frame, and a
+        // trivial scene would hide a cadence problem a real app shows.
+        androidx.compose.foundation.layout.Column(Modifier.fillMaxSize().background(Color.White)) {
+            repeat(HEAVY_ROWS) { row ->
+                androidx.compose.material.Text(
+                    text = "Row $row - " + "lorem ipsum dolor sit amet ".repeat(HEAVY_REPEATS),
+                    color = Color.DarkGray,
+                    maxLines = 1,
+                )
+            }
+        }
         val shown by dialogShown
         if (shown) {
             Dialog(onDismissRequest = { }) {
@@ -252,8 +316,12 @@ internal object DialogAppearanceHeadfulCases {
             settle(WARMUP_MILLIS)
             val shownNs = System.nanoTime()
             dialogShown.value = true
+            var hiddenNs = Long.MAX_VALUE
             try {
                 settle(FILM_MILLIS)
+                hiddenNs = System.nanoTime()
+                dialogShown.value = false
+                settle(HIDE_FILM_MILLIS)
             } finally {
                 capturing.set(false)
                 grabber.join()
@@ -265,6 +333,7 @@ internal object DialogAppearanceHeadfulCases {
                     frames
                         .filter { (ns, _) -> ns >= shownNs }
                         .map { (ns, img) -> sample((ns - shownNs) / 1_000_000, img) },
+                    hideAtMs = (hiddenNs - shownNs) / 1_000_000,
                 )
             measured[native] = curve
             val mode = if (native) "native" else "in-scene"
@@ -333,12 +402,33 @@ internal object DialogAppearanceHeadfulCases {
                     problems += "$what: in-scene=$a native=$b (tolerance $tolerance)"
                 }
             }
-            near("first visible (ms)", inScene.firstVisibleMs, native.firstVisibleMs, FIRST_VISIBLE_TOLERANCE_MS)
+            // One-sided: the native layer shows its first frame sooner (its
+            // surface presents without waiting for the owner's frame); later
+            // than the in-scene layer would be a regression.
+            val inSceneFirst = inScene.firstVisibleMs
+            val nativeFirst = native.firstVisibleMs
+            if (inSceneFirst == null ||
+                nativeFirst == null ||
+                nativeFirst > inSceneFirst + FIRST_VISIBLE_TOLERANCE_MS
+            ) {
+                problems +=
+                    "first visible (ms): in-scene=$inSceneFirst native=$nativeFirst (tolerance $FIRST_VISIBLE_TOLERANCE_MS)"
+            }
             near("settled (ms)", inScene.settledMs, native.settledMs, SETTLE_TOLERANCE_MS)
             near("slide-in (px)", inScene.slideInPx, native.slideInPx, SLIDE_TOLERANCE_PX)
             near("scrim ramp", inScene.scrimRamp, native.scrimRamp, COLOR_TOLERANCE)
             near("final scrim", inScene.finalScrimRed, native.finalScrimRed, COLOR_TOLERANCE)
             near("final content", inScene.finalBlueness, native.finalBlueness, COLOR_TOLERANCE)
+            near("hide start (ms)", inScene.hideStartMs, native.hideStartMs, FIRST_VISIBLE_TOLERANCE_MS)
+            near("hide gone (ms)", inScene.hideGoneMs, native.hideGoneMs, SETTLE_TOLERANCE_MS)
+            if (native.showStalls > inScene.showStalls + STALL_TOLERANCE) {
+                problems +=
+                    "appearance drops frames: in-scene stalls=${inScene.showStalls} native stalls=${native.showStalls}"
+            }
+            if (native.hideStalls > inScene.hideStalls + STALL_TOLERANCE) {
+                problems +=
+                    "disappearance drops frames: in-scene stalls=${inScene.hideStalls} native stalls=${native.hideStalls}"
+            }
             check(problems.isEmpty()) {
                 "the native popup layer's dialog does not appear like the in-scene one:\n  " +
                     problems.joinToString("\n  ")
@@ -392,8 +482,12 @@ internal object DialogAppearanceHeadfulCases {
     private const val SETTLE_BEFORE_MILLIS = 600L
     private const val WARMUP_MILLIS = 200L
     private const val FILM_MILLIS = 700L
+    private const val HIDE_FILM_MILLIS = 500L
+    private const val HEAVY_ROWS = 40
+    private const val HEAVY_REPEATS = 6
+    private const val STALL_TOLERANCE = 3
     private const val MAX_FRAMES = 200
-    private const val DUMP_UNTIL_MS = 260L
+    private const val DUMP_UNTIL_MS = 1_300L
     private const val SETTLE_PX = 1
     private const val SETTLE_COLOR = 6
     private const val FIRST_VISIBLE_TOLERANCE_MS = 50L
