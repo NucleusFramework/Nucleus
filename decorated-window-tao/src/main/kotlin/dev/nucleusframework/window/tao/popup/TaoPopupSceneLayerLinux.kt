@@ -46,6 +46,8 @@ import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.makeGLWithInterface
+import java.util.logging.Level
+import java.util.logging.Logger
 import kotlin.math.roundToInt
 
 /**
@@ -130,6 +132,13 @@ internal class TaoPopupSceneLayerLinux(
      * shows as a square of margin around a point.
      */
     private var contentBounds: IntRect = IntRect.Zero
+
+    /**
+     * Whether the compositor positions this surface (`xdg_popup`) instead of us
+     * (`wl_subsurface`) — see [decideCompositorPlacement]. Decided at the first
+     * frame, since a window's map type cannot change afterwards.
+     */
+    private var compositorPlaced: Boolean? = null
 
     /** EGL attachment ready — flips on WINDOW_READY once the GPU side is up. */
     private var attachment: Long = 0
@@ -299,7 +308,11 @@ internal class TaoPopupSceneLayerLinux(
     private var onOutsidePointerEvent: ((PointerEventType, PointerButton?) -> Unit)? = null
 
     init {
-        popupWindow.onWindowReady { _, _ -> attachGpu() }
+        trace { "created popup window ${popupWindow.handle} focusable=$_focusable" }
+        popupWindow.onWindowReady { _, _ ->
+            trace { "window ready" }
+            attachGpu()
+        }
         // Compositor expose (X11) / re-map: repaint through the host pump.
         popupWindow.onRedrawRequested { host.requestRedraw() }
         registerInput()
@@ -363,6 +376,7 @@ internal class TaoPopupSceneLayerLinux(
         }
         attachment = handle
         directContext = ctx
+        trace { "gpu attached kind=$kind ${w}x$h" }
         glTextureHostState.value =
             object : TaoGlTextureHost {
                 override val directContext: DirectContext = ctx
@@ -373,6 +387,11 @@ internal class TaoPopupSceneLayerLinux(
             }
         // Re-push any frame set before the window was ready, and paint.
         if (!contentBounds.isEmpty) updateNativeFrame()
+        // Paint now, not on the owner's next frame: this first render is what
+        // measures the content and writes boundsInWindow, i.e. what shows the
+        // popup at all — waiting for the owner's redraw added a frame or two to
+        // every menu. The present itself still rides the owner's pump.
+        renderFrame()
         host.requestRedraw()
     }
 
@@ -395,6 +414,7 @@ internal class TaoPopupSceneLayerLinux(
     override var boundsInWindow: IntRect
         get() = _bounds
         set(value) {
+            trace { "boundsInWindow=$value" }
             _bounds = value
             if (!value.isEmpty) contentBounds = value
             updateNativeFrame()
@@ -431,11 +451,13 @@ internal class TaoPopupSceneLayerLinux(
     override fun close() {
         if (released) return
         released = true
+        trace { "close" }
         host.unregisterRenderer(rendererToken)
         host.popupScrims.unregister(rendererToken)
         host.unregisterKeyHandler(keyHandlerToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
         host.unregisterOutsidePressListener(outsidePressToken)
+        host.releaseCompositorPopup(rendererToken)
         // Drop the TextureView handle before the context it points at dies: a
         // late composition must not import onto a closed context.
         glTextureHostState.value = null
@@ -578,8 +600,36 @@ internal class TaoPopupSceneLayerLinux(
         // logical size below an exact integer for GTK.
         val w = alignToBufferScale(drawBounds.width, bufferScale)
         val h = alignToBufferScale(drawBounds.height, bufferScale)
-        popupWindow.setOuterPosition((xPx / scale).toDouble(), (yPx / scale).toDouble())
-        popupWindow.setInnerSize((w / scale).toDouble(), (h / scale).toDouble())
+        val compositorPlaced =
+            compositorPlaced ?: decideCompositorPlacement(geometry).also {
+                compositorPlaced = it
+                TaoPopupDiagnostics.lastCompositorPlaced = it
+            }
+        trace {
+            "push frame pos=($xPx,$yPx) size=${w}x$h shown=$shown attached=${attachment != 0L} " +
+                "compositorPlaced=$compositorPlaced"
+        }
+        if (compositorPlaced) {
+            // The compositor owns the position from map on, and GDK positions an
+            // xdg_popup once — only the frame before show() counts. Neither a
+            // plain move nor a plain resize here: either would re-map the window
+            // as a subsurface, so the anchor call carries the size as well.
+            if (!shown) {
+                popupWindow.anchorPopupInParent(
+                    contentXDp = contentInParent.left / scale.toDouble(),
+                    contentYDp = contentInParent.top / scale.toDouble(),
+                    widthDp = (w / scale).toDouble(),
+                    heightDp = (h / scale).toDouble(),
+                    shadowLeftDp = ((contentBounds.left - drawBounds.left) / scale).roundToInt(),
+                    shadowTopDp = ((contentBounds.top - drawBounds.top) / scale).roundToInt(),
+                    shadowRightDp = ((drawBounds.right - contentBounds.right) / scale).roundToInt(),
+                    shadowBottomDp = ((drawBounds.bottom - contentBounds.bottom) / scale).roundToInt(),
+                )
+            }
+        } else {
+            popupWindow.setOuterPosition((xPx / scale).toDouble(), (yPx / scale).toDouble())
+            popupWindow.setInnerSize((w / scale).toDouble(), (h / scale).toDouble())
+        }
         if (w != widthPx || h != heightPx) {
             widthPx = w
             heightPx = h
@@ -589,11 +639,29 @@ internal class TaoPopupSceneLayerLinux(
         }
         if (!shown) {
             shown = true
+            trace { "show" }
             popupWindow.show()
         }
     }
 
+    /**
+     * Whether the compositor should place this surface — an `xdg_popup` it
+     * keeps on screen — rather than us. Only on native Wayland, the one
+     * backend where the client cannot see the screen and so cannot clamp (X11
+     * has [popupScreenClampOffset]); only for popups, since a dialog belongs
+     * to its window and stays centred in it as a subsurface; and one per
+     * parent, because an `xdg_popup` must be its parent's topmost popup
+     * ([TaoPopupHostLinux.acquireCompositorPopup]).
+     */
+    private fun decideCompositorPlacement(geometry: PopupScreenGeometry?): Boolean =
+        geometry == null &&
+            popupWindow.parentIsNativeWayland() &&
+            scrimColorState.value == null &&
+            host.acquireCompositorPopup(rendererToken)
+
     // ── Per-frame render — driven by the host's redraw pump ───────────────
+
+    private var presented = false
 
     private fun renderFrame() {
         if (released || attachment == 0L) return
@@ -620,7 +688,13 @@ internal class TaoPopupSceneLayerLinux(
             // alpha mode must be stated — see renderGlFrame).
             windowTransparent = true,
             present = {
-                if (frame != IntRect.Zero) NativeTaoEglBridge.nativePresent(attachment)
+                if (frame != IntRect.Zero) {
+                    if (!presented) {
+                        presented = true
+                        trace { "first present frame=$frame" }
+                    }
+                    NativeTaoEglBridge.nativePresent(attachment)
+                }
             },
         ) { canvas, nanoTime ->
             canvas.save()
@@ -721,7 +795,13 @@ internal class TaoPopupSceneLayerLinux(
         return onKeyEvent?.invoke(event) == true
     }
 
+    private fun trace(message: () -> String) {
+        if (logger.isLoggable(Level.FINE)) logger.fine("popup ${System.identityHashCode(this)}: ${message()}")
+    }
+
     private companion object {
+        private val logger: Logger = Logger.getLogger(TaoPopupSceneLayerLinux::class.java.name)
+
         // Wire scale — must match Rust `CURSOR_FIXED_SCALE`.
         private const val POSITION_SCALE: Float = 1024f
 

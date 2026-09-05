@@ -1021,6 +1021,36 @@ impl Window {
   /// off it, which is why the caret's *size* matters here and not on Windows.
   /// GDK works in logical pixels, so the caller's physical rect is scaled down
   /// on the way in.
+  /// Nucleus patch: anchor a `GTK_WINDOW_POPUP` overlay at a point of its
+  /// transient parent through `gdk_window_move_to_rect`, so GDK maps it as an
+  /// `xdg_popup` the compositor keeps on screen (flipped above the point when
+  /// there is no room below, slid along an edge) instead of a `wl_subsurface`
+  /// it lets hang off the display. `(x, y)` are logical parent-window
+  /// coordinates of the content's top-left; `shadow` = (left, right, top,
+  /// bottom) transparent margins the surface carries around that content,
+  /// declared as the popup's shadow width so the compositor constrains the
+  /// content, not the margin. `width`/`height` are the whole surface in
+  /// logical pixels, applied here rather than left to a separate size request:
+  /// GDK builds the `xdg_positioner` from the window's *current* geometry, so a
+  /// popup still sized 1×1 at this point asks the compositor to constrain a
+  /// 1×1 rectangle and never gets flipped. GDK positions a popup once, at map:
+  /// call before the window is shown.
+  pub fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    if let Err(e) = self.window_requests_tx.send((
+      self.window_id,
+      WindowRequest::PopupAnchor {
+        x,
+        y,
+        width,
+        height,
+        shadow,
+      },
+    ))
+    {
+      log::warn!("Fail to send popup anchor request: {}", e);
+    }
+  }
+
   pub fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
     let scale_factor = self.scale_factor();
     let (x, y): (i32, i32) = position.into().to_logical::<i32>(scale_factor).into();
@@ -1362,6 +1392,15 @@ pub enum WindowRequest {
   /// Nucleus patch (nucleusframework#558): the rectangle the caret occupies,
   /// in window-local logical pixels, for the input method to steer clear of.
   SetImeCursorArea((i32, i32, i32, i32)),
+  /// Nucleus patch: anchor a popup overlay at a point of its transient parent
+  /// through `gdk_window_move_to_rect` — see `Window::popup_anchor`.
+  PopupAnchor {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    shadow: (i32, i32, i32, i32),
+  },
   WireUpEvents {
     transparent: bool,
     fullscreen: bool,

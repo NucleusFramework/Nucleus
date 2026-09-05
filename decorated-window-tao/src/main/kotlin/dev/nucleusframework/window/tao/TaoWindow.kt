@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
+import kotlin.math.roundToInt
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -929,6 +930,52 @@ public class TaoWindow internal constructor(
     }
 
     /**
+     * Linux native Wayland only, for a popup overlay (`openWindow(popupOf = …)`):
+     * anchors the popup's content at a point of the parent's content area
+     * through GDK's `move_to_rect`, so it maps as an `xdg_popup` the compositor
+     * keeps on screen — flipped above the point when there is no room below,
+     * slid along an edge — instead of a `wl_subsurface` the compositor cannot
+     * constrain. The shadow margins are the transparent border the surface
+     * carries around its content; the compositor constrains the content, not
+     * the margin. The surface size is applied here too, because GDK builds the
+     * positioner from the window's current geometry — a popup still sized 1×1
+     * asks the compositor to constrain a 1×1 rectangle and is never flipped.
+     * GDK positions a popup once, at map: call before [show], and never
+     * [setOuterPosition] or [setInnerSize] afterwards (either one re-maps it as
+     * a plain subsurface).
+     */
+    internal fun anchorPopupInParent(
+        contentXDp: Double,
+        contentYDp: Double,
+        widthDp: Double,
+        heightDp: Double,
+        shadowLeftDp: Int,
+        shadowTopDp: Int,
+        shadowRightDp: Int,
+        shadowBottomDp: Int,
+    ) {
+        var x = contentXDp
+        var y = contentYDp
+        // Same content-area → parent-surface conversion as setOuterPosition.
+        if (isPopup && popupParentHandle != 0L && parentIsNativeWayland()) {
+            val packed = NativeTaoBridge.nativeLinuxContentOrigin(popupParentHandle)
+            x += (packed shr 32).toInt()
+            y += packed.toInt()
+        }
+        NativeTaoBridge.nativeLinuxPopupAnchor(
+            handle,
+            x.roundToInt(),
+            y.roundToInt(),
+            widthDp.roundToInt(),
+            heightDp.roundToInt(),
+            shadowLeftDp,
+            shadowTopDp,
+            shadowRightDp,
+            shadowBottomDp,
+        )
+    }
+
+    /**
      * [setOuterPosition] in physical screen pixels — the coordinate space
      * [outerBoundsPx] reports in, so a caller that computes a target from live
      * window rects never has to guess a scale factor.
@@ -956,7 +1003,7 @@ public class TaoWindow internal constructor(
     }
 
     /** `true` when the popup parent is a native Wayland surface (kind == 2). */
-    private fun parentIsNativeWayland(): Boolean {
+    internal fun parentIsNativeWayland(): Boolean {
         if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
         val handles = NativeTaoBridge.nativeLinuxHandles(popupParentHandle) ?: return false
         return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND

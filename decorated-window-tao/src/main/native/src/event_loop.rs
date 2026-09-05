@@ -769,6 +769,44 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::PopupAnchor {
+                    handle,
+                    x,
+                    y,
+                    width,
+                    height,
+                    shadow_left,
+                    shadow_top,
+                    shadow_right,
+                    shadow_bottom,
+                } => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        use tao::platform::unix::WindowExtUnix;
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(w) = guard.as_ref().and_then(|map| map.get(&handle)) {
+                            w.popup_anchor(
+                                x,
+                                y,
+                                width,
+                                height,
+                                (shadow_left, shadow_right, shadow_top, shadow_bottom),
+                            );
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = (
+                        handle,
+                        x,
+                        y,
+                        width,
+                        height,
+                        shadow_left,
+                        shadow_top,
+                        shadow_right,
+                        shadow_bottom,
+                    );
+                }
                 UserEvent::SetFullscreen { handle, fullscreen } => {
                     let guard = WINDOWS.lock().unwrap();
                     if let Some(map) = guard.as_ref() {

@@ -56,6 +56,7 @@ class TaoSceneTestBatteryDriftTest {
     private val batteryClasses: List<Class<*>> =
         listOf(
             TaoKeyMappingTest::class.java,
+            NativePopupLayersTest::class.java,
             TaoKeyboardModifiersDecodeTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             Win32WheelDeltaTest::class.java,

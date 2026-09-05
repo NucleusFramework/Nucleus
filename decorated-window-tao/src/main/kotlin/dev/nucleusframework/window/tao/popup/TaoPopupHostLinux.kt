@@ -149,4 +149,17 @@ internal interface TaoPopupHostLinux {
     )
 
     fun unregisterOutsidePressListener(token: Any)
+
+    /**
+     * Claims the parent's compositor-positioned popup for [token]. On native
+     * Wayland a popup layer that gets it maps as an `xdg_popup` the compositor
+     * keeps on screen ([TaoWindow.anchorPopupInParent]); an `xdg_popup` must be
+     * its parent's topmost popup and GDK refuses to map a second one, so only
+     * one layer at a time may take that path — the others stay subsurfaces.
+     * Returns `false` while another layer holds it.
+     */
+    fun acquireCompositorPopup(token: Any): Boolean
+
+    /** Releases [acquireCompositorPopup]'s claim; a no-op for a token that never held it. */
+    fun releaseCompositorPopup(token: Any)
 }

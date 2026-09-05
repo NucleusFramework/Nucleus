@@ -372,6 +372,19 @@ pub(crate) enum UserEvent {
         x: f64,
         y: f64,
     },
+    /// Linux: anchor a popup overlay at a logical point of its parent so GDK
+    /// maps it as a compositor-positioned `xdg_popup` (see `popup_anchor`).
+    PopupAnchor {
+        handle: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        shadow_left: i32,
+        shadow_top: i32,
+        shadow_right: i32,
+        shadow_bottom: i32,
+    },
     SetFullscreen {
         handle: u64,
         fullscreen: bool,

@@ -73,8 +73,19 @@ internal object TaoPopupDiagnostics {
         frameCount++
     }
 
+    /**
+     * Whether the most recently placed Linux popup layer let the *compositor*
+     * position it (an `xdg_popup`, native Wayland) rather than placing itself.
+     * `null` until one is placed. The Wayland half of the #569 contract: there
+     * is no screen geometry to assert against there, so the placement decision
+     * is what a test can hold on to.
+     */
+    @Volatile
+    var lastCompositorPlaced: Boolean? = null
+
     fun reset() {
         last.set(null)
         frameCount = 0
+        lastCompositorPlaced = null
     }
 }

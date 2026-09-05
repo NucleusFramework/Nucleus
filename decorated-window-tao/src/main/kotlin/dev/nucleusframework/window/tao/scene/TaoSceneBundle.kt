@@ -156,6 +156,26 @@ internal class TaoSceneBundle(
         if (swallowed && isRecomposerAlive) requestFrame()
     }
 
+    /**
+     * Recomposes and re-lays-out the scene now, without drawing.
+     *
+     * For the one case where a Compose state write has to reach the node tree
+     * *between* two things that happen in the same turn, rather than on the
+     * next frame: a press that dismisses a popup, which the scene then receives
+     * (see `TaoComposeSceneHostLinux.onPointerButton`). Two frame rolls, because
+     * the first one composes the nodes and only the second runs the effects they
+     * launched — a `pointerInput` handler awaits from a coroutine, so a node
+     * composed but not yet started would let the press through untouched.
+     */
+    fun composeAndLayoutNow() {
+        exceptionHandler.catchExceptions {
+            val nanoTime = System.nanoTime()
+            frameRecomposer.performFrame(nanoTime)
+            frameRecomposer.performFrame(nanoTime)
+            scene.measureAndLayout()
+        }
+    }
+
     @Suppress("TooGenericExceptionCaught")
     override fun close() {
         closed.set(true)

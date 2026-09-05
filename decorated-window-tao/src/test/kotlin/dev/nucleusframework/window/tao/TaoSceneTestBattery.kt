@@ -361,6 +361,18 @@ public object TaoSceneTestBattery {
         run("TaoSceneScrollTest: scrolled content repaints at the new offset") {
             TaoSceneScrollTest().`scrolled content repaints at the new offset`()
         }
+        run("NativePopupLayersTest: a Popup inside NativePopupLayers is built by the window's native layer factory") {
+            NativePopupLayersTest().`a Popup inside NativePopupLayers is built by the window's native layer factory`()
+        }
+        run("NativePopupLayersTest: a Popup outside NativePopupLayers keeps drawing in the scene") {
+            NativePopupLayersTest().`a Popup outside NativePopupLayers keeps drawing in the scene`()
+        }
+        run("NativePopupLayersTest: without a native layer factory NativePopupLayers is a no-op") {
+            NativePopupLayersTest().`without a native layer factory NativePopupLayers is a no-op`()
+        }
+        run("NativePopupLayersTest: closing the Popup closes the native layer") {
+            NativePopupLayersTest().`closing the Popup closes the native layer`()
+        }
         run("TaoScenePopupTest: popup renders above the window content") {
             TaoScenePopupTest().`popup renders above the window content`()
         }

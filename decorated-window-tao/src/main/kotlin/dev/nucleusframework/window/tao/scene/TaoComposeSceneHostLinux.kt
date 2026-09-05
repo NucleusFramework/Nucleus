@@ -7,6 +7,7 @@ import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
@@ -216,6 +217,9 @@ internal class TaoComposeSceneHostLinux(
      */
     private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
 
+    /** The layer holding this window's `xdg_popup` slot — see [TaoPopupHostLinux.acquireCompositorPopup]. */
+    private var compositorPopupOwner: Any? = null
+
     /** Callbacks invoked when the owner window's screen position changes (X11). */
     private val ownerMoveListeners: MutableMap<Any, () -> Unit> = LinkedHashMap()
 
@@ -256,6 +260,10 @@ internal class TaoComposeSceneHostLinux(
      * swap-in-flight branch of [onRedrawRequested]. Reset on every render.
      */
     private var skipDrainBudget: Int = SKIP_DRAIN_BUDGET_PER_FRAME
+
+    /** Diagnostics for a frame the swap gate skipped — see [onRedrawRequested]. */
+    private var skippedFrames: Int = 0
+    private var skippedFrameStartNanos: Long = 0L
 
     /** Parent locals bridged via [setSceneCompositionLocalContext]; applied to the scene once created. */
     private var pendingCompositionLocalContext: androidx.compose.runtime.CompositionLocalContext? = null
@@ -1671,7 +1679,17 @@ internal class TaoComposeSceneHostLinux(
                 skipDrainBudget--
                 flushingDispatcher.drain()
             }
+            skippedFrames++
+            if (skippedFrameStartNanos == 0L) skippedFrameStartNanos = System.nanoTime()
             return
+        }
+        if (skippedFrameStartNanos != 0L) {
+            val stalledMs = (System.nanoTime() - skippedFrameStartNanos) / 1_000_000
+            if (stalledMs >= FRAME_STALL_TRACE_MILLIS) {
+                linuxHostLogger.fine("frame stalled ${stalledMs}ms on the swap ($skippedFrames skipped)")
+            }
+            skippedFrameStartNanos = 0L
+            skippedFrames = 0
         }
         skipDrainBudget = SKIP_DRAIN_BUDGET_PER_FRAME
 
@@ -2007,6 +2025,18 @@ internal class TaoComposeSceneHostLinux(
         if (pressed && outsidePressListeners.isNotEmpty()) {
             val button = mapButton(buttonCode)
             for (cb in outsidePressListeners.values.toList()) cb(button)
+            // Let the scene apply that dismissal before it sees this press.
+            // The listeners above close whatever popup was open by writing
+            // Compose state, and the press is about to be dispatched in the
+            // same turn — so a node that is *disabled while the popup is open*
+            // is still disabled when the press arrives, and the press does
+            // nothing. Compose's own `contextMenuOpenDetector` is exactly that
+            // node, which is why a second right click used to close the context
+            // menu instead of moving it to the new spot, the way every OS menu
+            // does. One extra composition per outside press, and only while a
+            // popup is open.
+            Snapshot.sendApplyNotifications()
+            sceneBundle?.composeAndLayoutNow()
         }
 
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
@@ -2291,6 +2321,17 @@ internal class TaoComposeSceneHostLinux(
 
             override fun unregisterOutsidePressListener(token: Any) {
                 outer.outsidePressListeners.remove(token)
+            }
+
+            override fun acquireCompositorPopup(token: Any): Boolean {
+                val owner = outer.compositorPopupOwner
+                if (owner != null && owner !== token) return false
+                outer.compositorPopupOwner = token
+                return true
+            }
+
+            override fun releaseCompositorPopup(token: Any) {
+                if (outer.compositorPopupOwner === token) outer.compositorPopupOwner = null
             }
         }
     }
@@ -2577,6 +2618,9 @@ internal class TaoComposeSceneHostLinux(
     }
 
     private companion object {
+        /** A run of skipped frames is only worth a line past this. */
+        private const val FRAME_STALL_TRACE_MILLIS = 100L
+
         /**
          * Every attached Linux host, so an outbound drag session can keep
          * painting the windows it is *not* running in (see [OutboundDragPump]).
