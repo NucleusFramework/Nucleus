@@ -49,6 +49,12 @@ dependencies {
     implementation(libs.reorderable)
     implementation("com.materialkolor:material-kolor:4.1.1")
     implementation(libs.compose.material.icons.extended)
+    // Trackpad Lab: an embedded native WebView (WKWebView / WebKitGTK / WebView2)
+    // to check trackpad scrolling over a NativeView. The published artifact was
+    // built against an older Nucleus; the in-tree modules must win.
+    implementation(libs.composewebview) {
+        exclude(group = "dev.nucleusframework")
+    }
 }
 
 java {

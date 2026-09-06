@@ -23,7 +23,6 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent
-import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -35,6 +34,7 @@ import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.TaoSceneScrollRouter
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.newMetalRenderExecutor
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
@@ -98,6 +98,17 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private val windowInfo = StandalonePopupWindowInfo()
 
     private val framePump = StandaloneFramePump { renderNow() }
+
+    // Wheel → Scroll, trackpad gesture → Pan, same as the window host (#654).
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoStandalonePopupHostMac.scene
+                override val scale: Float get() = this@TaoStandalonePopupHostMac.scale
+
+                override fun guard(block: () -> Unit) = framePump.nonReentrant(block)
+            },
+        )
     private val replayInFlight = AtomicBoolean(false)
     private var nextFrameNs = 0L
     private var visible = false
@@ -284,12 +295,22 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun dispose() {
-        if (!isValid || disposed) return
+        if (disposed) return
         disposed = true
         framePump.disposed = true
+        if (!isValid) {
+            // Never came up (bridges missing, panel creation failed): only the
+            // eagerly created pieces need releasing.
+            scrollRouter.cancel()
+            renderExecutor.shutdown()
+            return
+        }
         revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
+        // After the native callback is gone: no scroll can reach a router
+        // whose timer scope is already dead.
+        scrollRouter.cancel()
         sceneBundle?.close()
         sceneBundle = null
         metalTextureHostCache.invalidate()
@@ -423,6 +444,9 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     else -> PointerEventType.Move
                 }
             framePump.nonReentrant {
+                // A click ends an open trackpad pan first — inside the pump,
+                // like every other scene dispatch here.
+                if (eventType == PointerEventType.Press) scrollRouter.finishPan()
                 sc.sendPointerEvent(
                     eventType = eventType,
                     position = Offset(x, y),
@@ -438,13 +462,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             dx: Float,
             dy: Float,
             precise: Boolean,
+            gesturePhase: Int,
         ) {
             framePump.nonReentrant {
-                scene?.dispatchAwtShapedScroll(
-                    x,
-                    y,
-                    appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
-                )
+                scrollRouter.onScroll(x, y, appKitWheelToAwtScrollEvent(dx, dy, precise, gesturePhase))
             }
         }
 

@@ -35,7 +35,7 @@ import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -205,6 +205,18 @@ internal class TaoComposeSceneHost(
     private var widthPx: Int = 0
     private var heightPx: Int = 0
     private var scale: Float = 1f
+
+    // Wheel → Scroll, trackpad gesture → Pan (#654). Declared with the rest of
+    // the input state, ahead of every handler that reads it.
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHost.scene
+                override val scale: Float get() = this@TaoComposeSceneHost.scale
+
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
+            },
+        )
 
     // Sub-pixel deadband (#615): the wire delivers 1/1024-px positions and
     // macOS emits a CursorMoved before every mouseDown/mouseUp, so click
@@ -856,6 +868,30 @@ internal class TaoComposeSceneHost(
                     yPx,
                     dx,
                     dy,
+                    TaoNativeViewHost.SCROLL_WHEEL,
+                )
+            }
+
+            override fun dispatchPanToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                panOffsetPx: Offset,
+                phase: Int,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                // Back to wheel units with the scale TaoSceneScrollRouter used
+                // (10 dp per unit at the window's scale), not the content's
+                // LocalDensity, which an app may override.
+                val unitPx = AWT_PIXEL_TO_ROTATION * outer.scale
+                NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
+                    outer.nsViewHandle,
+                    handle,
+                    xPx,
+                    yPx,
+                    panOffsetPx.x / unitPx,
+                    panOffsetPx.y / unitPx,
+                    phase,
                 )
             }
 
@@ -1013,6 +1049,9 @@ internal class TaoComposeSceneHost(
             // comment on `hasReceivedCursorMove` for the rationale.
             return
         }
+        // A click ends a trackpad gesture for Compose too (a tap to stop a
+        // fling must not race an open pan session).
+        if (pressed) scrollRouter.finishPan()
         val composeButton = mapButton(buttonCode)
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -1055,19 +1094,15 @@ internal class TaoComposeSceneHost(
     }
 
     /**
-     * [event] is pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`
-     * and carries a synthetic native event so Compose's desktop scroll config
-     * can read `scrollAmount` and precise-wheel metadata like the AWT backend.
+     * [event] is pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`;
+     * wheel notches reach Compose as `Scroll` events with a synthetic native
+     * event attached (so the desktop scroll config can read `scrollAmount`),
+     * trackpad gesture steps as Pan events — see [TaoSceneScrollRouter].
      */
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-        scene?.dispatchAwtShapedScroll(
-            x = pointerDeadband.x,
-            y = pointerDeadband.y,
-            event = event,
-            keyboardModifiers = currentKeyboardModifiers,
-        )
+        scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
 
     // ── Trackpad gestures (macOS pinch / rotate / smart-magnify) ──────────
@@ -1551,6 +1586,7 @@ internal class TaoComposeSceneHost(
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
+        scrollRouter.cancel()
         // The native cache keys on the NSView pointer; leaving it set would
         // let a later view allocated at the same address inherit this
         // window's text and caret.

@@ -22,6 +22,7 @@
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <math.h>
 #import <jni.h>
 
@@ -2870,6 +2871,76 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeft
     if ([NSThread isMainThread]) read();
     else                          dispatch_sync(dispatch_get_main_queue(), read);
     return packed;
+}
+
+/* macOS only, headful e2e (#652 / #653 / #654): hands a synthetic
+ * `scrollWheel:` NSEvent to the tao NSView passed in — the entry point a real
+ * trackpad or wheel event takes once the WindowServer has routed it. Skipping
+ * the WindowServer (CGEventPost) means no Accessibility grant and no cursor
+ * parked over the window are needed, and the delivery is deterministic.
+ *
+ * (x, y) are view-local points with a top-left origin (Compose dp).
+ * (dx, dy) are AppKit `scrollingDelta*` values: points when `precise`
+ * (`hasPreciseScrollingDeltas == YES`, trackpad), lines otherwise (wheel).
+ * They are whole numbers by construction: the CGEvent point/line delta fields
+ * are integers and `+[NSEvent eventWithCGEvent:]` derives `scrollingDelta*`
+ * from them (setting the fixed-point fields only changes the legacy
+ * `deltaX/Y`) — verified, not assumed; cases that need sub-point steps have
+ * to go through the JVM-side scene harness instead.
+ * `phase` / `momentumPhase` use the IOHID field encodings that
+ * `+[NSEvent eventWithCGEvent:]` decodes into `NSEventPhase` — phase: 1 began,
+ * 2 changed, 4 ended, 8 cancelled, 128 may-begin; momentum: 1 began, 2 changed,
+ * 3 ended. 0 leaves the field unset (a wheel / phase-less device).
+ *
+ * A CGEvent-built NSEvent has no window: its `locationInWindow` is the CG
+ * location flipped against the primary display. The location is therefore
+ * chosen so that the flipped value equals the wanted window point, which is
+ * what tao's `mouse_motion` (run first by `scroll_wheel`) resolves back to
+ * the view-local cursor position.
+ *
+ * This DRIVES the app rather than reading it, so unlike the other nativeDiag*
+ * entries it is inert unless the process was started with
+ * NUCLEUS_TAO_INPUT_INJECTION=1 (the taoHeadfulTest Gradle task sets it) and
+ * it only runs on the main thread. Returns JNI false when disabled, off the
+ * main thread, or when the view, its window or the primary screen is gone;
+ * JNI true only once `scrollWheel:` was actually sent to the given view. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrollWheel(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jfloat x, jfloat y, jfloat dx, jfloat dy, jboolean precise,
+        jint phase, jint momentumPhase) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    // Main thread only from here on, so the lazy flag needs no atomics.
+    static int sEnabled = -1;
+    if (sEnabled < 0) {
+        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
+        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
+    }
+    if (!sEnabled) return JNI_FALSE;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    NSScreen *primary = NSScreen.screens.firstObject;
+    if (window == nil || primary == nil) return JNI_FALSE;
+    // View-local top-left → window base coordinates (bottom-left).
+    NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+    NSPoint inWindow = [view convertPoint:local toView:nil];
+    CGEventRef cg = CGEventCreateScrollWheelEvent(
+        NULL, precise ? kCGScrollEventUnitPixel : kCGScrollEventUnitLine, 2,
+        (int32_t)lroundf(dy), (int32_t)lroundf(dx));
+    if (cg == NULL) return JNI_FALSE;
+    if (phase != 0) {
+        CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, phase);
+    }
+    if (momentumPhase != 0) {
+        CGEventSetIntegerValueField(cg, kCGScrollWheelEventMomentumPhase, momentumPhase);
+    }
+    CGEventSetLocation(cg, CGPointMake(inWindow.x, primary.frame.size.height - inWindow.y));
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil) return JNI_FALSE;
+    [view scrollWheel:event];
+    return JNI_TRUE;
 }
 
 /* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds

@@ -1,17 +1,5 @@
 package dev.nucleusframework.window.tao.headful
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.TaoEventCode
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -87,26 +75,6 @@ internal object LinuxDiscreteScrollHeadfulCases {
         }
     }
 
-    @Composable
-    private fun ScrollableColumn(
-        scrollPx: AtomicInteger,
-        scrollMax: AtomicInteger,
-    ) {
-        val state = rememberScrollState()
-        scrollPx.set(state.value)
-        scrollMax.set(state.maxValue)
-        Column(Modifier.fillMaxSize().verticalScroll(state)) {
-            repeat(ROW_COUNT) { i ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(ROW_HEIGHT_DP.dp)
-                        .background(if (i % 2 == 0) Color.DarkGray else Color.Gray),
-                )
-            }
-        }
-    }
-
     /**
      * Place Compose's last pointer over the scrollable, through the same
      * CURSOR_MOVED wire the host uses for a real mouse. GTK motion injection
@@ -137,7 +105,4 @@ internal object LinuxDiscreteScrollHeadfulCases {
 
     /** Thousandths: 1.0 in GDK's smooth-delta convention (positive Y = down). */
     private const val SMOOTH_DELTA_Y_MILLI = 1000
-
-    private const val ROW_COUNT = 80
-    private const val ROW_HEIGHT_DP = 24
 }

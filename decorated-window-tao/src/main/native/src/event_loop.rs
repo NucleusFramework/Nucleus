@@ -12,15 +12,17 @@ use tao::window::WindowBuilder;
 
 use crate::events::{
     current_modifier_bits, dispatch, dispatch_ime_commit, dispatch_ime_preedit,
-    dispatch_ime_replace_commit, dispatch_key,
-    dispatch_touch_input, handle_for, mouse_button_code, pack_modifiers, UserEvent,
+    dispatch_ime_replace_commit, dispatch_key, dispatch_scroll_gesture, dispatch_touch_input,
+    handle_for, mouse_button_code, pack_modifiers, UserEvent, AWT_LINE_TO_POINTS,
     CURSOR_FIXED_SCALE, EVENT_CLOSE_REQUESTED, EVENT_CURSOR_LEFT, EVENT_CURSOR_MOVED,
     EVENT_DESTROYED, EVENT_FOCUSED, EVENT_KEY_DOWN, EVENT_KEY_TYPED, EVENT_KEY_UP, EVENT_LAUNCHED,
     EVENT_MAIN_EVENTS_CLEARED, EVENT_MODIFIERS_CHANGED, EVENT_MOUSE_DOWN, EVENT_MOUSE_UP,
     EVENT_MOVED, EVENT_REDRAW_REQUESTED, EVENT_RESIZED, EVENT_SCALE_FACTOR_CHANGED,
     EVENT_SCROLL_LINE, EVENT_SCROLL_PIXEL, EVENT_UNFOCUSED, EVENT_WINDOW_READY, SCROLL_FIXED_SCALE,
-    TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS, TOUCH_EVENT_RELEASE,
-    TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
+    SCROLL_GESTURE_BEGAN, SCROLL_GESTURE_CANCELLED, SCROLL_GESTURE_CHANGED, SCROLL_GESTURE_ENDED,
+    SCROLL_GESTURE_MAY_BEGIN, SCROLL_GESTURE_MOMENTUM_BEGAN, SCROLL_GESTURE_MOMENTUM_CHANGED,
+    SCROLL_GESTURE_MOMENTUM_ENDED, TOUCH_EVENT_CANCEL, TOUCH_EVENT_MOVE, TOUCH_EVENT_PRESS,
+    TOUCH_EVENT_RELEASE, TOUCH_FORCE_FIXED_SCALE, TOUCH_FORCE_UNKNOWN,
 };
 #[cfg(target_os = "windows")]
 use crate::events::{
@@ -824,24 +826,79 @@ pub(crate) fn run_event_loop_blocking() {
                         };
                         dispatch(handle, code, mouse_button_code(button), 0);
                     }
-                    WindowEvent::MouseWheel { delta, .. } => {
-                        // Pass the raw NSEvent values straight through; the JVM
-                        // side reshapes them to match AWT's `preciseWheelRotation`
-                        // semantics so Compose's `MacOSCocoaConfig` can apply its
-                        // standard `× 10dp × -scrollAmount` formula.
-                        let (code, dx, dy) = match delta {
-                            MouseScrollDelta::LineDelta(x, y) => {
-                                (EVENT_SCROLL_LINE, x as f64, y as f64)
-                            }
-                            MouseScrollDelta::PixelDelta(p) => (EVENT_SCROLL_PIXEL, p.x, p.y),
+                    WindowEvent::MouseWheel {
+                        delta,
+                        scroll_phase,
+                        ..
+                    } => {
+                        // The JVM side reshapes the deltas to AWT's
+                        // `preciseWheelRotation` semantics so Compose's
+                        // `MacOSCocoaConfig` can apply its standard
+                        // `× 10dp × -scrollAmount` formula. AWT never scales
+                        // by the display factor, so the vendored tao hands
+                        // `PixelDelta` over in LOGICAL points (patch 0007,
+                        // #653) — nothing to undo here.
+                        let (precise, dx, dy) = match delta {
+                            MouseScrollDelta::LineDelta(x, y) => (false, x as f64, y as f64),
+                            MouseScrollDelta::PixelDelta(p) => (true, p.x, p.y),
                             _ => return,
                         };
-                        dispatch(
-                            handle,
-                            code,
-                            (dx * SCROLL_FIXED_SCALE) as jint,
-                            (dy * SCROLL_FIXED_SCALE) as jint,
-                        );
+                        // A precise scroll that belongs to a trackpad gesture
+                        // (finger or momentum phase) is reported as a gesture
+                        // so the JVM can surface Compose Pan events (#654);
+                        // everything else stays an ordinary wheel scroll.
+                        let gesture = match scroll_phase {
+                            tao::event::ScrollPhase::None => None,
+                            tao::event::ScrollPhase::MayBegin => Some(SCROLL_GESTURE_MAY_BEGIN),
+                            tao::event::ScrollPhase::Began => Some(SCROLL_GESTURE_BEGAN),
+                            tao::event::ScrollPhase::Changed => Some(SCROLL_GESTURE_CHANGED),
+                            tao::event::ScrollPhase::Ended => Some(SCROLL_GESTURE_ENDED),
+                            tao::event::ScrollPhase::Cancelled => Some(SCROLL_GESTURE_CANCELLED),
+                            tao::event::ScrollPhase::MomentumBegan => {
+                                Some(SCROLL_GESTURE_MOMENTUM_BEGAN)
+                            }
+                            tao::event::ScrollPhase::MomentumChanged => {
+                                Some(SCROLL_GESTURE_MOMENTUM_CHANGED)
+                            }
+                            tao::event::ScrollPhase::MomentumEnded => {
+                                Some(SCROLL_GESTURE_MOMENTUM_ENDED)
+                            }
+                        };
+                        match gesture {
+                            Some(phase) => {
+                                // The phase decides the route for the WHOLE
+                                // gesture: a step whose `hasPreciseScrollingDeltas`
+                                // flag differs from its siblings (seen on some
+                                // devices for zero-delta terminal steps) must
+                                // still reach the pan router, or the pan is
+                                // never closed. Line-shaped steps are scaled to
+                                // their point equivalent to keep one wire shape.
+                                let (dx, dy) = if precise {
+                                    (dx, dy)
+                                } else {
+                                    (dx * AWT_LINE_TO_POINTS, dy * AWT_LINE_TO_POINTS)
+                                };
+                                dispatch_scroll_gesture(
+                                    handle,
+                                    phase,
+                                    (dx * SCROLL_FIXED_SCALE) as jint,
+                                    (dy * SCROLL_FIXED_SCALE) as jint,
+                                );
+                            }
+                            None => {
+                                let code = if precise {
+                                    EVENT_SCROLL_PIXEL
+                                } else {
+                                    EVENT_SCROLL_LINE
+                                };
+                                dispatch(
+                                    handle,
+                                    code,
+                                    (dx * SCROLL_FIXED_SCALE) as jint,
+                                    (dy * SCROLL_FIXED_SCALE) as jint,
+                                );
+                            }
+                        }
                     }
                     WindowEvent::ReceivedImeText(text) => {
                         let mods = current_modifier_bits();

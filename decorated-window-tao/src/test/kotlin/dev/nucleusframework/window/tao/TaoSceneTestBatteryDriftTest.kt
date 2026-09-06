@@ -27,6 +27,8 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,6 +68,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoScenePointerTest::class.java,
             TaoScenePointerSlopTest::class.java,
             TaoSceneScrollTest::class.java,
+            TaoSceneTrackpadPanTest::class.java,
+            TaoTrackpadPanRouterTest::class.java,
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
@@ -96,6 +100,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneRectManagerRaceTest::class.java to
                 "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoScrollWireDriftTest::class.java to
+                "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
             dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
                 "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",

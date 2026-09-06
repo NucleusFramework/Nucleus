@@ -269,6 +269,15 @@ public object TaoApplication {
             guarded { lookup(handle)?.dispatchTrackpadGesture(kind, phase, xFixed, yFixed, valueFixed) }
         }
 
+        override fun onScrollGesture(
+            handle: Long,
+            phase: Int,
+            dxFixed: Int,
+            dyFixed: Int,
+        ) {
+            guarded { lookup(handle)?.dispatchScrollGesture(phase, dxFixed, dyFixed) }
+        }
+
         override fun onTouchInput(
             handle: Long,
             phase: Int,

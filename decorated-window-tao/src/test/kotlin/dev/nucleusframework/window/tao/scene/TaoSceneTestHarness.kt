@@ -26,6 +26,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
@@ -283,6 +284,44 @@ internal class TaoSceneTestScope(
     private var isPressed = false
     private var modifierState = 0
 
+    // Manual clock of the scroll routers, advanced by their timers when fired.
+    private var routerNowMillis = 0L
+
+    /** A router's deferred PanEnd, fired by hand (see [elapsePanGrace]); one slot per router. */
+    private inner class ManualPanTimer {
+        private var pending: (() -> Unit)? = null
+        private var fireAtMillis = 0L
+
+        fun schedule(
+            delayMillis: Long,
+            action: () -> Unit,
+        ): () -> Unit {
+            fireAtMillis = routerNowMillis + delayMillis
+            pending = action
+            return { if (pending === action) pending = null }
+        }
+
+        fun fire() {
+            val action = pending ?: return
+            pending = null
+            routerNowMillis = fireAtMillis
+            action()
+        }
+    }
+
+    private val scrollTarget =
+        object : TaoSceneScrollRouter.Target {
+            override val scene: ComposeScene get() = this@TaoSceneTestScope.scene
+            override val scale: Float get() = density
+        }
+
+    private val panTimer = ManualPanTimer()
+    private val legacyPanTimer = ManualPanTimer()
+    private val scrollRouter =
+        TaoSceneScrollRouter(scrollTarget, panTimer::schedule, panEnabled = true, clock = { routerNowMillis })
+    private val legacyScrollRouter =
+        TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false, clock = { routerNowMillis })
+
     var lastPicture: Picture? = null
         private set
 
@@ -397,6 +436,11 @@ internal class TaoSceneTestScope(
         pressed: Boolean,
     ) {
         if (!hasReceivedCursorMove) return // host guard: no click before a cursor move
+        // Like the host, after the guard: a click ends an open trackpad pan first.
+        if (pressed) {
+            scrollRouter.finishPan()
+            legacyScrollRouter.finishPan()
+        }
         val modifiers = taoKeyboardModifiers(modifierState)
         if (pressed && isPressed) {
             scene.sendPointerEvent(
@@ -437,6 +481,47 @@ internal class TaoSceneTestScope(
             eventType = PointerEventType.Exit,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
+    /**
+     * Full production scroll routing (`TaoSceneScrollRouter`, as the macOS
+     * hosts call it from `onPointerScroll` / popup `onScroll`): wheel notches
+     * become Scroll, trackpad gesture steps become Pan — or Scroll too when
+     * [panEvents] is false, mirroring `-Dnucleus.tao.trackpadPanEvents=false`.
+     */
+    fun routeScroll(
+        event: TaoPointerScrollEvent,
+        panEvents: Boolean = true,
+    ) {
+        val router = if (panEvents) scrollRouter else legacyScrollRouter
+        router.onScroll(pointerDeadband.x, pointerDeadband.y, event, taoKeyboardModifiers(modifierState))
+        frame()
+    }
+
+    /** Fires the deferred PanEnd the momentum grace timer would, on both routers. */
+    fun elapsePanGrace() {
+        panTimer.fire()
+        legacyPanTimer.fire()
+        frame()
+    }
+
+    /**
+     * Mirrors the scene host's trackpad pan dispatch (`dispatchTrackpadPan`,
+     * #654): [panOffsetPx] is in pixels with Compose's sign — positive =
+     * content scrolls down / right.
+     */
+    fun pan(
+        type: PointerEventType,
+        panOffsetPx: Offset,
+    ) {
+        scene.dispatchTrackpadPan(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            panOffset = panOffsetPx,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
         frame()

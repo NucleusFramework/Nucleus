@@ -963,6 +963,7 @@ impl<T: 'static> EventLoop<T> {
                     ScrollDirection::Smooth => TouchPhase::Moved,
                     _ => TouchPhase::Ended,
                   },
+                  scroll_phase: crate::event::ScrollPhase::None,
                   modifiers: ModifiersState::empty(),
                 },
               }) {

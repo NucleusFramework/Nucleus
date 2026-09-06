@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerButton
@@ -274,6 +275,30 @@ private fun Modifier.nativeViewPointerInterop(
                             )
                             true
                         }
+                        // Trackpad pan (#654): the whole gesture belongs to the
+                        // native view — begin and end included, so its own
+                        // scroll view finishes rubber-banding / fades its
+                        // scrollers — and is consumed so the Compose scrollable
+                        // above never opens a pan session of its own. The
+                        // offset stays in scene px; the host converts it back
+                        // to wheel units with the scale the router used.
+                        PointerEventType.PanStart,
+                        PointerEventType.PanMove,
+                        PointerEventType.PanEnd,
+                        -> {
+                            host.dispatchPanToNative(
+                                handle,
+                                xPx,
+                                yPx,
+                                change.panOffset,
+                                when (event.type) {
+                                    PointerEventType.PanStart -> TaoNativeViewHost.PAN_START
+                                    PointerEventType.PanEnd -> TaoNativeViewHost.PAN_END
+                                    else -> TaoNativeViewHost.PAN_MOVE
+                                },
+                            )
+                            true
+                        }
                         else -> false
                     }
                 if (dispatched) event.changes.forEach { it.consume() }
@@ -330,7 +355,7 @@ internal interface TaoNativeViewHost {
     ) {
     }
 
-    /** Forwards an unconsumed Compose scroll onto the native view. */
+    /** Forwards an unconsumed Compose scroll (AWT wheel units) onto the native view. */
     fun dispatchScrollToNative(
         handle: Long,
         xPx: Float,
@@ -338,6 +363,32 @@ internal interface TaoNativeViewHost {
         dx: Float,
         dy: Float,
     ) {
+    }
+
+    /**
+     * Forwards one step of an unconsumed trackpad pan onto the native view
+     * (#654). [panOffsetPx] is Compose's `panOffset` in scene px; the host
+     * converts it back to wheel units with the same scale the scroll router
+     * sized it with, so an app-level `LocalDensity` override cannot skew it.
+     * [phase] is [PAN_START], [PAN_MOVE] or [PAN_END], so the native side can
+     * hand the embedded view a gesture with a proper begin and end. macOS
+     * only: the other backends never produce Pan events.
+     */
+    fun dispatchPanToNative(
+        handle: Long,
+        xPx: Float,
+        yPx: Float,
+        panOffsetPx: Offset,
+        phase: Int,
+    ) {
+    }
+
+    companion object {
+        /** Mouse-wheel notch / phase-less precise scroll (`native_view.m` `kNvScrollWheel`). */
+        const val SCROLL_WHEEL: Int = 0
+        const val PAN_START: Int = 1
+        const val PAN_MOVE: Int = 2
+        const val PAN_END: Int = 3
     }
 
     /**

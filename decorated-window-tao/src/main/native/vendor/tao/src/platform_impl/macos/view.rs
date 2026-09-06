@@ -31,9 +31,10 @@ use objc2_foundation::{
 use once_cell::sync::Lazy;
 
 use crate::{
-  dpi::LogicalPosition,
+  dpi::{LogicalPosition, PhysicalPosition},
   event::{
-    DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
+    DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, ScrollPhase, TouchPhase,
+    WindowEvent,
   },
   keyboard::{KeyCode, ModifiersState},
   platform_impl::platform::{
@@ -1259,15 +1260,22 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
 
   unsafe {
-    let state_ptr: *mut c_void = *this.get_ivar("taoState");
-    let state = &mut *(state_ptr as *mut ViewState);
-
     let delta = {
-      // macOS horizontal sign convention is the inverse of tao.
-      let (x, y) = (event.scrollingDeltaX() * -1.0, event.scrollingDeltaY());
+      // PATCH(nucleus): keep AppKit's sign on both axes — positive means the
+      // content moves down / right, which is exactly the convention
+      // `MouseScrollDelta` documents. Upstream negated X here "because macOS
+      // is the inverse of tao"; it is not, and a consumer that negates both
+      // axes for the AWT convention then ended up with X reversed (Nucleus
+      // #652). Same as winit.
+      let (x, y) = (event.scrollingDeltaX(), event.scrollingDeltaY());
       if event.hasPreciseScrollingDeltas() {
-        let delta = LogicalPosition::new(x, y).to_physical(state.get_scale_factor());
-        MouseScrollDelta::PixelDelta(delta)
+        // PATCH(nucleus): carry AppKit's LOGICAL points as-is instead of
+        // multiplying by the view's cached backing scale. The only consumer
+        // (the Nucleus loop) wants points — AWT's `preciseWheelRotation` is
+        // `scrollingDelta / 10` with no display scale (Nucleus #653) — and
+        // converting back with a second, independently cached scale can
+        // disagree with this one for a frame during a display hop.
+        MouseScrollDelta::PixelDelta(PhysicalPosition::new(x, y))
       } else {
         MouseScrollDelta::LineDelta(x as f32, y as f32)
       }
@@ -1276,6 +1284,34 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
       NSEventPhase::MayBegin | NSEventPhase::Began => TouchPhase::Started,
       NSEventPhase::Ended => TouchPhase::Ended,
       _ => TouchPhase::Moved,
+    };
+    // PATCH(nucleus): full gesture / momentum phase (Nucleus #654). AppKit
+    // reports the fingers-on-glass part in `phase` and the inertial tail that
+    // follows in `momentumPhase`, never both at once; a wheel notch or a
+    // phase-less device has neither.
+    // `NSEventPhase` is an NS_OPTIONS mask: test bits, do not match values.
+    let scroll_phase = {
+      let p = event.phase();
+      let m = event.momentumPhase();
+      if p.contains(NSEventPhase::MayBegin) {
+        ScrollPhase::MayBegin
+      } else if p.contains(NSEventPhase::Began) {
+        ScrollPhase::Began
+      } else if p.intersects(NSEventPhase::Changed | NSEventPhase::Stationary) {
+        ScrollPhase::Changed
+      } else if p.contains(NSEventPhase::Ended) {
+        ScrollPhase::Ended
+      } else if p.contains(NSEventPhase::Cancelled) {
+        ScrollPhase::Cancelled
+      } else if m.contains(NSEventPhase::Began) {
+        ScrollPhase::MomentumBegan
+      } else if m.contains(NSEventPhase::Changed) {
+        ScrollPhase::MomentumChanged
+      } else if m.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled) {
+        ScrollPhase::MomentumEnded
+      } else {
+        ScrollPhase::None
+      }
     };
 
     let device_event = Event::DeviceEvent {
@@ -1294,6 +1330,7 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
         device_id: DEVICE_ID,
         delta,
         phase,
+        scroll_phase,
         modifiers: event_mods(event),
       },
     };

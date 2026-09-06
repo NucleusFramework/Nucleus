@@ -117,6 +117,24 @@ internal object NativeTaoBridge {
         }
 
         /**
+         * macOS-only trackpad scroll gesture (#654): a precise scroll whose
+         * AppKit `phase` / `momentumPhase` is set. It takes this callback
+         * instead of [onEvent] `SCROLL_PIXEL` so the host can surface Compose
+         * Pan events. [phase] is a [dev.nucleusframework.window.tao.TaoScrollGesturePhase]
+         * code; [dxFixed] / [dyFixed] are logical points (AppKit
+         * `scrollingDelta*`, tao sign) × 100, exactly like `SCROLL_PIXEL`.
+         *
+         * Default implementation no-ops so non-macOS callers can ignore it.
+         */
+        fun onScrollGesture(
+            handle: Long,
+            phase: Int,
+            dxFixed: Int,
+            dyFixed: Int,
+        ) {
+        }
+
+        /**
          * Windows touchscreen input. Tao emits one `WindowEvent::Touch` per
          * finger update (WM_POINTER / WM_TOUCH), forwarded here verbatim.
          * The JVM side aggregates the active set before issuing

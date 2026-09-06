@@ -98,6 +98,45 @@ public object TaoTrackpadPhase {
     public const val CANCELLED: Int = 3
 }
 
+/**
+ * Phase of a macOS trackpad scroll gesture step as delivered by
+ * `EventCallback.onScrollGesture` (#654). AppKit reports the fingers-on-glass
+ * part in `NSEvent.phase` and the inertial tail that follows in
+ * `momentumPhase`, never both at once. [wire] is the code the Rust loop
+ * (`events.rs` `SCROLL_GESTURE_*`) and the popup panel (`popup_panel.m`
+ * `NucleusScrollGesture*`) send; a scroll that belongs to no gesture (wheel
+ * notch, phase-less device) has no phase — `null` on the JVM,
+ * [NONE_WIRE] on the popup wire. Distinct from the public
+ * [TaoTrackpadPhase] of magnify / rotate gestures on purpose: the two streams
+ * are different and must not be passed for one another.
+ */
+@Suppress("MagicNumber")
+internal enum class TaoScrollGesturePhase(
+    val wire: Int,
+) {
+    BEGAN(0),
+    CHANGED(1),
+    ENDED(2),
+    CANCELLED(3),
+    MOMENTUM_BEGAN(4),
+    MOMENTUM_CHANGED(5),
+    MOMENTUM_ENDED(6),
+
+    /** Fingers touched the trackpad, no scroll yet (`NSEventPhaseMayBegin`). */
+    MAY_BEGIN(7),
+    ;
+
+    companion object {
+        /** Wire code for "not a gesture step" (only the popup wire carries it). */
+        const val NONE_WIRE: Int = -1
+
+        private val byWire: Map<Int, TaoScrollGesturePhase> = entries.associateBy { it.wire }
+
+        /** `null` for [NONE_WIRE] and for any code this build does not know. */
+        fun fromWire(code: Int): TaoScrollGesturePhase? = byWire[code]
+    }
+}
+
 /** Modifier-state bitmask that mirrors the Rust side. */
 @Suppress("MagicNumber")
 public object TaoModifierMask {
