@@ -540,16 +540,34 @@ internal object NativeTaoBridge {
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /**
+     * Linux only: returns one descriptor per GDK monitor, encoded as documented
+     * in [dev.nucleusframework.window.tao.TaoMonitor].
+     *
+     * [handle] may be `0` — monitors are a display-wide property, so the
+     * default GDK display is used when no window is available. `null` when GDK
+     * has no display.
+     */
+    @JvmStatic
+    external fun nativeLinuxMonitors(handle: Long): Array<String>?
+
+    /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
-     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
-     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
-     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
-     * [ownerHandle] to clear the relationship.
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint`). Mirrors the Win32
+     * `GWLP_HWNDPARENT` and AppKit `addChildWindow:` paths used by
+     * `DecoratedDialog`. Pass `0` for [ownerHandle] to clear the relationship.
+     *
+     * [destroyWithOwner] adds `gtk_window_set_destroy_with_parent`, which is
+     * the JDialog behaviour a dialog wants and the opposite of what a
+     * satellite wants: a satellite outlives the window it is anchored to (the
+     * workspace hands it to another one). GTK destroying it behind tao's back
+     * leaves a live `TaoWindow` whose toplevel is gone — a window that reports
+     * no geometry and can never be shown again.
      */
     @JvmStatic
     external fun nativeLinuxSetDialogOwner(
         childHandle: Long,
         ownerHandle: Long,
+        destroyWithOwner: Boolean,
     )
 
     /**
@@ -655,6 +673,14 @@ internal object NativeTaoBridge {
         height: Double,
     )
 
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMaxInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
     /** [pixels] is row-major premultiplied RGBA. Empty array clears the icon. */
     @JvmStatic
     external fun nativeSetWindowIcon(
@@ -678,6 +704,24 @@ internal object NativeTaoBridge {
         handle: Long,
         x: Double,
         y: Double,
+    )
+
+    /**
+     * Linux only: anchors a popup overlay (`popupOf`) at a logical point of
+     * its parent window through GDK's `move_to_rect`, so GDK maps it as a
+     * compositor-positioned `xdg_popup` — see [TaoWindow.anchorPopupInParent].
+     */
+    @JvmStatic
+    external fun nativeLinuxPopupAnchor(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        shadowLeft: Int,
+        shadowTop: Int,
+        shadowRight: Int,
+        shadowBottom: Int,
     )
 
     @JvmStatic

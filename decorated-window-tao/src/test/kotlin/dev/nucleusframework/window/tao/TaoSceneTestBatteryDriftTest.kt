@@ -13,6 +13,8 @@ import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
+import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
+import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
 import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
 import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
@@ -27,6 +29,11 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.workspace.DragControllerTest
+import dev.nucleusframework.window.tao.workspace.HostGeometryTest
+import dev.nucleusframework.window.tao.workspace.RelocatingSaveableStateRegistryTest
+import dev.nucleusframework.window.tao.workspace.TransferDragTest
+import dev.nucleusframework.window.tao.workspace.WindowGroupTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,6 +56,8 @@ class TaoSceneTestBatteryDriftTest {
     private val batteryClasses: List<Class<*>> =
         listOf(
             TaoKeyMappingTest::class.java,
+            NativePopupLayersTest::class.java,
+            dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest::class.java,
             TaoKeyboardModifiersDecodeTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
             Win32WheelDeltaTest::class.java,
@@ -75,6 +84,15 @@ class TaoSceneTestBatteryDriftTest {
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
             TitleBarHitTestTest::class.java,
+            LcdTextTest::class.java,
+            WindowPositionerTest::class.java,
+            SatelliteWorkspaceTest::class.java,
+            RelocatingSaveableStateRegistryTest::class.java,
+            WindowGroupTest::class.java,
+            HostGeometryTest::class.java,
+            DragControllerTest::class.java,
+            TransferDragTest::class.java,
+            TabWorkspaceTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */
@@ -105,6 +123,18 @@ class TaoSceneTestBatteryDriftTest {
                 "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
             dev.nucleusframework.window.ChromeLogicTest::class.java to
                 "unit tests for chrome helpers; no ComposeScene",
+            NucleusWindowV2BridgeTest::class.java to
+                "pure state mapping + geometry provider evaluation, no ComposeScene",
+            TaoMonitorsTest::class.java to
+                "parses the native monitor wire format; no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScreenClampTest::class.java to
+                "pure-function popup screen clamp geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupDrawInflateTest::class.java to
+                "pure-function popup draw margin geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScrimRegistryTest::class.java to
+                "scrim bookkeeping + raster blend on a CPU bitmap (#569); no ComposeScene",
+            LcdTextCaptureTest::class.java to
+                "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =

@@ -43,7 +43,7 @@ import kotlin.math.roundToInt
 
 /**
  * Composable variant of [openDecoratedWindow]. API mirrors
- * `decorated-window-jni`'s `DecoratedWindow`.
+ * the legacy AWT backend's `DecoratedWindow`.
  *
  * Reactive parameters (`title`, `alwaysOnTop`, `visible`, `focusable`,
  * `minimumSize`, `icon`, every field of [state]) push to the underlying
@@ -55,7 +55,7 @@ import kotlin.math.roundToInt
  * natively, [state] is updated. The `applied` snapshot guards against
  * feedback loops so we don't write back values we ourselves originated.
  *
- * Limitations vs. `decorated-window-jni`:
+ * Known limitations:
  *  - `enabled` only applies at construction (no live disabling yet).
  *  - User `content` lambda captures latest via `rememberUpdatedState`; state
  *    declared in the parent application scope and read inside `content`
@@ -477,7 +477,22 @@ public fun ApplicationScope.DecoratedWindow(
                 // outer origin so the ghost tracks the cursor instead of
                 // landing up/left by the decoration inset + outer offset.
                 val (xDp, yDp) = absolutePositionForPopup(window, pos)
+                // Asked for before the window is shown, so the platform can map
+                // it where it belongs: GTK and Win32 both carry a move issued
+                // ahead of the map into the initial placement. Without this the
+                // window is mapped wherever the WM felt like and only then
+                // moved — a satellite visibly flashes at the screen's default
+                // spot before snapping beside its parent.
                 window.setOuterPosition(xDp, yDp)
+                // X11: the WM applies its own placement at map time regardless,
+                // and a move issued before the map has been seen to race it
+                // (under Xvfb/openbox the window intermittently stayed at GTK's
+                // unallocated 1×1). Re-apply once the frame is real — that both
+                // overrides the WM and repairs an early move that was lost.
+                if (Platform.Current == Platform.Linux) {
+                    awaitMappedOnX11(window)
+                    window.setOuterPosition(xDp, yDp)
+                }
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
@@ -839,3 +854,22 @@ private fun actualWindowSizeDp(
     if (w <= 0 || h <= 0) return null
     return w to h
 }
+
+/**
+ * Suspends until [window] reports real outer bounds (both axes past GTK's 1px
+ * unallocated placeholder). Gives up after [X11_MAP_WAIT_RETRIES] polls — the
+ * move is then issued regardless, which is the previous behaviour.
+ */
+private suspend fun awaitMappedOnX11(window: TaoWindow) {
+    repeat(X11_MAP_WAIT_RETRIES) {
+        val b = window.outerBoundsPx()
+        if (b != null && b.size == RECT_ARRAY_LENGTH && b[2] > 1L && b[3] > 1L) return
+        delay(X11_MAP_WAIT_RETRY_MS)
+    }
+}
+
+private const val RECT_ARRAY_LENGTH = 4
+
+/** ~1.5 s: a slow Xvfb maps well within this; a real session in a few polls. */
+private const val X11_MAP_WAIT_RETRIES = 60
+private const val X11_MAP_WAIT_RETRY_MS = 25L

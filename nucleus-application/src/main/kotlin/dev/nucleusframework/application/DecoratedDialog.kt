@@ -3,27 +3,26 @@
 // UI — so a non-UI composable called in the caller's scope cannot reclassify
 // the window content. ktlint's `annotation` and `function-type-modifier-spacing`
 // rules contradict each other on the resulting two-annotation parameter type.
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @file:Suppress("ktlint:standard:annotation")
 
 package dev.nucleusframework.application
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.window.DialogState
 import androidx.compose.ui.window.rememberDialogState
 import dev.nucleusframework.application.internal.TaoDecoratedDialogAdapter
-import dev.nucleusframework.window.AwtDecoratedDialogScope
-import dev.nucleusframework.window.DecoratedDialogState
-import dev.nucleusframework.window.DecoratedDialog as AwtDecoratedDialog
+import dev.nucleusframework.window.tao.v2.DialogState as NucleusDialogState
 
 /**
- * Backend-agnostic decorated dialog. Mirrors [DecoratedWindow] but for modal /
- * secondary windows: non-resizable by default, no maximize / minimize affordance.
+ * Decorated dialog. Mirrors [DecoratedWindow] but for modal / secondary
+ * windows: non-resizable by default, no maximize / minimize affordance.
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
@@ -42,36 +41,6 @@ public fun NucleusApplicationScope.DecoratedDialog(
     content: @Composable @UiComposable NucleusDecoratedDialogScope.() -> Unit,
 ) {
     when (this) {
-        is AwtNucleusApplicationScope ->
-            AwtDecoratedDialog(
-                onCloseRequest = onCloseRequest,
-                state = state,
-                visible = visible,
-                title = title,
-                icon = icon,
-                resizable = resizable,
-                enabled = enabled,
-                focusable = focusable,
-                onPreviewKeyEvent = onPreviewKeyEvent,
-                onKeyEvent = onKeyEvent,
-            ) {
-                val awtScope: AwtDecoratedDialogScope = this
-                val nucleusWindow =
-                    remember(window) {
-                        AwtDialogNucleusWindow(window, onCloseRequest)
-                    }
-                val scope =
-                    remember(awtScope, nucleusWindow) {
-                        AwtNucleusDecoratedDialogScope(awtScope, nucleusWindow)
-                    }
-                CompositionLocalProvider(
-                    LocalNucleusBackend provides NucleusBackend.Awt,
-                    LocalNucleusWindow provides nucleusWindow,
-                ) {
-                    scope.content()
-                }
-            }
-
         is TaoNucleusApplicationScope ->
             TaoDecoratedDialogAdapter.Dialog(
                 scope = this,
@@ -127,10 +96,89 @@ public fun DecoratedDialog(
     )
 }
 
-internal class AwtNucleusDecoratedDialogScope(
-    private val delegate: AwtDecoratedDialogScope,
-    override val nucleusWindow: NucleusWindow,
-) : NucleusDecoratedDialogScope,
-    AwtDecoratedDialogScope by delegate {
-    override val state: DecoratedDialogState get() = delegate.state
+/**
+ * [DecoratedDialog] overload for the AWT-free dialog API v2 clone.
+ *
+ * [state] has no default so `DecoratedDialog(onCloseRequest) { }` still
+ * resolves to the v1 overload.
+ *
+ * `requestScreen` / `screenId` are not applied on Tao (primary work area
+ * only).
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun NucleusApplicationScope.DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: NucleusDialogState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = false,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    when (this) {
+        is TaoNucleusApplicationScope ->
+            TaoDecoratedDialogAdapter.DialogNucleusV2(
+                scope = this,
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                content = content,
+            )
+    }
+}
+
+/**
+ * Receiver-less [DecoratedDialog] for Compose window API v2. See the
+ * [NucleusApplicationScope] overload.
+ */
+@ExperimentalComposeUiApi
+@Suppress("FunctionNaming", "LongParameterList")
+@Composable
+public fun DecoratedDialog(
+    onCloseRequest: () -> Unit,
+    state: NucleusDialogState,
+    visible: Boolean = true,
+    title: String = "",
+    icon: Painter? = null,
+    resizable: Boolean = false,
+    enabled: Boolean = true,
+    focusable: Boolean = true,
+    minSize: DpSize = DpSize.Unspecified,
+    maxSize: DpSize = DpSize.Unspecified,
+    onPreviewKeyEvent: (KeyEvent) -> Boolean = { false },
+    onKeyEvent: (KeyEvent) -> Boolean = { false },
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    LocalNucleusApplicationScope.current.DecoratedDialog(
+        onCloseRequest = onCloseRequest,
+        state = state,
+        visible = visible,
+        title = title,
+        icon = icon,
+        resizable = resizable,
+        enabled = enabled,
+        focusable = focusable,
+        minSize = minSize,
+        maxSize = maxSize,
+        onPreviewKeyEvent = onPreviewKeyEvent,
+        onKeyEvent = onKeyEvent,
+        content = content,
+    )
 }

@@ -349,6 +349,12 @@ pub(crate) enum UserEvent {
         width: f64,
         height: f64,
     },
+    SetMaxInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the maximum".
+        width: f64,
+        height: f64,
+    },
     SetWindowIcon {
         handle: u64,
         // Premultiplied RGBA pixel buffer, row-major. Empty `pixels` clears.
@@ -365,6 +371,19 @@ pub(crate) enum UserEvent {
         handle: u64,
         x: f64,
         y: f64,
+    },
+    /// Linux: anchor a popup overlay at a logical point of its parent so GDK
+    /// maps it as a compositor-positioned `xdg_popup` (see `popup_anchor`).
+    PopupAnchor {
+        handle: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        shadow_left: i32,
+        shadow_top: i32,
+        shadow_right: i32,
+        shadow_bottom: i32,
     },
     SetFullscreen {
         handle: u64,

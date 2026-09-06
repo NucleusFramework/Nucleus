@@ -18,6 +18,12 @@ public object TaoCursorIcon {
     public const val NS_RESIZE: Int = 10
     public const val NESW_RESIZE: Int = 11
     public const val NWSE_RESIZE: Int = 12
+
+    /** Open hand: this can be picked up and dragged. */
+    public const val GRAB: Int = 13
+
+    /** Closed hand: it is being dragged. */
+    public const val GRABBING: Int = 14
 }
 
 /** Mirrors the event constants in `nucleus_tao` (`lib.rs`). */

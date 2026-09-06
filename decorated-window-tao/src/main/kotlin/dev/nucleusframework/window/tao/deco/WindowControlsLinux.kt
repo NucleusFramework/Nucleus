@@ -67,7 +67,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     // Iterate over `layout.buttons` in natural order — `layout.buttons[0]` is
     // "closest to the edge". Core's `TitleBarMeasurePolicy` places End items
     // first-declared = rightmost (controls-on-right) and Start items
-    // first-declared = leftmost. Mirrors `decorated-window-jni`'s
+    // first-declared = leftmost. Mirrors the legacy AWT backend's
     // `WindowControlArea.kt` exactly.
     for (button in layout.buttons) {
         when (button) {

@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package dev.nucleusframework.application.internal
 
 import androidx.compose.runtime.Composable
@@ -11,9 +13,7 @@ import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.window.DialogState
-import dev.nucleusframework.application.LocalNucleusBackend
 import dev.nucleusframework.application.LocalNucleusWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.NucleusDecoratedDialogScope
 import dev.nucleusframework.application.NucleusWindow
 import dev.nucleusframework.application.TaoNucleusApplicationScope
@@ -82,46 +82,100 @@ internal object TaoDecoratedDialogAdapter {
                 // throwing default, e.g. LocalAppGraph, would crash otherwise).
                 compositionLocalContext = outerLocals,
             ) {
-                val taoScope: TaoDecoratedDialogScope = this
-                // Tao dialogs share TaoWindow with regular windows; rebuild the
-                // active-state mirror as a single-bit DecoratedWindowState so
-                // [TaoNucleusWindow] can read uniform flow values.
-                val windowStateMirror =
-                    remember(taoScope) {
-                        derivedStateOf {
-                            DecoratedWindowState.of(active = taoScope.state.isActive)
-                        }
-                    }
-                val nucleusWindow: NucleusWindow =
-                    remember(taoScope.window) {
-                        TaoNucleusWindow(taoScope.window, windowStateMirror)
-                    }
-                val nucleusScope =
-                    remember(taoScope, nucleusWindow) {
-                        TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
-                    }
-                // Bridge the parent composition's locals (theme, density,
-                // user-provided locals, …) into the dialog's own ComposeScene
-                // via `ComposeScene.compositionLocalContext` rather than a
-                // `CompositionLocalProvider(outerLocals)` wrapper. The wrapper
-                // would re-provide Compose's internal `LocalComposeSceneContext`
-                // captured from the PARENT scene, routing every Popup /
-                // DropdownMenu / Tooltip layer back into the parent window — the
-                // popup-mispositioned-relative-to-parent bug. The scene property
-                // is applied above the scene's own `LocalComposeSceneContext`
-                // (see RootNodeOwner.setContent), so theme flows while the dialog
-                // scene keeps authority over popup layer creation.
-                val bridge = LocalTaoCompositionLocalContextBridge.current
-                SideEffect { bridge?.invoke(outerLocals) }
-                CompositionLocalProvider(
-                    LocalLayoutDirection provides parentLayoutDirection,
-                    LocalNucleusBackend provides NucleusBackend.Tao,
-                    LocalNucleusWindow provides nucleusWindow,
-                ) {
-                    nucleusScope.content()
-                }
+                bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
             }
         }
+    }
+
+    @Suppress("LongParameterList")
+    @Composable
+    fun DialogNucleusV2(
+        scope: TaoNucleusApplicationScope,
+        onCloseRequest: () -> Unit,
+        state: dev.nucleusframework.window.tao.v2.DialogState,
+        visible: Boolean,
+        title: String,
+        icon: Painter?,
+        resizable: Boolean,
+        enabled: Boolean,
+        focusable: Boolean,
+        minSize: androidx.compose.ui.unit.DpSize,
+        maxSize: androidx.compose.ui.unit.DpSize,
+        onPreviewKeyEvent: (KeyEvent) -> Boolean,
+        onKeyEvent: (KeyEvent) -> Boolean,
+        content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+    ) {
+        val outerLocals = currentCompositionLocalContext
+        val parentLayoutDirection = LocalLayoutDirection.current
+        val parentModalCount = LocalModalDialogCount.current
+        DisposableEffect(Unit) {
+            parentModalCount.value++
+            onDispose { parentModalCount.value-- }
+        }
+        with(scope.taoScope) {
+            TaoDecoratedDialog(
+                onCloseRequest = onCloseRequest,
+                state = state,
+                visible = visible,
+                title = title,
+                icon = icon,
+                resizable = resizable,
+                enabled = enabled,
+                focusable = focusable,
+                minSize = minSize,
+                maxSize = maxSize,
+                onPreviewKeyEvent = onPreviewKeyEvent,
+                onKeyEvent = onKeyEvent,
+                compositionLocalContext = outerLocals,
+            ) {
+                bindNucleusDialogContent(outerLocals, parentLayoutDirection, content)
+            }
+        }
+    }
+}
+
+@Composable
+private fun TaoDecoratedDialogScope.bindNucleusDialogContent(
+    outerLocals: androidx.compose.runtime.CompositionLocalContext,
+    parentLayoutDirection: androidx.compose.ui.unit.LayoutDirection,
+    content: @Composable NucleusDecoratedDialogScope.() -> Unit,
+) {
+    val taoScope: TaoDecoratedDialogScope = this
+    // Tao dialogs share TaoWindow with regular windows; rebuild the
+    // active-state mirror as a single-bit DecoratedWindowState so
+    // [TaoNucleusWindow] can read uniform flow values.
+    val windowStateMirror =
+        remember(taoScope) {
+            derivedStateOf {
+                DecoratedWindowState.of(active = taoScope.state.isActive)
+            }
+        }
+    val nucleusWindow: NucleusWindow =
+        remember(taoScope.window) {
+            TaoNucleusWindow(taoScope.window, windowStateMirror)
+        }
+    val nucleusScope =
+        remember(taoScope, nucleusWindow) {
+            TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
+        }
+    // Bridge the parent composition's locals (theme, density,
+    // user-provided locals, …) into the dialog's own ComposeScene
+    // via `ComposeScene.compositionLocalContext` rather than a
+    // `CompositionLocalProvider(outerLocals)` wrapper. The wrapper
+    // would re-provide Compose's internal `LocalComposeSceneContext`
+    // captured from the PARENT scene, routing every Popup /
+    // DropdownMenu / Tooltip layer back into the parent window — the
+    // popup-mispositioned-relative-to-parent bug. The scene property
+    // is applied above the scene's own `LocalComposeSceneContext`
+    // (see RootNodeOwner.setContent), so theme flows while the dialog
+    // scene keeps authority over popup layer creation.
+    val bridge = LocalTaoCompositionLocalContextBridge.current
+    SideEffect { bridge?.invoke(outerLocals) }
+    CompositionLocalProvider(
+        LocalLayoutDirection provides parentLayoutDirection,
+        LocalNucleusWindow provides nucleusWindow,
+    ) {
+        nucleusScope.content()
     }
 }
 

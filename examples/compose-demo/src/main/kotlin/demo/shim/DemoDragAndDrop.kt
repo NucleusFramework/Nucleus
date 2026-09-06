@@ -7,7 +7,7 @@ import java.awt.datatransfer.DataFlavor
 import java.io.File
 
 // DragAndDropEvent payload helpers. On the Tao backend (as on standard Compose
-// Desktop / decorated-window-jni) drops surface through the same AWT transfer
+// Desktop / the legacy AWT backend) drops surface through the same AWT transfer
 // path exercised by tao-demo: DragAndDropEvent.awtTransferable exposes the
 // payload via the AWT flavor system.
 

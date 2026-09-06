@@ -2,7 +2,11 @@
 
 package dev.nucleusframework.window.tao
 
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntRect
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
@@ -13,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
+import kotlin.math.roundToInt
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -59,7 +64,7 @@ public class TaoWindow internal constructor(
      * the `resizable` flag the window was created with; tracks runtime
      * [setResizable] calls. Surfaced to Compose so [WindowControlsLinux] /
      * [WindowControlsWindows] can hide the maximize button on non-resizable
-     * windows (matches the `decorated-window-jni` behaviour).
+     * windows (matches the legacy AWT backend's behaviour).
      */
     public val isResizable: Boolean
         get() = resizableState.value
@@ -102,6 +107,14 @@ public class TaoWindow internal constructor(
      */
     private val prepareCloseListeners = CopyOnWriteArrayList<() -> Unit>()
 
+    /**
+     * Fires synchronously at the start of [requestClose], right after
+     * [prepareCloseListeners]: windows *owned* by this one (satellites) sever
+     * their native owner link here, so Win32 / GTK don't destroy them together
+     * with their former owner while the app is handing them a new one.
+     */
+    private val closingListeners = CopyOnWriteArrayList<() -> Unit>()
+
     private val destroyedListeners = CopyOnWriteArrayList<() -> Unit>()
 
     @Volatile
@@ -125,6 +138,14 @@ public class TaoWindow internal constructor(
     // on this flag keeps the disable off the per-frame redraw path.
     private var startupEraseActive = false
     private val focusListeners = CopyOnWriteArrayList<(Boolean) -> Unit>()
+
+    /**
+     * `true` while this window holds the keyboard focus, as last reported by
+     * the native FOCUSED / UNFOCUSED events. Snapshot-backed, so Compose
+     * readers recompose on change.
+     */
+    public var isFocused: Boolean by mutableStateOf(false)
+        private set
 
     @Volatile
     private var willHideListener: (() -> Unit)? = null
@@ -244,6 +265,7 @@ public class TaoWindow internal constructor(
         } else {
             for (listener in prepareCloseListeners) listener.invoke()
         }
+        for (listener in closingListeners) listener.invoke()
         NativeTaoBridge.nativeRequestClose(handle)
     }
 
@@ -803,18 +825,40 @@ public class TaoWindow internal constructor(
      * a window opened with `forceX11` reports `false` inside an app whose other
      * windows are Wayland. Only meaningful once the native window exists (after
      * `WINDOW_READY`).
+     *
+     * Cheap to poll: the kind is resolved through JNI once and cached, since a
+     * surface never changes backend for the life of its window. Cross-window
+     * gestures read it on every pointer move.
      */
     public val isNativeWaylandSurface: Boolean
-        get() {
-            if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
-            val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return false
-            return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
-        }
+        get() = linuxSurfaceKind() == WAYLAND_HANDLE_KIND
+
+    /**
+     * `nativeLinuxHandles` slot 0, cached from the first call that returns a
+     * realized surface: `0` while the native window does not exist yet (not
+     * cached, so the next read asks again), `1` for Xlib, `2` for Wayland.
+     */
+    @Volatile
+    private var cachedLinuxSurfaceKind = 0L
+
+    private fun linuxSurfaceKind(): Long {
+        val cached = cachedLinuxSurfaceKind
+        if (cached != 0L) return cached
+        if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return 0L
+        val handles = NativeTaoBridge.nativeLinuxHandles(handle) ?: return 0L
+        val kind = if (handles.isNotEmpty()) handles[0] else 0L
+        if (kind != 0L) cachedLinuxSurfaceKind = kind
+        return kind
+    }
 
     /** Features already reported through [warnIfNativeWayland] for this window. */
     private val waylandWarnings = ConcurrentHashMap.newKeySet<String>()
 
-    /** Logical pixels. Pass `null` to clear the minimum. */
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole minimum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
     public fun setMinimumSize(
         widthDp: Double?,
         heightDp: Double?,
@@ -822,6 +866,20 @@ public class TaoWindow internal constructor(
         val w = widthDp ?: -1.0
         val h = heightDp ?: -1.0
         NativeTaoBridge.nativeSetMinInnerSize(handle, w, h)
+    }
+
+    /**
+     * Logical pixels. The constraint is per-window, not per-axis: a `null` on
+     * either axis clears the whole maximum, so pass `null` for **both** to
+     * clear it and two real values to set it.
+     */
+    public fun setMaximumSize(
+        widthDp: Double?,
+        heightDp: Double?,
+    ) {
+        val w = widthDp ?: -1.0
+        val h = heightDp ?: -1.0
+        NativeTaoBridge.nativeSetMaxInnerSize(handle, w, h)
     }
 
     /** [pixels] must be row-major premultiplied RGBA. Empty array clears. */
@@ -871,8 +929,81 @@ public class TaoWindow internal constructor(
         NativeTaoBridge.nativeSetOuterPosition(handle, x, y)
     }
 
+    /**
+     * Linux native Wayland only, for a popup overlay (`openWindow(popupOf = …)`):
+     * anchors the popup's content at a point of the parent's content area
+     * through GDK's `move_to_rect`, so it maps as an `xdg_popup` the compositor
+     * keeps on screen — flipped above the point when there is no room below,
+     * slid along an edge — instead of a `wl_subsurface` the compositor cannot
+     * constrain. The shadow margins are the transparent border the surface
+     * carries around its content; the compositor constrains the content, not
+     * the margin. The surface size is applied here too, because GDK builds the
+     * positioner from the window's current geometry — a popup still sized 1×1
+     * asks the compositor to constrain a 1×1 rectangle and is never flipped.
+     * GDK positions a popup once, at map: call before [show], and never
+     * [setOuterPosition] or [setInnerSize] afterwards (either one re-maps it as
+     * a plain subsurface).
+     */
+    internal fun anchorPopupInParent(
+        contentXDp: Double,
+        contentYDp: Double,
+        widthDp: Double,
+        heightDp: Double,
+        shadowLeftDp: Int,
+        shadowTopDp: Int,
+        shadowRightDp: Int,
+        shadowBottomDp: Int,
+    ) {
+        var x = contentXDp
+        var y = contentYDp
+        // Same content-area → parent-surface conversion as setOuterPosition.
+        if (isPopup && popupParentHandle != 0L && parentIsNativeWayland()) {
+            val packed = NativeTaoBridge.nativeLinuxContentOrigin(popupParentHandle)
+            x += (packed shr 32).toInt()
+            y += packed.toInt()
+        }
+        NativeTaoBridge.nativeLinuxPopupAnchor(
+            handle,
+            x.roundToInt(),
+            y.roundToInt(),
+            widthDp.roundToInt(),
+            heightDp.roundToInt(),
+            shadowLeftDp,
+            shadowTopDp,
+            shadowRightDp,
+            shadowBottomDp,
+        )
+    }
+
+    /**
+     * [setOuterPosition] in physical screen pixels — the coordinate space
+     * [outerBoundsPx] reports in, so a caller that computes a target from live
+     * window rects never has to guess a scale factor.
+     *
+     * On Windows this goes straight to `SetWindowPos(SWP_NOSIZE)`: Tao's
+     * logical `set_outer_position` multiplies by the scale the window was
+     * *created* at, which is the wrong factor as soon as the window lives on a
+     * second monitor with a different DPI. macOS and Linux convert with the
+     * window's own scale factor, where logical units and the native frame
+     * (AppKit points / GTK logical pixels) line up.
+     */
+    internal fun setOuterPositionPx(
+        xPx: Int,
+        yPx: Int,
+    ) {
+        if (Platform.Current == Platform.Windows && NativeTaoWindowsDecoBridge.isLoaded) {
+            val hwnd = NativeTaoBridge.nativeHwndHandle(handle)
+            if (hwnd != 0L) {
+                NativeTaoWindowsDecoBridge.nativeSetWindowOuterPositionPx(hwnd, xPx, yPx)
+                return
+            }
+        }
+        val scale = scaleFactor.takeIf { it > 0f } ?: 1f
+        setOuterPosition(xPx / scale.toDouble(), yPx / scale.toDouble())
+    }
+
     /** `true` when the popup parent is a native Wayland surface (kind == 2). */
-    private fun parentIsNativeWayland(): Boolean {
+    internal fun parentIsNativeWayland(): Boolean {
         if (Platform.Current != Platform.Linux || !NativeTaoBridge.isLoaded) return false
         val handles = NativeTaoBridge.nativeLinuxHandles(popupParentHandle) ?: return false
         return handles.isNotEmpty() && handles[0] == WAYLAND_HANDLE_KIND
@@ -953,6 +1084,45 @@ public class TaoWindow internal constructor(
         resizedListeners += block
     }
 
+    // ── Multi-cast unsubscribe ────────────────────────────────────────────────
+    // A window that observes *another* window (a satellite following its
+    // parent) has a shorter lifetime than the window it listens to, so it must
+    // be able to detach. Windows that only listen to themselves don't need
+    // this: their listener lists die with the native window.
+
+    /** Detaches a listener registered with [onResized]. */
+    internal fun removeResizedListener(block: (Int, Int) -> Unit) {
+        resizedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onMoved]. */
+    internal fun removeMovedListener(block: (Int, Int) -> Unit) {
+        movedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onDestroyed]. */
+    internal fun removeDestroyedListener(block: () -> Unit) {
+        destroyedListeners -= block
+    }
+
+    /** Detaches a listener registered with [onClosing]. */
+    internal fun removeClosingListener(block: () -> Unit) {
+        closingListeners -= block
+    }
+
+    /** Detaches a listener registered with [onFullscreenPrepare]. */
+    internal fun removeFullscreenPrepareListener(block: (Int, Int, Boolean) -> Unit) {
+        fullscreenPrepareListeners -= block
+    }
+
+    internal fun removeFocusListener(block: (Boolean) -> Unit) {
+        focusListeners -= block
+    }
+
+    internal fun removeMinimizedListener(block: (Boolean) -> Unit) {
+        minimizedListeners -= block
+    }
+
     public fun onScaleFactorChanged(block: (scale: Float) -> Unit) {
         scaleFactorListener = block
     }
@@ -968,6 +1138,14 @@ public class TaoWindow internal constructor(
      */
     internal fun onPrepareClose(block: () -> Unit) {
         prepareCloseListeners += block
+    }
+
+    /**
+     * Owned-window hook: runs at the start of [requestClose], before the native
+     * destroy. Multi-cast; detach with [removeClosingListener].
+     */
+    internal fun onClosing(block: () -> Unit) {
+        closingListeners += block
     }
 
     /** Multi-cast: every call adds a listener; all of them fire when the window is destroyed. */
@@ -1116,6 +1294,34 @@ public class TaoWindow internal constructor(
      * See [NativeTaoBridge.EventCallback.onImePreedit].
      */
     @Volatile
+    /**
+     * Renders the current composition of this window's scene into a bitmap —
+     * the whole content area, or the given region of it in physical content
+     * pixels. Installed by the scene host while it is attached; `null` before
+     * and after, and on hosts that do not offer it.
+     *
+     * What a platform drag-and-drop session shows under the pointer where the
+     * window itself cannot follow (native Wayland): a picture of the palette
+     * or panel being dragged rather than a window the client cannot move.
+     */
+    internal var contentSnapshot: ((IntRect?) -> ImageBitmap?)? = null
+
+    /** See [contentSnapshot]; `null` when the host offers none or the scene has no size yet. */
+    internal fun snapshotContent(rectPx: IntRect?): ImageBitmap? = contentSnapshot?.invoke(rectPx)
+
+    /**
+     * This window's scene root as a drag-and-drop target, installed by the
+     * scene host while it is attached; `null` before and after.
+     *
+     * The platform inbound callbacks (`NativeTao*DndBridge.Callback`) resolve
+     * the node through the very same lambda, so a driver inside the process —
+     * the headful suite — can hand a drag to
+     * [dev.nucleusframework.window.tao.dnd.TaoSceneDnD] along the path the OS
+     * takes, rather than a parallel one that could drift from it.
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    internal var inboundDragAndDropNode: (() -> androidx.compose.ui.scene.ComposeSceneDragAndDropNode?)? = null
+
     internal var imePreedit: ((String) -> Unit)? = null
 
     internal fun dispatchImePreedit(text: String) {
@@ -1181,9 +1387,13 @@ public class TaoWindow internal constructor(
                 // just yields one extra, idempotent request.
                 redrawPending.set(false)
                 requestRedraw()
+                isFocused = true
                 focusListeners.forEach { it.invoke(true) }
             }
-            TaoEventCode.UNFOCUSED -> focusListeners.forEach { it.invoke(false) }
+            TaoEventCode.UNFOCUSED -> {
+                isFocused = false
+                focusListeners.forEach { it.invoke(false) }
+            }
             TaoEventCode.MINIMIZED -> {
                 val minimized = a != 0
                 isMinimized = minimized

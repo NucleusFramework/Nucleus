@@ -210,7 +210,7 @@ public val LocalTaoWindow: ProvidableCompositionLocal<TaoWindow?> = staticCompos
 private val ModalScrimColor = Color(0x66000000)
 
 /**
- * Tao-backed equivalent of `decorated-window-jni`'s `DecoratedWindow`.
+ * Tao-backed equivalent of the legacy AWT backend's `DecoratedWindow`.
  * Imperative-on-the-outside, Composable-on-the-inside: opens a single Tao
  * window, mounts the user [content] inside its dedicated `ComposeScene`, and
  * returns the [TaoWindow] handle for further imperative control.
@@ -219,7 +219,7 @@ private val ModalScrimColor = Color(0x66000000)
  * AWT-based backends so an app can swap modules with minimal call-site change.
  * `enabled = false` swallows pointer + keyboard events at the host level so
  * the window appears unresponsive (no native disabled-state visual — matches
- * `decorated-window-jni`'s behavior). `focusable = false` calls
+ * the legacy AWT backend's behavior). `focusable = false` calls
  * `tao::Window::set_focusable(false)`, which prevents the window from ever
  * becoming key (useful for HUD/overlay windows).
  */
@@ -307,7 +307,7 @@ internal fun ApplicationScope.openDecoratedWindow(
             // On macOS we keep native decorations (traffic-light buttons live there).
             // On Windows + Linux we drop them — we draw the close/min/max buttons
             // ourselves via [WindowControlsWindows] / [WindowControlsLinux] inside
-            // the user's [TitleBar] composable, mirroring decorated-window-jni.
+            // the user's [TitleBar] composable, mirroring the legacy AWT backend.
             // `undecorated` opts out entirely (borderless, no traffic lights).
             // Linux still gets the native GTK drop shadow through
             // `undecoratedShadow` below (yaru.dart-style hidden-titlebar CSD).
@@ -499,6 +499,10 @@ internal fun ApplicationScope.openDecoratedWindow(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -509,6 +513,7 @@ internal fun ApplicationScope.openDecoratedWindow(
                 dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
                     provides host.metalTextureHost(),
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
             ) {
                 // Re-centre the native AppKit traffic-lights whenever the
@@ -726,6 +731,10 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -733,6 +742,7 @@ private fun ApplicationScope.openDecoratedWindowLinux(
                 LocalWindowClearColorLayers provides clearColorLayers,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 // Read as state: a Wayland hide/show rebuilds the EGL + Skia
                 // context pair, and TextureView imports must follow it.
@@ -1160,6 +1170,10 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                         fullyTransparent = transparent,
                     )
                 }
+            // For NativePopupLayers { }: null when every popup is native already.
+            // Remembered so the static local keeps one value per window.
+            val nativePopupLayerFactory =
+                remember { if (host.nativePopupLayers) null else host.nativePopupLayerFactory() }
             CompositionLocalProvider(
                 LocalTitleBarInfo provides TitleBarInfo(title, icon),
                 LocalTaoWindow provides window,
@@ -1169,6 +1183,7 @@ private fun ApplicationScope.openDecoratedWindowWindows(
                 LocalBackdropComposeTint provides host.backdropTintArgbState,
                 LocalFullscreenTitleBarHolder provides fullscreenHolder,
                 LocalTaoNativeViewHost provides host.nativeViewHost(),
+                LocalTaoNativePopupLayerFactory provides nativePopupLayerFactory,
                 LocalTaoCompositionLocalContextBridge provides host::setSceneCompositionLocalContext,
                 dev.nucleusframework.window.tao.popup.LocalTaoPopupHostWindows
                     provides host.popupHost(),

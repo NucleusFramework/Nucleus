@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.headful
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -16,8 +17,11 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.rememberDialogState
 import androidx.compose.ui.window.rememberWindowState
+import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.SatelliteWindow
+import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.XdgPortalParent
 import dev.nucleusframework.window.tao.taoApplication
@@ -44,8 +48,7 @@ public object TaoHeadfulTestSuiteMain {
         listOf(
             TaoWindowTestCase("window maps, paints and reports a real size") {
                 awaitUntil("window mapped with non-zero outer bounds") {
-                    val b = bounds()
-                    b != null && b[2] > 0 && b[3] > 0
+                    window.hasRealFramePx()
                 }
             },
             TaoWindowTestCase("setInnerSize fires onResized with the requested size") {
@@ -364,15 +367,42 @@ public object TaoHeadfulTestSuiteMain {
             FramePacingHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
+            NativePopupPlacementHeadfulCases.all() +
+            NativePopupMarginInputHeadfulCases.all() +
+            DialogAppearanceHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
-            ImeHeadfulCases.all()
+            SatelliteWindowHeadfulCases.all() +
+            SatelliteWorkspaceHeadfulCases.all() +
+            SatelliteWorkspaceStressHeadfulCases.all() +
+            SatelliteWorkspaceMonkeyHeadfulCases.all() +
+            TabWorkspaceHeadfulCases.all() +
+            TabWorkspaceLifecycleHeadfulCases.all() +
+            TabWorkspaceMotionHeadfulCases.all() +
+            TabWorkspaceMouseHeadfulCases.all() +
+            TabWorkspaceConcurrencyHeadfulCases.all() +
+            TabWorkspaceStormHeadfulCases.all() +
+            TabWorkspaceStressHeadfulCases.all() +
+            WaylandWorkspaceHeadfulCases.all() +
+            WaylandWorkspaceStressHeadfulCases.all() +
+            WorkspaceFileDropHeadfulCases.all() +
+            TabSatellitesHeadfulCases.all() +
+            TabSatellitesChaosHeadfulCases.all() +
+            TabWorkspacePointerHeadfulCases.all() +
+            SatellitePlacementHeadfulCases.all() +
+            WindowExtremesHeadfulCases.all() +
+            WorkspaceLoadHeadfulCases.all() +
+            MonitorAndScaleHeadfulCases.all() +
+            WorkspaceRaceHeadfulCases.all() +
+            ImeHeadfulCases.all() +
+            WindowApiV2HeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
         allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
 
     @JvmStatic
+    @Suppress("LongMethod") // one flat harness: case hosting, then the driver
     fun main(args: Array<String>) {
         if (cases.isEmpty()) {
             // Distinct from the failure-count exit codes: an unmatched filter
@@ -389,6 +419,13 @@ public object TaoHeadfulTestSuiteMain {
         thread(isDaemon = true, name = "tao-headful-watchdog") {
             Thread.sleep(watchdogMillis)
             System.err.println("WATCHDOG: headful suite exceeded ${watchdogMillis / 1000}s — halting")
+            // A wedged loop thread is the usual reason we get here, and a CI
+            // log has no `jstack`: print where every thread is parked so the
+            // hang is diagnosable from the log alone (#658).
+            for ((thread, frames) in Thread.getAllStackTraces()) {
+                System.err.println("\"${thread.name}\" ${thread.state}")
+                for (frame in frames) System.err.println("\tat $frame")
+            }
             System.err.flush()
             Runtime.getRuntime().halt(WATCHDOG_EXIT_CODE)
         }
@@ -415,46 +452,18 @@ public object TaoHeadfulTestSuiteMain {
             // level so it survives the window scene's attach/re-composition.
             val windowHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
             val dialogHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
+            val satelliteHolder = remember(current) { mutableStateOf<dev.nucleusframework.window.tao.TaoWindow?>(null) }
 
             if (skipReason == null) {
                 androidx.compose.runtime.key(current) {
-                    val fallbackState =
-                        rememberWindowState(
-                            size = case.size ?: DpSize(800.dp, 600.dp),
-                        )
-                    DecoratedWindow(
-                        onCloseRequest = { /* cases drive their own lifecycle */ },
-                        state = case.windowState ?: fallbackState,
-                        title = "tao-headful: ${case.name}",
-                        transparent = case.transparent,
-                        nativePopupLayers = case.nativePopupLayers,
-                    ) {
-                        // Default chrome surface; cases may paint over it via
-                        // [TaoWindowTestCase.content] (scaffold, backdrop, …).
-                        // Fully-transparent probes opt out so the Skia clear is
-                        // what the compositor sees in empty regions.
-                        if (case.paintDefaultBackground) {
-                            Box(Modifier.fillMaxSize().background(Color.DarkGray))
-                        }
-                        case.content(this)
-                        val w = window
-                        LaunchedEffect(w) { windowHolder.value = w }
-                    }
-                    val dialogContent = case.dialogContent
-                    if (dialogContent != null) {
-                        DecoratedDialog(
-                            onCloseRequest = { /* cases drive their own lifecycle */ },
-                            state =
-                                rememberDialogState(
-                                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
-                                ),
-                            title = "tao-headful-dialog: ${case.name}",
-                        ) {
-                            dialogContent()
-                            val w = window
-                            LaunchedEffect(w) { dialogHolder.value = w }
-                        }
-                    }
+                    CaseWindow(case, windowHolder, dialogHolder, satelliteHolder)
+                    ApplicationScopeSatellite(
+                        case = case,
+                        windowHolder = windowHolder,
+                        dialogHolder = dialogHolder,
+                        satelliteHolder = satelliteHolder,
+                    )
+                    case.applicationContent?.invoke(this, HeadfulWindows(windowHolder.value, dialogHolder.value))
                 }
             }
 
@@ -473,7 +482,9 @@ public object TaoHeadfulTestSuiteMain {
                             awaitPublishedWindows(
                                 windowHolder = windowHolder,
                                 dialogHolder = dialogHolder,
+                                satelliteHolder = satelliteHolder,
                                 waitForDialog = running.dialogContent != null,
+                                waitForSatellite = running.satelliteState != null,
                             )
                         // Per-case budget: a driver that never completes must
                         // fail its own case, not run out the global watchdog
@@ -493,7 +504,11 @@ public object TaoHeadfulTestSuiteMain {
                     ) {
                         t
                     }
+                // Whatever the case did, it does not get to hand the next one
+                // a held mouse button — see [HeadfulRobot.releaseEveryButton].
+                HeadfulRobot.releaseEveryButton()
                 System.err.println("[tao-headful] ${if (failure == null) "OK" else "FAIL"} ${running.name}")
+                failure?.printStackTrace(System.err)
                 advance(
                     TaoWindowTestResult(
                         running.name,
@@ -507,6 +522,40 @@ public object TaoHeadfulTestSuiteMain {
         // Unreachable: taoApplication never returns (exitProcess inside), and
         // reportAndExit terminates first. Kept as a hard backstop.
         reportAndExit(results)
+    }
+
+    /**
+     * The reparenting call site: an application-scope satellite whose owner is
+     * picked from the case's [TaoWindowTestCase.satelliteOwner] state, exactly
+     * like a shared palette in an app. Composed only once the chosen owner has
+     * published itself; a no-op for cases that host their satellite inside the
+     * window content instead.
+     */
+    @Composable
+    private fun ApplicationScope.ApplicationScopeSatellite(
+        case: TaoWindowTestCase,
+        windowHolder: MutableState<TaoWindow?>,
+        dialogHolder: MutableState<TaoWindow?>,
+        satelliteHolder: MutableState<TaoWindow?>,
+    ) {
+        val satelliteState = case.satelliteState ?: return
+        val satelliteOwner = case.satelliteOwner ?: return
+        val owner =
+            when (satelliteOwner.value) {
+                SatelliteOwner.CaseWindow -> windowHolder.value
+                SatelliteOwner.DialogWindow -> dialogHolder.value
+            } ?: return
+        SatelliteWindow(
+            onCloseRequest = case.satelliteOnCloseRequest,
+            parent = owner,
+            state = satelliteState,
+            title = "tao-headful-satellite: ${case.name}",
+            hideWhileParentFullscreenOrMaximized = case.satelliteHideWhileParentFills,
+        ) {
+            case.satelliteContent(this)
+            val s = window
+            LaunchedEffect(s) { satelliteHolder.value = s }
+        }
     }
 
     private fun reportAndExit(results: List<TaoWindowTestResult>): Nothing {
@@ -548,7 +597,9 @@ public object TaoHeadfulTestSuiteMain {
     private suspend fun awaitPublishedWindows(
         windowHolder: MutableState<TaoWindow?>,
         dialogHolder: MutableState<TaoWindow?>,
+        satelliteHolder: MutableState<TaoWindow?>,
         waitForDialog: Boolean,
+        waitForSatellite: Boolean,
     ): TaoWindowTestScope {
         val deadline = System.currentTimeMillis() + WINDOW_PUBLISH_TIMEOUT_MILLIS
         while (windowHolder.value == null) {
@@ -561,9 +612,16 @@ public object TaoHeadfulTestSuiteMain {
                 kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
             }
         }
+        if (waitForSatellite) {
+            while (satelliteHolder.value == null) {
+                check(System.currentTimeMillis() < deadline) { "satellite never published its handle" }
+                kotlinx.coroutines.delay(WINDOW_PUBLISH_POLL_MILLIS)
+            }
+        }
         return TaoWindowTestScope(
             window = windowHolder.value!!,
             dialogWindow = dialogHolder.value,
+            satelliteWindow = satelliteHolder.value,
         )
     }
 
@@ -593,7 +651,7 @@ public object TaoHeadfulTestSuiteMain {
 
     private const val WINDOW_PUBLISH_TIMEOUT_MILLIS = 15_000L
     private const val WINDOW_PUBLISH_POLL_MILLIS = 25L
-    private const val GLOBAL_WATCHDOG_MILLIS = 240_000L
+    private const val GLOBAL_WATCHDOG_MILLIS = 900_000L
     private const val WATCHDOG_EXIT_CODE = 42
     private const val BAD_FILTER_EXIT_CODE = 43
     private const val RESIZE_W_DP = 640.0
@@ -601,4 +659,88 @@ public object TaoHeadfulTestSuiteMain {
     private const val RESIZE_TOLERANCE_PX = 64
     private const val RESTORE_TOLERANCE_PX = 32
     private const val MOVE_DELTA_DP = 60.0
+}
+
+/**
+ * One case's real window (and optional dialog), composed fresh per case.
+ *
+ * Extracted from `main` so the suite loop stays readable: the AWT-free window
+ * API v2 clone needs a second `DecoratedWindow` call site, since its state is a
+ * different type from Compose's.
+ */
+@Composable
+private fun ApplicationScope.CaseWindow(
+    case: TaoWindowTestCase,
+    windowHolder: MutableState<TaoWindow?>,
+    dialogHolder: MutableState<TaoWindow?>,
+    satelliteHolder: MutableState<TaoWindow?>,
+) {
+    val fallbackState =
+        rememberWindowState(
+            size = case.size ?: DpSize(800.dp, 600.dp),
+        )
+    // Default chrome surface; cases may paint over it via
+    // [TaoWindowTestCase.content] (scaffold, backdrop, …).
+    // Fully-transparent probes opt out so the Skia clear is
+    // what the compositor sees in empty regions.
+    val windowContent: @Composable TaoDecoratedWindowScope.() -> Unit = {
+        if (case.paintDefaultBackground) {
+            Box(Modifier.fillMaxSize().background(Color.DarkGray))
+        }
+        case.content(this)
+        val w = window
+        LaunchedEffect(w) { windowHolder.value = w }
+
+        // Composed inside the window content so the satellite resolves this
+        // case's window as its parent through LocalTaoWindow — the same call
+        // site an app uses.
+        val satelliteState = case.satelliteState
+        if (satelliteState != null && case.satelliteOwner == null) {
+            SatelliteWindow(
+                onCloseRequest = case.satelliteOnCloseRequest,
+                state = satelliteState,
+                title = "tao-headful-satellite: ${case.name}",
+                hideWhileParentFullscreenOrMaximized = case.satelliteHideWhileParentFills,
+            ) {
+                case.satelliteContent(this)
+                val s = window
+                LaunchedEffect(s) { satelliteHolder.value = s }
+            }
+        }
+    }
+    val nucleusState = case.nucleusWindowState
+    if (nucleusState != null) {
+        DecoratedWindow(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state = nucleusState,
+            title = "tao-headful: ${case.name}",
+            transparent = case.transparent,
+            nativePopupLayers = case.nativePopupLayers,
+            content = windowContent,
+        )
+    } else {
+        DecoratedWindow(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state = case.windowState ?: fallbackState,
+            title = "tao-headful: ${case.name}",
+            transparent = case.transparent,
+            nativePopupLayers = case.nativePopupLayers,
+            content = windowContent,
+        )
+    }
+    val dialogContent = case.dialogContent
+    if (dialogContent != null && case.dialogVisible.value) {
+        DecoratedDialog(
+            onCloseRequest = { /* cases drive their own lifecycle */ },
+            state =
+                rememberDialogState(
+                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
+                ),
+            title = "tao-headful-dialog: ${case.name}",
+        ) {
+            dialogContent()
+            val w = window
+            LaunchedEffect(w) { dialogHolder.value = w }
+        }
+    }
 }

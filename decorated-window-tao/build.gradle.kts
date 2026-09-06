@@ -39,6 +39,8 @@ dependencies {
     testImplementation(kotlin("test"))
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)
+    // The Material 3 AlertDialog the headful appearance film compares against nucleus-demo
+    testImplementation(libs.compose.material3)
 }
 
 java {
@@ -101,9 +103,16 @@ val taoTestClassesJar by tasks.registering(Jar::class) {
     from(sourceSets.test.get().output)
 }
 
+// Consumers get the compiled test classes *and* what those classes need at run
+// time. Without the `extendsFrom`, every dependency of the test source set has
+// to be repeated in each consumer, and one that is not simply throws
+// NoClassDefFoundError the first time the suite reaches the code that uses it —
+// which is how `examples/tao-native-test` lost Material 3 and took the whole
+// GraalVM job down with the Tao main thread.
 val taoTestArtifacts: Configuration by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
+    extendsFrom(configurations.testImplementation.get())
 }
 
 artifacts {
@@ -163,6 +172,13 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     }
     System.getProperty("nucleus.tao.headful.filter")?.let {
         systemProperty("nucleus.tao.headful.filter", it)
+    }
+    // Replays a red monkey run: the case prints the seed it used.
+    System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
+        systemProperty("nucleus.tao.headful.monkeySeed", it)
+    }
+    System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
+        systemProperty(it, System.getProperty(it))
     }
     System.getProperty("nucleus.issue576.samples")?.let {
         systemProperty("nucleus.issue576.samples", it)

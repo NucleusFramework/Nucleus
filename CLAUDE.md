@@ -2,11 +2,11 @@
 
 A multi-module Gradle plugin and runtime library toolkit for shipping production-ready JVM desktop applications on macOS, Windows, and Linux.
 
-Published releases are `2.4.x` (latest tag `v2.4.4`). Do not treat `IDEAL_API.md` as current — that file is gone; the real entry point is `nucleusApplication(args) { }` in `nucleus-application`. Plugin-injected strings are `NucleusApp`, not a generated `NucleusGenerated` object.
+Published releases are `2.5.x` (latest tag `v2.5.0`). Do not treat `IDEAL_API.md` as current — that file is gone; the real entry point is `nucleusApplication(args) { }` in `nucleus-application`. Plugin-injected strings are `NucleusApp`, not a generated `NucleusGenerated` object.
 
 ## Project Structure
 
-- `nucleus-application` - `nucleusApplication`, backend-agnostic `DecoratedWindow` / `HostedWindow`, `onDeepLink`, `aotTraining`
+- `nucleus-application` - `nucleusApplication`, `DecoratedWindow` / `HostedWindow`, `onDeepLink`, `aotTraining`
 - `core-runtime` - Executable type detection, single instance, deep links, platform detection, app metadata (`NucleusApp`)
 - `aot-runtime` - AOT cache mode detection for JDK 25+ (Project Leyden)
 - `updater-runtime` - Auto-update engine (GitHub/S3), SHA-512, delta/blockmap, progress, update level, post-update events
@@ -36,16 +36,14 @@ Published releases are `2.4.x` (latest tag `v2.4.4`). Do not treat `IDEAL_API.md
 - `linux-hidpi` - Native HiDPI scale detection on Linux
 - `graalvm-runtime` - GraalVM native-image bootstrap
 - `decorated-window-core` - Shared types, layout, styling (design-system agnostic)
-- `decorated-window-tao` - **Default/recommended backend** — no-AWT window shell over the Rust `tao` crate via JNI (Metal on macOS, EGL on Linux, ANGLE/GLES on Windows), single native event-loop thread as `Dispatchers.Main`
-- `decorated-window-awt` - AWT chrome shared by the JBR/JNI backends
-- `decorated-window-jbr` - JBR-based implementation (requires JetBrains Runtime) — **legacy/maintenance-only**
-- `decorated-window-jni` - JNI-based implementation (any JVM, GraalVM compatible) — **legacy/maintenance-only**
+- `decorated-window-tao` - **The only window backend** — no-AWT window shell over the Rust `tao` crate via JNI (Metal on macOS, EGL on Linux, ANGLE/GLES on Windows), single native event-loop thread as `Dispatchers.Main`
+- `decorated-window-tao` internals: `window/tao/workspace/` is the shared, `internal` core behind the multi-window archetypes — `WindowGroup` (membership, focus recency, pinning), `RelocatedContentHost` + `RelocatingSaveableStateRegistry` (`rememberSaveable` state that follows content between windows), `HostGeometry` (drop targets in physical screen px), `CrossWindowDrag` (one live drag, screen-space drag handle), `DragGhostWindow`, `ScreenPlacement` (`supportsScreenPlacement`: the native-Wayland gate — GDK reports every toplevel at `(0, 0)` and ignores moves, so anything that treats `outerBoundsPx()`'s origin as a screen coordinate must check it; the size half stays valid there), `TransferDrag` (the native-Wayland path of every cross-window gesture: the grip starts a platform **drag-and-drop** session carrying an in-process token (`TaoPrivateTransfer`, `SAME_APP` only), the window under the pointer resolves the drop in its *own* coordinates and records it on the session, and the source acts on that record when the session ends — inverted roles versus `ScreenDrag`, because the source is told nothing about where the pointer is; the drag icon is a reduced snapshot of the dragged palette or panel, taken through `TaoWindow.contentSnapshot`). `SatelliteWorkspace` (docking) and `TabWorkspace` (Chrome-like tabs) are both built on it — put new cross-window gestures there rather than duplicating the geometry or the drag bookkeeping.
 - `decorated-window-jewel` - Jewel (IntelliJ theme) integration
 - `decorated-window-material2` - Material 2 color mapping
 - `decorated-window-material3` - Material 3 color mapping
 - `plugin-build/plugin` - Gradle plugin for packaging & distribution
 - `buildSrc` - Build-only convention plugins (`nucleus.native-module`: the shared `buildNative*` wiring for every JNI module)
-- `examples/` - Demo & sample applications: `nucleus-demo` (flagship), `compose-demo`, `tao-demo`, `swing-tao-demo`, `jni-demo`, `jewel-demo`, `cmp-demo` (KMP), `window-scaffold-demo`, `zstd-demo`, `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `orphan-reflect-smoke`, `extra-launcher-demo`, `tao-native-test` (GraalVM + SLF4J fixture), `benchmark-demo` (JIT-vs-GraalVM-O3, ports under `ports/`), `gstreamer-demo` / `mediafoundation-demo` / `avfoundation-demo` (platform video into a `TextureView`), plus `shared` (Compose helper used by tao/jni demos). `native-proxy` and `spellcheck` directories on disk are **not** on `main` — ignore them unless the matching feature branch is checked out.
+- `examples/` - Demo & sample applications: `nucleus-demo` (flagship), `compose-demo`, `tao-demo`, `swing-tao-demo`, `jewel-demo`, `cmp-demo` (KMP), `window-scaffold-demo`, `satellite-demo` (satellite workspace: floating palettes following the focused document, docking into a `DockLayout`, drag-to-dock, layout snapshots), `tabs-demo` (Chrome-like tabs: tear-off, merge, reorder, state following a tab between windows, layout snapshots), `jewel-tabs-demo` (the same tab workspace wearing Jewel's `TabStrip` / `TabData.Editor` chrome), `tab-satellites-demo` (the two archetypes composed: one `SatelliteWorkspace` per tab window, palettes drawing the window's selected tab), `zstd-demo`, `scheduler-demo`, `service-management-demo`, `system-info-demo`, `fs-watcher-smoke`, `orphan-reflect-smoke`, `extra-launcher-demo`, `tao-native-test` (GraalVM + SLF4J fixture), `benchmark-demo` (JIT-vs-GraalVM-O3, ports under `ports/`), `gstreamer-demo` / `mediafoundation-demo` / `avfoundation-demo` (platform video into a `TextureView`), plus `shared` (Compose helper used by the tao demos). `native-proxy` and `spellcheck` directories on disk are **not** on `main` — ignore them unless the matching feature branch is checked out.
 
 ## Build & Run
 
@@ -61,7 +59,6 @@ Published releases are `2.4.x` (latest tag `v2.4.4`). Do not treat `IDEAL_API.md
 
 - Kotlin 2.4 with Compose Desktop 1.11
 - JNI for all native interop (no JNA in runtime modules)
-- JBR (JetBrains Runtime) API for decorated-window-jbr
 - Gradle 9.4 with version catalog (`gradle/libs.versions.toml`)
 - Detekt + KtLint for code quality
 
@@ -72,10 +69,12 @@ Published releases are `2.4.x` (latest tag `v2.4.4`). Do not treat `IDEAL_API.md
 - Native modules use platform-specific JNI implementations — test on each OS
 - Plugin is published via included build in `plugin-build/`
 - Version catalog is the source of truth for all dependency versions
+- **Compose window API v2**: Compose 1.12's `androidx.compose.ui.window.v2` types are hard-wired to AWT (`Screen` wraps a `GraphicsDevice`, `WindowGeometryProviderScope` takes a displayable `java.awt.Window`), so they are **not accepted** by any Nucleus window API — a half-working surface (scoped providers and `requestScreen` inert) is worse than none. The supported v2 surface is `dev.nucleusframework.window.tao.v2`, a member-for-member AWT-free clone backed by `TaoMonitors` + `TaoWindow`: migrating from the Compose package is a single import change, and deleting the clone restores the upstream import if JetBrains decouples its own types. Multi-monitor geometry comes from `TaoMonitors` (`EnumDisplayMonitors` / `NSScreen.screens` / GDK), never `GraphicsEnvironment`
+- **No reflection**: runtime modules must stay GraalVM native-image compatible, so reflection is not an acceptable implementation tool — not even with a graceful fallback. Reach for a static bridge instead (e.g. a friend-package Java accessor like `androidx.compose.ui.draganddrop.TaoTransferableAccess`, which reads Kotlin `internal` members through their `$ui`-mangled JVM names), a public API of our own, or a plugin bytecode transform. A feature that can only be built reflectively is a feature we do not ship: document the gap and offer a working alternative
 - **Public API freeze**: root `build.gradle.kts` applies kotlinx binary-compatibility-validator + `explicitApi()` to every non-example module. Baselines live in `<module>/api/<module>.api`. After intentional public API changes run `./gradlew apiDump` and commit the dump; `apiCheck` (wired into `check` / `preMerge`) fails on accidental ABI drift. Exception: `decorated-window-jewel` (JVM 25) is ignored by BCV until ASM supports class-file 69 — still uses `explicitApi()`. Helper: `scripts/fix-explicit-api.py` for mechanical visibility/return-type fixes from kotlinc diagnostics.
 - **KDoc on public API**: `UndocumentedPublicClass` / `UndocumentedPublicFunction` are enforced by detekt (`detekt` is wired into `check` / `preMerge`). Pre-existing gaps are grandfathered in per-module `<module>/detekt-baseline.xml` files — any *new* undocumented public class or function fails the build. Do not regenerate a baseline to silence a new finding; write the KDoc. `UndocumentedPublicProperty` stays off because the generated icon/symbol catalogs (`sf-symbols`, `freedesktop-icons`) would swamp it
 - **Logging**: `java.util.logging` is the single facade for every runtime module — no SLF4J dependency forced on consumers, no raw `println` / `System.err` in `src/main`. Logger names must be the fully-qualified class name (or an explicit `dev.nucleusframework.*` string) so the whole framework sits under one JUL namespace. `allowNucleusRuntimeLogging = true` is an opt-in convenience that raises the `dev.nucleusframework` logger to `nucleusLoggingLevel` and attaches a colored console handler; apps that configure JUL themselves (`logging.properties`, `jul-to-slf4j`) leave it `false` and Nucleus never touches the JUL configuration
-- `decorated-window-tao` is the recommended backend for new projects (no AWT, native event-loop-driven, true Windows fullscreen, GraalVM native-image first-class). `decorated-window-jni` and `decorated-window-jbr` (the AWT-based backends) are legacy/maintenance-only
+- `decorated-window-tao` is the only window backend (no AWT, native event-loop-driven, true Windows fullscreen, GraalVM native-image first-class). The AWT-based backends (`decorated-window-awt` / `-jbr` / `-jni`), `NucleusBackend`, `LocalNucleusBackend`, the `backend =` parameter of `nucleusApplication`, and `NucleusWindowUnsafe.awtWindow` / `awtDialog` were all removed in 2.6. Compose Desktop's AWT `Window` / `Dialog` / `Tray` are unsupported — use `DecoratedWindow`, `HostedWindow` / `HostedDialog`, and an AWT-free tray
 - macOS Liquid Glass enabled by default via `macOsSdkVersion = "26.0"` (vtool SDK patching)
 - The HotSpot GC is selected type-safely with `application { garbageCollector = GarbageCollector.Z }` (unset = JVM ergonomics). The flags are prepended to the launcher `.cfg` java-options and to the `run` task — before `jvmArgs`, so an explicit `-XX:+Use…GC` there still wins — and the AOT training run inherits them from the `.cfg`
 

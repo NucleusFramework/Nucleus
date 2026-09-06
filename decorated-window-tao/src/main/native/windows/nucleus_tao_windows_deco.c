@@ -1632,6 +1632,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwn
 #else
     SetWindowLongW(child, GWLP_HWNDPARENT, (LONG)(LONG_PTR)owner);
 #endif
+    if (!owner) return;
+    /* Re-stack the child above its owner. Win32 only enforces "owned windows
+     * sit above their owner" when the owner gets *activated*; SW_MAXIMIZE /
+     * SW_RESTORE / a fullscreen SetWindowPos on an already-active owner puts
+     * it at HWND_TOP, above its own satellites. Re-setting the same
+     * GWLP_HWNDPARENT alone moves nothing. Async: this often runs from inside
+     * the owner's WM_SIZE, i.e. nested in its own SetWindowPos. */
+    SetWindowPos(child, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
 /* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back
@@ -1707,6 +1716,135 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeOwnerM
     values[2] = (jlong)(r.right - r.left);
     values[3] = (jlong)(r.bottom - r.top);
     (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}
+
+/* ---------------- Multi-monitor enumeration ----------------
+ *
+ * One tab-separated descriptor per monitor:
+ *   id \t name \t x \t y \t w \t h \t workX \t workY \t workW \t workH
+ *      \t scaleMilli \t primary
+ * Geometry is physical pixels in virtual-screen space (the process is
+ * per-monitor-v2 DPI aware, so GetMonitorInfo already reports physical).
+ * `id` is the GDI device name (\\.\DISPLAY1) — stable across enumerations for
+ * as long as the monitor stays attached; `name` is the friendly device string.
+ *
+ * No CRT here (/NODEFAULTLIB), so formatting goes through user32's wsprintfW.
+ */
+
+#define NUCLEUS_MAX_MONITORS 32
+#define NUCLEUS_MONITOR_ROW_CHARS 512
+
+typedef struct {
+    WCHAR rows[NUCLEUS_MAX_MONITORS][NUCLEUS_MONITOR_ROW_CHARS];
+    int count;
+} MonitorRows;
+
+/* Replaces the row separators in-place so a display name can't corrupt the
+ * encoding. */
+static void sanitizeRowField(WCHAR *text) {
+    if (!text) return;
+    for (; *text; text++) {
+        if (*text == L'\t' || *text == L'\n' || *text == L'\r') *text = L' ';
+    }
+}
+
+static UINT getMonitorDpi(HMONITOR mon) {
+    typedef HRESULT (WINAPI *PFN_GetDpiForMonitor)(HMONITOR, int, UINT *, UINT *);
+    static PFN_GetDpiForMonitor pGetDpiForMonitor = NULL;
+    static BOOL resolved = FALSE;
+    if (!resolved) {
+        resolved = TRUE;
+        HMODULE shcore = LoadLibraryW(L"shcore.dll");
+        if (shcore) {
+            pGetDpiForMonitor =
+                (PFN_GetDpiForMonitor)GetProcAddress(shcore, "GetDpiForMonitor");
+        }
+    }
+    if (pGetDpiForMonitor && mon) {
+        UINT dpiX = 0, dpiY = 0;
+        /* MDT_EFFECTIVE_DPI */
+        if (pGetDpiForMonitor(mon, 0, &dpiX, &dpiY) == S_OK && dpiX > 0) return dpiX;
+    }
+    HDC hdc = GetDC(NULL);
+    UINT dpi = 96;
+    if (hdc) {
+        int caps = GetDeviceCaps(hdc, LOGPIXELSX);
+        if (caps > 0) dpi = (UINT)caps;
+        ReleaseDC(NULL, hdc);
+    }
+    return dpi;
+}
+
+static BOOL CALLBACK collectMonitorProc(HMONITOR mon, HDC hdc, LPRECT clip, LPARAM data) {
+    (void)hdc; (void)clip;
+    MonitorRows *out = (MonitorRows *)data;
+    if (!out || out->count >= NUCLEUS_MAX_MONITORS) return FALSE;
+
+    MONITORINFOEXW mi;
+    memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(mon, (LPMONITORINFO)&mi)) return TRUE;
+
+    DISPLAY_DEVICEW dd;
+    memset(&dd, 0, sizeof(dd));
+    dd.cb = sizeof(dd);
+    WCHAR name[128];
+    name[0] = L'\0';
+    if (EnumDisplayDevicesW(mi.szDevice, 0, &dd, 0)) {
+        lstrcpynW(name, dd.DeviceString, 128);
+    }
+    if (name[0] == L'\0') lstrcpynW(name, mi.szDevice, 128);
+    sanitizeRowField(name);
+    sanitizeRowField(mi.szDevice);
+
+    UINT dpi = getMonitorDpi(mon);
+    if (dpi == 0) dpi = 96;
+
+    wsprintfW(out->rows[out->count],
+        L"%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d",
+        mi.szDevice,
+        name,
+        (int)mi.rcMonitor.left,
+        (int)mi.rcMonitor.top,
+        (int)(mi.rcMonitor.right - mi.rcMonitor.left),
+        (int)(mi.rcMonitor.bottom - mi.rcMonitor.top),
+        (int)mi.rcWork.left,
+        (int)mi.rcWork.top,
+        (int)(mi.rcWork.right - mi.rcWork.left),
+        (int)(mi.rcWork.bottom - mi.rcWork.top),
+        (int)((dpi * 1000) / 96),
+        (mi.dwFlags & MONITORINFOF_PRIMARY) ? 1 : 0);
+    out->count++;
+    return TRUE;
+}
+
+/* Returns one descriptor String per attached monitor, or NULL when the
+ * enumeration fails. See the format comment above. */
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetMonitors(
+    JNIEnv *env, jclass clazz)
+{
+    (void)clazz;
+    /* Static, not stack: 32 KB of locals would need the CRT's __chkstk probe,
+     * which /NODEFAULTLIB doesn't link. Safe because every entry point of this
+     * bridge is called from the Tao event-loop thread. */
+    static MonitorRows rows;
+    rows.count = 0;
+    EnumDisplayMonitors(NULL, NULL, collectMonitorProc, (LPARAM)&rows);
+    if (rows.count <= 0) return NULL;
+
+    jclass stringClass = (*env)->FindClass(env, "java/lang/String");
+    if (!stringClass) return NULL;
+    jobjectArray arr = (*env)->NewObjectArray(env, rows.count, stringClass, NULL);
+    if (!arr) return NULL;
+    for (int i = 0; i < rows.count; i++) {
+        jstring row = (*env)->NewString(env,
+            (const jchar *)rows.rows[i], (jsize)lstrlenW(rows.rows[i]));
+        if (!row) return NULL;
+        (*env)->SetObjectArrayElement(env, arr, i, row);
+        (*env)->DeleteLocalRef(env, row);
+    }
     return arr;
 }
 
@@ -1938,7 +2076,48 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWin
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+#ifndef SPI_GETFONTSMOOTHINGTYPE
+#define SPI_GETFONTSMOOTHINGTYPE 0x200A
+#endif
+#ifndef FE_FONTSMOOTHINGCLEARTYPE
+#define FE_FONTSMOOTHINGCLEARTYPE 0x0002
+#endif
+#ifndef SPI_GETFONTSMOOTHINGORIENTATION
+#define SPI_GETFONTSMOOTHINGORIENTATION 0x2012
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONBGR
+#define FE_FONTSMOOTHINGORIENTATIONBGR 0x0000
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONRGB
+#define FE_FONTSMOOTHINGORIENTATIONRGB 0x0001
+#endif
 
+/* 0 = grayscale / unknown, 1 = RGB_H, 2 = BGR_H. Used by Tao LCD text. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSmoothingPixelGeometry(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    BOOL smoothing = FALSE;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smoothing, 0) || !smoothing) {
+        return 0;
+    }
+    UINT type = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) ||
+        type != FE_FONTSMOOTHINGCLEARTYPE) {
+        return 0;
+    }
+    UINT orientation = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0)) {
+        /* Unknown stripe order: degrade to grayscale, never assume RGB —
+         * a wrong guess on a BGR panel inverts every fringe. */
+        return 0;
+    }
+    if (orientation == FE_FONTSMOOTHINGORIENTATIONBGR) {
+        return 2;
+    }
+    return 1;
+}
 /* Issue #631: apply the requested topmost z-order directly and synchronously.
  * tao caches its WindowFlags and only issues the z-order SetWindowPos when a
  * flag *diff* appears (and then with SWP_ASYNCWINDOWPOS), so a WS_EX_TOPMOST
@@ -1971,3 +2150,4 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsTopm
     LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
     return (ex & WS_EX_TOPMOST) ? JNI_TRUE : JNI_FALSE;
 }
+

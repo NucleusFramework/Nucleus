@@ -25,6 +25,45 @@ pub(crate) static EVENT_LOOP_PROXY: Mutex<Option<EventLoopProxy<UserEvent>>> = M
 
 pub(crate) static WINDOWS: Mutex<Option<HashMap<u64, Window>>> = Mutex::new(None);
 
+/// Handles whose GTK toplevel was destroyed by GTK itself rather than through
+/// `RequestClose` — a transient window taken down with its owner
+/// (`gtk_window_set_destroy_with_parent`). The tao `Window` and its entry in
+/// [WINDOWS] both survive that, so nothing else records it; showing such a
+/// window re-realizes a disposed `GtkApplicationWindow`, and
+/// `gtk_application_window_real_realize` then dereferences the menu sections
+/// dispose has already cleared (SIGSEGV inside `g_menu_model_get_n_items`,
+/// with no GTK warning first).
+#[cfg(target_os = "linux")]
+pub(crate) static GTK_DESTROYED: Mutex<Option<std::collections::HashSet<u64>>> = Mutex::new(None);
+
+/// Records that GTK destroyed [handle]'s toplevel behind tao's back.
+#[cfg(target_os = "linux")]
+pub(crate) fn mark_gtk_destroyed(handle: u64) {
+    if let Ok(mut guard) = GTK_DESTROYED.lock() {
+        guard.get_or_insert_with(std::collections::HashSet::new).insert(handle);
+    }
+}
+
+/// Whether GTK has destroyed [handle]'s toplevel — see [GTK_DESTROYED].
+#[cfg(target_os = "linux")]
+pub(crate) fn is_gtk_destroyed(handle: u64) -> bool {
+    GTK_DESTROYED
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|set| set.contains(&handle)))
+        .unwrap_or(false)
+}
+
+/// Forgets [handle] once tao itself drops the window.
+#[cfg(target_os = "linux")]
+pub(crate) fn forget_gtk_destroyed(handle: u64) {
+    if let Ok(mut guard) = GTK_DESTROYED.lock() {
+        if let Some(set) = guard.as_mut() {
+            set.remove(&handle);
+        }
+    }
+}
+
 // Tracked across `WindowEvent::ModifiersChanged`. AWT-style modifier state
 // (which Compose `KeyEvent` consumes) carries Shift/Ctrl/Alt/Meta booleans on
 // every event, so we need to remember the latest snapshot. Stored as already-

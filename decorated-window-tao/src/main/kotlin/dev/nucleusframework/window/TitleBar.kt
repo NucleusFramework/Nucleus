@@ -67,7 +67,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
 /**
  * Platform-aware title bar for the Tao-backed [DecoratedWindow].
  *
- * Signature mirrors `decorated-window-jbr` / `decorated-window-jni` so an app
+ * Signature mirrors the legacy AWT backend so an app
  * can swap backends without touching call sites:
  * - [gradientStartColor] enables the optional centered horizontal gradient.
  * - [style] resolves all metrics + colors via [LocalTitleBarStyle]; the default
@@ -80,7 +80,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  * - `windowDragHandler` consumes title-bar press events and dispatches them to
  *   `TaoWindow.dragWindow()`, with double-press → toggle-maximize.
  * - macOS native traffic-light area is reserved via [PaddingValues] (78 dp on
- *   each side), matching `decorated-window-jni`'s JBR-driven inset path.
+ *   each side), matching the legacy AWT backend's JBR-driven inset path.
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
@@ -105,6 +105,21 @@ public fun DecoratedWindowScope.TitleBar(
     )
 }
 
+/**
+ * [TitleBar] with the measure policy left open, for chrome that needs a
+ * different arrangement than the platform default — a strip that fills the
+ * space between the platform controls, for instance
+ * ([TitleBarLayoutPolicy.FillCenter]).
+ *
+ * @param nativeWindowDrag whether pressing the bar starts the platform's own
+ *   interactive move. On by default, which is what gives the window the OS
+ *   snapping and tiling. Turn it off for a window that moves *itself* during
+ *   the gesture: the platform move is a compositor grab that swallows every
+ *   pointer event up to and including the release, so a window moved that way
+ *   cannot decide anything when it lands. The caller then supplies its own
+ *   drag through [modifier], which covers the whole bar rather than only the
+ *   part its content happens to occupy.
+ */
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 public fun DecoratedWindowScope.BasicTitleBar(
@@ -113,6 +128,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    nativeWindowDrag: Boolean = true,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -144,7 +160,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     }
 
     // ── newFullscreenControls (macOS) ─────────────────────────────────────
-    // Mirrors `decorated-window-jni/TitleBar.MacOS.kt`. In native fullscreen
+    // Mirrors the legacy AWT backend's macOS title bar. In native fullscreen
     // on a non-notch screen the system menu bar auto-hides; when it slides
     // back in we offset the title bar (and the AppKit traffic-light
     // replacements) by the menu bar height so they read like Safari.
@@ -260,7 +276,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     val controlsPlacementDir = controlDir
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
-    // active. Mirrors `decorated-window-jni`'s `nativeSetRTL` call path.
+    // active. Mirrors the legacy AWT backend's `nativeSetRTL` call path.
     if (Platform.Current == Platform.MacOS) {
         LaunchedEffect(taoWindow, controlIsRtl) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
@@ -281,7 +297,12 @@ public fun DecoratedWindowScope.BasicTitleBar(
             // Bind drag to [taoWindow] explicitly (not only LocalTaoWindow) so
             // secondary windows stay movable when parent CompositionLocals are
             // bridged into this scene and would otherwise clobber LocalTaoWindow.
-            .windowDragArea(window = taoWindow)
+            //
+            // Opted out of by a window that moves itself, which is the only way
+            // a move can decide anything on release: `windowDragArea` hands the
+            // gesture to the compositor, and the compositor then swallows every
+            // pointer event including the release. See [nativeWindowDrag].
+            .let { if (nativeWindowDrag) it.windowDragArea(window = taoWindow) else it }
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =
@@ -316,7 +337,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
             onPlace = {
                 // macOS fullscreen: keep the AppKit replacement traffic-lights
                 // pinned to whatever Y the Compose title bar is currently at.
-                // Mirrors `decorated-window-jni`'s `nativeUpdateFullScreenButtons`.
+                // Mirrors the legacy AWT backend's `nativeUpdateFullScreenButtons`.
                 if (isMacOS && currentState.isFullscreen && NativeMetalBridge.isLoaded) {
                     val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
                     if (nsView != 0L) {
@@ -329,7 +350,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // Window controls are declared BEFORE user content so core's
                 // [TitleBarMeasurePolicy] places them at the extreme edge first
                 // (first-declared End item = rightmost in LTR; first-declared
-                // Start item = leftmost). Mirrors `decorated-window-jni`'s
+                // Start item = leftmost). Mirrors the legacy AWT backend's
                 // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
                 // ahead of `content()`.
                 when (Platform.Current) {
@@ -414,7 +435,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
 
 /**
  * Platform-specific reservation insets returned to [GenericTitleBarImpl]'s
- * `applyTitleBar` callback. Mirrors `decorated-window-jni`'s `MacOSTitleBar`
+ * `applyTitleBar` callback. Mirrors the legacy AWT backend's `MacOSTitleBar`
  * exactly:
  * - macOS in fullscreen: 80 dp on the controls edge.
  * - macOS otherwise: Apple's traffic-light formula
@@ -464,7 +485,7 @@ private fun macTrafficLightInset(height: Dp): Dp {
 
 // ── Drag ──────────────────────────────────────────────────────────────────
 
-// Mirrors `decorated-window-jni/TitleBar.MacOS.kt::titleBarHitTestHandler`.
+// Mirrors the legacy AWT backend's `titleBarHitTestHandler`.
 // Press → mark pendingDrag (no consumption). Move while pending → start the
 // native window drag. Consumed Press → enter `inUserControl` and skip drag.
 //

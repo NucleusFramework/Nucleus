@@ -60,13 +60,18 @@ impl<'a> AdapterChangeHandler<'a> {
         self.adapter.register_interfaces(node.id(), interfaces);
         self.adapter.emit_cache_added(node.id());
         if is_root && role == Role::Window {
-            let adapter_index = self
+            // PATCH(nucleus): skip the announcement when this adapter is not in
+            // the app context rather than unwrapping. The crate is built with
+            // `panic = "abort"`, so the miss took the whole application down —
+            // `node.rs` treats the same miss as `Error::Defunct`.
+            if let Ok(adapter_index) = self
                 .adapter
                 .context
                 .read_app_context()
                 .adapter_index(self.adapter.id)
-                .unwrap();
-            self.adapter.window_created(adapter_index, node.id());
+            {
+                self.adapter.window_created(adapter_index, node.id());
+            }
         }
 
         let live = wrapper.live();
@@ -569,7 +574,10 @@ impl Adapter {
             let mut app_context = self.context.write_app_context();
             app_context.toolkit_name = Some(tree_state.toolkit_name().to_string());
             app_context.toolkit_version = tree_state.toolkit_version().map(|s| s.to_string());
-            let adapter_index = app_context.adapter_index(self.id).unwrap();
+            // PATCH(nucleus): see the miss handling above — an adapter whose
+            // registration has not been processed yet publishes its tree
+            // without the root announcement instead of aborting.
+            let adapter_index = app_context.adapter_index(self.id).ok();
             let root = tree_state.root();
             let root_id = root.id();
             let wrapper = NodeWrapper(&root);
@@ -581,7 +589,9 @@ impl Adapter {
         for (id, interfaces) in objects_to_add {
             self.register_interfaces(id, interfaces);
             if id == root_id {
-                self.window_created(adapter_index, id);
+                if let Some(index) = adapter_index {
+                    self.window_created(index, id);
+                }
             }
         }
     }

@@ -30,7 +30,6 @@ apiValidation {
             "tao-demo",
             "swing-tao-demo",
             "zstd-demo",
-            "jni-demo",
             "shared",
             "jewel-demo",
             "cmp-demo",
@@ -46,7 +45,13 @@ apiValidation {
             "avfoundation-demo",
             "tao-native-test",
             "window-scaffold-demo",
+            "satellite-demo",
+            "tabs-demo",
+            "jewel-tabs-demo",
+            "tab-satellites-demo",
             "watermark-demo",
+            "rect-stress-demo",
+            "widget-demo",
             // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
             // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
             "decorated-window-jewel",
@@ -56,6 +61,11 @@ apiValidation {
     // reach Compose's internal AwtDragAndDropTransferable (Java friend-package
     // access). Implementation detail of decorated-window-tao, not public ABI.
     ignoredPackages.add("androidx.compose.ui.draganddrop")
+    // ComposeWindowV2Access lives in androidx.compose.ui.window.v2 to reach
+    // Compose 1.12's internal WindowState/DialogState request channels. Nothing
+    // user-facing lives there — inspectableWindowBounds is in
+    // dev.nucleusframework.window.tao precisely so apiCheck still covers it.
+    ignoredPackages.add("androidx.compose.ui.window.v2")
 }
 
 // The per-module `buildNative*` tasks themselves are wired by the

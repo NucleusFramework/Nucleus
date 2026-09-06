@@ -4,6 +4,7 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -32,6 +33,9 @@ internal interface TaoPopupHostWindows {
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
 
+    /** The owner window's live `WindowInfo` — see [TaoPopupHost.parentWindowInfo]. */
+    val parentWindowInfo: WindowInfo
+
     /**
      * Screen work area in physical pixels. Used as the inner scene's
      * layout size so a tall popup (DropdownMenu, expanded Tooltip) in a
@@ -41,6 +45,14 @@ internal interface TaoPopupHostWindows {
      * [parentWindowSize] when the host can't resolve the monitor.
      */
     val workAreaSize: IntSize get() = parentWindowSize
+
+    /**
+     * Owner client origin on screen + every display's work area, so a layer
+     * can clamp its native frame into the real screen instead of the
+     * window-rooted virtual one Compose positions against. See
+     * [TaoPopupHost.popupScreenGeometry].
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
 
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
@@ -79,6 +91,9 @@ internal interface TaoPopupHostWindows {
      * eglMakeCurrent swaps surfaces.
      */
     val hostDirectContext: DirectContext
+
+    /** The dialog scrims of this host's layers — see [TaoPopupHost.popupScrims]. */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 
