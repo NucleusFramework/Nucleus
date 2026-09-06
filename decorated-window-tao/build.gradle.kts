@@ -103,9 +103,16 @@ val taoTestClassesJar by tasks.registering(Jar::class) {
     from(sourceSets.test.get().output)
 }
 
+// Consumers get the compiled test classes *and* what those classes need at run
+// time. Without the `extendsFrom`, every dependency of the test source set has
+// to be repeated in each consumer, and one that is not simply throws
+// NoClassDefFoundError the first time the suite reaches the code that uses it —
+// which is how `examples/tao-native-test` lost Material 3 and took the whole
+// GraalVM job down with the Tao main thread.
 val taoTestArtifacts: Configuration by configurations.creating {
     isCanBeConsumed = true
     isCanBeResolved = false
+    extendsFrom(configurations.testImplementation.get())
 }
 
 artifacts {
