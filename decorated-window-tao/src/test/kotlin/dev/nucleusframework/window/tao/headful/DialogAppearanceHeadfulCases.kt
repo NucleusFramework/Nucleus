@@ -364,6 +364,7 @@ internal object DialogAppearanceHeadfulCases {
                     "${if (native) "native popup layer" else "in-scene layer"}",
             skip = ::skipReason,
             nativePopupLayers = native,
+            paintDefaultBackground = false,
             content = { if (material) MaterialContent() else Content() },
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
@@ -386,30 +387,53 @@ internal object DialogAppearanceHeadfulCases {
             val capturing =
                 java.util.concurrent.atomic
                     .AtomicBoolean(true)
-            val grabber =
-                kotlin.concurrent.thread(name = "dialog-appearance-capture") {
-                    while (capturing.get() && frames.size < MAX_FRAMES) {
-                        frames += System.nanoTime() to robot.createScreenCapture(region)
-                    }
-                }
             // Warm-up: the first composition of a dialog loads fonts and theme
-            // tokens; that would be filmed as a slow appearance.
+            // tokens; that would be filmed as a slow appearance. It runs BEFORE
+            // the grabber starts — the film is a fixed budget of frames, and a
+            // host that captures faster than the warm-up lasts would spend the
+            // whole budget on it and leave the curve with nothing after
+            // `shownNs`, which reads as "the dialog never showed up on screen".
             dialogShown.value = true
             settle(SETTLE_BEFORE_MILLIS)
             dialogShown.value = false
             settle(SETTLE_BEFORE_MILLIS)
             settle(WARMUP_MILLIS)
+            // One capture session per half, each with its own frame budget. A
+            // single session would spend the whole budget on the appearance —
+            // grabbing is much faster than the film lasts — and leave the
+            // disappearance with no frames, which reads as "the dialog never
+            // went away" in the comparison.
+            var grabber: Thread? = null
+
+            fun startFilm() {
+                capturing.set(true)
+                val from = frames.size
+                grabber =
+                    kotlin.concurrent.thread(name = "dialog-appearance-capture") {
+                        while (capturing.get() && frames.size - from < MAX_FRAMES_PER_HALF) {
+                            frames += System.nanoTime() to robot.createScreenCapture(region)
+                        }
+                    }
+            }
+
+            fun stopFilm() {
+                capturing.set(false)
+                grabber?.join()
+                grabber = null
+            }
+            startFilm()
             val shownNs = System.nanoTime()
             dialogShown.value = true
             var hiddenNs = Long.MAX_VALUE
             try {
                 settle(FILM_MILLIS)
+                stopFilm()
                 hiddenNs = System.nanoTime()
                 dialogShown.value = false
+                startFilm()
                 settle(HIDE_FILM_MILLIS)
             } finally {
-                capturing.set(false)
-                grabber.join()
+                stopFilm()
                 dialogShown.value = false
             }
             settle(SETTLE_BEFORE_MILLIS)
@@ -583,6 +607,10 @@ internal object DialogAppearanceHeadfulCases {
     private const val STALL_TOLERANCE = 3
     private const val HEIGHT_RATIO_TOLERANCE = 0.15f
     private const val MAX_FRAMES = 200
+
+    /** Per-half budget; the two halves together stay within [MAX_FRAMES]. */
+    private const val MAX_FRAMES_PER_HALF = MAX_FRAMES / 2
+
     private const val DUMP_UNTIL_MS = 1_300L
     private const val SETTLE_PX = 1
     private const val SETTLE_COLOR = 6
