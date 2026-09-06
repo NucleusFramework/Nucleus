@@ -170,7 +170,7 @@ class TaoSceneTrackpadPanTest {
         }
 
     private fun gestureStep(
-        phase: Int,
+        phase: TaoScrollGesturePhase,
         dyAwt: Float,
     ) = TaoPointerScrollEvent(dxAwt = 0f, dyAwt = dyAwt, scrollAmount = 1, gesturePhase = phase)
 

@@ -417,6 +417,11 @@ internal class TaoSceneTestScope(
         button: PointerButton,
         pressed: Boolean,
     ) {
+        // Like the hosts: a click ends an open trackpad pan first.
+        if (pressed) {
+            scrollRouter.finishPan()
+            legacyScrollRouter.finishPan()
+        }
         if (!hasReceivedCursorMove) return // host guard: no click before a cursor move
         val modifiers = taoKeyboardModifiers(modifierState)
         if (pressed && isPressed) {

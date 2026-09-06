@@ -11,7 +11,8 @@ import kotlin.test.assertTrue
 /**
  * State machine of [TaoTrackpadPanRouter] (#654) against a hand-driven
  * scheduler: the finger `Ended` must defer `PanEnd` so AppKit's momentum tail
- * continues the same pan, and a swipe with no tail must still close.
+ * continues the same pan, a swipe with no tail must still close, and no
+ * truncated stream may leave the pan open.
  */
 class TaoTrackpadPanRouterTest {
     private class Harness {
@@ -35,8 +36,8 @@ class TaoTrackpadPanRouterTest {
                 send = { type, delta -> sent += type to delta },
             )
 
-        /** Fires the deferred end as the grace timer would. */
-        fun elapseGrace() {
+        /** Fires the pending end timer (grace or stall) as the scheduler would. */
+        fun elapseTimer() {
             val action = pending ?: return
             pending = null
             action()
@@ -60,7 +61,7 @@ class TaoTrackpadPanRouterTest {
         assertTrue(h.hasPendingEnd, "Ended must only schedule the PanEnd")
         assertEquals(TaoTrackpadPanRouter.momentumGraceMillis, h.lastDelayMillis)
 
-        h.elapseGrace()
+        h.elapseTimer()
         assertEquals(
             listOf(PointerEventType.PanStart, PointerEventType.PanMove, PointerEventType.PanEnd),
             h.types(),
@@ -76,7 +77,7 @@ class TaoTrackpadPanRouterTest {
         h.router.onGesture(TaoScrollGesturePhase.ENDED, down)
         assertEquals(listOf(PointerEventType.PanStart, PointerEventType.PanMove), h.types())
         assertTrue(h.hasPendingEnd)
-        h.elapseGrace()
+        h.elapseTimer()
         assertEquals(PointerEventType.PanEnd, h.types().last())
 
         h.sent.clear()
@@ -108,10 +109,45 @@ class TaoTrackpadPanRouterTest {
             ),
             h.types(),
         )
-        assertEquals(1, h.cancelled, "the momentum Began must cancel the deferred PanEnd")
         assertFalse(h.hasPendingEnd)
-        // A stale grace timer firing later must not emit a second PanEnd.
-        h.elapseGrace()
+        // A stale timer firing later must not emit a second PanEnd.
+        h.elapseTimer()
+        assertEquals(1, h.types().count { it == PointerEventType.PanEnd })
+    }
+
+    @Test
+    fun `fingers resting on the glass during the tail close the pan at once`() {
+        // AppKit interrupts a momentum tail with MayBegin and does not always
+        // follow with MomentumEnded; the next swipe must get its own PanStart.
+        val h = Harness()
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        h.router.onGesture(TaoScrollGesturePhase.ENDED, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_BEGAN, down)
+        h.router.onGesture(TaoScrollGesturePhase.MAY_BEGIN, Offset.Zero)
+        assertEquals(PointerEventType.PanEnd, h.types().last())
+        assertFalse(h.hasPendingEnd)
+
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        assertEquals(2, h.types().count { it == PointerEventType.PanStart })
+    }
+
+    @Test
+    fun `a truncated stream is closed by the stall watchdog`() {
+        // Every open step arms a stall timer, so a tail that simply stops
+        // (window lost key status, terminal step never delivered) still ends.
+        val h = Harness()
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        assertTrue(h.hasPendingEnd, "an open pan must always have an end timer armed")
+        assertEquals(TaoTrackpadPanRouter.DEFAULT_STALL_MILLIS, h.lastDelayMillis)
+
+        h.router.onGesture(TaoScrollGesturePhase.ENDED, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_BEGAN, down)
+        assertEquals(TaoTrackpadPanRouter.DEFAULT_STALL_MILLIS, h.lastDelayMillis, "momentum re-arms the stall timer")
+        h.elapseTimer()
+        assertEquals(PointerEventType.PanEnd, h.types().last())
         assertEquals(1, h.types().count { it == PointerEventType.PanEnd })
     }
 
@@ -161,6 +197,18 @@ class TaoTrackpadPanRouterTest {
 
         assertEquals(1, h.types().count { it == PointerEventType.PanStart })
         assertEquals(0, h.types().count { it == PointerEventType.PanEnd })
+    }
+
+    @Test
+    fun `finishNow closes an open pan and is a no-op otherwise`() {
+        val h = Harness()
+        h.router.finishNow()
+        assertTrue(h.sent.isEmpty())
+
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        h.router.finishNow()
+        assertEquals(PointerEventType.PanEnd, h.types().last())
         assertFalse(h.hasPendingEnd)
     }
 
@@ -172,7 +220,7 @@ class TaoTrackpadPanRouterTest {
         h.router.cancel()
 
         assertFalse(h.hasPendingEnd)
-        h.elapseGrace()
+        h.elapseTimer()
         assertEquals(listOf(PointerEventType.PanStart), h.types())
     }
 }

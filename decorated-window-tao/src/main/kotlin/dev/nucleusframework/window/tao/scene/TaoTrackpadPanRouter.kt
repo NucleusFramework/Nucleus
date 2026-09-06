@@ -20,10 +20,14 @@ import dev.nucleusframework.window.tao.TaoScrollGesturePhase
  * velocity is ~0 and Compose adds no fling of its own — the platform drives
  * the inertia, exactly as under AWT where every step is a plain wheel event.
  *
- * A terminal step (`Ended`, `Cancelled`, `MomentumEnded`) that still carries a
- * delta is delivered even when no pan is open — AppKit's `Ended` can hold the
- * last finger movement, and a `Began` may have been missed (window became key
- * mid-gesture) — so no scroll distance is ever dropped.
+ * An open pan is always bounded: every step re-arms an end timer ([graceMillis]
+ * after the finger `Ended`, [stallMillis] otherwise), so a stream that is cut
+ * short — fingers resting on the glass during the tail (`MayBegin`, which
+ * closes the pan at once), a window losing key status, a terminal step that
+ * never arrives — cannot leave Compose's scroll session open. A terminal step
+ * that still carries a delta is delivered even when no pan is open (AppKit's
+ * `Ended` can hold the last finger movement, and a `Began` may have been
+ * missed), so no scroll distance is dropped.
  *
  * [send] receives the pan offset in AWT `preciseWheelRotation` units (the
  * shape of [dev.nucleusframework.window.tao.TaoPointerScrollEvent.dxAwt]); the
@@ -34,36 +38,32 @@ internal class TaoTrackpadPanRouter(
     private val schedule: (delayMillis: Long, action: () -> Unit) -> (() -> Unit),
     private val send: (type: PointerEventType, panAwt: Offset) -> Unit,
     private val graceMillis: Long = momentumGraceMillis,
+    private val stallMillis: Long = DEFAULT_STALL_MILLIS,
 ) {
     private var active = false
     private var cancelPendingEnd: (() -> Unit)? = null
 
     fun onGesture(
-        phase: Int,
+        phase: TaoScrollGesturePhase,
         deltaAwt: Offset,
     ) {
         when (phase) {
-            // Fingers resting on the glass: nothing to pan yet. A Cancelled
-            // that follows without a Began is a no-op below.
-            TaoScrollGesturePhase.MAY_BEGIN -> Unit
+            // Fingers touched the glass: a running momentum tail is over (AppKit
+            // does not always follow with MomentumEnded); with no pan open,
+            // nothing to do until Began.
+            TaoScrollGesturePhase.MAY_BEGIN -> finish()
             TaoScrollGesturePhase.BEGAN,
             TaoScrollGesturePhase.CHANGED,
             TaoScrollGesturePhase.MOMENTUM_BEGAN,
             TaoScrollGesturePhase.MOMENTUM_CHANGED,
             -> {
-                clearPendingEnd()
                 start()
                 move(deltaAwt)
+                armEnd(stallMillis)
             }
             TaoScrollGesturePhase.ENDED -> {
                 move(deltaAwt)
-                if (!active) return
-                clearPendingEnd()
-                cancelPendingEnd =
-                    schedule(graceMillis) {
-                        cancelPendingEnd = null
-                        finish()
-                    }
+                if (active) armEnd(graceMillis)
             }
             TaoScrollGesturePhase.CANCELLED,
             TaoScrollGesturePhase.MOMENTUM_ENDED,
@@ -71,10 +71,11 @@ internal class TaoTrackpadPanRouter(
                 move(deltaAwt)
                 finish()
             }
-            // Unknown wire value: ignore rather than desynchronise the pan.
-            else -> Unit
         }
     }
+
+    /** Closes an open pan now (a click, a wheel notch: the gesture is over). */
+    fun finishNow() = finish()
 
     /** Teardown: drops a pending deferred end and forgets the open pan (no `PanEnd` is sent). */
     fun cancel() {
@@ -105,6 +106,17 @@ internal class TaoTrackpadPanRouter(
         send(PointerEventType.PanEnd, Offset.Zero)
     }
 
+    /** (Re-)arms the single end timer of the open pan. */
+    private fun armEnd(delayMillis: Long) {
+        clearPendingEnd()
+        if (!active) return
+        cancelPendingEnd =
+            schedule(delayMillis) {
+                cancelPendingEnd = null
+                finish()
+            }
+    }
+
     private fun clearPendingEnd() {
         cancelPendingEnd?.invoke()
         cancelPendingEnd = null
@@ -120,6 +132,14 @@ internal class TaoTrackpadPanRouter(
          * shows a stacked fling at the end of a flick.
          */
         const val DEFAULT_MOMENTUM_GRACE_MILLIS: Long = 150L
+
+        /**
+         * Watchdog between two steps of an open pan. Finger and momentum steps
+         * arrive at frame rate, so a gap this long means the stream was cut
+         * short; the price of closing a pan whose fingers merely paused on the
+         * glass is a new `PanStart` when they move again.
+         */
+        const val DEFAULT_STALL_MILLIS: Long = 1_000L
 
         val momentumGraceMillis: Long =
             System

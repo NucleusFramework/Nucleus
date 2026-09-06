@@ -235,7 +235,9 @@ internal class TaoPopupSceneLayer(
         TaoSceneScrollRouter(
             object : TaoSceneScrollRouter.Target {
                 override val scene: ComposeScene get() = innerScene
-                override val scale: Float get() = this@TaoPopupSceneLayer.scale
+
+                // Live: Compose re-assigns the layer density on a display hop.
+                override val scale: Float get() = _density.density
 
                 override fun guard(block: () -> Unit) = host.exceptionHandler.catchExceptions(block)
             },
@@ -273,6 +275,7 @@ internal class TaoPopupSceneLayer(
                     TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
+            if (eventType == PointerEventType.Press) scrollRouter.finishPan()
             innerScene.sendPointerEvent(
                 eventType = eventType,
                 position = Offset(x, y),

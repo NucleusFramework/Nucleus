@@ -133,6 +133,14 @@ otherwise AWT). Inside the block you can call `onDeepLink { }` and
 `aotTraining()`; plugin-injected metadata is `NucleusApp`, not a generated
 constants object.
 
+On macOS the Tao backend delivers trackpad gestures to Compose as pan events
+(`PointerEventType.PanStart` / `PanMove` / `PanEnd`, with `panOffset` in
+pixels) and mouse-wheel notches as `Scroll`, with the same distances the AWT
+backend produces. Foundation's `Modifier.scrollable` handles both; a custom
+`pointerInput` that only reacts to `PointerEventType.Scroll` must also handle
+pan, or start the app with `-Dnucleus.tao.trackpadPanEvents=false` to receive
+AWT-style `Scroll` events for everything.
+
 Then configure packaging in `build.gradle.kts`:
 
 ```kotlin

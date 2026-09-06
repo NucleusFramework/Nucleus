@@ -22,22 +22,38 @@ class TaoWindowScrollTest {
         assertEquals(-1f, event.dxAwt)
         assertEquals(2f, event.dyAwt)
         assertEquals(1, event.scrollAmount)
-        assertEquals(TaoScrollGesturePhase.NONE, event.gesturePhase)
+        assertEquals(null, event.gesturePhase)
     }
 
     @Test
     fun scrollGestureIsShapedLikePixelScrollWithItsPhase() {
-        var event: TaoPointerScrollEvent? = null
-        TaoWindow(handle = 1L).apply {
-            onPointerScroll { event = it }
-            dispatchScrollGesture(TaoScrollGesturePhase.MOMENTUM_CHANGED, dxFixed = 1000, dyFixed = -2000)
-        }
-        val gesture = requireNotNull(event)
+        val gesture = dispatchGesture(TaoScrollGesturePhase.MOMENTUM_CHANGED.wire, dxFixed = 1000, dyFixed = -2000)
 
         assertEquals(-1f, gesture.dxAwt)
         assertEquals(2f, gesture.dyAwt)
         assertEquals(1, gesture.scrollAmount)
         assertEquals(TaoScrollGesturePhase.MOMENTUM_CHANGED, gesture.gesturePhase)
+    }
+
+    @Test
+    fun unknownGestureWireCodeDegradesToPlainPreciseScroll() {
+        val event = dispatchGesture(phaseWire = 99, dxFixed = 0, dyFixed = -1000)
+
+        assertEquals(1f, event.dyAwt)
+        assertEquals(null, event.gesturePhase)
+    }
+
+    private fun dispatchGesture(
+        phaseWire: Int,
+        dxFixed: Int,
+        dyFixed: Int,
+    ): TaoPointerScrollEvent {
+        var event: TaoPointerScrollEvent? = null
+        TaoWindow(handle = 1L).apply {
+            onPointerScroll { event = it }
+            dispatchScrollGesture(phaseWire, dxFixed, dyFixed)
+        }
+        return requireNotNull(event)
     }
 
     private fun dispatchScroll(

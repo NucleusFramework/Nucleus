@@ -163,6 +163,10 @@ pub(crate) const SCROLL_GESTURE_MOMENTUM_BEGAN: jint = 4;
 pub(crate) const SCROLL_GESTURE_MOMENTUM_CHANGED: jint = 5;
 pub(crate) const SCROLL_GESTURE_MOMENTUM_ENDED: jint = 6;
 pub(crate) const SCROLL_GESTURE_MAY_BEGIN: jint = 7;
+// AWT: one wheel line is one unit of `preciseWheelRotation`, one point of a
+// precise delta is a tenth of one — so a gesture step that arrives in lines is
+// scaled to its point equivalent before it joins the (point-shaped) gesture wire.
+pub(crate) const AWT_LINE_TO_POINTS: f64 = 10.0;
 pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
 // Linux only. Dispatched synchronously on the event-loop thread right
 // BEFORE the GTK window is hidden, so the JVM can suspend its EGL rendering
@@ -526,7 +530,6 @@ pub(crate) fn dispatch_ime_replace_commit(handle: u64, text: &str, start: u64, l
 /// is one of the `SCROLL_GESTURE_*` codes; the deltas are LOGICAL points
 /// (AppKit `scrollingDelta*`, tao's sign) × SCROLL_FIXED_SCALE, like
 /// EVENT_SCROLL_PIXEL.
-#[allow(dead_code)]
 pub(crate) fn dispatch_scroll_gesture(handle: u64, phase: jint, dx_fixed: jint, dy_fixed: jint) {
     let Some(vm) = JAVA_VM.get() else { return };
     let Ok(guard) = EVENT_CALLBACK.lock() else {

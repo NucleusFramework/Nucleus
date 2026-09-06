@@ -1260,9 +1260,6 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
 
   unsafe {
-    let state_ptr: *mut c_void = *this.get_ivar("taoState");
-    let state = &mut *(state_ptr as *mut ViewState);
-
     let delta = {
       // PATCH(nucleus): keep AppKit's sign on both axes — positive means the
       // content moves down / right, which is exactly the convention

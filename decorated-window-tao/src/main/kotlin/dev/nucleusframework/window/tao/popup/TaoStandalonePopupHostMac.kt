@@ -295,13 +295,19 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun dispose() {
-        if (!isValid || disposed) return
+        if (!isValid) {
+            scrollRouter.cancel()
+            return
+        }
+        if (disposed) return
         disposed = true
         framePump.disposed = true
-        scrollRouter.cancel()
         revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
+        // After the native callback is gone: no scroll can reach a router
+        // whose timer scope is already dead.
+        scrollRouter.cancel()
         sceneBundle?.close()
         sceneBundle = null
         metalTextureHostCache.invalidate()
@@ -434,6 +440,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
+            if (eventType == PointerEventType.Press) scrollRouter.finishPan()
             framePump.nonReentrant {
                 sc.sendPointerEvent(
                     eventType = eventType,

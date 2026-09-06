@@ -31,12 +31,15 @@ internal fun appKitWheelToAwtScrollDelta(
     return if (precise) awtSign / AWT_PIXEL_TO_ROTATION else awtSign
 }
 
-/** [gesturePhase] is the [TaoScrollGesturePhase] of a trackpad step, `NONE` for a wheel. */
+/**
+ * [gesturePhaseWire] is the [TaoScrollGesturePhase.wire] of a trackpad step,
+ * [TaoScrollGesturePhase.NONE_WIRE] for a wheel notch.
+ */
 internal fun appKitWheelToAwtScrollEvent(
     dx: Float,
     dy: Float,
     precise: Boolean,
-    gesturePhase: Int = TaoScrollGesturePhase.NONE,
+    gesturePhaseWire: Int = TaoScrollGesturePhase.NONE_WIRE,
 ): TaoPointerScrollEvent {
     val delta = appKitWheelToAwtScrollDelta(dx, dy, precise)
     return TaoPointerScrollEvent(
@@ -47,6 +50,6 @@ internal fun appKitWheelToAwtScrollEvent(
         // does. Do not copy LINUX_AWT_SCROLL_AMOUNT_DEFAULT here.
         scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
         // A wheel notch has no phase; only precise events can belong to a gesture.
-        gesturePhase = if (precise) gesturePhase else TaoScrollGesturePhase.NONE,
+        gesturePhase = if (precise) TaoScrollGesturePhase.fromWire(gesturePhaseWire) else null,
     )
 }

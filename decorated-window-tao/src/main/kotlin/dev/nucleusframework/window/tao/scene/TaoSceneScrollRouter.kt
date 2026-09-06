@@ -5,8 +5,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.scene.ComposeScene
+import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
-import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
@@ -16,6 +16,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.logging.Logger
 
 /**
  * Single front door for wheel and trackpad input into a [ComposeScene],
@@ -31,6 +33,13 @@ import kotlinx.coroutines.launch
  *   `MacOSCocoaConfig` applies to a wheel notch, so a pan and a notch move
  *   content by the same distance, as they do under AWT.
  *
+ * Every step of one pan, the deferred `PanEnd` included, is dispatched at the
+ * position and with the modifiers of the last gesture step, deliberately:
+ * Compose hit-tests Pan events, and the node that received the `PanMove`s is
+ * the one whose scroll session has to be closed — a `PanEnd` sent where the
+ * pointer moved to in the meantime would leave it open. A click or a wheel
+ * notch while a pan is open closes it first ([finishPan]).
+ *
  * Pan events are what Compose's `Modifier.scrollable` consumes for trackpads
  * and what lets a map bind panning and zooming to different gestures. Code
  * that only listens to `PointerEventType.Scroll` no longer sees trackpad
@@ -39,7 +48,7 @@ import kotlinx.coroutines.launch
  * where every gesture step is a `Scroll`.
  *
  * [schedule] is only supplied by tests; production routers own a coroutine
- * scope on the UI dispatcher for the deferred `PanEnd`. UI thread only.
+ * scope on the UI dispatcher for the end timer. UI thread only.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneScrollRouter(
@@ -54,12 +63,20 @@ internal class TaoSceneScrollRouter(
         /** Px per dp of the scene, for the pan offset. */
         val scale: Float
 
-        /** Wraps the deferred `PanEnd` delivery (exception handler, frame pump). */
+        /**
+         * Wraps the deferred `PanEnd` delivery. Hosts route it through their
+         * window exception handler / frame pump; whatever escapes lands in
+         * [TaoFatalCoroutineExceptionHandler], never in the default handler.
+         */
         fun guard(block: () -> Unit) = block()
     }
 
     private val scope: CoroutineScope? =
-        if (schedule == null) CoroutineScope(TaoMainDispatcher + SupervisorJob()) else null
+        if (schedule == null) {
+            CoroutineScope(TaoMainDispatcher + SupervisorJob() + TaoFatalCoroutineExceptionHandler)
+        } else {
+            null
+        }
 
     private val pan =
         TaoTrackpadPanRouter(
@@ -67,8 +84,9 @@ internal class TaoSceneScrollRouter(
             send = ::sendPan,
         )
 
-    // Where the pan is, in scene px, plus the modifiers of the last step; the
-    // deferred PanEnd has no event of its own to read them from.
+    private var cancelled = false
+
+    // Where the pan is, in scene px, plus the modifiers of its last step.
     private var x = 0f
     private var y = 0f
     private var keyboardModifiers = PointerKeyboardModifiers()
@@ -79,18 +97,36 @@ internal class TaoSceneScrollRouter(
         event: TaoPointerScrollEvent,
         keyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers(),
     ) {
-        this.x = x
-        this.y = y
-        this.keyboardModifiers = keyboardModifiers
-        if (panEnabled && event.gesturePhase != TaoScrollGesturePhase.NONE) {
-            pan.onGesture(event.gesturePhase, Offset(event.dxAwt, event.dyAwt))
+        if (cancelled) return
+        val phase = event.gesturePhase
+        if (panEnabled && phase != null) {
+            this.x = x
+            this.y = y
+            this.keyboardModifiers = keyboardModifiers
+            if (panAnnounced.compareAndSet(false, true)) {
+                logger.config {
+                    "Trackpad gestures reach Compose as Pan events (PanStart / PanMove / PanEnd); " +
+                        "handlers listening only for PointerEventType.Scroll do not see them. " +
+                        "-Dnucleus.tao.trackpadPanEvents=false restores AWT-style Scroll events."
+                }
+            }
+            pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))
         } else {
+            // A different device took over: close the pan where it was.
+            pan.finishNow()
             target.scene?.dispatchAwtShapedScroll(x, y, event, keyboardModifiers)
         }
     }
 
-    /** Teardown: drops the pending deferred end and the timer scope. */
+    /** Closes an open pan now — a pointer press ends the gesture for Compose too. */
+    fun finishPan() {
+        if (cancelled) return
+        pan.finishNow()
+    }
+
+    /** Teardown: drops the pending end, the timer scope, and ignores anything that still arrives. */
     fun cancel() {
+        cancelled = true
         pan.cancel()
         scope?.cancel()
     }
@@ -121,6 +157,11 @@ internal class TaoSceneScrollRouter(
     }
 
     internal companion object {
+        private val logger = Logger.getLogger(TaoSceneScrollRouter::class.java.name)
+
+        /** One CONFIG line per process the first time a gesture is routed as Pan. */
+        private val panAnnounced = AtomicBoolean(false)
+
         /**
          * `-Dnucleus.tao.trackpadPanEvents=false` sends trackpad gesture steps
          * down the wheel path as AWT-shaped `Scroll` events instead of Compose

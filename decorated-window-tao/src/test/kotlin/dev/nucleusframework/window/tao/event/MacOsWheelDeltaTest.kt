@@ -56,18 +56,12 @@ class MacOsWheelDeltaTest {
     @Test
     fun gesturePhaseRidesAlongForPreciseEventsOnly() {
         // Popups forward the AppKit phase; a wheel notch can never be a gesture step.
-        val step =
-            appKitWheelToAwtScrollEvent(
-                dx = 0f,
-                dy = -10f,
-                precise = true,
-                gesturePhase = TaoScrollGesturePhase.CHANGED,
-            )
+        val changed = TaoScrollGesturePhase.CHANGED.wire
+        val step = appKitWheelToAwtScrollEvent(dx = 0f, dy = -10f, precise = true, gesturePhaseWire = changed)
         assertEquals(TaoScrollGesturePhase.CHANGED, step.gesturePhase)
         assertEquals(1f, step.dyAwt, absoluteTolerance = 0f)
-        val notch =
-            appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false, gesturePhase = TaoScrollGesturePhase.CHANGED)
-        assertEquals(TaoScrollGesturePhase.NONE, notch.gesturePhase)
+        val notch = appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false, gesturePhaseWire = changed)
+        assertEquals(null, notch.gesturePhase)
     }
 
     @Test

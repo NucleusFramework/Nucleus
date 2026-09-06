@@ -128,6 +128,9 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     // Unattended: a fatal must fail the suite loudly, not block in the #622
     // native dialog until the global watchdog halts and eats the real result.
     systemProperty("nucleus.tao.fatalErrorDialog", "false")
+    // Arms the macOS scrollWheel: injector (nativeDiagInjectScrollWheel) the
+    // trackpad cases drive; it is inert in any process without this variable.
+    environment("NUCLEUS_TAO_INPUT_INJECTION", "1")
     // Same Kover JVM agent the `test` task uses, so headful window coverage
     // is counted. JavaExec is otherwise invisible to Kover.
     dependsOn(tasks.named("koverFindJar"))

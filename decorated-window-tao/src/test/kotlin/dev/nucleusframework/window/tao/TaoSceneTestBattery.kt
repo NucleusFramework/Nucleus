@@ -198,6 +198,9 @@ public object TaoSceneTestBattery {
         run("TaoWindowScrollTest: scrollGestureIsShapedLikePixelScrollWithItsPhase") {
             TaoWindowScrollTest().scrollGestureIsShapedLikePixelScrollWithItsPhase()
         }
+        run("TaoWindowScrollTest: unknownGestureWireCodeDegradesToPlainPreciseScroll") {
+            TaoWindowScrollTest().unknownGestureWireCodeDegradesToPlainPreciseScroll()
+        }
         run("TaoTrackpadPanRouterTest: swipe without momentum ends after the grace period") {
             TaoTrackpadPanRouterTest().`swipe without momentum ends after the grace period`()
         }
@@ -206,6 +209,15 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadPanRouterTest: momentum tail continues the pan and ends it once") {
             TaoTrackpadPanRouterTest().`momentum tail continues the pan and ends it once`()
+        }
+        run("TaoTrackpadPanRouterTest: fingers resting on the glass during the tail close the pan at once") {
+            TaoTrackpadPanRouterTest().`fingers resting on the glass during the tail close the pan at once`()
+        }
+        run("TaoTrackpadPanRouterTest: a truncated stream is closed by the stall watchdog") {
+            TaoTrackpadPanRouterTest().`a truncated stream is closed by the stall watchdog`()
+        }
+        run("TaoTrackpadPanRouterTest: finishNow closes an open pan and is a no-op otherwise") {
+            TaoTrackpadPanRouterTest().`finishNow closes an open pan and is a no-op otherwise`()
         }
         run("TaoTrackpadPanRouterTest: pan offsets pass through unchanged and zero deltas send no move") {
             TaoTrackpadPanRouterTest().`pan offsets pass through unchanged and zero deltas send no move`()

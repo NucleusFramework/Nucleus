@@ -1012,6 +1012,9 @@ internal class TaoComposeSceneHost(
             // comment on `hasReceivedCursorMove` for the rationale.
             return
         }
+        // A click ends a trackpad gesture for Compose too (a tap to stop a
+        // fling must not race an open pan session).
+        if (pressed) scrollRouter.finishPan()
         val composeButton = mapButton(buttonCode)
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers

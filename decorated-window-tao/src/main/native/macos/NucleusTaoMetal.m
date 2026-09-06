@@ -22,6 +22,7 @@
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
+#include <string.h>
 #include <math.h>
 #import <jni.h>
 
@@ -2890,15 +2891,26 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeft
  * location flipped against the primary display. The location is therefore
  * chosen so that the flipped value equals the wanted window point, which is
  * what tao's `mouse_motion` (run first by `scroll_wheel`) resolves back to
- * the view-local cursor position. Returns JNI false when the view or its
- * window is gone or the event could not be built. */
+ * the view-local cursor position.
+ *
+ * This DRIVES the app rather than reading it, so unlike the other nativeDiag*
+ * entries it is inert unless the process was started with
+ * NUCLEUS_TAO_INPUT_INJECTION=1 (the taoHeadfulTest Gradle task sets it) and
+ * it only runs on the main thread — no dispatch_sync that a caller holding a
+ * lock the main thread wants could deadlock on. Returns JNI false when
+ * disabled, off the main thread, or when the view / window is gone. */
 JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrollWheel(
         JNIEnv *env, jclass clazz, jlong nsViewPtr,
         jfloat x, jfloat y, jfloat dx, jfloat dy, jboolean precise,
         jint phase, jint momentumPhase) {
     (void)env; (void)clazz;
-    if (nsViewPtr == 0) return JNI_FALSE;
+    static int sEnabled = -1;
+    if (sEnabled < 0) {
+        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
+        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
+    }
+    if (!sEnabled || nsViewPtr == 0 || ![NSThread isMainThread]) return JNI_FALSE;
     void *rawPtr = (void *)(uintptr_t)nsViewPtr;
     __block jboolean delivered = JNI_FALSE;
     dispatch_block_t deliver = ^{
@@ -2927,8 +2939,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
         [content scrollWheel:event];
         delivered = JNI_TRUE;
     };
-    if ([NSThread isMainThread]) deliver();
-    else                          dispatch_sync(dispatch_get_main_queue(), deliver);
+    deliver();
     return delivered;
 }
 

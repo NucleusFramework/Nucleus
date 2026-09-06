@@ -99,26 +99,40 @@ public object TaoTrackpadPhase {
 }
 
 /**
- * Phase of a macOS trackpad scroll gesture as delivered by
- * `EventCallback.onScrollGesture` (mirrors the Rust `SCROLL_GESTURE_*` codes,
- * #654). AppKit reports the fingers-on-glass part in `NSEvent.phase` and the
- * inertial tail that follows in `momentumPhase`, never both at once. [NONE] is
- * the JVM-side marker for a scroll that belongs to no gesture (mouse wheel,
- * phase-less device); it never travels over the wire.
+ * Phase of a macOS trackpad scroll gesture step as delivered by
+ * `EventCallback.onScrollGesture` (#654). AppKit reports the fingers-on-glass
+ * part in `NSEvent.phase` and the inertial tail that follows in
+ * `momentumPhase`, never both at once. [wire] is the code the Rust loop
+ * (`events.rs` `SCROLL_GESTURE_*`) and the popup panel (`popup_panel.m`
+ * `NucleusScrollGesture*`) send; a scroll that belongs to no gesture (wheel
+ * notch, phase-less device) has no phase — `null` on the JVM,
+ * [NONE_WIRE] on the popup wire. Distinct from the public
+ * [TaoTrackpadPhase] of magnify / rotate gestures on purpose: the two streams
+ * are different and must not be passed for one another.
  */
 @Suppress("MagicNumber")
-internal object TaoScrollGesturePhase {
-    const val NONE: Int = -1
-    const val BEGAN: Int = 0
-    const val CHANGED: Int = 1
-    const val ENDED: Int = 2
-    const val CANCELLED: Int = 3
-    const val MOMENTUM_BEGAN: Int = 4
-    const val MOMENTUM_CHANGED: Int = 5
-    const val MOMENTUM_ENDED: Int = 6
+internal enum class TaoScrollGesturePhase(
+    val wire: Int,
+) {
+    BEGAN(0),
+    CHANGED(1),
+    ENDED(2),
+    CANCELLED(3),
+    MOMENTUM_BEGAN(4),
+    MOMENTUM_CHANGED(5),
+    MOMENTUM_ENDED(6),
 
     /** Fingers touched the trackpad, no scroll yet (`NSEventPhaseMayBegin`). */
-    const val MAY_BEGIN: Int = 7
+    MAY_BEGIN(7),
+    ;
+
+    companion object {
+        /** Wire code for "not a gesture step" (only the popup wire carries it). */
+        const val NONE_WIRE: Int = -1
+
+        /** `null` for [NONE_WIRE] and for any code this build does not know. */
+        fun fromWire(code: Int): TaoScrollGesturePhase? = entries.firstOrNull { it.wire == code }
+    }
 }
 
 /** Modifier-state bitmask that mirrors the Rust side. */

@@ -81,7 +81,7 @@ index 9d0ab3fb..6cf94fb6 100644
                  },
                }) {
 diff --git a/src/platform_impl/macos/view.rs b/src/platform_impl/macos/view.rs
-index b0fb8472..e6f1e8d5 100644
+index b0fb8472..80004bd1 100644
 --- a/src/platform_impl/macos/view.rs
 +++ b/src/platform_impl/macos/view.rs
 @@ -31,9 +31,10 @@ use objc2_foundation::{
@@ -97,9 +97,13 @@ index b0fb8472..e6f1e8d5 100644
    },
    keyboard::{KeyCode, ModifiersState},
    platform_impl::platform::{
-@@ -1263,11 +1264,21 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
-     let state = &mut *(state_ptr as *mut ViewState);
+@@ -1259,15 +1260,22 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
+   mouse_motion(this, event);
  
+   unsafe {
+-    let state_ptr: *mut c_void = *this.get_ivar("taoState");
+-    let state = &mut *(state_ptr as *mut ViewState);
+-
      let delta = {
 -      // macOS horizontal sign convention is the inverse of tao.
 -      let (x, y) = (event.scrollingDeltaX() * -1.0, event.scrollingDeltaY());
@@ -123,7 +127,7 @@ index b0fb8472..e6f1e8d5 100644
        } else {
          MouseScrollDelta::LineDelta(x as f32, y as f32)
        }
-@@ -1277,6 +1288,23 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
+@@ -1277,6 +1285,23 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
        NSEventPhase::Ended => TouchPhase::Ended,
        _ => TouchPhase::Moved,
      };
@@ -147,7 +151,7 @@ index b0fb8472..e6f1e8d5 100644
  
      let device_event = Event::DeviceEvent {
        device_id: DEVICE_ID,
-@@ -1294,6 +1322,7 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
+@@ -1294,6 +1319,7 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
          device_id: DEVICE_ID,
          delta,
          phase,

@@ -1095,10 +1095,13 @@ public class TaoWindow internal constructor(
      * scene host turns the stream into Compose Pan events.
      */
     internal fun dispatchScrollGesture(
-        phase: Int,
+        phaseWire: Int,
         dxFixed: Int,
         dyFixed: Int,
     ) {
+        // A code this build does not know degrades to a plain precise scroll
+        // rather than a pan step the router cannot place.
+        val phase = TaoScrollGesturePhase.fromWire(phaseWire)
         pointerScrollListener?.invoke(preciseScrollEvent(dxFixed, dyFixed, gesturePhase = phase))
     }
 
@@ -1112,7 +1115,7 @@ public class TaoWindow internal constructor(
     private fun preciseScrollEvent(
         dxFixed: Int,
         dyFixed: Int,
-        gesturePhase: Int,
+        gesturePhase: TaoScrollGesturePhase?,
     ) = TaoPointerScrollEvent(
         dxAwt = -(dxFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
         dyAwt = -(dyFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
@@ -1262,9 +1265,7 @@ public class TaoWindow internal constructor(
             TaoEventCode.SCROLL_PIXEL -> {
                 // Precise scroll outside a gesture (smooth-scroll mice); see
                 // [preciseScrollEvent] for the AWT shaping.
-                pointerScrollListener?.invoke(
-                    preciseScrollEvent(a, b, gesturePhase = TaoScrollGesturePhase.NONE),
-                )
+                pointerScrollListener?.invoke(preciseScrollEvent(a, b, gesturePhase = null))
             }
             // KEY_DOWN / KEY_UP: routed in Phase 2b (no logical-key encoding yet)
         }
@@ -1294,14 +1295,14 @@ public class TaoWindow internal constructor(
  * [dxAwt] / [dyAwt] are `preciseWheelRotation` (positive = scroll down /
  * right), [scrollAmount] the platform line-count policy Compose Desktop reads.
  * [gesturePhase] is the [TaoScrollGesturePhase] of a macOS trackpad gesture
- * step, or [TaoScrollGesturePhase.NONE] for a wheel notch / phase-less device
- * — gesture steps become Compose Pan events, the rest ordinary Scroll events.
+ * step, or `null` for a wheel notch / phase-less device — gesture steps
+ * become Compose Pan events, the rest ordinary Scroll events.
  */
 internal data class TaoPointerScrollEvent(
     val dxAwt: Float,
     val dyAwt: Float,
     val scrollAmount: Int,
-    val gesturePhase: Int = TaoScrollGesturePhase.NONE,
+    val gesturePhase: TaoScrollGesturePhase? = null,
 )
 
 private data class WindowsTitleBarTouchDrag(

@@ -275,27 +275,40 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
 - (void)rightMouseDown:(NSEvent *)event  { [self maybeBecomeKey:event]; [self dispatchPointer:event type:EVT_PTR_DOWN button:2]; }
 - (void)rightMouseUp:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_UP   button:2]; }
 
-/* Trackpad gesture phase of a scroll event, encoded like the vendored tao's
- * `ScrollPhase` -> Kotlin `TaoScrollGesturePhase` (events.rs SCROLL_GESTURE_*),
- * so a popup routes a two-finger swipe exactly like the window behind it (#654).
- * AppKit sets `phase` for the fingers-on-glass part and `momentumPhase` for the
- * inertial tail, never both; a wheel notch has neither (-1 = NONE). */
+/* Trackpad gesture phase wire codes: one copy of the vendored tao's
+ * `ScrollPhase` -> Kotlin `TaoScrollGesturePhase` mapping (events.rs
+ * SCROLL_GESTURE_*), so a popup routes a two-finger swipe exactly like the
+ * window behind it (#654). Kept in sync by TaoScrollWireDriftTest. */
+typedef NS_ENUM(jint, NucleusScrollGesture) {
+    NucleusScrollGestureNone            = -1,
+    NucleusScrollGestureBegan           = 0,
+    NucleusScrollGestureChanged         = 1,
+    NucleusScrollGestureEnded           = 2,
+    NucleusScrollGestureCancelled       = 3,
+    NucleusScrollGestureMomentumBegan   = 4,
+    NucleusScrollGestureMomentumChanged = 5,
+    NucleusScrollGestureMomentumEnded   = 6,
+    NucleusScrollGestureMayBegin        = 7,
+};
+
+/* AppKit sets `phase` for the fingers-on-glass part and `momentumPhase` for the
+ * inertial tail, never both; a wheel notch has neither. */
 static jint scrollGesturePhase(NSEvent *event) {
     switch (event.phase) {
-        case NSEventPhaseMayBegin:   return 7;
-        case NSEventPhaseBegan:      return 0;
+        case NSEventPhaseMayBegin:   return NucleusScrollGestureMayBegin;
+        case NSEventPhaseBegan:      return NucleusScrollGestureBegan;
         case NSEventPhaseChanged:
-        case NSEventPhaseStationary: return 1;
-        case NSEventPhaseEnded:      return 2;
-        case NSEventPhaseCancelled:  return 3;
+        case NSEventPhaseStationary: return NucleusScrollGestureChanged;
+        case NSEventPhaseEnded:      return NucleusScrollGestureEnded;
+        case NSEventPhaseCancelled:  return NucleusScrollGestureCancelled;
         default: break;
     }
     switch (event.momentumPhase) {
-        case NSEventPhaseBegan:      return 4;
-        case NSEventPhaseChanged:    return 5;
+        case NSEventPhaseBegan:      return NucleusScrollGestureMomentumBegan;
+        case NSEventPhaseChanged:    return NucleusScrollGestureMomentumChanged;
         case NSEventPhaseEnded:
-        case NSEventPhaseCancelled:  return 6;
-        default:                     return -1;
+        case NSEventPhaseCancelled:  return NucleusScrollGestureMomentumEnded;
+        default:                     return NucleusScrollGestureNone;
     }
 }
 
