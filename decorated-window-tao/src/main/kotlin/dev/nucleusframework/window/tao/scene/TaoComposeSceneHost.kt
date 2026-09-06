@@ -925,7 +925,10 @@ internal class TaoComposeSceneHost(
                 .nativeGetContentRect(nsViewHandle)
                 ?.takeIf { it.size >= 2 }
                 ?: return null
-        val areas = TaoMonitors.all(window).map { it.workAreaPx }.ifEmpty { return null }
+        // `reported`, not `all`: `all` invents a monitor when the platform
+        // names none, and clamping a popup into an invented work area moves it
+        // somewhere no display is. No geometry means no clamp.
+        val areas = TaoMonitors.reported(window).map { it.workAreaPx }.ifEmpty { return null }
         return PopupScreenGeometry(
             parentContentOriginPx = IntOffset(content[0].toInt(), content[1].toInt()),
             workAreasPx = areas,

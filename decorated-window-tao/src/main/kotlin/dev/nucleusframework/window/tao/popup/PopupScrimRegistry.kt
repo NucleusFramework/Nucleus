@@ -51,8 +51,15 @@ internal class PopupScrimRegistry(
         scrims[token] = color
     }
 
+    /**
+     * Drops [token]'s layer. A layer that was still dimming when it went away
+     * changed the scrim stack, so this reports it like any other change: nobody
+     * below observes the registry, and a host that skips clean frames would
+     * otherwise leave the owner window dark until an unrelated invalidation.
+     */
     fun unregister(token: Any) {
-        scrims.remove(token)
+        val dimmed = scrims.remove(token)?.invoke() != null
+        if (dimmed) onChanged()
     }
 
     /** The scrims of every registered layer, bottom-up. */

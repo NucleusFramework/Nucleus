@@ -1,6 +1,7 @@
 package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.ui.unit.IntRect
+import org.jetbrains.skia.Rect
 import kotlin.math.ceil
 
 /**
@@ -41,3 +42,31 @@ internal fun popupDrawBounds(
         bottom = bounds.bottom + margin,
     )
 }
+
+/**
+ * Cull rect for the picture the macOS layer records, in **scene** coordinates.
+ *
+ * The layer draws its inner scene in owner-window coordinates
+ * (`calculateLocalPosition` is the identity) and defers the translation into
+ * the surface to replay time, so the recorded content sits at
+ * [drawBounds]`.topLeft` — not at the picture's origin. `SkCanvas::drawPicture`
+ * quick-rejects against the picture's cull rect mapped by the current matrix,
+ * and the replay matrix is `translate(-drawBounds.topLeft)`: a cull rect rooted
+ * at the origin therefore maps to `-drawBounds.topLeft`, entirely off the
+ * drawable, and the whole picture is dropped. The rect has to follow the
+ * content.
+ *
+ * Skia only takes that path for a picture of more than one op, and a Compose
+ * scene records as exactly one (a skiko `RenderNode` drawable), so a bare popup
+ * happened to survive an origin-rooted rect. One dimmed by a dialog above it
+ * does not: the layer paints those scrims into the same picture
+ * ([PopupScrimRegistry.paintAbove]) and the frame is dropped whole. See
+ * `MacPopupPictureCullTest`.
+ */
+internal fun popupPictureCullRect(drawBounds: IntRect): Rect =
+    Rect.makeLTRB(
+        drawBounds.left.toFloat(),
+        drawBounds.top.toFloat(),
+        drawBounds.right.toFloat(),
+        drawBounds.bottom.toFloat(),
+    )

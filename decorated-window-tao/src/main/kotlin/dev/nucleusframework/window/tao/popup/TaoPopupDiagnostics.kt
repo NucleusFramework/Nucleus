@@ -83,9 +83,20 @@ internal object TaoPopupDiagnostics {
     @Volatile
     var lastCompositorPlaced: Boolean? = null
 
+    /**
+     * How many times the most recent run's compositor-placed layers anchored
+     * (`xdg_positioner`). More than one means a popup was re-mapped because its
+     * size changed after it was already on screen — the only way to keep the
+     * `xdg_surface` geometry and the EGL buffer agreeing, since GDK positions a
+     * popup once.
+     */
+    @Volatile
+    var compositorAnchorCount: Int = 0
+
     fun reset() {
         last.set(null)
         frameCount = 0
         lastCompositorPlaced = null
+        compositorAnchorCount = 0
     }
 }

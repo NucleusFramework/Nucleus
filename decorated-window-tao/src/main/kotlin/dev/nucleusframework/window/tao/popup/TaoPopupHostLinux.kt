@@ -1,8 +1,10 @@
 package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -23,6 +25,7 @@ import kotlin.coroutines.CoroutineContext
  * Threading: every call must run on the Tao event-loop thread.
  */
 @OptIn(ExperimentalComposeUiApi::class)
+@Suppress("TooManyFunctions")
 internal interface TaoPopupHostLinux {
     /** Tao window hosting the main scene — the popup windows' `popupOf` parent. */
     val parentWindow: TaoWindow
@@ -149,6 +152,30 @@ internal interface TaoPopupHostLinux {
     )
 
     fun unregisterOutsidePressListener(token: Any)
+
+    /**
+     * Delivers a pointer event that landed on a layer's **draw margin** to the
+     * owner window's scene, at [positionPx] in owner-window physical pixels.
+     *
+     * A layer's window is inflated past the popup's layout bounds so shadows
+     * and the appearance animation are not clipped ([popupDrawBounds]). That
+     * margin is transparent, but on Linux it is still the popup's window as far
+     * as the display server is concerned, so the press never reaches the owner
+     * — a click on a button beside an open menu would dismiss the menu and
+     * never press the button, and hovering past the menu's edge would freeze
+     * the owner's hover state. Windows and macOS get the pass-through from the
+     * OS (the layer hands it the *content* rect); GTK's own input shaping does
+     * not take on a popup toplevel, so the layer routes the event here instead.
+     *
+     * A [PointerEventType.Press] is expected to behave exactly like a press
+     * that reached the owner natively — including the outside-press listeners
+     * and the recompose between them and the dispatch.
+     */
+    fun forwardMarginPointer(
+        eventType: PointerEventType,
+        positionPx: Offset,
+        button: PointerButton?,
+    )
 
     /**
      * Claims the parent's compositor-positioned popup for [token]. On native

@@ -609,12 +609,25 @@ internal class TaoPopupSceneLayerLinux(
             "push frame pos=($xPx,$yPx) size=${w}x$h shown=$shown attached=${attachment != 0L} " +
                 "compositorPlaced=$compositorPlaced"
         }
+        val sizeChanged = w != widthPx || h != heightPx
         if (compositorPlaced) {
-            // The compositor owns the position from map on, and GDK positions an
-            // xdg_popup once — only the frame before show() counts. Neither a
-            // plain move nor a plain resize here: either would re-map the window
-            // as a subsurface, so the anchor call carries the size as well.
-            if (!shown) {
+            // The compositor owns the position from map on, and GDK builds the
+            // `xdg_positioner` once, from the window's geometry as it stands at
+            // map — so the anchor call carries the size as well, and a plain
+            // move or resize afterwards would re-map the window as a
+            // subsurface. A size that changes after the popup is mapped (a menu
+            // whose items measure late) therefore cannot be applied in place:
+            // resizing the EGL buffer alone would leave the `xdg_surface`
+            // geometry at the anchored size, which is the buffer/geometry
+            // disagreement of #502. Re-map instead — hide, re-anchor at the new
+            // size, show — which is also what re-runs the compositor's flip for
+            // the size it now has.
+            if (!shown || sizeChanged) {
+                if (shown) {
+                    trace { "re-anchor ${widthPx}x$heightPx -> ${w}x$h" }
+                    popupWindow.hide()
+                    shown = false
+                }
                 popupWindow.anchorPopupInParent(
                     contentXDp = contentInParent.left / scale.toDouble(),
                     contentYDp = contentInParent.top / scale.toDouble(),
@@ -625,12 +638,13 @@ internal class TaoPopupSceneLayerLinux(
                     shadowRightDp = ((drawBounds.right - contentBounds.right) / scale).roundToInt(),
                     shadowBottomDp = ((drawBounds.bottom - contentBounds.bottom) / scale).roundToInt(),
                 )
+                TaoPopupDiagnostics.compositorAnchorCount++
             }
         } else {
             popupWindow.setOuterPosition((xPx / scale).toDouble(), (yPx / scale).toDouble())
             popupWindow.setInnerSize((w / scale).toDouble(), (h / scale).toDouble())
         }
-        if (w != widthPx || h != heightPx) {
+        if (sizeChanged) {
             widthPx = w
             heightPx = h
             if (attachment != 0L) {
@@ -751,13 +765,16 @@ internal class TaoPopupSceneLayerLinux(
         lastX = xPx
         lastY = yPx
         val position = scenePosition(xPx, yPx)
-        // The window is inflated past the layout bounds (see [drawBounds]); a
-        // press in that margin lands on this window rather than the parent, so
-        // the parent's outside-press listener never sees it. It is an outside
-        // press all the same — the Windows content rect and the macOS hit region
-        // hand it to the parent natively.
-        if (eventType == PointerEventType.Press && !_bounds.contains(position.round())) {
-            onOutsidePointerEvent?.invoke(eventType, button)
+        // The window is inflated past the layout bounds (see [drawBounds]), and
+        // that margin lands on this window rather than the parent — on Windows
+        // and macOS the OS routes it to the parent, because those layers hand
+        // it the content rect. Here the layer has to do the routing: report the
+        // outside press (Compose's dismiss-on-click-outside) and hand the event
+        // to the owner window, so a click on a button beside an open menu both
+        // closes the menu and presses the button.
+        if (!_bounds.contains(position.round())) {
+            if (eventType == PointerEventType.Press) onOutsidePointerEvent?.invoke(eventType, button)
+            forwardToOwner(eventType, position, button)
             return@catchExceptions
         }
         innerScene.sendPointerEvent(
@@ -767,6 +784,30 @@ internal class TaoPopupSceneLayerLinux(
             keyboardModifiers = taoKeyboardModifiers(host.parentWindow.modifierState),
             button = button,
         )
+    }
+
+    /**
+     * Hands the owner window an event that landed on this popup's draw margin.
+     *
+     * Only while the point is over the owner's content: the margin can hang off
+     * the window (a menu opened at its edge), and a press over another window —
+     * or another application — is not the owner's to receive. Compose would
+     * simply hit-test nothing there, but forwarding it would still run the
+     * dismissal twice and report a press the user never made to that window.
+     */
+    private fun forwardToOwner(
+        eventType: PointerEventType,
+        position: Offset,
+        button: PointerButton?,
+    ) {
+        val size = host.parentWindowSize
+        val inOwner =
+            position.x >= 0f &&
+                position.y >= 0f &&
+                position.x < size.width &&
+                position.y < size.height
+        if (!inOwner) return
+        host.forwardMarginPointer(eventType, position, button)
     }
 
     /** Popup-window-local physical px → inner-scene (parent-window) coords. */

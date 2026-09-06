@@ -657,7 +657,7 @@ internal class TaoPopupSceneLayer(
         return TaoRecordedSurface(
             attachmentHandle = attachmentHandle,
             directContext = directContext,
-            picture = recordSceneToPicture(sceneBundle, widthPx, heightPx),
+            picture = recordSceneToPicture(sceneBundle, widthPx, heightPx, cullRect = popupPictureCullRect(drawBounds)),
             clearColor = 0x00000000,
             isAlive = { !disposed },
             pictureOffset = IntOffset(-drawBounds.left, -drawBounds.top),

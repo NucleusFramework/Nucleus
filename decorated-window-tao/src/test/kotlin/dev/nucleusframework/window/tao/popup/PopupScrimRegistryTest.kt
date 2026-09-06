@@ -80,6 +80,33 @@ class PopupScrimRegistryTest {
         assertEquals(emptyList(), registry.above(bottom))
     }
 
+    /**
+     * A layer torn down while its scrim was still opaque — a dialog removed
+     * from composition rather than faded out by `DialogAppearanceController` —
+     * takes its dimming with it, and nothing under it observes that. Without a
+     * repaint the owner window stays dark until an unrelated invalidation
+     * happens to produce a non-clean frame.
+     */
+    @Test
+    fun `unregistering a dimming layer repaints the host`() {
+        var changes = 0
+        val registry = PopupScrimRegistry(onChanged = { changes++ })
+        registry.register(top) { Color.Black }
+        registry.unregister(top)
+        assertEquals(1, changes)
+    }
+
+    /** The common case — a plain popup — must not cost a repaint on the way out. */
+    @Test
+    fun `unregistering a layer that dimmed nothing is silent`() {
+        var changes = 0
+        val registry = PopupScrimRegistry(onChanged = { changes++ })
+        registry.register(top) { null }
+        registry.unregister(top)
+        registry.unregister(Any())
+        assertEquals(0, changes)
+    }
+
     @Test
     fun `re-registering moves a layer to the top of the stack`() {
         val registry = stack(bottom to Color.Red, top to Color.Blue)

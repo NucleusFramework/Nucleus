@@ -28,6 +28,35 @@ class TaoMonitorsTest {
         assertTrue(monitor.isPrimary)
     }
 
+    /**
+     * `all` is documented never to be empty, so an `isEmpty()` guard on it is
+     * dead code — and the popup screen clamp used to lean on exactly that. The
+     * invariant is pinned here so a caller can read `all` as "always something"
+     * and `reported` as "only what the platform said".
+     */
+    @Test
+    fun allNeverReportsAnEmptyList() {
+        assertTrue(TaoMonitors.all().isNotEmpty())
+    }
+
+    /**
+     * The synthetic monitor `all` falls back to is a guess — a fixed 1920x1080
+     * rectangle at the origin when even [TaoScreenGeometry] has nothing — and a
+     * popup clamped into it would be dragged onto a display that does not
+     * exist. `reported` is what the clamp asks, so it must never invent one.
+     */
+    @Test
+    fun reportedIsEmptyWhenThePlatformNamesNoMonitor() {
+        val reported = TaoMonitors.reported()
+        val all = TaoMonitors.all()
+        if (reported.isEmpty()) {
+            assertEquals(1, all.size, "the synthetic fallback is one monitor")
+            assertEquals("primary", all.single().id)
+        } else {
+            assertEquals(reported.map { it.id }.toSet(), all.map { it.id }.toSet())
+        }
+    }
+
     @Test
     fun convertsToDpWithTheGivenScale() {
         val monitor = requireNotNull(TaoMonitors.parseMonitor(row()))

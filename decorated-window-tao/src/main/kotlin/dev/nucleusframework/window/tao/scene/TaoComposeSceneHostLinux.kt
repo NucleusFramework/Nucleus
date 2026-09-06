@@ -13,6 +13,7 @@ import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asSkiaBitmap
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
@@ -229,7 +230,7 @@ internal class TaoComposeSceneHostLinux(
      * parent press is by definition outside every popup. See
      * [TaoPopupHostLinux.registerOutsidePressListener].
      */
-    private val outsidePressListeners: MutableMap<Any, (androidx.compose.ui.input.pointer.PointerButton?) -> Unit> =
+    private val outsidePressListeners: MutableMap<Any, (PointerButton?) -> Unit> =
         LinkedHashMap()
 
     private val windowInfo = TaoWindowInfo()
@@ -2018,26 +2019,9 @@ internal class TaoComposeSceneHostLinux(
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
-        // A press reaching the parent scene is outside every popup layer (the
-        // popup windows own their input region) — forward so Compose's
-        // dismiss-on-click-outside fires. The Linux stand-in for macOS's
-        // NSEvent monitor / Windows' WH_MOUSE_LL hook.
-        if (pressed && outsidePressListeners.isNotEmpty()) {
-            val button = mapButton(buttonCode)
-            for (cb in outsidePressListeners.values.toList()) cb(button)
-            // Let the scene apply that dismissal before it sees this press.
-            // The listeners above close whatever popup was open by writing
-            // Compose state, and the press is about to be dispatched in the
-            // same turn — so a node that is *disabled while the popup is open*
-            // is still disabled when the press arrives, and the press does
-            // nothing. Compose's own `contextMenuOpenDetector` is exactly that
-            // node, which is why a second right click used to close the context
-            // menu instead of moving it to the new spot, the way every OS menu
-            // does. One extra composition per outside press, and only while a
-            // popup is open.
-            Snapshot.sendApplyNotifications()
-            sceneBundle?.composeAndLayoutNow()
-        }
+        // A press reaching the parent scene is outside every popup layer — the
+        // Linux stand-in for macOS's NSEvent monitor / Windows' WH_MOUSE_LL hook.
+        if (pressed) dismissPopupsBeforePress(mapButton(buttonCode))
 
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
@@ -2048,6 +2032,26 @@ internal class TaoComposeSceneHostLinux(
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
+    }
+
+    /**
+     * Runs the popup dismissal a press outside every layer implies, and lets
+     * the scene apply it before that press is dispatched.
+     *
+     * The listeners close whatever popup was open by writing Compose state, and
+     * the press is about to be dispatched in the same turn — so a node that is
+     * *disabled while the popup is open* would still be disabled when the press
+     * arrives, and the press would do nothing. Compose's own
+     * `contextMenuOpenDetector` is exactly that node, which is why a second
+     * right click used to close the context menu instead of moving it to the
+     * new spot, the way every OS menu does. One extra composition per outside
+     * press, and only while a popup is open.
+     */
+    private fun dismissPopupsBeforePress(button: PointerButton?) {
+        if (outsidePressListeners.isEmpty()) return
+        for (cb in outsidePressListeners.values.toList()) cb(button)
+        Snapshot.sendApplyNotifications()
+        sceneBundle?.composeAndLayoutNow()
     }
 
     /**
@@ -2258,7 +2262,9 @@ internal class TaoComposeSceneHostLinux(
             override val popupScreenGeometry: PopupScreenGeometry? get() {
                 if (!outer.isX11) return null
                 val origin = parentScreenOriginPx
-                val areas = TaoMonitors.all(outer.window).map { it.workAreaPx }
+                // `reported`, not `all` — see the macOS resolver: a synthesized
+                // monitor is a guess, and a clamp is only safe on a real one.
+                val areas = TaoMonitors.reported(outer.window).map { it.workAreaPx }
                 if (areas.isEmpty()) return null
                 return PopupScreenGeometry(parentContentOriginPx = origin, workAreasPx = areas)
             }
@@ -2321,6 +2327,23 @@ internal class TaoComposeSceneHostLinux(
 
             override fun unregisterOutsidePressListener(token: Any) {
                 outer.outsidePressListeners.remove(token)
+            }
+
+            override fun forwardMarginPointer(
+                eventType: PointerEventType,
+                positionPx: Offset,
+                button: PointerButton?,
+            ) {
+                if (eventType == PointerEventType.Press) outer.dismissPopupsBeforePress(button)
+                outer.currentKeyboardModifiers = taoKeyboardModifiers(outer.window.modifierState)
+                outer.windowInfo.keyboardModifiers = outer.currentKeyboardModifiers
+                outer.scene?.sendPointerEvent(
+                    eventType = eventType,
+                    position = positionPx,
+                    type = PointerType.Mouse,
+                    keyboardModifiers = outer.currentKeyboardModifiers,
+                    button = button,
+                )
             }
 
             override fun acquireCompositorPopup(token: Any): Boolean {

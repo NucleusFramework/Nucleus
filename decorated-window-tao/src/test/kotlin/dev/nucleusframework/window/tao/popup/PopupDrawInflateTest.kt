@@ -35,6 +35,20 @@ class PopupDrawInflateTest {
         assertEquals(IntRect(36, 136, 364, 464), popupDrawBounds(bounds, 2f))
     }
 
+    /**
+     * The cull rect lives in the space the scene draws in, not the surface's —
+     * `MacPopupPictureCullTest` shows what an origin-rooted one costs.
+     */
+    @Test
+    fun `the cull rect is the draw bounds in scene coordinates`() {
+        val draw = popupDrawBounds(bounds, 1f)
+        val rect = popupPictureCullRect(draw)
+        assertEquals(draw.left.toFloat(), rect.left)
+        assertEquals(draw.top.toFloat(), rect.top)
+        assertEquals(draw.right.toFloat(), rect.right)
+        assertEquals(draw.bottom.toFloat(), rect.bottom)
+    }
+
     @Test
     fun `the content keeps its size and offset inside the surface`() {
         val draw = popupDrawBounds(bounds, 2f)
