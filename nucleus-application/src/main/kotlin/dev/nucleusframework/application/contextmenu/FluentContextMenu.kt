@@ -41,21 +41,28 @@ internal val FluentMenuTheme =
     )
 
 /**
- * Fluent 2's `shadow16` token, the elevation it assigns to menus and context
- * menus: `0 0 2px rgba(0 0 0 / 12%), 0 8px 16px rgba(0 0 0 / 14%)` in light,
- * `0 0 2px rgba(0 0 0 / 24%), 0 8px 16px rgba(0 0 0 / 28%)` in dark.
+ * The shadow WinUI's `ThemeShadow` casts for a `MenuFlyout`, which sits at
+ * `Translation.Z = 32` (context menus, command bars, flyouts), from
+ * `GetDropShadowRecipe` in `dxaml/xcp/components/graphics/inc/DropShadowRecipe.h`:
+ * elevation `Z / 2 = 16`, which is the top of the `2..16` band — no ambient
+ * layer, one directional layer with a blur radius equal to the elevation
+ * (plus one, added when the shadow is built), shifted down by half of it, at
+ * `min(elevation / 100 + 0.06, 0.14)` in light and a flat `0.26` in dark.
+ *
+ * The composition `DropShadow.BlurRadius` is a Gaussian radius in the Direct2D
+ * sense — WinUI reserves exactly that many pixels around the caster for the
+ * shadow, so it is the ~3 σ extent, not the CSS radius of 2 σ: 17 px there is
+ * an ~11 px CSS blur here.
+ *
+ * Not the Fluent 2 web token (`shadow16`, `0 0 8px 12%` + `0 8px 16px 14%`):
+ * that is what Fluent UI React menus draw, but the flyout imitates the OS menu.
  */
 private fun fluentShadows(dark: Boolean): List<ContextMenuBoxShadow> =
     listOf(
         ContextMenuBoxShadow(
-            offsetY = 0.dp,
-            blur = 2.dp,
-            color = Color.Black.copy(alpha = if (dark) 0.24f else 0.12f),
-        ),
-        ContextMenuBoxShadow(
             offsetY = 8.dp,
-            blur = 16.dp,
-            color = Color.Black.copy(alpha = if (dark) 0.28f else 0.14f),
+            blur = 11.dp,
+            color = Color.Black.copy(alpha = if (dark) 0.26f else 0.14f),
         ),
     )
 
