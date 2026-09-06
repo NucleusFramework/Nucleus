@@ -31,14 +31,10 @@ import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
-import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
-import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
-import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -53,12 +49,9 @@ import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
 import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1061,55 +1054,25 @@ internal class TaoComposeSceneHost(
     }
 
     /**
-     * [event] is pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`
-     * and carries a synthetic native event so Compose's desktop scroll config
-     * can read `scrollAmount` and precise-wheel metadata like the AWT backend.
+     * [event] is pre-shaped to match AWT `MouseWheelEvent.preciseWheelRotation`;
+     * wheel notches reach Compose as `Scroll` events with a synthetic native
+     * event attached (so the desktop scroll config can read `scrollAmount`),
+     * trackpad gesture steps as Pan events — see [TaoSceneScrollRouter].
      */
     fun onPointerScroll(event: TaoPointerScrollEvent) {
+        if (sceneBundle == null) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
-        if (event.gesturePhase != TaoScrollGesturePhase.NONE) {
-            // Trackpad gesture step: Compose Pan events, not Scroll (#654).
-            trackpadPan.onGesture(event.gesturePhase, Offset(event.dxAwt, event.dyAwt))
-            return
-        }
-        scene?.dispatchAwtShapedScroll(
-            x = pointerDeadband.x,
-            y = pointerDeadband.y,
-            event = event,
-            keyboardModifiers = currentKeyboardModifiers,
-        )
+        scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
 
-    // Deferred PanEnd timer of [trackpadPan]; lives on the Tao main thread
-    // like every other host callback.
-    private val trackpadPanScope = CoroutineScope(TaoMainDispatcher + SupervisorJob())
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHost.scene
+                override val scale: Float get() = this@TaoComposeSceneHost.scale
 
-    /**
-     * Turns the macOS trackpad scroll gesture stream into Compose Pan events
-     * (#654). Offsets arrive in AWT wheel units and leave in pixels: one unit
-     * is `10.dp` — the factor Compose Desktop's `MacOSCocoaConfig` applies to
-     * a wheel notch — so a trackpad pan and a wheel scroll move content by the
-     * same amount, as they do under AWT.
-     */
-    private val trackpadPan =
-        TaoTrackpadPanRouter(
-            schedule = { delayMillis, action ->
-                val job =
-                    trackpadPanScope.launch {
-                        delay(delayMillis)
-                        exceptionHandler.catchExceptions(action)
-                    }
-                ({ job.cancel() })
-            },
-            send = { type, panAwt ->
-                scene?.dispatchTrackpadPan(
-                    x = pointerDeadband.x,
-                    y = pointerDeadband.y,
-                    type = type,
-                    panOffset = panAwt * (AWT_PIXEL_TO_ROTATION * scale),
-                    keyboardModifiers = currentKeyboardModifiers,
-                )
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
             },
         )
 
@@ -1594,7 +1557,7 @@ internal class TaoComposeSceneHost(
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
-        trackpadPan.cancel()
+        scrollRouter.cancel()
         // The native cache keys on the NSView pointer; leaving it set would
         // let a later view allocated at the same address inherit this
         // window's text and caret.

@@ -178,8 +178,18 @@ fun ScrollTestScreen() {
                                         // consumes it. We never consume — scrolling
                                         // must still happen normally.
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
-                                        if (event.type != PointerEventType.Scroll) continue
-                                        val d = event.changes.first().scrollDelta
+                                        // Wheel notches arrive as Scroll (AWT wheel units);
+                                        // on the Tao backend a trackpad gesture arrives as
+                                        // Pan with a pixel offset — 10 dp per wheel unit
+                                        // (Compose's MacOSCocoaConfig factor), so both are
+                                        // logged in the same unit.
+                                        val change = event.changes.first()
+                                        val d =
+                                            when (event.type) {
+                                                PointerEventType.Scroll -> change.scrollDelta
+                                                PointerEventType.PanMove -> change.panOffset / (10f * density)
+                                                else -> continue
+                                            }
                                         val now = System.nanoTime() / 1_000_000
                                         if (!meter.inGesture || now - meter.lastTimeMs > IDLE_MS) {
                                             meter.inGesture = true

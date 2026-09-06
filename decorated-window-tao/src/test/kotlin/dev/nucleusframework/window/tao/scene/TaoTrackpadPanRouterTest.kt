@@ -18,10 +18,12 @@ class TaoTrackpadPanRouterTest {
         val sent = mutableListOf<Pair<PointerEventType, Offset>>()
         private var pending: (() -> Unit)? = null
         var cancelled = 0
+        var lastDelayMillis = -1L
 
         val router =
             TaoTrackpadPanRouter(
-                schedule = { _, action ->
+                schedule = { delayMillis, action ->
+                    lastDelayMillis = delayMillis
                     pending = action
                     (
                         {
@@ -56,14 +58,34 @@ class TaoTrackpadPanRouterTest {
 
         assertEquals(listOf(PointerEventType.PanStart, PointerEventType.PanMove), h.types())
         assertTrue(h.hasPendingEnd, "Ended must only schedule the PanEnd")
-        assertTrue(h.router.isPanning)
+        assertEquals(TaoTrackpadPanRouter.momentumGraceMillis, h.lastDelayMillis)
 
         h.elapseGrace()
         assertEquals(
             listOf(PointerEventType.PanStart, PointerEventType.PanMove, PointerEventType.PanEnd),
             h.types(),
         )
-        assertFalse(h.router.isPanning)
+    }
+
+    @Test
+    fun `terminal steps carrying a delta still pan when no gesture is open`() {
+        // AppKit's Ended can hold the last finger movement, and the Began may
+        // have been missed (window became key mid-gesture): the distance must
+        // not be dropped.
+        val h = Harness()
+        h.router.onGesture(TaoScrollGesturePhase.ENDED, down)
+        assertEquals(listOf(PointerEventType.PanStart, PointerEventType.PanMove), h.types())
+        assertTrue(h.hasPendingEnd)
+        h.elapseGrace()
+        assertEquals(PointerEventType.PanEnd, h.types().last())
+
+        h.sent.clear()
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_ENDED, down)
+        assertEquals(
+            listOf(PointerEventType.PanStart, PointerEventType.PanMove, PointerEventType.PanEnd),
+            h.types(),
+        )
+        assertFalse(h.hasPendingEnd)
     }
 
     @Test
@@ -150,7 +172,6 @@ class TaoTrackpadPanRouterTest {
         h.router.cancel()
 
         assertFalse(h.hasPendingEnd)
-        assertFalse(h.router.isPanning)
         h.elapseGrace()
         assertEquals(listOf(PointerEventType.PanStart), h.types())
     }

@@ -23,7 +23,6 @@ import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
 import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
 import dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent
-import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -35,6 +34,7 @@ import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
 import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.TaoSceneScrollRouter
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.newMetalRenderExecutor
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
@@ -98,6 +98,17 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private val windowInfo = StandalonePopupWindowInfo()
 
     private val framePump = StandaloneFramePump { renderNow() }
+
+    // Wheel → Scroll, trackpad gesture → Pan, same as the window host (#654).
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoStandalonePopupHostMac.scene
+                override val scale: Float get() = this@TaoStandalonePopupHostMac.scale
+
+                override fun guard(block: () -> Unit) = framePump.nonReentrant(block)
+            },
+        )
     private val replayInFlight = AtomicBoolean(false)
     private var nextFrameNs = 0L
     private var visible = false
@@ -287,6 +298,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
         if (!isValid || disposed) return
         disposed = true
         framePump.disposed = true
+        scrollRouter.cancel()
         revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
@@ -438,13 +450,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             dx: Float,
             dy: Float,
             precise: Boolean,
+            gesturePhase: Int,
         ) {
             framePump.nonReentrant {
-                scene?.dispatchAwtShapedScroll(
-                    x,
-                    y,
-                    appKitWheelToAwtScrollEvent(dx, dy, precise),
-                )
+                scrollRouter.onScroll(x, y, appKitWheelToAwtScrollEvent(dx, dy, precise, gesturePhase))
             }
         }
 

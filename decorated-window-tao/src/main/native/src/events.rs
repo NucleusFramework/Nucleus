@@ -147,9 +147,9 @@ pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logica
 // (positive = content moves down / right, i.e. AppKit's); the JVM negates.
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
 
-// a/b = LOGICAL points (AppKit `scrollingDelta*`) * SCROLL_FIXED_SCALE — tao's
-// `PixelDelta` is converted back from physical pixels in the loop because AWT
-// never applies the display scale to `preciseWheelRotation` (Nucleus #653).
+// a/b = LOGICAL points (AppKit `scrollingDelta*`) * SCROLL_FIXED_SCALE — the
+// vendored tao (patch 0007) leaves `PixelDelta` in points because AWT never
+// applies the display scale to `preciseWheelRotation` (Nucleus #653).
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
 // Trackpad scroll gesture phases (`EventCallback.onScrollGesture`); mirror
 // Kotlin `TaoScrollGesturePhase`. A precise scroll that belongs to a gesture

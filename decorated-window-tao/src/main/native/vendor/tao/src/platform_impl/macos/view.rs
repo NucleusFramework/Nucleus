@@ -31,7 +31,7 @@ use objc2_foundation::{
 use once_cell::sync::Lazy;
 
 use crate::{
-  dpi::LogicalPosition,
+  dpi::{LogicalPosition, PhysicalPosition},
   event::{
     DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, ScrollPhase, TouchPhase,
     WindowEvent,
@@ -1272,8 +1272,13 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
       // #652). Same as winit.
       let (x, y) = (event.scrollingDeltaX(), event.scrollingDeltaY());
       if event.hasPreciseScrollingDeltas() {
-        let delta = LogicalPosition::new(x, y).to_physical(state.get_scale_factor());
-        MouseScrollDelta::PixelDelta(delta)
+        // PATCH(nucleus): carry AppKit's LOGICAL points as-is instead of
+        // multiplying by the view's cached backing scale. The only consumer
+        // (the Nucleus loop) wants points — AWT's `preciseWheelRotation` is
+        // `scrollingDelta / 10` with no display scale (Nucleus #653) — and
+        // converting back with a second, independently cached scale can
+        // disagree with this one for a frame during a display hop.
+        MouseScrollDelta::PixelDelta(PhysicalPosition::new(x, y))
       } else {
         MouseScrollDelta::LineDelta(x as f32, y as f32)
       }

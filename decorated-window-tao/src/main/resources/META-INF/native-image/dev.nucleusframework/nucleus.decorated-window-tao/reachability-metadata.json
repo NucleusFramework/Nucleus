@@ -353,7 +353,7 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
-                { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
                 { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
             ]
         },
@@ -409,7 +409,7 @@
             "jniAccessible": true,
             "methods": [
                 { "name": "onPointerEvent", "parameterTypes": ["int","float","float","int","int"] },
-                { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean"] },
+                { "name": "onScroll",       "parameterTypes": ["float","float","float","float","boolean","int"] },
                 { "name": "onKeyEvent",     "parameterTypes": ["int","int","int","int"] }
             ]
         },

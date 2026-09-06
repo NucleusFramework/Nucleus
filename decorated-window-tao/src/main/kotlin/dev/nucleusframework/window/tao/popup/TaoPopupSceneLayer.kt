@@ -21,7 +21,6 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
 import dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent
-import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
@@ -32,6 +31,7 @@ import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
 import dev.nucleusframework.window.tao.scene.TaoRecordedSurface
 import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.TaoSceneScrollRouter
 import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
 import dev.nucleusframework.window.tao.scene.catchExceptions
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
@@ -230,6 +230,17 @@ internal class TaoPopupSceneLayer(
 
     private val innerScene: ComposeScene get() = sceneBundle.scene
 
+    // Wheel → Scroll, trackpad gesture → Pan, same as the window host (#654).
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene get() = innerScene
+                override val scale: Float get() = this@TaoPopupSceneLayer.scale
+
+                override fun guard(block: () -> Unit) = host.exceptionHandler.catchExceptions(block)
+            },
+        )
+
     private var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onKeyEvent: ((KeyEvent) -> Boolean)? = null
     private var onOutsidePointerEvent: ((PointerEventType, PointerButton?) -> Unit)? = null
@@ -276,12 +287,9 @@ internal class TaoPopupSceneLayer(
             dx: Float,
             dy: Float,
             precise: Boolean,
+            gesturePhase: Int,
         ) = host.exceptionHandler.catchExceptions {
-            innerScene.dispatchAwtShapedScroll(
-                x,
-                y,
-                appKitWheelToAwtScrollEvent(dx, dy, precise),
-            )
+            scrollRouter.onScroll(x, y, appKitWheelToAwtScrollEvent(dx, dy, precise, gesturePhase))
         }
 
         override fun onKeyEvent(
@@ -407,6 +415,7 @@ internal class TaoPopupSceneLayer(
         // AppKit event doesn't deref a half-disposed scene.
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panelHandle)
         PopupNativeBridge.nativeSetEventCallback(panelHandle, null)
+        scrollRouter.cancel()
         host.setCursor(TaoCursorIcon.DEFAULT)
         sceneBundle.close()
         // Close the Skia context on its owning render thread. close() runs in

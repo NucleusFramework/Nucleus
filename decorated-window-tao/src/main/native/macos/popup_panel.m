@@ -49,7 +49,7 @@
 static JavaVM *sJVM = NULL;
 static jclass sCallbackClass = NULL;          // global ref to the Java callback interface
 static jmethodID sOnPointerMethod = NULL;     // (IFFII)V — type, x, y, button, modifiers
-static jmethodID sOnScrollMethod = NULL;      // (FFFFZ)V — x, y, dx, dy, precise
+static jmethodID sOnScrollMethod = NULL;      // (FFFFZI)V — x, y, dx, dy, precise, gesturePhase
 static jmethodID sOnKeyMethod = NULL;         // (IIII)V  — type, vkCode, codePoint, modifiers
 static jclass sOutsideListenerClass = NULL;
 static jmethodID sOutsideOnClickMethod = NULL; // (II)V  — eventType, button
@@ -70,7 +70,7 @@ static void ensureCallbackCache(JNIEnv *env, jobject cbSample, jobject outsideSa
             sCallbackClass = (*env)->NewGlobalRef(env, local);
             (*env)->DeleteLocalRef(env, local);
             sOnPointerMethod = (*env)->GetMethodID(env, sCallbackClass, "onPointerEvent", "(IFFII)V");
-            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZ)V");
+            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZI)V");
             sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIII)V");
         }
     }
@@ -275,6 +275,30 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
 - (void)rightMouseDown:(NSEvent *)event  { [self maybeBecomeKey:event]; [self dispatchPointer:event type:EVT_PTR_DOWN button:2]; }
 - (void)rightMouseUp:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_UP   button:2]; }
 
+/* Trackpad gesture phase of a scroll event, encoded like the vendored tao's
+ * `ScrollPhase` -> Kotlin `TaoScrollGesturePhase` (events.rs SCROLL_GESTURE_*),
+ * so a popup routes a two-finger swipe exactly like the window behind it (#654).
+ * AppKit sets `phase` for the fingers-on-glass part and `momentumPhase` for the
+ * inertial tail, never both; a wheel notch has neither (-1 = NONE). */
+static jint scrollGesturePhase(NSEvent *event) {
+    switch (event.phase) {
+        case NSEventPhaseMayBegin:   return 7;
+        case NSEventPhaseBegan:      return 0;
+        case NSEventPhaseChanged:
+        case NSEventPhaseStationary: return 1;
+        case NSEventPhaseEnded:      return 2;
+        case NSEventPhaseCancelled:  return 3;
+        default: break;
+    }
+    switch (event.momentumPhase) {
+        case NSEventPhaseBegan:      return 4;
+        case NSEventPhaseChanged:    return 5;
+        case NSEventPhaseEnded:
+        case NSEventPhaseCancelled:  return 6;
+        default:                     return -1;
+    }
+}
+
 - (void)scrollWheel:(NSEvent *)event {
     jobject cb = [self takeCallbackOrNil];
     if (cb == NULL) { [super scrollWheel:event]; return; }
@@ -284,7 +308,8 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY,
-        event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE);
+        event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE,
+        scrollGesturePhase(event));
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 

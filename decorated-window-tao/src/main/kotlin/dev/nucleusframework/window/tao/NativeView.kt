@@ -275,15 +275,15 @@ private fun Modifier.nativeViewPointerInterop(
                             )
                             true
                         }
-                        PointerEventType.PanStart,
-                        PointerEventType.PanMove,
-                        PointerEventType.PanEnd,
-                        -> {
+                        PointerEventType.PanMove -> {
                             // Trackpad pan (#654), handed over in AWT wheel
-                            // units: panOffset is 10 dp per unit (see the
-                            // scene host), so the native view keeps scrolling
-                            // under a two-finger swipe exactly like under a
-                            // wheel.
+                            // units: panOffset is 10 dp per unit (see
+                            // TaoSceneScrollRouter), so the native view keeps
+                            // scrolling under a two-finger swipe exactly like
+                            // under a wheel. PanStart / PanEnd carry no offset
+                            // and are not forwarded: the native side replays
+                            // `NSApp.currentEvent`, and for the deferred PanEnd
+                            // that is an unrelated, stale event.
                             val unitPx = AWT_PIXEL_TO_ROTATION * density
                             host.dispatchScrollToNative(
                                 handle,

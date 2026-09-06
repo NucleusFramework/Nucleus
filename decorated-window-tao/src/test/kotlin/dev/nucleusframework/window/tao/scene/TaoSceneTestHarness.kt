@@ -284,6 +284,26 @@ internal class TaoSceneTestScope(
     private var isPressed = false
     private var modifierState = 0
 
+    // The deferred PanEnd of the scroll routers, fired by hand (see elapsePanGrace).
+    private var pendingPanEnd: (() -> Unit)? = null
+
+    private val scrollTarget =
+        object : TaoSceneScrollRouter.Target {
+            override val scene: ComposeScene get() = this@TaoSceneTestScope.scene
+            override val scale: Float get() = density
+        }
+
+    private fun manualSchedule(
+        @Suppress("UNUSED_PARAMETER") delayMillis: Long,
+        action: () -> Unit,
+    ): () -> Unit {
+        pendingPanEnd = action
+        return { if (pendingPanEnd === action) pendingPanEnd = null }
+    }
+
+    private val scrollRouter = TaoSceneScrollRouter(scrollTarget, ::manualSchedule, panEnabled = true)
+    private val legacyScrollRouter = TaoSceneScrollRouter(scrollTarget, ::manualSchedule, panEnabled = false)
+
     var lastPicture: Picture? = null
         private set
 
@@ -440,6 +460,29 @@ internal class TaoSceneTestScope(
             type = PointerType.Mouse,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
+        frame()
+    }
+
+    /**
+     * Full production scroll routing (`TaoSceneScrollRouter`, as the macOS
+     * hosts call it from `onPointerScroll` / popup `onScroll`): wheel notches
+     * become Scroll, trackpad gesture steps become Pan — or Scroll too when
+     * [panEvents] is false, mirroring `-Dnucleus.tao.trackpadPanEvents=false`.
+     */
+    fun routeScroll(
+        event: TaoPointerScrollEvent,
+        panEvents: Boolean = true,
+    ) {
+        val router = if (panEvents) scrollRouter else legacyScrollRouter
+        router.onScroll(pointerDeadband.x, pointerDeadband.y, event, taoKeyboardModifiers(modifierState))
+        frame()
+    }
+
+    /** Fires the deferred PanEnd the momentum grace timer would. */
+    fun elapsePanGrace() {
+        val action = pendingPanEnd ?: return
+        pendingPanEnd = null
+        action()
         frame()
     }
 

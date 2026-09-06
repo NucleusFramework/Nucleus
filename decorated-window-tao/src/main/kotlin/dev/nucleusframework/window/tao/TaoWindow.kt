@@ -5,6 +5,8 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -1097,15 +1099,26 @@ public class TaoWindow internal constructor(
         dxFixed: Int,
         dyFixed: Int,
     ) {
-        pointerScrollListener?.invoke(
-            TaoPointerScrollEvent(
-                dxAwt = -(dxFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
-                dyAwt = -(dyFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
-                scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
-                gesturePhase = phase,
-            ),
-        )
+        pointerScrollListener?.invoke(preciseScrollEvent(dxFixed, dyFixed, gesturePhase = phase))
     }
+
+    /**
+     * AWT's macOS NSEvent → MouseWheelEvent conversion: `preciseWheelRotation
+     * = -scrollingDelta / 10`, no display scale (#652 / #653). The wire carries
+     * LOGICAL AppKit points × [SCROLL_FIXED_SCALE]; tao (and AppKit) count
+     * positive as "content moves down / right", AWT as "scroll down / right",
+     * hence the negation on both axes.
+     */
+    private fun preciseScrollEvent(
+        dxFixed: Int,
+        dyFixed: Int,
+        gesturePhase: Int,
+    ) = TaoPointerScrollEvent(
+        dxAwt = -(dxFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
+        dyAwt = -(dyFixed / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION,
+        scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
+        gesturePhase = gesturePhase,
+    )
 
     internal fun dispatchKey(
         type: Int,
@@ -1247,19 +1260,10 @@ public class TaoWindow internal constructor(
                 )
             }
             TaoEventCode.SCROLL_PIXEL -> {
-                // The loop hands over LOGICAL points (AppKit scrollingDelta*,
-                // never physical pixels — AWT applies no display scale, #653).
-                // AWT's macOS NSEvent → MouseWheelEvent conversion divides
-                // scrollingDelta by 10 to obtain preciseWheelRotation; we mirror
-                // it. Negate as above for the AWT sign convention (#652).
-                val dx = -(a / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION
-                val dy = -(b / SCROLL_FIXED_SCALE) / AWT_PIXEL_TO_ROTATION
+                // Precise scroll outside a gesture (smooth-scroll mice); see
+                // [preciseScrollEvent] for the AWT shaping.
                 pointerScrollListener?.invoke(
-                    TaoPointerScrollEvent(
-                        dxAwt = dx,
-                        dyAwt = dy,
-                        scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
-                    ),
+                    preciseScrollEvent(a, b, gesturePhase = TaoScrollGesturePhase.NONE),
                 )
             }
             // KEY_DOWN / KEY_UP: routed in Phase 2b (no logical-key encoding yet)
@@ -1269,8 +1273,6 @@ public class TaoWindow internal constructor(
     private companion object {
         const val SCROLL_FIXED_SCALE: Float = 100f
         const val LINUX_AWT_SCROLL_AMOUNT_DEFAULT: Int = 3
-        const val MACOS_AWT_SCROLL_AMOUNT: Int = 1
-        const val AWT_PIXEL_TO_ROTATION: Float = 10f
         const val WINDOWS_TOUCH_DRAG_THRESHOLD_PX: Int = 16
 
         val platformLineScrollAmount: Int

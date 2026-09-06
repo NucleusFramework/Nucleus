@@ -144,6 +144,9 @@ public object TaoSceneTestBattery {
         run("MacOsWheelDeltaTest: preciseDeltaCarriesMacOsScrollAmount") {
             MacOsWheelDeltaTest().preciseDeltaCarriesMacOsScrollAmount()
         }
+        run("MacOsWheelDeltaTest: gesturePhaseRidesAlongForPreciseEventsOnly") {
+            MacOsWheelDeltaTest().gesturePhaseRidesAlongForPreciseEventsOnly()
+        }
         run("StandaloneFramePumpTest: scheduleOnMainRunsInline") {
             StandaloneFramePumpTest().scheduleOnMainRunsInline()
         }
@@ -197,6 +200,9 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadPanRouterTest: swipe without momentum ends after the grace period") {
             TaoTrackpadPanRouterTest().`swipe without momentum ends after the grace period`()
+        }
+        run("TaoTrackpadPanRouterTest: terminal steps carrying a delta still pan when no gesture is open") {
+            TaoTrackpadPanRouterTest().`terminal steps carrying a delta still pan when no gesture is open`()
         }
         run("TaoTrackpadPanRouterTest: momentum tail continues the pan and ends it once") {
             TaoTrackpadPanRouterTest().`momentum tail continues the pan and ends it once`()
@@ -388,6 +394,12 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneTrackpadPanTest: pan moves content by its pixel offset") {
             TaoSceneTrackpadPanTest().`pan moves content by its pixel offset`()
+        }
+        run("TaoSceneTrackpadPanTest: routed gesture steps pan a column and close after the grace") {
+            TaoSceneTrackpadPanTest().`routed gesture steps pan a column and close after the grace`()
+        }
+        run("TaoSceneTrackpadPanTest: with pan events disabled gesture steps scroll as wheel events") {
+            TaoSceneTrackpadPanTest().`with pan events disabled gesture steps scroll as wheel events`()
         }
         run("TaoScenePopupTest: popup renders above the window content") {
             TaoScenePopupTest().`popup renders above the window content`()

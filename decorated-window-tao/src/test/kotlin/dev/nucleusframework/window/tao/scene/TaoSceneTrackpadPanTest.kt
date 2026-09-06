@@ -16,8 +16,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -106,6 +110,86 @@ class TaoSceneTrackpadPanTest {
             pan(PointerEventType.PanEnd, Offset.Zero)
             frameUntilIdle()
             assertEquals(BLUE, pixelAt(50, 50), "after a 100 px pan the blue block must fill the viewport")
+        }
+
+    @Test
+    fun `routed gesture steps pan a column and close after the grace`() =
+        runTaoSceneTest(width = 100, height = 200) {
+            val scrollValue = mutableStateOf(0)
+            val seen = mutableListOf<PointerEventType>()
+            setContent {
+                val state = rememberScrollState()
+                scrollValue.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state).recording(seen)) {
+                    repeat(50) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            moveMouse(50f, 100f)
+            // Fingers up (AppKit -10 pt → AWT +1) three times, then lift.
+            routeScroll(gestureStep(TaoScrollGesturePhase.BEGAN, dyAwt = 0f))
+            repeat(3) { routeScroll(gestureStep(TaoScrollGesturePhase.CHANGED, dyAwt = 1f)) }
+            routeScroll(gestureStep(TaoScrollGesturePhase.ENDED, dyAwt = 0f))
+            frameUntilIdle()
+            assertTrue(scrollValue.value > 0, "routed pan must scroll the column (got ${scrollValue.value})")
+            assertEquals(
+                listOf(
+                    PointerEventType.PanStart,
+                    PointerEventType.PanMove,
+                    PointerEventType.PanMove,
+                    PointerEventType.PanMove,
+                ),
+                seen.toList(),
+                "a gesture must reach Compose as Pan, never as Scroll",
+            )
+            elapsePanGrace()
+            assertEquals(PointerEventType.PanEnd, seen.last(), "the deferred PanEnd must close the gesture")
+        }
+
+    @Test
+    fun `with pan events disabled gesture steps scroll as wheel events`() =
+        runTaoSceneTest(width = 100, height = 200) {
+            val scrollValue = mutableStateOf(0)
+            val seen = mutableListOf<PointerEventType>()
+            setContent {
+                val state = rememberScrollState()
+                scrollValue.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state).recording(seen)) {
+                    repeat(50) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            moveMouse(50f, 100f)
+            routeScroll(gestureStep(TaoScrollGesturePhase.BEGAN, dyAwt = 0f), panEvents = false)
+            repeat(3) { routeScroll(gestureStep(TaoScrollGesturePhase.CHANGED, dyAwt = 1f), panEvents = false) }
+            routeScroll(gestureStep(TaoScrollGesturePhase.ENDED, dyAwt = 0f), panEvents = false)
+            frameUntilIdle()
+            assertTrue(scrollValue.value > 0, "legacy routing must still scroll the column (got ${scrollValue.value})")
+            assertTrue(
+                seen.isNotEmpty() && seen.all { it == PointerEventType.Scroll },
+                "expected Scroll only, got $seen",
+            )
+        }
+
+    private fun gestureStep(
+        phase: Int,
+        dyAwt: Float,
+    ) = TaoPointerScrollEvent(dxAwt = 0f, dyAwt = dyAwt, scrollAmount = 1, gesturePhase = phase)
+
+    /** Records Scroll / Pan event types seen on the Initial pass, without consuming. */
+    private fun Modifier.recording(seen: MutableList<PointerEventType>): Modifier =
+        pointerInput(seen) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    when (event.type) {
+                        PointerEventType.Scroll,
+                        PointerEventType.PanStart,
+                        PointerEventType.PanMove,
+                        PointerEventType.PanEnd,
+                        -> seen += event.type
+                        else -> Unit
+                    }
+                }
+            }
         }
 
     private companion object {

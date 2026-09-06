@@ -835,25 +835,14 @@ pub(crate) fn run_event_loop_blocking() {
                         // `preciseWheelRotation` semantics so Compose's
                         // `MacOSCocoaConfig` can apply its standard
                         // `× 10dp × -scrollAmount` formula. AWT never scales
-                        // by the display factor, so tao's physical `PixelDelta`
-                        // goes back to logical points first (#653).
+                        // by the display factor, so the vendored tao hands
+                        // `PixelDelta` over in LOGICAL points (patch 0007,
+                        // #653) — nothing to undo here.
                         let (code, dx, dy) = match delta {
                             MouseScrollDelta::LineDelta(x, y) => {
                                 (EVENT_SCROLL_LINE, x as f64, y as f64)
                             }
-                            MouseScrollDelta::PixelDelta(p) => {
-                                let scale = WINDOWS
-                                    .lock()
-                                    .ok()
-                                    .and_then(|guard| {
-                                        guard.as_ref().and_then(|map| {
-                                            map.get(&handle).map(|w| w.scale_factor())
-                                        })
-                                    })
-                                    .unwrap_or(1.0);
-                                let logical = p.to_logical::<f64>(scale);
-                                (EVENT_SCROLL_PIXEL, logical.x, logical.y)
-                            }
+                            MouseScrollDelta::PixelDelta(p) => (EVENT_SCROLL_PIXEL, p.x, p.y),
                             _ => return,
                         };
                         let dx_fixed = (dx * SCROLL_FIXED_SCALE) as jint;

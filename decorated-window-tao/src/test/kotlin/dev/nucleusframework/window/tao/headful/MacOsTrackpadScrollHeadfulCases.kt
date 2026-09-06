@@ -73,6 +73,7 @@ internal object MacOsTrackpadScrollHeadfulCases {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("row has overflow") { scrollMax.get() > 0 }
             settle()
+            recorder.reset()
             swipe(dx = -SWIPE_DELTA_PT, dy = 0f, steps = SWIPE_STEPS, momentum = false)
             waitFor(SCROLL_REACTION_MILLIS) { scrollPx.get() != 0 }
             check(scrollPx.get() > 0) {
@@ -108,9 +109,13 @@ internal object MacOsTrackpadScrollHeadfulCases {
             // The doubling only shows on a HiDPI display: flip the screen to
             // its 2x twin for the duration of the case when the window sits on
             // a 1x display (same trick as the #507 probe), else run as-is.
+            // Decided before the try so the finally restores the mode even
+            // when the window never reports the new scale.
             val baseScale = window.scaleFactor
-            val switched = baseScale < HIDPI && switchDisplayTo2x()
+            val switched = baseScale < HIDPI && hiDpiSwitchAvailable()
             try {
+                if (switched) switchDisplayTo2x()
+                recorder.reset()
                 val scale = window.scaleFactor
                 System.err.println("[probe] window scale factor = $scale (switched to HiDPI: $switched)")
 
@@ -138,21 +143,22 @@ internal object MacOsTrackpadScrollHeadfulCases {
     }
 
     /**
-     * Flips the main display to the HiDPI twin of its current mode and waits
-     * for the window to report the new backing scale. `false` (and a log line)
-     * when the helper or a twin mode is unavailable — the case then runs at
-     * the current scale, which still checks the sign.
+     * Whether the main display can be flipped to the HiDPI twin of its current
+     * mode. `false` (and a log line) when the helper or a twin mode is
+     * unavailable — the case then runs at the current scale, which still
+     * checks the sign.
      */
-    private suspend fun TaoWindowTestScope.switchDisplayTo2x(): Boolean {
-        val unavailable = MacDisplayModeTool.unavailableReason()
-        if (unavailable != null) {
-            System.err.println("[probe] HiDPI switch unavailable: $unavailable")
-            return false
-        }
+    private fun hiDpiSwitchAvailable(): Boolean {
+        val unavailable = MacDisplayModeTool.unavailableReason() ?: return true
+        System.err.println("[probe] HiDPI switch unavailable: $unavailable")
+        return false
+    }
+
+    /** Flips the display and waits for the window to report the new backing scale. */
+    private suspend fun TaoWindowTestScope.switchDisplayTo2x() {
         System.err.println("[probe] setmode 2x -> ${MacDisplayModeTool.run("2x")}")
         awaitUntil("window reports a HiDPI backing scale") { window.scaleFactor >= HIDPI }
         settle(DISPLAY_SETTLE_MILLIS)
-        return true
     }
 
     private suspend fun TaoWindowTestScope.restoreDisplayTo1x(baseScale: Float) {
@@ -184,6 +190,7 @@ internal object MacOsTrackpadScrollHeadfulCases {
             settle()
             val scale = window.scaleFactor
 
+            recorder.reset()
             swipe(dx = 0f, dy = -SWIPE_DELTA_PT, steps = SWIPE_STEPS, momentum = true)
             waitFor(PAN_END_MILLIS) { recorder.count(PointerEventType.PanEnd) >= 1 }
             val gesture = recorder.snapshot()
@@ -252,6 +259,7 @@ internal object MacOsTrackpadScrollHeadfulCases {
             awaitUntil("window mapped") { bounds() != null }
             awaitUntil("column has overflow") { scrollMax.get() > 0 }
             settle()
+            recorder.reset()
             swipe(dx = 0f, dy = -SWIPE_DELTA_PT, steps = SWIPE_STEPS, momentum = false)
             waitFor(SCROLL_REACTION_MILLIS) { scrollPx.get() > 0 }
             check(scrollPx.get() > 0) {
@@ -351,6 +359,9 @@ internal object MacOsTrackpadScrollHeadfulCases {
         }
 
         fun snapshot(): List<Recorded> = synchronized(events) { events.toList() }
+
+        /** Cases share their recorder with the registry; start each run clean. */
+        fun reset() = events.clear()
 
         fun count(type: PointerEventType): Int = snapshot().count { it.type == type }
 

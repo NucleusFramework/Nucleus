@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao.event
 
+import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -50,6 +51,23 @@ class MacOsWheelDeltaTest {
         assertEquals(0f, event.dxAwt, absoluteTolerance = 0f)
         assertEquals(-1f, event.dyAwt, absoluteTolerance = 0f)
         assertEquals(MACOS_AWT_SCROLL_AMOUNT, event.scrollAmount)
+    }
+
+    @Test
+    fun gesturePhaseRidesAlongForPreciseEventsOnly() {
+        // Popups forward the AppKit phase; a wheel notch can never be a gesture step.
+        val step =
+            appKitWheelToAwtScrollEvent(
+                dx = 0f,
+                dy = -10f,
+                precise = true,
+                gesturePhase = TaoScrollGesturePhase.CHANGED,
+            )
+        assertEquals(TaoScrollGesturePhase.CHANGED, step.gesturePhase)
+        assertEquals(1f, step.dyAwt, absoluteTolerance = 0f)
+        val notch =
+            appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false, gesturePhase = TaoScrollGesturePhase.CHANGED)
+        assertEquals(TaoScrollGesturePhase.NONE, notch.gesturePhase)
     }
 
     @Test

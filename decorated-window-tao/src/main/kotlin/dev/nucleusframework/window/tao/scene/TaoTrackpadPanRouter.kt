@@ -16,10 +16,14 @@ import dev.nucleusframework.window.tao.TaoScrollGesturePhase
  * therefore kept open across the momentum tail and closed on `MomentumEnded`.
  * AppKit does not say in advance whether a tail will follow, so the finger
  * `Ended` only *schedules* the `PanEnd` and a momentum event arriving within
- * [MOMENTUM_GRACE_MILLIS] cancels it. By the time the pan really ends the
- * tracked velocity is ~0 and Compose adds no fling of its own — the platform
- * drives the inertia, exactly as under AWT where every step is a plain wheel
- * event.
+ * [graceMillis] cancels it. By the time the pan really ends the tracked
+ * velocity is ~0 and Compose adds no fling of its own — the platform drives
+ * the inertia, exactly as under AWT where every step is a plain wheel event.
+ *
+ * A terminal step (`Ended`, `Cancelled`, `MomentumEnded`) that still carries a
+ * delta is delivered even when no pan is open — AppKit's `Ended` can hold the
+ * last finger movement, and a `Began` may have been missed (window became key
+ * mid-gesture) — so no scroll distance is ever dropped.
  *
  * [send] receives the pan offset in AWT `preciseWheelRotation` units (the
  * shape of [dev.nucleusframework.window.tao.TaoPointerScrollEvent.dxAwt]); the
@@ -29,12 +33,10 @@ import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 internal class TaoTrackpadPanRouter(
     private val schedule: (delayMillis: Long, action: () -> Unit) -> (() -> Unit),
     private val send: (type: PointerEventType, panAwt: Offset) -> Unit,
+    private val graceMillis: Long = momentumGraceMillis,
 ) {
     private var active = false
     private var cancelPendingEnd: (() -> Unit)? = null
-
-    /** True between `PanStart` and `PanEnd` (including a pending deferred end). */
-    val isPanning: Boolean get() = active
 
     fun onGesture(
         phase: Int,
@@ -54,11 +56,11 @@ internal class TaoTrackpadPanRouter(
                 move(deltaAwt)
             }
             TaoScrollGesturePhase.ENDED -> {
-                if (!active) return
                 move(deltaAwt)
+                if (!active) return
                 clearPendingEnd()
                 cancelPendingEnd =
-                    schedule(MOMENTUM_GRACE_MILLIS) {
+                    schedule(graceMillis) {
                         cancelPendingEnd = null
                         finish()
                     }
@@ -66,7 +68,6 @@ internal class TaoTrackpadPanRouter(
             TaoScrollGesturePhase.CANCELLED,
             TaoScrollGesturePhase.MOMENTUM_ENDED,
             -> {
-                if (!active) return
                 move(deltaAwt)
                 finish()
             }
@@ -87,11 +88,14 @@ internal class TaoTrackpadPanRouter(
         send(PointerEventType.PanStart, Offset.Zero)
     }
 
+    /** Opens the pan if needed and moves it; a zero delta is not a move. */
     private fun move(deltaAwt: Offset) {
         // Float compares, not `!= Offset.Zero`: the wire negation turns a
         // zero delta (Began / Ended steps) into -0.0, whose packed bits differ
         // from +0.0 and would leak zero-offset PanMoves into Compose.
-        if (deltaAwt.x != 0f || deltaAwt.y != 0f) send(PointerEventType.PanMove, deltaAwt)
+        if (deltaAwt.x == 0f && deltaAwt.y == 0f) return
+        start()
+        send(PointerEventType.PanMove, deltaAwt)
     }
 
     private fun finish() {
@@ -108,9 +112,20 @@ internal class TaoTrackpadPanRouter(
 
     internal companion object {
         /**
-         * AppKit posts the first momentum event within a frame or two of the
-         * finger `Ended`; anything past this is a swipe with no inertia.
+         * How long a finger `Ended` waits for AppKit's momentum tail before the
+         * pan is closed. AppKit posts the first momentum event within a frame
+         * or two; the default leaves ample room and costs nothing for a swipe
+         * without inertia (its fling velocity is ~0 anyway). Override with
+         * `-Dnucleus.tao.trackpadMomentumGraceMillis=<ms>` if a machine ever
+         * shows a stacked fling at the end of a flick.
          */
-        const val MOMENTUM_GRACE_MILLIS: Long = 100L
+        const val DEFAULT_MOMENTUM_GRACE_MILLIS: Long = 150L
+
+        val momentumGraceMillis: Long =
+            System
+                .getProperty("nucleus.tao.trackpadMomentumGraceMillis")
+                ?.toLongOrNull()
+                ?.takeIf { it >= 0 }
+                ?: DEFAULT_MOMENTUM_GRACE_MILLIS
     }
 }
