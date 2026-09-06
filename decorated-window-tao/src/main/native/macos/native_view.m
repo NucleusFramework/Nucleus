@@ -458,22 +458,45 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
 }
 
 /* Phase of a Compose scroll handed to the native view — mirrors Kotlin
- * `TaoNativeViewHost.SCROLL_WHEEL / PAN_START / PAN_MOVE / PAN_END`. */
+ * `TaoNativeViewHost.SCROLL_WHEEL / PAN_START / PAN_MOVE / PAN_END`
+ * (TaoScrollWireDriftTest keeps the two in step). */
 enum { kNvScrollWheel = 0, kNvPanStart = 1, kNvPanMove = 2, kNvPanEnd = 3 };
 
-/* Is `event` the live AppKit scroll event this Compose step came from? A
- * wheel step matches any scrollWheel event (previous behaviour); a pan step
- * must match its phase class, because a PanEnd deferred by the pan router's
- * grace timer runs long after AppKit moved on to some unrelated event. */
+/* Compose/AWT wheel unit → AppKit points (TaoSceneScrollRouter, MacOSCocoaConfig). */
+static const float kAwtPixelToRotation = 10.f;
+
+/* The AppKit scroll event most recently handed to a native child, so no
+ * event is ever delivered twice: NSApp.currentEvent is not cleared between
+ * events, so an idle app still reports the gesture's last event when the pan
+ * router's deferred PanEnd fires 150 ms later — and one AppKit event can
+ * yield two Compose steps (a Began carrying a delta is PanStart + PanMove).
+ * Identity is the unretained pointer plus the timestamp. */
+static __unsafe_unretained NSEvent *sConsumedScroll = nil;
+static NSTimeInterval sConsumedScrollTs = -1;
+static BOOL sConsumedScrollTerminal = NO;
+
+/* Sub-point residue of the synthesised fallback, per target view: CGEvent
+ * deltas are whole points and a slow two-finger drag yields < 0.5 pt per
+ * frame, which rounding alone would zero out step after step. */
+static __unsafe_unretained NSView *sResidueView = nil;
+static float sResidueX = 0.f, sResidueY = 0.f;
+
+static BOOL nvIsTerminal(NSEvent *e) {
+    return (e.phase & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0
+        || (e.momentumPhase & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0;
+}
+
+/* Does the live AppKit scroll event belong to the phase class of this Compose
+ * step? A wheel step accepts any scroll event; a pan step must match, so a
+ * step derived from an event of another class (an Ended that carries the
+ * last finger delta becomes a PanMove) is synthesised with its own phase. */
 static BOOL nvScrollEventMatches(NSEvent *event, jint phase) {
-    if (event == nil || event.type != NSEventTypeScrollWheel) return NO;
     NSEventPhase p = event.phase, m = event.momentumPhase;
     switch (phase) {
         case kNvPanStart: return (p & (NSEventPhaseBegan | NSEventPhaseMayBegin)) != 0;
         case kNvPanMove:  return (p & (NSEventPhaseChanged | NSEventPhaseStationary)) != 0
                               || (m & (NSEventPhaseBegan | NSEventPhaseChanged)) != 0;
-        case kNvPanEnd:   return (p & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0
-                              || (m & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0;
+        case kNvPanEnd:   return nvIsTerminal(event);
         default:          return YES;
     }
 }
@@ -491,27 +514,52 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     NSPoint windowPoint = window_point_from_compose_px(content, xPx, yPx);
     NSView *hit = hit_native_child(child, windowPoint);
     if (hit == nil) return;
-    // Prefer the original AppKit event: same sign, precise-pixel flag,
-    // gesture / momentum phase. The pan router dispatches each step on the
-    // same turn as the scrollWheel that produced it, so currentEvent is
-    // still that event — except for the deferred PanEnd, caught by the
-    // phase check below.
+
     NSEvent *current = NSApp.currentEvent;
-    if (nvScrollEventMatches(current, phase)) {
-        [hit scrollWheel:current];
-        return;
+    BOOL isScroll = current != nil && current.type == NSEventTypeScrollWheel;
+    BOOL consumed = isScroll && current == sConsumedScroll && current.timestamp == sConsumedScrollTs;
+    if (isScroll && !consumed) {
+        // Fresh AppKit event — the source of this Compose step. Replay it
+        // whole when its phase class matches (sign, precision and phase come
+        // for free) and mark it delivered either way, so a second Compose
+        // step from the same event, or the deferred PanEnd, never applies
+        // its delta again.
+        sConsumedScroll = current;
+        sConsumedScrollTs = current.timestamp;
+        if (nvScrollEventMatches(current, phase)) {
+            sConsumedScrollTerminal = nvIsTerminal(current);
+            [hit scrollWheel:current];
+            return;
+        }
+        sConsumedScrollTerminal = NO;
+    } else if (consumed) {
+        // Already delivered in full. Only a PanEnd still owes the child its
+        // terminal phase, and only if what it got was not terminal already.
+        if (phase != kNvPanEnd || sConsumedScrollTerminal) return;
+        dx = 0.f;
+        dy = 0.f;
+        sConsumedScrollTerminal = YES;
     }
+
     // Fallback: Compose/AWT scrollDelta is the inverse of AppKit
     // `scrollingDelta` on both axes (TaoWindow.kt SCROLL_PIXEL/LINE, #652)
-    // and precise deltas are divided by 10. Reconstruct AppKit points:
-    // native = -awt * 10 for X and Y alike, and give a pan step the phase
-    // the native scroll view expects (IOHID encoding, see popup_panel.m /
-    // NucleusTaoMetal.m: 1 began, 2 changed, 4 ended).
-    const float kAwtPixelToRotation = 10.f;
-    CGEventRef cg = CGEventCreateScrollWheelEvent(
-        NULL, kCGScrollEventUnitPixel, 2,
-        (int32_t)lroundf(-dy * kAwtPixelToRotation),
-        (int32_t)lroundf(-dx * kAwtPixelToRotation));
+    // and precise deltas are divided by 10. Reconstruct AppKit points —
+    // native = -awt * 10 for X and Y alike — carrying the sub-point residue
+    // forward, and give a pan step the phase the native scroll view expects
+    // (IOHID encoding, see popup_panel.m / NucleusTaoMetal.m: 1 began,
+    // 2 changed, 4 ended).
+    if (hit != sResidueView) {
+        sResidueView = hit;
+        sResidueX = 0.f;
+        sResidueY = 0.f;
+    }
+    float px = -dx * kAwtPixelToRotation + sResidueX;
+    float py = -dy * kAwtPixelToRotation + sResidueY;
+    int32_t ix = (int32_t)lroundf(px), iy = (int32_t)lroundf(py);
+    sResidueX = px - (float)ix;
+    sResidueY = py - (float)iy;
+    if (ix == 0 && iy == 0 && phase == kNvPanMove) return; // not a whole point yet
+    CGEventRef cg = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitPixel, 2, iy, ix);
     if (cg == NULL) return;
     switch (phase) {
         case kNvPanStart: CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, 1); break;

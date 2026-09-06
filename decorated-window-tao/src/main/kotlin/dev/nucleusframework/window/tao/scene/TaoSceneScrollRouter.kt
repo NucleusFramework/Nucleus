@@ -7,6 +7,7 @@ import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.scene.ComposeScene
 import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
@@ -105,17 +106,30 @@ internal class TaoSceneScrollRouter(
         if (cancelled) return
         val phase = event.gesturePhase
         if (panEnabled && phase != null) {
-            this.x = x
-            this.y = y
-            this.keyboardModifiers = keyboardModifiers
-            if (panAnnounced.compareAndSet(false, true)) {
+            // MayBegin belongs to the NEXT gesture: it closes the previous pan,
+            // whose PanEnd must land where that pan's moves went, so the
+            // position is not moved for it.
+            if (phase != TaoScrollGesturePhase.MAY_BEGIN) {
+                this.x = x
+                this.y = y
+                this.keyboardModifiers = keyboardModifiers
+            }
+            if (!panAnnounced.get() && panAnnounced.compareAndSet(false, true)) {
                 logger.config {
                     "Trackpad gestures reach Compose as Pan events (PanStart / PanMove / PanEnd); " +
                         "handlers listening only for PointerEventType.Scroll do not see them. " +
                         "-Dnucleus.tao.trackpadPanEvents=false restores AWT-style Scroll events."
                 }
             }
-            pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))
+            if (!pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))) {
+                // An orphaned momentum step (the grace closed the pan before
+                // AppKit's tail arrived): Compose is flinging on its own, so a
+                // second pan would stack on it — but dropping the tail would
+                // stop a flick dead. Deliver it as the wheel scroll it would
+                // have been under AWT; the wheel logic interrupts the fling
+                // and carries the distance.
+                target.scene?.dispatchAwtShapedScroll(x, y, event, keyboardModifiers)
+            }
         } else {
             // A different device took over: close the pan where it was.
             pan.finishNow()

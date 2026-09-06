@@ -284,8 +284,24 @@ internal class TaoSceneTestScope(
     private var isPressed = false
     private var modifierState = 0
 
-    // The deferred PanEnd of the scroll routers, fired by hand (see elapsePanGrace).
-    private var pendingPanEnd: (() -> Unit)? = null
+    /** A router's deferred PanEnd, fired by hand (see [elapsePanGrace]); one slot per router. */
+    private class ManualPanTimer {
+        private var pending: (() -> Unit)? = null
+
+        fun schedule(
+            @Suppress("UNUSED_PARAMETER") delayMillis: Long,
+            action: () -> Unit,
+        ): () -> Unit {
+            pending = action
+            return { if (pending === action) pending = null }
+        }
+
+        fun fire() {
+            val action = pending ?: return
+            pending = null
+            action()
+        }
+    }
 
     private val scrollTarget =
         object : TaoSceneScrollRouter.Target {
@@ -293,16 +309,10 @@ internal class TaoSceneTestScope(
             override val scale: Float get() = density
         }
 
-    private fun manualSchedule(
-        @Suppress("UNUSED_PARAMETER") delayMillis: Long,
-        action: () -> Unit,
-    ): () -> Unit {
-        pendingPanEnd = action
-        return { if (pendingPanEnd === action) pendingPanEnd = null }
-    }
-
-    private val scrollRouter = TaoSceneScrollRouter(scrollTarget, ::manualSchedule, panEnabled = true)
-    private val legacyScrollRouter = TaoSceneScrollRouter(scrollTarget, ::manualSchedule, panEnabled = false)
+    private val panTimer = ManualPanTimer()
+    private val legacyPanTimer = ManualPanTimer()
+    private val scrollRouter = TaoSceneScrollRouter(scrollTarget, panTimer::schedule, panEnabled = true)
+    private val legacyScrollRouter = TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false)
 
     var lastPicture: Picture? = null
         private set
@@ -483,11 +493,10 @@ internal class TaoSceneTestScope(
         frame()
     }
 
-    /** Fires the deferred PanEnd the momentum grace timer would. */
+    /** Fires the deferred PanEnd the momentum grace timer would, on both routers. */
     fun elapsePanGrace() {
-        val action = pendingPanEnd ?: return
-        pendingPanEnd = null
-        action()
+        panTimer.fire()
+        legacyPanTimer.fire()
         frame()
     }
 

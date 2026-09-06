@@ -210,8 +210,8 @@ public object TaoSceneTestBattery {
         run("TaoTrackpadPanRouterTest: momentum tail continues the pan and ends it once") {
             TaoTrackpadPanRouterTest().`momentum tail continues the pan and ends it once`()
         }
-        run("TaoTrackpadPanRouterTest: a momentum tail arriving after the pan closed is dropped") {
-            TaoTrackpadPanRouterTest().`a momentum tail arriving after the pan closed is dropped`()
+        run("TaoTrackpadPanRouterTest: a momentum tail arriving after the pan closed is handed back unhandled") {
+            TaoTrackpadPanRouterTest().`a momentum tail arriving after the pan closed is handed back unhandled`()
         }
         run("TaoTrackpadPanRouterTest: fingers resting on the glass during the tail close the pan at once") {
             TaoTrackpadPanRouterTest().`fingers resting on the glass during the tail close the pan at once`()
@@ -415,6 +415,12 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneTrackpadPanTest: with pan events disabled gesture steps scroll as wheel events") {
             TaoSceneTrackpadPanTest().`with pan events disabled gesture steps scroll as wheel events`()
+        }
+        run("TaoSceneTrackpadPanTest: an orphaned momentum tail scrolls as wheel events instead of stalling") {
+            TaoSceneTrackpadPanTest().`an orphaned momentum tail scrolls as wheel events instead of stalling`()
+        }
+        run("TaoSceneScrollTest: one wheel unit scrolls ten dp on macOS") {
+            TaoSceneScrollTest().`one wheel unit scrolls ten dp on macOS`()
         }
         run("TaoScenePopupTest: popup renders above the window content") {
             TaoScenePopupTest().`popup renders above the window content`()

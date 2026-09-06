@@ -292,24 +292,20 @@ typedef NS_ENUM(jint, NucleusScrollGesture) {
 };
 
 /* AppKit sets `phase` for the fingers-on-glass part and `momentumPhase` for the
- * inertial tail, never both; a wheel notch has neither. */
+ * inertial tail, never both; a wheel notch has neither. NSEventPhase is an
+ * NS_OPTIONS mask, so bits are tested rather than switched on. Same order as
+ * the vendored tao `scroll_wheel`. */
 static jint scrollGesturePhase(NSEvent *event) {
-    switch (event.phase) {
-        case NSEventPhaseMayBegin:   return NucleusScrollGestureMayBegin;
-        case NSEventPhaseBegan:      return NucleusScrollGestureBegan;
-        case NSEventPhaseChanged:
-        case NSEventPhaseStationary: return NucleusScrollGestureChanged;
-        case NSEventPhaseEnded:      return NucleusScrollGestureEnded;
-        case NSEventPhaseCancelled:  return NucleusScrollGestureCancelled;
-        default: break;
-    }
-    switch (event.momentumPhase) {
-        case NSEventPhaseBegan:      return NucleusScrollGestureMomentumBegan;
-        case NSEventPhaseChanged:    return NucleusScrollGestureMomentumChanged;
-        case NSEventPhaseEnded:
-        case NSEventPhaseCancelled:  return NucleusScrollGestureMomentumEnded;
-        default:                     return NucleusScrollGestureNone;
-    }
+    NSEventPhase p = event.phase, m = event.momentumPhase;
+    if (p & NSEventPhaseMayBegin)                            return NucleusScrollGestureMayBegin;
+    if (p & NSEventPhaseBegan)                               return NucleusScrollGestureBegan;
+    if (p & (NSEventPhaseChanged | NSEventPhaseStationary))  return NucleusScrollGestureChanged;
+    if (p & NSEventPhaseEnded)                               return NucleusScrollGestureEnded;
+    if (p & NSEventPhaseCancelled)                           return NucleusScrollGestureCancelled;
+    if (m & NSEventPhaseBegan)                               return NucleusScrollGestureMomentumBegan;
+    if (m & NSEventPhaseChanged)                             return NucleusScrollGestureMomentumChanged;
+    if (m & (NSEventPhaseEnded | NSEventPhaseCancelled))     return NucleusScrollGestureMomentumEnded;
+    return NucleusScrollGestureNone;
 }
 
 - (void)scrollWheel:(NSEvent *)event {

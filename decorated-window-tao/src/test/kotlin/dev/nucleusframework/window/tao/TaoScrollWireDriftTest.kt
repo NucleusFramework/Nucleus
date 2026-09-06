@@ -1,5 +1,6 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import java.io.File
 import java.lang.reflect.Method
@@ -56,7 +57,51 @@ class TaoScrollWireDriftTest {
         assertEquals(kotlinWire(), objc - "NONE", "popup_panel.m NucleusScrollGesture* vs TaoScrollGesturePhase.wire")
     }
 
+    @Test
+    fun `native_view m kNv codes match TaoNativeViewHost`() {
+        val objc =
+            NV_CODE
+                .findAll(nativeView().readText())
+                .associate { it.groupValues[1].toScreamingSnake() to it.groupValues[2].toInt() }
+        val kotlin =
+            mapOf(
+                "SCROLL_WHEEL" to TaoNativeViewHost.SCROLL_WHEEL,
+                "PAN_START" to TaoNativeViewHost.PAN_START,
+                "PAN_MOVE" to TaoNativeViewHost.PAN_MOVE,
+                "PAN_END" to TaoNativeViewHost.PAN_END,
+            )
+        assertEquals(kotlin, objc, "native_view.m kNv* vs TaoNativeViewHost")
+    }
+
+    @Test
+    fun `the ten units per wheel factor agrees everywhere it is written down`() {
+        val expected = AWT_PIXEL_TO_ROTATION.toDouble()
+        assertEquals(expected, firstNumber(RUST_LINE_TO_POINTS, eventsRs()), "events.rs AWT_LINE_TO_POINTS")
+        assertEquals(expected, firstNumber(OBJC_PIXEL_TO_ROTATION, nativeView()), "native_view.m kAwtPixelToRotation")
+        assertEquals(
+            expected,
+            firstNumber(DEMO_PAN_FACTOR, demoScrollScreen()),
+            "ScrollTestScreen PAN_DP_PER_WHEEL_UNIT",
+        )
+    }
+
+    private fun firstNumber(
+        regex: Regex,
+        file: File,
+    ): Double =
+        regex
+            .find(file.readText())
+            ?.groupValues
+            ?.get(1)
+            ?.toDouble()
+            ?: fail("no match for $regex in ${file.path}")
+
     private fun popupPanel() = sourceFile("src/main/native/macos/popup_panel.m")
+
+    private fun nativeView() = sourceFile("src/main/native/macos/native_view.m")
+
+    private fun demoScrollScreen() =
+        sourceFile("../examples/nucleus-demo/src/main/kotlin/com/example/demo/ScrollTestScreen.kt")
 
     private fun eventsRs() = sourceFile("src/main/native/src/events.rs")
 
@@ -65,6 +110,7 @@ class TaoScrollWireDriftTest {
      * may use the repository root. Either way the failure names the file.
      */
     private fun sourceFile(relative: String): File {
+        // Module directory first (Gradle), then the repository root (IDE).
         val candidates = listOf(File(relative), File("decorated-window-tao", relative))
         return candidates.firstOrNull { it.isFile }
             ?: fail("cannot find $relative from ${File("").absolutePath} (tried ${candidates.map { it.path }})")
@@ -94,5 +140,9 @@ class TaoScrollWireDriftTest {
         val GET_METHOD_ID = Regex("""GetMethodID\(env,\s*\w+,\s*"(\w+)",\s*"([^"]+)"\)""")
         val RUST_CODE = Regex("""pub\(crate\) const SCROLL_GESTURE_(\w+): jint = (\d+);""")
         val OBJC_CODE = Regex("""NucleusScrollGesture(\w+)\s*=\s*(-?\d+)""")
+        val NV_CODE = Regex("""kNv(\w+)\s*=\s*(\d+)""")
+        val RUST_LINE_TO_POINTS = Regex("""const AWT_LINE_TO_POINTS: f64 = ([0-9.]+);""")
+        val OBJC_PIXEL_TO_ROTATION = Regex("""kAwtPixelToRotation = ([0-9.]+)f;""")
+        val DEMO_PAN_FACTOR = Regex("""PAN_DP_PER_WHEEL_UNIT = ([0-9.]+)f""")
     }
 }

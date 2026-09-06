@@ -1289,18 +1289,29 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
     // reports the fingers-on-glass part in `phase` and the inertial tail that
     // follows in `momentumPhase`, never both at once; a wheel notch or a
     // phase-less device has neither.
-    let scroll_phase = match event.phase() {
-      NSEventPhase::MayBegin => ScrollPhase::MayBegin,
-      NSEventPhase::Began => ScrollPhase::Began,
-      NSEventPhase::Changed | NSEventPhase::Stationary => ScrollPhase::Changed,
-      NSEventPhase::Ended => ScrollPhase::Ended,
-      NSEventPhase::Cancelled => ScrollPhase::Cancelled,
-      _ => match event.momentumPhase() {
-        NSEventPhase::Began => ScrollPhase::MomentumBegan,
-        NSEventPhase::Changed => ScrollPhase::MomentumChanged,
-        NSEventPhase::Ended | NSEventPhase::Cancelled => ScrollPhase::MomentumEnded,
-        _ => ScrollPhase::None,
-      },
+    // `NSEventPhase` is an NS_OPTIONS mask: test bits, do not match values.
+    let scroll_phase = {
+      let p = event.phase();
+      let m = event.momentumPhase();
+      if p.contains(NSEventPhase::MayBegin) {
+        ScrollPhase::MayBegin
+      } else if p.contains(NSEventPhase::Began) {
+        ScrollPhase::Began
+      } else if p.intersects(NSEventPhase::Changed | NSEventPhase::Stationary) {
+        ScrollPhase::Changed
+      } else if p.contains(NSEventPhase::Ended) {
+        ScrollPhase::Ended
+      } else if p.contains(NSEventPhase::Cancelled) {
+        ScrollPhase::Cancelled
+      } else if m.contains(NSEventPhase::Began) {
+        ScrollPhase::MomentumBegan
+      } else if m.contains(NSEventPhase::Changed) {
+        ScrollPhase::MomentumChanged
+      } else if m.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled) {
+        ScrollPhase::MomentumEnded
+      } else {
+        ScrollPhase::None
+      }
     };
 
     let device_event = Event::DeviceEvent {

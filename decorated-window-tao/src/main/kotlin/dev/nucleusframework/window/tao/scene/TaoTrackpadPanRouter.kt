@@ -29,7 +29,7 @@ import dev.nucleusframework.window.tao.TaoScrollGesturePhase
  * `Ended` can hold the last finger movement, and a `Began` may have been
  * missed), so no finger distance is dropped; momentum steps, in contrast, only
  * continue an open pan — a late tail after the grace already closed the pan
- * is dropped rather than stacked on Compose's fling.
+ * is handed back to the caller (`false`) rather than stacked on Compose's fling.
  *
  * [send] receives the pan offset in AWT `preciseWheelRotation` units (the
  * shape of [dev.nucleusframework.window.tao.TaoPointerScrollEvent.dxAwt]); the
@@ -45,10 +45,15 @@ internal class TaoTrackpadPanRouter(
     private var active = false
     private var cancelPendingEnd: (() -> Unit)? = null
 
+    /**
+     * Routes one gesture step. Returns `false` for a momentum step that found
+     * no open pan (the grace closed it first): the caller decides what to do
+     * with its delta — the router itself never opens a pan for the tail.
+     */
     fun onGesture(
         phase: TaoScrollGesturePhase,
         deltaAwt: Offset,
-    ) {
+    ): Boolean {
         when (phase) {
             // Fingers touched the glass: a running momentum tail is over (AppKit
             // does not always follow with MomentumEnded); with no pan open,
@@ -73,21 +78,22 @@ internal class TaoTrackpadPanRouter(
             // is closed — the grace elapsed before AppKit's first momentum
             // step, or the Began was never seen — Compose's own fling is
             // running, and opening a second pan would stack the platform
-            // inertia on top of it (content overshoots by ~2×). Dropping the
-            // late tail is the safe outcome.
+            // inertia on top of it (content overshoots by ~2×). The step is
+            // reported as unhandled instead.
             TaoScrollGesturePhase.MOMENTUM_BEGAN,
             TaoScrollGesturePhase.MOMENTUM_CHANGED,
             -> {
-                if (!active) return
+                if (!active) return false
                 move(deltaAwt)
                 armEnd(stallMillis)
             }
             TaoScrollGesturePhase.MOMENTUM_ENDED -> {
-                if (!active) return
+                if (!active) return false
                 move(deltaAwt)
                 finish()
             }
         }
+        return true
     }
 
     /** Closes an open pan now (a click, a wheel notch: the gesture is over). */

@@ -205,6 +205,18 @@ internal class TaoComposeSceneHost(
     private var heightPx: Int = 0
     private var scale: Float = 1f
 
+    // Wheel → Scroll, trackpad gesture → Pan (#654). Declared with the rest of
+    // the input state, ahead of every handler that reads it.
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoComposeSceneHost.scene
+                override val scale: Float get() = this@TaoComposeSceneHost.scale
+
+                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
+            },
+        )
+
     // Sub-pixel deadband (#615): the wire delivers 1/1024-px positions and
     // macOS emits a CursorMoved before every mouseDown/mouseUp, so click
     // jitter under 1 dp must not reach the scene — Compose's mouse slop is
@@ -1070,16 +1082,6 @@ internal class TaoComposeSceneHost(
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)
     }
-
-    private val scrollRouter =
-        TaoSceneScrollRouter(
-            object : TaoSceneScrollRouter.Target {
-                override val scene: ComposeScene? get() = this@TaoComposeSceneHost.scene
-                override val scale: Float get() = this@TaoComposeSceneHost.scale
-
-                override fun guard(block: () -> Unit) = exceptionHandler.catchExceptions(block)
-            },
-        )
 
     // ── Trackpad gestures (macOS pinch / rotate / smart-magnify) ──────────
     //

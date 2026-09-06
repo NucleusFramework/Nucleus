@@ -701,7 +701,9 @@ public final class dev/nucleusframework/window/tao/TaoTrackpadPhase {
 
 public final class dev/nucleusframework/window/tao/TaoWindow {
 	public static final field $stable I
+	public static final field AWT_PIXEL_TO_ROTATION F
 	public static final field LINUX_AWT_SCROLL_AMOUNT_DEFAULT I
+	public static final field MACOS_AWT_SCROLL_AMOUNT I
 	public static final field SCROLL_FIXED_SCALE F
 	public static final field WAYLAND_HANDLE_KIND J
 	public static final field WINDOWS_TOUCH_DRAG_THRESHOLD_PX I

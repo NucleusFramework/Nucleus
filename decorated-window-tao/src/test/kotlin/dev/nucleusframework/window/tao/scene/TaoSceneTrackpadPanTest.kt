@@ -169,6 +169,43 @@ class TaoSceneTrackpadPanTest {
             )
         }
 
+    @Test
+    fun `an orphaned momentum tail scrolls as wheel events instead of stalling`() =
+        runTaoSceneTest(width = 100, height = 200) {
+            val scrollValue = mutableStateOf(0)
+            val seen = mutableListOf<PointerEventType>()
+            setContent {
+                val state = rememberScrollState()
+                scrollValue.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state).recording(seen)) {
+                    repeat(50) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            moveMouse(50f, 100f)
+            routeScroll(gestureStep(TaoScrollGesturePhase.BEGAN, dyAwt = 0f))
+            routeScroll(gestureStep(TaoScrollGesturePhase.CHANGED, dyAwt = 1f))
+            routeScroll(gestureStep(TaoScrollGesturePhase.ENDED, dyAwt = 0f))
+            // The grace fires before AppKit's tail shows up.
+            elapsePanGrace()
+            frameUntilIdle()
+            val afterPan = scrollValue.value
+            assertEquals(PointerEventType.PanEnd, seen.last())
+
+            seen.clear()
+            routeScroll(gestureStep(TaoScrollGesturePhase.MOMENTUM_BEGAN, dyAwt = 1f))
+            routeScroll(gestureStep(TaoScrollGesturePhase.MOMENTUM_CHANGED, dyAwt = 1f))
+            routeScroll(gestureStep(TaoScrollGesturePhase.MOMENTUM_ENDED, dyAwt = 0f))
+            frameUntilIdle()
+            assertTrue(
+                seen.isNotEmpty() && seen.all { it == PointerEventType.Scroll },
+                "expected Scroll only, got $seen",
+            )
+            assertTrue(
+                scrollValue.value > afterPan,
+                "the tail must still move content (${scrollValue.value} vs $afterPan)",
+            )
+        }
+
     private fun gestureStep(
         phase: TaoScrollGesturePhase,
         dyAwt: Float,

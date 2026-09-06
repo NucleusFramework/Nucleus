@@ -295,6 +295,9 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun dispose() {
+        if (disposed) return
+        disposed = true
+        framePump.disposed = true
         if (!isValid) {
             // Never came up (bridges missing, panel creation failed): only the
             // eagerly created pieces need releasing.
@@ -302,9 +305,6 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             renderExecutor.shutdown()
             return
         }
-        if (disposed) return
-        disposed = true
-        framePump.disposed = true
         revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)

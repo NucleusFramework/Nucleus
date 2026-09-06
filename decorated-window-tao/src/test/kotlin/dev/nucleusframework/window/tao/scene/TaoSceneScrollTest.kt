@@ -12,7 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -141,6 +144,29 @@ class TaoSceneScrollTest {
             largeAmount > smallAmount,
             "scrollAmount=6 ($largeAmount px) must out-scroll scrollAmount=1 ($smallAmount px)",
         )
+    }
+
+    @Test
+    fun `one wheel unit scrolls ten dp on macOS`() {
+        // The factor TaoSceneScrollRouter sizes trackpad pans with
+        // (AWT_PIXEL_TO_ROTATION) is Compose Desktop's MacOSCocoaConfig
+        // `10.dp` per preciseWheelRotation; pin it so a Compose change shows
+        // up here rather than as pans and notches drifting apart.
+        if (Platform.Current != Platform.MacOS) return // LinuxGnomeConfig / WindowsWinUIConfig scale differently
+        runTaoSceneTest(width = 100, height = 200, density = 2f) {
+            val scrollValue = mutableStateOf(0)
+            setContent {
+                val state = rememberScrollState()
+                scrollValue.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state)) {
+                    repeat(50) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            moveMouse(50f, 100f)
+            scroll(scrollEvent(dy = 1f, scrollAmount = 1))
+            frameUntilIdle()
+            assertEquals((AWT_PIXEL_TO_ROTATION * 2f).roundToInt(), scrollValue.value)
+        }
     }
 
     @Test

@@ -5,8 +5,6 @@ package dev.nucleusframework.window.tao
 import androidx.compose.runtime.mutableStateOf
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
-import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
@@ -1274,6 +1272,13 @@ public class TaoWindow internal constructor(
     private companion object {
         const val SCROLL_FIXED_SCALE: Float = 100f
         const val LINUX_AWT_SCROLL_AMOUNT_DEFAULT: Int = 3
+
+        // ABI: a `const val` in a private companion still compiles to a public
+        // static on TaoWindow, and these two are part of the validated 2.4.x
+        // surface (api/decorated-window-tao.api). Aliases of the shared
+        // definitions in event/MacOsWheelDelta.kt so they cannot diverge.
+        const val AWT_PIXEL_TO_ROTATION: Float = dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+        const val MACOS_AWT_SCROLL_AMOUNT: Int = dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT
         const val WINDOWS_TOUCH_DRAG_THRESHOLD_PX: Int = 16
 
         val platformLineScrollAmount: Int
