@@ -4,6 +4,7 @@ import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -35,6 +36,14 @@ internal interface TaoPopupHost {
     val parentWindowSize: IntSize
 
     /**
+     * The owner window's live `WindowInfo`. Its `containerSize` is snapshot
+     * state, so a dialog that centres itself in it (`Dialog.skiko.kt` reads
+     * `LocalWindowInfo.current.containerSize`) re-measures when the window is
+     * resized — [parentWindowSize] is a plain read and would leave it frozen.
+     */
+    val parentWindowInfo: WindowInfo
+
+    /**
      * Visible-frame size (screen minus menu bar + dock) of the NSScreen
      * hosting the owner window, in **physical pixels**. Used by popup
      * layers as the upper bound for inner-scene layout — popups can
@@ -50,6 +59,21 @@ internal interface TaoPopupHost {
      * popup is torn down and rebuilt on owner-move/screen-change anyway.
      */
     val workAreaSize: IntSize get() = parentWindowSize
+
+    /**
+     * Where the owner window sits on screen, and where the displays' work
+     * areas are — the origin [workAreaSize] deliberately throws away.
+     *
+     * [workAreaSize] gives the popup room to lay out at full size, but Compose
+     * then flips and clips inside that size *rooted at the window*, so the
+     * decision is made against a virtual screen rather than the real one.
+     * Layers use this to clamp their native frame back into the display's work
+     * area at the point they push it. `null` when the platform cannot resolve
+     * it (early init, no screen), which restores the unclamped behaviour.
+     *
+     * Read on every frame push; implementations must stay cheap.
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
 
     /** Coroutine context to feed inner scenes (parent context + frame clock + flushing dispatcher). */
     val sceneCoroutineContext: CoroutineContext
@@ -80,6 +104,14 @@ internal interface TaoPopupHost {
      * the alpha-aware dialog-scrim blend mode (#559).
      */
     val isOwnerWindowTransparent: Boolean get() = false
+
+    /**
+     * The dialog scrims of this host's layers. A layer registers its
+     * `scrimColor` here for its whole lifetime; the host paints them all over
+     * the owner window's scene, and every layer paints the ones above it into
+     * its own surface — see [PopupScrimRegistry].
+     */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 

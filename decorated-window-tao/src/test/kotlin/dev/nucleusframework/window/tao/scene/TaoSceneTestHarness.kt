@@ -33,6 +33,7 @@ import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Picture
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import kotlin.coroutines.CoroutineContext
 
@@ -259,6 +260,18 @@ internal class TaoSceneTestScope(
     val scene: ComposeScene get() = sceneBundle.scene
 
     /**
+     * Mirrors [TaoSceneBundle.renderOverlay] — what a popup layer paints into
+     * the same picture *after* its scene (the scrims of the layers stacked
+     * above it). Recorded inside the frame, so it counts towards the picture's
+     * op count exactly as it does in production.
+     */
+    var renderOverlay: ((org.jetbrains.skia.Canvas) -> Unit)?
+        get() = sceneBundle.renderOverlay
+        set(value) {
+            sceneBundle.renderOverlay = value
+        }
+
+    /**
      * Mirrors the scene host's `exceptionHandler` field (#621): installed on the
      * bundle, so frames go through the production guard in
      * [TaoSceneBundle.render], and consulted at the input / IME entry points the
@@ -304,7 +317,16 @@ internal class TaoSceneTestScope(
      * render pass: pump continuations, deliver the frame clock, then record
      * the scene through the production CPU record path.
      */
-    fun frame(deltaMillis: Long = FRAME_DELTA_MILLIS): Picture {
+    fun frame(
+        deltaMillis: Long = FRAME_DELTA_MILLIS,
+        /**
+         * Cull rect handed to the picture recorder. Defaults to the scene size,
+         * as a window host records; a popup layer records the same scene with a
+         * rect rooted at its draw bounds, which is what
+         * `MacPopupPictureCullTest` exercises.
+         */
+        cullRect: Rect? = null,
+    ): Picture {
         timeNanos += deltaMillis * NANOS_PER_MILLI
         // Release virtual-clock timers (delay / withTimeout) due at the new
         // time BEFORE pumping, so their continuations run in this frame.
@@ -319,7 +341,13 @@ internal class TaoSceneTestScope(
         // dispatchers around the tick), so the recompose triggered by this
         // frame's `withFrameNanos` continuations is part of the recorded picture
         // — same guarantee the explicit sendFrame + pump used to give.
-        return recordSceneToPicture(sceneBundle, width, height, timeNanos).also { lastPicture = it }
+        return recordSceneToPicture(
+            bundle = sceneBundle,
+            widthPx = width,
+            heightPx = height,
+            nanoTime = timeNanos,
+            cullRect = cullRect ?: Rect.makeWH(width.toFloat(), height.toFloat()),
+        ).also { lastPicture = it }
     }
 
     /**

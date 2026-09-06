@@ -367,6 +367,9 @@ public object TaoHeadfulTestSuiteMain {
             FramePacingHeadfulCases.all() +
             MacWindowChromeStateHeadfulCases.all() +
             PopupScaleHeadfulCases.all() +
+            NativePopupPlacementHeadfulCases.all() +
+            NativePopupMarginInputHeadfulCases.all() +
+            DialogAppearanceHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +

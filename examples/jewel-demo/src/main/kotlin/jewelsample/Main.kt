@@ -73,6 +73,13 @@ fun main() =
                         position = WindowPosition.Aligned(Alignment.Center),
                     ),
                 minimumSize = DpSize(800.dp, 400.dp),
+                // Jewel's `LocalPopupRenderer` default delegates to
+                // `androidx.compose.ui.window.Popup`, so every ListComboBox /
+                // PopupMenu / tooltip in the showcase becomes a real OS window
+                // and is placed against the display rather than against this
+                // window (#569). Park the window at the bottom of the screen
+                // and open a combo box to see it.
+                nativePopupLayers = true,
                 onKeyEvent = { keyEvent ->
                     processKeyShortcuts(keyEvent = keyEvent, onNavigateTo = MainViewModel::onNavigateTo)
                 },

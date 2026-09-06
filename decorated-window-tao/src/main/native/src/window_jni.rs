@@ -511,6 +511,34 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     });
 }
 
+/// Linux only: see `UserEvent::PopupAnchor`. Logical parent-window pixels.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxPopupAnchor(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    x: jint,
+    y: jint,
+    width: jint,
+    height: jint,
+    shadow_left: jint,
+    shadow_top: jint,
+    shadow_right: jint,
+    shadow_bottom: jint,
+) {
+    send_user_event(UserEvent::PopupAnchor {
+        handle: handle as u64,
+        x,
+        y,
+        width,
+        height,
+        shadow_left,
+        shadow_top,
+        shadow_right,
+        shadow_bottom,
+    });
+}
+
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeIsFullscreen(
     _env: JNIEnv,

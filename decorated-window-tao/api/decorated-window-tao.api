@@ -1,3 +1,7 @@
+public final class androidx/compose/ui/scene/TaoComposeSceneContextAccess {
+	public static fun localComposeSceneContext ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
 public final class dev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/ComposableSingletons$DialogTitleBarKt;
 	public fun <init> ()V
@@ -321,6 +325,10 @@ public final class dev/nucleusframework/window/tao/MetalTestTextureProducer : ja
 
 public final class dev/nucleusframework/window/tao/MetalTestTextureProducer$Companion {
 	public final fun create (II)Ldev/nucleusframework/window/tao/MetalTestTextureProducer;
+}
+
+public final class dev/nucleusframework/window/tao/NativePopupLayersKt {
+	public static final fun NativePopupLayers (Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;I)V
 }
 
 public final class dev/nucleusframework/window/tao/NativeViewKt {

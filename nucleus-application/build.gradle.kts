@@ -75,6 +75,28 @@ tasks.register<JavaExec>("spellcheckConsumer") {
     mainClass.set("dev.nucleusframework.application.spellcheck.SpellcheckConsumerMainKt")
 }
 
+/**
+ * Writes the test runtime classpath for `scripts/context-menu-wayland-e2e.py`,
+ * which launches `ContextMenuE2EMainKt` itself under a nested compositor (a
+ * JavaExec would not see the driver's WAYLAND_DISPLAY through the daemon).
+ */
+tasks.register("contextMenuE2EClasspath") {
+    group = "verification"
+    description = "Builds the test classes and writes their runtime classpath for the context menu E2E driver"
+    dependsOn(tasks.named("testClasses"))
+    val output = layout.buildDirectory.file("e2e/context-menu-classpath.txt")
+    val classpath = sourceSets["test"].runtimeClasspath
+    inputs.files(classpath)
+    outputs.file(output)
+    doLast {
+        output
+            .get()
+            .asFile
+            .apply { parentFile.mkdirs() }
+            .writeText(classpath.asPath)
+    }
+}
+
 tasks.register<JavaExec>("systemThemeE2E") {
     group = "verification"
     description =

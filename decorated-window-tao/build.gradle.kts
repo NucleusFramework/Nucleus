@@ -39,6 +39,8 @@ dependencies {
     testImplementation(kotlin("test"))
     // Skiko native runtime for the opt-in real-window smoke test
     testImplementation(compose.desktop.currentOs)
+    // The Material 3 AlertDialog the headful appearance film compares against nucleus-demo
+    testImplementation(libs.compose.material3)
 }
 
 java {
@@ -167,6 +169,9 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     // Replays a red monkey run: the case prints the seed it used.
     System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
         systemProperty("nucleus.tao.headful.monkeySeed", it)
+    }
+    System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
+        systemProperty(it, System.getProperty(it))
     }
     System.getProperty("nucleus.issue576.samples")?.let {
         systemProperty("nucleus.issue576.samples", it)

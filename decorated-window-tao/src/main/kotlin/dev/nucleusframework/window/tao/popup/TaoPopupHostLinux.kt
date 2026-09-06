@@ -1,8 +1,11 @@
 package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -22,6 +25,7 @@ import kotlin.coroutines.CoroutineContext
  * Threading: every call must run on the Tao event-loop thread.
  */
 @OptIn(ExperimentalComposeUiApi::class)
+@Suppress("TooManyFunctions")
 internal interface TaoPopupHostLinux {
     /** Tao window hosting the main scene — the popup windows' `popupOf` parent. */
     val parentWindow: TaoWindow
@@ -38,6 +42,9 @@ internal interface TaoPopupHostLinux {
 
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
+
+    /** The owner window's live `WindowInfo` — see [TaoPopupHost.parentWindowInfo]. */
+    val parentWindowInfo: WindowInfo
 
     /**
      * Screen work area in physical pixels. Used as the inner scene's
@@ -59,6 +66,17 @@ internal interface TaoPopupHostLinux {
      */
     val parentScreenOriginPx: IntOffset
 
+    /**
+     * [parentScreenOriginPx] paired with every display's work area, so a layer
+     * can clamp its native frame into the real screen instead of the
+     * window-rooted virtual one Compose positions against. See
+     * [TaoPopupHost.popupScreenGeometry].
+     *
+     * `null` on Wayland: a popup there is a `wl_subsurface` placed relative to
+     * the parent surface, and no global position exists to clamp against.
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
+
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
 
@@ -72,6 +90,9 @@ internal interface TaoPopupHostLinux {
      * window so drag ghosts and in-scene layers share one code path.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
+
+    /** The dialog scrims of this host's layers — see [TaoPopupHost.popupScrims]. */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 
@@ -131,4 +152,41 @@ internal interface TaoPopupHostLinux {
     )
 
     fun unregisterOutsidePressListener(token: Any)
+
+    /**
+     * Delivers a pointer event that landed on a layer's **draw margin** to the
+     * owner window's scene, at [positionPx] in owner-window physical pixels.
+     *
+     * A layer's window is inflated past the popup's layout bounds so shadows
+     * and the appearance animation are not clipped ([popupDrawBounds]). That
+     * margin is transparent, but on Linux it is still the popup's window as far
+     * as the display server is concerned, so the press never reaches the owner
+     * — a click on a button beside an open menu would dismiss the menu and
+     * never press the button, and hovering past the menu's edge would freeze
+     * the owner's hover state. Windows and macOS get the pass-through from the
+     * OS (the layer hands it the *content* rect); GTK's own input shaping does
+     * not take on a popup toplevel, so the layer routes the event here instead.
+     *
+     * A [PointerEventType.Press] is expected to behave exactly like a press
+     * that reached the owner natively — including the outside-press listeners
+     * and the recompose between them and the dispatch.
+     */
+    fun forwardMarginPointer(
+        eventType: PointerEventType,
+        positionPx: Offset,
+        button: PointerButton?,
+    )
+
+    /**
+     * Claims the parent's compositor-positioned popup for [token]. On native
+     * Wayland a popup layer that gets it maps as an `xdg_popup` the compositor
+     * keeps on screen ([TaoWindow.anchorPopupInParent]); an `xdg_popup` must be
+     * its parent's topmost popup and GDK refuses to map a second one, so only
+     * one layer at a time may take that path — the others stay subsurfaces.
+     * Returns `false` while another layer holds it.
+     */
+    fun acquireCompositorPopup(token: Any): Boolean
+
+    /** Releases [acquireCompositorPopup]'s claim; a no-op for a token that never held it. */
+    fun releaseCompositorPopup(token: Any)
 }

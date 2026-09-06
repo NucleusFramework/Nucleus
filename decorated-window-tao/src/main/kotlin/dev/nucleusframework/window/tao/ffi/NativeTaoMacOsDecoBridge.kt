@@ -56,6 +56,21 @@ internal object NativeTaoMacOsDecoBridge {
     external fun nativeGetWindowRect(nsView: Long): LongArray?
 
     /**
+     * Returns the view's own rect on screen as `[x, y, width, height]` in
+     * physical pixels with a top-left origin — same convention as
+     * [nativeGetWindowRect] and [nativeGetMonitors].
+     *
+     * This is the origin window-rooted Compose coordinates are relative to,
+     * which is *not* the window frame origin when the window has a native
+     * title bar. Used by the popup screen clamp
+     * ([dev.nucleusframework.window.tao.popup.popupScreenClampOffset], #569) to
+     * turn a popup's window-rooted frame into screen coordinates. Returns
+     * `null` if the view is not attached to an NSWindow.
+     */
+    @JvmStatic
+    external fun nativeGetContentRect(nsView: Long): LongArray?
+
+    /**
      * Returns the primary screen's `visibleFrame` (full screen minus menu bar
      * and Dock) as `[x, y, width, height]` in physical pixels with a top-left
      * origin. Used to resolve [androidx.compose.ui.window.WindowPosition.Aligned].

@@ -126,7 +126,21 @@ public object TaoMonitors {
      * display reachable from a realized window; `null` falls back to the
      * default GDK display. Ignored on Windows and macOS.
      */
-    public fun all(window: TaoWindow? = null): List<TaoMonitor> {
+    public fun all(window: TaoWindow? = null): List<TaoMonitor> =
+        reported(window).ifEmpty { listOf(syntheticMonitor(window)) }.withOnePrimary()
+
+    /**
+     * The monitors the platform actually named — empty when it named none.
+     *
+     * [all] papers over that with [syntheticMonitor], which is right for a
+     * screen picker and wrong for anything that treats a work area as the truth
+     * about the display: the synthetic monitor falls back to a fixed
+     * [FALLBACK_WIDTH_PX] × [FALLBACK_HEIGHT_PX] rectangle at the origin, and a
+     * popup clamped into *that* would be dragged onto a display that does not
+     * exist. Callers who would rather do nothing than act on a guess ask here
+     * and treat empty as "no geometry" — see `PopupScreenGeometry`.
+     */
+    internal fun reported(window: TaoWindow? = null): List<TaoMonitor> {
         val rows =
             when (Platform.Current) {
                 Platform.Windows ->
@@ -137,8 +151,7 @@ public object TaoMonitors {
                     if (NativeTaoBridge.isLoaded) NativeTaoBridge.nativeLinuxMonitors(window?.handle ?: 0L) else null
                 else -> null
             }
-        val monitors = rows?.mapNotNull(::parseMonitor).orEmpty()
-        return monitors.ifEmpty { listOf(syntheticMonitor(window)) }.withOnePrimary()
+        return rows?.mapNotNull(::parseMonitor).orEmpty()
     }
 
     /**

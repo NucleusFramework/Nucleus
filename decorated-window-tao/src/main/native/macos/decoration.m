@@ -14,6 +14,9 @@
 //   - nativeGetWindowRect: returns the NSWindow's outer frame in physical
 //     pixels using a top-left origin (matching Win32 `GetWindowRect`), so the
 //     Kotlin centring math is the same on every platform.
+//   - nativeGetContentRect: same convention, but for the view's own rect on
+//     screen — the origin window-rooted Compose coordinates are relative to,
+//     which the #569 popup screen clamp converts through.
 //   - nativeGetPrimaryMonitorWorkArea: returns NSScreen.visibleFrame for the
 //     primary screen, in physical pixels with top-left origin (matches the
 //     Windows `SystemParametersInfo(SPI_GETWORKAREA)` shape).
@@ -152,6 +155,32 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetWindo
     if (!window) return NULL;
 
     NSRect topLeft = to_top_left_rect(window.frame);
+    return make_rect_array(env, topLeft, window.backingScaleFactor);
+}
+
+/* Returns the *content* rect of the view's window — the rect window-rooted
+ * Compose coordinates are relative to — as `[x, y, width, height]` in physical
+ * pixels with a top-left origin, i.e. the same space nativeGetWindowRect and
+ * nativeGetMonitors report in.
+ *
+ * Distinct from nativeGetWindowRect: a window with a native title bar has its
+ * content origin below the frame origin, and the #569 popup screen clamp is
+ * only as accurate as this offset. `convertRectToScreen:` is asked for the
+ * view's own bounds rather than the window's contentLayoutRect so a nested
+ * overlay view answers for itself. */
+JNIEXPORT jlongArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDecoBridge_nativeGetContentRect(
+    JNIEnv *env, jclass clazz, jlong nsViewLong)
+{
+    (void)clazz;
+    if (!nsViewLong) return NULL;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewLong;
+    NSWindow *window = view.window;
+    if (!window) return NULL;
+
+    NSRect inWindow = [view convertRect:view.bounds toView:nil];
+    NSRect onScreen = [window convertRectToScreen:inWindow];
+    NSRect topLeft = to_top_left_rect(onScreen);
     return make_rect_array(env, topLeft, window.backingScaleFactor);
 }
 

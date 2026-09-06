@@ -18,6 +18,7 @@ import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.scene.ComposeScenePointer
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowExceptionHandler
@@ -28,6 +29,7 @@ import dev.nucleusframework.window.tao.TaoEventCode
 import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
+import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
@@ -46,6 +48,8 @@ import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDecoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsNativeViewBridge
 import dev.nucleusframework.window.tao.initialMacOsScaleFactor
 import dev.nucleusframework.window.tao.installContentMeasurer
+import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
+import dev.nucleusframework.window.tao.popup.PopupScrimRegistry
 import dev.nucleusframework.window.tao.popup.TaoPopupHost
 import dev.nucleusframework.window.tao.popup.TaoPopupSceneLayer
 import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
@@ -58,7 +62,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.DirectContext
+import org.jetbrains.skia.Rect
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.locks.LockSupport
@@ -414,7 +420,7 @@ internal class TaoComposeSceneHost(
                 isWindowTransparent = fullyTransparent,
             )
 
-        val hostPopupHost = if (nativePopupLayers) popupHost() else null
+        val nativeLayerFactory = if (nativePopupLayers) nativePopupLayerFactory() else null
         // The scene's MonotonicFrameClock is owned by the FrameRecomposer inside the
         // bundle (Compose 1.12). It matters that the clock exists: without one the
         // recomposer can't tell when a frame finished and re-fires the invalidation
@@ -422,7 +428,7 @@ internal class TaoComposeSceneHost(
         // itself in `performFrame` (one frame per FrameDispatcher tick, re-scheduling
         // only while animations remain), so the host no longer sends frames manually.
         sceneBundle =
-            if (hostPopupHost != null) {
+            if (nativeLayerFactory != null) {
                 // Opt-in path (e.g. tray popups): every Popup becomes a native
                 // NSPanel owned by this window, so popup content can extend
                 // beyond — and float independently of — the window bounds.
@@ -431,18 +437,7 @@ internal class TaoComposeSceneHost(
                     density = Density(scale),
                     layoutDirection = GlobalLayoutDirection,
                     size = IntSize(widthPx, heightPx),
-                    composeSceneContext =
-                        TaoComposeSceneContext(
-                            platformContext = taoPlatformContext,
-                        ) { density, layoutDirection, focusable, consumeOutside ->
-                            TaoPopupSceneLayer(
-                                host = hostPopupHost,
-                                initialDensity = density,
-                                initialLayoutDirection = layoutDirection,
-                                initialFocusable = focusable,
-                                initialConsumePointerInputOutside = consumeOutside,
-                            )
-                        },
+                    composeSceneContext = TaoComposeSceneContext(taoPlatformContext, nativeLayerFactory),
                     // Schedule a frame on the render loop (coalesced); it renders
                     // then waits for the next vsync. See startRenderLoop.
                     requestFrame = { frameDispatcher?.scheduleFrame() },
@@ -463,9 +458,7 @@ internal class TaoComposeSceneHost(
                 )
             }
         scene?.compositionLocalContext = pendingCompositionLocalContext
-        // Frame failures (recomposition / layout / draw) are caught inside the
-        // bundle, the single seam all three platforms render through.
-        sceneBundle?.exceptionHandler = exceptionHandler
+        configureSceneBundle()
 
         // One source of truth for the scene's drop target: the callback below
         // resolves it through here, and so does an in-process driver.
@@ -765,6 +758,40 @@ internal class TaoComposeSceneHost(
     // each other when multiple popups are active.
     private val popupRenderers: MutableMap<Any, () -> TaoRecordedSurface?> = LinkedHashMap()
 
+    /**
+     * Dialog scrims of the native popup layers, painted over the main scene at
+     * the end of every frame — see [PopupScrimRegistry].
+     */
+    private val popupScrims =
+        PopupScrimRegistry {
+            sceneBundle?.visualDirty?.set(true)
+            window.requestRedraw()
+        }
+
+    /**
+     * Dialog scrims of native popup layers land on the owner window's surface,
+     * after its content — Compose Desktop's `onRenderOverlay`.
+     */
+    private fun paintPopupScrims(canvas: Canvas) {
+        popupScrims.paintAll(
+            canvas,
+            Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+            transparent = fullyTransparent,
+        )
+    }
+
+    /**
+     * Hooks every main-scene bundle gets: frame failures (recomposition /
+     * layout / draw) go to the window's exception handler — the single seam
+     * all three platforms render through — and popup scrims paint after the
+     * content.
+     */
+    private fun configureSceneBundle() {
+        val bundle = sceneBundle ?: return
+        bundle.exceptionHandler = exceptionHandler
+        bundle.renderOverlay = ::paintPopupScrims
+    }
+
     // Tao's macOS pipeline intercepts keys before AppKit's responder
     // chain, so an overlay NSView can't receive `keyDown:` natively. The
     // host's `onKeyEvent` consults these handlers first; returning `true`
@@ -885,6 +912,48 @@ internal class TaoComposeSceneHost(
         window.requestRedraw()
     }
 
+    /**
+     * #569: the NSView's own origin on screen — not the window frame's, a
+     * native title bar sits between them — paired with every screen's
+     * `visibleFrame`, so a popup layer can clamp against the display it lands
+     * on instead of the work-area-sized virtual screen Compose positions it in.
+     */
+    private fun resolvePopupScreenGeometry(): PopupScreenGeometry? {
+        if (!NativeTaoMacOsDecoBridge.isLoaded) return null
+        val content =
+            NativeTaoMacOsDecoBridge
+                .nativeGetContentRect(nsViewHandle)
+                ?.takeIf { it.size >= 2 }
+                ?: return null
+        // `reported`, not `all`: `all` invents a monitor when the platform
+        // names none, and clamping a popup into an invented work area moves it
+        // somewhere no display is. No geometry means no clamp.
+        val areas = TaoMonitors.reported(window).map { it.workAreaPx }.ifEmpty { return null }
+        return PopupScreenGeometry(
+            parentContentOriginPx = IntOffset(content[0].toInt(), content[1].toInt()),
+            workAreasPx = areas,
+        )
+    }
+
+    /**
+     * Builds this window's native popup layers ([TaoPopupSceneLayer]). The
+     * factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
+     * hands to a subtree that wants native surfaces while the window's own
+     * popups stay in-scene. `null` before the NSView is attached.
+     */
+    fun nativePopupLayerFactory(): TaoPopupLayerFactory? {
+        val popupHost = popupHost() ?: return null
+        return { density, layoutDirection, focusable, consumeOutside ->
+            TaoPopupSceneLayer(
+                host = popupHost,
+                initialDensity = density,
+                initialLayoutDirection = layoutDirection,
+                initialFocusable = focusable,
+                initialConsumePointerInputOutside = consumeOutside,
+            )
+        }
+    }
+
     fun popupHost(): TaoPopupHost? {
         if (nsViewHandle == 0L) return null
         val outer = this
@@ -893,6 +962,7 @@ internal class TaoComposeSceneHost(
             override val scale: Float get() = outer.scale
             override val isOwnerWindowTransparent: Boolean get() = outer.fullyTransparent
             override val parentWindowSize: IntSize get() = IntSize(outer.widthPx, outer.heightPx)
+            override val parentWindowInfo: androidx.compose.ui.platform.WindowInfo get() = outer.windowInfo
             override val workAreaSize: IntSize get() {
                 val packed = NativeMetalBridge.nativeOwnerWorkAreaSize(outer.nsViewHandle)
                 if (packed == 0L) return parentWindowSize
@@ -900,11 +970,16 @@ internal class TaoComposeSceneHost(
                 val h = (packed and 0xFFFFFFFFL).toInt()
                 return if (w > 0 && h > 0) IntSize(w, h) else parentWindowSize
             }
+
+            override val popupScreenGeometry: PopupScreenGeometry?
+                get() = outer.resolvePopupScreenGeometry()
             override val sceneCoroutineContext: CoroutineContext
                 get() = outer.coroutineContext + outer.flushingDispatcher
 
             override val exceptionHandler: WindowExceptionHandler?
                 get() = outer.exceptionHandler
+
+            override val popupScrims: PopupScrimRegistry get() = outer.popupScrims
 
             override fun requestRedraw() = outer.window.requestRedraw()
 
@@ -1523,6 +1598,7 @@ internal class TaoComposeSceneHost(
                         s.directContext,
                         s.picture,
                         s.clearColor,
+                        s.pictureOffset,
                         s.present,
                     )
                 }

@@ -706,6 +706,24 @@ internal object NativeTaoBridge {
         y: Double,
     )
 
+    /**
+     * Linux only: anchors a popup overlay (`popupOf`) at a logical point of
+     * its parent window through GDK's `move_to_rect`, so GDK maps it as a
+     * compositor-positioned `xdg_popup` — see [TaoWindow.anchorPopupInParent].
+     */
+    @JvmStatic
+    external fun nativeLinuxPopupAnchor(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        shadowLeft: Int,
+        shadowTop: Int,
+        shadowRight: Int,
+        shadowBottom: Int,
+    )
+
     @JvmStatic
     external fun nativeIsFullscreen(handle: Long): Boolean
 

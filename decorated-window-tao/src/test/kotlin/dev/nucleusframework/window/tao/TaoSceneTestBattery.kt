@@ -11,6 +11,7 @@ import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
 import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
+import dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest
 import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
 import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
 import dev.nucleusframework.window.tao.scene.LcdTextTest
@@ -360,6 +361,33 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneScrollTest: scrolled content repaints at the new offset") {
             TaoSceneScrollTest().`scrolled content repaints at the new offset`()
+        }
+        run("NativePopupLayersTest: a Popup inside NativePopupLayers is built by the window's native layer factory") {
+            NativePopupLayersTest().`a Popup inside NativePopupLayers is built by the window's native layer factory`()
+        }
+        run("NativePopupLayersTest: a Popup outside NativePopupLayers keeps drawing in the scene") {
+            NativePopupLayersTest().`a Popup outside NativePopupLayers keeps drawing in the scene`()
+        }
+        run("NativePopupLayersTest: without a native layer factory NativePopupLayers is a no-op") {
+            NativePopupLayersTest().`without a native layer factory NativePopupLayers is a no-op`()
+        }
+        run("NativePopupLayersTest: closing the Popup closes the native layer") {
+            NativePopupLayersTest().`closing the Popup closes the native layer`()
+        }
+        run("MacPopupPictureCullTest: a dimmed popup keeps its content") {
+            MacPopupPictureCullTest().`a dimmed popup keeps its content`()
+        }
+        run("MacPopupPictureCullTest: an origin-rooted cull rect drops a dimmed popup's whole frame") {
+            MacPopupPictureCullTest().`an origin-rooted cull rect drops a dimmed popup's whole frame`()
+        }
+        run("MacPopupPictureCullTest: a dimmed popup records more than one op") {
+            MacPopupPictureCullTest().`a dimmed popup records more than one op`()
+        }
+        run("MacPopupPictureCullTest: an undimmed popup keeps its content") {
+            MacPopupPictureCullTest().`an undimmed popup keeps its content`()
+        }
+        run("MacPopupPictureCullTest: a bare Compose scene records as one op and is unrolled") {
+            MacPopupPictureCullTest().`a bare Compose scene records as one op and is unrolled`()
         }
         run("TaoScenePopupTest: popup renders above the window content") {
             TaoScenePopupTest().`popup renders above the window content`()

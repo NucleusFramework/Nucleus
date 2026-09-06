@@ -36,6 +36,8 @@ public fun NucleusApplicationScope.MaterialDecoratedWindow(
     nativePopupLayers: Boolean = false,
     // Replace Compose-drawn context menus with the OS-looking menu: `NSMenu`
     // on macOS, or a Compose flyout on Linux (Adwaita) / Windows (Fluent).
+    // The flyout always opens in a native popup surface, whatever
+    // `nativePopupLayers` says.
     nativeContextMenu: Boolean = false,
     // Hide this window from the OS taskbar/Dock while it stays visible and
     // focusable (on Linux effective on X11/XWayland only).
