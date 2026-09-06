@@ -234,7 +234,7 @@ Each module is published independently to Maven Central — use them together or
 | `nucleus.native-http-okhttp` | OkHttp engine on `native-http` |
 | `nucleus.native-http-ktor` | Ktor engine on `native-http` |
 | `nucleus.linux-hidpi` | Native HiDPI scale detection on Linux |
-| `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion |
+| `nucleus.graalvm-runtime` | Native-image bootstrap, font fixes, automatic resource inclusion. Daemons/CLIs: `graalvm { headless = true }` to skip AWT/Skiko metadata and GUI `.so`/`.dll` copies |
 
 ## Documentation
 
