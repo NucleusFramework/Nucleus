@@ -14,19 +14,19 @@ private val AdwaitaUiFont = FontFamily("Adwaita Sans")
 
 internal val AdwaitaMenuTheme =
     ContextMenuFlyoutTheme(
-        menuShape = RoundedCornerShape(15.dp),
+        menuCornerRadius = 15.dp,
         itemShape = RoundedCornerShape(9.dp),
         uiFont = AdwaitaUiFont,
         iconFont = AdwaitaUiFont,
         chevron = "›",
         chevronSize = 16.sp,
-        chevronAlpha = 0.30f,
+        chevronGap = 6.dp,
         minWidth = 120.dp,
         maxWidth = 280.dp,
         menuPadding = PaddingValues(6.dp),
         itemHeight = 32.dp,
         itemHorizontalPadding = 12.dp,
-        itemOuterHorizontalPadding = 0.dp,
+        itemMargin = PaddingValues(0.dp),
         separatorPadding = PaddingValues(vertical = 6.dp),
         iconSize = 16.dp,
         iconGap = 6.dp,
@@ -35,7 +35,7 @@ internal val AdwaitaMenuTheme =
         showIcons = false,
         shortcutGap = 24.dp,
         shortcutSize = 14.sp,
-        shortcutAlpha = 0.55f,
+        shortcutPadding = PaddingValues(0.dp),
         colors = ::adwaitaColors,
         glyph = { null },
     )
@@ -73,6 +73,8 @@ private fun adwaitaColors(dark: Boolean): ContextMenuFlyoutColors =
             hover = Color.White.copy(alpha = 0.10f),
             separator = Color.White.copy(alpha = ADWAITA_BORDER_OPACITY),
             border = Color.Black.copy(alpha = 0.05f),
+            chevron = Color.White.copy(alpha = 0.30f),
+            shortcut = Color.White.copy(alpha = 0.55f),
         )
     } else {
         ContextMenuFlyoutColors(
@@ -82,5 +84,7 @@ private fun adwaitaColors(dark: Boolean): ContextMenuFlyoutColors =
             hover = Color(red = 0, green = 0, blue = 6, alpha = 0x1A),
             separator = Color(red = 0, green = 0, blue = 6).copy(alpha = 0.80f * ADWAITA_BORDER_OPACITY),
             border = Color.Black.copy(alpha = 0.05f),
+            chevron = Color(red = 0, green = 0, blue = 6, alpha = 0xCC).copy(alpha = 0.30f),
+            shortcut = Color(red = 0, green = 0, blue = 6, alpha = 0xCC).copy(alpha = 0.55f),
         )
     }

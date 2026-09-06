@@ -76,6 +76,7 @@ import org.jetbrains.skia.Paint as SkiaPaint
 
 private const val SUBMENU_OPEN_DELAY_MS = 200L
 private const val SUBMENU_CLOSE_DELAY_MS = 160L
+private val BORDER_WIDTH = 1.dp
 
 internal class ContextMenuFlyoutColors(
     val surface: Color,
@@ -83,7 +84,17 @@ internal class ContextMenuFlyoutColors(
     val textDisabled: Color,
     val hover: Color,
     val separator: Color,
+    /**
+     * The 1 dp ring at the menu's edge. It is painted *outside* the surface,
+     * over whatever is behind the menu — WinUI's `BackgroundSizing =
+     * InnerBorderEdge`, libadwaita's `0 0 0 1px` box-shadow — so a translucent
+     * colour here blends with the backdrop, not with [surface].
+     */
     val border: Color,
+    /** The submenu chevron. */
+    val chevron: Color,
+    /** The keyboard shortcut next to an enabled item's label. */
+    val shortcut: Color,
 )
 
 /**
@@ -107,19 +118,23 @@ internal class ContextMenuBoxShadow(
 )
 
 internal class ContextMenuFlyoutTheme(
-    val menuShape: RoundedCornerShape,
+    val menuCornerRadius: Dp,
     val itemShape: RoundedCornerShape,
     val uiFont: FontFamily,
     val iconFont: FontFamily,
     val chevron: String,
     val chevronSize: TextUnit,
-    val chevronAlpha: Float,
+    /** Space between the label (or shortcut) and the submenu chevron. */
+    val chevronGap: Dp,
     val minWidth: Dp,
+    /** [Dp.Unspecified] leaves the width to the content, as WinUI's presenter does. */
     val maxWidth: Dp,
+    /** Inside the 1 dp border ring, around the whole item stack. */
     val menuPadding: PaddingValues,
     val itemHeight: Dp,
     val itemHorizontalPadding: Dp,
-    val itemOuterHorizontalPadding: Dp,
+    /** Around each row, outside its hover highlight. */
+    val itemMargin: PaddingValues,
     val separatorPadding: PaddingValues,
     val iconSize: Dp,
     val iconGap: Dp,
@@ -128,11 +143,17 @@ internal class ContextMenuFlyoutTheme(
     val showIcons: Boolean,
     val shortcutGap: Dp,
     val shortcutSize: TextUnit,
-    val shortcutAlpha: Float,
+    /** Around the shortcut text, inside the row; a top-only value nudges its baseline down. */
+    val shortcutPadding: PaddingValues,
     val colors: (dark: Boolean) -> ContextMenuFlyoutColors,
     val glyph: (ContextMenuIcon) -> String?,
     val vector: (ContextMenuIcon) -> ImageVector? = { null },
 ) {
+    val menuShape: RoundedCornerShape = RoundedCornerShape(menuCornerRadius)
+
+    /** [menuShape] one border ring further in: the surface inside the ring stays concentric with it. */
+    val surfaceShape: RoundedCornerShape = RoundedCornerShape((menuCornerRadius - BORDER_WIDTH).coerceAtLeast(0.dp))
+
     internal fun hasIcon(icon: ContextMenuIcon?): Boolean {
         if (icon == null) return false
         return vector(icon) != null || glyph(icon) != null
@@ -215,16 +236,17 @@ private fun ContextMenuFlyoutSurface(
             entries.any { entry ->
                 entry is ContextMenuEntry.Item && theme.hasIcon(entry.icon)
             }
-    val maxWidth = theme.maxWidth.takeOrElse { 320.dp }
+    val maxWidth = theme.maxWidth.takeOrElse { Dp.Infinity }
     Box(Modifier.padding(theme.shadowPad)) {
         Column(
             Modifier
                 .widthIn(min = theme.minWidth, max = maxWidth)
-                .boxShadows(theme.shadows(dark), theme.menuShape)
+                .boxShadows(theme.shadows(dark), theme.menuCornerRadius)
                 .width(IntrinsicSize.Max)
                 .clip(theme.menuShape)
-                .border(1.dp, colors.border, theme.menuShape)
-                .background(colors.surface)
+                .border(BORDER_WIDTH, colors.border, theme.menuShape)
+                .padding(BORDER_WIDTH)
+                .background(colors.surface, theme.surfaceShape)
                 .padding(theme.menuPadding),
         ) {
             entries.forEach { entry ->
@@ -269,15 +291,16 @@ private fun ContextMenuFlyoutSurface(
 
 /**
  * Draws [shadows] behind the content, each as the content's rounded rectangle
- * of [shape] under a blur mask. The content is opaque and drawn on top, so
- * nothing of the shadow shows through the surface itself, as with CSS.
+ * of corner radius [cornerRadius] under a blur mask. The content is opaque and
+ * drawn on top, so nothing of the shadow shows through the surface itself, as
+ * with CSS.
  */
 private fun Modifier.boxShadows(
     shadows: List<ContextMenuBoxShadow>,
-    shape: RoundedCornerShape,
+    cornerRadius: Dp,
 ): Modifier =
     drawWithCache {
-        val radius = shape.topStart.toPx(size, this)
+        val radius = cornerRadius.toPx()
         val layers =
             shadows.map { shadow ->
                 val sigma = shadow.blur.toPx() / 2f
@@ -383,7 +406,7 @@ private fun ContextMenuFlyoutRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = theme.itemOuterHorizontalPadding)
+            .padding(theme.itemMargin)
             .clip(theme.itemShape)
             .hoverable(interactionSource, enabled = enabled)
             .background(if (hovered && enabled) colors.hover else Color.Transparent)
@@ -421,9 +444,10 @@ private fun ContextMenuFlyoutRow(
             Spacer(Modifier.width(theme.shortcutGap))
             BasicText(
                 text = shortcut,
+                modifier = Modifier.padding(theme.shortcutPadding),
                 style =
                     TextStyle(
-                        color = if (enabled) content.copy(alpha = theme.shortcutAlpha) else colors.textDisabled,
+                        color = if (enabled) colors.shortcut else colors.textDisabled,
                         fontSize = theme.shortcutSize,
                         fontFamily = theme.uiFont,
                     ),
@@ -431,12 +455,12 @@ private fun ContextMenuFlyoutRow(
             )
         }
         if (chevron) {
-            Spacer(Modifier.width(theme.iconGap))
+            Spacer(Modifier.width(theme.chevronGap))
             BasicText(
                 text = theme.chevron,
                 style =
                     TextStyle(
-                        color = content.copy(alpha = theme.chevronAlpha),
+                        color = colors.chevron,
                         fontSize = theme.chevronSize,
                         fontFamily = theme.iconFont,
                     ),
