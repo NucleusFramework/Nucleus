@@ -383,6 +383,16 @@ internal class TaoComposeSceneHostLinux(
     private val postResizeCatchUpFrames = AtomicInteger(0)
     private val sceneSizeUpdateIntervalNs = 16_666_667L // 60fps
 
+    /**
+     * In-drag GPU cache purge, deferred to the next render pass. [onResized]
+     * runs on the event-loop thread with no EGL context bound — the swap thread
+     * may even hold ours for its `eglSwapBuffers` — so the timing decision is
+     * taken here and the purge itself happens in [onRedrawRequested], the one
+     * place this host's context is current on this thread.
+     */
+    private var lastResizePurgeNs: Long = 0L
+    private var resizePurgeDue: Boolean = false
+
     private var lastPointerX: Float = 0f
     private var lastPointerY: Float = 0f
 
@@ -671,6 +681,13 @@ internal class TaoComposeSceneHostLinux(
         }
         val iface = GLAssembledInterface.createFromNativePointers(0L, fnPtr)
         val ctx = DirectContext.makeGLWithInterface(iface)
+        // Anchor the GPU resource cache budget while the fresh EGL context is
+        // still the one the native attach left current — writing the limit
+        // purges to fit, so like every other use of the context it belongs
+        // where the context is usable. The value itself changes nothing today
+        // (see GPU_RESOURCE_CACHE_LIMIT_BYTES); what reclaims the per-size
+        // scratch of a drag is [purgeResizeScratchIfDue].
+        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
         directContext = ctx
         // Publish the TextureView handle for the fresh EGL context / Skia
         // context pair (see glTextureHostState).
@@ -1378,6 +1395,12 @@ internal class TaoComposeSceneHostLinux(
             (widthPx / opaqueScale).coerceAtLeast(1),
             (heightPx / opaqueScale).coerceAtLeast(1),
         )
+        // Arm the periodic in-drag purge of the per-size GPU scratch — see
+        // [resizePurgeDue] for why it can't run right here.
+        if (now - lastResizePurgeNs >= GPU_RESIZE_PURGE_INTERVAL_NS) {
+            lastResizePurgeNs = now
+            resizePurgeDue = true
+        }
         requestRedrawCoalesced()
     }
 
@@ -1540,6 +1563,45 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * Reclaims the per-size GPU scratch a live resize mints, while the sizes
+     * are still streaming — the Linux half of what
+     * [TaoComposeSceneHostWindows.onResized] does inside the OS modal
+     * resize/move loop. Toggling the limit to 0 runs Skia's `purgeAsNeeded`
+     * inline, releasing every unlocked resource; restoring the budget lets the
+     * next frame re-mint only what it needs. The only purge primitive skiko
+     * exposes — see [GPU_RESOURCE_CACHE_LIMIT_BYTES].
+     *
+     * Called from the render pass, right after [applyPendingNativeResize] has
+     * closed the [cachedSurface]/[cachedRt] of the previous size: their backing
+     * render target and stencil are unlocked at exactly this point, so this is
+     * where the toggle actually returns memory rather than merely walking the
+     * cache. It is also the only point where this host's EGL context is current
+     * on this thread — the purge issues `glDelete*`, and the same foreign-context
+     * hazard the Windows host documents on its own purge applies here, only
+     * worse: every Linux surface owns a *private*, unshared context (a popup
+     * layer, a tray panel, a sibling window), so ids collide wholesale and a
+     * purge against the wrong binding deletes a sibling's live textures.
+     * Binding from [onResized] instead would be both racy (the swap thread may
+     * hold our context) and pointless, since the frame that follows re-binds
+     * anyway.
+     *
+     * Deliberately only the *in-drag* half of the Windows behaviour: there is
+     * no settle purge and no `System.gc()` nudge, for the same reason macOS has
+     * none (see [TaoComposeSceneHost.purgeResizeScratchIfDue]). GTK gives us no
+     * drag-end signal to hang them on — the compositor-driven resize grab ends
+     * with nothing more than pointer events resuming — and a timer standing in
+     * for it buys a stop-the-world collection after every zoom, snap and
+     * programmatic resize. The reclaim #638 is really after is at rest, not at
+     * drag end.
+     */
+    private fun purgeResizeScratchIfDue(ctx: DirectContext) {
+        if (!resizePurgeDue) return
+        resizePurgeDue = false
+        ctx.resourceCacheLimit = 0
+        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+    }
+
+    /**
      * KWin only: after a present, the pending `wl_egl_window_resize` is in
      * effect — advance the paint size and re-arm a frame if still behind.
      */
@@ -1671,6 +1733,7 @@ internal class TaoComposeSceneHostLinux(
         // Coalesced size/scale change is committed here, after the GL context
         // is current — applyPendingNativeResize closes the stale Skia cache.
         applyPendingNativeResize()
+        purgeResizeScratchIfDue(ctx)
         updateResizeBurstSwapInterval()
 
         val paintSize = resolvePaintSize()
