@@ -40,10 +40,13 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.paint
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -66,6 +69,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import org.jetbrains.skia.FilterBlurMode
+import org.jetbrains.skia.MaskFilter
+import org.jetbrains.skia.RRect
+import org.jetbrains.skia.Paint as SkiaPaint
 
 private const val SUBMENU_OPEN_DELAY_MS = 200L
 private const val SUBMENU_CLOSE_DELAY_MS = 160L
@@ -77,6 +84,26 @@ internal class ContextMenuFlyoutColors(
     val hover: Color,
     val separator: Color,
     val border: Color,
+)
+
+/**
+ * One CSS `box-shadow` layer under the menu surface: the menu's rounded
+ * rectangle grown by [spread], moved down by [offsetY] and blurred with the
+ * CSS blur radius [blur] — a Gaussian whose standard deviation is half the
+ * radius, as css-backgrounds-3 specifies and as GTK and Breeze both render.
+ *
+ * The OS menus the flyouts imitate all describe their shadow this way
+ * (libadwaita's `_popovers.scss`, Breeze's `ShadowParams`, Fluent 2's shadow
+ * tokens), so the themes carry those declarations verbatim. Compose's own
+ * `Modifier.shadow` is a Material elevation model instead — and on desktop its
+ * `ambientColor` / `spotColor` alphas are further multiplied by fixed 0.039 /
+ * 0.19 factors — so no elevation value reproduces a given `box-shadow`.
+ */
+internal class ContextMenuBoxShadow(
+    val offsetY: Dp,
+    val blur: Dp,
+    val color: Color,
+    val spread: Dp = 0.dp,
 )
 
 internal class ContextMenuFlyoutTheme(
@@ -96,10 +123,8 @@ internal class ContextMenuFlyoutTheme(
     val separatorPadding: PaddingValues,
     val iconSize: Dp,
     val iconGap: Dp,
-    val shadowElevation: Dp,
     val shadowPad: Dp,
-    val ambientShadow: Color,
-    val spotShadow: Color,
+    val shadows: (dark: Boolean) -> List<ContextMenuBoxShadow>,
     val showIcons: Boolean,
     val shortcutGap: Dp,
     val shortcutSize: TextUnit,
@@ -195,13 +220,8 @@ private fun ContextMenuFlyoutSurface(
         Column(
             Modifier
                 .widthIn(min = theme.minWidth, max = maxWidth)
-                .shadow(
-                    elevation = theme.shadowElevation,
-                    shape = theme.menuShape,
-                    clip = false,
-                    ambientColor = theme.ambientShadow,
-                    spotColor = theme.spotShadow,
-                ).width(IntrinsicSize.Max)
+                .boxShadows(theme.shadows(dark), theme.menuShape)
+                .width(IntrinsicSize.Max)
                 .clip(theme.menuShape)
                 .border(1.dp, colors.border, theme.menuShape)
                 .background(colors.surface)
@@ -246,6 +266,44 @@ private fun ContextMenuFlyoutSurface(
         }
     }
 }
+
+/**
+ * Draws [shadows] behind the content, each as the content's rounded rectangle
+ * of [shape] under a blur mask. The content is opaque and drawn on top, so
+ * nothing of the shadow shows through the surface itself, as with CSS.
+ */
+private fun Modifier.boxShadows(
+    shadows: List<ContextMenuBoxShadow>,
+    shape: RoundedCornerShape,
+): Modifier =
+    drawWithCache {
+        val radius = shape.topStart.toPx(size, this)
+        val layers =
+            shadows.map { shadow ->
+                val sigma = shadow.blur.toPx() / 2f
+                val paint =
+                    SkiaPaint().apply {
+                        color = shadow.color.toArgb()
+                        if (sigma > 0f) maskFilter = MaskFilter.makeBlur(FilterBlurMode.NORMAL, sigma)
+                    }
+                val spread = shadow.spread.toPx()
+                val offsetY = shadow.offsetY.toPx()
+                val rect =
+                    RRect.makeLTRB(
+                        -spread,
+                        offsetY - spread,
+                        size.width + spread,
+                        size.height + offsetY + spread,
+                        radius + spread,
+                    )
+                rect to paint
+            }
+        onDrawBehind {
+            drawIntoCanvas { canvas ->
+                layers.forEach { (rect, paint) -> canvas.nativeCanvas.drawRRect(rect, paint) }
+            }
+        }
+    }
 
 @Composable
 private fun ContextMenuFlyoutSubmenu(

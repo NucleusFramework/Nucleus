@@ -32,10 +32,8 @@ internal val BreezeMenuTheme =
         separatorPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
         iconSize = 16.dp,
         iconGap = 4.dp,
-        shadowElevation = 10.dp,
         shadowPad = 12.dp,
-        ambientShadow = Color.Black.copy(alpha = 0.18f),
-        spotShadow = Color.Black.copy(alpha = 0.10f),
+        shadows = { BreezeMenuShadows },
         showIcons = true,
         shortcutGap = 16.dp,
         shortcutSize = 14.sp,
@@ -43,6 +41,21 @@ internal val BreezeMenuTheme =
         colors = ::breezeColors,
         glyph = { null },
         vector = ContextMenuIcon::toBreezeVector,
+    )
+
+/**
+ * Breeze's `ShadowLarge` — the kstyle default for menus — from
+ * `lookupShadowParams` in `kstyle/breezeshadowhelper.cpp`:
+ * `CompositeShadowParams(QPoint(0, 5), ShadowParams(QPoint(0, 0), 20, 0.22),
+ * ShadowParams(QPoint(0, -3), 10, 0.12))`. Each layer's offset is the
+ * composite offset plus its own, its radius a CSS blur radius
+ * (`BoxShadowRenderer` uses `radius / 2` as the standard deviation), at the
+ * default `ShadowStrength` of 255 and the default black shadow colour.
+ */
+private val BreezeMenuShadows =
+    listOf(
+        ContextMenuBoxShadow(offsetY = 5.dp, blur = 20.dp, color = Color.Black.copy(alpha = 0.22f)),
+        ContextMenuBoxShadow(offsetY = 2.dp, blur = 10.dp, color = Color.Black.copy(alpha = 0.12f)),
     )
 
 private fun breezeColors(dark: Boolean): ContextMenuFlyoutColors =

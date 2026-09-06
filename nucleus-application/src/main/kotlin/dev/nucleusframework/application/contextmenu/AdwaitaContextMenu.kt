@@ -30,16 +30,27 @@ internal val AdwaitaMenuTheme =
         separatorPadding = PaddingValues(vertical = 6.dp),
         iconSize = 16.dp,
         iconGap = 6.dp,
-        shadowElevation = 8.dp,
         shadowPad = 16.dp,
-        ambientShadow = Color.Black.copy(alpha = 0.09f),
-        spotShadow = Color.Black.copy(alpha = 0.05f),
+        shadows = { AdwaitaMenuShadows },
         showIcons = false,
         shortcutGap = 24.dp,
         shortcutSize = 14.sp,
         shortcutAlpha = 0.55f,
         colors = ::adwaitaColors,
         glyph = { null },
+    )
+
+/**
+ * `popover > contents { box-shadow: ... }` in libadwaita's `_popovers.scss`:
+ * `0 0 0 1px RGB(0 0 0 / 5%)`, `0 1px 5px 1px RGB(0 0 0 / 9%)`,
+ * `0 2px 14px 3px RGB(0 0 0 / 5%)`. The first, a hairline ring, is the
+ * [ContextMenuFlyoutColors.border]; the other two are the shadow proper. Same
+ * in the dark variant.
+ */
+private val AdwaitaMenuShadows =
+    listOf(
+        ContextMenuBoxShadow(offsetY = 1.dp, blur = 5.dp, spread = 1.dp, color = Color.Black.copy(alpha = 0.09f)),
+        ContextMenuBoxShadow(offsetY = 2.dp, blur = 14.dp, spread = 3.dp, color = Color.Black.copy(alpha = 0.05f)),
     )
 
 /**

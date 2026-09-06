@@ -30,16 +30,33 @@ internal val FluentMenuTheme =
         separatorPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
         iconSize = 16.dp,
         iconGap = 12.dp,
-        shadowElevation = 16.dp,
         shadowPad = 0.dp,
-        ambientShadow = Color.Black.copy(alpha = 0.20f),
-        spotShadow = Color.Black.copy(alpha = 0.20f),
+        shadows = ::fluentShadows,
         showIcons = true,
         shortcutGap = 36.dp,
         shortcutSize = 12.sp,
         shortcutAlpha = 0.60f,
         colors = ::fluentColors,
         glyph = ContextMenuIcon::toFluentGlyph,
+    )
+
+/**
+ * Fluent 2's `shadow16` token, the elevation it assigns to menus and context
+ * menus: `0 0 2px rgba(0 0 0 / 12%), 0 8px 16px rgba(0 0 0 / 14%)` in light,
+ * `0 0 2px rgba(0 0 0 / 24%), 0 8px 16px rgba(0 0 0 / 28%)` in dark.
+ */
+private fun fluentShadows(dark: Boolean): List<ContextMenuBoxShadow> =
+    listOf(
+        ContextMenuBoxShadow(
+            offsetY = 0.dp,
+            blur = 2.dp,
+            color = Color.Black.copy(alpha = if (dark) 0.24f else 0.12f),
+        ),
+        ContextMenuBoxShadow(
+            offsetY = 8.dp,
+            blur = 16.dp,
+            color = Color.Black.copy(alpha = if (dark) 0.28f else 0.14f),
+        ),
     )
 
 private fun fluentColors(dark: Boolean): ContextMenuFlyoutColors =
