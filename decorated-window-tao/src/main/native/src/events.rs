@@ -137,13 +137,32 @@ pub(crate) const EVENT_MAIN_EVENTS_CLEARED: jint = 20;
 // the JVM side using the cached scale factor.
 pub(crate) const EVENT_MOVED: jint = 21;
 pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logical)
-                                                // Scroll deltas come either as line counts (mouse wheel) or pixel deltas
-                                                // (trackpad). Compose's `MacOSCocoaConfig` (cf. compose-multiplatform-core)
-                                                // expects each kind to be shaped like AWT `MouseWheelEvent.preciseWheelRotation`,
-                                                // which has different scaling: lines map ≈ 1 notch, pixels map ≈ scrollingDelta/10.
-                                                // We split the event code so the JVM side can apply the right factor.
+
+// Scroll deltas come either as line counts (mouse wheel) or precise deltas
+// (trackpad, smooth-scroll mice). Compose's `MacOSCocoaConfig` (cf.
+// compose-multiplatform-core) expects each kind to be shaped like AWT
+// `MouseWheelEvent.preciseWheelRotation`, which has different scaling: lines
+// map ≈ 1 notch, precise deltas map ≈ scrollingDelta/10. We split the event
+// code so the JVM side can apply the right factor. Both carry tao's sign
+// (positive = content moves down / right, i.e. AppKit's); the JVM negates.
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
+
+// a/b = LOGICAL points (AppKit `scrollingDelta*`) * SCROLL_FIXED_SCALE — tao's
+// `PixelDelta` is converted back from physical pixels in the loop because AWT
+// never applies the display scale to `preciseWheelRotation` (Nucleus #653).
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
+// Trackpad scroll gesture phases (`EventCallback.onScrollGesture`); mirror
+// Kotlin `TaoScrollGesturePhase`. A precise scroll that belongs to a gesture
+// (AppKit `phase` / `momentumPhase` set) takes this callback instead of
+// EVENT_SCROLL_PIXEL so the JVM can surface it as Compose Pan events (#654).
+pub(crate) const SCROLL_GESTURE_BEGAN: jint = 0;
+pub(crate) const SCROLL_GESTURE_CHANGED: jint = 1;
+pub(crate) const SCROLL_GESTURE_ENDED: jint = 2;
+pub(crate) const SCROLL_GESTURE_CANCELLED: jint = 3;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_BEGAN: jint = 4;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_CHANGED: jint = 5;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_ENDED: jint = 6;
+pub(crate) const SCROLL_GESTURE_MAY_BEGIN: jint = 7;
 pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
 // Linux only. Dispatched synchronously on the event-loop thread right
 // BEFORE the GTK window is hidden, so the JVM can suspend its EGL rendering
@@ -501,6 +520,39 @@ pub(crate) fn dispatch_ime_replace_commit(handle: u64, text: &str, start: u64, l
         text,
         &[start as jlong, length as jlong],
     );
+}
+
+/// Trackpad scroll gesture (macOS): `EventCallback.onScrollGesture`. [phase]
+/// is one of the `SCROLL_GESTURE_*` codes; the deltas are LOGICAL points
+/// (AppKit `scrollingDelta*`, tao's sign) × SCROLL_FIXED_SCALE, like
+/// EVENT_SCROLL_PIXEL.
+#[allow(dead_code)]
+pub(crate) fn dispatch_scroll_gesture(handle: u64, phase: jint, dx_fixed: jint, dy_fixed: jint) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onScrollGesture",
+        "(JIII)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(phase),
+            JValue::Int(dx_fixed),
+            JValue::Int(dy_fixed),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
 }
 
 #[allow(clippy::too_many_arguments, dead_code)]

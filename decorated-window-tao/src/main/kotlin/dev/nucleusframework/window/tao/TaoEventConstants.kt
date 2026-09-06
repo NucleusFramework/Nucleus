@@ -98,6 +98,29 @@ public object TaoTrackpadPhase {
     public const val CANCELLED: Int = 3
 }
 
+/**
+ * Phase of a macOS trackpad scroll gesture as delivered by
+ * `EventCallback.onScrollGesture` (mirrors the Rust `SCROLL_GESTURE_*` codes,
+ * #654). AppKit reports the fingers-on-glass part in `NSEvent.phase` and the
+ * inertial tail that follows in `momentumPhase`, never both at once. [NONE] is
+ * the JVM-side marker for a scroll that belongs to no gesture (mouse wheel,
+ * phase-less device); it never travels over the wire.
+ */
+@Suppress("MagicNumber")
+internal object TaoScrollGesturePhase {
+    const val NONE: Int = -1
+    const val BEGAN: Int = 0
+    const val CHANGED: Int = 1
+    const val ENDED: Int = 2
+    const val CANCELLED: Int = 3
+    const val MOMENTUM_BEGAN: Int = 4
+    const val MOMENTUM_CHANGED: Int = 5
+    const val MOMENTUM_ENDED: Int = 6
+
+    /** Fingers touched the trackpad, no scroll yet (`NSEventPhaseMayBegin`). */
+    const val MAY_BEGIN: Int = 7
+}
+
 /** Modifier-state bitmask that mirrors the Rust side. */
 @Suppress("MagicNumber")
 public object TaoModifierMask {

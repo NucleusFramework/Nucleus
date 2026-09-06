@@ -26,6 +26,7 @@ import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
@@ -437,6 +438,25 @@ internal class TaoSceneTestScope(
             eventType = PointerEventType.Exit,
             position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
+    /**
+     * Mirrors the scene host's trackpad pan dispatch (`dispatchTrackpadPan`,
+     * #654): [panOffsetPx] is in pixels with Compose's sign — positive =
+     * content scrolls down / right.
+     */
+    fun pan(
+        type: PointerEventType,
+        panOffsetPx: Offset,
+    ) {
+        scene.dispatchTrackpadPan(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            panOffset = panOffsetPx,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
         frame()

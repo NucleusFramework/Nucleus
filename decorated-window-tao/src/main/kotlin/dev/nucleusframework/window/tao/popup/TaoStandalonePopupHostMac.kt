@@ -443,7 +443,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                 scene?.dispatchAwtShapedScroll(
                     x,
                     y,
-                    appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
+                    appKitWheelToAwtScrollEvent(dx, dy, precise),
                 )
             }
         }

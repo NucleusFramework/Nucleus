@@ -27,6 +27,8 @@ import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -66,6 +68,8 @@ class TaoSceneTestBatteryDriftTest {
             TaoScenePointerTest::class.java,
             TaoScenePointerSlopTest::class.java,
             TaoSceneScrollTest::class.java,
+            TaoSceneTrackpadPanTest::class.java,
+            TaoTrackpadPanRouterTest::class.java,
             TaoScenePopupTest::class.java,
             TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,

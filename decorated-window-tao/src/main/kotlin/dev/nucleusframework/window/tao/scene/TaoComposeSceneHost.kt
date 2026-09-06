@@ -31,11 +31,14 @@ import dev.nucleusframework.window.tao.TaoKeyLocation
 import dev.nucleusframework.window.tao.TaoModifierMask
 import dev.nucleusframework.window.tao.TaoNativeViewHost
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.TaoScrollGesturePhase
 import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
+import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -50,9 +53,12 @@ import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
 import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -1062,6 +1068,11 @@ internal class TaoComposeSceneHost(
     fun onPointerScroll(event: TaoPointerScrollEvent) {
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
+        if (event.gesturePhase != TaoScrollGesturePhase.NONE) {
+            // Trackpad gesture step: Compose Pan events, not Scroll (#654).
+            trackpadPan.onGesture(event.gesturePhase, Offset(event.dxAwt, event.dyAwt))
+            return
+        }
         scene?.dispatchAwtShapedScroll(
             x = pointerDeadband.x,
             y = pointerDeadband.y,
@@ -1069,6 +1080,38 @@ internal class TaoComposeSceneHost(
             keyboardModifiers = currentKeyboardModifiers,
         )
     }
+
+    // Deferred PanEnd timer of [trackpadPan]; lives on the Tao main thread
+    // like every other host callback.
+    private val trackpadPanScope = CoroutineScope(TaoMainDispatcher + SupervisorJob())
+
+    /**
+     * Turns the macOS trackpad scroll gesture stream into Compose Pan events
+     * (#654). Offsets arrive in AWT wheel units and leave in pixels: one unit
+     * is `10.dp` — the factor Compose Desktop's `MacOSCocoaConfig` applies to
+     * a wheel notch — so a trackpad pan and a wheel scroll move content by the
+     * same amount, as they do under AWT.
+     */
+    private val trackpadPan =
+        TaoTrackpadPanRouter(
+            schedule = { delayMillis, action ->
+                val job =
+                    trackpadPanScope.launch {
+                        delay(delayMillis)
+                        exceptionHandler.catchExceptions(action)
+                    }
+                ({ job.cancel() })
+            },
+            send = { type, panAwt ->
+                scene?.dispatchTrackpadPan(
+                    x = pointerDeadband.x,
+                    y = pointerDeadband.y,
+                    type = type,
+                    panOffset = panAwt * (AWT_PIXEL_TO_ROTATION * scale),
+                    keyboardModifiers = currentKeyboardModifiers,
+                )
+            },
+        )
 
     // ── Trackpad gestures (macOS pinch / rotate / smart-magnify) ──────────
     //
@@ -1551,6 +1594,7 @@ internal class TaoComposeSceneHost(
         window.imePreedit = null
         window.imeCommit = null
         imeSession.onInputSession(null)
+        trackpadPan.cancel()
         // The native cache keys on the NSView pointer; leaving it set would
         // let a later view allocated at the same address inherit this
         // window's text and caret.

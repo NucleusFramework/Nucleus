@@ -444,6 +444,9 @@ pub enum WindowEvent<'a> {
     device_id: DeviceId,
     delta: MouseScrollDelta,
     phase: TouchPhase,
+    /// PATCH(nucleus): fine-grained trackpad gesture / momentum phase;
+    /// [`ScrollPhase::None`] for a mouse wheel. See [`ScrollPhase`].
+    scroll_phase: ScrollPhase,
     #[deprecated = "Deprecated in favor of WindowEvent::ModifiersChanged"]
     modifiers: ModifiersState,
   },
@@ -570,11 +573,13 @@ impl Clone for WindowEvent<'static> {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       } => MouseWheel {
         device_id: *device_id,
         delta: *delta,
         phase: *phase,
+        scroll_phase: *scroll_phase,
         modifiers: *modifiers,
       },
       #[allow(deprecated)]
@@ -668,11 +673,13 @@ impl<'a> WindowEvent<'a> {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       } => Some(MouseWheel {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       }),
       #[allow(deprecated)]
@@ -902,6 +909,27 @@ pub enum TouchPhase {
   Moved,
   Ended,
   Cancelled,
+}
+
+/// PATCH(nucleus): fine-grained phase of a trackpad scroll, next to the
+/// coarser [`TouchPhase`] on [`WindowEvent::MouseWheel`]. `TouchPhase` can
+/// neither say "not a gesture at all" (a mouse wheel notch) nor tell the
+/// inertial momentum tail that follows a swipe from the fingers-on-glass part;
+/// a toolkit that routes trackpad panning and wheel scrolling differently
+/// needs both. Only the macOS backend reports anything but `None`.
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub enum ScrollPhase {
+  /// Not part of a gesture: mouse wheel, or a device without phase reporting.
+  None,
+  /// Fingers touched the trackpad, no scroll yet (`NSEventPhaseMayBegin`).
+  MayBegin,
+  Began,
+  Changed,
+  Ended,
+  Cancelled,
+  MomentumBegan,
+  MomentumChanged,
+  MomentumEnded,
 }
 
 /// Represents a touch event

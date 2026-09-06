@@ -16,11 +16,28 @@ class TaoWindowScrollTest {
 
     @Test
     fun pixelScrollMirrorsMacOsAwtPreciseWheelRotationScale() {
+        // Wire = logical AppKit points × 100 (#653): 10 pt right, 20 pt up.
         val event = dispatchScroll(TaoEventCode.SCROLL_PIXEL, dx = 1000, dy = -2000)
 
         assertEquals(-1f, event.dxAwt)
         assertEquals(2f, event.dyAwt)
         assertEquals(1, event.scrollAmount)
+        assertEquals(TaoScrollGesturePhase.NONE, event.gesturePhase)
+    }
+
+    @Test
+    fun scrollGestureIsShapedLikePixelScrollWithItsPhase() {
+        var event: TaoPointerScrollEvent? = null
+        TaoWindow(handle = 1L).apply {
+            onPointerScroll { event = it }
+            dispatchScrollGesture(TaoScrollGesturePhase.MOMENTUM_CHANGED, dxFixed = 1000, dyFixed = -2000)
+        }
+        val gesture = requireNotNull(event)
+
+        assertEquals(-1f, gesture.dxAwt)
+        assertEquals(2f, gesture.dyAwt)
+        assertEquals(1, gesture.scrollAmount)
+        assertEquals(TaoScrollGesturePhase.MOMENTUM_CHANGED, gesture.gesturePhase)
     }
 
     private fun dispatchScroll(

@@ -10,34 +10,32 @@ internal const val AWT_PIXEL_TO_ROTATION: Float = 10f
 internal const val MACOS_AWT_SCROLL_AMOUNT: Int = 1
 
 /**
- * Maps raw AppKit `scrollingDelta*` onto AWT `preciseWheelRotation`.
+ * Maps raw AppKit `scrollingDelta*` onto AWT `preciseWheelRotation` the way
+ * OpenJDK's `AWTView.m` + `CPlatformResponder` do: `-[event deltaX/Y]`, where
+ * a precise (trackpad) event's legacy delta is `scrollingDelta × 0.1` in
+ * points. AppKit's sign is "positive = content moves down / right", AWT's is
+ * "positive = scroll down / right" — both axes flip (#652) — and the display
+ * scale never enters (#653).
  *
- * Matches [dev.nucleusframework.window.tao.TaoWindow] `SCROLL_LINE` /
- * `SCROLL_PIXEL`: tao already flips X then Kotlin negates both axes, so
- * the net sign from raw AppKit is `Offset(dx, -dy)`. Precise (trackpad)
- * deltas are converted to physical pixels then divided by 10, same as
- * AWT's NSEvent → `preciseWheelRotation` conversion.
- *
- * Popup NSPanel content views skip tao and must go through this before
- * Compose.
+ * Same net result as [dev.nucleusframework.window.tao.TaoWindow] `SCROLL_LINE`
+ * / `SCROLL_PIXEL`. Popup NSPanel content views skip tao and must go through
+ * this before Compose.
  */
 internal fun appKitWheelToAwtScrollDelta(
     dx: Float,
     dy: Float,
     precise: Boolean,
-    scale: Float,
 ): Offset {
-    val awtSign = Offset(dx, -dy)
-    return if (precise) awtSign * (scale / AWT_PIXEL_TO_ROTATION) else awtSign
+    val awtSign = Offset(-dx, -dy)
+    return if (precise) awtSign / AWT_PIXEL_TO_ROTATION else awtSign
 }
 
 internal fun appKitWheelToAwtScrollEvent(
     dx: Float,
     dy: Float,
     precise: Boolean,
-    scale: Float,
 ): TaoPointerScrollEvent {
-    val delta = appKitWheelToAwtScrollDelta(dx, dy, precise, scale)
+    val delta = appKitWheelToAwtScrollDelta(dx, dy, precise)
     return TaoPointerScrollEvent(
         dxAwt = delta.x,
         dyAwt = delta.y,

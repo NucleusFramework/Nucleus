@@ -66,6 +66,15 @@
                     ]
                 },
                 {
+                    "name": "onScrollGesture",
+                    "parameterTypes": [
+                        "long",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
                     "name": "onTouchInput",
                     "parameterTypes": [
                         "long",
@@ -132,6 +141,15 @@
                         "long",
                         "int",
                         "int",
+                        "int",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "onScrollGesture",
+                    "parameterTypes": [
+                        "long",
                         "int",
                         "int",
                         "int"

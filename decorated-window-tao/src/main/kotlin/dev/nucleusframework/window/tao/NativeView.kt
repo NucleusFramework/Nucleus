@@ -24,6 +24,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -271,6 +272,25 @@ private fun Modifier.nativeViewPointerInterop(
                                 yPx,
                                 change.scrollDelta.x,
                                 change.scrollDelta.y,
+                            )
+                            true
+                        }
+                        PointerEventType.PanStart,
+                        PointerEventType.PanMove,
+                        PointerEventType.PanEnd,
+                        -> {
+                            // Trackpad pan (#654), handed over in AWT wheel
+                            // units: panOffset is 10 dp per unit (see the
+                            // scene host), so the native view keeps scrolling
+                            // under a two-finger swipe exactly like under a
+                            // wheel.
+                            val unitPx = AWT_PIXEL_TO_ROTATION * density
+                            host.dispatchScrollToNative(
+                                handle,
+                                xPx,
+                                yPx,
+                                change.panOffset.x / unitPx,
+                                change.panOffset.y / unitPx,
                             )
                             true
                         }

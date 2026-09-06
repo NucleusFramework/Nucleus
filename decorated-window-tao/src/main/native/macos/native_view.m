@@ -479,16 +479,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
         return;
     }
     // Fallback: Compose/AWT scrollDelta is the inverse of AppKit
-    // `scrollingDelta` (TaoWindow.kt SCROLL_PIXEL/LINE) and pixel
-    // wheels are divided by 10. Reconstruct AppKit units.
-    //   Y: rust keeps scrollingDeltaY, Kotlin negates → nativeY = -dy*10
-    //   X: rust already flips scrollingDeltaX, Kotlin negates again
-    //      → nativeX = dx*10
+    // `scrollingDelta` on both axes (TaoWindow.kt SCROLL_PIXEL/LINE, #652)
+    // and precise deltas are divided by 10. Reconstruct AppKit points:
+    // native = -awt * 10 for X and Y alike.
     const float kAwtPixelToRotation = 10.f;
     CGEventRef cg = CGEventCreateScrollWheelEvent(
         NULL, kCGScrollEventUnitPixel, 2,
         (int32_t)lroundf(-dy * kAwtPixelToRotation),
-        (int32_t)lroundf(dx * kAwtPixelToRotation));
+        (int32_t)lroundf(-dx * kAwtPixelToRotation));
     if (cg == NULL) return;
     CGEventSetLocation(cg, NSPointToCGPoint(
         [hit.window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin));

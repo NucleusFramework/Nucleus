@@ -59,6 +59,31 @@ internal object TaoSyntheticMouseWheelEvent {
 }
 
 /**
+ * Feeds one step of a trackpad pan into the scene as Compose's `PanStart` /
+ * `PanMove` / `PanEnd` (#654). [panOffset] is in pixels with Compose's sign
+ * (positive = content scrolls down / right, like `scrollDelta`); foundation's
+ * `TrackpadScrollingLogic` consumes it directly, so unlike wheel scrolls no
+ * AWT-shaped native event is attached — `ScrollConfig` is only consulted for
+ * `Scroll` events.
+ */
+@OptIn(InternalComposeUiApi::class)
+internal fun ComposeScene.dispatchTrackpadPan(
+    x: Float,
+    y: Float,
+    type: PointerEventType,
+    panOffset: Offset,
+    keyboardModifiers: PointerKeyboardModifiers = PointerKeyboardModifiers(),
+) {
+    sendPointerEvent(
+        eventType = type,
+        position = Offset(x, y),
+        type = PointerType.Mouse,
+        keyboardModifiers = keyboardModifiers,
+        panGestureOffset = panOffset,
+    )
+}
+
+/**
  * Feeds an already AWT-shaped [TaoPointerScrollEvent] into the scene, including
  * the synthetic `MouseWheelEvent` Compose Desktop's scroll config reads for
  * `scrollAmount` / `preciseWheelRotation`.

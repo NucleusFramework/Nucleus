@@ -280,7 +280,7 @@ internal class TaoPopupSceneLayer(
             innerScene.dispatchAwtShapedScroll(
                 x,
                 y,
-                appKitWheelToAwtScrollEvent(dx, dy, precise, scale),
+                appKitWheelToAwtScrollEvent(dx, dy, precise),
             )
         }
 

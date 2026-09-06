@@ -26,6 +26,8 @@ import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
 
 /**
  * Programmatic, reflection-free registry of the stage-1 offscreen battery so
@@ -127,14 +129,14 @@ public object TaoSceneTestBattery {
         run("MacOsWheelDeltaTest: scrollUpMatchesTaoWindowAwtSign") {
             MacOsWheelDeltaTest().scrollUpMatchesTaoWindowAwtSign()
         }
-        run("MacOsWheelDeltaTest: horizontalDeltaKeepsAppKitX") {
-            MacOsWheelDeltaTest().horizontalDeltaKeepsAppKitX()
+        run("MacOsWheelDeltaTest: horizontalDeltaFlipsLikeVertical") {
+            MacOsWheelDeltaTest().horizontalDeltaFlipsLikeVertical()
         }
-        run("MacOsWheelDeltaTest: precisePixelDeltaMatchesTaoWindowScale") {
-            MacOsWheelDeltaTest().precisePixelDeltaMatchesTaoWindowScale()
+        run("MacOsWheelDeltaTest: precisePixelDeltaIgnoresDisplayScale") {
+            MacOsWheelDeltaTest().precisePixelDeltaIgnoresDisplayScale()
         }
-        run("MacOsWheelDeltaTest: precisePixelHorizontalMatchesTaoWindowScale") {
-            MacOsWheelDeltaTest().precisePixelHorizontalMatchesTaoWindowScale()
+        run("MacOsWheelDeltaTest: precisePixelHorizontalFlipsAndDividesByTen") {
+            MacOsWheelDeltaTest().precisePixelHorizontalFlipsAndDividesByTen()
         }
         run("MacOsWheelDeltaTest: lineDeltaCarriesMacOsScrollAmount") {
             MacOsWheelDeltaTest().lineDeltaCarriesMacOsScrollAmount()
@@ -189,6 +191,27 @@ public object TaoSceneTestBattery {
         }
         run("TaoWindowScrollTest: pixelScrollMirrorsMacOsAwtPreciseWheelRotationScale") {
             TaoWindowScrollTest().pixelScrollMirrorsMacOsAwtPreciseWheelRotationScale()
+        }
+        run("TaoWindowScrollTest: scrollGestureIsShapedLikePixelScrollWithItsPhase") {
+            TaoWindowScrollTest().scrollGestureIsShapedLikePixelScrollWithItsPhase()
+        }
+        run("TaoTrackpadPanRouterTest: swipe without momentum ends after the grace period") {
+            TaoTrackpadPanRouterTest().`swipe without momentum ends after the grace period`()
+        }
+        run("TaoTrackpadPanRouterTest: momentum tail continues the pan and ends it once") {
+            TaoTrackpadPanRouterTest().`momentum tail continues the pan and ends it once`()
+        }
+        run("TaoTrackpadPanRouterTest: pan offsets pass through unchanged and zero deltas send no move") {
+            TaoTrackpadPanRouterTest().`pan offsets pass through unchanged and zero deltas send no move`()
+        }
+        run("TaoTrackpadPanRouterTest: cancelled closes immediately and may-begin alone is silent") {
+            TaoTrackpadPanRouterTest().`cancelled closes immediately and may-begin alone is silent`()
+        }
+        run("TaoTrackpadPanRouterTest: a new swipe during the grace period keeps the same pan open") {
+            TaoTrackpadPanRouterTest().`a new swipe during the grace period keeps the same pan open`()
+        }
+        run("TaoTrackpadPanRouterTest: cancel drops the pending end without sending PanEnd") {
+            TaoTrackpadPanRouterTest().`cancel drops the pending end without sending PanEnd`()
         }
         run("TaoWindowResizableTest: reflectsCreationFlag") { TaoWindowResizableTest().reflectsCreationFlag() }
         run("WindowWrapContentTest: creationSizeUsesSpecifiedAxis") {
@@ -353,6 +376,18 @@ public object TaoSceneTestBattery {
         }
         run("TaoSceneScrollTest: scrolled content repaints at the new offset") {
             TaoSceneScrollTest().`scrolled content repaints at the new offset`()
+        }
+        run("TaoSceneTrackpadPanTest: positive vertical pan scrolls a column down") {
+            TaoSceneTrackpadPanTest().`positive vertical pan scrolls a column down`()
+        }
+        run("TaoSceneTrackpadPanTest: positive horizontal pan scrolls a row forward") {
+            TaoSceneTrackpadPanTest().`positive horizontal pan scrolls a row forward`()
+        }
+        run("TaoSceneTrackpadPanTest: negative pan at the origin is a no-op") {
+            TaoSceneTrackpadPanTest().`negative pan at the origin is a no-op`()
+        }
+        run("TaoSceneTrackpadPanTest: pan moves content by its pixel offset") {
+            TaoSceneTrackpadPanTest().`pan moves content by its pixel offset`()
         }
         run("TaoScenePopupTest: popup renders above the window content") {
             TaoScenePopupTest().`popup renders above the window content`()

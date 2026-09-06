@@ -523,6 +523,30 @@ internal object NativeMetalBridge {
     external fun nativeDiagViewTopLeftPx(nsViewPtr: Long): Long
 
     /**
+     * Headful e2e only (#652 / #653 / #654): hands a synthetic `scrollWheel:`
+     * NSEvent to the tao content view — the entry a real trackpad or wheel
+     * takes once the WindowServer has routed it — without an Accessibility
+     * grant or the cursor over the window. [x] / [y] are content-local points
+     * with a top-left origin; [dx] / [dy] are AppKit `scrollingDelta*` values
+     * (points when [precise], lines otherwise); [phase] / [momentumPhase] are
+     * the IOHID field encodings `NSEvent(cgEvent:)` decodes (documented on the
+     * test-side `MacScrollWheelProbe`), `0` = unset. `false` when the view or
+     * its window is gone.
+     */
+    @JvmStatic
+    @Suppress("LongParameterList")
+    external fun nativeDiagInjectScrollWheel(
+        nsViewPtr: Long,
+        x: Float,
+        y: Float,
+        dx: Float,
+        dy: Float,
+        precise: Boolean,
+        phase: Int,
+        momentumPhase: Int,
+    ): Boolean
+
+    /**
      * Disables native → JVM callbacks and removes any active menu bar
      * monitors. Called from a JVM shutdown hook so AppKit can't fire a
      * callback into a half-destroyed JVM.
