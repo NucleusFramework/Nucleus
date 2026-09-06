@@ -17,7 +17,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
 
 /**
@@ -56,6 +55,7 @@ internal class TaoSceneScrollRouter(
     private val target: Target,
     schedule: ((delayMillis: Long, action: () -> Unit) -> (() -> Unit))? = null,
     private val panEnabled: Boolean = trackpadPanEventsEnabled,
+    clock: () -> Long = { System.nanoTime() / NANOS_PER_MILLI },
 ) {
     /** What the router needs from its host, read live at dispatch time. */
     interface Target {
@@ -88,6 +88,7 @@ internal class TaoSceneScrollRouter(
         TaoTrackpadPanRouter(
             schedule = testSchedule ?: ::scheduleOnMain,
             send = ::sendPan,
+            clock = clock,
         )
 
     private var cancelled = false
@@ -114,20 +115,24 @@ internal class TaoSceneScrollRouter(
                 this.y = y
                 this.keyboardModifiers = keyboardModifiers
             }
-            if (!panAnnounced.get() && panAnnounced.compareAndSet(false, true)) {
+            if (!panAnnounced) {
+                // A racing duplicate line is harmless; a CAS per step is not free.
+                panAnnounced = true
                 logger.config {
                     "Trackpad gestures reach Compose as Pan events (PanStart / PanMove / PanEnd); " +
                         "handlers listening only for PointerEventType.Scroll do not see them. " +
                         "-Dnucleus.tao.trackpadPanEvents=false restores AWT-style Scroll events."
                 }
             }
-            if (!pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))) {
+            val orphanedMomentum = !pan.onGesture(phase, Offset(event.dxAwt, event.dyAwt))
+            if (orphanedMomentum && (event.dxAwt != 0f || event.dyAwt != 0f)) {
                 // An orphaned momentum step (the grace closed the pan before
                 // AppKit's tail arrived): Compose is flinging on its own, so a
                 // second pan would stack on it — but dropping the tail would
                 // stop a flick dead. Deliver it as the wheel scroll it would
                 // have been under AWT; the wheel logic interrupts the fling
-                // and carries the distance.
+                // and carries the distance. A zero-delta tail end is skipped,
+                // as AWT skips zero deltas.
                 target.scene?.dispatchAwtShapedScroll(x, y, event, keyboardModifiers)
             }
         } else {
@@ -178,9 +183,11 @@ internal class TaoSceneScrollRouter(
 
     internal companion object {
         private val logger = Logger.getLogger(TaoSceneScrollRouter::class.java.name)
+        private const val NANOS_PER_MILLI = 1_000_000L
 
         /** One CONFIG line per process the first time a gesture is routed as Pan. */
-        private val panAnnounced = AtomicBoolean(false)
+        @Volatile
+        private var panAnnounced = false
 
         /**
          * `-Dnucleus.tao.trackpadPanEvents=false` sends trackpad gesture steps

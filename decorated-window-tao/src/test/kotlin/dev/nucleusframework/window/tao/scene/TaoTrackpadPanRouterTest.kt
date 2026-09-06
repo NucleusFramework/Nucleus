@@ -18,6 +18,8 @@ class TaoTrackpadPanRouterTest {
     private class Harness {
         val sent = mutableListOf<Pair<PointerEventType, Offset>>()
         private var pending: (() -> Unit)? = null
+        private var fireAtMillis = 0L
+        var nowMillis = 0L
         var cancelled = 0
         var lastDelayMillis = -1L
 
@@ -25,6 +27,7 @@ class TaoTrackpadPanRouterTest {
             TaoTrackpadPanRouter(
                 schedule = { delayMillis, action ->
                     lastDelayMillis = delayMillis
+                    fireAtMillis = nowMillis + delayMillis
                     pending = action
                     (
                         {
@@ -34,12 +37,14 @@ class TaoTrackpadPanRouterTest {
                     )
                 },
                 send = { type, delta -> sent += type to delta },
+                clock = { nowMillis },
             )
 
-        /** Fires the pending end timer (grace or stall) as the scheduler would. */
+        /** Advances the clock to the pending timer and fires it, as the scheduler would. */
         fun elapseTimer() {
             val action = pending ?: return
             pending = null
+            nowMillis = fireAtMillis
             action()
         }
 
@@ -155,7 +160,7 @@ class TaoTrackpadPanRouterTest {
 
     @Test
     fun `a truncated stream is closed by the stall watchdog`() {
-        // Every open step arms a stall timer, so a tail that simply stops
+        // Every open step moves the end deadline, so a tail that simply stops
         // (window lost key status, terminal step never delivered) still ends.
         val h = Harness()
         h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
@@ -164,11 +169,42 @@ class TaoTrackpadPanRouterTest {
         assertEquals(TaoTrackpadPanRouter.DEFAULT_STALL_MILLIS, h.lastDelayMillis)
 
         h.router.onGesture(TaoScrollGesturePhase.ENDED, Offset.Zero)
+        assertEquals(TaoTrackpadPanRouter.momentumGraceMillis, h.lastDelayMillis, "Ended pulls the deadline in")
         h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_BEGAN, down)
-        assertEquals(TaoTrackpadPanRouter.DEFAULT_STALL_MILLIS, h.lastDelayMillis, "momentum re-arms the stall timer")
+        // The momentum step pushes the deadline back out to the stall window
+        // without touching the in-flight timer: on firing, that timer re-arms
+        // for the remainder instead of ending the pan.
+        h.elapseTimer()
+        assertEquals(
+            0,
+            h.types().count { it == PointerEventType.PanEnd },
+            "grace timer must defer to the later deadline",
+        )
+        assertEquals(
+            TaoTrackpadPanRouter.DEFAULT_STALL_MILLIS - TaoTrackpadPanRouter.momentumGraceMillis,
+            h.lastDelayMillis,
+            "re-armed for the remainder of the stall window",
+        )
         h.elapseTimer()
         assertEquals(PointerEventType.PanEnd, h.types().last())
         assertEquals(1, h.types().count { it == PointerEventType.PanEnd })
+    }
+
+    @Test
+    fun `finger steps move the deadline without re-scheduling the timer`() {
+        // One coroutine per gesture, not one per 120 Hz step.
+        val h = Harness()
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        repeat(10) {
+            h.nowMillis += 8
+            h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        }
+        assertEquals(0, h.cancelled, "steps that only push the deadline out must not cancel the timer")
+        h.elapseTimer()
+        assertEquals(0, h.types().count { it == PointerEventType.PanEnd }, "the timer fired before the moved deadline")
+        assertTrue(h.hasPendingEnd, "…and re-armed for the remainder")
+        h.elapseTimer()
+        assertEquals(PointerEventType.PanEnd, h.types().last())
     }
 
     @Test
@@ -216,6 +252,9 @@ class TaoTrackpadPanRouterTest {
         h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
 
         assertEquals(1, h.types().count { it == PointerEventType.PanStart })
+        assertEquals(0, h.types().count { it == PointerEventType.PanEnd })
+        // The grace timer still in flight defers to the stall deadline.
+        h.elapseTimer()
         assertEquals(0, h.types().count { it == PointerEventType.PanEnd })
     }
 

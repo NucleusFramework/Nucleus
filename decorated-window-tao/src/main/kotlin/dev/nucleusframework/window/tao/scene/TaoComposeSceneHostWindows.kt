@@ -1745,9 +1745,7 @@ internal class TaoComposeSceneHostWindows(
                 yPx: Float,
                 dx: Float,
                 dy: Float,
-                phase: Int,
             ) {
-                // Windows has no gesture phases on the WM_MOUSEWHEEL wire.
                 if (parent == 0L) return
                 outer.nativePointerRedispatchInFlight = true
                 try {

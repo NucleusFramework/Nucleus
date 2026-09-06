@@ -96,6 +96,23 @@ internal class TaoWindowTestScope(
         }
     }
 
+    /**
+     * [awaitUntil] that reports instead of throwing: `true` once [predicate]
+     * held within [timeoutMillis], `false` otherwise — for cases whose real
+     * assertion (with its own diagnostics) follows.
+     */
+    suspend fun awaitUntilOrTimeout(
+        timeoutMillis: Long,
+        predicate: () -> Boolean,
+    ): Boolean {
+        val deadline = System.currentTimeMillis() + timeoutMillis
+        while (!predicate()) {
+            if (System.currentTimeMillis() >= deadline) return false
+            delay(POLL_MILLIS)
+        }
+        return true
+    }
+
     /** Lets the loop breathe for a fixed settle period. */
     suspend fun settle(millis: Long = SETTLE_MILLIS) = delay(millis)
 

@@ -13,6 +13,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.logging.Logger
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION as SHARED_AWT_PIXEL_TO_ROTATION
+import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_MACOS_AWT_SCROLL_AMOUNT
 
 /**
  * Phase 2 handle to a window owned by the Tao event loop.
@@ -1277,8 +1279,8 @@ public class TaoWindow internal constructor(
         // static on TaoWindow, and these two are part of the validated 2.4.x
         // surface (api/decorated-window-tao.api). Aliases of the shared
         // definitions in event/MacOsWheelDelta.kt so they cannot diverge.
-        const val AWT_PIXEL_TO_ROTATION: Float = dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
-        const val MACOS_AWT_SCROLL_AMOUNT: Int = dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT
+        const val AWT_PIXEL_TO_ROTATION: Float = SHARED_AWT_PIXEL_TO_ROTATION
+        const val MACOS_AWT_SCROLL_AMOUNT: Int = SHARED_MACOS_AWT_SCROLL_AMOUNT
         const val WINDOWS_TOUCH_DRAG_THRESHOLD_PX: Int = 16
 
         val platformLineScrollAmount: Int

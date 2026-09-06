@@ -196,10 +196,9 @@ class TaoSceneTrackpadPanTest {
             routeScroll(gestureStep(TaoScrollGesturePhase.MOMENTUM_CHANGED, dyAwt = 1f))
             routeScroll(gestureStep(TaoScrollGesturePhase.MOMENTUM_ENDED, dyAwt = 0f))
             frameUntilIdle()
-            assertTrue(
-                seen.isNotEmpty() && seen.all { it == PointerEventType.Scroll },
-                "expected Scroll only, got $seen",
-            )
+            // Two Scroll for the two steps with a delta; the zero-delta tail
+            // end is skipped, as AWT skips zero deltas.
+            assertEquals(listOf(PointerEventType.Scroll, PointerEventType.Scroll), seen.toList())
             assertTrue(
                 scrollValue.value > afterPan,
                 "the tail must still move content (${scrollValue.value} vs $afterPan)",

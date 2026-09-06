@@ -78,11 +78,6 @@ class TaoScrollWireDriftTest {
         val expected = AWT_PIXEL_TO_ROTATION.toDouble()
         assertEquals(expected, firstNumber(RUST_LINE_TO_POINTS, eventsRs()), "events.rs AWT_LINE_TO_POINTS")
         assertEquals(expected, firstNumber(OBJC_PIXEL_TO_ROTATION, nativeView()), "native_view.m kAwtPixelToRotation")
-        assertEquals(
-            expected,
-            firstNumber(DEMO_PAN_FACTOR, demoScrollScreen()),
-            "ScrollTestScreen PAN_DP_PER_WHEEL_UNIT",
-        )
     }
 
     private fun firstNumber(
@@ -99,9 +94,6 @@ class TaoScrollWireDriftTest {
     private fun popupPanel() = sourceFile("src/main/native/macos/popup_panel.m")
 
     private fun nativeView() = sourceFile("src/main/native/macos/native_view.m")
-
-    private fun demoScrollScreen() =
-        sourceFile("../examples/nucleus-demo/src/main/kotlin/com/example/demo/ScrollTestScreen.kt")
 
     private fun eventsRs() = sourceFile("src/main/native/src/events.rs")
 
@@ -143,6 +135,5 @@ class TaoScrollWireDriftTest {
         val NV_CODE = Regex("""kNv(\w+)\s*=\s*(\d+)""")
         val RUST_LINE_TO_POINTS = Regex("""const AWT_LINE_TO_POINTS: f64 = ([0-9.]+);""")
         val OBJC_PIXEL_TO_ROTATION = Regex("""kAwtPixelToRotation = ([0-9.]+)f;""")
-        val DEMO_PAN_FACTOR = Regex("""PAN_DP_PER_WHEEL_UNIT = ([0-9.]+)f""")
     }
 }

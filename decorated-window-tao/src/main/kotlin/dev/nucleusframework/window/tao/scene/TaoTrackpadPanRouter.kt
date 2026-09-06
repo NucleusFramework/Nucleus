@@ -41,9 +41,19 @@ internal class TaoTrackpadPanRouter(
     private val send: (type: PointerEventType, panAwt: Offset) -> Unit,
     private val graceMillis: Long = momentumGraceMillis,
     private val stallMillis: Long = DEFAULT_STALL_MILLIS,
+    private val clock: () -> Long = { System.nanoTime() / NANOS_PER_MILLI },
 ) {
     private var active = false
-    private var cancelPendingEnd: (() -> Unit)? = null
+
+    // The end of the open pan is a deadline, not a timer per step: steps arrive
+    // at frame rate and re-arming a coroutine for each would cost a launch, a
+    // main-loop wake and a cancel every few milliseconds. One timer is in
+    // flight at a time; it is only re-scheduled when the deadline moves
+    // EARLIER (the grace after the finger Ended), and on firing it either
+    // closes the pan or re-arms for the remainder.
+    private var endDeadlineMillis = 0L
+    private var timerFiresAtMillis = 0L
+    private var cancelTimer: (() -> Unit)? = null
 
     /**
      * Routes one gesture step. Returns `false` for a momentum step that found
@@ -128,20 +138,31 @@ internal class TaoTrackpadPanRouter(
         send(PointerEventType.PanEnd, Offset.Zero)
     }
 
-    /** (Re-)arms the single end timer of the open pan. */
+    /**
+     * Moves the end deadline of the open pan. A timer is scheduled only when
+     * none is in flight or the new deadline is earlier than its firing time.
+     */
     private fun armEnd(delayMillis: Long) {
-        clearPendingEnd()
         if (!active) return
-        cancelPendingEnd =
+        endDeadlineMillis = clock() + delayMillis
+        if (cancelTimer != null && timerFiresAtMillis <= endDeadlineMillis) return
+        clearPendingEnd()
+        scheduleTimer(delayMillis)
+    }
+
+    private fun scheduleTimer(delayMillis: Long) {
+        timerFiresAtMillis = clock() + delayMillis
+        cancelTimer =
             schedule(delayMillis) {
-                cancelPendingEnd = null
-                finish()
+                cancelTimer = null
+                val remaining = endDeadlineMillis - clock()
+                if (active && remaining > 0) scheduleTimer(remaining) else finish()
             }
     }
 
     private fun clearPendingEnd() {
-        cancelPendingEnd?.invoke()
-        cancelPendingEnd = null
+        cancelTimer?.invoke()
+        cancelTimer = null
     }
 
     internal companion object {
@@ -162,6 +183,8 @@ internal class TaoTrackpadPanRouter(
          * glass is a new `PanStart` when they move again.
          */
         const val DEFAULT_STALL_MILLIS: Long = 1_000L
+
+        private const val NANOS_PER_MILLI = 1_000_000L
 
         val momentumGraceMillis: Long =
             System

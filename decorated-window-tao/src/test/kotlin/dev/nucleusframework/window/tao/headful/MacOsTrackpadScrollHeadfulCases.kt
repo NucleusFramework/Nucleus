@@ -1,26 +1,14 @@
 package dev.nucleusframework.window.tao.headful
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerEvent
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.headful.MacScrollWheelProbe.Momentum
 import dev.nucleusframework.window.tao.headful.MacScrollWheelProbe.Phase
@@ -75,7 +63,7 @@ internal object MacOsTrackpadScrollHeadfulCases {
             settle()
             recorder.reset()
             swipe(dx = -SWIPE_DELTA_PT, dy = 0f, steps = SWIPE_STEPS, momentum = false)
-            waitFor(SCROLL_REACTION_MILLIS) { scrollPx.get() != 0 }
+            awaitUntilOrTimeout(SCROLL_REACTION_MILLIS) { scrollPx.get() != 0 }
             check(scrollPx.get() > 0) {
                 "swipe left (scrollingDeltaX < 0) must scroll the row forward as under AWT; " +
                     "offset=${scrollPx.get()} recorded=${recorder.describe()}"
@@ -192,7 +180,7 @@ internal object MacOsTrackpadScrollHeadfulCases {
 
             recorder.reset()
             swipe(dx = 0f, dy = -SWIPE_DELTA_PT, steps = SWIPE_STEPS, momentum = true)
-            waitFor(PAN_END_MILLIS) { recorder.count(PointerEventType.PanEnd) >= 1 }
+            awaitUntilOrTimeout(PAN_END_MILLIS) { recorder.count(PointerEventType.PanEnd) >= 1 }
             val gesture = recorder.snapshot()
             check(gesture.isNotEmpty() && gesture.first().type == PointerEventType.PanStart) {
                 "a trackpad gesture must open with PanStart; recorded=${recorder.describe()}"
@@ -227,7 +215,9 @@ internal object MacOsTrackpadScrollHeadfulCases {
             }
 
             // A classic wheel notch: AppKit +1 line (scroll up) → AWT -1.
-            val before = gesture.size
+            // Baseline taken right before the injection: anything the gesture
+            // still delivers meanwhile must not land in the wheel's window.
+            val before = recorder.snapshot().size
             inject(dx = 0f, dy = 1f, precise = false)
             awaitUntil("wheel notch recorded as Scroll") { recorder.count(PointerEventType.Scroll) >= 1 }
             val afterWheel = recorder.snapshot().drop(before)
@@ -261,14 +251,14 @@ internal object MacOsTrackpadScrollHeadfulCases {
             settle()
             recorder.reset()
             swipe(dx = 0f, dy = -SWIPE_DELTA_PT, steps = SWIPE_STEPS, momentum = false)
-            waitFor(SCROLL_REACTION_MILLIS) { scrollPx.get() > 0 }
+            awaitUntilOrTimeout(SCROLL_REACTION_MILLIS) { scrollPx.get() > 0 }
             check(scrollPx.get() > 0) {
                 "fingers up must scroll the column down; offset=${scrollPx.get()} recorded=${recorder.describe()}"
             }
             check(recorder.count(PointerEventType.PanMove) >= SWIPE_STEPS) {
                 "the column must have been driven by Pan events; recorded=${recorder.describe()}"
             }
-            waitFor(PAN_END_MILLIS) { recorder.count(PointerEventType.PanEnd) >= 1 }
+            awaitUntilOrTimeout(PAN_END_MILLIS) { recorder.count(PointerEventType.PanEnd) >= 1 }
             check(recorder.count(PointerEventType.PanEnd) == 1) {
                 "a gesture without momentum must still end with exactly one PanEnd; recorded=${recorder.describe()}"
             }
@@ -332,15 +322,6 @@ internal object MacOsTrackpadScrollHeadfulCases {
         check(delivered) { "nativeDiagInjectScrollWheel returned false (window or content view gone?)" }
     }
 
-    /** Polls [predicate] for up to [millis] without failing — the caller asserts. */
-    private suspend fun TaoWindowTestScope.waitFor(
-        millis: Long,
-        predicate: () -> Boolean,
-    ) {
-        val deadline = System.currentTimeMillis() + millis
-        while (!predicate() && System.currentTimeMillis() < deadline) settle(POLL_MILLIS)
-    }
-
     // ── Compose content ─────────────────────────────────────────────────────
 
     private class Recorded(
@@ -401,46 +382,6 @@ internal object MacOsTrackpadScrollHeadfulCases {
         }
     }
 
-    @Composable
-    private fun ScrollableColumn(
-        scrollPx: AtomicInteger,
-        scrollMax: AtomicInteger,
-    ) {
-        val state = rememberScrollState()
-        scrollPx.set(state.value)
-        scrollMax.set(state.maxValue)
-        Column(Modifier.fillMaxSize().verticalScroll(state)) {
-            repeat(CELL_COUNT) { i ->
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(CELL_SIZE_DP.dp)
-                        .background(if (i % 2 == 0) Color.DarkGray else Color.Gray),
-                )
-            }
-        }
-    }
-
-    @Composable
-    private fun ScrollableRow(
-        scrollPx: AtomicInteger,
-        scrollMax: AtomicInteger,
-    ) {
-        val state = rememberScrollState()
-        scrollPx.set(state.value)
-        scrollMax.set(state.maxValue)
-        Row(Modifier.fillMaxSize().horizontalScroll(state)) {
-            repeat(CELL_COUNT) { i ->
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .width(CELL_SIZE_DP.dp)
-                        .background(if (i % 2 == 0) Color.DarkGray else Color.Gray),
-                )
-            }
-        }
-    }
-
     // ── Helpers ─────────────────────────────────────────────────────────────
 
     private fun macOnly(): String? =
@@ -468,7 +409,6 @@ internal object MacOsTrackpadScrollHeadfulCases {
     private const val MOMENTUM_STEP_RATIO = 0.6f
     private const val MOMENTUM_TAIL_RATIO = 0.3f
     private const val STEP_MILLIS = 16L
-    private const val POLL_MILLIS = 16L
 
     /** How long a scrollable gets to react before the (soft) wait gives up. */
     private const val SCROLL_REACTION_MILLIS = 2_000L
@@ -482,7 +422,4 @@ internal object MacOsTrackpadScrollHeadfulCases {
     private const val SCALE_TOLERANCE = 0.01f
     private const val DISPLAY_SETTLE_MILLIS = 1_000L
     private const val HIDPI_CASE_TIMEOUT_MILLIS = 90_000L
-
-    private const val CELL_COUNT = 80
-    private const val CELL_SIZE_DP = 48
 }

@@ -465,21 +465,30 @@ enum { kNvScrollWheel = 0, kNvPanStart = 1, kNvPanMove = 2, kNvPanEnd = 3 };
 /* Compose/AWT wheel unit → AppKit points (TaoSceneScrollRouter, MacOSCocoaConfig). */
 static const float kAwtPixelToRotation = 10.f;
 
-/* The AppKit scroll event most recently handed to a native child, so no
- * event is ever delivered twice: NSApp.currentEvent is not cleared between
- * events, so an idle app still reports the gesture's last event when the pan
- * router's deferred PanEnd fires 150 ms later — and one AppKit event can
- * yield two Compose steps (a Began carrying a delta is PanStart + PanMove).
- * Identity is the unretained pointer plus the timestamp. */
-static __unsafe_unretained NSEvent *sConsumedScroll = nil;
-static NSTimeInterval sConsumedScrollTs = -1;
-static BOOL sConsumedScrollTerminal = NO;
+/* One trackpad gesture reaches one native child at a time, so the per-child
+ * bookkeeping is a single record keyed on the child handle Kotlin passes — a
+ * stable per-NativeView identity, unlike a raw NSView* that a later child
+ * could be allocated at. */
+static struct {
+    jlong child;
+    /* The child was given a begin / move and still owes an end: keeps a
+     * deferred PanEnd from sending a second terminal phase, whatever
+     * NSApp.currentEvent happens to be by then. */
+    BOOL gestureOpen;
+    /* Sub-point residue of the synthesised fallback: CGEvent deltas are whole
+     * points and a slow two-finger drag yields < 0.5 pt per frame. Reset at
+     * every gesture boundary. */
+    float residueX, residueY;
+} sChild = { 0, NO, 0.f, 0.f };
 
-/* Sub-point residue of the synthesised fallback, per target view: CGEvent
- * deltas are whole points and a slow two-finger drag yields < 0.5 pt per
- * frame, which rounding alone would zero out step after step. */
-static __unsafe_unretained NSView *sResidueView = nil;
-static float sResidueX = 0.f, sResidueY = 0.f;
+/* The AppKit scroll event whose DELTA was already handed to a native child,
+ * so no delta is applied twice: NSApp.currentEvent is not cleared between
+ * events, so an idle app still reports the gesture's last event when the pan
+ * router's deferred PanEnd fires 150 ms later — and one AppKit event can yield
+ * two Compose steps (an Ended carrying the last finger delta is PanStart +
+ * PanMove). Identity is the unretained pointer plus the timestamp. */
+static __unsafe_unretained NSEvent *sSpentScroll = nil;
+static NSTimeInterval sSpentScrollTs = -1;
 
 static BOOL nvIsTerminal(NSEvent *e) {
     return (e.phase & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0
@@ -501,6 +510,11 @@ static BOOL nvScrollEventMatches(NSEvent *event, jint phase) {
     }
 }
 
+static void nvNoteDelivered(jint phase, BOOL terminal) {
+    if (terminal || phase == kNvPanEnd)                       sChild.gestureOpen = NO;
+    else if (phase == kNvPanStart || phase == kNvPanMove)    sChild.gestureOpen = YES;
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDispatchScroll(
     JNIEnv *env, jclass clazz,
@@ -515,31 +529,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     NSView *hit = hit_native_child(child, windowPoint);
     if (hit == nil) return;
 
+    if (childPtr != sChild.child) {
+        sChild.child = childPtr;
+        sChild.gestureOpen = NO;
+        sChild.residueX = sChild.residueY = 0.f;
+    } else if (phase == kNvPanStart || phase == kNvScrollWheel) {
+        // Gesture boundary: the residue belonged to what came before.
+        sChild.residueX = sChild.residueY = 0.f;
+    }
+
     NSEvent *current = NSApp.currentEvent;
     BOOL isScroll = current != nil && current.type == NSEventTypeScrollWheel;
-    BOOL consumed = isScroll && current == sConsumedScroll && current.timestamp == sConsumedScrollTs;
-    if (isScroll && !consumed) {
-        // Fresh AppKit event — the source of this Compose step. Replay it
-        // whole when its phase class matches (sign, precision and phase come
-        // for free) and mark it delivered either way, so a second Compose
-        // step from the same event, or the deferred PanEnd, never applies
-        // its delta again.
-        sConsumedScroll = current;
-        sConsumedScrollTs = current.timestamp;
-        if (nvScrollEventMatches(current, phase)) {
-            sConsumedScrollTerminal = nvIsTerminal(current);
-            [hit scrollWheel:current];
-            return;
-        }
-        sConsumedScrollTerminal = NO;
-    } else if (consumed) {
-        // Already delivered in full. Only a PanEnd still owes the child its
-        // terminal phase, and only if what it got was not terminal already.
-        if (phase != kNvPanEnd || sConsumedScrollTerminal) return;
-        dx = 0.f;
-        dy = 0.f;
-        sConsumedScrollTerminal = YES;
+    BOOL spent = isScroll && current == sSpentScroll && current.timestamp == sSpentScrollTs;
+    BOOL hasDelta = dx != 0.f || dy != 0.f;
+    if (isScroll && !spent && nvScrollEventMatches(current, phase)) {
+        // Fresh AppKit event of the right phase class: replay it whole — sign,
+        // precision, phase and delta come for free — and mark its delta spent.
+        sSpentScroll = current;
+        sSpentScrollTs = current.timestamp;
+        nvNoteDelivered(phase, nvIsTerminal(current));
+        [hit scrollWheel:current];
+        return;
     }
+    // This step's delta already travelled with the replayed / synthesised
+    // event it was derived from (a Began carrying a delta is PanStart+PanMove).
+    if (spent && hasDelta) return;
+    // The child already received its terminal phase for this gesture.
+    if (phase == kNvPanEnd && !sChild.gestureOpen) return;
 
     // Fallback: Compose/AWT scrollDelta is the inverse of AppKit
     // `scrollingDelta` on both axes (TaoWindow.kt SCROLL_PIXEL/LINE, #652)
@@ -547,17 +563,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     // native = -awt * 10 for X and Y alike — carrying the sub-point residue
     // forward, and give a pan step the phase the native scroll view expects
     // (IOHID encoding, see popup_panel.m / NucleusTaoMetal.m: 1 began,
-    // 2 changed, 4 ended).
-    if (hit != sResidueView) {
-        sResidueView = hit;
-        sResidueX = 0.f;
-        sResidueY = 0.f;
+    // 2 changed, 4 ended). A fresh event whose delta rides in this step is
+    // spent by it; a zero-delta step (PanStart / PanEnd) leaves the event's
+    // delta to the sibling step that carries it.
+    if (isScroll && !spent && hasDelta) {
+        sSpentScroll = current;
+        sSpentScrollTs = current.timestamp;
     }
-    float px = -dx * kAwtPixelToRotation + sResidueX;
-    float py = -dy * kAwtPixelToRotation + sResidueY;
+    float px = -dx * kAwtPixelToRotation + sChild.residueX;
+    float py = -dy * kAwtPixelToRotation + sChild.residueY;
     int32_t ix = (int32_t)lroundf(px), iy = (int32_t)lroundf(py);
-    sResidueX = px - (float)ix;
-    sResidueY = py - (float)iy;
+    sChild.residueX = px - (float)ix;
+    sChild.residueY = py - (float)iy;
     if (ix == 0 && iy == 0 && phase == kNvPanMove) return; // not a whole point yet
     CGEventRef cg = CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitPixel, 2, iy, ix);
     if (cg == NULL) return;
@@ -571,7 +588,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
         [hit.window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin));
     NSEvent *event = [NSEvent eventWithCGEvent:cg];
     CFRelease(cg);
-    if (event != nil) [hit scrollWheel:event];
+    if (event == nil) return;
+    nvNoteDelivered(phase, NO);
+    [hit scrollWheel:event];
 }
 
 JNIEXPORT void JNICALL

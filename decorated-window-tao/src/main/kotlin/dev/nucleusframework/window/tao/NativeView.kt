@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.PointerButton
@@ -24,7 +25,6 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import dev.nucleusframework.core.runtime.Platform
-import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -272,7 +272,6 @@ private fun Modifier.nativeViewPointerInterop(
                                 yPx,
                                 change.scrollDelta.x,
                                 change.scrollDelta.y,
-                                TaoNativeViewHost.SCROLL_WHEEL,
                             )
                             true
                         }
@@ -280,20 +279,18 @@ private fun Modifier.nativeViewPointerInterop(
                         // native view — begin and end included, so its own
                         // scroll view finishes rubber-banding / fades its
                         // scrollers — and is consumed so the Compose scrollable
-                        // above never opens a pan session of its own. Offsets
-                        // are handed over in AWT wheel units: panOffset is
-                        // 10 dp per unit (see TaoSceneScrollRouter).
+                        // above never opens a pan session of its own. The
+                        // offset stays in scene px; the host converts it back
+                        // to wheel units with the scale the router used.
                         PointerEventType.PanStart,
                         PointerEventType.PanMove,
                         PointerEventType.PanEnd,
                         -> {
-                            val unitPx = AWT_PIXEL_TO_ROTATION * density
-                            host.dispatchScrollToNative(
+                            host.dispatchPanToNative(
                                 handle,
                                 xPx,
                                 yPx,
-                                change.panOffset.x / unitPx,
-                                change.panOffset.y / unitPx,
+                                change.panOffset,
                                 when (event.type) {
                                     PointerEventType.PanStart -> TaoNativeViewHost.PAN_START
                                     PointerEventType.PanEnd -> TaoNativeViewHost.PAN_END
@@ -358,26 +355,36 @@ internal interface TaoNativeViewHost {
     ) {
     }
 
-    /**
-     * Forwards an unconsumed Compose scroll onto the native view. [dx] / [dy]
-     * are AWT wheel units; [phase] is one of [SCROLL_WHEEL], [PAN_START],
-     * [PAN_MOVE], [PAN_END] so the native side can hand the embedded view a
-     * gesture with a proper begin and end (macOS replays the live AppKit event
-     * when it is the matching one, else synthesises a phased scroll).
-     */
-    @Suppress("LongParameterList")
+    /** Forwards an unconsumed Compose scroll (AWT wheel units) onto the native view. */
     fun dispatchScrollToNative(
         handle: Long,
         xPx: Float,
         yPx: Float,
         dx: Float,
         dy: Float,
+    ) {
+    }
+
+    /**
+     * Forwards one step of an unconsumed trackpad pan onto the native view
+     * (#654). [panOffsetPx] is Compose's `panOffset` in scene px; the host
+     * converts it back to wheel units with the same scale the scroll router
+     * sized it with, so an app-level `LocalDensity` override cannot skew it.
+     * [phase] is [PAN_START], [PAN_MOVE] or [PAN_END], so the native side can
+     * hand the embedded view a gesture with a proper begin and end. macOS
+     * only: the other backends never produce Pan events.
+     */
+    fun dispatchPanToNative(
+        handle: Long,
+        xPx: Float,
+        yPx: Float,
+        panOffsetPx: Offset,
         phase: Int,
     ) {
     }
 
     companion object {
-        /** Mouse-wheel notch / phase-less precise scroll. */
+        /** Mouse-wheel notch / phase-less precise scroll (`native_view.m` `kNvScrollWheel`). */
         const val SCROLL_WHEEL: Int = 0
         const val PAN_START: Int = 1
         const val PAN_MOVE: Int = 2

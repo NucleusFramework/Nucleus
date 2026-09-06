@@ -284,14 +284,19 @@ internal class TaoSceneTestScope(
     private var isPressed = false
     private var modifierState = 0
 
+    // Manual clock of the scroll routers, advanced by their timers when fired.
+    private var routerNowMillis = 0L
+
     /** A router's deferred PanEnd, fired by hand (see [elapsePanGrace]); one slot per router. */
-    private class ManualPanTimer {
+    private inner class ManualPanTimer {
         private var pending: (() -> Unit)? = null
+        private var fireAtMillis = 0L
 
         fun schedule(
-            @Suppress("UNUSED_PARAMETER") delayMillis: Long,
+            delayMillis: Long,
             action: () -> Unit,
         ): () -> Unit {
+            fireAtMillis = routerNowMillis + delayMillis
             pending = action
             return { if (pending === action) pending = null }
         }
@@ -299,6 +304,7 @@ internal class TaoSceneTestScope(
         fun fire() {
             val action = pending ?: return
             pending = null
+            routerNowMillis = fireAtMillis
             action()
         }
     }
@@ -311,8 +317,10 @@ internal class TaoSceneTestScope(
 
     private val panTimer = ManualPanTimer()
     private val legacyPanTimer = ManualPanTimer()
-    private val scrollRouter = TaoSceneScrollRouter(scrollTarget, panTimer::schedule, panEnabled = true)
-    private val legacyScrollRouter = TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false)
+    private val scrollRouter =
+        TaoSceneScrollRouter(scrollTarget, panTimer::schedule, panEnabled = true, clock = { routerNowMillis })
+    private val legacyScrollRouter =
+        TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false, clock = { routerNowMillis })
 
     var lastPicture: Picture? = null
         private set

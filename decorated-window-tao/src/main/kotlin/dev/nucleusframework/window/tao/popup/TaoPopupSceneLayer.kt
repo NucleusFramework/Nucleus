@@ -236,7 +236,14 @@ internal class TaoPopupSceneLayer(
             object : TaoSceneScrollRouter.Target {
                 override val scene: ComposeScene get() = innerScene
 
-                // Live: Compose re-assigns the layer density on a display hop.
+                // The layer scene's own density (live: Compose re-assigns it
+                // on a display hop, and it carries an app-level LocalDensity
+                // override at the Popup call site). That is the density the
+                // popup content measures with and the one MacOSCocoaConfig
+                // sizes a wheel notch with — so it is the one a pan must use
+                // to move the same distance. `host.scale` stays the surface's
+                // pixel-per-point ratio for nativeResize; the two differ on
+                // purpose whenever the app zooms its UI through LocalDensity.
                 override val scale: Float get() = _density.density
 
                 override fun guard(block: () -> Unit) = host.exceptionHandler.catchExceptions(block)

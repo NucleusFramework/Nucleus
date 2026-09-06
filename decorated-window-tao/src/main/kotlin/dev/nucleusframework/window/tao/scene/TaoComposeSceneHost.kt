@@ -35,6 +35,7 @@ import dev.nucleusframework.window.tao.TaoTrackpadGesture
 import dev.nucleusframework.window.tao.TaoTrackpadPhase
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -858,7 +859,6 @@ internal class TaoComposeSceneHost(
                 yPx: Float,
                 dx: Float,
                 dy: Float,
-                phase: Int,
             ) {
                 if (outer.nsViewHandle == 0L || handle == 0L) return
                 NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
@@ -868,6 +868,29 @@ internal class TaoComposeSceneHost(
                     yPx,
                     dx,
                     dy,
+                    TaoNativeViewHost.SCROLL_WHEEL,
+                )
+            }
+
+            override fun dispatchPanToNative(
+                handle: Long,
+                xPx: Float,
+                yPx: Float,
+                panOffsetPx: Offset,
+                phase: Int,
+            ) {
+                if (outer.nsViewHandle == 0L || handle == 0L) return
+                // Back to wheel units with the scale TaoSceneScrollRouter used
+                // (10 dp per unit at the window's scale), not the content's
+                // LocalDensity, which an app may override.
+                val unitPx = AWT_PIXEL_TO_ROTATION * outer.scale
+                NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
+                    outer.nsViewHandle,
+                    handle,
+                    xPx,
+                    yPx,
+                    panOffsetPx.x / unitPx,
+                    panOffsetPx.y / unitPx,
                     phase,
                 )
             }
@@ -1077,7 +1100,6 @@ internal class TaoComposeSceneHost(
      * trackpad gesture steps as Pan events — see [TaoSceneScrollRouter].
      */
     fun onPointerScroll(event: TaoPointerScrollEvent) {
-        if (sceneBundle == null) return
         currentKeyboardModifiers = taoKeyboardModifiers(window.modifierState)
         windowInfo.keyboardModifiers = currentKeyboardModifiers
         scrollRouter.onScroll(pointerDeadband.x, pointerDeadband.y, event, currentKeyboardModifiers)

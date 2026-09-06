@@ -2910,12 +2910,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrol
         jfloat x, jfloat y, jfloat dx, jfloat dy, jboolean precise,
         jint phase, jint momentumPhase) {
     (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    // Main thread only from here on, so the lazy flag needs no atomics.
     static int sEnabled = -1;
     if (sEnabled < 0) {
         const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
         sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
     }
-    if (!sEnabled || nsViewPtr == 0 || ![NSThread isMainThread]) return JNI_FALSE;
+    if (!sEnabled) return JNI_FALSE;
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     NSWindow *window = view.window;
     NSScreen *primary = NSScreen.screens.firstObject;

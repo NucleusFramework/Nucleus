@@ -219,6 +219,9 @@ public object TaoSceneTestBattery {
         run("TaoTrackpadPanRouterTest: a truncated stream is closed by the stall watchdog") {
             TaoTrackpadPanRouterTest().`a truncated stream is closed by the stall watchdog`()
         }
+        run("TaoTrackpadPanRouterTest: finger steps move the deadline without re-scheduling the timer") {
+            TaoTrackpadPanRouterTest().`finger steps move the deadline without re-scheduling the timer`()
+        }
         run("TaoTrackpadPanRouterTest: finishNow closes an open pan and is a no-op otherwise") {
             TaoTrackpadPanRouterTest().`finishNow closes an open pan and is a no-op otherwise`()
         }
