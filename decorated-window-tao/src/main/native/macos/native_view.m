@@ -680,3 +680,101 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeRe
     }
     [overlay removeFromSuperview];
 }
+
+// ── Diagnostics for the headful suite ──────────────────────────────────
+//
+// A NativeView case needs a real, focusable AppKit view — one that takes
+// first responder on click and shows an I-beam — to race against Compose.
+// The test module cannot allocate one itself, so these hand out a plain
+// NSTextField and read the responder chain and the text back. Nothing here
+// is used by NativeView proper.
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagCreateTextField(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    NSTextField *field = [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 64, 24)];
+    field.editable = YES;
+    field.selectable = YES;
+    field.bezeled = YES;
+    field.wantsLayer = YES;
+    return (jlong)(uintptr_t)(__bridge_retained void *)field;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagReleaseView(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    if (viewPtr == 0) return;
+    NSView *view = (__bridge_transfer NSView *)(void *)(uintptr_t)viewPtr;
+    [view removeFromSuperview];
+}
+
+/* An NSTextField never is the first responder itself while edited: the
+ * window's shared field editor (an NSTextView whose delegate is the
+ * field) is. Both shapes mean "keystrokes go to the embed". */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsEditing(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    NSResponder *first = view.window.firstResponder;
+    if (first == view) return JNI_TRUE;
+    if ([first isKindOfClass:[NSTextView class]]) {
+        NSTextView *editor = (NSTextView *)first;
+        if (editor.isFieldEditor && editor.delegate == (id<NSTextViewDelegate>)view) return JNI_TRUE;
+    }
+    return JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewIsFirstResponder(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)env; (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.window == nil) return JNI_FALSE;
+    return view.window.firstResponder == view ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagTextFieldString(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (![view isKindOfClass:[NSTextField class]]) return NULL;
+    NSString *value = ((NSTextField *)view).stringValue ?: @"";
+    return (*env)->NewStringUTF(env, value.UTF8String);
+}
+
+/* The view's frame in its superview, converted to Compose's convention:
+ * physical pixels, top-left origin, as `[x, y, w, h]`. Null without a
+ * superview or a window. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDiagViewFrame(
+    JNIEnv *env, jclass clazz, jlong viewPtr)
+{
+    (void)clazz;
+    NSView *view = view_from_long(viewPtr);
+    if (view == nil || view.superview == nil || view.window == nil) return NULL;
+    CGFloat scale = view.window.backingScaleFactor;
+    if (scale <= 0) scale = 1.0;
+    NSRect frame = view.frame;
+    CGFloat parentHeight = view.superview.bounds.size.height;
+    CGFloat topLeftY = view.superview.isFlipped ? frame.origin.y : parentHeight - frame.origin.y - frame.size.height;
+    jint out[4] = {
+        (jint)lround(frame.origin.x * scale),
+        (jint)lround(topLeftY * scale),
+        (jint)lround(frame.size.width * scale),
+        (jint)lround(frame.size.height * scale),
+    };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
+}

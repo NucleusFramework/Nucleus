@@ -227,3 +227,72 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_native
     short delta = (short)(msg == WM_MOUSEHWHEEL ? (-dx * 120.0f) : (-dy * 120.0f));
     SendMessageW(target, msg, MAKEWPARAM(0, delta), MAKELPARAM((short)pt.x, (short)pt.y));
 }
+
+/* ── Diagnostics for the headful suite ──────────────────────────────────
+ *
+ * A NativeView case needs a real, focusable child HWND — one that takes
+ * Win32 keyboard focus on click and shows an I-beam — to race against
+ * Compose. The test module cannot create one itself, so these hand out a
+ * plain single-line EDIT control and read the focus and the text back.
+ * Nothing here is used by NativeView proper. */
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagCreateEdit(
+    JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    /* Hidden top-level: nativeAttach flips it to WS_CHILD and reparents,
+     * exactly the path a user-created control takes. */
+    HWND edit = CreateWindowExW(
+        0, L"EDIT", L"",
+        WS_POPUP | ES_LEFT | ES_AUTOHSCROLL,
+        0, 0, 64, 24,
+        NULL, NULL, GetModuleHandleW(NULL), NULL);
+    return (jlong)(uintptr_t)edit;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagDestroyWindow(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)env; (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (IsWindow(h)) DestroyWindow(h);
+}
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagFocusedHwnd(
+    JNIEnv *env, jclass clazz) {
+    (void)env; (void)clazz;
+    return (jlong)(uintptr_t)GetFocus();
+}
+
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagWindowText(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    WCHAR buf[512];
+    int len = GetWindowTextW(h, buf, 512);
+    if (len < 0) len = 0;
+    return (*env)->NewString(env, (const jchar *)buf, (jsize)len);
+}
+
+/* The control's rectangle in its parent's client coordinates (physical
+ * px, top-left origin) as `[x, y, w, h]`, or null when not a window. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsNativeViewBridge_nativeDiagWindowFrame(
+    JNIEnv *env, jclass clazz, jlong hwnd) {
+    (void)clazz;
+    HWND h = hwnd_from_jlong(hwnd);
+    if (!IsWindow(h)) return NULL;
+    HWND parent = GetParent(h);
+    RECT rect;
+    if (!GetWindowRect(h, &rect)) return NULL;
+    POINT corners[2] = { { rect.left, rect.top }, { rect.right, rect.bottom } };
+    if (parent) MapWindowPoints(NULL, parent, corners, 2);
+    jint out[4] = { corners[0].x, corners[0].y, corners[1].x - corners[0].x, corners[1].y - corners[0].y };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
+}

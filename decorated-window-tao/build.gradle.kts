@@ -177,6 +177,10 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     System.getProperty("nucleus.tao.headful.monkeySeed")?.let {
         systemProperty("nucleus.tao.headful.monkeySeed", it)
     }
+    // Replays a journal instead of a random walk (comma-separated action names).
+    System.getProperty("nucleus.tao.headful.monkeyScript")?.let {
+        systemProperty("nucleus.tao.headful.monkeyScript", it)
+    }
     System.getProperties().stringPropertyNames().filter { it.startsWith("nucleus.dialog.appearance.") }.forEach {
         systemProperty(it, System.getProperty(it))
     }

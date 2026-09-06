@@ -548,6 +548,7 @@ internal class TaoPopupSceneLayer(
 
     override fun close() {
         host.unregisterRenderer(rendererToken)
+        host.onLayerClosed(this)
         host.popupScrims.unregister(rendererToken)
         // Mark disposed before any teardown so a surface already recorded this
         // frame is skipped at replay time (TaoRecordedSurface.isAlive).

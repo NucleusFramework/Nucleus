@@ -123,6 +123,14 @@ typedef void       (*PFN_gdk_event_free)(void *event);
 typedef void      *(*PFN_g_object_ref)(void *obj);
 typedef void       (*PFN_g_object_unref)(void *obj);
 typedef void       (*PFN_g_list_free)(GList *list);
+typedef GtkWidget *(*PFN_gtk_window_get_focus)(GtkWindow *window);
+typedef void       (*PFN_gtk_container_check_resize)(GtkContainer *container);
+typedef void       (*PFN_gtk_widget_queue_draw)(GtkWidget *widget);
+typedef void      *(*PFN_gdk_window_get_display)(void *window);
+typedef void      *(*PFN_gdk_display_get_default_seat)(void *display);
+typedef void      *(*PFN_gdk_seat_get_pointer)(void *seat);
+typedef void      *(*PFN_gdk_window_get_device_position)(
+    void *window, void *device, int *x, int *y, unsigned int *mask);
 
 /* GtkAlign enum — `GTK_ALIGN_FILL` = 0 (GTK 3), `GTK_ALIGN_START` = 1.
  * We use START on the dummy main child so it doesn't request expansion. */
@@ -168,6 +176,14 @@ static struct {
     PFN_g_object_ref              g_object_ref;
     PFN_g_object_unref            g_object_unref;
     PFN_g_list_free               g_list_free;
+    /* Optional: keyboard-owner bookkeeping and the live button state. */
+    PFN_gtk_window_get_focus      gtk_window_get_focus;
+    PFN_gtk_container_check_resize gtk_container_check_resize;
+    PFN_gtk_widget_queue_draw     gtk_widget_queue_draw;
+    PFN_gdk_window_get_display    gdk_window_get_display;
+    PFN_gdk_display_get_default_seat gdk_display_get_default_seat;
+    PFN_gdk_seat_get_pointer      gdk_seat_get_pointer;
+    PFN_gdk_window_get_device_position gdk_window_get_device_position;
 } g;
 
 static void *load_first(const char *const *names) {
@@ -236,7 +252,14 @@ static int ensure_gtk_loaded(void) {
     if (libgdk != NULL) {
         g.gdk_event_copy          = (PFN_gdk_event_copy)              dlsym(libgdk, "gdk_event_copy");
         g.gdk_event_free          = (PFN_gdk_event_free)              dlsym(libgdk, "gdk_event_free");
+        g.gdk_window_get_display  = (PFN_gdk_window_get_display)      dlsym(libgdk, "gdk_window_get_display");
+        g.gdk_display_get_default_seat = (PFN_gdk_display_get_default_seat) dlsym(libgdk, "gdk_display_get_default_seat");
+        g.gdk_seat_get_pointer    = (PFN_gdk_seat_get_pointer)        dlsym(libgdk, "gdk_seat_get_pointer");
+        g.gdk_window_get_device_position = (PFN_gdk_window_get_device_position) dlsym(libgdk, "gdk_window_get_device_position");
     }
+    g.gtk_window_get_focus        = (PFN_gtk_window_get_focus)        dlsym(libgtk, "gtk_window_get_focus");
+    g.gtk_container_check_resize  = (PFN_gtk_container_check_resize)  dlsym(libgtk, "gtk_container_check_resize");
+    g.gtk_widget_queue_draw       = (PFN_gtk_widget_queue_draw)       dlsym(libgtk, "gtk_widget_queue_draw");
     g.g_object_ref                = (PFN_g_object_ref)                dlsym(libgobj, "g_object_ref");
     g.g_object_unref              = (PFN_g_object_unref)              dlsym(libgobj, "g_object_unref");
     if (libglib != NULL) {
@@ -348,6 +371,24 @@ typedef struct {
     gint x, y, w, h;
     gint valid;
 } widget_rect_t;
+
+/* Whether [widget] is one of the EventBoxes this file creates — the input
+ * boxes and the focus sink. GTK focus on one of them means Compose owns the
+ * keyboard (Tao's toplevel handler feeds it); focus on anything else means
+ * an embed does. Tao reads the same marker (`nucleus_tao_input_box`) to
+ * decide whether a key press is Compose's or the embed's. */
+static int is_nucleus_input_box(GtkWidget *widget) {
+    return widget != NULL && g.g_object_get_data(widget, NUCLEUS_INPUT_BOX_KEY) != NULL;
+}
+
+/* The GTK focus widget of the toplevel [widget] lives in, or NULL. */
+static GtkWidget *focus_widget_of(GtkWidget *widget) {
+    if (g.gtk_window_get_focus == NULL) return NULL;
+    GtkWidget *toplevel = g.gtk_widget_get_toplevel(widget);
+    if (toplevel == NULL) return NULL;
+    return g.gtk_window_get_focus((GtkWindow *) toplevel);
+}
+
 
 /* `get-child-position` signal handler. Reads the cached rect from the
  * child's GObject data and writes it into [allocation]. ALWAYS returns
@@ -529,6 +570,25 @@ static void egl_restore(const egl_snapshot_t *s) {
  * widget never realises at the offscreen 1×1 parking allocation
  * (WebKit's GPU compositor sizes its glyph atlas at first paint and
  * never recovers from a 1×1 start: page text stays blank). */
+/* Re-runs `get-child-position` for the overlay's children with the rects
+ * just cached — synchronously. `gtk_widget_queue_resize` alone parks the
+ * allocation until GTK's next frame-clock layout phase, one compositor
+ * frame after Compose laid the slot out: through a resize the embed then
+ * trails the window by a frame at best, and by several when the frame
+ * clock is paced slower than the Compose layouts feeding it. Processing
+ * the queued resize right here lands the embed in the same frame as the
+ * Compose content around it. The overlay reports min = 0, so the pass
+ * never reaches the GtkApplicationWindow. The embed's own size_allocate
+ * may touch its GL (WebKit's accelerated surface): guard the thread's EGL
+ * context like every other GTK call that can. */
+static void relayout_overlay_now(GtkWidget *overlay) {
+    g.gtk_widget_queue_resize(overlay);
+    if (g.gtk_container_check_resize == NULL) return;
+    egl_snapshot_t saved = egl_save();
+    g.gtk_container_check_resize((GtkContainer *) overlay);
+    egl_restore(&saved);
+}
+
 static void mount_on_overlay(GtkWidget *overlay, GtkWidget *widget) {
     GtkWidget *parent = g.gtk_widget_get_parent(widget);
     if (parent == overlay) return;
@@ -669,12 +729,10 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeSetFra
         return;
     }
 
-    /* Trigger a re-layout pass on the overlay so
-     * `get-child-position` runs with the new rect. The overlay
-     * itself reports min = 0 (we pinned it via set_size_request),
-     * so this does NOT propagate up to the GtkApplicationWindow —
-     * shrinking the window stays cheap. */
-    g.gtk_widget_queue_resize(parent);
+    /* Re-layout the overlay so `get-child-position` runs with the new
+     * rect — now, not at the next frame-clock tick (see
+     * relayout_overlay_now). */
+    relayout_overlay_now(parent);
 }
 
 /* Clears the GTK window's focused widget. The Compose overlay slot
@@ -700,6 +758,68 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeReques
     if (gtk_window_ptr == 0) return;
     GtkWindow *win = (GtkWindow *) (uintptr_t) gtk_window_ptr;
     g.gtk_window_set_focus(win, NULL);
+}
+
+/* Gives the keyboard back to Compose after a press Compose kept: when an
+ * embed holds GTK focus (the user clicked into it earlier), a click on
+ * Compose ground outside every input box would otherwise leave the keys
+ * with the embed while Compose shows a focused text field. Clearing the
+ * focus widget routes keys to the toplevel handler again — Tao picks them
+ * up for Compose — and the next focus-in lands on the focus sink, never
+ * on the embed. Returns whether anything changed. */
+EXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeClaimKeyboardForCompose(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || g.gtk_window_get_focus == NULL) return JNI_FALSE;
+    if (gtk_window_ptr == 0) return JNI_FALSE;
+    GtkWindow *win = (GtkWindow *) (uintptr_t) gtk_window_ptr;
+    GtkWidget *focus = g.gtk_window_get_focus(win);
+    if (focus == NULL || is_nucleus_input_box(focus)) return JNI_FALSE;
+    g.gtk_window_set_focus(win, NULL);
+    return JNI_TRUE;
+}
+
+/* The pointer's button state as GDK sees it right now (GDK_BUTTON1_MASK =
+ * 1 << 8, BUTTON2 = 1 << 9, BUTTON3 = 1 << 10), or -1 when it cannot be
+ * read. A press forwarded to an embed can lose its release to a grab the
+ * embed takes — its context menu, a drag it starts — so the host asks GDK
+ * which buttons are really down instead of trusting the last event. */
+EXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeQueryPointerButtons(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || gtk_window_ptr == 0) return -1;
+    if (g.gtk_widget_get_window == NULL || g.gdk_window_get_display == NULL ||
+        g.gdk_display_get_default_seat == NULL || g.gdk_seat_get_pointer == NULL ||
+        g.gdk_window_get_device_position == NULL) {
+        return -1;
+    }
+    void *gdk_window = g.gtk_widget_get_window((GtkWidget *) (uintptr_t) gtk_window_ptr);
+    if (gdk_window == NULL) return -1;
+    void *display = g.gdk_window_get_display(gdk_window);
+    void *seat = display != NULL ? g.gdk_display_get_default_seat(display) : NULL;
+    void *pointer = seat != NULL ? g.gdk_seat_get_pointer(seat) : NULL;
+    if (pointer == NULL) return -1;
+    unsigned int mask = 0;
+    g.gdk_window_get_device_position(gdk_window, pointer, NULL, NULL, &mask);
+    return (jint) mask;
+}
+
+/* Asks GTK to paint — and so commit — its toplevel on its next frame. While
+ * the content sub-surface is in sync mode (resize burst with an embed), a
+ * Compose buffer is only shown by GTK's commit; GTK commits on every
+ * configure while the pointer moves, and this covers the frames in between
+ * and the last one after the pointer stops. */
+EXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeQueueToplevelDraw(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || g.gtk_widget_queue_draw == NULL || gtk_window_ptr == 0) return;
+    g.gtk_widget_queue_draw((GtkWidget *) (uintptr_t) gtk_window_ptr);
 }
 
 /* ── Input-box overlay: hit capture for NativeView blending ──
@@ -886,8 +1006,13 @@ static gboolean on_input_box_button_press(GtkWidget *widget, void *event_ptr,
     s_live_event = NULL;
     /* Focus the box only when Compose kept the press; if it was
      * forwarded to the embed, the embed grabbed focus and stealing it
-     * back would send the next keystrokes to Compose instead. */
-    if (!s_live_event_forwarded && g.gtk_widget_grab_focus != NULL) {
+     * back would send the next keystrokes to Compose instead. And only
+     * when the keyboard is not already Compose's: moving focus from one
+     * of our boxes to another fires a focus-out that the Kotlin side
+     * turns into "clear the Compose focus" — a click on a Compose button
+     * over an embed would deselect the text field beside it. */
+    if (!s_live_event_forwarded && g.gtk_widget_grab_focus != NULL &&
+        !is_nucleus_input_box(focus_widget_of(widget))) {
         g.gtk_widget_grab_focus(widget);
     }
     /* TRUE = consume the event. We have already dispatched it to
@@ -1100,7 +1225,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeMoveIn
     rect->valid = 1;
 
     GtkWidget *overlay = g.gtk_widget_get_parent(box);
-    if (overlay != NULL) g.gtk_widget_queue_resize(overlay);
+    if (overlay != NULL) relayout_overlay_now(overlay);
 }
 
 EXPORT void JNICALL
@@ -1194,4 +1319,158 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDispat
     GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
     if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
     forward_live_event(widget, (double) x_logical, (double) y_logical);
+}
+
+/* ── Diagnostics for the headful suite ──────────────────────────────────
+ *
+ * The test module has no way to fabricate a `GtkWidget*` of its own, and
+ * a NativeView case needs a real, focusable one: a widget that takes GTK
+ * keyboard focus on click and shows an I-beam is what the focus and
+ * cursor races between Compose and an embed happen against. These entry
+ * points hand out a plain `GtkEntry`, say which widget the GTK window
+ * currently focuses, and read the entry back — nothing here is used by
+ * `NativeView` itself. Resolved lazily and optionally, so a GTK without
+ * one of these symbols still mounts embeds. */
+
+typedef GtkWidget  *(*PFN_gtk_entry_new)(void);
+typedef const char *(*PFN_gtk_entry_get_text)(GtkWidget *entry);
+typedef GtkWidget  *(*PFN_gtk_window_get_focus)(GtkWindow *window);
+typedef gboolean    (*PFN_gtk_widget_has_focus)(GtkWidget *widget);
+typedef void       *(*PFN_g_object_ref_sink)(void *object);
+typedef void        (*PFN_gtk_widget_get_allocation)(GtkWidget *widget, GdkRectangle *allocation);
+typedef gboolean    (*PFN_gtk_widget_get_mapped)(GtkWidget *widget);
+
+static struct {
+    int resolved;
+    PFN_gtk_entry_new        gtk_entry_new;
+    PFN_gtk_entry_get_text   gtk_entry_get_text;
+    PFN_gtk_window_get_focus gtk_window_get_focus;
+    PFN_gtk_widget_has_focus gtk_widget_has_focus;
+    PFN_g_object_ref_sink    g_object_ref_sink;
+    PFN_gtk_widget_get_allocation gtk_widget_get_allocation;
+    PFN_gtk_widget_get_mapped gtk_widget_get_mapped;
+} diag;
+
+static int ensure_diag_loaded(void) {
+    if (!ensure_gtk_loaded()) return 0;
+    if (diag.resolved) return diag.gtk_entry_new != NULL;
+    diag.resolved = 1;
+    const char *gtk_libs[] = { "libgtk-3.so.0", "libgtk-3.so", NULL };
+    void *libgtk = load_first(gtk_libs);
+    if (libgtk == NULL) return 0;
+    diag.gtk_entry_new        = (PFN_gtk_entry_new)        dlsym(libgtk, "gtk_entry_new");
+    diag.gtk_entry_get_text   = (PFN_gtk_entry_get_text)   dlsym(libgtk, "gtk_entry_get_text");
+    diag.gtk_window_get_focus = (PFN_gtk_window_get_focus) dlsym(libgtk, "gtk_window_get_focus");
+    diag.gtk_widget_has_focus = (PFN_gtk_widget_has_focus) dlsym(libgtk, "gtk_widget_has_focus");
+    diag.gtk_widget_get_allocation = (PFN_gtk_widget_get_allocation) dlsym(libgtk, "gtk_widget_get_allocation");
+    diag.gtk_widget_get_mapped = (PFN_gtk_widget_get_mapped) dlsym(libgtk, "gtk_widget_get_mapped");
+    const char *gobj_libs[] = { "libgobject-2.0.so.0", "libgobject-2.0.so", NULL };
+    void *libgobj = load_first(gobj_libs);
+    if (libgobj != NULL) diag.g_object_ref_sink = (PFN_g_object_ref_sink) dlsym(libgobj, "g_object_ref_sink");
+    return diag.gtk_entry_new != NULL && diag.g_object_ref_sink != NULL;
+}
+
+/* A fresh, unparented `GtkEntry` — the caller owns it until
+ * nativeDiagDestroyWidget. Owned the way a well-behaved embedder owns a
+ * widget it hands to NativeView: `g_object_ref_sink` here, so the
+ * container's unparent on detach does not finalise it under the app, and
+ * `g_object_unref` after the destroy. Shown here so the deferred mount in
+ * nativeSetFrame maps it as soon as it is realised. */
+EXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagCreateEntry(
+    JNIEnv *env, jclass clazz)
+{
+    (void) env; (void) clazz;
+    if (!ensure_diag_loaded()) return 0;
+    GtkWidget *entry = diag.gtk_entry_new();
+    if (entry == NULL) return 0;
+    diag.g_object_ref_sink(entry);
+    g.gtk_widget_set_can_focus(entry, GTK_TRUE);
+    g.gtk_widget_show(entry);
+    return (jlong) (uintptr_t) entry;
+}
+
+/* Destroys a widget made by nativeDiagCreateEntry. Detaches it first so
+ * GtkOverlay's child window bookkeeping runs before GTK finalises it. */
+EXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagDestroyWidget(
+    JNIEnv *env, jclass clazz, jlong widget_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || widget_ptr == 0) return;
+    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
+    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return;
+    GtkWidget *parent = g.gtk_widget_get_parent(widget);
+    if (parent != NULL) g.gtk_container_remove((GtkContainer *) parent, widget);
+    g.gtk_widget_destroy(widget);
+    g.g_object_unref(widget);
+}
+
+/* The widget the GTK window routes key events to, as a pointer, or 0
+ * when nothing in the window has focus. A NativeView case compares it
+ * against its entry and against nothing — after a click on Compose the
+ * focus must sit on an input box (or nowhere), never on the embed. */
+EXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagFocusWidget(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_diag_loaded() || diag.gtk_window_get_focus == NULL) return 0;
+    if (gtk_window_ptr == 0) return 0;
+    GtkWidget *focus = diag.gtk_window_get_focus((GtkWindow *) (uintptr_t) gtk_window_ptr);
+    return (jlong) (uintptr_t) focus;
+}
+
+/* Whether [widget_ptr] itself has GTK focus (its toplevel need not be active). */
+EXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagWidgetHasFocus(
+    JNIEnv *env, jclass clazz, jlong widget_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_diag_loaded() || diag.gtk_widget_has_focus == NULL) return JNI_FALSE;
+    if (widget_ptr == 0) return JNI_FALSE;
+    return diag.gtk_widget_has_focus((GtkWidget *) (uintptr_t) widget_ptr) ? JNI_TRUE : JNI_FALSE;
+}
+
+/* The text typed into an entry made by nativeDiagCreateEntry — proves
+ * that keystrokes reached the embed (or did not) after a focus change. */
+EXPORT jstring JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagEntryText(
+    JNIEnv *env, jclass clazz, jlong widget_ptr)
+{
+    (void) clazz;
+    if (!ensure_diag_loaded() || diag.gtk_entry_get_text == NULL) return NULL;
+    if (widget_ptr == 0) return NULL;
+    const char *text = diag.gtk_entry_get_text((GtkWidget *) (uintptr_t) widget_ptr);
+    return text != NULL ? (*env)->NewStringUTF(env, text) : NULL;
+}
+
+/* Where the probe actually sits: its allocation translated into the
+ * coordinates of Tao's content box (the widget Compose's origin maps to),
+ * in logical pixels, as `[x, y, w, h]` — or null while it is not mapped.
+ * A resize case compares this against the Compose slot to measure how far
+ * the embed trails the layout. */
+EXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeDiagWidgetFrame(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr, jlong widget_ptr)
+{
+    (void) clazz;
+    if (!ensure_diag_loaded() || diag.gtk_widget_get_allocation == NULL || diag.gtk_widget_get_mapped == NULL) {
+        return NULL;
+    }
+    if (gtk_window_ptr == 0 || widget_ptr == 0) return NULL;
+    GtkWidget *widget = (GtkWidget *) (uintptr_t) widget_ptr;
+    if (!g.g_type_check_instance_is_a(widget, g.gtk_widget_get_type())) return NULL;
+    if (!diag.gtk_widget_get_mapped(widget)) return NULL;
+    GtkWidget *content = g.gtk_bin_get_child((GtkWidget *) (uintptr_t) gtk_window_ptr);
+    if (content == NULL) return NULL;
+    GdkRectangle allocation;
+    diag.gtk_widget_get_allocation(widget, &allocation);
+    int x = 0, y = 0;
+    if (!g.gtk_widget_translate_coordinates(widget, content, 0, 0, &x, &y)) return NULL;
+    jint out[4] = { x, y, allocation.width, allocation.height };
+    jintArray result = (*env)->NewIntArray(env, 4);
+    if (result == NULL) return NULL;
+    (*env)->SetIntArrayRegion(env, result, 0, 4, out);
+    return result;
 }

@@ -733,12 +733,34 @@ internal object NativeTaoBridge {
         fullscreen: Boolean,
     )
 
-    /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
+    /**
+     * Sets the OS cursor for the window. [code] follows [TaoCursorIcon].
+     * Callers go through [setCursorIcon], which records the request first.
+     */
     @JvmStatic
     external fun nativeSetCursorIcon(
         handle: Long,
         code: Int,
     )
+
+    /**
+     * The last cursor code requested per window handle, exactly as it was
+     * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
+     * read back portably (and never under Xvfb), so this is what the headful
+     * suite asserts against: a `BasicTextField` under a still pointer must
+     * have left a `TEXT` here, and a native view under it must not have
+     * flipped it back.
+     */
+    val lastCursorIcon: java.util.concurrent.ConcurrentHashMap<Long, Int> = java.util.concurrent.ConcurrentHashMap()
+
+    /** Records the request in [lastCursorIcon] and applies it. */
+    fun setCursorIcon(
+        handle: Long,
+        code: Int,
+    ) {
+        lastCursorIcon[handle] = code
+        nativeSetCursorIcon(handle, code)
+    }
 
     /**
      * Anchors the platform IME UI at the given window-local rect in *physical

@@ -54,6 +54,7 @@ import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxTouchBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
 import dev.nucleusframework.window.tao.hasGlTextureImports
 import dev.nucleusframework.window.tao.installContentMeasurer
 import dev.nucleusframework.window.tao.popup.PopupScreenGeometry
@@ -320,6 +321,13 @@ internal class TaoComposeSceneHostLinux(
      * opaque region. Tracked by handle so duplicate attach/detach is safe.
      */
     private val attachedNativeViews: MutableSet<Long> = linkedSetOf()
+
+    /**
+     * Handles whose detach has run and that have not been attached again —
+     * a late `setFrame` for one of these must not touch the widget.
+     * Cleared on attach: a new widget can be allocated at an old address.
+     */
+    private val detachedNativeViews: MutableSet<Long> = hashSetOf()
     private val nativeViewRects: MutableMap<Long, IntArray> = LinkedHashMap()
 
     /**
@@ -418,6 +426,15 @@ internal class TaoComposeSceneHostLinux(
      */
     private var lastResizeEventNs: Long = 0L
     private var resizeBurstActive: Boolean = false
+
+    /**
+     * Whether the content sub-surface is in `set_sync` mode — entered with the
+     * resize burst while an embed is attached, left when the burst ends. In
+     * that mode a Compose buffer only shows with GTK's toplevel commit, which
+     * is what makes it land atomically with the embed's new position; see
+     * `NativeTaoEglBridge.nativeSetSubsurfaceSync`.
+     */
+    private var subsurfaceSynced: Boolean = false
     private var appliedSwapInterval: Int = 1
     private var pendingSwapInterval: Int? = null
 
@@ -464,6 +481,24 @@ internal class TaoComposeSceneHostLinux(
      * resize hit-test; re-adding a code already in the set is a no-op.
      */
     private val pressedButtons = mutableSetOf<Int>()
+
+    /**
+     * Tao codes of the buttons whose press Compose handed to an embedded
+     * native widget ([TaoNativeViewHost.dispatchPointerToNative]) and whose
+     * release has not come back yet.
+     *
+     * Such a release routinely never comes: the embed's own context menu, or a
+     * drag it starts, takes a grab and the release goes there. Compose is then
+     * left holding a button forever, and — since a click needs a down
+     * *transition* — every later click on Compose is dead, and hover no longer
+     * updates the cursor. [healStaleNativePresses] asks GDK which buttons are
+     * really down on the next motion and releases the phantoms; the next press
+     * releases them regardless, the way the macOS host does.
+     */
+    private val forwardedNativeButtons = mutableSetOf<Int>()
+
+    /** Whether the press being dispatched was handed to a native view — reset at every press. */
+    private var nativePointerDispatchedThisEvent = false
 
     /**
      * Captured at the first composition via [setContent]. Exposes the
@@ -724,13 +759,26 @@ internal class TaoComposeSceneHostLinux(
         directContext = ctx
         // Publish the TextureView handle for the fresh EGL context / Skia
         // context pair (see glTextureHostState).
+        val ownAttachment = attachmentHandle
         glTextureHostState.value =
             object : TaoGlTextureHost {
                 override val directContext: DirectContext = ctx
 
-                // Read live: 0 once the window detached, so a late disposal
-                // can't bind (nor dereference) a freed attachment.
-                override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachmentHandle, block)
+                // Bound only while this pair is the live one. A Wayland
+                // hide/show rebuilds the EGL context *and* the DirectContext:
+                // reading the outer attachment live would bind the *new* EGL
+                // context for a consumer still holding this object's closed
+                // `ctx` — a `flushAndSubmit` on it is a SIGSEGV in Skia. Once
+                // the outer handle moved on (or went to 0 on detach) this
+                // pair is gone, and the caller's null means "context gone".
+                override fun <T> withContextCurrent(block: () -> T): T? =
+                    if (attachmentHandle != ownAttachment ||
+                        directContext !== this@TaoComposeSceneHostLinux.directContext
+                    ) {
+                        null
+                    } else {
+                        withEglContextCurrent(ownAttachment, block)
+                    }
             }
 
         // The native attach binds the EGL context to *this* thread (the GTK
@@ -788,6 +836,8 @@ internal class TaoComposeSceneHostLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         NativeTaoEglBridge.nativeDetach(attachmentHandle)
         attachmentHandle = 0L
+        // The sub-surface went with the attachment; a fresh one starts desync.
+        subsurfaceSynced = false
     }
 
     /**
@@ -1405,6 +1455,10 @@ internal class TaoComposeSceneHostLinux(
                 resizeBurstActive = true
                 pendingSwapInterval = 0
             }
+            if (!subsurfaceSynced && attachedNativeViews.isNotEmpty() && attachmentHandle != 0L) {
+                subsurfaceSynced = true
+                NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, true)
+            }
             // Two catch-up frames: (1) swap that allocates the new buffer,
             // (2) paint into it. Refreshed on every motion so a continuous
             // drag always has headroom after the last pixel.
@@ -1444,12 +1498,16 @@ internal class TaoComposeSceneHostLinux(
      */
     private fun updateResizeBurstSwapInterval() {
         if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
-        if (resizeBurstActive &&
-            lastResizeEventNs > 0L &&
-            System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
-        ) {
+        val burstOver = lastResizeEventNs > 0L && System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
+        if (resizeBurstActive && burstOver) {
             resizeBurstActive = false
             pendingSwapInterval = 1
+        }
+        if (subsurfaceSynced && burstOver) {
+            subsurfaceSynced = false
+            // `set_desync` applies whatever the compositor still caches, so
+            // the last frame of the burst is never stranded.
+            NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, false)
         }
         val want = pendingSwapInterval ?: return
         pendingSwapInterval = null
@@ -1473,7 +1531,16 @@ internal class TaoComposeSceneHostLinux(
         val packed = NativeTaoBridge.nativeLinuxContentOrigin(window.handle)
         val xLogical = (packed shr 32).toInt()
         val yLogical = packed.toInt()
-        NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)
+        if (NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)) {
+            // The new position is pending parent state: GTK's next commit
+            // applies it, and after a maximize/restore GTK is idle — ask it
+            // to paint. (Committing the parent ourselves is not safe; see the
+            // native side.)
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
+                NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
+            }
+        }
     }
 
     /**
@@ -1812,6 +1879,14 @@ internal class TaoComposeSceneHostLinux(
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
+        if (subsurfaceSynced) {
+            // In sync mode this frame only shows with GTK's next commit; make
+            // sure there is one, also once the pointer has stopped moving.
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
+                NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
+            }
+        }
 
         // Re-align the content subsurface with GTK's content area AFTER the
         // swap was requested, so the repositioning (which the native side
@@ -1976,6 +2051,7 @@ internal class TaoComposeSceneHostLinux(
         val yPx = bFixed / 1024f
         lastPointerX = xPx
         lastPointerY = yPx
+        if (forwardedNativeButtons.isNotEmpty()) healStaleNativePresses()
         // Real pointer motion resuming means the compositor released any
         // resize/move grab — that's our grab-ended signal (the compositor
         // withholds motion for the whole grab), so drop the focus mask here
@@ -2079,6 +2155,14 @@ internal class TaoComposeSceneHostLinux(
         // Any other real press means no compositor grab is in flight.
         if (pressed) {
             compositorDragActive = false
+            nativePointerDispatchedThisEvent = false
+            // A button an embed swallowed the release of must not still be
+            // "down" when this press is hit-tested — see [forwardedNativeButtons].
+            for (stale in forwardedNativeButtons.toList()) {
+                if (stale != buttonCode && stale in pressedButtons) onPointerButton(stale, pressed = false)
+            }
+        } else {
+            forwardedNativeButtons.remove(buttonCode)
         }
         if (pressed) pressedButtons.add(buttonCode) else pressedButtons.remove(buttonCode)
 
@@ -2095,6 +2179,42 @@ internal class TaoComposeSceneHostLinux(
             keyboardModifiers = currentKeyboardModifiers,
             button = mapButton(buttonCode),
         )
+        if (pressed && !nativePointerDispatchedThisEvent && attachedNativeViews.isNotEmpty()) {
+            // Compose kept the press, so the keyboard is Compose's: an embed
+            // the user clicked into earlier would otherwise keep GTK focus
+            // and every keystroke, while Compose shows a focused text field.
+            // The macOS host does the same with `makeFirstResponder`.
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
+                NativeTaoLinuxWidgetBridge.nativeClaimKeyboardForCompose(gtkWindow)
+            }
+        }
+    }
+
+    /**
+     * Releases every [forwardedNativeButtons] entry GDK reports as up. Only
+     * called while there is one, so a window without embeds never pays the
+     * device query.
+     */
+    private fun healStaleNativePresses() {
+        if (!NativeTaoLinuxWidgetBridge.isLoaded) return
+        val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow == 0L) return
+        val mask = NativeTaoLinuxWidgetBridge.nativeQueryPointerButtons(gtkWindow)
+        if (mask < 0) return
+        for (button in forwardedNativeButtons.toList()) {
+            val bit =
+                when (button) {
+                    dev.nucleusframework.window.tao.TaoMouseButton.LEFT -> GDK_BUTTON1_MASK
+                    dev.nucleusframework.window.tao.TaoMouseButton.MIDDLE -> GDK_BUTTON2_MASK
+                    dev.nucleusframework.window.tao.TaoMouseButton.RIGHT -> GDK_BUTTON3_MASK
+                    else -> 0
+                }
+            if (mask and bit == 0) {
+                forwardedNativeButtons.remove(button)
+                if (button in pressedButtons) onPointerButton(button, pressed = false)
+            }
+        }
     }
 
     /**
@@ -2263,6 +2383,10 @@ internal class TaoComposeSceneHostLinux(
         return keyHandler?.invoke(composeEvent) == true
     }
 
+    /** Native popup layers handed out by [nativePopupLayerFactory] and not yet closed — swept by [detach]. */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    private val liveNativePopupLayers = linkedSetOf<androidx.compose.ui.scene.ComposeSceneLayer>()
+
     /**
      * Builds this window's native popup layers ([TaoPopupSceneLayerLinux]).
      * The factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
@@ -2271,6 +2395,7 @@ internal class TaoComposeSceneHostLinux(
      * was: a Wayland hide/show rebuilds the EGL pair and the host reads the
      * live one.
      */
+
     fun nativePopupLayerFactory(): TaoPopupLayerFactory =
         { density, layoutDirection, focusable, consumeOutside ->
             TaoPopupSceneLayerLinux(
@@ -2279,7 +2404,7 @@ internal class TaoComposeSceneHostLinux(
                 initialLayoutDirection = layoutDirection,
                 initialFocusable = focusable,
                 initialConsumePointerInputOutside = consumeOutside,
-            )
+            ).also { liveNativePopupLayers += it }
         }
 
     /**
@@ -2359,6 +2484,11 @@ internal class TaoComposeSceneHostLinux(
                 outer.popupRenderers.remove(token)
             }
 
+            @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+            override fun onLayerClosed(layer: androidx.compose.ui.scene.ComposeSceneLayer) {
+                outer.liveNativePopupLayers.remove(layer)
+            }
+
             override fun registerKeyHandler(
                 token: Any,
                 handler: (KeyEvent) -> Boolean,
@@ -2423,6 +2553,16 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * One host instance per scene. The composition local built from it keys
+     * `NativeView`'s attach effect: a fresh object on every recomposition of
+     * the window root would detach and re-attach every embed each time.
+     */
+    private var nativeViewHostInstance: dev.nucleusframework.window.tao.TaoNativeViewHost? = null
+
+    fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? =
+        nativeViewHostInstance ?: createNativeViewHost()?.also { nativeViewHostInstance = it }
+
+    /**
      * Plumbing for the `GtkWidget` variant of `NucleusPlatformView`.
      * Resolves Tao's `GtkApplicationWindow*` once (it doesn't change
      * for the lifetime of the window), routes attach/detach/setFrame
@@ -2433,7 +2573,7 @@ internal class TaoComposeSceneHostLinux(
      * library is available (missing on non-Linux builds and on Linux
      * builds that didn't ship the .so).
      */
-    fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
+    private fun createNativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? {
         if (window.handle == 0L) return null
         if (!dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge.isLoaded) return null
         val gtkWindow =
@@ -2446,9 +2586,13 @@ internal class TaoComposeSceneHostLinux(
                 childHandle: Long,
                 regionToken: Any,
             ) {
+                // The sink must be the first focusable child of the overlay,
+                // ahead of the embed — see [TaoLinuxOverlayControllerImpl.ensureFocusSink].
+                outer.overlayController.ensureFocusSink()
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeAttach(gtkWindow, childHandle)
                 outer.foreignGlInterop = true
+                outer.detachedNativeViews.remove(childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.add(childHandle)) {
                     // Force a re-push: lastOpaqueRegion may still hold the full
                     // opaque key from before the embed existed.
@@ -2463,6 +2607,7 @@ internal class TaoComposeSceneHostLinux(
             ) {
                 outer.nativeViewRects.remove(childHandle)
                 outer.overlayController.unregisterRegion(regionToken)
+                outer.detachedNativeViews += childHandle
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDetach(childHandle)
                 if (childHandle != 0L && outer.attachedNativeViews.remove(childHandle)) {
@@ -2479,6 +2624,13 @@ internal class TaoComposeSceneHostLinux(
                 heightPx: Int,
                 regionToken: Any,
             ) {
+                // A layout pass can still report the slot of an embed whose
+                // detach already ran (the node is placed once more in the
+                // frame that removes it); the widget may be gone by then. Only
+                // *detached* handles are refused: the first setFrame routinely
+                // lands before the attach effect, and it is what mounts the
+                // widget (the C side defers the mount to the first real rect).
+                if (handle in outer.detachedNativeViews) return
                 // Compose feeds physical pixels; GTK 3 lays out in
                 // logical pixels (the compositor applies the device
                 // scale on its own).
@@ -2520,8 +2672,28 @@ internal class TaoComposeSceneHostLinux(
                 val rect = outer.nativeViewRects[handle]
                 val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()
                 val yLogical = ((yPx - (rect?.get(1)?.toFloat() ?: 0f)) / s).toInt()
+                if (type == NATIVE_POINTER_PRESS) {
+                    // NativeView numbers buttons 1 = primary, 2 = secondary.
+                    outer.forwardedNativeButtons +=
+                        if (button == NATIVE_SECONDARY_BUTTON) {
+                            dev.nucleusframework.window.tao.TaoMouseButton.RIGHT
+                        } else {
+                            dev.nucleusframework.window.tao.TaoMouseButton.LEFT
+                        }
+                    // The embed takes the keyboard with this press (the bridge
+                    // grabs GTK focus for it before forwarding): a Compose text
+                    // field must not keep showing a caret beside the embed's.
+                    // Deferred — this runs inside the Press dispatch.
+                    outer.flushingDispatcher.enqueue(
+                        Runnable { outer.capturedFocusManager?.clearFocus(force = true) },
+                    )
+                }
                 dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge
                     .nativeDispatchPointer(handle, type, xLogical, yLogical, button, pressed)
+            }
+
+            override fun noteNativePointerDispatch() {
+                outer.nativePointerDispatchedThisEvent = true
             }
 
             override fun dispatchScrollToNative(
@@ -2635,6 +2807,12 @@ internal class TaoComposeSceneHostLinux(
 
     fun detach() {
         liveHosts -= this
+        // Layers whose dismiss animation was still running: Compose closes a
+        // native popup layer only when its own disappearance finishes, so an
+        // owner destroyed mid-animation left the layer's popup window mapped
+        // for good — an invisible rectangle eating every click under it.
+        for (layer in liveNativePopupLayers.toList()) layer.close()
+        liveNativePopupLayers.clear()
         window.contentSnapshot = null
         window.inboundDragAndDropNode = null
         window.imePreedit = null
@@ -2700,6 +2878,8 @@ internal class TaoComposeSceneHostLinux(
             NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)
             attachmentHandle = 0L
+            // The sub-surface went with the attachment; a fresh one starts desync.
+            subsurfaceSynced = false
         }
     }
 
@@ -2997,10 +3177,19 @@ private class LinuxTaoPlatformContext(
         // through `gdk_window_set_device_cursor` for every master pointer of
         // the seat — required because GTK 3 manages cursors via XInput 2's
         // per-device table, which masks legacy `XDefineCursor`.
-        NativeTaoBridge.nativeSetCursorIcon(windowHandle, mapPointerIcon(pointerIcon))
+        NativeTaoBridge.setCursorIcon(windowHandle, mapPointerIcon(pointerIcon))
     }
 
     private fun mapPointerIcon(icon: androidx.compose.ui.input.pointer.PointerIcon): Int = icon.toTaoCursorIconCode()
 }
 
 private val linuxHostLogger: Logger = Logger.getLogger("dev.nucleusframework.window.tao.scene")
+
+/** `TaoNativeViewHost.dispatchPointerToNative` type codes and button numbers, as `NativeView` sends them. */
+private const val NATIVE_POINTER_PRESS = 1
+private const val NATIVE_SECONDARY_BUTTON = 2
+
+/** GDK button bits in a modifier mask. */
+private const val GDK_BUTTON1_MASK = 1 shl 8
+private const val GDK_BUTTON2_MASK = 1 shl 9
+private const val GDK_BUTTON3_MASK = 1 shl 10

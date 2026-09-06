@@ -258,7 +258,7 @@ internal class TaoPopupSceneLayerLinux(
 
                     override fun setPointerIcon(pointerIcon: PointerIcon) {
                         if (released) return
-                        NativeTaoBridge.nativeSetCursorIcon(
+                        NativeTaoBridge.setCursorIcon(
                             popupWindow.handle,
                             pointerIcon.toTaoCursorIconCode(),
                         )
@@ -453,6 +453,7 @@ internal class TaoPopupSceneLayerLinux(
         released = true
         trace { "close" }
         host.unregisterRenderer(rendererToken)
+        host.onLayerClosed(this)
         host.popupScrims.unregister(rendererToken)
         host.unregisterKeyHandler(keyHandlerToken)
         host.unregisterOwnerMoveListener(moveListenerToken)

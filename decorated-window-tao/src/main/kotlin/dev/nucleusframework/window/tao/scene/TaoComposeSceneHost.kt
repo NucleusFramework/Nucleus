@@ -866,7 +866,17 @@ internal class TaoComposeSceneHost(
     // consumes the event before the main scene sees it.
     private val popupKeyHandlers: MutableMap<Any, (KeyEvent) -> Boolean> = LinkedHashMap()
 
-    fun nativeViewHost(): TaoNativeViewHost? {
+    /**
+     * One host instance per scene. The composition local built from it keys
+     * `NativeView`'s attach effect: a fresh object on every recomposition of
+     * the window root would detach and re-attach every embed each time.
+     */
+    private var nativeViewHostInstance: dev.nucleusframework.window.tao.TaoNativeViewHost? = null
+
+    fun nativeViewHost(): dev.nucleusframework.window.tao.TaoNativeViewHost? =
+        nativeViewHostInstance ?: createNativeViewHost()?.also { nativeViewHostInstance = it }
+
+    private fun createNativeViewHost(): TaoNativeViewHost? {
         if (nsViewHandle == 0L) return null
         if (!NativeTaoMacOsNativeViewBridge.isLoaded) return null
         val outer = this
@@ -1003,12 +1013,17 @@ internal class TaoComposeSceneHost(
         )
     }
 
+    /** Native popup layers handed out by [nativePopupLayerFactory] and not yet closed — swept by [detach]. */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    private val liveNativePopupLayers = linkedSetOf<androidx.compose.ui.scene.ComposeSceneLayer>()
+
     /**
      * Builds this window's native popup layers ([TaoPopupSceneLayer]). The
      * factory behind [nativePopupLayers], and the one `NativePopupLayers { }`
      * hands to a subtree that wants native surfaces while the window's own
      * popups stay in-scene. `null` before the NSView is attached.
      */
+
     fun nativePopupLayerFactory(): TaoPopupLayerFactory? {
         val popupHost = popupHost() ?: return null
         return { density, layoutDirection, focusable, consumeOutside ->
@@ -1018,7 +1033,7 @@ internal class TaoComposeSceneHost(
                 initialLayoutDirection = layoutDirection,
                 initialFocusable = focusable,
                 initialConsumePointerInputOutside = consumeOutside,
-            )
+            ).also { liveNativePopupLayers += it }
         }
     }
 
@@ -1062,6 +1077,11 @@ internal class TaoComposeSceneHost(
                 popupRenderers.remove(token)
             }
 
+            @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+            override fun onLayerClosed(layer: androidx.compose.ui.scene.ComposeSceneLayer) {
+                liveNativePopupLayers.remove(layer)
+            }
+
             override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
 
             override fun registerKeyHandler(
@@ -1076,7 +1096,7 @@ internal class TaoComposeSceneHost(
             }
 
             override fun setCursor(iconCode: Int) {
-                NativeTaoBridge.nativeSetCursorIcon(outer.window.handle, iconCode)
+                NativeTaoBridge.setCursorIcon(outer.window.handle, iconCode)
             }
         }
     }
@@ -1702,6 +1722,12 @@ internal class TaoComposeSceneHost(
     }
 
     fun detach() {
+        // Layers whose dismiss animation was still running: Compose closes a
+        // native popup layer only when its own disappearance finishes, so an
+        // owner destroyed mid-animation left the layer's popup window mapped
+        // for good — an invisible rectangle eating every click under it.
+        for (layer in liveNativePopupLayers.toList()) layer.close()
+        liveNativePopupLayers.clear()
         window.inboundDragAndDropNode = null
         window.imeReplaceCommit = null
         window.imePreedit = null
@@ -1832,7 +1858,7 @@ private class TaoPlatformContext(
         }
 
     override fun setPointerIcon(pointerIcon: androidx.compose.ui.input.pointer.PointerIcon) {
-        NativeTaoBridge.nativeSetCursorIcon(windowHandle, mapPointerIcon(pointerIcon))
+        NativeTaoBridge.setCursorIcon(windowHandle, mapPointerIcon(pointerIcon))
     }
 
     /**
