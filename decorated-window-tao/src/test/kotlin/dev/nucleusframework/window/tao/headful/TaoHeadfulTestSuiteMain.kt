@@ -40,9 +40,17 @@ import kotlin.system.exitProcess
  */
 public object TaoHeadfulTestSuiteMain {
     // Substring match on the case name, e.g.
-    // `-Dnucleus.tao.headful.filter=#418` to run one probe on its own.
+    // `-Dnucleus.tao.headful.filter=#418` to run one probe on its own. Several
+    // substrings separated by `|` run every case matching any of them, in suite
+    // order — the way to replay an interference between two case families.
     private val nameFilter: String? =
         System.getProperty("nucleus.tao.headful.filter")?.takeIf { it.isNotBlank() }
+    private val nameFilters: List<String> =
+        nameFilter
+            ?.split('|')
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
 
     private val allCases: List<TaoWindowTestCase> =
         listOf(
@@ -396,10 +404,16 @@ public object TaoHeadfulTestSuiteMain {
             MonitorAndScaleHeadfulCases.all() +
             WorkspaceRaceHeadfulCases.all() +
             ImeHeadfulCases.all() +
-            WindowApiV2HeadfulCases.all()
+            WindowApiV2HeadfulCases.all() +
+            // Last: the monkeys are the longest cases, and the robot ones leave the
+            // real pointer wherever their last gesture ended.
+            NativeViewMonkeyHeadfulCases.all() +
+            TextureViewMonkeyHeadfulCases.all()
 
     private val cases: List<TaoWindowTestCase> =
-        allCases.filter { nameFilter == null || it.name.contains(nameFilter, ignoreCase = true) }
+        allCases.filter { case ->
+            nameFilters.isEmpty() || nameFilters.any { case.name.contains(it, ignoreCase = true) }
+        }
 
     @JvmStatic
     @Suppress("LongMethod") // one flat harness: case hosting, then the driver

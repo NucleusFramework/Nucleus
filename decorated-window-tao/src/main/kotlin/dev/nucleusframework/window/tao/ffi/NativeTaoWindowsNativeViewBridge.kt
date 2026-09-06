@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
  * HWNDs instead of NSViews. All entry points must run on the Tao
  * main UI thread (= the thread that owns the parent HWND).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoWindowsNativeViewBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoWindowsNativeViewBridge::class.java)
 
@@ -87,4 +88,31 @@ internal object NativeTaoWindowsNativeViewBridge {
         dx: Float,
         dy: Float,
     )
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A single-line `EDIT` control created as a hidden top-level window,
+     * for a headful case to embed through `NativeView` (whose attach
+     * turns it into a child of the Tao HWND). 0 on failure. Destroy with
+     * [nativeDiagDestroyWindow].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateEdit(): Long
+
+    /** `DestroyWindow` on a control from [nativeDiagCreateEdit]. */
+    @JvmStatic
+    external fun nativeDiagDestroyWindow(hwnd: Long)
+
+    /** The HWND holding Win32 keyboard focus on this thread's queue (`GetFocus`), or 0. */
+    @JvmStatic
+    external fun nativeDiagFocusedHwnd(): Long
+
+    /** The text of a control from [nativeDiagCreateEdit], or null. */
+    @JvmStatic
+    external fun nativeDiagWindowText(hwnd: Long): String?
+
+    /** A child's rect in its parent's client px, top-left origin, as `[x, y, w, h]`, or null. */
+    @JvmStatic
+    external fun nativeDiagWindowFrame(hwnd: Long): IntArray?
 }

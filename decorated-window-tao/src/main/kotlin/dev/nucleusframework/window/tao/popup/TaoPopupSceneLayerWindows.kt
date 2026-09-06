@@ -427,6 +427,7 @@ internal class TaoPopupSceneLayerWindows(
         released = true
         host.notifyPopupClosing()
         host.unregisterRenderer(rendererToken)
+        host.onLayerClosed(this)
         host.popupScrims.unregister(rendererToken)
         host.unregisterOwnerMoveListener(moveListenerToken)
         PopupNativeBridgeWindows.nativeUninstallOutsideClickMonitor(panelHandle)

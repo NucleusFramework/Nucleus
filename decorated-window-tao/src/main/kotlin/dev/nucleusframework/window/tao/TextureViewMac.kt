@@ -15,6 +15,7 @@ import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.ContentChangeMode
+import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
@@ -169,6 +170,9 @@ private val metalTextureImports =
         importTexture = ::importTexture,
         closeImport = { it.close() },
     )
+
+/** Whether any `TextureView` import is currently alive on [context] — the headful suite's leak probe. */
+internal fun hasMetalTextureImports(context: DirectContext): Boolean = metalTextureImports.hasImportsFor(context)
 
 private fun importTexture(
     host: TaoMetalTextureHost,

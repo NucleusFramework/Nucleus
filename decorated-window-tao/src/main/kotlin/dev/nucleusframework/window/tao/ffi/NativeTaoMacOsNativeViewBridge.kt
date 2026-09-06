@@ -198,4 +198,37 @@ internal object NativeTaoMacOsNativeViewBridge {
      */
     @JvmStatic
     external fun nativeIsFirstResponder(overlayNsView: Long): Boolean
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A retained, unparented `NSTextField` for a headful case to embed
+     * through `NativeView`. 0 on failure. Release with [nativeDiagReleaseView].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateTextField(): Long
+
+    /** Removes a view from [nativeDiagCreateTextField] from its superview and releases it. */
+    @JvmStatic
+    external fun nativeDiagReleaseView(nsView: Long)
+
+    /**
+     * Whether [nsView] is editing: its window's first responder is the view
+     * or the field editor working on its behalf — the AppKit shape of
+     * "keystrokes go to the embed".
+     */
+    @JvmStatic
+    external fun nativeDiagViewIsEditing(nsView: Long): Boolean
+
+    /** Whether [contentNsView] itself is its window's first responder — keystrokes go to Compose. */
+    @JvmStatic
+    external fun nativeDiagViewIsFirstResponder(contentNsView: Long): Boolean
+
+    /** The string value of a field from [nativeDiagCreateTextField], or null. */
+    @JvmStatic
+    external fun nativeDiagTextFieldString(nsView: Long): String?
+
+    /** A subview's frame in physical px with a top-left origin, as `[x, y, w, h]`, or null. */
+    @JvmStatic
+    external fun nativeDiagViewFrame(nsView: Long): IntArray?
 }

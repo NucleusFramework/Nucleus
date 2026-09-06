@@ -130,6 +130,16 @@ internal interface TaoPopupHost {
     fun unregisterRenderer(token: Any)
 
     /**
+     * A layer this host handed out has closed and must leave the host's live
+     * set. Compose closes a native popup layer only when the layer's own
+     * disappearance animation finishes; an owner window torn down before
+     * that would otherwise leave the layer's window mapped for good, so the
+     * host tracks its layers and closes the survivors on detach.
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    fun onLayerClosed(layer: androidx.compose.ui.scene.ComposeSceneLayer) {}
+
+    /**
      * Runs [block] on the host's dedicated Metal render thread and blocks until
      * it returns. Overlay/popup surfaces must create, use, and close their Skia
      * `DirectContext` here so Skia's Metal context thread-affinity is respected

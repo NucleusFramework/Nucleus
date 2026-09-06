@@ -53,6 +53,23 @@ use super::{
 
 use taskbar::TaskbarIndicator;
 
+/// Whether GTK focus sits on a widget Nucleus did not create — an embedded
+/// native view (`NativeView`), which the widget bridge never marks with
+/// `nucleus_tao_input_box` the way it marks its own capture boxes. Keys then
+/// belong to the embed: no IME filtering on its behalf, no delivery to
+/// Compose, plain GTK propagation to the focus widget. Without this the
+/// toplevel's `GtkIMContext` consumed every printable key and the handler
+/// stopped propagation, so a `WebKitWebView` or a `GtkEntry` the user had
+/// clicked into never received a single character.
+fn embed_owns_keyboard(window: &gtk::Window) -> bool {
+  let Some(focus) = window.focused_widget() else {
+    return false;
+  };
+  // SAFETY: only the presence of the key is read; the pointer stored under it
+  // (a non-null marker set by the widget bridge) is never dereferenced.
+  unsafe { glib::prelude::ObjectExt::data::<()>(&focus, "nucleus_tao_input_box").is_none() }
+}
+
 #[derive(Clone)]
 pub struct EventLoopWindowTarget<T> {
   /// Gdk display
@@ -1142,7 +1159,10 @@ impl<T: 'static> EventLoop<T> {
             let handler = keyboard_handler.clone();
             let ime_ = ime.clone();
             let ime_state_press = ime_state.clone();
-            window.connect_key_press_event(move |_, event_key| {
+            window.connect_key_press_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               // The IME gets first refusal, and a key it consumed must not also
               // reach Compose — otherwise the Enter that confirms a conversion
               // also inserts a newline, and the BackSpace that edits the
@@ -1157,12 +1177,19 @@ impl<T: 'static> EventLoop<T> {
               }
               handler(event_key.to_owned(), ElementState::Pressed);
 
-              glib::Propagation::Proceed
+              // Compose owns the keyboard and has the key: stop here so GtkWindow's
+              // own bindings do not run on it too — an arrow or a Tab would
+              // otherwise `move-focus` into an embedded native view, which then
+              // steals every following keystroke from the Compose text field.
+              glib::Propagation::Stop
             });
 
             let handler = keyboard_handler.clone();
             let ime_state_release = ime_state;
-            window.connect_key_release_event(move |_, event_key| {
+            window.connect_key_release_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
               let filtered = ime.filter_keypress(event_key);
               if !ime_state_release
                 .borrow_mut()
@@ -1171,7 +1198,7 @@ impl<T: 'static> EventLoop<T> {
                 return glib::Propagation::Stop;
               }
               handler(event_key.to_owned(), ElementState::Released);
-              glib::Propagation::Proceed
+              glib::Propagation::Stop
             });
 
             let tx_clone = event_tx.clone();

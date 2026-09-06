@@ -102,7 +102,13 @@ public sealed interface NucleusPlatformView {
      * punched rect shows the desktop instead of the widget.
      */
     public interface GtkWidget : NucleusPlatformView {
-        /** Pointer to the user-supplied `GtkWidget*` (cast to Long). */
+        /**
+         * Pointer to the user-supplied `GtkWidget*` (cast to Long). The app
+         * owns a reference to it (`g_object_ref_sink`) for as long as the
+         * handle is in use and releases it from [dispose]: the container's
+         * unparent on detach drops the container's own reference, and a
+         * widget nobody else holds is finalised right there.
+         */
         public val gtkWidgetHandle: Long
     }
 
