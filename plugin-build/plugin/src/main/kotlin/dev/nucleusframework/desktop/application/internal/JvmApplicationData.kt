@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.internal
 
 import dev.nucleusframework.desktop.application.dsl.GarbageCollector
 import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
+import dev.nucleusframework.desktop.application.dsl.NucleusOptimizationSettings
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationBuildTypes
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
 import dev.nucleusframework.internal.utils.new
@@ -38,11 +39,24 @@ internal open class JvmApplicationData
             set(value) {
                 customJavaHome = value
             }
+
+        internal val hasCustomJavaHome: Boolean
+            get() = customJavaHome != null
+
+        /**
+         * Lazy JDK home used by packaging / `run`. When [optLastJdk] is on
+         * this is a [NucleusJdkToolchainValueSource]; otherwise it reads
+         * [javaHome].
+         */
+        internal var javaHomeOverride: Provider<String>? = null
+
         val javaHomeProvider: Provider<String>
-            get() = providers.provider { javaHome }
+            get() = javaHomeOverride ?: providers.provider { javaHome }
         val args: MutableList<String> = ArrayList()
         val jvmArgs: MutableList<String> = ArrayList()
         var garbageCollector: GarbageCollector? = null
+        var nucleusOptimization: Boolean = false
+        val nucleusOptimizationSettings: NucleusOptimizationSettings = objects.new()
         val nativeDistributions: JvmApplicationDistributions = objects.new()
         val buildTypes: JvmApplicationBuildTypes = objects.new()
         val graalvm: GraalvmSettings = objects.new()

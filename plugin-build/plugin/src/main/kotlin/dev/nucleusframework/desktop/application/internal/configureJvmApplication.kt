@@ -79,6 +79,9 @@ internal const val NUCLEUS_TASK_GROUP = "nucleus"
 // todo: file associations
 // todo: use workers
 internal fun JvmApplicationContext.configureJvmApplication() {
+    applyNucleusOptimization(app)
+    applyNucleusOptimizationJdk(project, app)
+
     if (app.isDefaultConfigurationEnabled) {
         configureDefaultApp()
     }
@@ -380,6 +383,14 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
+    val flattenJars =
+        tasks.register<AbstractJarsFlattenTask>(
+            taskNameAction = "flatten",
+            taskNameObject = "Jars",
+        ) {
+            configureFlattenJars(this, runProguard)
+        }
+
     // === Non-sandboxed pipeline (direct distribution formats: DMG, ZIP, NSIS, etc.) ===
 
     val createDistributable =
@@ -395,6 +406,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                 checkRuntime = commonTasks.checkRuntime,
                 unpackDefaultResources = commonTasks.unpackDefaultResources,
                 runProguard = runProguard,
+                flattenJars = flattenJars,
                 patchCaCertificates = commonTasks.patchCaCertificates,
                 sandboxed = false,
             )
@@ -479,6 +491,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
                         checkRuntime = commonTasks.checkRuntime,
                         unpackDefaultResources = commonTasks.unpackDefaultResources,
                         runProguard = runProguard,
+                        flattenJars = flattenJars,
                         stripNativeLibs = stripNativeLibsFromJars,
                         patchCaCertificates = commonTasks.patchCaCertificates,
                         sandboxed = true,
@@ -596,14 +609,6 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
         }
     }
 
-    val flattenJars =
-        tasks.register<AbstractJarsFlattenTask>(
-            taskNameAction = "flatten",
-            taskNameObject = "Jars",
-        ) {
-            configureFlattenJars(this, runProguard)
-        }
-
     val packageUberJarForCurrentOS =
         tasks.register<Jar>(
             taskNameAction = "package",
@@ -658,7 +663,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val patchMacJvmTask: TaskProvider<AbstractPatchMacJvmTask>? =
         if (currentOS == OS.MacOS && app.nativeDistributions.macOS.macOsSdkVersion != null) {
             registerPatchMacJvmTask(
-                javaHome = app.javaHome,
+                javaHome = app.javaHomeProvider,
                 minVersion = app.nativeDistributions.macOS.minimumSystemVersion ?: "10.13",
                 sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion!!,
             )
@@ -757,7 +762,11 @@ private fun JvmApplicationContext.configureProguardTask(
         dontobfuscate.set(settings.obfuscate.map { !it })
         dontoptimize.set(settings.optimize.map { !it })
 
-        joinOutputJars.set(settings.joinOutputJars)
+        joinOutputJars.set(
+            settings.joinOutputJars.map { enabled ->
+                enabled || app.optSingleJar
+            },
+        )
 
         dependsOn(unpackDefaultResources)
         defaultComposeRulesFile.set(unpackDefaultResources.flatMap { it.resources.defaultComposeProguardRules })
@@ -798,6 +807,7 @@ private fun JvmApplicationContext.configurePackageTask(
     checkRuntime: TaskProvider<AbstractCheckNativeDistributionRuntime>? = null,
     unpackDefaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
     runProguard: Provider<AbstractProguardTask>? = null,
+    flattenJars: TaskProvider<AbstractJarsFlattenTask>? = null,
     stripNativeLibs: TaskProvider<AbstractStripNativeLibsFromJarsTask>? = null,
     patchCaCertificates: TaskProvider<AbstractPatchCaCertificatesTask>? = null,
     sandboxed: Boolean = false,
@@ -886,6 +896,14 @@ private fun JvmApplicationContext.configurePackageTask(
             packageTask.launcherMainJar.set(runProguard.flatMap { it.mainJarInDestinationDir })
             packageTask.mangleJarFilesNames.set(false)
             packageTask.packageFromUberJar.set(runProguard.flatMap { it.joinOutputJars })
+        }
+        app.optSingleJar && flattenJars != null -> {
+            packageTask.dependsOn(flattenJars)
+            val flattened = flattenJars.flatMap { it.flattenedJar }
+            packageTask.files.from(flattened)
+            packageTask.launcherMainJar.set(flattened)
+            packageTask.mangleJarFilesNames.set(false)
+            packageTask.packageFromUberJar.set(true)
         }
         else -> {
             packageTask.useAppRuntimeFiles { (runtimeJars, mainJar) ->
@@ -1118,11 +1136,9 @@ private fun JvmApplicationContext.configureRunTask(
     exec.dependsOn(prepareAppResources)
 
     exec.mainClass.set(app.mainClass)
-    exec.executable(javaExecutable(app.javaHome))
     if (currentOS == OS.MacOS) {
         val sdkVersion = app.nativeDistributions.macOS.macOsSdkVersion
         if (sdkVersion != null && patchMacJvmTask != null) {
-            val javaHome = app.javaHome
             exec.dependsOn(patchMacJvmTask)
             // Route the fork through a vtool-patched copy of the JDK so AppKit
             // gates Liquid Glass on. `javaLauncher` is finalized before
@@ -1141,12 +1157,14 @@ private fun JvmApplicationContext.configureRunTask(
                 .asFile
             val patchedJavaHomeFile = patchedBinFile.parentFile.parentFile
             exec.javaLauncher.set(
-                ExternalJavaLauncher(
-                    javaBinary = patchedBinFile,
-                    javaHome = patchedJavaHomeFile,
-                    objects = project.objects,
-                    metadataJavaHome = java.io.File(javaHome),
-                ),
+                app.javaHomeProvider.map { home ->
+                    ExternalJavaLauncher(
+                        javaBinary = patchedBinFile,
+                        javaHome = patchedJavaHomeFile,
+                        objects = project.objects,
+                        metadataJavaHome = java.io.File(home),
+                    )
+                },
             )
             // `executable` isn't Provider-aware in Gradle 9, but it isn't
             // finalized before `doFirst` either — align it with the launcher
@@ -1154,7 +1172,11 @@ private fun JvmApplicationContext.configureRunTask(
             exec.doFirst {
                 (it as JavaExec).executable(patchedBinFile.absolutePath)
             }
+        } else {
+            configureRunJavaHome(exec)
         }
+    } else {
+        configureRunJavaHome(exec)
     }
     exec.jvmArgs =
         arrayListOf<String>().apply {
@@ -1291,8 +1313,24 @@ private fun sandboxingJvmArgs(resourcesPath: String): List<String> =
  * tasks of all build types since inputs (javaHome, SDK/min version) are
  * identical at the project level.
  */
+private fun JvmApplicationContext.configureRunJavaHome(exec: JavaExec) {
+    if (app.javaHomeOverride != null) {
+        exec.javaLauncher.set(
+            app.javaHomeProvider.map { home ->
+                ExternalJavaLauncher(
+                    javaBinary = java.io.File(javaExecutable(home)),
+                    javaHome = java.io.File(home),
+                    objects = project.objects,
+                )
+            },
+        )
+    } else {
+        exec.executable(javaExecutable(app.javaHome))
+    }
+}
+
 private fun JvmApplicationContext.registerPatchMacJvmTask(
-    javaHome: String,
+    javaHome: Provider<String>,
     minVersion: String,
     sdkVersion: String,
 ): TaskProvider<AbstractPatchMacJvmTask> {
