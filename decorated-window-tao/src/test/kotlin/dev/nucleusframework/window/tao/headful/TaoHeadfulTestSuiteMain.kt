@@ -419,6 +419,13 @@ public object TaoHeadfulTestSuiteMain {
         thread(isDaemon = true, name = "tao-headful-watchdog") {
             Thread.sleep(watchdogMillis)
             System.err.println("WATCHDOG: headful suite exceeded ${watchdogMillis / 1000}s — halting")
+            // A wedged loop thread is the usual reason we get here, and a CI
+            // log has no `jstack`: print where every thread is parked so the
+            // hang is diagnosable from the log alone (#658).
+            for ((thread, frames) in Thread.getAllStackTraces()) {
+                System.err.println("\"${thread.name}\" ${thread.state}")
+                for (frame in frames) System.err.println("\tat $frame")
+            }
             System.err.flush()
             Runtime.getRuntime().halt(WATCHDOG_EXIT_CODE)
         }

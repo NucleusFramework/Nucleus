@@ -278,6 +278,11 @@ internal object DialogAppearanceHeadfulCases {
         val shown by translatedShown
         // Exactly what Dialog.skiko.kt does: a GraphicsLayer created from the
         // *owner window's* GraphicsContext, recorded and drawn inside the layer.
+        // Supported across contexts: a skiko RenderNode records a picture and
+        // replays it (alpha through saveLayer) on whatever canvas draws it —
+        // no GPU resource of the owner's DirectContext is touched inside the
+        // popup's. #658's "hang" in the native variant was the case's own
+        // screen capture, not this layer.
         val graphicsContext = androidx.compose.ui.platform.LocalGraphicsContext.current
         val layer = androidx.compose.runtime.remember { graphicsContext.createGraphicsLayer() }
         if (shown) {
@@ -323,7 +328,14 @@ internal object DialogAppearanceHeadfulCases {
             translatedShown.value = true
             try {
                 settle(SETTLE_BEFORE_MILLIS)
-                val img = Robot().createScreenCapture(region)
+                // Off the loop thread, like the film cases' grabber: on Linux a
+                // capture from the Tao thread deadlocks on GDK's global lock
+                // (#658, see HeadfulRobot) — the case then never returns and
+                // the global watchdog takes the whole suite down with it.
+                val img =
+                    requireNotNull(HeadfulRobot.capture(region)) {
+                        "screen capture unavailable: ${HeadfulRobot.unavailableReason}"
+                    }
                 val s = sample(0, img)
                 measuredTranslated[native] = s
                 System.err.println(

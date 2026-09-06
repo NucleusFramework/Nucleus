@@ -4,8 +4,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.awt.MouseInfo
 import java.awt.Point
+import java.awt.Rectangle
 import java.awt.Robot
 import java.awt.event.InputEvent
+import java.awt.image.BufferedImage
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
@@ -25,10 +27,19 @@ import java.util.concurrent.TimeoutException
  *   (`sun.awt.screencast.ScreencastHelper`). When the compositor refuses the
  *   session ("Session is not allowed to call NotifyPointer methods"),
  *   `mousePress` blocks forever inside the native call.
+ * - Linux/X11: `createScreenCapture` deadlocks on the Tao thread (#658). The
+ *   JDK grabs pixels through GTK, and loading GTK from AWT calls
+ *   `gdk_threads_init()`, which retroactively installs GDK's global lock in
+ *   the process — GDK then holds it around every event it dispatches on the
+ *   loop thread. The capture takes that same non-recursive mutex via
+ *   `gdk_threads_enter()`, so a driver capturing from inside an event
+ *   dispatch parks its own thread for good (`futex` wait, no Java frames).
+ *   Whether a case is inside a dispatch depends on what resumed it, which is
+ *   why the deadlock looked like a property of the case's content.
  *
- * So every gesture runs on [Dispatchers.IO] under a timeout, and the first
- * timeout latches [unavailableReason] — later calls fail fast instead of
- * parking another thread on the same wedged native lock.
+ * So every gesture and capture runs on [Dispatchers.IO] under a timeout, and
+ * the first timeout latches [unavailableReason] — later calls fail fast
+ * instead of parking another thread on the same wedged native lock.
  */
 internal object HeadfulRobot {
     @Volatile
@@ -81,6 +92,15 @@ internal object HeadfulRobot {
     /** Why input injection is unusable on this host, or null while it works. */
     val unavailableReason: String?
         get() = unavailable
+
+    /**
+     * Grabs [region] (logical screen points) off the event loop, or null when
+     * the host cannot capture — see [inject] for the failure modes and
+     * [unavailableReason] for the latched cause. Never call
+     * `Robot.createScreenCapture` on the Tao thread directly: see the Linux
+     * bullet above.
+     */
+    suspend fun capture(region: Rectangle): BufferedImage? = inject { it.createScreenCapture(region) }
 
     /**
      * Runs [gesture] with a shared [Robot] off the event loop, giving up after
