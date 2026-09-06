@@ -362,8 +362,18 @@ internal class TaoComposeSceneHost(
         val devicePtr = NativeMetalBridge.nativeDevicePtr(handle)
         val queuePtr = NativeMetalBridge.nativeQueuePtr(handle)
         // The Skia Metal DirectContext is thread-affine: create it on the render
-        // thread that will use it for every frame's GPU encode + present.
-        directContext = runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
+        // thread that will use it for every frame's GPU encode + present. The
+        // resource-cache budget is anchored in the same hop — writing it purges
+        // to fit, so it belongs on the owning thread like every other use of
+        // the context. See GPU_RESOURCE_CACHE_LIMIT_BYTES for why the value
+        // itself changes nothing today, and [purgeGpuResourceCache] for what
+        // actually reclaims.
+        directContext =
+            runOnRenderThread {
+                DirectContext.makeMetal(devicePtr, queuePtr).also {
+                    it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+                }
+            }
 
         scale = initialMacOsScaleFactor(window)
 
@@ -678,6 +688,64 @@ internal class TaoComposeSceneHost(
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
         window.requestRedraw()
+        purgeResizeScratchIfDue()
+    }
+
+    private var lastResizePurgeNs: Long = 0
+
+    /**
+     * Reclaims the per-size GPU scratch a live resize mints, while the sizes are
+     * still streaming — the macOS half of what
+     * [TaoComposeSceneHostWindows.onResized] does inside the OS modal
+     * resize/move loop. Skia's budget caps the cache, but a capped cache full of
+     * scratch no frame will ever ask for again is still 256 MiB resident.
+     *
+     * Deliberately only the *in-drag* half of the Windows behaviour. There is no
+     * settle purge and no `System.gc()` nudge here, because macOS has no
+     * `WM_EXITSIZEMOVE` to hang them on and a timer standing in for it proved a
+     * bad trade twice over: the drag's own frames are display-link paced, so
+     * macOS never accumulates the way Windows' unpaced modal loop does (a
+     * 60-step storm moved the graphics footprint 68 MB → 72 MB, and a purge + GC
+     * at the end of it returned essentially none of that), while the pair landed
+     * on an animating window as a visible stall — a window with a live
+     * `NativeView` embed dropped below 4 frames per 400 ms right after a storm.
+     * Cost with no measured benefit. The reclaim that #638 is actually after is
+     * at rest, not at drag end, and belongs on the idle path.
+     */
+    private fun purgeResizeScratchIfDue() {
+        val now = System.nanoTime()
+        if (now - lastResizePurgeNs < GPU_RESIZE_PURGE_INTERVAL_NS) return
+        lastResizePurgeNs = now
+        purgeGpuResourceCache()
+    }
+
+    /**
+     * Frees the GPU resource cache: toggling the limit to 0 runs Skia's
+     * `purgeAsNeeded` inline, releasing every unlocked resource, and restoring
+     * the budget lets the next frame re-mint only what it needs. The only purge
+     * primitive skiko exposes — see [GPU_RESOURCE_CACHE_LIMIT_BYTES].
+     *
+     * Metal has no notion of a *current* context, so none of the foreign-context
+     * hazard the ANGLE/EGL hosts guard against (#514) applies here: the danger
+     * on this backend is thread affinity instead. The `DirectContext` is created
+     * on, and only ever touched from, [renderExecutor], so the toggle hops
+     * there — submitted rather than awaited, because the caller is the Tao main
+     * thread on the resize path and blocking it would park the drag behind the
+     * in-flight replay. FIFO ordering puts the purge cleanly between two frames,
+     * where nothing the host caches is live (each frame wraps the drawable's
+     * texture in a fresh `BackendRenderTarget`), and once [detach] has nulled
+     * the context this returns before submitting anything.
+     */
+    private fun purgeGpuResourceCache() {
+        val ctx = directContext ?: return
+        // Rejected once detach() shut the executor down; a purge is never worth
+        // routing to the fatal handler.
+        runCatching {
+            renderExecutor.submit {
+                ctx.resourceCacheLimit = 0
+                ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
+            }
+        }
     }
 
     /**

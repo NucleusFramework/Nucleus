@@ -408,15 +408,21 @@ internal class TaoComposeSceneHostWindows(
         attachmentHandle = handle
         directContext =
             (ctx ?: error("Failed to create Skia DirectContext on the ANGLE ES context")).also {
-                // Bound the GPU resource cache. Each frame wraps the default
-                // framebuffer in a fresh BackendRenderTarget + Surface, and Skia
-                // allocates a stencil/scratch attachment sized to the current
-                // window for it. During a border drag every new window size mints
-                // new scratch resources; even with VSync pacing the present (see
-                // onResizeLoopChanged) an explicit budget forces purgeAsNeeded on
-                // each flush so the cache stays bounded, and onResizeLoopChanged
-                // additionally purges the scratch accumulated across the drag.
-                it.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+                // Anchor the GPU resource cache budget. Each frame wraps the
+                // default framebuffer in a fresh BackendRenderTarget + Surface,
+                // and Skia allocates a stencil/scratch attachment sized to the
+                // current window for it; during a border drag every new window
+                // size mints scratch no later frame reuses.
+                //
+                // This write is a no-op at the current value — Ganesh's own
+                // default is the same 256 MiB (measured) — and it does NOT, as
+                // this comment used to claim, "force purgeAsNeeded on each
+                // flush": Skia purges to fit its budget whether or not we set
+                // one. What actually reclaims the drag's scratch is the purge,
+                // in onResized and onResizeLoopChanged. Keep the write anyway:
+                // it is the value the limit-toggle restores and the one place
+                // to change if the hosts ever run below Skia's default.
+                it.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
             }
         attachedHostCount.incrementAndGet()
 
@@ -1086,7 +1092,7 @@ internal class TaoComposeSceneHostWindows(
         // the drag-end path in onResizeLoopChanged reclaims the rest.
         if (resizeLoopActive) {
             val now = System.nanoTime()
-            if (now - lastResizePurgeNs >= RESIZE_PURGE_INTERVAL_NS) {
+            if (now - lastResizePurgeNs >= GPU_RESIZE_PURGE_INTERVAL_NS) {
                 lastResizePurgeNs = now
                 purgeGpuResourceCache()
             }
@@ -1118,7 +1124,7 @@ internal class TaoComposeSceneHostWindows(
         val ctx = directContext ?: return
         if (attachmentHandle != 0L) NativeTaoGlBridge.nativeMakeCurrent(attachmentHandle)
         ctx.resourceCacheLimit = 0
-        ctx.resourceCacheLimit = RESOURCE_CACHE_LIMIT_BYTES
+        ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
     }
 
     /**
@@ -2120,27 +2126,6 @@ internal class TaoComposeSceneHostWindows(
 
         /** Half-distance of the synthetic two-finger pair at scale 1.0. */
         private const val PINCH_BASE_RADIUS_PX: Float = 120f
-
-        /**
-         * GPU resource cache budget for the host DirectContext. Bounds the
-         * per-frame scratch (wrapped-framebuffer stencil/attachments) so an
-         * uncapped resize flood — VSync is dropped during the OS modal
-         * resize/move loop — can't grow the process unbounded. Sized to cover
-         * a HiDPI window's render target plus Compose's layer/glyph caches
-         * with headroom, while still far below the >1 GB the leak reached.
-         */
-        private const val RESOURCE_CACHE_LIMIT_BYTES: Long = 256L * 1024 * 1024
-
-        /**
-         * Gap between in-drag GPU cache purges during the OS modal
-         * resize/move loop. Every frame of the drag mints render-target
-         * scratch (stencil/attachments) at a size no later frame reuses;
-         * the periodic limit-toggle purge in [onResized] releases that
-         * accumulation mid-drag so the peak stays bounded even for long
-         * drags, without skipping any resize frame (a skipped frame is
-         * composited by DWM as a geometry/content mismatch — trembling).
-         */
-        private const val RESIZE_PURGE_INTERVAL_NS: Long = 250_000_000L
 
         // Stable ids well clear of real touch ids (raw WM_POINTER finger ids).
         private const val PINCH_POINTER_ID_A: Long = 0xA001L
