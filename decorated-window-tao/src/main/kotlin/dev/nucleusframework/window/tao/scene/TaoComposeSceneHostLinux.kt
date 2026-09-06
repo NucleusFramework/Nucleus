@@ -2213,7 +2213,9 @@ internal class TaoComposeSceneHostLinux(
                 yPx: Float,
                 dx: Float,
                 dy: Float,
+                phase: Int,
             ) {
+                // GTK gets a plain scroll-event per step; phases are macOS only.
                 val s = if (outer.scale > 0f) outer.scale else 1f
                 val rect = outer.nativeViewRects[handle]
                 val xLogical = ((xPx - (rect?.get(0)?.toFloat() ?: 0f)) / s).toInt()

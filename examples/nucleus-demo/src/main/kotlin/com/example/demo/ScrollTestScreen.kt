@@ -52,6 +52,14 @@ import kotlin.math.roundToInt
  *    i.e. after Compose's WindowsWinUIConfig `height/20` scaling).
  */
 private const val IDLE_MS = 180L
+
+/**
+ * Pixels of trackpad pan per AWT wheel unit on the Tao backend: Compose
+ * Desktop's `MacOSCocoaConfig` turns one `preciseWheelRotation` into 10 dp,
+ * and Nucleus sizes `panOffset` the same way so both gestures move content
+ * equally (`decorated-window-tao` `AWT_PIXEL_TO_ROTATION`).
+ */
+private const val PAN_DP_PER_WHEEL_UNIT = 10f
 private const val ROWS = 600
 private const val MAX_LOG = 14
 
@@ -65,6 +73,9 @@ private class ScrollMeter {
     var rawSumX = 0f
     var maxRawAbsY = 0f
     var lastRawY = 0f
+
+    // Set by PanEnd / a new PanStart: the gesture is over now, no need to wait for IDLE_MS.
+    var endRequested = false
 
     // Monotonic frame-clock tick counter (incremented in the withFrameNanos
     // loop) and its value at gesture start. The difference over the gesture
@@ -116,15 +127,16 @@ fun ScrollTestScreen() {
         }
     }
 
-    // Finalize a gesture once the scroll events go quiet for IDLE_MS. Both this
-    // ticker and the pointer handler run on the UI dispatcher, so the shared
-    // ScrollMeter needs no extra synchronization.
+    // Finalize a gesture once its PanEnd arrived (trackpad on Tao) or the
+    // scroll events went quiet for IDLE_MS (wheel, or backends without pan
+    // events). Both the ticker and the pointer handler run on the UI
+    // dispatcher, so the shared ScrollMeter needs no extra synchronization.
     LaunchedEffect(Unit) {
         while (true) {
             delay(40)
             liveValue = scrollState.value
             val now = System.nanoTime() / 1_000_000
-            if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) {
+            if (meter.inGesture && (meter.endRequested || now - meter.lastTimeMs >= IDLE_MS)) {
                 val px = scrollState.value - meter.startValuePx
                 // Render FPS over the whole gesture window (start → finalize, i.e.
                 // including the post-input animation tail) = frames rendered ÷
@@ -146,6 +158,7 @@ fun ScrollTestScreen() {
                 )
                 if (gestures.size > MAX_LOG) gestures.removeAt(gestures.lastIndex)
                 meter.inGesture = false
+                meter.endRequested = false
             }
         }
     }
@@ -180,18 +193,27 @@ fun ScrollTestScreen() {
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
                                         // Wheel notches arrive as Scroll (AWT wheel units);
                                         // on the Tao backend a trackpad gesture arrives as
-                                        // Pan with a pixel offset — 10 dp per wheel unit
-                                        // (Compose's MacOSCocoaConfig factor), so both are
-                                        // logged in the same unit.
+                                        // PanStart / PanMove / PanEnd with a pixel offset,
+                                        // logged in wheel units via PAN_DP_PER_WHEEL_UNIT.
                                         val change = event.changes.first()
+                                        val now = System.nanoTime() / 1_000_000
                                         val d =
                                             when (event.type) {
                                                 PointerEventType.Scroll -> change.scrollDelta
-                                                PointerEventType.PanMove -> change.panOffset / (10f * density)
+                                                PointerEventType.PanMove ->
+                                                    change.panOffset / (PAN_DP_PER_WHEEL_UNIT * density)
+                                                PointerEventType.PanStart,
+                                                PointerEventType.PanEnd,
+                                                -> {
+                                                    // A gesture boundary: close the open gesture
+                                                    // now instead of merging across IDLE_MS.
+                                                    if (meter.inGesture) meter.endRequested = true
+                                                    continue
+                                                }
                                                 else -> continue
                                             }
-                                        val now = System.nanoTime() / 1_000_000
-                                        if (!meter.inGesture || now - meter.lastTimeMs > IDLE_MS) {
+                                        if (!meter.inGesture || meter.endRequested || now - meter.lastTimeMs > IDLE_MS) {
+                                            meter.endRequested = false
                                             meter.inGesture = true
                                             meter.startValuePx = scrollState.value
                                             meter.startTimeMs = now

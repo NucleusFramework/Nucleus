@@ -5,7 +5,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerKeyboardModifiers
 import androidx.compose.ui.scene.ComposeScene
-import dev.nucleusframework.window.tao.TaoFatalCoroutineExceptionHandler
+import dev.nucleusframework.window.tao.TaoNonFatalCoroutineExceptionHandler
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
@@ -47,8 +47,8 @@ import java.util.logging.Logger
  * `-Dnucleus.tao.trackpadPanEvents=false` restores the AWT-style behaviour
  * where every gesture step is a `Scroll`.
  *
- * [schedule] is only supplied by tests; production routers own a coroutine
- * scope on the UI dispatcher for the end timer. UI thread only.
+ * [schedule] is only supplied by tests; production routers lazily own a
+ * coroutine scope on the UI dispatcher for the end timer. UI thread only.
  */
 @OptIn(InternalComposeUiApi::class)
 internal class TaoSceneScrollRouter(
@@ -65,22 +65,27 @@ internal class TaoSceneScrollRouter(
 
         /**
          * Wraps the deferred `PanEnd` delivery. Hosts route it through their
-         * window exception handler / frame pump; whatever escapes lands in
-         * [TaoFatalCoroutineExceptionHandler], never in the default handler.
+         * window exception handler / frame pump; whatever escapes is logged by
+         * [TaoNonFatalCoroutineExceptionHandler] — a broken PanEnd costs one
+         * gesture, not the app, exactly like the synchronous popup path where
+         * `popup_panel.m` clears the pending JNI exception.
          */
         fun guard(block: () -> Unit) = block()
     }
 
-    private val scope: CoroutineScope? =
-        if (schedule == null) {
-            CoroutineScope(TaoMainDispatcher + SupervisorJob() + TaoFatalCoroutineExceptionHandler)
-        } else {
-            null
-        }
+    private val testSchedule = schedule
+
+    // Created on the first deferred end: most popup layers never see a
+    // trackpad gesture and must not pay for a scope each.
+    private var scope: CoroutineScope? = null
+
+    private fun timerScope(): CoroutineScope =
+        scope ?: CoroutineScope(TaoMainDispatcher + SupervisorJob() + TaoNonFatalCoroutineExceptionHandler)
+            .also { scope = it }
 
     private val pan =
         TaoTrackpadPanRouter(
-            schedule = schedule ?: ::scheduleOnMain,
+            schedule = testSchedule ?: ::scheduleOnMain,
             send = ::sendPan,
         )
 
@@ -129,6 +134,7 @@ internal class TaoSceneScrollRouter(
         cancelled = true
         pan.cancel()
         scope?.cancel()
+        scope = null
     }
 
     private fun sendPan(
@@ -149,7 +155,7 @@ internal class TaoSceneScrollRouter(
         action: () -> Unit,
     ): () -> Unit {
         val job =
-            requireNotNull(scope).launch {
+            timerScope().launch {
                 delay(delayMillis)
                 target.guard(action)
             }

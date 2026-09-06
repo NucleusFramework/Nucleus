@@ -24,10 +24,12 @@ import dev.nucleusframework.window.tao.TaoScrollGesturePhase
  * after the finger `Ended`, [stallMillis] otherwise), so a stream that is cut
  * short — fingers resting on the glass during the tail (`MayBegin`, which
  * closes the pan at once), a window losing key status, a terminal step that
- * never arrives — cannot leave Compose's scroll session open. A terminal step
+ * never arrives — cannot leave Compose's scroll session open. A finger step
  * that still carries a delta is delivered even when no pan is open (AppKit's
  * `Ended` can hold the last finger movement, and a `Began` may have been
- * missed), so no scroll distance is dropped.
+ * missed), so no finger distance is dropped; momentum steps, in contrast, only
+ * continue an open pan — a late tail after the grace already closed the pan
+ * is dropped rather than stacked on Compose's fling.
  *
  * [send] receives the pan offset in AWT `preciseWheelRotation` units (the
  * shape of [dev.nucleusframework.window.tao.TaoPointerScrollEvent.dxAwt]); the
@@ -54,8 +56,6 @@ internal class TaoTrackpadPanRouter(
             TaoScrollGesturePhase.MAY_BEGIN -> finish()
             TaoScrollGesturePhase.BEGAN,
             TaoScrollGesturePhase.CHANGED,
-            TaoScrollGesturePhase.MOMENTUM_BEGAN,
-            TaoScrollGesturePhase.MOMENTUM_CHANGED,
             -> {
                 start()
                 move(deltaAwt)
@@ -65,9 +65,25 @@ internal class TaoTrackpadPanRouter(
                 move(deltaAwt)
                 if (active) armEnd(graceMillis)
             }
-            TaoScrollGesturePhase.CANCELLED,
-            TaoScrollGesturePhase.MOMENTUM_ENDED,
+            TaoScrollGesturePhase.CANCELLED -> {
+                move(deltaAwt)
+                finish()
+            }
+            // The inertial tail only ever continues an open pan. Once the pan
+            // is closed — the grace elapsed before AppKit's first momentum
+            // step, or the Began was never seen — Compose's own fling is
+            // running, and opening a second pan would stack the platform
+            // inertia on top of it (content overshoots by ~2×). Dropping the
+            // late tail is the safe outcome.
+            TaoScrollGesturePhase.MOMENTUM_BEGAN,
+            TaoScrollGesturePhase.MOMENTUM_CHANGED,
             -> {
+                if (!active) return
+                move(deltaAwt)
+                armEnd(stallMillis)
+            }
+            TaoScrollGesturePhase.MOMENTUM_ENDED -> {
+                if (!active) return
                 move(deltaAwt)
                 finish()
             }

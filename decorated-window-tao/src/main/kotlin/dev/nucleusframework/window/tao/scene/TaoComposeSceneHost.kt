@@ -846,6 +846,7 @@ internal class TaoComposeSceneHost(
                 yPx: Float,
                 dx: Float,
                 dy: Float,
+                phase: Int,
             ) {
                 if (outer.nsViewHandle == 0L || handle == 0L) return
                 NativeTaoMacOsNativeViewBridge.nativeDispatchScroll(
@@ -855,6 +856,7 @@ internal class TaoComposeSceneHost(
                     yPx,
                     dx,
                     dy,
+                    phase,
                 )
             }
 

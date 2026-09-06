@@ -11,7 +11,8 @@ import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
  * `scroll_wheel`, the JNI loop and the Compose host all run for real.
  *
  * Deltas are raw AppKit `scrollingDelta*` values: points for a [precise]
- * (trackpad) event, lines for a wheel notch. AppKit's sign convention is
+ * (trackpad) event, lines for a wheel notch — whole numbers only, the CGEvent
+ * delta fields are integers (fractions are rounded). AppKit's sign convention is
  * "positive = content moves down / right", i.e. a two-finger swipe *up* or
  * *left* (natural scrolling) is a negative delta. Compose / AWT use the
  * opposite sign; see `MacOsWheelDelta.kt`.

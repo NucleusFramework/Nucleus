@@ -81,11 +81,30 @@ class TaoTrackpadPanRouterTest {
         assertEquals(PointerEventType.PanEnd, h.types().last())
 
         h.sent.clear()
-        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_ENDED, down)
+        h.router.onGesture(TaoScrollGesturePhase.CANCELLED, down)
         assertEquals(
             listOf(PointerEventType.PanStart, PointerEventType.PanMove, PointerEventType.PanEnd),
             h.types(),
         )
+        assertFalse(h.hasPendingEnd)
+    }
+
+    @Test
+    fun `a momentum tail arriving after the pan closed is dropped`() {
+        // Grace elapsed before AppKit's first momentum step (loaded machine):
+        // Compose is already flinging; a second pan would stack the inertia.
+        val h = Harness()
+        h.router.onGesture(TaoScrollGesturePhase.BEGAN, Offset.Zero)
+        h.router.onGesture(TaoScrollGesturePhase.CHANGED, down)
+        h.router.onGesture(TaoScrollGesturePhase.ENDED, Offset.Zero)
+        h.elapseTimer()
+        assertEquals(PointerEventType.PanEnd, h.types().last())
+
+        h.sent.clear()
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_BEGAN, down)
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_CHANGED, down)
+        h.router.onGesture(TaoScrollGesturePhase.MOMENTUM_ENDED, down)
+        assertTrue(h.sent.isEmpty(), "late momentum must not open a second pan, got ${h.types()}")
         assertFalse(h.hasPendingEnd)
     }
 

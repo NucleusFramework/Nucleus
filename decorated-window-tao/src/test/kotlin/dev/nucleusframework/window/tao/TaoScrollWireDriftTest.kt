@@ -6,6 +6,7 @@ import java.lang.reflect.Method
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /**
  * The macOS scroll wire is written by hand in three places that the compiler
@@ -22,10 +23,10 @@ class TaoScrollWireDriftTest {
     fun `popup_panel m GetMethodID descriptors match the Kotlin callback`() {
         val declared =
             GET_METHOD_ID
-                .findAll(POPUP_PANEL.readText())
+                .findAll(popupPanel().readText())
                 .associate { it.groupValues[1] to it.groupValues[2] }
                 .filterKeys { it != "onOutsideClick" } // lives on a different listener class
-        assertTrue(declared.isNotEmpty(), "no GetMethodID(...) found in ${POPUP_PANEL.path}")
+        assertTrue(declared.isNotEmpty(), "no GetMethodID(...) found in popup_panel.m")
 
         val callback = PopupNativeBridge.EventCallback::class.java
         declared.forEach { (name, descriptor) ->
@@ -40,7 +41,7 @@ class TaoScrollWireDriftTest {
     fun `Rust SCROLL_GESTURE codes match TaoScrollGesturePhase`() {
         val rust =
             RUST_CODE
-                .findAll(EVENTS_RS.readText())
+                .findAll(eventsRs().readText())
                 .associate { it.groupValues[1] to it.groupValues[2].toInt() }
         assertEquals(kotlinWire(), rust, "events.rs SCROLL_GESTURE_* vs TaoScrollGesturePhase.wire")
     }
@@ -49,10 +50,24 @@ class TaoScrollWireDriftTest {
     fun `popup_panel m NucleusScrollGesture codes match TaoScrollGesturePhase`() {
         val objc =
             OBJC_CODE
-                .findAll(POPUP_PANEL.readText())
+                .findAll(popupPanel().readText())
                 .associate { it.groupValues[1].toScreamingSnake() to it.groupValues[2].toInt() }
         assertEquals(TaoScrollGesturePhase.NONE_WIRE, objc["NONE"], "NucleusScrollGestureNone")
         assertEquals(kotlinWire(), objc - "NONE", "popup_panel.m NucleusScrollGesture* vs TaoScrollGesturePhase.wire")
+    }
+
+    private fun popupPanel() = sourceFile("src/main/native/macos/popup_panel.m")
+
+    private fun eventsRs() = sourceFile("src/main/native/src/events.rs")
+
+    /**
+     * Gradle runs tests from the module directory; an IDE run configuration
+     * may use the repository root. Either way the failure names the file.
+     */
+    private fun sourceFile(relative: String): File {
+        val candidates = listOf(File(relative), File("decorated-window-tao", relative))
+        return candidates.firstOrNull { it.isFile }
+            ?: fail("cannot find $relative from ${File("").absolutePath} (tried ${candidates.map { it.path }})")
     }
 
     private fun kotlinWire(): Map<String, Int> = TaoScrollGesturePhase.entries.associate { it.name to it.wire }
@@ -76,16 +91,6 @@ class TaoScrollWireDriftTest {
         }
 
     private companion object {
-        // Gradle runs tests from the module directory.
-        val POPUP_PANEL =
-            File("src/main/native/macos/popup_panel.m").also {
-                require(it.isFile) { "missing ${it.absolutePath}" }
-            }
-        val EVENTS_RS =
-            File(
-                "src/main/native/src/events.rs",
-            ).also { require(it.isFile) { "missing ${it.absolutePath}" } }
-
         val GET_METHOD_ID = Regex("""GetMethodID\(env,\s*\w+,\s*"(\w+)",\s*"([^"]+)"\)""")
         val RUST_CODE = Regex("""pub\(crate\) const SCROLL_GESTURE_(\w+): jint = (\d+);""")
         val OBJC_CODE = Regex("""NucleusScrollGesture(\w+)\s*=\s*(-?\d+)""")

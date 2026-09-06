@@ -144,8 +144,8 @@ public object TaoSceneTestBattery {
         run("MacOsWheelDeltaTest: preciseDeltaCarriesMacOsScrollAmount") {
             MacOsWheelDeltaTest().preciseDeltaCarriesMacOsScrollAmount()
         }
-        run("MacOsWheelDeltaTest: gesturePhaseRidesAlongForPreciseEventsOnly") {
-            MacOsWheelDeltaTest().gesturePhaseRidesAlongForPreciseEventsOnly()
+        run("MacOsWheelDeltaTest: gesturePhaseRidesAlongWhateverThePrecisionFlag") {
+            MacOsWheelDeltaTest().gesturePhaseRidesAlongWhateverThePrecisionFlag()
         }
         run("StandaloneFramePumpTest: scheduleOnMainRunsInline") {
             StandaloneFramePumpTest().scheduleOnMainRunsInline()
@@ -209,6 +209,9 @@ public object TaoSceneTestBattery {
         }
         run("TaoTrackpadPanRouterTest: momentum tail continues the pan and ends it once") {
             TaoTrackpadPanRouterTest().`momentum tail continues the pan and ends it once`()
+        }
+        run("TaoTrackpadPanRouterTest: a momentum tail arriving after the pan closed is dropped") {
+            TaoTrackpadPanRouterTest().`a momentum tail arriving after the pan closed is dropped`()
         }
         run("TaoTrackpadPanRouterTest: fingers resting on the glass during the tail close the pan at once") {
             TaoTrackpadPanRouterTest().`fingers resting on the glass during the tail close the pan at once`()

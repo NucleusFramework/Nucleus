@@ -295,14 +295,21 @@ internal object MacOsTrackpadScrollHeadfulCases {
         settle(STEP_MILLIS)
         inject(dx = 0f, dy = 0f, precise = true, phase = Phase.ENDED)
         if (momentum) {
+            // Whole points: the CGEvent delta fields are integers, so the
+            // injector cannot carry fractions (see nativeDiagInjectScrollWheel).
             settle(STEP_MILLIS)
-            inject(dx = dx / 2, dy = dy / 2, precise = true, momentum = Momentum.BEGAN)
+            inject(dx = momentumStep(dx), dy = momentumStep(dy), precise = true, momentum = Momentum.BEGAN)
             settle(STEP_MILLIS)
-            inject(dx = dx / 4, dy = dy / 4, precise = true, momentum = Momentum.CHANGED)
+            inject(dx = momentumTail(dx), dy = momentumTail(dy), precise = true, momentum = Momentum.CHANGED)
             settle(STEP_MILLIS)
             inject(dx = 0f, dy = 0f, precise = true, momentum = Momentum.ENDED)
         }
     }
+
+    /** Decaying momentum tail of a finger delta [d], in whole points. */
+    private fun momentumStep(d: Float): Float = (d * MOMENTUM_STEP_RATIO).toInt().toFloat()
+
+    private fun momentumTail(d: Float): Float = (d * MOMENTUM_TAIL_RATIO).toInt().toFloat()
 
     private fun TaoWindowTestScope.inject(
         dx: Float,
@@ -458,6 +465,8 @@ internal object MacOsTrackpadScrollHeadfulCases {
     /** AppKit points per injected finger move. */
     private const val SWIPE_DELTA_PT = 10f
     private const val SWIPE_STEPS = 3
+    private const val MOMENTUM_STEP_RATIO = 0.6f
+    private const val MOMENTUM_TAIL_RATIO = 0.3f
     private const val STEP_MILLIS = 16L
     private const val POLL_MILLIS = 16L
 

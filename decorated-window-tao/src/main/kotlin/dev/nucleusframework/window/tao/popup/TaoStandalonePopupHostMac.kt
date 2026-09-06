@@ -296,7 +296,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
     override fun dispose() {
         if (!isValid) {
+            // Never came up (bridges missing, panel creation failed): only the
+            // eagerly created pieces need releasing.
             scrollRouter.cancel()
+            renderExecutor.shutdown()
             return
         }
         if (disposed) return
@@ -440,8 +443,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
-            if (eventType == PointerEventType.Press) scrollRouter.finishPan()
             framePump.nonReentrant {
+                // A click ends an open trackpad pan first — inside the pump,
+                // like every other scene dispatch here.
+                if (eventType == PointerEventType.Press) scrollRouter.finishPan()
                 sc.sendPointerEvent(
                     eventType = eventType,
                     position = Offset(x, y),

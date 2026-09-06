@@ -88,6 +88,7 @@ internal object NativeTaoMacOsNativeViewBridge {
         yPx: Float,
         dx: Float,
         dy: Float,
+        phase: Int,
     )
 
     /** Makes [nsView] the window's first responder (native IME / typing). */

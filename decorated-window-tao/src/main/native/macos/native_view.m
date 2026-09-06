@@ -457,11 +457,32 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     }
 }
 
+/* Phase of a Compose scroll handed to the native view — mirrors Kotlin
+ * `TaoNativeViewHost.SCROLL_WHEEL / PAN_START / PAN_MOVE / PAN_END`. */
+enum { kNvScrollWheel = 0, kNvPanStart = 1, kNvPanMove = 2, kNvPanEnd = 3 };
+
+/* Is `event` the live AppKit scroll event this Compose step came from? A
+ * wheel step matches any scrollWheel event (previous behaviour); a pan step
+ * must match its phase class, because a PanEnd deferred by the pan router's
+ * grace timer runs long after AppKit moved on to some unrelated event. */
+static BOOL nvScrollEventMatches(NSEvent *event, jint phase) {
+    if (event == nil || event.type != NSEventTypeScrollWheel) return NO;
+    NSEventPhase p = event.phase, m = event.momentumPhase;
+    switch (phase) {
+        case kNvPanStart: return (p & (NSEventPhaseBegan | NSEventPhaseMayBegin)) != 0;
+        case kNvPanMove:  return (p & (NSEventPhaseChanged | NSEventPhaseStationary)) != 0
+                              || (m & (NSEventPhaseBegan | NSEventPhaseChanged)) != 0;
+        case kNvPanEnd:   return (p & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0
+                              || (m & (NSEventPhaseEnded | NSEventPhaseCancelled)) != 0;
+        default:          return YES;
+    }
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDispatchScroll(
     JNIEnv *env, jclass clazz,
     jlong contentPtr, jlong childPtr,
-    jfloat xPx, jfloat yPx, jfloat dx, jfloat dy)
+    jfloat xPx, jfloat yPx, jfloat dx, jfloat dy, jint phase)
 {
     (void)env; (void)clazz;
     NSView *content = view_from_long(contentPtr);
@@ -471,23 +492,33 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsNativeViewBridge_nativeDi
     NSView *hit = hit_native_child(child, windowPoint);
     if (hit == nil) return;
     // Prefer the original AppKit event: same sign, precise-pixel flag,
-    // momentum phase. Tao queues the scroll onto Compose on the same
-    // turn, so currentEvent is still the scrollWheel that started this.
+    // gesture / momentum phase. The pan router dispatches each step on the
+    // same turn as the scrollWheel that produced it, so currentEvent is
+    // still that event — except for the deferred PanEnd, caught by the
+    // phase check below.
     NSEvent *current = NSApp.currentEvent;
-    if (current != nil && current.type == NSEventTypeScrollWheel) {
+    if (nvScrollEventMatches(current, phase)) {
         [hit scrollWheel:current];
         return;
     }
     // Fallback: Compose/AWT scrollDelta is the inverse of AppKit
     // `scrollingDelta` on both axes (TaoWindow.kt SCROLL_PIXEL/LINE, #652)
     // and precise deltas are divided by 10. Reconstruct AppKit points:
-    // native = -awt * 10 for X and Y alike.
+    // native = -awt * 10 for X and Y alike, and give a pan step the phase
+    // the native scroll view expects (IOHID encoding, see popup_panel.m /
+    // NucleusTaoMetal.m: 1 began, 2 changed, 4 ended).
     const float kAwtPixelToRotation = 10.f;
     CGEventRef cg = CGEventCreateScrollWheelEvent(
         NULL, kCGScrollEventUnitPixel, 2,
         (int32_t)lroundf(-dy * kAwtPixelToRotation),
         (int32_t)lroundf(-dx * kAwtPixelToRotation));
     if (cg == NULL) return;
+    switch (phase) {
+        case kNvPanStart: CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, 1); break;
+        case kNvPanMove:  CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, 2); break;
+        case kNvPanEnd:   CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, 4); break;
+        default: break;
+    }
     CGEventSetLocation(cg, NSPointToCGPoint(
         [hit.window convertRectToScreen:NSMakeRect(windowPoint.x, windowPoint.y, 0, 0)].origin));
     NSEvent *event = [NSEvent eventWithCGEvent:cg];

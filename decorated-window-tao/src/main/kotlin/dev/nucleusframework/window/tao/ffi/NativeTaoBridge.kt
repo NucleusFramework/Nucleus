@@ -126,7 +126,6 @@ internal object NativeTaoBridge {
          *
          * Default implementation no-ops so non-macOS callers can ignore it.
          */
-        @Suppress("FunctionParameterNaming")
         fun onScrollGesture(
             handle: Long,
             phase: Int,

@@ -272,25 +272,21 @@ private fun Modifier.nativeViewPointerInterop(
                                 yPx,
                                 change.scrollDelta.x,
                                 change.scrollDelta.y,
+                                TaoNativeViewHost.SCROLL_WHEEL,
                             )
                             true
                         }
+                        // Trackpad pan (#654): the whole gesture belongs to the
+                        // native view — begin and end included, so its own
+                        // scroll view finishes rubber-banding / fades its
+                        // scrollers — and is consumed so the Compose scrollable
+                        // above never opens a pan session of its own. Offsets
+                        // are handed over in AWT wheel units: panOffset is
+                        // 10 dp per unit (see TaoSceneScrollRouter).
                         PointerEventType.PanStart,
+                        PointerEventType.PanMove,
                         PointerEventType.PanEnd,
                         -> {
-                            // Consumed, not forwarded: the gesture belongs to
-                            // the native view, so the Compose scrollable above
-                            // must not open a pan session of its own, and the
-                            // native side would only replay `NSApp.currentEvent`
-                            // — stale for the deferred PanEnd.
-                            true
-                        }
-                        PointerEventType.PanMove -> {
-                            // Trackpad pan (#654), handed over in AWT wheel
-                            // units: panOffset is 10 dp per unit (see
-                            // TaoSceneScrollRouter), so the native view keeps
-                            // scrolling under a two-finger swipe exactly like
-                            // under a wheel.
                             val unitPx = AWT_PIXEL_TO_ROTATION * density
                             host.dispatchScrollToNative(
                                 handle,
@@ -298,6 +294,11 @@ private fun Modifier.nativeViewPointerInterop(
                                 yPx,
                                 change.panOffset.x / unitPx,
                                 change.panOffset.y / unitPx,
+                                when (event.type) {
+                                    PointerEventType.PanStart -> TaoNativeViewHost.PAN_START
+                                    PointerEventType.PanEnd -> TaoNativeViewHost.PAN_END
+                                    else -> TaoNativeViewHost.PAN_MOVE
+                                },
                             )
                             true
                         }
@@ -357,14 +358,30 @@ internal interface TaoNativeViewHost {
     ) {
     }
 
-    /** Forwards an unconsumed Compose scroll onto the native view. */
+    /**
+     * Forwards an unconsumed Compose scroll onto the native view. [dx] / [dy]
+     * are AWT wheel units; [phase] is one of [SCROLL_WHEEL], [PAN_START],
+     * [PAN_MOVE], [PAN_END] so the native side can hand the embedded view a
+     * gesture with a proper begin and end (macOS replays the live AppKit event
+     * when it is the matching one, else synthesises a phased scroll).
+     */
+    @Suppress("LongParameterList")
     fun dispatchScrollToNative(
         handle: Long,
         xPx: Float,
         yPx: Float,
         dx: Float,
         dy: Float,
+        phase: Int,
     ) {
+    }
+
+    companion object {
+        /** Mouse-wheel notch / phase-less precise scroll. */
+        const val SCROLL_WHEEL: Int = 0
+        const val PAN_START: Int = 1
+        const val PAN_MOVE: Int = 2
+        const val PAN_END: Int = 3
     }
 
     /**

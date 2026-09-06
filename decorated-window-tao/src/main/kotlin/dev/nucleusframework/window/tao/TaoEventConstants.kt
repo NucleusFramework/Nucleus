@@ -130,8 +130,10 @@ internal enum class TaoScrollGesturePhase(
         /** Wire code for "not a gesture step" (only the popup wire carries it). */
         const val NONE_WIRE: Int = -1
 
+        private val byWire: Map<Int, TaoScrollGesturePhase> = entries.associateBy { it.wire }
+
         /** `null` for [NONE_WIRE] and for any code this build does not know. */
-        fun fromWire(code: Int): TaoScrollGesturePhase? = entries.firstOrNull { it.wire == code }
+        fun fromWire(code: Int): TaoScrollGesturePhase? = byWire[code]
     }
 }
 

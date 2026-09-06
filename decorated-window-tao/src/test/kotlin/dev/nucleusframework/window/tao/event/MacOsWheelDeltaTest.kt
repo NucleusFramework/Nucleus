@@ -54,13 +54,18 @@ class MacOsWheelDeltaTest {
     }
 
     @Test
-    fun gesturePhaseRidesAlongForPreciseEventsOnly() {
-        // Popups forward the AppKit phase; a wheel notch can never be a gesture step.
+    fun gesturePhaseRidesAlongWhateverThePrecisionFlag() {
+        // Popups forward the AppKit phase. A step reported without precise
+        // deltas keeps its phase too (AppKit does that for some zero-delta
+        // terminal steps) — dropping it would close the pan mid-gesture.
         val changed = TaoScrollGesturePhase.CHANGED.wire
         val step = appKitWheelToAwtScrollEvent(dx = 0f, dy = -10f, precise = true, gesturePhaseWire = changed)
         assertEquals(TaoScrollGesturePhase.CHANGED, step.gesturePhase)
         assertEquals(1f, step.dyAwt, absoluteTolerance = 0f)
-        val notch = appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false, gesturePhaseWire = changed)
+        val lineStep = appKitWheelToAwtScrollEvent(dx = 0f, dy = -1f, precise = false, gesturePhaseWire = changed)
+        assertEquals(TaoScrollGesturePhase.CHANGED, lineStep.gesturePhase)
+        assertEquals(1f, lineStep.dyAwt, absoluteTolerance = 0f)
+        val notch = appKitWheelToAwtScrollEvent(dx = 0f, dy = 1f, precise = false)
         assertEquals(null, notch.gesturePhase)
     }
 

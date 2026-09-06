@@ -49,7 +49,10 @@ internal fun appKitWheelToAwtScrollEvent(
         // lines-per-notch multiplier out of scrollAmount the way LinuxGtkConfig
         // does. Do not copy LINUX_AWT_SCROLL_AMOUNT_DEFAULT here.
         scrollAmount = MACOS_AWT_SCROLL_AMOUNT,
-        // A wheel notch has no phase; only precise events can belong to a gesture.
-        gesturePhase = if (precise) TaoScrollGesturePhase.fromWire(gesturePhaseWire) else null,
+        // The phase, not the precision flag, says whether this step belongs to
+        // a gesture: AppKit has been seen reporting a zero-delta terminal step
+        // with hasPreciseScrollingDeltas == NO, and dropping its phase would
+        // close the pan mid-gesture (the Rust window path routes the same way).
+        gesturePhase = TaoScrollGesturePhase.fromWire(gesturePhaseWire),
     )
 }
