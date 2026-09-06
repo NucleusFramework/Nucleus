@@ -426,6 +426,15 @@ internal class TaoComposeSceneHostLinux(
      */
     private var lastResizeEventNs: Long = 0L
     private var resizeBurstActive: Boolean = false
+
+    /**
+     * Whether the content sub-surface is in `set_sync` mode — entered with the
+     * resize burst while an embed is attached, left when the burst ends. In
+     * that mode a Compose buffer only shows with GTK's toplevel commit, which
+     * is what makes it land atomically with the embed's new position; see
+     * `NativeTaoEglBridge.nativeSetSubsurfaceSync`.
+     */
+    private var subsurfaceSynced: Boolean = false
     private var appliedSwapInterval: Int = 1
     private var pendingSwapInterval: Int? = null
 
@@ -827,6 +836,8 @@ internal class TaoComposeSceneHostLinux(
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         NativeTaoEglBridge.nativeDetach(attachmentHandle)
         attachmentHandle = 0L
+        // The sub-surface went with the attachment; a fresh one starts desync.
+        subsurfaceSynced = false
     }
 
     /**
@@ -1444,6 +1455,10 @@ internal class TaoComposeSceneHostLinux(
                 resizeBurstActive = true
                 pendingSwapInterval = 0
             }
+            if (!subsurfaceSynced && attachedNativeViews.isNotEmpty() && attachmentHandle != 0L) {
+                subsurfaceSynced = true
+                NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, true)
+            }
             // Two catch-up frames: (1) swap that allocates the new buffer,
             // (2) paint into it. Refreshed on every motion so a continuous
             // drag always has headroom after the last pixel.
@@ -1483,12 +1498,16 @@ internal class TaoComposeSceneHostLinux(
      */
     private fun updateResizeBurstSwapInterval() {
         if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
-        if (resizeBurstActive &&
-            lastResizeEventNs > 0L &&
-            System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
-        ) {
+        val burstOver = lastResizeEventNs > 0L && System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
+        if (resizeBurstActive && burstOver) {
             resizeBurstActive = false
             pendingSwapInterval = 1
+        }
+        if (subsurfaceSynced && burstOver) {
+            subsurfaceSynced = false
+            // `set_desync` applies whatever the compositor still caches, so
+            // the last frame of the burst is never stranded.
+            NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, false)
         }
         val want = pendingSwapInterval ?: return
         pendingSwapInterval = null
@@ -1512,7 +1531,16 @@ internal class TaoComposeSceneHostLinux(
         val packed = NativeTaoBridge.nativeLinuxContentOrigin(window.handle)
         val xLogical = (packed shr 32).toInt()
         val yLogical = packed.toInt()
-        NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)
+        if (NativeTaoEglBridge.nativeSetContentOffset(attachmentHandle, xLogical, yLogical)) {
+            // The new position is pending parent state: GTK's next commit
+            // applies it, and after a maximize/restore GTK is idle — ask it
+            // to paint. (Committing the parent ourselves is not safe; see the
+            // native side.)
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
+                NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
+            }
+        }
     }
 
     /**
@@ -1851,6 +1879,14 @@ internal class TaoComposeSceneHostLinux(
         surface.flushAndSubmit(syncCpu = false)
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
+        if (subsurfaceSynced) {
+            // In sync mode this frame only shows with GTK's next commit; make
+            // sure there is one, also once the pointer has stopped moving.
+            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
+                NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
+            }
+        }
 
         // Re-align the content subsurface with GTK's content area AFTER the
         // swap was requested, so the repositioning (which the native side
@@ -2842,6 +2878,8 @@ internal class TaoComposeSceneHostLinux(
             NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
             NativeTaoEglBridge.nativeDetach(attachmentHandle)
             attachmentHandle = 0L
+            // The sub-surface went with the attachment; a fresh one starts desync.
+            subsurfaceSynced = false
         }
     }
 

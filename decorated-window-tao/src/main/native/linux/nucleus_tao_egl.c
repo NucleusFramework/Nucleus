@@ -290,6 +290,7 @@ typedef int             (*PFN_wl_display_flush)(wl_display *);
 #define WL_SUBCOMPOSITOR_GET_SUBSURFACE    1
 #define WL_SUBSURFACE_DESTROY              0
 #define WL_SUBSURFACE_SET_POSITION         1
+#define WL_SUBSURFACE_SET_SYNC             4
 #define WL_SUBSURFACE_SET_DESYNC           5
 #define WL_SURFACE_DESTROY                 0
 #define WL_SURFACE_ATTACH                  1
@@ -1521,14 +1522,14 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeResize(
  * draws. Cheap no-op when the offset is unchanged; no-op on X11 (the CSD is
  * never latched there).
  */
-JNIEXPORT void JNICALL
+JNIEXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffset(
     JNIEnv *env, jclass clazz, jlong handle, jint xLogical, jint yLogical)
 {
     (void) env; (void) clazz;
     EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
-    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
-    if (att->content_off_x == xLogical && att->content_off_y == yLogical) return;
+    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return JNI_FALSE;
+    if (att->content_off_x == xLogical && att->content_off_y == yLogical) return JNI_FALSE;
     att->content_off_x = xLogical;
     att->content_off_y = yLogical;
     p_wl_proxy_marshal_flags(att->wl_subsurface, WL_SUBSURFACE_SET_POSITION,
@@ -1538,14 +1539,44 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetContentOffs
      * GTK's next commit, and after a maximize/restore GTK has already
      * committed its reallocation by the time this runs and then goes idle,
      * which would leave the old offset applied forever (content shifted
-     * bottom-right by the former shadow margins). Issue an empty commit on
-     * GTK's toplevel surface ourselves: it applies pending state only, and
-     * this call always runs on the GTK main thread (the render loop), so
-     * GTK is never mid-way through its own attach/damage/commit sequence. */
-    if (att->wl_parent_surface) {
-        p_wl_proxy_marshal_flags(att->wl_parent_surface, WL_SURFACE_COMMIT,
-            NULL, p_wl_proxy_get_version(att->wl_parent_surface), 0);
-    }
+     * bottom-right by the former shadow margins). This used to issue an
+     * empty commit on GTK's toplevel surface here. That is not safe: GDK
+     * attaches its SHM buffer in `end_paint` and commits it in
+     * `after_paint`, and a commit of ours between the two hands the
+     * compositor a buffer GDK still counts as staged — the release then
+     * fails GDK's `buffer_release_callback` check and cairo aborts the
+     * process (seen after a minimize/restore storm). The caller asks GTK to
+     * repaint the toplevel instead, and GTK's own commit applies the
+     * position. Returns whether the offset changed, so the caller knows to. */
+    if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
+    return JNI_TRUE;
+}
+
+/**
+ * Switches the content sub-surface between `set_sync` and `set_desync`.
+ *
+ * Normally desync: Compose's buffers land on their own, independently of
+ * GTK's cairo paint cycle (see the file header). Through an interactive
+ * resize that independence is the problem: an embedded native view
+ * (`NativeView`, e.g. WebKit's accelerated sub-surface) is positioned by GTK
+ * on its allocation, and a sub-surface position is parent state that only
+ * takes effect on GTK's toplevel commit — one GTK paint after Compose laid
+ * the new hole out and swapped. The embed peels off the hole by a frame on
+ * every configure. In sync mode our buffer is cached by the compositor and
+ * applied atomically with that same GTK commit, hole and embed together.
+ * Per the protocol, `set_desync` applies any cached state at once, so
+ * leaving sync mode never strands a frame.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSubsurfaceSync(
+    JNIEnv *env, jclass clazz, jlong handle, jboolean sync)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_subsurface || !p_wl_proxy_marshal_flags) return;
+    p_wl_proxy_marshal_flags(att->wl_subsurface,
+        sync ? WL_SUBSURFACE_SET_SYNC : WL_SUBSURFACE_SET_DESYNC,
+        NULL, p_wl_proxy_get_version(att->wl_subsurface), 0);
     if (p_wl_display_flush && att->wl_display_conn) p_wl_display_flush(att->wl_display_conn);
 }
 

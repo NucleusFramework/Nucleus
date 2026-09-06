@@ -119,7 +119,7 @@ internal object NativeTaoEglBridge {
         handle: Long,
         xLogical: Int,
         yLogical: Int,
-    )
+    ): Boolean
 
     /**
      * Wayland only: declares which part of the content surface is fully opaque,
@@ -209,4 +209,16 @@ internal object NativeTaoEglBridge {
      */
     @JvmStatic
     external fun nativeGetProcAddrFunctionPointer(): Long
+
+    /**
+     * Wayland only: puts the content sub-surface in `set_sync` (buffers apply
+     * with GTK's toplevel commit, atomically with the positions of embedded
+     * native views) or back in `set_desync` (buffers apply on their own).
+     * No-op on X11.
+     */
+    @JvmStatic
+    external fun nativeSetSubsurfaceSync(
+        handle: Long,
+        sync: Boolean,
+    )
 }

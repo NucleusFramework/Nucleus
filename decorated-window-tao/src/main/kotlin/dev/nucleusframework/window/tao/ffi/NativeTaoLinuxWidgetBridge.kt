@@ -206,6 +206,10 @@ internal object NativeTaoLinuxWidgetBridge {
     @JvmStatic
     external fun nativeQueryPointerButtons(gtkWindowPtr: Long): Int
 
+    /** `gtk_widget_queue_draw` on the toplevel: GTK paints and commits it on its next frame. */
+    @JvmStatic
+    external fun nativeQueueToplevelDraw(gtkWindowPtr: Long)
+
     // ── Diagnostics for the headful suite ─────────────────────────────
 
     /**

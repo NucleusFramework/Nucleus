@@ -125,6 +125,7 @@ typedef void       (*PFN_g_object_unref)(void *obj);
 typedef void       (*PFN_g_list_free)(GList *list);
 typedef GtkWidget *(*PFN_gtk_window_get_focus)(GtkWindow *window);
 typedef void       (*PFN_gtk_container_check_resize)(GtkContainer *container);
+typedef void       (*PFN_gtk_widget_queue_draw)(GtkWidget *widget);
 typedef void      *(*PFN_gdk_window_get_display)(void *window);
 typedef void      *(*PFN_gdk_display_get_default_seat)(void *display);
 typedef void      *(*PFN_gdk_seat_get_pointer)(void *seat);
@@ -178,6 +179,7 @@ static struct {
     /* Optional: keyboard-owner bookkeeping and the live button state. */
     PFN_gtk_window_get_focus      gtk_window_get_focus;
     PFN_gtk_container_check_resize gtk_container_check_resize;
+    PFN_gtk_widget_queue_draw     gtk_widget_queue_draw;
     PFN_gdk_window_get_display    gdk_window_get_display;
     PFN_gdk_display_get_default_seat gdk_display_get_default_seat;
     PFN_gdk_seat_get_pointer      gdk_seat_get_pointer;
@@ -257,6 +259,7 @@ static int ensure_gtk_loaded(void) {
     }
     g.gtk_window_get_focus        = (PFN_gtk_window_get_focus)        dlsym(libgtk, "gtk_window_get_focus");
     g.gtk_container_check_resize  = (PFN_gtk_container_check_resize)  dlsym(libgtk, "gtk_container_check_resize");
+    g.gtk_widget_queue_draw       = (PFN_gtk_widget_queue_draw)       dlsym(libgtk, "gtk_widget_queue_draw");
     g.g_object_ref                = (PFN_g_object_ref)                dlsym(libgobj, "g_object_ref");
     g.g_object_unref              = (PFN_g_object_unref)              dlsym(libgobj, "g_object_unref");
     if (libglib != NULL) {
@@ -803,6 +806,20 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeQueryP
     unsigned int mask = 0;
     g.gdk_window_get_device_position(gdk_window, pointer, NULL, NULL, &mask);
     return (jint) mask;
+}
+
+/* Asks GTK to paint — and so commit — its toplevel on its next frame. While
+ * the content sub-surface is in sync mode (resize burst with an embed), a
+ * Compose buffer is only shown by GTK's commit; GTK commits on every
+ * configure while the pointer moves, and this covers the frames in between
+ * and the last one after the pointer stops. */
+EXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeQueueToplevelDraw(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || g.gtk_widget_queue_draw == NULL || gtk_window_ptr == 0) return;
+    g.gtk_widget_queue_draw((GtkWidget *) (uintptr_t) gtk_window_ptr);
 }
 
 /* ── Input-box overlay: hit capture for NativeView blending ──
