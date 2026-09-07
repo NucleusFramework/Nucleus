@@ -36,8 +36,10 @@ import dev.nucleusframework.window.tao.TaoTouchEvent
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.clearContentMeasurer
 import dev.nucleusframework.window.tao.event.ProvideTaoWindowsScrollConfig
+import dev.nucleusframework.window.tao.event.TaoTrackpadScaleSession
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyEvent
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.event.taoTypedKeyEvent
@@ -696,28 +698,32 @@ internal class TaoComposeSceneHostWindows(
     // Windows delivers a precision-touchpad pinch (and a real Ctrl+wheel) as a
     // WM_MOUSEWHEEL carrying the Ctrl flag; the vendored Tao patch routes those
     // to the magnify hook (instead of a scroll, which would drive the
-    // scrollable — the bug we're fixing). Each notch/tick is a discrete delta,
-    // but pinch detection (`detectTransformGestures`) only crosses its touch
-    // slop once distance has changed enough, so per-tick Press→Release bursts
-    // would swallow fine touchpad zooms. We instead keep ONE continuous
-    // two-finger Touch gesture: the first tick presses, every tick moves
-    // (accumulating scale), and an idle debounce releases it — the same
-    // continuous model the macOS path uses, so zoom is smooth and the gesture
-    // never reaches the scrollable.
+    // scrollable). Each notch/tick is a discrete delta with no Began/Ended
+    // phase, so we keep ONE continuous Compose scale gesture: the first tick
+    // opens `ScaleStart`, every tick is `ScaleChange`, and an idle debounce
+    // sends `ScaleEnd` (#660).
 
-    private var pinchActive = false
-    private var pinchScale = 1f
     private var pinchCenterX = 0f
     private var pinchCenterY = 0f
+    private val scaleSession =
+        TaoTrackpadScaleSession { type, factor ->
+            scene?.dispatchTrackpadScale(
+                x = pinchCenterX,
+                y = pinchCenterY,
+                type = type,
+                scaleFactor = factor,
+                keyboardModifiers = currentKeyboardModifiers,
+            )
+        }
     private var pinchEndJob: Job? = null
 
     /**
-     * Synthesises a two-finger pinch from one Ctrl+wheel tick. [valueFixed] is
-     * the normalized wheel delta × [TRACKPAD_VALUE_SCALE] (positive = zoom in).
-     * Only magnify gestures are produced on Windows, so kind/phase/x/y from the
-     * shared `onTrackpadGesture` wire are ignored.
+     * Forwards one Ctrl+wheel / precision-touchpad pinch tick as a Compose
+     * scale step. [valueFixed] is the normalized wheel delta ×
+     * [TRACKPAD_VALUE_SCALE] (positive = zoom in). Only magnify gestures are
+     * produced on Windows, so kind/phase/x/y from the shared
+     * `onTrackpadGesture` wire are ignored.
      */
-    @OptIn(ExperimentalComposeUiApi::class)
     fun onTrackpadGesture(
         @Suppress("UNUSED_PARAMETER") kind: Int,
         @Suppress("UNUSED_PARAMETER") phase: Int,
@@ -735,48 +741,13 @@ internal class TaoComposeSceneHostWindows(
         // ticks accumulate smoothly without each message behaving like a large
         // zoom step.
         val step = TaoWheelPinchZoom.stepFromWheelDelta(value)
-
-        if (!pinchActive) {
-            pinchActive = true
-            pinchScale = 1f
-            // Centre on the cursor = zoom focal point (the pinch doesn't move it).
-            pinchCenterX = lastPointerX
-            pinchCenterY = lastPointerY
-            sendPinchPointers(PointerEventType.Press)
-        }
-        pinchScale *= step
-        sendPinchPointers(PointerEventType.Move)
+        pinchCenterX = lastPointerX
+        pinchCenterY = lastPointerY
+        scaleSession.change(step)
         schedulePinchEnd()
     }
 
-    @OptIn(ExperimentalComposeUiApi::class)
-    private fun sendPinchPointers(eventType: PointerEventType) {
-        val sc = scene ?: return
-        val radius = PINCH_BASE_RADIUS_PX * pinchScale
-        val pressed = eventType != PointerEventType.Release
-        val pointers =
-            listOf(
-                ComposeScenePointer(
-                    id = PointerId(PINCH_POINTER_ID_A),
-                    position = Offset(pinchCenterX - radius, pinchCenterY),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-                ComposeScenePointer(
-                    id = PointerId(PINCH_POINTER_ID_B),
-                    position = Offset(pinchCenterX + radius, pinchCenterY),
-                    pressed = pressed,
-                    type = PointerType.Touch,
-                ),
-            )
-        sc.sendPointerEvent(
-            eventType = eventType,
-            pointers = pointers,
-            keyboardModifiers = currentKeyboardModifiers,
-        )
-    }
-
-    /** Re-arms the idle timer that releases the synthetic pinch once ticks stop. */
+    /** Re-arms the idle timer that closes the scale gesture once ticks stop. */
     private fun schedulePinchEnd() {
         pinchEndJob?.cancel()
         pinchEndJob =
@@ -788,10 +759,7 @@ internal class TaoComposeSceneHostWindows(
 
     private fun endPinchGesture() {
         pinchEndJob = null
-        if (!pinchActive) return
-        sendPinchPointers(PointerEventType.Release)
-        pinchActive = false
-        pinchScale = 1f
+        scaleSession.end()
     }
 
     @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
@@ -2446,10 +2414,9 @@ internal class TaoComposeSceneHostWindows(
         nativeViewBlending.destroyOverlay()
         shutdownA11yScheduler()
         textToolbar.hide()
-        // Stop the pinch idle timer; the scene is going away so no Release needed.
+        // Stop the pinch idle timer; the scene is going away so no ScaleEnd needed.
         pinchEndJob?.cancel()
         pinchEndJob = null
-        pinchActive = false
         gestureScope.cancel()
         // Make THIS host's ES context current before tearing down Skia
         // resources. A sibling host (e.g. the main window opened while this
@@ -2509,14 +2476,7 @@ internal class TaoComposeSceneHostWindows(
          */
         private const val TRACKPAD_VALUE_SCALE: Float = 10_000f
 
-        /** Half-distance of the synthetic two-finger pair at scale 1.0. */
-        private const val PINCH_BASE_RADIUS_PX: Float = 120f
-
-        // Stable ids well clear of real touch ids (raw WM_POINTER finger ids).
-        private const val PINCH_POINTER_ID_A: Long = 0xA001L
-        private const val PINCH_POINTER_ID_B: Long = 0xA002L
-
-        /** Idle gap after the last tick before the synthetic pinch releases. */
+        /** Idle gap after the last tick before the scale gesture closes. */
         private const val PINCH_IDLE_END_MS: Long = 120L
 
         /**

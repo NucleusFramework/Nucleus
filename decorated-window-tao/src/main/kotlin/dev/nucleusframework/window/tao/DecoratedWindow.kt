@@ -420,8 +420,8 @@ internal fun ApplicationScope.openDecoratedWindow(
 
     // Trackpad pinch / rotate / smart-magnify, intercepted before AppKit
     // dispatches them down the responder chain (Tao 0.35 doesn't surface
-    // these events). Synthesised as two-finger Touch pointers in the host
-    // so cross-platform `detectTransformGestures` reacts uniformly.
+    // these events). Pinch is forwarded as Compose Scale events (#660);
+    // rotation still synthesises two-finger Touch pointers.
     window.onTrackpadGesture { kind, phase, x, y, value ->
         exceptionHandler.catchExceptions {
             if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)
@@ -1105,9 +1105,8 @@ private fun ApplicationScope.openDecoratedWindowWindows(
 
     // Trackpad pinch-to-zoom. Windows delivers a precision-touchpad pinch (and
     // a real Ctrl+wheel) as a Ctrl-flagged WM_MOUSEWHEEL; the Tao patch routes
-    // those to the magnify hook instead of a scroll, and the host synthesises a
-    // two-finger Touch pinch so cross-platform `detectTransformGestures` zooms
-    // uniformly — same model as macOS.
+    // those to the magnify hook instead of a scroll, and the host forwards
+    // Compose Scale events (#660) — same model as macOS.
     window.onTrackpadGesture { kind, phase, x, y, value ->
         exceptionHandler.catchExceptions {
             if (enabled) host.onTrackpadGesture(kind, phase, x, y, value)

@@ -24,6 +24,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -31,8 +32,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /**
- * Demonstrates `detectTransformGestures` driven by macOS trackpad pinch /
- * rotate / smart-magnify (Tao backend) and standard mouse drag.
+ * Demonstrates trackpad pinch / rotate / smart-magnify (Tao backend) and
+ * standard mouse drag.
+ *
+ * Pinch arrives as Compose `ScaleStart` / `ScaleChange` / `ScaleEnd` (#660);
+ * two-finger rotate still goes through `detectTransformGestures` (Compose
+ * has no rotation event).
  *
  * Modifier topology — important: the gesture detector lives on the **outer**
  * (viewport) Box, the visual transform lives on the **inner** Box. Compose
@@ -76,6 +81,25 @@ fun ZoomTab(modifier: Modifier = Modifier) {
                     .clip(RoundedCornerShape(16.dp))
                     .background(Color(0xFF15181D))
                     .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                when (event.type) {
+                                    PointerEventType.ScaleStart,
+                                    PointerEventType.ScaleChange,
+                                    PointerEventType.ScaleEnd,
+                                    -> {
+                                        var factor = 1f
+                                        event.changes.forEach { factor *= it.scaleFactor }
+                                        if (factor != 1f) {
+                                            scale = (scale * factor).coerceIn(MIN_SCALE, MAX_SCALE)
+                                        }
+                                    }
+                                    else -> Unit
+                                }
+                            }
+                        }
+                    }.pointerInput(Unit) {
                         detectTransformGestures { _, pan, zoom, rot ->
                             scale = (scale * zoom).coerceIn(MIN_SCALE, MAX_SCALE)
                             rotation += rot
