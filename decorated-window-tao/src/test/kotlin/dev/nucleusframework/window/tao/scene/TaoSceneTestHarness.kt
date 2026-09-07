@@ -27,6 +27,7 @@ import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
+import dev.nucleusframework.window.tao.event.dispatchTrackpadScale
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
@@ -550,6 +551,25 @@ internal class TaoSceneTestScope(
             y = pointerDeadband.y,
             type = type,
             panOffset = panOffsetPx,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
+    /**
+     * Mirrors the scene host's trackpad pinch dispatch (`dispatchTrackpadScale`,
+     * #660): [scaleFactor] is a multiplicative per-event ratio (`1f` = no
+     * change). The pointer sits at the last cursor position.
+     */
+    fun scale(
+        type: PointerEventType,
+        scaleFactor: Float = 1f,
+    ) {
+        scene.dispatchTrackpadScale(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            scaleFactor = scaleFactor,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
         frame()
