@@ -21,6 +21,11 @@ abstract class GraalvmSettings
     ) {
         val isEnabled: Property<Boolean> = objects.notNullProperty(false)
 
+        // Skip AWT/Java2D/Skiko reachability metadata and companion GUI native libs
+        // (libawt, libfontmanager, Skiko, …). Use for daemons and CLIs. Also bakes
+        // `-Djava.awt.headless=true` into the image.
+        val headless: Property<Boolean> = objects.notNullProperty(false)
+
         // Gradle toolchain spec used only when toolchain.autoDownload is disabled; the
         // auto-downloaded toolchain is selected via toolchain { channel / version } instead.
         @Suppress("MagicNumber")
