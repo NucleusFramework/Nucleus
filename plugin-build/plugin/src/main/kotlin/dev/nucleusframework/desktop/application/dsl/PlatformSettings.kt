@@ -186,6 +186,32 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     /** Additional pacman dependencies for .pacman packages. */
     var pacmanDepends: List<String> = emptyList()
 
+    /**
+     * User after-install script concatenated after Nucleus's own template (desktop
+     * integration, AppArmor, optional polkit silent-update helper). electron-builder
+     * macros such as `${sanitizedProductName}` and `${executable}` are substituted.
+     */
+    val afterInstall: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User after-remove script concatenated after Nucleus's own template (polkit
+     * policy cleanup when silent update is enabled).
+     */
+    val afterRemove: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User before-install script passed to fpm (`--before-install`). Run as root
+     * before the payload is unpacked — stop a packaged systemd service here so
+     * binaries in `/opt` can be replaced.
+     */
+    val beforeInstall: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User before-remove script passed to fpm (`--before-remove`). Run as root
+     * before the payload is deleted.
+     */
+    val beforeRemove: RegularFileProperty = objects.fileProperty()
+
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 
     fun snap(fn: Action<SnapSettings>) {

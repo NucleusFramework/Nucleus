@@ -61,7 +61,11 @@ abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
                 } else {
                     modules.get()
                 }
-            modulesToInclude.forEach { m ->
+            // Temurin 24+ enables JEP 493 (jlink from the run-time image, no jmods/).
+            // That mode cannot emit an image that itself contains jdk.jlink:
+            // "This JDK does not contain packaged modules and cannot be used to create
+            // another image with the jdk.jlink module". A shipped app never needs jlink.
+            modulesToInclude.filterNot { it == "jdk.jlink" }.forEach { m ->
                 cliArg("--add-modules", m)
             }
 
