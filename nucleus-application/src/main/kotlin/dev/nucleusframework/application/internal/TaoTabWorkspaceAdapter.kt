@@ -27,6 +27,7 @@ internal object TaoTabWorkspaceAdapter {
         strip: @Composable TabStripScope.() -> Unit,
         nativeContextMenu: Boolean,
         windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
+        windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit,
         onLastWindowClosed: () -> Unit,
     ) {
         // Each window the workspace opens gets a fresh ComposeScene — see
@@ -42,6 +43,14 @@ internal object TaoTabWorkspaceAdapter {
                 windowContentWrapper = { inner ->
                     bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu) {
                         windowWrapper(inner)
+                    }
+                },
+                // Inside the window's own scene, where `bindNucleusContent`
+                // has already provided the Nucleus locals: the wrapper is
+                // handed the same scope the content wrapper gets.
+                windowBodyWrapper = { body ->
+                    bindNucleusContent(outerLocals, parentLayoutDirection, nativeContextMenu) {
+                        windowBodyWrapper(body)
                     }
                 },
                 onLastWindowClosed = onLastWindowClosed,

@@ -75,6 +75,10 @@ internal object TabWorkspaceMotionHeadfulCases {
                     check(workspace.dropPreview?.group === second) {
                         "round $round: the other strip did not answer a teleport: ${workspace.dropPreview}"
                     }
+                    // Another window's strip is a move, not a reorder: the tab
+                    // is leaving this window, so the ghost carries it there.
+                    val ghost = requireNotNull(workspace.dragGhost) { "round $round: the ghost was lost" }
+                    check(ghost.screenRectPx.width > 0f) { "round $round: the ghost has no size" }
                     session.update(nowhere)
                     settle(JUMP_SETTLE_MILLIS)
                     check(workspace.dropPreview == null) { "round $round: empty space previewed a drop" }
@@ -83,8 +87,15 @@ internal object TabWorkspaceMotionHeadfulCases {
                     check(workspace.dropPreview?.group === home) {
                         "round $round: its own strip did not answer a teleport: ${workspace.dropPreview}"
                     }
-                    val ghost = requireNotNull(workspace.dragGhost) { "round $round: the ghost was lost" }
-                    check(ghost.screenRectPx.width > 0f) { "round $round: the ghost has no size" }
+                    // Back over its own strip the tab is in the strip's hands,
+                    // which draws it under the pointer: no ghost window, and
+                    // the pointer published for the strip to follow.
+                    check(workspace.dragGhost == null) {
+                        "round $round: a ghost over its own strip: ${workspace.dragGhost}"
+                    }
+                    check(workspace.dragPointerScreenPx == onHome) {
+                        "round $round: the strip was not told the pointer: ${workspace.dragPointerScreenPx}"
+                    }
                 }
 
                 // The last sample is the one that decides.
@@ -177,7 +188,11 @@ internal object TabWorkspaceMotionHeadfulCases {
                 session.update(grab)
 
                 val onTheStrip = Offset(strip.left + strip.width * STRIP_MID_FRACTION, strip.center.y)
-                session.update(onTheStrip)
+                // Clear of its own strip, where the ghost is what carries the
+                // tab: over the strip itself there is none to compare against,
+                // since the strip holds the tab under the pointer instead.
+                val offTheStrip = Offset(onTheStrip.x, strip.bottom + OFF_STRIP_PX)
+                session.update(offTheStrip)
                 val ghostAtStrip = requireNotNull(workspace.dragGhost).screenRectPx
 
                 val garbage =
@@ -193,7 +208,7 @@ internal object TabWorkspaceMotionHeadfulCases {
                     check(ghost.screenRectPx == ghostAtStrip) {
                         "an unusable sample ($sample) moved the ghost to ${ghost.screenRectPx}"
                     }
-                    check(workspace.dropPreview?.group === home) { "an unusable sample dropped the preview" }
+                    check(workspace.dropPreview == null) { "an unusable sample invented a drop target" }
                 }
 
                 // Far outside every display, then the same sample twice.
@@ -211,8 +226,12 @@ internal object TabWorkspaceMotionHeadfulCases {
                     "the source window was resized by the excursion"
                 }
 
-                // And the gesture still works: back on the strip, release.
+                // And the gesture still works: back on the strip — where the
+                // strip takes the tab back in hand — and released.
                 session.update(onTheStrip)
+                check(workspace.dragGhost == null && workspace.dropPreview?.group === home) {
+                    "its own strip did not take the tab back: ${workspace.dragGhost} ${workspace.dropPreview}"
+                }
                 session.end(onTheStrip)
                 awaitUntil("the tab is still in its window") {
                     workspace.groups.size == 1 && fixture.groupOf("Beta") === home
@@ -495,4 +514,7 @@ internal object TabWorkspaceMotionHeadfulCases {
 
     /** Both sides come from the same live geometry: rounding only. */
     private const val STRIP_FOLLOW_TOLERANCE_PX = 8f
+
+    /** Just under the strip: the body, where a dragged tab is out of the strip's hands. */
+    private const val OFF_STRIP_PX = 40f
 }

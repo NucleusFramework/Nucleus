@@ -46,6 +46,11 @@ import dev.nucleusframework.window.tao.TabWorkspace
  *   that window's scope as receiver — where per-window chrome goes, since the
  *   app does not open these windows itself: `WindowBackground`,
  *   `WindowAppearance`, a themed `Surface`. Must invoke the lambda it is given.
+ * @param windowBodyWrapper composed inside each window, below the tab strip,
+ *   around the selected tab's body: chrome that belongs to the window rather
+ *   than to a tab goes here — a `DockLayout` with its satellites, an activity
+ *   bar. [windowWrapper] wraps the window including its strip; this one wraps
+ *   only what is under it. Must invoke the lambda it is given.
  * @param onLastWindowClosed called every time the workspace goes from holding
  *   tabs to holding none, which is where an app calls `exitApplication`.
  */
@@ -56,6 +61,7 @@ public fun NucleusApplicationScope.TabWindows(
     strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
     nativeContextMenu: Boolean = true,
     windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
+    windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     when (this) {
@@ -66,6 +72,7 @@ public fun NucleusApplicationScope.TabWindows(
                 strip = strip,
                 nativeContextMenu = nativeContextMenu,
                 windowWrapper = windowWrapper,
+                windowBodyWrapper = windowBodyWrapper,
                 onLastWindowClosed = onLastWindowClosed,
             )
     }
@@ -82,6 +89,7 @@ public fun TabWindows(
     strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
     nativeContextMenu: Boolean = true,
     windowWrapper: @Composable NucleusDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
+    windowBodyWrapper: @Composable NucleusDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     LocalNucleusApplicationScope.current.TabWindows(
@@ -89,6 +97,7 @@ public fun TabWindows(
         strip = strip,
         nativeContextMenu = nativeContextMenu,
         windowWrapper = windowWrapper,
+        windowBodyWrapper = windowBodyWrapper,
         onLastWindowClosed = onLastWindowClosed,
     )
 }

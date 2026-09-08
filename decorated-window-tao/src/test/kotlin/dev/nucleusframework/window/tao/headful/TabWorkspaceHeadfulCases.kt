@@ -16,7 +16,13 @@ import kotlin.math.abs
  *     reorder inside one window rebuilds nothing;
  *  3. a snapshot restores the windows it described, tabs declared afterwards
  *     included;
- *  4. selection: closing the selected tab picks a neighbour, in real windows.
+ *  4. selection: closing the selected tab picks a neighbour, in real windows;
+ *  5. the app's `windowBodyWrapper` is composed once per window, under the
+ *     strip and above the tab body, and neither a selection change nor a
+ *     tear-off rebuilds it.
+ *
+ * The strip's motion — carrying a tab, the neighbours stepping aside, tabs
+ * opening and closing — lives in [TabStripMotionHeadfulCases].
  *
  * The edge cases — abrupt pointer jumps, a backing-scale change, minimize,
  * maximize, interrupted gestures — live in [TabWorkspaceStressHeadfulCases].
@@ -31,7 +37,59 @@ internal object TabWorkspaceHeadfulCases {
             stateSurvivesMovesAndReordersDoNotRebuild(),
             snapshotRestoresWindows(),
             closingTheSelectedTabPicksANeighbour(),
+            theWindowBodyWrapperHoldsTheWindowsOwnChrome(),
         )
+
+    private fun theWindowBodyWrapperHoldsTheWindowsOwnChrome(): TaoWindowTestCase {
+        val fixture = TabWorkspaceFixture(initialTitles = listOf("Alpha", "Beta"))
+        return TaoWindowTestCase(
+            name = "tab workspace hosts the window's own chrome under the strip, built once per window",
+            skip = ::workspaceSkipReason,
+            windowState = idleCaseWindowState(),
+            size = idleCaseWindowSize(),
+            paintDefaultBackground = false,
+            applicationContent = { with(fixture) { Windows() } },
+            driver = {
+                val first = awaitTabWindows(fixture, "Alpha", "Beta")
+                val workspace = fixture.workspace
+                val group = requireNotNull(fixture.groupOf("Alpha"))
+                awaitUntil("the window chrome is measured") { fixture.bodyWrapperBounds.value[group.id] != null }
+                val chrome = requireNotNull(fixture.bodyWrapperBounds.value[group.id])
+                val strip = requireNotNull(workspace.stripGeometry(group)).layoutBoundsInWindowPx
+                val scale = first.scaleFactor
+                check(chrome.top >= strip.bottom - LAYOUT_TOLERANCE_PX) {
+                    "the window chrome is not under the strip: chrome=$chrome strip=$strip"
+                }
+                check(abs(chrome.height - BODY_CHROME_H_DP * scale) <= LAYOUT_TOLERANCE_PX) {
+                    "the chrome is ${chrome.height} px tall, asked for ${BODY_CHROME_H_DP * scale}"
+                }
+                check(chrome.width > 0f) { "the chrome has no width" }
+                val builtOnce = fixture.bodyWrapperBuilds.value
+                check(builtOnce == 1) { "the body wrapper was built $builtOnce times for one window" }
+
+                // A selection change is a tab change: the window's chrome is not part of it.
+                workspace.select(fixture.tabId("Beta"))
+                awaitUntil("Beta is composed") { fixture.windowOf("Beta") != null }
+                settle()
+                check(fixture.bodyWrapperBuilds.value == builtOnce) {
+                    "a selection change rebuilt the window chrome: ${fixture.bodyWrapperBuilds.value}"
+                }
+                check(fixture.bodyWrapperBounds.value[group.id] == chrome) { "the chrome moved on a tab change" }
+
+                // A tear-off adds a window, and with it one chrome of its own.
+                workspace.tearOff(fixture.tabId("Beta"), tearOffRectPx(first), scale)
+                awaitUntil("a second window is mapped") {
+                    workspace.groups.size == 2 && workspace.groups.all { it.window?.hasRealFramePx() == true }
+                }
+                awaitUntil("the second window's chrome is measured") { fixture.bodyWrapperBounds.value.size == 2 }
+                settle()
+                check(fixture.bodyWrapperBuilds.value == builtOnce + 1) {
+                    "the second window did not get exactly one chrome: ${fixture.bodyWrapperBuilds.value}"
+                }
+                check(fixture.bodyWrapperBounds.value[group.id] == chrome) { "the first window's chrome was rebuilt" }
+            },
+        )
+    }
 
     /**
      * The gesture an app is judged on: pull a tab out into its own window with
@@ -370,4 +428,28 @@ internal object TabWorkspaceHeadfulCases {
             },
         )
     }
+
+    /** One frame at 60 Hz: long enough for the reorder to be laid out, far from the animation's end. */
+    private const val ONE_FRAME_MILLIS = 24L
+
+    /** Comfortably past [dev.nucleusframework.window.tao.TabReorderAnimation]. */
+    private const val REORDER_SETTLE_MILLIS = 400L
+
+    /** Just inside a slot's leading edge: the index before that tab. */
+    private const val EDGE_PROBE_PX = 4f
+
+    /** Below the strip: the window's body, where a dragged tab is out of the strip's hands. */
+    private const val OUT_OF_STRIP_PX = 60f
+
+    /** Inside a tab's trailing edge, where the stock strip puts its close button. */
+    private const val CLOSE_BUTTON_INSET_PX = 12f
+
+    /** Far enough for the carried tab's leading edge to pass one neighbour's centre. */
+    private const val CARRY_SLOTS = 0.8f
+
+    /** A spring settles within a pixel; anything larger is a wrong number, not a rounding. */
+    private const val MOTION_TOLERANCE_PX = 2f
+
+    /** Below this a tab is too narrow for the case to mean anything. */
+    private const val MIN_TAB_WIDTH_PX = 40f
 }

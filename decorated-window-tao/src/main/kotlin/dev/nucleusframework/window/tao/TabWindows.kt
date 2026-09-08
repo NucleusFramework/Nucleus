@@ -116,6 +116,9 @@ public fun ApplicationScope.Tab(
  *
  * A group appears when a tab is torn off and disappears when its last tab
  * leaves, so windows follow the tabs without the app opening or closing any.
+ * The strip is the top of the window and the selected tab fills the rest;
+ * [windowBodyWrapper] is where an app puts chrome of its own between the two —
+ * `examples/reader-dock-demo` hangs a whole `DockLayout` of satellites there.
  * [onLastWindowClosed] fires when the final group goes, which is where an app
  * calls `exitApplication`.
  *
@@ -130,6 +133,12 @@ public fun ApplicationScope.Tab(
  * @param windowContentWrapper composed around each window's chrome and
  *   content, inside that window's scene — the hook framework layers use to
  *   provide their per-window locals. Must invoke the lambda it is given.
+ * @param windowBodyWrapper composed *inside* each window, below the tab strip,
+ *   around the selected tab's body: where chrome that belongs to the window
+ *   rather than to a tab goes — a `DockLayout` and its satellites, an activity
+ *   bar, a status bar. The strip stays at the very top of the window, and the
+ *   wrapper is one call site for every window, so nothing a tab change does
+ *   rebuilds it. Must invoke the lambda it is given.
  * @param onLastWindowClosed called every time the workspace goes from holding
  *   groups to holding none — never for the empty workspace this composable
  *   first sees, since the tabs are declared after it.
@@ -141,6 +150,7 @@ public fun ApplicationScope.TabWindows(
     compositionLocalContext: CompositionLocalContext? = null,
     strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
     windowContentWrapper: @Composable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit = { it() },
+    windowBodyWrapper: @Composable TaoDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit = { it() },
     onLastWindowClosed: () -> Unit = {},
 ) {
     val ghost = workspace.dragGhost
@@ -151,10 +161,9 @@ public fun ApplicationScope.TabWindows(
             title = ghost.tab.title,
             compositionLocalContext = compositionLocalContext,
         ) {
-            TabGhostCard(ghost.tab.title)
+            TabGhostCard(ghost.tab.title, Modifier.fillMaxSize())
         }
     }
-
     val currentOnLastClosed = rememberUpdatedState(onLastWindowClosed)
 
     // The groups to compose, mirrored out of the workspace by an effect rather
@@ -187,7 +196,14 @@ public fun ApplicationScope.TabWindows(
 
     for (group in groups) {
         key(group.id) {
-            TabWindow(workspace, group, compositionLocalContext, strip, windowContentWrapper)
+            TabWindow(
+                workspace,
+                group,
+                compositionLocalContext,
+                strip,
+                windowContentWrapper,
+                windowBodyWrapper,
+            )
         }
     }
 }
@@ -201,6 +217,7 @@ private fun ApplicationScope.TabWindow(
     compositionLocalContext: CompositionLocalContext?,
     strip: @Composable TabStripScope.() -> Unit,
     windowContentWrapper: @Composable TaoDecoratedWindowScope.(content: @Composable () -> Unit) -> Unit,
+    windowBodyWrapper: @Composable TaoDecoratedWindowScope.(body: @Composable () -> Unit) -> Unit,
 ) {
     val state =
         rememberWindowState(
@@ -243,7 +260,11 @@ private fun ApplicationScope.TabWindow(
                     },
                 ) { padding ->
                     Box(Modifier.fillMaxSize().padding(padding)) {
-                        TabBody(workspace, selected)
+                        // The app's window-level chrome sits here, under the
+                        // strip: one call site for every window, so a tab
+                        // change neither rebuilds it nor moves the body's
+                        // relocation keys.
+                        windowScope.windowBodyWrapper { TabBody(workspace, selected) }
                     }
                 }
             }
@@ -265,6 +286,11 @@ private fun ApplicationScope.TabWindow(
  * its `rememberSaveable` registry entries. The key is above the relocation
  * anchor, not below it, so the path from the anchor down to the content is
  * still identical in every window.
+ *
+ * A workspace that keeps pictures of its tabs for its hover cards
+ * ([TabWorkspace.captureThumbnails]) has the body wrapped in a recorder —
+ * above the anchor too, and the same wrapper in every window, so it changes
+ * nothing about what follows a tab across.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -275,7 +301,12 @@ private fun TabBody(
     if (tab == null) return
     key(tab.id) {
         val scope = remember(workspace, tab) { TabScopeImpl(workspace, tab) }
-        RelocatedContentHost(tab.stateSlot, scope, tab.content)
+        val body = @Composable { RelocatedContentHost(tab.stateSlot, scope, tab.content) }
+        if (workspace.captureThumbnails) {
+            TabThumbnailRecorder(tab) { body() }
+        } else {
+            body()
+        }
     }
 }
 

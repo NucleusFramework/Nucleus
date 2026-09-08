@@ -225,6 +225,22 @@ internal suspend fun robotDragTo(
     }
 
 /**
+ * Moves the pointer to [to] (physical screen px) with **no button held**: a
+ * hover, not a drag.
+ *
+ * Interpolated like [robotDragTo], so the window under it gets the enter and
+ * move events a real pointer delivers rather than one teleport — which is
+ * what anything driven by hover, a tab's card among them, actually reacts to.
+ * `null` when the host cannot inject input.
+ */
+internal suspend fun robotMoveTo(
+    to: Offset,
+    scale: Float,
+    steps: Int = ROBOT_DRAG_STEPS,
+    stepDelayMillis: Long = ROBOT_DRAG_STEP_MILLIS,
+): Boolean? = robotDragTo(to, scale, steps, stepDelayMillis)
+
+/**
  * Where the last robot gesture aimed and where the pointer landed — worth
  * putting in the description of anything a robot-driven case waits for, so a
  * timeout on a runner nobody can attach to still says which of the two went

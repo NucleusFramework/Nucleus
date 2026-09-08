@@ -9,14 +9,13 @@ package dev.nucleusframework.window.tao
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -44,6 +43,7 @@ import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.BasicTitleBar
@@ -54,7 +54,6 @@ import dev.nucleusframework.window.tao.workspace.DragGhostWindow
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
 import dev.nucleusframework.window.tao.workspace.screenDragHandle
-import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
 
 /**
  * What a satellite's `header` and `content` lambdas get to see: the satellite
@@ -79,6 +78,26 @@ public interface SatelliteScope {
      */
     public val isDocked: Boolean
 
+    /**
+     * `true` when the window this satellite is composed in is placed by the
+     * compositor rather than by the app ([TaoWindow.canPlaceOnScreen] `false`
+     * — a native Wayland surface).
+     *
+     * That is the one thing chrome has to adapt to, and it says nothing about
+     * the platform: where it holds, *moving the window* is the compositor's
+     * gesture and only the area an app leaves unclaimed can start it, while
+     * *moving the satellite* — docking it, tearing it out — rides the
+     * platform's drag-and-drop session from a [Modifier.satelliteDragHandle].
+     * The two cannot share one area, so a floating satellite's title bar
+     * reserves [SatelliteCaptionStripWidth] for the compositor and hands it to
+     * the `floatingCaption` slot of [Satellite]; everywhere else the whole bar
+     * drags the satellite and that slot is not composed at all.
+     *
+     * `false` until the native window exists, and while the satellite has no
+     * window at all (a docked panel reads its host's value).
+     */
+    public val isCompositorPlaced: Boolean
+
     /** Docks the satellite on [side] of the workspace owner; defaults to the last side it was docked on. */
     public fun dock(side: DockSide = satellite.preferredDockSide) {
         workspace.dock(satellite.id, side)
@@ -99,7 +118,16 @@ internal class SatelliteScopeImpl(
     override val workspace: SatelliteWorkspace,
     override val satellite: SatelliteEntry,
     override val isDocked: Boolean,
-) : SatelliteScope
+    /**
+     * The window this scope's content is composed in, read on every access:
+     * the scope outlives the window (a satellite docks, undocks, moves host)
+     * and a window answers [TaoWindow.canPlaceOnScreen] only once its native
+     * surface exists.
+     */
+    private val host: () -> TaoWindow? = { null },
+) : SatelliteScope {
+    override val isCompositorPlaced: Boolean get() = host()?.canPlaceOnScreen == false
+}
 
 /**
  * Declares a satellite of [workspace] and hosts it wherever its placement
@@ -141,6 +169,21 @@ internal class SatelliteScopeImpl(
  * @param title shown by the default [header] and as the floating window title.
  * @param initialPlacement where the satellite starts on first declaration.
  * @param initiallyOpen whether it is shown on first declaration.
+ * @param dockSides the sides the satellite may be docked on: the others are
+ *   neither offered while it is dragged nor accepted by
+ *   [SatelliteWorkspace.dock]. Empty makes it a floating-only palette. Fixed
+ *   on first declaration, like the placement; a docked [initialPlacement]
+ *   must name one of them.
+ * @param floatable whether the satellite can be a window of its own. `false`
+ *   is a fixed panel: no tear-out, [SatelliteWorkspace.undock] refuses it,
+ *   the default header offers no Float action, and a drag can only move it
+ *   inside the dock. Requires a docked [initialPlacement].
+ * @param reorderable whether the user may change its rank on its side.
+ *   `false` pins it to the rank it was declared with: its own drag is offered
+ *   none, and another panel can be dropped after it but never in front of it.
+ *   Requires a docked [initialPlacement]. With `floatable = false` and a
+ *   single [dockSides], the panel is furniture and its header is not even a
+ *   drag handle.
  * @param resizable whether the floating window can be resized by the user.
  * @param hideWhileOwnerFullscreenOrMaximized hide the floating window while
  *   the owner fills the screen; see [SatelliteWindow].
@@ -152,6 +195,14 @@ internal class SatelliteScopeImpl(
  *   use to provide their per-window locals. Must invoke the lambda it is given.
  * @param header chrome shown in the floating window's title bar and above the
  *   docked panel; [DefaultSatelliteHeader] draws the title and dock actions.
+ * @param floatingCaption composed inside the strip of the floating title bar
+ *   that is left to the compositor's window move — the
+ *   [SatelliteCaptionStripWidth] beside the window controls, reserved only
+ *   where the window is placed by the compositor
+ *   ([SatelliteScope.isCompositorPlaced]). It is *not* a
+ *   [Modifier.satelliteDragHandle]: a press in it moves the window, so what
+ *   belongs here is the affordance that says so, not a control. Not composed
+ *   at all on the platforms where the whole bar drags the satellite.
  * @param content the satellite's body.
  */
 @Suppress("LongParameterList", "FunctionNaming")
@@ -163,6 +214,9 @@ public fun ApplicationScope.Satellite(
     title: String,
     initialPlacement: SatellitePlacement = SatellitePlacement.Floating(),
     initiallyOpen: Boolean = true,
+    dockSides: Set<DockSide> = DockSide.entries.toSet(),
+    floatable: Boolean = true,
+    reorderable: Boolean = true,
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     compositionLocalContext: CompositionLocalContext? = null,
@@ -170,10 +224,17 @@ public fun ApplicationScope.Satellite(
         @Composable @UiComposable TaoDecoratedWindowScope.(content: @Composable @UiComposable () -> Unit) -> Unit =
         { it() },
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
-    val entry = remember(workspace, id) { workspace.register(id, title, initialPlacement, initiallyOpen) }
-    val scope = remember(entry) { SatelliteScopeImpl(workspace, entry, isDocked = false) }
+    val entry =
+        remember(workspace, id) {
+            workspace.register(id, title, initialPlacement, initiallyOpen, dockSides, floatable, reorderable)
+        }
+    // The satellite's own window, once it has one: the scope is created before
+    // it and survives it, so it is read through a lambda.
+    var floatingWindow by remember(entry) { mutableStateOf<TaoWindow?>(null) }
+    val scope = remember(entry) { SatelliteScopeImpl(workspace, entry, isDocked = false) { floatingWindow } }
     // Published as snapshot state so the DockLayout hosting the panel picks up
     // a new lambda without this composable knowing where the panel lives.
     SideEffect {
@@ -194,7 +255,7 @@ public fun ApplicationScope.Satellite(
             title = ghost.satellite.title,
             compositionLocalContext = compositionLocalContext,
         ) {
-            SatelliteGhostCard(ghost.satellite.title)
+            SatelliteGhostCard(ghost.satellite.title, Modifier.fillMaxSize())
         }
     }
 
@@ -223,6 +284,10 @@ public fun ApplicationScope.Satellite(
         compositionLocalContext = compositionLocalContext,
     ) {
         val windowScope: TaoDecoratedWindowScope = this
+        SideEffect { floatingWindow = window }
+        DisposableEffect(window) {
+            onDispose { if (floatingWindow === window) floatingWindow = null }
+        }
         // Native Wayland: the workspace cannot move the window itself (no
         // client-side placement), so the bar keeps the compositor's move —
         // the only way the palette stays draggable there. The header strip
@@ -230,7 +295,8 @@ public fun ApplicationScope.Satellite(
         // caption strip next to the window controls is left to the compositor
         // move: the split Chrome's tab strip makes between a tab and the empty
         // strip beside it.
-        val workspaceDrag = window.supportsScreenPlacement
+        val workspaceDrag = window.canPlaceOnScreen
+        val currentCaption by rememberUpdatedState(floatingCaption)
         floatingContentWrapper {
             with(windowScope) {
                 WindowScaffold(
@@ -265,8 +331,12 @@ public fun ApplicationScope.Satellite(
                                         contentAlignment = Alignment.Center,
                                     ) { currentHeader(scope) }
                                     // Unclaimed on purpose: the bar's compositor
-                                    // move is what a press here starts.
-                                    Spacer(Modifier.width(WAYLAND_CAPTION_DP.dp).fillMaxHeight())
+                                    // move is what a press here starts, and the
+                                    // app's own content for it goes inside.
+                                    Box(
+                                        modifier = Modifier.width(SatelliteCaptionStripWidth).fillMaxHeight(),
+                                        contentAlignment = Alignment.Center,
+                                    ) { currentCaption(scope) }
                                 }
                             }
                         }
@@ -282,20 +352,17 @@ public fun ApplicationScope.Satellite(
 }
 
 /**
- * The translucent card a panel torn out of its dock is previewed as: the
- * satellite's grip and title on a tinted, rounded surface, filling the ghost
- * window.
+ * The card a panel is previewed as while it is dragged — following the pointer
+ * out of its dock, and drawn on the space a release will fill: the satellite's
+ * grip and title on the shared [DragPreviewSurface].
  */
 @Composable
-private fun SatelliteGhostCard(title: String) {
+internal fun SatelliteGhostCard(
+    title: String,
+    modifier: Modifier = Modifier,
+) {
     val accent = LocalTitleBarStyle.current.colors.content
-    val ghostShape = RoundedCornerShape(GHOST_CORNER_DP.dp)
-    Box(
-        Modifier
-            .fillMaxSize()
-            .background(accent.copy(alpha = GHOST_FILL_ALPHA), ghostShape)
-            .border(GHOST_BORDER_DP.dp, accent.copy(alpha = GHOST_BORDER_ALPHA), ghostShape),
-    ) {
+    DragPreviewSurface(modifier) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(GHOST_PADDING_DP.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -353,15 +420,25 @@ private fun SatelliteGhostCard(title: String) {
  * still be moved. Custom floating chrome gets the same split for free: it is
  * composed inside that handle.
  *
- * No-op outside a Tao window. Drives [SatelliteWorkspace.beginDrag].
+ * No-op outside a Tao window, and on a satellite a drag could not move
+ * anywhere — fixed to one side, pinned to its rank and alone in the workspace
+ * — rather than leaving a gesture that can only end where it started.
+ *
+ * Drives [SatelliteWorkspace.beginDrag].
  */
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
-    screenDragHandle(
-        key = scope,
-        isDragging = { scope.workspace.draggedSatellite === scope.satellite },
-        beginTransfer = { window -> scope.workspace.beginTransferDrag(scope.satellite.id, scope.dragOrigin(window)) },
-    ) { window, pointerScreenPx ->
-        scope.workspace.beginDrag(scope.satellite.id, scope.dragOrigin(window), pointerScreenPx)?.asScreenDrag()
+    if (!scope.workspace.canBeDragged(scope.satellite)) {
+        this
+    } else {
+        screenDragHandle(
+            key = scope,
+            isDragging = { scope.workspace.draggedSatellite === scope.satellite },
+            beginTransfer = { window ->
+                scope.workspace.beginTransferDrag(scope.satellite.id, scope.dragOrigin(window))
+            },
+        ) { window, pointerScreenPx ->
+            scope.workspace.beginDrag(scope.satellite.id, scope.dragOrigin(window), pointerScreenPx)?.asScreenDrag()
+        }
     }
 
 private fun SatelliteScope.dragOrigin(window: TaoWindow): SatelliteDragOrigin =
@@ -375,6 +452,18 @@ private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
 
         override fun cancel() = this@asScreenDrag.cancel()
     }
+
+/**
+ * Width of the strip a floating satellite's title bar leaves to the
+ * compositor's window move, next to the window controls, on a window the
+ * compositor places ([SatelliteScope.isCompositorPlaced]). The
+ * `floatingCaption` slot of [Satellite] is composed inside it.
+ *
+ * Wide enough to aim at without looking, narrow enough to leave the header
+ * the rest of the bar — the same bargain Chrome's tab strip makes with the
+ * empty strip beside the last tab.
+ */
+public val SatelliteCaptionStripWidth: Dp = 56.dp
 
 /**
  * The stock satellite header: the title, then "Dock" while floating or
@@ -393,13 +482,14 @@ private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
  * see which is which. Chrome's tab strip and GIMP's dock tabs draw the same
  * distinction for the same reason.
  */
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
 public fun SatelliteScope.DefaultSatelliteHeader() {
     val colors = LocalTitleBarStyle.current.colors
     var hovered by remember { mutableStateOf(false) }
     val window = LocalTaoWindow.current
-    val chip = !isDocked && window != null && !window.supportsScreenPlacement
+    val chip = !isDocked && isCompositorPlaced
     val shape = if (chip) RoundedCornerShape(CHIP_CORNER_DP.dp) else RectangleShape
     val background =
         when {
@@ -412,12 +502,19 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
         modifier =
             Modifier
                 .fillMaxWidth()
-                // Full height so the whole header strip is the grip, not just
-                // the band its content happens to occupy. The chip is inset
-                // inside that, so it reads as an object sitting in the bar
-                // while the area a press lands on stays the whole strip.
-                .fillMaxHeight()
-                .then(if (chip) Modifier.padding(vertical = CHIP_INSET_DP.dp) else Modifier)
+                // Docked, the strip sizes itself: the dock frame imposes no
+                // height, so a custom header can be as tall as it likes.
+                // Floating, full height so the whole header strip is the grip,
+                // not just the band its content happens to occupy. The chip is
+                // inset inside that, so it reads as an object sitting in the
+                // bar while the area a press lands on stays the whole strip.
+                .then(
+                    if (isDocked) {
+                        Modifier.height(DockPanelHeaderHeight).background(colors.background)
+                    } else {
+                        Modifier.fillMaxHeight()
+                    },
+                ).then(if (chip) Modifier.padding(vertical = CHIP_INSET_DP.dp) else Modifier)
                 .then(if (isDocked) Modifier.satelliteDragHandle(this) else Modifier)
                 .onPointerEvent(PointerEventType.Enter) { hovered = true }
                 .onPointerEvent(PointerEventType.Exit) { hovered = false }
@@ -434,10 +531,10 @@ public fun SatelliteScope.DefaultSatelliteHeader() {
             overflow = TextOverflow.Ellipsis,
         )
         if (isDocked) {
-            HeaderAction("Float", colors.content) { undock() }
+            if (satellite.isFloatable) HeaderAction("Float", colors.content) { undock() }
             HeaderAction("Close", colors.content) { close() }
         } else {
-            HeaderAction("Dock", colors.content) { dock() }
+            if (satellite.dockSides.isNotEmpty()) HeaderAction("Dock", colors.content) { dock() }
         }
     }
 }
@@ -481,9 +578,6 @@ private fun HeaderAction(
 
 private const val HEADER_PADDING_DP = 8
 
-/** Title-bar strip left to the compositor move on native Wayland, beside the window controls. */
-private const val WAYLAND_CAPTION_DP = 56
-
 /** The chip's corner radius, matching the tab strip's own tabs. */
 private const val CHIP_CORNER_DP = 8
 
@@ -499,10 +593,6 @@ private const val GRIP_DOT_COLUMNS = 2
 private const val GRIP_DOT_ROWS = 3
 private const val GRIP_ALPHA = 0.55f
 private const val GRIP_HOVER_ALPHA = 0.08f
-private const val GHOST_FILL_ALPHA = 0.22f
-private const val GHOST_BORDER_ALPHA = 0.55f
-private const val GHOST_BORDER_DP = 1
-private const val GHOST_CORNER_DP = 8
 private const val GHOST_PADDING_DP = 8
 private const val HEADER_ACTION_PADDING_DP = 6
 private const val HEADER_ACTION_VERTICAL_PADDING_DP = 2

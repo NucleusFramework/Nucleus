@@ -30,7 +30,6 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
-import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
 import kotlinx.coroutines.delay
 
 /**
@@ -485,7 +484,7 @@ private class SatelliteAnchoring(
      * origin, and the moves they would issue are ignored. Ownership, z-order
      * and the hide-while-parent-fills rule still apply.
      */
-    val canPlace: Boolean get() = satellite.supportsScreenPlacement
+    val canPlace: Boolean get() = satellite.canPlaceOnScreen
 
     private var offsetXPx = 0
     private var offsetYPx = 0
@@ -829,7 +828,7 @@ private fun anchoredWindowPosition(
 ): WindowPosition {
     // Native Wayland: the parent rect this would anchor to is the screen
     // origin, and the compositor places the window anyway.
-    if (!parent.supportsScreenPlacement) return WindowPosition.PlatformDefault
+    if (!parent.canPlaceOnScreen) return WindowPosition.PlatformDefault
     val scale = parent.scaleFactor.takeIf { it > 0f } ?: 1f
     val childSizePx = Size(state.size.width.value * scale, state.size.height.value * scale)
     val origin = anchoredOriginPx(parent, state, childSizePx) ?: return WindowPosition.PlatformDefault

@@ -9,6 +9,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -18,8 +21,8 @@ import dev.nucleusframework.window.tao.workspace.HostGeometryRegistry
 import dev.nucleusframework.window.tao.workspace.RelocatableSlot
 import dev.nucleusframework.window.tao.workspace.WindowGroup
 import dev.nucleusframework.window.tao.workspace.sanitizedOrNull
-import dev.nucleusframework.window.tao.workspace.supportsScreenPlacement
 import dev.nucleusframework.window.tao.workspace.warnScreenPlacementUnsupported
+import kotlinx.coroutines.CoroutineScope
 
 /**
  * One tab known to a [TabWorkspace]: its identity, title and body.
@@ -44,7 +47,38 @@ public class TabEntry internal constructor(
     /** `true` while this tab is the selected one of its group. */
     public val isSelected: Boolean get() = group?.selectedId == id
 
+    /**
+     * The last picture taken of this tab's body, for a hover card to draw
+     * ([TabHoverPreviewScope.thumbnail]).
+     *
+     * `null` unless the workspace was built with `captureThumbnails`, and
+     * `null` for a tab that has not been on screen yet: only the selected tab
+     * of a window is composed, so the picture is the one taken while this tab
+     * was that tab. [TabWorkspace.captureThumbnail] takes a fresh one of the
+     * tab currently shown.
+     */
+    public var thumbnail: ImageBitmap? by mutableStateOf(null)
+        internal set
+
+    /**
+     * Bumped to ask for a new [thumbnail]; the window showing the tab takes
+     * one and stores it. Starts at 0, which is the first capture.
+     */
+    internal var thumbnailRequest: Int by mutableStateOf(0)
+        private set
+
+    internal fun requestThumbnail() {
+        thumbnailRequest++
+    }
+
     internal var content: (@Composable TabScope.() -> Unit)? by mutableStateOf(null)
+
+    /**
+     * `true` until a strip has drawn this tab once: what tells the chrome to
+     * open it with an animation instead of having it appear at full width.
+     * Cleared by the first strip that shows it.
+     */
+    internal var isEntering: Boolean = true
 
     /** `rememberSaveable` values carried across a move between groups. */
     internal val stateSlot: RelocatableSlot = RelocatableSlot()
@@ -93,6 +127,45 @@ public class TabWindowGroup internal constructor(
 
     /** Rect of each tab in [ids], in window coordinates (physical px), published by the strip. */
     internal var slotsInWindowPx: List<Rect> = emptyList()
+
+    /**
+     * The slot of the tab [id], in window coordinates (physical px), or `null`
+     * before the strip has placed it. What a hover card is anchored to.
+     */
+    internal fun slotInWindowPx(id: String): Rect? {
+        val index = tabIds.indexOf(id).takeIf { it >= 0 } ?: return null
+        return slotsInWindowPx.getOrNull(index)?.takeUnless { it.isEmpty }
+    }
+
+    /**
+     * The tab the pointer is over in this group's strip, published by
+     * `Modifier.tabSlot` — see [TabStripScope.hoveredTab].
+     */
+    internal var hoveredId: String? by mutableStateOf(null)
+        private set
+
+    /**
+     * `true` from a press on the hovered tab until the pointer leaves it: a
+     * hover card must not sit under a tab being clicked, and must not come
+     * back until the pointer has been away, which is what a browser does.
+     */
+    internal var hoverBlocked: Boolean by mutableStateOf(false)
+        private set
+
+    internal fun noteHoverEnter(id: String?) {
+        hoveredId = id
+        hoverBlocked = false
+    }
+
+    internal fun noteHoverExit(id: String?) {
+        if (hoveredId != id) return
+        hoveredId = null
+        hoverBlocked = false
+    }
+
+    internal fun noteHoverPress(id: String?) {
+        if (hoveredId == id) hoverBlocked = true
+    }
 
     /**
      * Bumped every time [position] / [size] are set by the workspace rather
@@ -173,10 +246,18 @@ public data class TabLayoutSnapshot(
  *
  * @param defaultWindowSize the size a group's window gets when nothing else
  *   determines it: the first group, and any group restored without a size.
+ * @param captureThumbnails whether a picture of the selected tab's body is
+ *   kept for a hover card to draw ([TabEntry.thumbnail]). Off by default: it
+ *   records the body into a layer of its own and reads it back, which is a
+ *   cost a workspace should only pay when its chrome shows the pictures. A
+ *   `NativeView` or a `TextureView` in the body draws through a native surface
+ *   of its own rather than into the scene, so it is missing from the picture —
+ *   a body built around one is better off without captures.
  */
 @Suppress("TooManyFunctions")
 public class TabWorkspace(
     public val defaultWindowSize: DpSize = DefaultWindowSize,
+    public val captureThumbnails: Boolean = false,
 ) {
     private val windows = WindowGroup(followFocus = true)
 
@@ -242,6 +323,24 @@ public class TabWorkspace(
     public fun select(tabId: String) {
         val entry = entryMap[tabId] ?: return
         entry.group?.selectedId = tabId
+    }
+
+    /**
+     * Takes a fresh picture of [tabId]'s body for its hover card
+     * ([TabEntry.thumbnail]).
+     *
+     * Only the selected tab of a window is composed, so this reaches a tab
+     * that is on screen right now; for any other it does nothing and the
+     * picture stays the one taken while it was shown. A no-op altogether
+     * unless the workspace was built with `captureThumbnails`.
+     *
+     * Call it when the tab's content has changed enough for its old picture to
+     * be misleading — nothing else refreshes it, since the workspace cannot
+     * know what a body draws.
+     */
+    public fun captureThumbnail(tabId: String) {
+        if (!captureThumbnails) return
+        entryMap[tabId]?.requestThumbnail()
     }
 
     /**
@@ -399,9 +498,150 @@ public class TabWorkspace(
     private val drags =
         DragController<TabDragSession> {
             draggedTab = null
+            dragPointerScreenPx = null
+            dragGrabScreenPx = null
+            dragVelocityPxPerSecond = 0f
             dropPreview = null
             dragGhost = null
         }
+
+    /**
+     * Where the pointer of the live tab drag is, in physical screen px, or
+     * `null` while none is dragging — what a strip needs to hold the dragged
+     * tab under the pointer. Absent on the drag-and-drop path (native
+     * Wayland), where the source is never told where the pointer is.
+     */
+    internal var dragPointerScreenPx: Offset? by mutableStateOf(null)
+
+    /** Where the pointer was when the live tab drag started, in physical screen px; `null` while none is dragging. */
+    internal var dragGrabScreenPx: Offset? by mutableStateOf(null)
+
+    /**
+     * How fast the pointer of the live drag is travelling along the strip, in
+     * px per second — what the strip hands the spring that slides a released
+     * tab home, so a flick carries and a slow move does not overshoot.
+     */
+    internal var dragVelocityPxPerSecond: Float = 0f
+
+    /**
+     * A tab released inside its own strip, waiting for that strip to slide it
+     * into its new place before the order changes: the strip animates, then
+     * applies [reorder] and clears this. Set by the drag session, which does
+     * not reorder itself on that path, so that the tab is never seen jumping
+     * from under the pointer to its slot.
+     */
+    internal var pendingReorder: TabReorderSettle? by mutableStateOf(null)
+
+    private val stripMotions = HashMap<String, TabStripMotion>()
+
+    /**
+     * Takes [entry] in hand for a drag: it becomes the dragged tab, and the
+     * selected tab of its group.
+     *
+     * Selecting here is what stops an accidental drag from swallowing a click.
+     * The grip claims the press before the tab's own click gesture does, so a
+     * click whose pointer drifts past the touch slop becomes a drag — and a
+     * drag that ends where it started leaves the strip exactly as it was, with
+     * the click lost and the tab having wobbled for nothing. A browser selects
+     * a tab on the press for this reason, which also means the tab being
+     * carried is always the one on screen.
+     */
+    private fun holdForDrag(entry: TabEntry) {
+        draggedTab = entry
+        entry.group?.selectedId = entry.id
+    }
+
+    /**
+     * Takes the tab [tabId] in hand for a reorder inside its own strip, with
+     * no coordinate space but the strip's own: this is the gesture that has to
+     * work where a client is told nothing about the screen (native Wayland),
+     * so it is driven by [carryInStrip] with the pointer's travel in window px
+     * and resolved by the same edge-crossing rule the strip animates with.
+     *
+     * `null` when the tab is not in a group. Ends with [dropInStrip] or
+     * [releaseDrag]; a drag that leaves the strip hands over to [beginDrag] or
+     * [beginTransferDrag] instead.
+     */
+    internal fun takeInStrip(tabId: String): TabWindowGroup? {
+        val entry = entryMap[tabId] ?: return null
+        val group = entry.group ?: return null
+        transferDrag?.cancel()
+        releaseDrag(null)
+        holdForDrag(entry)
+        dropPreview = TabDropTarget(group, group.tabIds.indexOf(tabId))
+        return group
+    }
+
+    /**
+     * The tab in hand has travelled [slidePx] along its strip: publishes the
+     * place it would take, by the rule of [reorderTarget].
+     */
+    internal fun carryInStrip(
+        tabId: String,
+        slidePx: Float,
+    ) {
+        val entry = entryMap[tabId] ?: return
+        val group = entry.group ?: return
+        val index = reorderTarget(group, entry, slidePx) ?: group.tabIds.indexOf(tabId)
+        dropPreview = TabDropTarget(group, index)
+    }
+
+    /**
+     * The tab in hand has been let go inside its strip: records the place for
+     * the strip to slide it into, at [velocityPxPerSecond], and clears the
+     * drag. The strip applies the reorder once the tab has arrived.
+     */
+    internal fun dropInStrip(
+        tabId: String,
+        velocityPxPerSecond: Float,
+    ) {
+        val entry = entryMap[tabId] ?: return
+        val group = entry.group ?: return
+        val index = dropPreview?.takeIf { it.group === group }?.index ?: group.tabIds.indexOf(tabId)
+        draggedTab = null
+        dropPreview = null
+        pendingReorder = TabReorderSettle(entry, group, index, velocityPxPerSecond)
+    }
+
+    /**
+     * Tears the tab [tabId] out of [window] into a window of its own, at the
+     * size a pointer drag would give it and wherever the compositor puts it:
+     * the release of the local strip gesture, on a window the app cannot place.
+     */
+    internal fun tearOffWhereverTheCompositorPuts(
+        tabId: String,
+        window: TaoWindow,
+    ) {
+        val entry = entryMap[tabId] ?: return
+        if (entry.group?.tabIds?.size == 1) return
+        val scale = window.scaleFactor.takeIf { it > 0f } ?: 1f
+        val outer = window.outerBoundsPx()
+        val size =
+            outer?.let { tearOffSizePx(window, it, scale) }
+                ?: Size(defaultWindowSize.width.value * scale, defaultWindowSize.height.value * scale)
+        // A rect at the origin: the position is the compositor's and only the
+        // size survives — see TaoWindow.canPlaceOnScreen.
+        tearOff(tabId, Rect(Offset.Zero, size), scale)
+    }
+
+    /** The tab in hand is put back where it was: no reorder, no feedback. */
+    internal fun cancelInStrip() {
+        draggedTab = null
+        dropPreview = null
+    }
+
+    /**
+     * The motion of [group]'s strip — which tab is in hand and how far every
+     * tab of the strip is drawn from its slot. Created by the strip on its
+     * first composition; readable from here so a test can assert the motion
+     * the same way the drawing does.
+     */
+    internal fun motionOf(group: TabWindowGroup): TabStripMotion? = stripMotions[group.id]
+
+    internal fun motionFor(
+        group: TabWindowGroup,
+        scope: CoroutineScope,
+    ): TabStripMotion = stripMotions.getOrPut(group.id) { TabStripMotion(scope) }
 
     /**
      * The tab being dragged right now, or `null`. While it is set every strip
@@ -459,34 +699,161 @@ public class TabWorkspace(
         screenPx: Offset,
         exclude: TabEntry? = null,
         excludeGroup: TabWindowGroup? = null,
-    ): TabDropTarget? =
-        stripHosts
-            .ordered(windows.membersByRecency)
-            .asSequence()
-            .filterNot { it.minimized() }
-            .mapNotNull { geometry ->
-                val strip = geometry.layoutScreenRectPx() ?: return@mapNotNull null
-                if (!strip.contains(screenPx)) return@mapNotNull null
-                val group = groupOf(geometry.host)?.takeIf { it !== excludeGroup } ?: return@mapNotNull null
-                val client = geometry.clientOriginPx() ?: return@mapNotNull null
-                TabDropTarget(group, insertionIndex(group, screenPx.x - client.x, exclude))
-            }.firstOrNull()
+    ): TabDropTarget? = dropTargetAt(null, screenPx, exclude, excludeGroup)
+
+    /**
+     * The strip the tab being dragged would land in, decided from **where the
+     * tab is** as well as from where the pointer is: the strip
+     * [draggedScreenRectPx] — the ghost card following the pointer — has
+     * reached counts as entered, so a tab whose top edge has come up into a
+     * strip is previewed there before the pointer itself arrives. That is what
+     * the user sees moving, and it is the rule the dock zones already follow.
+     *
+     * The pointer still wins where both answer: a strip it is actually in is
+     * the target, whatever the card overlaps. Otherwise the first strip the
+     * card has reached, by the same order as the pointer overload. A `null`
+     * rect is the pointer alone.
+     *
+     * [exclude] and [excludeGroup] are as in the pointer overload.
+     */
+    public fun dropTargetAt(
+        draggedScreenRectPx: Rect?,
+        screenPx: Offset,
+        exclude: TabEntry? = null,
+        excludeGroup: TabWindowGroup? = null,
+    ): TabDropTarget? {
+        // The excluded group is dropped from the search rather than ending it:
+        // a single-tab window's own strip travels with the pointer and covers
+        // whatever it is being dropped on, so the search has to look past it.
+        val candidates =
+            stripHosts
+                .ordered(windows.membersByRecency)
+                .filterNot { it.minimized() }
+                .mapNotNull { geometry ->
+                    val group = groupOf(geometry.host)?.takeIf { it !== excludeGroup } ?: return@mapNotNull null
+                    geometry.layoutScreenRectPx()?.let { Triple(geometry, group, it) }
+                }
+        val hit =
+            candidates.firstOrNull { (_, _, strip) -> strip.contains(screenPx) }
+                ?: draggedScreenRectPx?.let { card ->
+                    candidates.firstOrNull { (_, _, strip) -> !strip.intersect(card).isEmpty }
+                }
+                ?: return null
+        val (geometry, group, _) = hit
+        val client = geometry.clientOriginPx() ?: return null
+        val ownSlide = exclude?.takeIf { it.group === group }?.let { slideIn(group, it, screenPx) }
+        val index =
+            if (ownSlide != null) {
+                reorderTarget(group, exclude, ownSlide) ?: group.tabIds.indexOf(exclude.id)
+            } else {
+                insertionIndex(group, screenPx.x - client.x, exclude)
+            }
+        return TabDropTarget(group, index)
+    }
+
+    /**
+     * How far the tab in hand has been carried along its own strip: the
+     * pointer's travel since the grab, in px — the same in screen and window
+     * space. `null` before a grab is on record.
+     */
+    private fun slideIn(
+        group: TabWindowGroup,
+        entry: TabEntry,
+        pointerScreenPx: Offset,
+    ): Float? {
+        if (group.tabIds.indexOf(entry.id) < 0) return null
+        val grab = dragGrabScreenPx ?: return null
+        return pointerScreenPx.x - grab.x
+    }
+
+    /**
+     * The place a tab carried [slidePx] along its own strip would take, or
+     * `null` for the one it has: the last neighbour whose centre its leading
+     * edge has crossed. Which end of the crossed run counts is the reading
+     * direction's business, read from the slots as in [insertionIndex].
+     *
+     * This is the rule of the strip's own animation, so what the drop preview
+     * says and where the tab settles are one and the same.
+     */
+    internal fun reorderTarget(
+        group: TabWindowGroup,
+        entry: TabEntry,
+        slidePx: Float,
+    ): Int? {
+        val index = group.tabIds.indexOf(entry.id).takeIf { it >= 0 } ?: return null
+        val slots = group.slotsInWindowPx
+        val own = slots.getOrNull(index)?.takeIf { !it.isEmpty } ?: return null
+        val currentStart = own.left + slidePx
+        val currentEnd = own.right + slidePx
+        val placed = slots.filter { !it.isEmpty }
+        val rightToLeft = placed.size >= 2 && placed.first().left > placed.last().left
+        val crossed: (Int) -> Boolean =
+            when {
+                currentStart < own.left -> { j ->
+                    j != index &&
+                        slots
+                            .getOrNull(j)
+                            ?.center
+                            ?.x
+                            ?.let { it in currentStart..<own.left } == true
+                }
+                currentStart > own.left -> { j ->
+                    j != index &&
+                        slots
+                            .getOrNull(j)
+                            ?.center
+                            ?.x
+                            ?.let { it in own.right..<currentEnd } == true
+                }
+                else -> return null
+            }
+        val indices = slots.indices.filter(crossed)
+        if (indices.isEmpty()) return null
+        // Moving towards low x: the farthest crossed neighbour is the first
+        // in strip order, unless the strip runs right to left, where it is the last.
+        val towardsLowX = currentStart < own.left
+        return if (towardsLowX == !rightToLeft) indices.first() else indices.last()
+    }
+
+    /**
+     * The width [entry] has in the strip it is dragged from, in dp of that
+     * strip's window — what the slot it lands in elsewhere opens to. Its slot
+     * is still published while it is in flight (dimmed, or moving with its
+     * window); before the strip ever placed it, the widest a tab gets.
+     */
+    internal fun draggedTabWidth(entry: TabEntry): Dp {
+        val group = entry.group
+        val slot = group?.slotsInWindowPx?.getOrNull(group.tabIds.indexOf(entry.id))?.takeIf { !it.isEmpty }
+        val scale = group?.window?.scaleFactor?.takeIf { it > 0f } ?: 1f
+        return slot?.let { (it.width / scale).dp } ?: TabMaxWidth
+    }
 
     /**
      * The index [xInWindowPx] falls at in [group]'s strip: the number of tabs
-     * whose midpoint is left of it, counting the dragged tab's own slot out so
-     * the index it would land at is the one it already has.
+     * whose midpoint the pointer has passed, counting the dragged tab's own
+     * slot out so the index it would land at is the one it already has.
+     *
+     * "Passed" is a question of reading direction, and the direction is read
+     * from the published slots themselves rather than from a layout direction
+     * the workspace has no business knowing: a right-to-left strip puts its
+     * first tab at the *right*, so its slots run from high x to low, and the
+     * pointer passes a midpoint by going left. Without that, every drop on a
+     * Hebrew or Arabic strip resolves mirrored.
      */
     internal fun insertionIndex(
         group: TabWindowGroup,
         xInWindowPx: Float,
         exclude: TabEntry?,
-    ): Int =
-        group.slotsInWindowPx
-            .zip(group.tabIds)
+    ): Int {
+        val slots = group.slotsInWindowPx.zip(group.tabIds)
+        val placed = slots.filterNot { (slot, _) -> slot.isEmpty }
+        val rightToLeft = placed.size >= 2 && placed.first().first.left > placed.last().first.left
+        return slots
             .filterNot { (_, id) -> id == exclude?.id }
-            .takeWhile { (slot, _) -> xInWindowPx >= slot.center.x }
-            .size
+            .takeWhile { (slot, _) ->
+                if (rightToLeft) xInWindowPx <= slot.center.x else xInWindowPx >= slot.center.x
+            }.size
+    }
 
     /**
      * Starts dragging the tab [tabId] from [origin], with the pointer at
@@ -512,14 +879,16 @@ public class TabWorkspace(
             when (origin) {
                 is TabDragOrigin.Strip -> origin.window
             }
-        if (!from.supportsScreenPlacement) {
+        if (!from.canPlaceOnScreen) {
             from.warnScreenPlacementUnsupported("TabWorkspace.beginDrag")
             return null
         }
         transferDrag?.cancel()
         val session = createTabDragSession(entry, origin, start) ?: return null
         drags.begin(session)
-        draggedTab = entry
+        holdForDrag(entry)
+        dragGrabScreenPx = start
+        dragPointerScreenPx = start
         return session
     }
 
@@ -550,7 +919,7 @@ public class TabWorkspace(
         releaseDrag(null)
         val session = createTabTransferDrag(entry, group, window)
         transferDrag = session
-        draggedTab = entry
+        holdForDrag(entry)
         return session
     }
 
@@ -685,7 +1054,17 @@ public class TabWorkspace(
     }
 }
 
+/** A tab released inside its own strip, and the place it is sliding to — see [TabWorkspace.pendingReorder]. */
+internal class TabReorderSettle(
+    val tab: TabEntry,
+    val group: TabWindowGroup,
+    val index: Int,
+    /** The pointer's speed along the strip at the release; the slide home starts with it. */
+    val velocityPxPerSecond: Float,
+)
+
 /** Where a tab drag would insert the tab: at [index] in [group]'s strip. */
+
 public data class TabDropTarget(
     val group: TabWindowGroup,
     val index: Int,
@@ -744,5 +1123,7 @@ public interface TabDragSession {
 
 /** Remembers a [TabWorkspace] for the lifetime of the calling composition. */
 @Composable
-public fun rememberTabWorkspace(defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize): TabWorkspace =
-    remember { TabWorkspace(defaultWindowSize) }
+public fun rememberTabWorkspace(
+    defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize,
+    captureThumbnails: Boolean = false,
+): TabWorkspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }

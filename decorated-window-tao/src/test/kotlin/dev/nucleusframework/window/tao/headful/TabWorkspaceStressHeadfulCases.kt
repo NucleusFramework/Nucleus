@@ -78,9 +78,17 @@ internal object TabWorkspaceStressHeadfulCases {
                 for (jump in jumps) {
                     session.update(jump)
                     settle(JUMP_SETTLE_MILLIS)
-                    val ghost = requireNotNull(workspace.dragGhost) { "the ghost was lost at $jump" }
-                    check(ghost.screenRectPx.width > 0f && ghost.screenRectPx.height > 0f) {
-                        "the ghost has no size after jumping to $jump: ${ghost.screenRectPx}"
+                    // Over its own strip the strip holds the tab under the
+                    // pointer, so there is no ghost to check — anywhere else
+                    // the ghost is what the user is dragging.
+                    val ownStrip = workspace.dropPreview?.group === fixture.groupOf("Beta")
+                    if (ownStrip) {
+                        check(workspace.dragGhost == null) { "a ghost over its own strip at $jump" }
+                    } else {
+                        val ghost = requireNotNull(workspace.dragGhost) { "the ghost was lost at $jump" }
+                        check(ghost.screenRectPx.width > 0f && ghost.screenRectPx.height > 0f) {
+                            "the ghost has no size after jumping to $jump: ${ghost.screenRectPx}"
+                        }
                     }
                     val bounds = requireNotNull(first.outerBoundsPx()) { "the source window was lost at $jump" }
                     check(bounds[2] > 0 && bounds[3] > 0) { "the source window has no size after $jump" }
