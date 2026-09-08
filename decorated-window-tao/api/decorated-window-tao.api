@@ -211,10 +211,16 @@ public final class dev/nucleusframework/window/tao/ComposableSingletons$Satellit
 	public final fun getLambda$1877818949$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
 }
 
+public final class dev/nucleusframework/window/tao/ComposableSingletons$TabHoverPreviewKt {
+	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$TabHoverPreviewKt;
+	public fun <init> ()V
+	public final fun getLambda$-1555734992$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+}
+
 public final class dev/nucleusframework/window/tao/ComposableSingletons$TabStripKt {
 	public static final field INSTANCE Ldev/nucleusframework/window/tao/ComposableSingletons$TabStripKt;
 	public fun <init> ()V
-	public final fun getLambda$-2032640526$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$737531015$Nucleus_decorated_window_tao ()Lkotlin/jvm/functions/Function3;
 }
 
 public final class dev/nucleusframework/window/tao/ComposableSingletons$TabWindowsKt {
@@ -776,6 +782,7 @@ public final class dev/nucleusframework/window/tao/TabEntry {
 	public static final field $stable I
 	public final fun getGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
 	public final fun getId ()Ljava/lang/String;
+	public final fun getThumbnail ()Landroidx/compose/ui/graphics/ImageBitmap;
 	public final fun getTitle ()Ljava/lang/String;
 	public final fun isSelected ()Z
 }
@@ -798,6 +805,38 @@ public final class dev/nucleusframework/window/tao/TabGroupSnapshot {
 	public final fun getTabIds ()Ljava/util/List;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/window/tao/TabHoverPreview {
+	public static final field $stable I
+	public static final field Companion Ldev/nucleusframework/window/tao/TabHoverPreview$Companion;
+	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JJZLkotlin/jvm/functions/Function3;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getContent ()Lkotlin/jvm/functions/Function3;
+	public final fun getDelay-UwyO8pc ()J
+	public final fun getNativeLayer ()Z
+	public final fun getOffset-RKDOV3M ()J
+}
+
+public final class dev/nucleusframework/window/tao/TabHoverPreview$Companion {
+	public final fun getDefault ()Ldev/nucleusframework/window/tao/TabHoverPreview;
+}
+
+public final class dev/nucleusframework/window/tao/TabHoverPreviewKt {
+	public static final fun TabHoverPreviewCard (Ldev/nucleusframework/window/tao/TabHoverPreviewScope;Landroidx/compose/ui/Modifier;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabHoverPreviewPopup (Ldev/nucleusframework/window/tao/TabStripScope;Ldev/nucleusframework/window/tao/TabHoverPreview;Landroidx/compose/runtime/Composer;II)V
+	public static final fun getHoveredTab (Ldev/nucleusframework/window/tao/TabStripScope;)Ldev/nucleusframework/window/tao/TabEntry;
+}
+
+public abstract interface class dev/nucleusframework/window/tao/TabHoverPreviewScope {
+	public abstract fun getGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
+	public abstract fun getTab ()Ldev/nucleusframework/window/tao/TabEntry;
+	public fun getThumbnail ()Landroidx/compose/ui/graphics/ImageBitmap;
+	public abstract fun getWorkspace ()Ldev/nucleusframework/window/tao/TabWorkspace;
+}
+
+public final class dev/nucleusframework/window/tao/TabHoverPreviewScope$DefaultImpls {
+	public static fun getThumbnail (Ldev/nucleusframework/window/tao/TabHoverPreviewScope;)Landroidx/compose/ui/graphics/ImageBitmap;
 }
 
 public final class dev/nucleusframework/window/tao/TabLayoutSnapshot {
@@ -834,7 +873,7 @@ public final class dev/nucleusframework/window/tao/TabStripDragKt {
 
 public final class dev/nucleusframework/window/tao/TabStripKt {
 	public static final fun TabDropGhostCard (Ldev/nucleusframework/window/tao/TabDropGhost;Landroidx/compose/ui/Modifier;Landroidx/compose/runtime/Composer;II)V
-	public static final fun TabStrip (Ldev/nucleusframework/window/tao/TabStripScope;Landroidx/compose/ui/Modifier;Landroidx/compose/animation/core/AnimationSpec;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabStrip (Ldev/nucleusframework/window/tao/TabStripScope;Landroidx/compose/ui/Modifier;Landroidx/compose/animation/core/AnimationSpec;Ldev/nucleusframework/window/tao/TabHoverPreview;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
 	public static final fun getDropGhost (Ldev/nucleusframework/window/tao/TabStripScope;)Ldev/nucleusframework/window/tao/TabDropGhost;
 	public static final fun tabSlot (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TabWindowGroup;I)Landroidx/compose/ui/Modifier;
 	public static final fun tabStripGeometry (Landroidx/compose/ui/Modifier;Ldev/nucleusframework/window/tao/TabWorkspace;Ldev/nucleusframework/window/tao/TabWindowGroup;)Landroidx/compose/ui/Modifier;
@@ -868,15 +907,17 @@ public final class dev/nucleusframework/window/tao/TabWindowsKt {
 public final class dev/nucleusframework/window/tao/TabWorkspace {
 	public static final field $stable I
 	public static final field Companion Ldev/nucleusframework/window/tao/TabWorkspace$Companion;
-	public synthetic fun <init> (JILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (JLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (JZLkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun beginDrag-0AR0LA0 (Ljava/lang/String;Ldev/nucleusframework/window/tao/TabDragOrigin;J)Ldev/nucleusframework/window/tao/TabDragSession;
+	public final fun captureThumbnail (Ljava/lang/String;)V
 	public final fun close (Ljava/lang/String;)V
 	public final fun dropTargetAt-9KIMszo (JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public static synthetic fun dropTargetAt-9KIMszo$default (Ldev/nucleusframework/window/tao/TabWorkspace;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun dropTargetAt-ubNVwUQ (Landroidx/compose/ui/geometry/Rect;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public static synthetic fun dropTargetAt-ubNVwUQ$default (Ldev/nucleusframework/window/tao/TabWorkspace;Landroidx/compose/ui/geometry/Rect;JLdev/nucleusframework/window/tao/TabEntry;Ldev/nucleusframework/window/tao/TabWindowGroup;ILjava/lang/Object;)Ldev/nucleusframework/window/tao/TabDropTarget;
 	public final fun getActiveGroup ()Ldev/nucleusframework/window/tao/TabWindowGroup;
+	public final fun getCaptureThumbnails ()Z
 	public final fun getDefaultWindowSize-MYxV2XQ ()J
 	public final fun getDragGhost ()Ldev/nucleusframework/window/tao/TabDragGhost;
 	public final fun getDraggedTab ()Ldev/nucleusframework/window/tao/TabEntry;
@@ -902,7 +943,7 @@ public final class dev/nucleusframework/window/tao/TabWorkspace$Companion {
 }
 
 public final class dev/nucleusframework/window/tao/TabWorkspaceKt {
-	public static final fun rememberTabWorkspace-UBP6k7g (JLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/TabWorkspace;
+	public static final fun rememberTabWorkspace-IbIYxLY (JZLandroidx/compose/runtime/Composer;II)Ldev/nucleusframework/window/tao/TabWorkspace;
 }
 
 public final class dev/nucleusframework/window/tao/TaoA11yAction {

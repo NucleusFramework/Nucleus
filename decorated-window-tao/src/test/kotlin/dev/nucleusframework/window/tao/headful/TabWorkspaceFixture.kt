@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -34,11 +35,13 @@ import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.Tab
 import dev.nucleusframework.window.tao.TabDragOrigin
+import dev.nucleusframework.window.tao.TabHoverPreview
 import dev.nucleusframework.window.tao.TabStrip
 import dev.nucleusframework.window.tao.TabWindowGroup
 import dev.nucleusframework.window.tao.TabWindows
 import dev.nucleusframework.window.tao.TabWorkspace
 import dev.nucleusframework.window.tao.TaoWindow
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Everything one tab case observes; fresh per case, so cases never share
@@ -61,6 +64,12 @@ internal class TabWorkspaceFixture(
     private val fileDropTargets: Boolean = false,
     /** The direction the strip is composed in: a right-to-left app lays its tabs out from the right. */
     private val layoutDirection: LayoutDirection = LayoutDirection.Ltr,
+    /**
+     * When `true`, the strip is given a hover card that records itself in
+     * [shownHoverCard]. Off by default: it puts a popup over the window, which
+     * no case that is not about hovering should have to reason about.
+     */
+    private val hoverPreview: Boolean = false,
 ) {
     val workspace = TabWorkspace(defaultWindowSize = windowSize)
 
@@ -105,6 +114,35 @@ internal class TabWorkspaceFixture(
      * compositions — but a reorder or a selection change must not.
      */
     val bodyIncarnations = mutableStateOf<Map<String, Int>>(emptyMap())
+
+    /** The tab whose hover card is composed right now, or `null` while none is. */
+    val shownHoverCard = mutableStateOf<String?>(null)
+
+    /** How many hover cards have been composed over the run. */
+    val hoverCardBuilds = mutableIntStateOf(0)
+
+    /**
+     * The card the strip is given when the fixture was built with
+     * `hoverPreview`: a plain square that reports which tab it belongs to for
+     * as long as it is composed.
+     *
+     * A short delay rather than the stock one, so a case does not spend most
+     * of its time waiting; the delay itself is not asserted — a wall-clock
+     * threshold is exactly what makes a case flaky on a loaded runner.
+     */
+    private val hoverCard: TabHoverPreview? =
+        if (!hoverPreview) {
+            null
+        } else {
+            TabHoverPreview(delay = HOVER_CARD_DELAY_MILLIS.milliseconds) {
+                DisposableEffect(tab.id) {
+                    shownHoverCard.value = tab.id
+                    hoverCardBuilds.value++
+                    onDispose { if (shownHoverCard.value == tab.id) shownHoverCard.value = null }
+                }
+                Box(Modifier.size(HOVER_CARD_W_DP.dp, HOVER_CARD_H_DP.dp).background(Color(0xFF3AA76D)))
+            }
+        }
 
     /** Set once [TabWindows] reports the last window gone. */
     val lastWindowClosed = mutableStateOf(false)
@@ -205,7 +243,9 @@ internal class TabWorkspaceFixture(
                 lastWindowClosedCount.value++
             },
             strip = {
-                CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) { TabStrip() }
+                CompositionLocalProvider(LocalLayoutDirection provides layoutDirection) {
+                    TabStrip(hoverPreview = hoverCard)
+                }
             },
             // The app's window-level chrome: a strip of its own above the tab
             // body, recording where it landed and how many times it was built,
@@ -298,6 +338,11 @@ internal const val TAB_SAVED_CLICKS = 5
 
 /** Vertical grab point inside a tab strip, in dp from the strip's top. */
 internal const val TAB_GRAB_Y_DP = 10f
+
+/** The fixture's hover card: quick to appear, and big enough to be seen on a screenshot. */
+private const val HOVER_CARD_DELAY_MILLIS = 120
+private const val HOVER_CARD_W_DP = 180
+private const val HOVER_CARD_H_DP = 90
 
 /** Far enough from every window that a drop there can only mean "tear off". */
 internal const val TAB_DROP_FAR_PX = 340f

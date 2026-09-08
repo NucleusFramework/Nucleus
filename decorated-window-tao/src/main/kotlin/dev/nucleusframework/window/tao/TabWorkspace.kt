@@ -10,6 +10,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
@@ -45,6 +46,30 @@ public class TabEntry internal constructor(
 
     /** `true` while this tab is the selected one of its group. */
     public val isSelected: Boolean get() = group?.selectedId == id
+
+    /**
+     * The last picture taken of this tab's body, for a hover card to draw
+     * ([TabHoverPreviewScope.thumbnail]).
+     *
+     * `null` unless the workspace was built with `captureThumbnails`, and
+     * `null` for a tab that has not been on screen yet: only the selected tab
+     * of a window is composed, so the picture is the one taken while this tab
+     * was that tab. [TabWorkspace.captureThumbnail] takes a fresh one of the
+     * tab currently shown.
+     */
+    public var thumbnail: ImageBitmap? by mutableStateOf(null)
+        internal set
+
+    /**
+     * Bumped to ask for a new [thumbnail]; the window showing the tab takes
+     * one and stores it. Starts at 0, which is the first capture.
+     */
+    internal var thumbnailRequest: Int by mutableStateOf(0)
+        private set
+
+    internal fun requestThumbnail() {
+        thumbnailRequest++
+    }
 
     internal var content: (@Composable TabScope.() -> Unit)? by mutableStateOf(null)
 
@@ -102,6 +127,45 @@ public class TabWindowGroup internal constructor(
 
     /** Rect of each tab in [ids], in window coordinates (physical px), published by the strip. */
     internal var slotsInWindowPx: List<Rect> = emptyList()
+
+    /**
+     * The slot of the tab [id], in window coordinates (physical px), or `null`
+     * before the strip has placed it. What a hover card is anchored to.
+     */
+    internal fun slotInWindowPx(id: String): Rect? {
+        val index = tabIds.indexOf(id).takeIf { it >= 0 } ?: return null
+        return slotsInWindowPx.getOrNull(index)?.takeUnless { it.isEmpty }
+    }
+
+    /**
+     * The tab the pointer is over in this group's strip, published by
+     * `Modifier.tabSlot` — see [TabStripScope.hoveredTab].
+     */
+    internal var hoveredId: String? by mutableStateOf(null)
+        private set
+
+    /**
+     * `true` from a press on the hovered tab until the pointer leaves it: a
+     * hover card must not sit under a tab being clicked, and must not come
+     * back until the pointer has been away, which is what a browser does.
+     */
+    internal var hoverBlocked: Boolean by mutableStateOf(false)
+        private set
+
+    internal fun noteHoverEnter(id: String?) {
+        hoveredId = id
+        hoverBlocked = false
+    }
+
+    internal fun noteHoverExit(id: String?) {
+        if (hoveredId != id) return
+        hoveredId = null
+        hoverBlocked = false
+    }
+
+    internal fun noteHoverPress(id: String?) {
+        if (hoveredId == id) hoverBlocked = true
+    }
 
     /**
      * Bumped every time [position] / [size] are set by the workspace rather
@@ -182,10 +246,18 @@ public data class TabLayoutSnapshot(
  *
  * @param defaultWindowSize the size a group's window gets when nothing else
  *   determines it: the first group, and any group restored without a size.
+ * @param captureThumbnails whether a picture of the selected tab's body is
+ *   kept for a hover card to draw ([TabEntry.thumbnail]). Off by default: it
+ *   records the body into a layer of its own and reads it back, which is a
+ *   cost a workspace should only pay when its chrome shows the pictures. A
+ *   `NativeView` or a `TextureView` in the body draws through a native surface
+ *   of its own rather than into the scene, so it is missing from the picture —
+ *   a body built around one is better off without captures.
  */
 @Suppress("TooManyFunctions")
 public class TabWorkspace(
     public val defaultWindowSize: DpSize = DefaultWindowSize,
+    public val captureThumbnails: Boolean = false,
 ) {
     private val windows = WindowGroup(followFocus = true)
 
@@ -251,6 +323,24 @@ public class TabWorkspace(
     public fun select(tabId: String) {
         val entry = entryMap[tabId] ?: return
         entry.group?.selectedId = tabId
+    }
+
+    /**
+     * Takes a fresh picture of [tabId]'s body for its hover card
+     * ([TabEntry.thumbnail]).
+     *
+     * Only the selected tab of a window is composed, so this reaches a tab
+     * that is on screen right now; for any other it does nothing and the
+     * picture stays the one taken while it was shown. A no-op altogether
+     * unless the workspace was built with `captureThumbnails`.
+     *
+     * Call it when the tab's content has changed enough for its old picture to
+     * be misleading — nothing else refreshes it, since the workspace cannot
+     * know what a body draws.
+     */
+    public fun captureThumbnail(tabId: String) {
+        if (!captureThumbnails) return
+        entryMap[tabId]?.requestThumbnail()
     }
 
     /**
@@ -445,6 +535,23 @@ public class TabWorkspace(
     private val stripMotions = HashMap<String, TabStripMotion>()
 
     /**
+     * Takes [entry] in hand for a drag: it becomes the dragged tab, and the
+     * selected tab of its group.
+     *
+     * Selecting here is what stops an accidental drag from swallowing a click.
+     * The grip claims the press before the tab's own click gesture does, so a
+     * click whose pointer drifts past the touch slop becomes a drag — and a
+     * drag that ends where it started leaves the strip exactly as it was, with
+     * the click lost and the tab having wobbled for nothing. A browser selects
+     * a tab on the press for this reason, which also means the tab being
+     * carried is always the one on screen.
+     */
+    private fun holdForDrag(entry: TabEntry) {
+        draggedTab = entry
+        entry.group?.selectedId = entry.id
+    }
+
+    /**
      * Takes the tab [tabId] in hand for a reorder inside its own strip, with
      * no coordinate space but the strip's own: this is the gesture that has to
      * work where a client is told nothing about the screen (native Wayland),
@@ -460,7 +567,7 @@ public class TabWorkspace(
         val group = entry.group ?: return null
         transferDrag?.cancel()
         releaseDrag(null)
-        draggedTab = entry
+        holdForDrag(entry)
         dropPreview = TabDropTarget(group, group.tabIds.indexOf(tabId))
         return group
     }
@@ -779,7 +886,7 @@ public class TabWorkspace(
         transferDrag?.cancel()
         val session = createTabDragSession(entry, origin, start) ?: return null
         drags.begin(session)
-        draggedTab = entry
+        holdForDrag(entry)
         dragGrabScreenPx = start
         dragPointerScreenPx = start
         return session
@@ -812,7 +919,7 @@ public class TabWorkspace(
         releaseDrag(null)
         val session = createTabTransferDrag(entry, group, window)
         transferDrag = session
-        draggedTab = entry
+        holdForDrag(entry)
         return session
     }
 
@@ -1016,5 +1123,7 @@ public interface TabDragSession {
 
 /** Remembers a [TabWorkspace] for the lifetime of the calling composition. */
 @Composable
-public fun rememberTabWorkspace(defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize): TabWorkspace =
-    remember { TabWorkspace(defaultWindowSize) }
+public fun rememberTabWorkspace(
+    defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize,
+    captureThumbnails: Boolean = false,
+): TabWorkspace = remember { TabWorkspace(defaultWindowSize, captureThumbnails) }

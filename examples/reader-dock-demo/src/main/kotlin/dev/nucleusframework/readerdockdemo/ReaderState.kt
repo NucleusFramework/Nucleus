@@ -118,7 +118,14 @@ class BookState {
  * windows read two seforim side by side, each with its own pane widths.
  */
 class ReaderState {
-    val tabs = TabWorkspace(defaultWindowSize = DpSize(WINDOW_W_DP.dp, WINDOW_H_DP.dp))
+    // `captureThumbnails` is what puts the page itself on a sefer's hover
+    // card: the workspace keeps a reduced picture of the body each tab last
+    // showed. Off by default — it costs a layer and a readback per tab.
+    val tabs =
+        TabWorkspace(
+            defaultWindowSize = DpSize(WINDOW_W_DP.dp, WINDOW_H_DP.dp),
+            captureThumbnails = true,
+        )
 
     /** The open seforim, in declaration order. One tab each. */
     val books =

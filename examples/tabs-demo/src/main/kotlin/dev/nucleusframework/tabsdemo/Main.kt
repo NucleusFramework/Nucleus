@@ -67,7 +67,7 @@ fun main() =
         DemoTheme(colors) {
             TabWindows(
                 workspace = demo.workspace,
-                strip = { DemoTabStrip(onNewTab = demo::open) },
+                strip = { DemoTabStrip(demo, onNewTab = demo::open) },
                 // Per-window chrome goes here, since the app opens no window
                 // of its own: the receiver is the window being composed.
                 windowWrapper = { content ->

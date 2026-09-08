@@ -286,6 +286,11 @@ private fun ApplicationScope.TabWindow(
  * its `rememberSaveable` registry entries. The key is above the relocation
  * anchor, not below it, so the path from the anchor down to the content is
  * still identical in every window.
+ *
+ * A workspace that keeps pictures of its tabs for its hover cards
+ * ([TabWorkspace.captureThumbnails]) has the body wrapped in a recorder —
+ * above the anchor too, and the same wrapper in every window, so it changes
+ * nothing about what follows a tab across.
  */
 @Suppress("FunctionNaming")
 @Composable
@@ -296,7 +301,12 @@ private fun TabBody(
     if (tab == null) return
     key(tab.id) {
         val scope = remember(workspace, tab) { TabScopeImpl(workspace, tab) }
-        RelocatedContentHost(tab.stateSlot, scope, tab.content)
+        val body = @Composable { RelocatedContentHost(tab.stateSlot, scope, tab.content) }
+        if (workspace.captureThumbnails) {
+            TabThumbnailRecorder(tab) { body() }
+        } else {
+            body()
+        }
     }
 }
 

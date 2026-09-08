@@ -123,7 +123,7 @@ fun main() =
                 // leftwards, and the strip animates the same way.
                 strip = {
                     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-                        ReaderTabStrip(onNewBook = reader::openBook)
+                        ReaderTabStrip(reader, onNewBook = reader::openBook)
                     }
                 },
                 windowWrapper = { content ->

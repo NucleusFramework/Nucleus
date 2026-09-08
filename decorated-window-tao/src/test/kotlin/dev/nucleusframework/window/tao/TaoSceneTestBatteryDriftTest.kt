@@ -106,6 +106,7 @@ class TaoSceneTestBatteryDriftTest {
             DragControllerTest::class.java,
             TransferDragTest::class.java,
             TabWorkspaceTest::class.java,
+            TabHoverPreviewTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */

@@ -1016,6 +1016,43 @@ public object TaoSceneTestBattery {
             TransferDragTest().`the hotspot follows the grab point into the reduced picture of a region`()
         }
 
+        run("TabHoverPreviewTest: the strip reports the tab the pointer rests on, and nothing once it leaves") {
+            TabHoverPreviewTest().`the strip reports the tab the pointer rests on, and nothing once it leaves`()
+        }
+        run("TabHoverPreviewTest: a press puts the card away until the pointer has been elsewhere") {
+            TabHoverPreviewTest().`a press puts the card away until the pointer has been elsewhere`()
+        }
+        run("TabHoverPreviewTest: a press on a tab the pointer is not on changes nothing") {
+            TabHoverPreviewTest().`a press on a tab the pointer is not on changes nothing`()
+        }
+        run("TabHoverPreviewTest: no card while a tab is being dragged") {
+            TabHoverPreviewTest().`no card while a tab is being dragged`()
+        }
+        run("TabHoverPreviewTest: a tab that has left the group is no longer hovered") {
+            TabHoverPreviewTest().`a tab that has left the group is no longer hovered`()
+        }
+        run("TabHoverPreviewTest: the anchor of a card is the tab's own slot, and nothing before it is placed") {
+            TabHoverPreviewTest().`the anchor of a card is the tab's own slot, and nothing before it is placed`()
+        }
+        run("TabHoverPreviewTest: the card hangs from the tab's leading edge, below it") {
+            TabHoverPreviewTest().`the card hangs from the tab's leading edge, below it`()
+        }
+        run("TabHoverPreviewTest: a right-to-left strip hangs the card from the tab's right edge") {
+            TabHoverPreviewTest().`a right-to-left strip hangs the card from the tab's right edge`()
+        }
+        run("TabHoverPreviewTest: a card that would run off the window is slid back in") {
+            TabHoverPreviewTest().`a card that would run off the window is slid back in`()
+        }
+        run("TabHoverPreviewTest: the selected tab has no card") {
+            TabHoverPreviewTest().`the selected tab has no card`()
+        }
+
+        run("TabWorkspaceTest: a drag selects the tab it lifted, so a click that drifts is never lost") {
+            TabWorkspaceTest().`a drag selects the tab it lifted, so a click that drifts is never lost`()
+        }
+        run("TabWorkspaceTest: taking a tab in hand inside its own strip selects it too") {
+            TabWorkspaceTest().`taking a tab in hand inside its own strip selects it too`()
+        }
         run("TabWorkspaceTest: a right-to-left strip resolves its insertion indices from the right") {
             TabWorkspaceTest().`a right-to-left strip resolves its insertion indices from the right`()
         }

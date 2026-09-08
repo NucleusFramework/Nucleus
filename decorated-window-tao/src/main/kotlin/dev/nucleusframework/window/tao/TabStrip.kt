@@ -94,6 +94,10 @@ internal class TabStripScopeImpl(
  *   or sliding home; `null` moves it at once. Only the drawing is animated:
  *   the strip's published geometry is the settled layout throughout, so a
  *   drop resolved mid-motion still lands where the strip says it will.
+ * @param hoverPreview the card shown under the tab the pointer rests on;
+ *   `null`, the default, shows none. [TabHoverPreview.Default] is a browser's
+ *   behaviour, and [TabHoverPreview] takes the card whole for an app that
+ *   wants to draw its own.
  * @param trailing chrome placed right after the last tab — a new-tab button,
  *   typically. It sits inside the strip, so the strip stays a single drop
  *   target and a tab released over it is appended.
@@ -102,6 +106,7 @@ internal class TabStripScopeImpl(
 public fun TabStripScope.TabStrip(
     modifier: Modifier = Modifier,
     reorderAnimation: AnimationSpec<Float>? = TabReorderAnimation,
+    hoverPreview: TabHoverPreview? = null,
     trailing: @Composable TabStripScope.() -> Unit = {},
 ) {
     val entries = tabs
@@ -145,6 +150,10 @@ public fun TabStripScope.TabStrip(
         key(landing.generation) { TabDropGhostSlot(ghost, entries.size) }
         trailing()
     }
+    // Outside the Row: the card is a popup anchored to the tab's own slot, so
+    // it belongs to the strip rather than to any one tab, and nothing about it
+    // takes part in the strip's layout.
+    hoverPreview?.let { TabHoverPreviewPopup(it) }
 }
 
 /**
@@ -333,9 +342,14 @@ private class TabTransferTarget(
  * Marks this element as the slot of the tab at [index] in [group], which is
  * what turns a pointer position into an insertion index.
  *
+ * It is also what publishes the tab under the pointer
+ * ([TabStripScope.hoveredTab]) and the rect a hover card is anchored to, so a
+ * strip that marks its slots gets [TabHoverPreviewPopup] for nothing.
+ *
  * [TabStrip] applies it already; a strip written from scratch must apply it to
  * every tab, in strip order.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 public fun Modifier.tabSlot(
     group: TabWindowGroup,
     index: Int,
@@ -348,6 +362,11 @@ public fun Modifier.tabSlot(
         // ones still placed, so a stale rect cannot shift an insertion index.
         group.slotsInWindowPx = slots.take(group.ids.size.coerceAtLeast(index + 1))
     }
+        // The id is resolved at event time, not captured: the slot at an index
+        // is whichever tab the strip has put there.
+        .onPointerEvent(PointerEventType.Enter) { group.noteHoverEnter(group.ids.getOrNull(index)) }
+        .onPointerEvent(PointerEventType.Exit) { group.noteHoverExit(group.ids.getOrNull(index)) }
+        .onPointerEvent(PointerEventType.Press) { group.noteHoverPress(group.ids.getOrNull(index)) }
 
 /** One tab: its title, a close button, and the whole thing a drag handle. */
 @OptIn(ExperimentalComposeUiApi::class)

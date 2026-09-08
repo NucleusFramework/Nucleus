@@ -490,6 +490,46 @@ class TabWorkspaceTest {
         moves: MutableList<Pair<Int, Int>> = mutableListOf(),
     ) = TabDragOrigin.Strip(window, outerBoundsPx = { frame }, move = { x, y -> moves += x to y })
 
+    /**
+     * The grip covers the whole tab and claims the press before the tab's own
+     * click gesture, so a click whose pointer drifts past the touch slop
+     * becomes a drag. Ending it where it started must therefore still leave
+     * the tab selected — otherwise that click did nothing at all, which is how
+     * a strip comes to feel like it swallows clicks.
+     */
+    @Test
+    fun `a drag selects the tab it lifted, so a click that drifts is never lost`() {
+        val workspace = TabWorkspace()
+        val (left, _) = workspace.twoStripWindows()
+        workspace.select("a")
+        assertEquals("a", left.selectedId, "the tab the drift starts from is not the selected one")
+
+        val session =
+            assertNotNull(
+                workspace.beginDrag("b", stripOrigin(firstWindow, FirstWindowFrame), Offset(110f, 20f)),
+            )
+
+        assertEquals("b", left.selectedId, "lifting a tab did not select it")
+
+        // Released where it was grabbed: nothing moves, and the selection the
+        // lift made stands.
+        session.end(Offset(110f, 20f))
+        assertEquals(listOf("a", "b"), left.ids, "a drag that went nowhere reordered the strip")
+        assertEquals("b", left.selectedId, "the selection was undone by the release")
+    }
+
+    /** The same, for the local strip gesture a window without screen placement uses. */
+    @Test
+    fun `taking a tab in hand inside its own strip selects it too`() {
+        val workspace = TabWorkspace()
+        val (left, _) = workspace.twoStripWindows()
+        workspace.select("a")
+
+        assertNotNull(workspace.takeInStrip("b"))
+
+        assertEquals("b", left.selectedId, "the local strip gesture left the click lost")
+    }
+
     @Test
     fun `dragging one of several tabs shows a ghost and inserts where it is dropped`() {
         val workspace = TabWorkspace()
