@@ -79,8 +79,18 @@ internal class ElectronBuilderConfigGenerator {
         // On macOS the product name must equal the prepackaged bundle's directory name: the DMG
         // target stages the app as `${productFilename}.app` while the ZIP target archives the
         // directory verbatim, so any mismatch ships two differently named bundles for one release.
+        //
+        // On Linux, fpm-based targets (deb/rpm/pacman) install the payload under
+        // `/opt/${sanitizedProductName}` and electron-builder's sanitizer only strips
+        // filesystem-invalid characters and does not remove spaces. So a display-style appName
+        // bakes spaces into the path, which then breaks every unquoted
+        // path/ExecStart substitution done by afterInstall scripts and systemd unit templates.
+        // `executableName` is already resolved from `linux.packageName ?: packageName`  and is
+        // the filesystem-safe name so it should be preferred it over appName on Linux so the install directory
+        // matched what scripts would expect.
         val resolvedProductName =
             macBundleName?.takeIf { currentOS == OS.MacOS && it.isNotBlank() }
+                ?: (if (currentOS == OS.Linux) executableName else null)
                 ?: distributions.appName ?: distributions.packageName ?: executableName
                 ?: error(
                     "No appName, packageName, or executableName available for electron-builder config",
