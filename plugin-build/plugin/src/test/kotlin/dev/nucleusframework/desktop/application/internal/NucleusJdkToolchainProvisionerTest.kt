@@ -8,7 +8,7 @@ import org.junit.Test
 
 class NucleusJdkToolchainProvisionerTest {
     @Test
-    fun `download URL is the pinned OpenJDK 27 RC`() {
+    fun `download URL is the pinned OpenJDK 27 GA`() {
         val url = NucleusJdkToolchainProvisioner.downloadUrl(OS.Windows, Arch.X64)
         assertEquals(
             "https://download.java.net/java/GA/jdk27/" +
@@ -32,7 +32,7 @@ class NucleusJdkToolchainProvisionerTest {
     }
 
     @Test
-    fun `install id embeds the RC pin so GA re-provisions`() {
+    fun `install id is the GA pin so RC caches re-provision`() {
         val id =
             NucleusJdkToolchainProvisioner.installationId(
                 NucleusJdkToolchainRequest(
@@ -41,12 +41,27 @@ class NucleusJdkToolchainProvisionerTest {
                     installBaseDir = java.io.File("."),
                 ),
             )
-        assertEquals("openjdk-27-rc-b35-windows-x64", id)
+        assertEquals("openjdk-27-windows-x64", id)
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun `macos x64 is not published`() {
-        NucleusJdkToolchainProvisioner.downloadUrl(OS.MacOS, Arch.X64)
+    @Test
+    fun `macos x64 falls back to Liberica`() {
+        val url = NucleusJdkToolchainProvisioner.downloadUrl(OS.MacOS, Arch.X64)
+        assertEquals(LIBERICA_27_MACOS_X64_URL, url)
+        assertTrue(NucleusJdkToolchainProvisioner.usesLibericaFallback(OS.MacOS, Arch.X64))
+    }
+
+    @Test
+    fun `macos x64 install id is Liberica so Oracle caches are not reused`() {
+        val id =
+            NucleusJdkToolchainProvisioner.installationId(
+                NucleusJdkToolchainRequest(
+                    os = OS.MacOS,
+                    arch = Arch.X64,
+                    installBaseDir = java.io.File("."),
+                ),
+            )
+        assertEquals("liberica-jdk-27-macos-x64", id)
     }
 
     @Test(expected = IllegalStateException::class)

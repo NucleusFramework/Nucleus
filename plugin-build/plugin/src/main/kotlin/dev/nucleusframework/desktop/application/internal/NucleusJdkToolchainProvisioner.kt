@@ -25,17 +25,24 @@ import javax.inject.Inject
  * Current OpenJDK used as the jpackage / jlink / `run` JDK when
  * [dev.nucleusframework.desktop.application.dsl.NucleusOptimizationSettings.lastJdk]
  * is on.
+ *
+ * Pin from https://jdk.java.net/27/ (GA 2026-09-15). The last RC (build 35) was
+ * promoted unchanged; the install id dropped the `-rc-b35` suffix so existing
+ * caches re-provision under a stable GA directory.
  */
-// TODO: switch OpenJDK 27 from RC build 35 to GA (2026-09-15). Update
-// OPENJDK_27_HASH / OPENJDK_27_BUILD from https://jdk.java.net/27/ and rename
-// OPENJDK_27_INSTALL_ID to openjdk-27 so existing caches re-provision.
 internal const val OPENJDK_27_FEATURE = 27
 internal const val OPENJDK_27_BUILD = 35
 internal const val OPENJDK_27_HASH = "55ce5470a6294008af0057ff4626d0e5"
-internal const val OPENJDK_27_INSTALL_ID = "openjdk-27-rc-b35"
+internal const val OPENJDK_27_INSTALL_ID = "openjdk-27"
 
 private const val OPENJDK_27_DOWNLOAD_BASE =
     "https://download.java.net/java/GA/jdk27/$OPENJDK_27_HASH/$OPENJDK_27_BUILD/GPL"
+
+/** BellSoft Liberica JDK 27 for macOS x64 — Oracle dropped the port. */
+internal const val LIBERICA_27_MACOS_X64_URL =
+    "https://github.com/bell-sw/Liberica/releases/download/27+36/bellsoft-jdk27+36-macos-amd64.tar.gz"
+private const val LIBERICA_27_MACOS_X64_SHA1 = "00c2e885219f9454a08aae944175758c8c2d3831"
+private const val LIBERICA_27_INSTALL_ID = "liberica-jdk-27"
 
 internal data class NucleusJdkToolchainRequest(
     val os: OS,
@@ -77,9 +84,10 @@ internal abstract class NucleusJdkToolchainValueSource :
  * [GraalvmToolchainProvisioner] for native-image.
  *
  * `NUCLEUS_JDK_HOME` pointing at a valid JDK 27 installation bypasses the
- * download. macOS Intel and Windows aarch64 are not published by OpenJDK 27
- * — set [dev.nucleusframework.desktop.application.dsl.JvmApplication.javaHome]
- * to a local JDK 27 instead.
+ * download. macOS Intel falls back to BellSoft Liberica JDK 27 (Oracle dropped
+ * the port). Windows aarch64 is not published — set
+ * [dev.nucleusframework.desktop.application.dsl.JvmApplication.javaHome] or
+ * `NUCLEUS_JDK_HOME` to a local JDK 27 instead.
  */
 @Suppress("TooManyFunctions")
 internal object NucleusJdkToolchainProvisioner {
@@ -115,10 +123,27 @@ internal object NucleusJdkToolchainProvisioner {
     internal fun downloadUrl(
         os: OS,
         arch: Arch,
-    ): String = "$OPENJDK_27_DOWNLOAD_BASE/${artifactName(os, arch)}"
+    ): String =
+        if (usesLibericaFallback(os, arch)) {
+            LIBERICA_27_MACOS_X64_URL
+        } else {
+            "$OPENJDK_27_DOWNLOAD_BASE/${artifactName(os, arch)}"
+        }
 
-    internal fun installationId(request: NucleusJdkToolchainRequest): String =
-        "$OPENJDK_27_INSTALL_ID-${request.os.id}-${archToken(request.arch)}"
+    internal fun installationId(request: NucleusJdkToolchainRequest): String {
+        val vendor =
+            if (usesLibericaFallback(request.os, request.arch)) {
+                LIBERICA_27_INSTALL_ID
+            } else {
+                OPENJDK_27_INSTALL_ID
+            }
+        return "$vendor-${request.os.id}-${archToken(request.arch)}"
+    }
+
+    internal fun usesLibericaFallback(
+        os: OS,
+        arch: Arch,
+    ): Boolean = os == OS.MacOS && arch == Arch.X64
 
     internal fun archToken(arch: Arch): String =
         when (arch) {
@@ -130,10 +155,7 @@ internal object NucleusJdkToolchainProvisioner {
         os: OS,
         arch: Arch,
     ) {
-        val unsupported =
-            (os == OS.MacOS && arch == Arch.X64) ||
-                (os == OS.Windows && arch == Arch.Arm64)
-        check(!unsupported) {
+        check(!(os == OS.Windows && arch == Arch.Arm64)) {
             "OpenJDK $OPENJDK_27_FEATURE has no ${os.id}-${archToken(arch)} build. " +
                 "Set nucleus.application { javaHome = \"...\" } to a local JDK $OPENJDK_27_FEATURE, " +
                 "or set $ENV_JDK_HOME."
@@ -200,14 +222,18 @@ internal object NucleusJdkToolchainProvisioner {
     ): File {
         val url = downloadUrl(request.os, request.arch)
         val description =
-            "OpenJDK $OPENJDK_27_FEATURE-rc+$OPENJDK_27_BUILD " +
-                "(${request.os.id}-${archToken(request.arch)})"
+            if (usesLibericaFallback(request.os, request.arch)) {
+                "Liberica JDK $OPENJDK_27_FEATURE (${request.os.id}-${archToken(request.arch)})"
+            } else {
+                "OpenJDK $OPENJDK_27_FEATURE+$OPENJDK_27_BUILD " +
+                    "(${request.os.id}-${archToken(request.arch)})"
+            }
         logger.lifecycle("[nucleusOptimization] Downloading $description from $url")
         val archive = File(request.installBaseDir, "$id.download")
         val extractDir = File(request.installBaseDir, "$id.extract")
         try {
             download(url, archive)
-            verifyChecksum(archive, "$url.sha256", logger)
+            verifyChecksum(archive, url, request, logger)
 
             extractDir.deleteRecursively()
             extract(archive, extractDir, execOperations)
@@ -250,9 +276,18 @@ internal object NucleusJdkToolchainProvisioner {
 
     private fun verifyChecksum(
         archive: File,
-        sha256Url: String,
+        url: String,
+        request: NucleusJdkToolchainRequest,
         logger: Logger,
     ) {
+        if (usesLibericaFallback(request.os, request.arch)) {
+            val actual = archive.digest("SHA-1")
+            check(actual.equals(LIBERICA_27_MACOS_X64_SHA1, ignoreCase = true)) {
+                "Checksum mismatch for $url: expected $LIBERICA_27_MACOS_X64_SHA1, got $actual"
+            }
+            return
+        }
+        val sha256Url = "$url.sha256"
         val text =
             runCatching { fetchText(sha256Url) }.getOrElse {
                 logger.warn(
@@ -291,7 +326,7 @@ internal object NucleusJdkToolchainProvisioner {
             }
         } catch (e: IOException) {
             throw IOException(
-                "Failed to download OpenJDK $OPENJDK_27_FEATURE from $url: ${e.message}",
+                "Failed to download JDK $OPENJDK_27_FEATURE from $url: ${e.message}",
                 e,
             )
         }
