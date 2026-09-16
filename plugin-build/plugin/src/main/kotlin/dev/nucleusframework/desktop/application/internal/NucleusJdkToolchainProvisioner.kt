@@ -38,10 +38,13 @@ internal const val OPENJDK_27_INSTALL_ID = "openjdk-27"
 private const val OPENJDK_27_DOWNLOAD_BASE =
     "https://download.java.net/java/GA/jdk27/$OPENJDK_27_HASH/$OPENJDK_27_BUILD/GPL"
 
-/** BellSoft Liberica JDK 27 for macOS x64 — Oracle dropped the port. */
+/** BellSoft Liberica JDK 27 for platforms Oracle does not publish. */
 internal const val LIBERICA_27_MACOS_X64_URL =
     "https://github.com/bell-sw/Liberica/releases/download/27+36/bellsoft-jdk27+36-macos-amd64.tar.gz"
+internal const val LIBERICA_27_WINDOWS_AARCH64_URL =
+    "https://github.com/bell-sw/Liberica/releases/download/27+36/bellsoft-jdk27+36-windows-aarch64.zip"
 private const val LIBERICA_27_MACOS_X64_SHA1 = "00c2e885219f9454a08aae944175758c8c2d3831"
+private const val LIBERICA_27_WINDOWS_AARCH64_SHA1 = "a0f9353138c99b090c101d452fea9373d7ac9523"
 private const val LIBERICA_27_INSTALL_ID = "liberica-jdk-27"
 
 internal data class NucleusJdkToolchainRequest(
@@ -84,10 +87,8 @@ internal abstract class NucleusJdkToolchainValueSource :
  * [GraalvmToolchainProvisioner] for native-image.
  *
  * `NUCLEUS_JDK_HOME` pointing at a valid JDK 27 installation bypasses the
- * download. macOS Intel falls back to BellSoft Liberica JDK 27 (Oracle dropped
- * the port). Windows aarch64 is not published — set
- * [dev.nucleusframework.desktop.application.dsl.JvmApplication.javaHome] or
- * `NUCLEUS_JDK_HOME` to a local JDK 27 instead.
+ * download. macOS Intel and Windows aarch64 fall back to BellSoft Liberica
+ * JDK 27 (Oracle dropped those ports).
  */
 @Suppress("TooManyFunctions")
 internal object NucleusJdkToolchainProvisioner {
@@ -124,10 +125,10 @@ internal object NucleusJdkToolchainProvisioner {
         os: OS,
         arch: Arch,
     ): String =
-        if (usesLibericaFallback(os, arch)) {
-            LIBERICA_27_MACOS_X64_URL
-        } else {
-            "$OPENJDK_27_DOWNLOAD_BASE/${artifactName(os, arch)}"
+        when {
+            os == OS.MacOS && arch == Arch.X64 -> LIBERICA_27_MACOS_X64_URL
+            os == OS.Windows && arch == Arch.Arm64 -> LIBERICA_27_WINDOWS_AARCH64_URL
+            else -> "$OPENJDK_27_DOWNLOAD_BASE/${artifactName(os, arch)}"
         }
 
     internal fun installationId(request: NucleusJdkToolchainRequest): String {
@@ -143,7 +144,9 @@ internal object NucleusJdkToolchainProvisioner {
     internal fun usesLibericaFallback(
         os: OS,
         arch: Arch,
-    ): Boolean = os == OS.MacOS && arch == Arch.X64
+    ): Boolean =
+        (os == OS.MacOS && arch == Arch.X64) ||
+            (os == OS.Windows && arch == Arch.Arm64)
 
     internal fun archToken(arch: Arch): String =
         when (arch) {
@@ -151,25 +154,23 @@ internal object NucleusJdkToolchainProvisioner {
             Arch.Arm64 -> "aarch64"
         }
 
-    internal fun checkSupported(
-        os: OS,
-        arch: Arch,
-    ) {
-        check(!(os == OS.Windows && arch == Arch.Arm64)) {
-            "OpenJDK $OPENJDK_27_FEATURE has no ${os.id}-${archToken(arch)} build. " +
-                "Set nucleus.application { javaHome = \"...\" } to a local JDK $OPENJDK_27_FEATURE, " +
-                "or set $ENV_JDK_HOME."
-        }
-    }
-
     private fun artifactName(
         os: OS,
         arch: Arch,
     ): String {
-        checkSupported(os, arch)
         val ext = if (os == OS.Windows) "zip" else "tar.gz"
         return "openjdk-${OPENJDK_27_FEATURE}_${os.id}-${archToken(arch)}_bin.$ext"
     }
+
+    private fun libericaSha1(
+        os: OS,
+        arch: Arch,
+    ): String =
+        when {
+            os == OS.MacOS && arch == Arch.X64 -> LIBERICA_27_MACOS_X64_SHA1
+            os == OS.Windows && arch == Arch.Arm64 -> LIBERICA_27_WINDOWS_AARCH64_SHA1
+            else -> error("No Liberica pin for ${os.id}-${archToken(arch)}")
+        }
 
     private fun environmentOverride(logger: Logger): File? {
         val env = System.getenv(ENV_JDK_HOME)?.takeIf { it.isNotBlank() } ?: return null
@@ -281,9 +282,10 @@ internal object NucleusJdkToolchainProvisioner {
         logger: Logger,
     ) {
         if (usesLibericaFallback(request.os, request.arch)) {
+            val expected = libericaSha1(request.os, request.arch)
             val actual = archive.digest("SHA-1")
-            check(actual.equals(LIBERICA_27_MACOS_X64_SHA1, ignoreCase = true)) {
-                "Checksum mismatch for $url: expected $LIBERICA_27_MACOS_X64_SHA1, got $actual"
+            check(actual.equals(expected, ignoreCase = true)) {
+                "Checksum mismatch for $url: expected $expected, got $actual"
             }
             return
         }

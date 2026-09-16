@@ -64,8 +64,23 @@ class NucleusJdkToolchainProvisionerTest {
         assertEquals("liberica-jdk-27-macos-x64", id)
     }
 
-    @Test(expected = IllegalStateException::class)
-    fun `windows aarch64 is not published`() {
-        NucleusJdkToolchainProvisioner.downloadUrl(OS.Windows, Arch.Arm64)
+    @Test
+    fun `windows aarch64 falls back to Liberica`() {
+        val url = NucleusJdkToolchainProvisioner.downloadUrl(OS.Windows, Arch.Arm64)
+        assertEquals(LIBERICA_27_WINDOWS_AARCH64_URL, url)
+        assertTrue(NucleusJdkToolchainProvisioner.usesLibericaFallback(OS.Windows, Arch.Arm64))
+    }
+
+    @Test
+    fun `windows aarch64 install id is Liberica so Oracle caches are not reused`() {
+        val id =
+            NucleusJdkToolchainProvisioner.installationId(
+                NucleusJdkToolchainRequest(
+                    os = OS.Windows,
+                    arch = Arch.Arm64,
+                    installBaseDir = java.io.File("."),
+                ),
+            )
+        assertEquals("liberica-jdk-27-windows-aarch64", id)
     }
 }
