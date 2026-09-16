@@ -47,8 +47,8 @@ abstract class NucleusOptimizationSettings {
     /**
      * Package and run the app with the current OpenJDK feature release,
      * auto-downloaded and cached under `<gradle-user-home>/nucleus/jdk` like
-     * the GraalVM toolchain. Intel macs get BellSoft Liberica JDK (Oracle
-     * dropped macos-x64). An explicit [JvmApplication.javaHome] always
+     * the GraalVM toolchain. Intel macs and Windows ARM get BellSoft Liberica
+     * JDK (Oracle dropped those ports). An explicit [JvmApplication.javaHome] always
      * wins. Does not change the Gradle compile JDK.
      */
     var lastJdk: Boolean? = null
