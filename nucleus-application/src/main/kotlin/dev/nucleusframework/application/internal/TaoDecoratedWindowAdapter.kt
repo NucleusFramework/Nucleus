@@ -211,6 +211,7 @@ internal fun TaoDecoratedWindowScope.bindNucleusContent(
             TaoNucleusDecoratedWindowScope(taoScope, nucleusWindow)
         }
     ObserveSingleInstanceRestore(nucleusWindow)
+    ObserveIdleGc(nucleusWindow)
     // outerLocals were captured in the OUTER composition and cross the
     // scene boundary as this scene's own compositionLocalContext (the
     // parameter above for the first composition, the bridge below for

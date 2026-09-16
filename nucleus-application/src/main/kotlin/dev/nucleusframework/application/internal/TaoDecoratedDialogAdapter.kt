@@ -158,6 +158,7 @@ private fun TaoDecoratedDialogScope.bindNucleusDialogContent(
         remember(taoScope, nucleusWindow) {
             TaoNucleusDecoratedDialogScope(taoScope, nucleusWindow)
         }
+    ObserveIdleGc(nucleusWindow)
     // Bridge the parent composition's locals (theme, density,
     // user-provided locals, …) into the dialog's own ComposeScene
     // via `ComposeScene.compositionLocalContext` rather than a
