@@ -826,6 +826,20 @@ internal class ElectronBuilderConfigGenerator {
                 args += "--before-remove"
                 args += it.absolutePath
             }
+        distributions.linux.afterUpgrade.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--after-upgrade"
+                args += it.absolutePath
+            }
+        distributions.linux.beforeUpgrade.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-upgrade"
+                args += it.absolutePath
+            }
         return args
     }
 
