@@ -57,7 +57,10 @@ abstract class AbstractJLinkTask : AbstractJvmToolOperationTask("jlink") {
         super.makeArgs(tmpDir).apply {
             val modulesToInclude =
                 if (includeAllModules.get()) {
+                    // JEP 493 JDKs (no jmods/) refuse to link an image containing jdk.jlink,
+                    // and a shipped app never needs it (#673).
                     JvmRuntimeProperties.readFromFile(javaRuntimePropertiesFile.ioFile).availableModules
+                        .filterNot { it == "jdk.jlink" }
                 } else {
                     modules.get()
                 }
