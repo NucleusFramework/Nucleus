@@ -2290,14 +2290,6 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                             app.nativeDistributions.windows.iconFile
                                 .orElse(unpackDefaultResources.flatMap { it.resources.windowsIcon }),
                         )
-                        val nsis = app.nativeDistributions.windows.nsis
-                        nsisInstallerIcon.set(nsis.installerIcon)
-                        nsisUninstallerIcon.set(nsis.uninstallerIcon)
-                        nsisLicense.set(nsis.license)
-                        nsisIncludeScript.set(nsis.includeScript)
-                        nsisScript.set(nsis.script)
-                        nsisInstallerHeader.set(nsis.installerHeader)
-                        nsisInstallerSidebar.set(nsis.installerSidebar)
                     }
                     OS.MacOS -> {
                         val mac = app.nativeDistributions.macOS

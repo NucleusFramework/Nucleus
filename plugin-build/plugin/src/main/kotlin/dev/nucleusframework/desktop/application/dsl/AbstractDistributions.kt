@@ -5,7 +5,6 @@
 
 package dev.nucleusframework.desktop.application.dsl
 
-import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.ProjectLayout
 import org.gradle.api.file.RegularFileProperty
@@ -35,7 +34,6 @@ abstract class AbstractDistributions {
     var homepage: String? = null
     val appResourcesRootDir: DirectoryProperty = objects.directoryProperty()
     val licenseFile: RegularFileProperty = objects.fileProperty()
-    val appContent: ConfigurableFileCollection = objects.fileCollection()
 
     var targetFormats: Set<TargetFormat> = EnumSet.noneOf(TargetFormat::class.java)
 

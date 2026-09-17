@@ -162,65 +162,6 @@ abstract class AbstractElectronBuilderPackageTask
         @get:PathSensitive(PathSensitivity.ABSOLUTE)
         val windowsIconFile: RegularFileProperty = objects.fileProperty()
 
-        // Mirrors of NsisSettings's file properties. `distributions` below is @Internal, so
-        // without these the packaging task has no idea these files affect its output --
-        // changing one, or adding it after a prior successful build, is invisible to
-        // up-to-date checking and a stale installer is silently reused.
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisInstallerIcon: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisUninstallerIcon: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisLicense: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisIncludeScript: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisScript: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisInstallerHeader: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.ABSOLUTE)
-        val nsisInstallerSidebar: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.RELATIVE)
-        val linuxAfterInstall: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.RELATIVE)
-        val linuxAfterRemove: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.RELATIVE)
-        val linuxBeforeInstall: RegularFileProperty = objects.fileProperty()
-
-        @get:InputFile
-        @get:Optional
-        @get:PathSensitive(PathSensitivity.RELATIVE)
-        val linuxBeforeRemove: RegularFileProperty = objects.fileProperty()
-
         @get:InputFile
         @get:Optional
         @get:PathSensitive(PathSensitivity.RELATIVE)

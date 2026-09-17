@@ -912,7 +912,6 @@ private fun JvmApplicationContext.configurePackageTask(
     )
     packageTask.launcherArgs.set(provider { app.args })
     packageTask.additionalLaunchers.set(app.additionalLaunchers)
-    packageTask.appContent.from(app.nativeDistributions.appContent)
 }
 
 private fun JvmApplicationContext.configureElectronBuilderPackageTask(
@@ -957,14 +956,6 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         app.nativeDistributions.windows.iconFile
             .orElse(unpackDefaultResources.get { windowsIcon }),
     )
-    val nsis = app.nativeDistributions.windows.nsis
-    packageTask.nsisInstallerIcon.set(nsis.installerIcon)
-    packageTask.nsisUninstallerIcon.set(nsis.uninstallerIcon)
-    packageTask.nsisLicense.set(nsis.license)
-    packageTask.nsisIncludeScript.set(nsis.includeScript)
-    packageTask.nsisScript.set(nsis.script)
-    packageTask.nsisInstallerHeader.set(nsis.installerHeader)
-    packageTask.nsisInstallerSidebar.set(nsis.installerSidebar)
     val startupWMClass =
         app.nativeDistributions.linux.startupWMClass
             ?.takeIf { it.isNotBlank() }
