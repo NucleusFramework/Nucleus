@@ -912,7 +912,6 @@ private fun JvmApplicationContext.configurePackageTask(
     )
     packageTask.launcherArgs.set(provider { app.args })
     packageTask.additionalLaunchers.set(app.additionalLaunchers)
-    packageTask.appContent.from(app.nativeDistributions.appContent)
 }
 
 private fun JvmApplicationContext.configureElectronBuilderPackageTask(
