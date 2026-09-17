@@ -26,7 +26,7 @@ private fun rememberNonUiTargetedState(): Any = remember { Any() }
 
 @Suppress("UnusedPrivateMember")
 private fun windowsStayUiRegardlessOfTheScopeApplier() {
-    taoApplication {
+    taoApplication(exitProcessOnExit = false) {
         // Binds the application scope's applier to a non-UI one.
         rememberNonUiTargetedState()
 

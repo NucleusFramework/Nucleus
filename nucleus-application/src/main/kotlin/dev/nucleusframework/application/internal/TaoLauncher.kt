@@ -19,13 +19,14 @@ internal object TaoLauncher {
     fun run(
         args: Array<String>,
         dockIconFollowsWindows: Boolean,
+        exitProcessOnExit: Boolean,
         content: @Composable NucleusApplicationScope.() -> Unit,
     ) {
         // macOS deep links arrive through Tao's `application:openURLs:` delegate
         // (forwarded by the native event loop to `TaoDeepLinkBridge`). The user's
         // callback is wired later from `TaoNucleusApplicationScope.onDeepLink { … }`;
         // URIs received before then are buffered and replayed by `TaoDeepLinkBridge`.
-        taoApplication {
+        taoApplication(exitProcessOnExit = exitProcessOnExit) {
             val scope = TaoNucleusApplicationScope(this, args)
             // Provide before other locals so Tao's per-window outerLocals bridge
             // carries LocalSystemTheme into each scene (see TaoDecoratedWindowAdapter).

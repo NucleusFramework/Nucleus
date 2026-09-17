@@ -1088,7 +1088,8 @@ public final class dev/nucleusframework/window/tao/TaoApplication {
 }
 
 public final class dev/nucleusframework/window/tao/TaoApplicationComposeKt {
-	public static final fun taoApplication (Lkotlin/jvm/functions/Function3;)V
+	public static final fun taoApplication (ZLkotlin/jvm/functions/Function3;)V
+	public static synthetic fun taoApplication$default (ZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
 }
 
 public final class dev/nucleusframework/window/tao/TaoCompositionLocalContextBridgeKt {

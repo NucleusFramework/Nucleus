@@ -97,7 +97,7 @@ public object TaoApplication {
     /**
      * Shows the native error dialog (once) and rethrows the recorded fatal,
      * if any. [run] calls it right after the loop exits; [taoApplication]
-     * calls it again just before its clean `exitProcess(0)` to catch a fatal
+     * calls it again just before finishing (exit or return) to catch a fatal
      * reported from a non-main thread (the coroutine exception handler runs
      * on the failing coroutine's thread) after [run]'s check already passed —
      * without the recheck such a crash would end the process with exit
