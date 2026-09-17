@@ -5,7 +5,9 @@ import groovy.json.JsonSlurper
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.Property
 import org.gradle.api.tasks.CacheableTask
+import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.OutputDirectory
 import org.gradle.api.tasks.PathSensitive
@@ -24,6 +26,9 @@ import java.io.File
  */
 @CacheableTask
 abstract class FilterLibraryMetadataTask : DefaultTask() {
+    @get:Input
+    abstract val headless: Property<Boolean>
+
     /** The runtime classpath JARs/dirs to check for conditional library presence. */
     @get:InputFiles
     @get:PathSensitive(PathSensitivity.NONE)
@@ -52,7 +57,12 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
         var includedCount = 0
         var skippedCount = 0
 
+        val skipGuiMetadata = headless.get()
         for (fileName in index) {
+            if (skipGuiMetadata && fileName in HEADLESS_SKIP_METADATA) {
+                skippedCount++
+                continue
+            }
             val stream = javaClass.classLoader.getResourceAsStream("$metadataDir/$fileName") ?: continue
 
             @Suppress("UNCHECKED_CAST")
@@ -96,5 +106,19 @@ abstract class FilterLibraryMetadataTask : DefaultTask() {
         logger.lifecycle(
             "Library metadata: included $includedCount files, skipped $skippedCount conditional files",
         )
+    }
+
+    companion object {
+        private val HEADLESS_SKIP_METADATA =
+            setOf(
+                "jdk-awt.json",
+                "jdk-fonts.json",
+                "jdk-graphics2d.json",
+                "skia-skiko.json",
+                "composetray.json",
+                "compose-ui.json",
+                "compose-mediaplayer.json",
+                "compose-webview-wry.json",
+            )
     }
 }
