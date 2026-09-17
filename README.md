@@ -44,12 +44,24 @@ tray.
 
 ## Used by
 
-- [AB Download Manager](https://github.com/amir1376/ab-download-manager) — packaging plugin
-- [Hammer](https://github.com/Darkrock-Studios/hammer-editor)
-- [OtakuWorld](https://github.com/jakepurple13/OtakuWorld)
-- [Husi](https://github.com/xchacha20-poly1305/husi)
-- [Zayit](https://github.com/kdroidFilter/Zayit)
-- [GitVantage](https://github.com/rocketraman/gitvantage)
+Each line is the Nucleus surface that project actually depends on:
+
+- [AB Download Manager](https://github.com/amir1376/ab-download-manager) ![stars](https://img.shields.io/github/stars/amir1376/ab-download-manager?style=social) — packaging plugin, aot-runtime, tray
+- [SimpMusic](https://github.com/maxrave-dev/SimpMusic) ![stars](https://img.shields.io/github/stars/maxrave-dev/SimpMusic?style=social) — notifications
+- [Tasks.org](https://github.com/tasks/tasks) ![stars](https://img.shields.io/github/stars/tasks/tasks?style=social) — notifications
+- [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) ![stars](https://img.shields.io/github/stars/CrossPaste/crosspaste-desktop?style=social) — tray
+- [Husi](https://github.com/xchacha20-poly1305/husi) ![stars](https://img.shields.io/github/stars/xchacha20-poly1305/husi?style=social) — notifications, autolaunch, darkmode-detector, scheduler, core-runtime, tray
+- [Flare](https://github.com/DimensionDev/Flare) ![stars](https://img.shields.io/github/stars/DimensionDev/Flare?style=social) — packaging plugin, JNI window backend, darkmode-detector, aot-runtime
+- [Rush](https://github.com/shub39/Rush) ![stars](https://img.shields.io/github/stars/shub39/Rush?style=social) — packaging plugin
+- [Hammer](https://github.com/Darkrock-Studios/hammer-editor) ![stars](https://img.shields.io/github/stars/Darkrock-Studios/hammer-editor?style=social) — Tao backend, nucleus-application, decorated-window-material3, darkmode-detector, launcher
+- [OtakuWorld](https://github.com/jakepurple13/OtakuWorld) ![stars](https://img.shields.io/github/stars/jakepurple13/OtakuWorld?style=social) — nucleus-application, notifications, scheduler, taskbar-progress, system-color, system-info, core-runtime, aot-runtime, updater
+- [WG Tunnel](https://github.com/wgtunnel/desktop) — packaging plugin, Tao backend, nucleus-application, decorated-window-material3, core-runtime, darkmode-detector, system-color, energy-manager, system-info, updater, graalvm-runtime, tray
+- [Zayit](https://github.com/kdroidFilter/Zayit) — packaging plugin, Tao backend, nucleus-application, decorated-window-core, decorated-window-jewel, core-runtime, darkmode-detector, system-color, system-info, energy-manager, notifications, updater, aot-runtime, graalvm-runtime, native-http, launcher, menu-macos, taskbar-progress-tao, sf-symbols
+- [NOMM](https://github.com/Combat787/NOMM) — packaging plugin, Tao backend, nucleus-application, decorated-window-material3, core-runtime, darkmode-detector, notifications, taskbar-progress, updater, aot-runtime, native-http, fs-watcher
+- [FuoEvolve](https://github.com/feeluown/FuoEvolve) — packaging plugin, Tao backend, nucleus-application, graalvm-runtime, media-control, notifications, launcher, tray
+- [CozySpace](https://github.com/terrakok/CozySpace) — packaging plugin, Tao backend, nucleus-application, decorated-window-core, darkmode-detector, tray
+- [Amethyst](https://github.com/anthonyhfm/Amethyst) — packaging plugin, Tao backend, nucleus-application, updater, menu-macos, global-hotkey, system-info
+- [GitVantage](https://github.com/rocketraman/gitvantage) — packaging plugin, Tao backend, nucleus-application, darkmode-detector, notifications, fs-watcher
 
 ## Showcase
 
