@@ -740,6 +740,7 @@ abstract class AbstractJPackageTask
 
             // Embed and sign app extensions (.appex) into Contents/PlugIns before sealing the app.
             embedAndSignAppExtensions(appDir, macSigner)
+            warnIfHostEntitlementsBlockExtensions(appEntitlementsFile)
 
             macSigner.sign(runtimeDir, runtimeEntitlementsFile, forceEntitlements = true)
             macSigner.sign(appDir, appEntitlementsFile, forceEntitlements = true)
@@ -777,7 +778,10 @@ abstract class AbstractJPackageTask
                 plugInsDir.mkdirs()
                 val dest = plugInsDir.resolve(source.name)
                 dest.deleteRecursively()
-                source.copyRecursively(dest, overwrite = true)
+                // `cp -R`, not `copyRecursively`: Kotlin's copy streams file contents and drops the
+                // POSIX mode, so the extension's executable lost its +x and launchd could not spawn
+                // it (#394). cp keeps the mode bits and any framework symlinks intact.
+                runExternalTool(File("/bin/cp"), listOf("-R", source.absolutePath, plugInsDir.absolutePath))
 
                 // Embed the extension's own provisioning profile.
                 extension.provisioningProfile?.copyTo(
@@ -787,6 +791,28 @@ abstract class AbstractJPackageTask
 
                 // Sign the extension inside-out with its OWN entitlements.
                 signBundleInsideOut(dest, extension.entitlements, macSigner)
+            }
+        }
+
+        /**
+         * The default entitlements relax the hardened runtime for the JVM. A host app that ships a
+         * network extension has been reported not to launch with these keys (#394); the fix is a
+         * custom `entitlementsFile` without them — modern JDKs only need `allow-jit`.
+         */
+        private fun warnIfHostEntitlementsBlockExtensions(appEntitlementsFile: File?) {
+            if (macAppExtensions.get().isEmpty() || appEntitlementsFile == null) return
+            val offending =
+                listOf(
+                    "com.apple.security.cs.allow-unsigned-executable-memory",
+                    "com.apple.security.cs.disable-library-validation",
+                ).filter { appEntitlementsFile.readText().contains(it) }
+            if (offending.isNotEmpty()) {
+                logger.warn(
+                    "macOS app extensions are embedded but the host entitlements ($appEntitlementsFile) " +
+                        "still grant ${offending.joinToString()}. Apps hosting a Network Extension have " +
+                        "been reported to fail to launch with these keys; set macOS { entitlementsFile } " +
+                        "to a plist without them (allow-jit is enough for the JVM).",
+                )
             }
         }
 

@@ -48,13 +48,13 @@ src/main/kotlin/.../Main.kt        Compose app; inspects its own Contents/PlugIn
 
 # Launch it — the window lists the embedded extension and shows that the .appex
 # carries its own signature/entitlements, separate from the app:
-open build/compose/binaries/main/app/NetworkExtensionDemo.app
+open "build/compose/binaries/main/app/Network Extension Demo.app"
 ```
 
 Inspect manually:
 
 ```bash
-APP=build/compose/binaries/main/app/NetworkExtensionDemo.app
+APP="build/compose/binaries/main/app/Network Extension Demo.app"
 codesign --verify --deep --strict --verbose=2 "$APP"
 codesign -d --entitlements :- "$APP/Contents/PlugIns/NetworkFilter.appex"
 ```
@@ -75,6 +75,14 @@ GRAALVM_HOME=/path/to/graalvm ./gradlew :examples:macos-appex-demo:packageGraalv
 
 ### Caveats
 
+- **Host entitlements**: Nucleus' default entitlements grant
+  `com.apple.security.cs.allow-unsigned-executable-memory` and
+  `com.apple.security.cs.disable-library-validation`; a host app shipping a Network Extension has
+  been reported not to launch with them (#394). Point `entitlementsFile` at a plist without those
+  two keys, as `packaging/app.entitlements` does — `allow-jit` is all the JVM needs. The plugin
+  warns when it embeds an extension into an app whose entitlements still carry them.
+- **Dev loop**: the `.appex` only exists inside the signed `.app`, so `run` (IDE launch) cannot
+  exercise it. Use `runDistributable` — it builds the app image with the extension and launches it.
 - **GraalVM native images are always ad-hoc signed**, so the embedded extension is ad-hoc too.
   For a Developer-ID/notarized GraalVM DMG, configure `signing {}` (the GraalVM DMG re-seal goes
   through the same electron-builder path as the JVM one).

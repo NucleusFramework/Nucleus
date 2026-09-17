@@ -165,6 +165,7 @@ abstract class JvmMacOSPlatformSettings : AbstractMacOSPlatformSettings() {
      */
     val appExtensions: MacAppExtensionSettings = MacAppExtensionSettings()
 
+    /** Configures [appExtensions]. See [MacAppExtensionSettings] for the caveats. */
     fun appExtensions(fn: Action<MacAppExtensionSettings>) {
         fn.execute(appExtensions)
     }

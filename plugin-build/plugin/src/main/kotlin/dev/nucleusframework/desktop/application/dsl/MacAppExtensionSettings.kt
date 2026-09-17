@@ -22,6 +22,18 @@ import java.io.Serializable
  * Nucleus does not build the `.appex` — build it with Xcode or Kotlin/Native and
  * point [MacAppExtension.appex] at the result.
  *
+ * Caveats (from the Network Extension validation in #394):
+ * - Set `macOS { entitlementsFile }` to a plist **without**
+ *   `com.apple.security.cs.allow-unsigned-executable-memory` and
+ *   `com.apple.security.cs.disable-library-validation` (both are in Nucleus' default
+ *   entitlements): a host app carrying them alongside a network extension has been
+ *   reported not to launch. `com.apple.security.cs.allow-jit` is enough for the JVM.
+ * - The extension only exists inside a signed `.app`: `run` cannot exercise it. Use
+ *   `runDistributable` (or `runReleaseDistributable`) for a dev loop with the extension.
+ * - Loading the extension at runtime needs an Apple-issued provisioning profile that
+ *   grants `com.apple.developer.networking.networkextension`; ad-hoc builds only prove
+ *   bundling and signing.
+ *
  * ```kotlin
  * macOS {
  *     appExtensions {
@@ -34,6 +46,7 @@ import java.io.Serializable
  * }
  * ```
  */
+@Suppress("SerialVersionUIDInSerializableClass") // Gradle DSL bean, never deserialized across versions
 class MacAppExtensionSettings : Serializable {
     internal val extensions: MutableList<MacAppExtension> = mutableListOf()
 
@@ -47,10 +60,6 @@ class MacAppExtensionSettings : Serializable {
         fn.execute(extension)
         extensions.add(extension)
     }
-
-    companion object {
-        private const val serialVersionUID = 1L
-    }
 }
 
 /**
@@ -60,6 +69,7 @@ class MacAppExtensionSettings : Serializable {
  * [provisioningProfile]), using the app's signing identity. The outer app is then
  * re-sealed without `--deep` so the extension's signature is preserved.
  */
+@Suppress("SerialVersionUIDInSerializableClass") // Gradle DSL bean, never deserialized across versions
 class MacAppExtension(
     /** Identifier used for diagnostics only. */
     val name: String,
@@ -81,9 +91,5 @@ class MacAppExtension(
     /** Provisioning profile embedded as `Contents/embedded.provisionprofile` inside the extension. */
     fun provisioningProfile(file: File) {
         provisioningProfile = file
-    }
-
-    companion object {
-        private const val serialVersionUID = 1L
     }
 }

@@ -8,6 +8,7 @@ plugins {
 
 dependencies {
     implementation(nucleus.desktop.currentOs)
+    implementation(project(":nucleus-application"))
     implementation(libs.compose.material3)
 }
 
@@ -80,4 +81,3 @@ val appImageTasks =
         "embedReleaseGraalvmAppExtensions",
     )
 tasks.matching { it.name in appImageTasks }.configureEach { dependsOn(buildAppex) }
-
