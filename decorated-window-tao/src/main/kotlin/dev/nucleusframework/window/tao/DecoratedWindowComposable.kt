@@ -438,11 +438,15 @@ public fun ApplicationScope.DecoratedWindow(
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true
-        // #546: the position effect skipped `Aligned` while the size was the
-        // creation fallback; resolve it now. Let the resize land first — on
-        // macOS the centring reads the live NSWindow frame.
-        val aligned = applied.initialAligned ?: return@LaunchedEffect
+        // Let the resize land: the scene below fills the new size, and on
+        // macOS the Aligned centring reads the live NSWindow frame.
         repeat(ALIGNED_POSITION_RETRIES) { if (applied.pendingProgrammaticPx != null) delay(ALIGNED_POSITION_RETRY_MS) }
+        // The scene now fills the window it was measured for (#546: the
+        // TitleBar's fillMaxWidth collapsed under the wrap modifiers).
+        window.resolvedSizePolicy().settled.value = true
+        // #546: the position effect skipped `Aligned` while the size was the
+        // creation fallback; resolve it now.
+        val aligned = applied.initialAligned ?: return@LaunchedEffect
         alignWithRetries(window, aligned, resolved)
     }
     LaunchedEffect(window, state.size, state.placement) {
