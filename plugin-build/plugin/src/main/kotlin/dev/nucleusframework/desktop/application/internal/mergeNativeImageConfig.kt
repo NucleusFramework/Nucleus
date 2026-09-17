@@ -539,16 +539,40 @@ internal fun writePlatformMetadata(
     platform: String,
     outputDir: File,
     mainClass: String? = null,
+    headless: Boolean = false,
 ) {
+    outputDir.mkdirs()
+    val targetFile = File(outputDir, "reachability-metadata.json")
+    val mainClassEntry =
+        if (mainClass.isNullOrBlank()) {
+            null
+        } else {
+            mutableMapOf<String, Any?>(
+                "type" to mainClass,
+                "jniAccessible" to true,
+                "methods" to
+                    listOf(
+                        mapOf(
+                            "name" to "main",
+                            "parameterTypes" to listOf("java.lang.String[]"),
+                        ),
+                    ),
+            )
+        }
+    if (headless) {
+        val reflection = mutableListOf<Any?>()
+        if (mainClassEntry != null) reflection.add(mainClassEntry)
+        targetFile.writeText(
+            JsonOutput.prettyPrint(JsonOutput.toJson(mapOf("reflection" to reflection))) + "\n",
+        )
+        return
+    }
     val resourcePath = "nucleus/graalvm/platform-metadata/$platform-reachability-metadata.json"
     val stream =
         object {}::class.java.classLoader.getResourceAsStream(resourcePath)
             ?: return
 
-    outputDir.mkdirs()
-    val targetFile = File(outputDir, "reachability-metadata.json")
-
-    if (mainClass.isNullOrBlank()) {
+    if (mainClassEntry == null) {
         stream.bufferedReader().use { reader ->
             targetFile.writeText(reader.readText())
         }
@@ -566,18 +590,6 @@ internal fun writePlatformMetadata(
             (root["reflection"] as? MutableList<Any?>)
                 ?: mutableListOf<Any?>().also { root["reflection"] = it }
 
-        val mainClassEntry =
-            mutableMapOf<String, Any?>(
-                "type" to mainClass,
-                "jniAccessible" to true,
-                "methods" to
-                    listOf(
-                        mapOf(
-                            "name" to "main",
-                            "parameterTypes" to listOf("java.lang.String[]"),
-                        ),
-                    ),
-            )
         reflection.add(0, mainClassEntry)
 
         targetFile.writeText(JsonOutput.prettyPrint(JsonOutput.toJson(root)) + "\n")

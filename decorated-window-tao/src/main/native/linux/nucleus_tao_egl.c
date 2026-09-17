@@ -111,6 +111,7 @@ typedef unsigned long  EGLNativeWindowType;   /* X11 Window XID on Xlib */
 #define EGL_CONTEXT_MINOR_VERSION      0x30FB
 #define EGL_CONTEXT_OPENGL_PROFILE_MASK            0x30FD
 #define EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT  0x00000002
+#define EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT           0x00000001
 #define EGL_PLATFORM_X11_KHR           0x31D5
 #define EGL_PLATFORM_WAYLAND_KHR       0x31D8
 
@@ -329,6 +330,7 @@ static void *g_libx11 = NULL;
 static PFN_eglGetDisplay         p_eglGetDisplay         = NULL;
 static PFN_eglGetPlatformDisplay p_eglGetPlatformDisplay = NULL;
 static PFN_eglInitialize         p_eglInitialize         = NULL;
+static PFN_eglTerminate          p_eglTerminate          = NULL;
 static PFN_eglBindAPI            p_eglBindAPI            = NULL;
 static PFN_eglChooseConfig       p_eglChooseConfig       = NULL;
 static PFN_eglGetConfigAttrib    p_eglGetConfigAttrib    = NULL;
@@ -434,6 +436,7 @@ static int load_libs(void) {
     LOAD(g_libegl, eglGetDisplay);
     LOAD(g_libegl, eglGetPlatformDisplay);
     LOAD(g_libegl, eglInitialize);
+    LOAD(g_libegl, eglTerminate);
     LOAD(g_libegl, eglBindAPI);
     LOAD(g_libegl, eglChooseConfig);
     LOAD(g_libegl, eglGetConfigAttrib);
@@ -561,6 +564,70 @@ static void log_egl_diagnostics_once(EGLDisplay edpy, int is_wayland) {
             "[nucleus_tao_egl]       supports proper EGLSurface resize; "
             "the legacy egl-wayland cannot resize EGLSurfaces).\n");
     }
+}
+
+/* ── GL context creation ────────────────────────────────────────────────── */
+
+/**
+ * Desktop GL 3.3 is the floor for Skia's modern GL renderer; drivers hand us
+ * a higher version when they have one. Compatibility profile first (the
+ * historical choice, matches the GLX helper), core profile second: Mesa caps
+ * some older GPUs lower in compat than in core (r600 on an AMD RV610: compat
+ * 3.0, core 3.3), and nothing here or in Skia needs the legacy entry points —
+ * Skia runs core-only on macOS. Returns EGL_NO_CONTEXT when neither works.
+ */
+static EGLContext create_gl_context(EGLDisplay edpy, EGLConfig cfg) {
+    static const EGLint profiles[] = {
+        EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
+        EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+    };
+    for (size_t i = 0; i < sizeof(profiles) / sizeof(profiles[0]); ++i) {
+        const EGLint ctx_attrs[] = {
+            EGL_CONTEXT_MAJOR_VERSION, 3,
+            EGL_CONTEXT_MINOR_VERSION, 3,
+            EGL_CONTEXT_OPENGL_PROFILE_MASK, profiles[i],
+            EGL_NONE
+        };
+        EGLContext ctx = p_eglCreateContext(edpy, cfg, EGL_NO_CONTEXT, ctx_attrs);
+        if (ctx != EGL_NO_CONTEXT) {
+            if (i > 0) {
+                fprintf(stderr, "[nucleus_tao_egl] OpenGL 3.3 compatibility context "
+                        "unavailable, using a core profile context instead.\n");
+            }
+            return ctx;
+        }
+        DBG("eglCreateContext(3.3, profile 0x%x) failed: 0x%x\n",
+            (unsigned) profiles[i], p_eglGetError ? p_eglGetError() : 0);
+    }
+    return EGL_NO_CONTEXT;
+}
+
+/* ── Software-rendering fallback (#670) ─────────────────────────────────── */
+
+/**
+ * GPUs whose driver caps desktop GL below the 3.3 compat floor Skia needs
+ * in both profiles make `create_gl_context` return EGL_NO_CONTEXT, and the
+ * JVM side then aborts the window. Mesa's llvmpipe
+ * does 4.5, but it is only selected when `LIBGL_ALWAYS_SOFTWARE` is set —
+ * and Mesa reads that variable inside `eglInitialize` (driver load), not at
+ * context creation. So the fallback terminates the display and the caller
+ * re-enters its attach path from `eglGetPlatformDisplay` onward: Mesa hands
+ * back the same EGLDisplay and `eglInitialize` reloads the driver, this time
+ * swrast. Process-wide and one-shot: the hardware driver misses the floor
+ * for every window or for none, so nothing else holds a live context on the
+ * display when this fires. Returns 1 when the caller should retry.
+ */
+static int g_software_fallback = 0;
+static int fall_back_to_software(EGLDisplay edpy) {
+    if (g_software_fallback || getenv("LIBGL_ALWAYS_SOFTWARE")) return 0;
+    g_software_fallback = 1;
+    fprintf(stderr,
+            "[nucleus_tao_egl] No OpenGL 3.3 context available (compat or core) — "
+            "the GPU driver is too old; retrying with LIBGL_ALWAYS_SOFTWARE=1 "
+            "(Mesa llvmpipe software rendering).\n");
+    setenv("LIBGL_ALWAYS_SOFTWARE", "1", 1);
+    if (p_eglTerminate) p_eglTerminate(edpy);
+    return 1;
 }
 
 /* ── Skia proc-address loader ───────────────────────────────────────────── */
@@ -814,18 +881,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
     int needs_child = ((VisualID) chosen_vid != want);
     DBG("chosen visualid=0x%lx, needs_child=%d\n", (unsigned long)(unsigned)chosen_vid, needs_child);
 
-    /* 4) Compat profile 3.3 — minimum for Skia's modern GL renderer; drivers
-     *    will hand us a higher version if available. */
-    const EGLint ctx_attrs[] = {
-        EGL_CONTEXT_MAJOR_VERSION, 3,
-        EGL_CONTEXT_MINOR_VERSION, 3,
-        EGL_CONTEXT_OPENGL_PROFILE_MASK,
-            EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
-        EGL_NONE
-    };
-    EGLContext ctx = p_eglCreateContext(edpy, chosen, EGL_NO_CONTEXT, ctx_attrs);
+    /* 4) GL 3.3 context — compat then core (see create_gl_context). Drivers
+     *    that can't reach 3.3 at all fail here, and we redo the attach on
+     *    llvmpipe (#670). */
+    EGLContext ctx = create_gl_context(edpy, chosen);
     if (ctx == EGL_NO_CONTEXT) {
-        DBG("eglCreateContext failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        if (fall_back_to_software(edpy)) {
+            return Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachX11(
+                env, clazz, xdisplayPtr, xidLong, widthPx, heightPx);
+        }
         return 0;
     }
 
@@ -1068,6 +1132,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
     (void) env; (void) clazz;
     if (!wlDisplayPtr || !wlSurfacePtr) return 0;
     if (!load_libs()) return 0;
+    int retry_on_software = 0;   /* set on the #670 path, consumed at fail_after_subsurface */
     if (!p_wl_egl_window_create) {
         fprintf(stderr,
                 "[nucleus_tao_egl] Wayland path unavailable — libwayland-egl.so.1 missing.\n");
@@ -1297,16 +1362,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
         goto fail_after_subsurface;
     }
 
-    const EGLint ctx_attrs[] = {
-        EGL_CONTEXT_MAJOR_VERSION, 3,
-        EGL_CONTEXT_MINOR_VERSION, 3,
-        EGL_CONTEXT_OPENGL_PROFILE_MASK,
-            EGL_CONTEXT_OPENGL_COMPATIBILITY_PROFILE_BIT,
-        EGL_NONE
-    };
-    EGLContext ctx = p_eglCreateContext(edpy, cfg, EGL_NO_CONTEXT, ctx_attrs);
+    EGLContext ctx = create_gl_context(edpy, cfg);
     if (ctx == EGL_NO_CONTEXT) {
-        DBG("eglCreateContext (Wayland) failed: 0x%x\n", p_eglGetError ? p_eglGetError() : 0);
+        retry_on_software = fall_back_to_software(edpy);
         goto fail_after_subsurface;
     }
 
@@ -1396,6 +1454,10 @@ fail_after_subsurface:
     p_wl_proxy_destroy(bind_state.compositor);
     p_wl_proxy_destroy(registry);
     p_wl_event_queue_destroy(queue);
+    if (retry_on_software) {
+        return Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachWayland(
+            env, clazz, wlDisplayPtr, wlSurfacePtr, widthPx, heightPx, bufferScale, swapInterval);
+    }
     return 0;
 }
 

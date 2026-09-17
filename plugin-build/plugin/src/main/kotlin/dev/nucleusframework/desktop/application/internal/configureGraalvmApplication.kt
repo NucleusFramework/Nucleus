@@ -613,7 +613,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             taskNameObject = "graalvmPlatformMetadata",
         ) {
             description = "Generate platform-specific GraalVM metadata for AWT/Java2D and main class"
+            val headlessForMetadata = graalvm.headless.get()
             inputs.property("mainClass", mainClassName ?: "")
+            inputs.property("headless", headlessForMetadata)
             outputs.dir(platformMetadataDir)
 
             doLast {
@@ -623,8 +625,15 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         OS.MacOS -> "macos"
                         OS.Linux -> "linux"
                     }
-                writePlatformMetadata(platform, platformMetadataDir.get().asFile, mainClassName)
-                logger.lifecycle("Platform metadata ($platform) written to: ${platformMetadataDir.get().asFile}")
+                writePlatformMetadata(
+                    platform,
+                    platformMetadataDir.get().asFile,
+                    mainClassName,
+                    headless = headlessForMetadata,
+                )
+                logger.lifecycle(
+                    "Platform metadata ($platform${if (headlessForMetadata) ", headless" else ""}) written to: ${platformMetadataDir.get().asFile}",
+                )
             }
         }
 
@@ -724,6 +733,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         "Filter and merge per-library GraalVM metadata based on runtime classpath"
                     task.group = NUCLEUS_TASK_GROUP
                     task.outputDir.set(libraryMetadataDir)
+                    task.headless.set(graalvm.headless)
                     if (runtimeCfg != null) {
                         task.runtimeClasspath.from(runtimeCfg)
                     }
@@ -917,6 +927,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             val resolvedMaxHeapSizePercent = graalvm.maxHeapSizePercent.get()
             val resolvedGarbageCollector = graalvm.garbageCollector.orNull
             val resolvedImageName = imageName.get()
+            val resolvedHeadless = graalvm.headless.get()
             val resolvedUberJar = uberJarFile.get().asFile.absolutePath
             val resolvedMacOsMinVersion =
                 if (currentOS == OS.MacOS) graalvm.macOS.minimumSystemVersion.get() else null
@@ -992,6 +1003,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
             inputs.property("pgoMode", resolvedPgoMode)
             inputs.property("pgoEnabled", resolvedPgoEnabled)
             inputs.property("imageName", resolvedImageName)
+            inputs.property("headless", resolvedHeadless)
             if (resolvedMacOsMinVersion != null) {
                 inputs.property("macOsMinVersion", resolvedMacOsMinVersion)
             }
@@ -1039,6 +1051,9 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                         // in as a launcher default so the produced binary never prints the warning
                         // and stays forward-compatible. Placed before user buildArgs (last wins).
                         add("--enable-native-access=ALL-UNNAMED")
+                        if (resolvedHeadless) {
+                            add("-Djava.awt.headless=true")
+                        }
 
                         // Garbage collector + default runtime max heap. Serial GC otherwise defaults
                         // to 80% of RAM; bake a desktop-appropriate ceiling (JVM parity, ~25%)
@@ -1269,6 +1284,7 @@ internal fun JvmApplicationContext.configureGraalvmApplication() {
                 )
             OS.Linux ->
                 configureLinuxGraalvmPackaging(
+                    graalvm,
                     graalvmHome,
                     nativeImageCompile,
                     nativeCompileDir,
@@ -2104,7 +2120,10 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with DLLs"
-        dependsOn(copyBinary, copyAppResources, copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
+        dependsOn(copyBinary, copyAppResources)
+        if (!graalvm.headless.get()) {
+            dependsOn(copyAwtDlls, copyJvmDll, copyJawtToBin, copySkikoLib, copyFontConfig)
+        }
         copyCRuntime?.let { dependsOn(it) }
     }
 }
@@ -2115,12 +2134,14 @@ private fun JvmApplicationContext.configureWindowsGraalvmPackaging(
 
 @Suppress("LongParameterList")
 private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
+    graalvm: GraalvmSettings,
     graalvmHome: org.gradle.api.provider.Provider<String>,
     nativeImageCompile: TaskProvider<Exec>,
     nativeCompileDir: org.gradle.api.provider.Provider<org.gradle.api.file.Directory>,
     imageName: org.gradle.api.provider.Provider<String>,
     packageUberJar: TaskProvider<Jar>,
 ): TaskProvider<DefaultTask> {
+    val headless = graalvm.headless.get()
     val outputDir = graalvmOutputDir.map { it.dir(resolvedPackageNameProvider().get()) }
 
     val copyBinary =
@@ -2264,18 +2285,17 @@ private fun JvmApplicationContext.configureLinuxGraalvmPackaging(
         taskNameObject = "graalvmNative",
     ) {
         description = "Build native image and package with .so libs"
-        dependsOn(
-            copyBinary,
-            copyAppResources,
-            copyAwtSoLibs,
-            copyJvmSo,
-            copyJawtToLib,
-            copySkikoLib,
-            fixRpath,
-            fixSoRpath,
-            stripSoLibs,
-            stripBinary,
-        )
+        dependsOn(copyBinary, copyAppResources, fixRpath, stripBinary)
+        if (!headless) {
+            dependsOn(
+                copyAwtSoLibs,
+                copyJvmSo,
+                copyJawtToLib,
+                copySkikoLib,
+                fixSoRpath,
+                stripSoLibs,
+            )
+        }
     }
 }
 
