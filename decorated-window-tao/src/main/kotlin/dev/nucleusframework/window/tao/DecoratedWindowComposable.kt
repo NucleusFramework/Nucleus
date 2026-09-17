@@ -73,6 +73,7 @@ public fun ApplicationScope.DecoratedWindow(
     minimumSize: DpSize? = null,
     visible: Boolean = true,
     resizable: Boolean = true,
+    minimizable: Boolean = true,
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
@@ -411,6 +412,13 @@ public fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, resizable) {
         if (window.isResizable != resizable) {
             window.setResizable(resizable)
+        }
+    }
+    // `minimizable` is post-creation only (no builder flag): same re-apply
+    // shape as `resizable` above (#504).
+    LaunchedEffect(window, minimizable) {
+        if (window.isMinimizable != minimizable) {
+            window.setMinimizable(minimizable)
         }
     }
     LaunchedEffect(window, measuredContent.value) {

@@ -124,6 +124,9 @@ public fun ApplicationScope.DecoratedDialog(
         minimumSize = null,
         visible = visible,
         resizable = resizable,
+        // The dialog chrome is close-only ([DialogTitleBar]); keep the native
+        // macOS traffic-lights in step (#504).
+        minimizable = false,
         enabled = enabled,
         focusable = focusable,
         alwaysOnTop = false,

@@ -84,7 +84,8 @@ public fun interface WindowControlsRenderer {
  *
  * Nucleus owns the semantics: [direction] decides the button order (and, on
  * Linux, the desktop's own button layout does), the maximize slot follows the
- * live maximized / fullscreen / [TaoWindow.isResizable] state, and close is
+ * live maximized / fullscreen / [TaoWindow.isResizable] state, the minimize
+ * slot follows [TaoWindow.isMinimizable], and close is
  * routed through the app's `onCloseRequest`. Supply a [renderer] to draw the
  * buttons in the design system's own style; the default reproduces the host
  * platform's look exactly.
@@ -216,7 +217,8 @@ private fun windowControlActions(
  * `WindowControlsWindows` has always used: fullscreen swaps maximize for
  * exit-fullscreen, and the maximize slot disappears entirely on a
  * non-resizable window (`isResizable` is snapshot-backed, so a runtime
- * `setResizable()` recomposes — see #260).
+ * `setResizable()` recomposes — see #260). The minimize slot does the same on
+ * a non-minimizable window (#504).
  */
 internal fun resolveWindowControl(
     slot: WindowControlSlot,
@@ -227,7 +229,11 @@ internal fun resolveWindowControl(
 ): WindowControlAction? =
     when (slot) {
         WindowControlSlot.Minimize ->
-            WindowControlAction(WindowControlType.Minimize) { window.minimize() }
+            if (window.isMinimizable) {
+                WindowControlAction(WindowControlType.Minimize) { window.minimize() }
+            } else {
+                null
+            }
 
         WindowControlSlot.Maximize ->
             when {

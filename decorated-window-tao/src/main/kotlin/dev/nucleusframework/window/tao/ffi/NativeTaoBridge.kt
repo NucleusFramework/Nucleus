@@ -639,6 +639,12 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetMinimizable(
+        handle: Long,
+        minimizable: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetMinimized(
         handle: Long,
         minimized: Boolean,
