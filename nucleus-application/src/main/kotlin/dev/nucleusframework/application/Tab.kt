@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoTabWorkspaceAdapter
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.TabScope
 import dev.nucleusframework.window.tao.TabStrip
 import dev.nucleusframework.window.tao.TabStripScope
@@ -56,6 +57,7 @@ import dev.nucleusframework.window.tao.TabWorkspace
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ExperimentalNucleusApi
 public fun NucleusApplicationScope.TabWindows(
     workspace: TabWorkspace,
     strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
@@ -84,6 +86,7 @@ public fun NucleusApplicationScope.TabWindows(
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
+@ExperimentalNucleusApi
 public fun TabWindows(
     workspace: TabWorkspace,
     strip: @Composable TabStripScope.() -> Unit = { TabStrip() },
@@ -122,6 +125,7 @@ public fun TabWindows(
 @Suppress("FunctionNaming")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun NucleusApplicationScope.Tab(
     workspace: TabWorkspace,
     id: String,
@@ -149,6 +153,7 @@ public fun NucleusApplicationScope.Tab(
 @Suppress("FunctionNaming")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun Tab(
     workspace: TabWorkspace,
     id: String,

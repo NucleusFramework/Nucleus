@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.DragController
 import dev.nucleusframework.window.tao.workspace.HostGeometry
 import dev.nucleusframework.window.tao.workspace.HostGeometryRegistry
@@ -31,6 +32,7 @@ import kotlinx.coroutines.CoroutineScope
  * it) and kept for the lifetime of the workspace, so a tab the app takes out
  * of composition and brings back resumes where it was.
  */
+@ExperimentalNucleusApi
 public class TabEntry internal constructor(
     /** Stable identity, the key used by every [TabWorkspace] operation. */
     public val id: String,
@@ -92,6 +94,7 @@ public class TabEntry internal constructor(
  * last tab out of a window closes that window, and dropping a tab in empty
  * space opens a new one. [TabWindows] composes one [DecoratedWindow] per group.
  */
+@ExperimentalNucleusApi
 public class TabWindowGroup internal constructor(
     /** Stable identity, unique within the workspace and stable across a restore. */
     public val id: String,
@@ -196,6 +199,7 @@ public class TabWindowGroup internal constructor(
  * @property position where its window was, `null` when the platform placed it.
  * @property size the size of its window.
  */
+@ExperimentalNucleusApi
 public data class TabGroupSnapshot(
     val id: String,
     val tabIds: List<String>,
@@ -211,6 +215,7 @@ public data class TabGroupSnapshot(
  *
  * @property groups the groups, in the order their windows were created.
  */
+@ExperimentalNucleusApi
 public data class TabLayoutSnapshot(
     val groups: List<TabGroupSnapshot>,
 )
@@ -255,6 +260,7 @@ public data class TabLayoutSnapshot(
  *   a body built around one is better off without captures.
  */
 @Suppress("TooManyFunctions")
+@ExperimentalNucleusApi
 public class TabWorkspace(
     public val defaultWindowSize: DpSize = DefaultWindowSize,
     public val captureThumbnails: Boolean = false,
@@ -1064,7 +1070,7 @@ internal class TabReorderSettle(
 )
 
 /** Where a tab drag would insert the tab: at [index] in [group]'s strip. */
-
+@ExperimentalNucleusApi
 public data class TabDropTarget(
     val group: TabWindowGroup,
     val index: Int,
@@ -1075,6 +1081,7 @@ public data class TabDropTarget(
  * sits on screen right now (physical screen pixels, outer frame of the ghost
  * window), with the px-per-dp of the window it came from.
  */
+@ExperimentalNucleusApi
 public data class TabDragGhost(
     val tab: TabEntry,
     val screenRectPx: Rect,
@@ -1082,6 +1089,7 @@ public data class TabDragGhost(
 )
 
 /** Where a tab drag starts; see [TabWorkspace.beginDrag]. */
+@ExperimentalNucleusApi
 public sealed interface TabDragOrigin {
     /**
      * The tab's own strip in [window]. Geometry is read through lambdas so
@@ -1110,6 +1118,7 @@ public sealed interface TabDragOrigin {
  * layout, an infinity) are ignored rather than propagated into window
  * geometry; the last usable position stands.
  */
+@ExperimentalNucleusApi
 public interface TabDragSession {
     /** The pointer moved. */
     public fun update(pointerScreenPx: Offset)
@@ -1123,6 +1132,7 @@ public interface TabDragSession {
 
 /** Remembers a [TabWorkspace] for the lifetime of the calling composition. */
 @Composable
+@ExperimentalNucleusApi
 public fun rememberTabWorkspace(
     defaultWindowSize: DpSize = TabWorkspace.DefaultWindowSize,
     captureThumbnails: Boolean = false,

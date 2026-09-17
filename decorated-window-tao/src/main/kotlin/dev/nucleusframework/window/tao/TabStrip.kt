@@ -46,12 +46,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.tao.workspace.positionInWindowPx
 import dev.nucleusframework.window.tao.workspace.publishHostGeometry
 import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
 
 /** What tab-strip chrome gets to see: the workspace and the group this strip belongs to. */
+@ExperimentalNucleusApi
 public interface TabStripScope {
     /** The workspace the strip belongs to. */
     public val workspace: TabWorkspace
@@ -103,6 +105,7 @@ internal class TabStripScopeImpl(
  *   target and a tab released over it is appended.
  */
 @Composable
+@ExperimentalNucleusApi
 public fun TabStripScope.TabStrip(
     modifier: Modifier = Modifier,
     reorderAnimation: AnimationSpec<Float>? = TabReorderAnimation,
@@ -198,6 +201,7 @@ private class TabLandingMemo {
  * strip in the strip's own hands: its neighbours moving aside already show
  * where it lands.
  */
+@ExperimentalNucleusApi
 public val TabStripScope.dropGhost: TabDropGhost?
     get() {
         val preview = workspace.dropPreview?.takeIf { it.group === group } ?: return null
@@ -214,6 +218,7 @@ public val TabStripScope.dropGhost: TabDropGhost?
  * @property width the width the tab has in the strip it comes from.
  * @property title the tab's title.
  */
+@ExperimentalNucleusApi
 public data class TabDropGhost(
     val index: Int,
     val width: Dp,
@@ -226,6 +231,7 @@ public data class TabDropGhost(
  * scratch composes it at [TabDropGhost.index] among its tabs.
  */
 @Composable
+@ExperimentalNucleusApi
 public fun TabDropGhostCard(
     ghost: TabDropGhost,
     modifier: Modifier = Modifier,
@@ -264,6 +270,7 @@ private fun TabDropGhostSlot(
  * scratch, on the element that spans the whole strip, and mark each tab's own
  * slot with [Modifier.tabSlot] so the insertion index can be worked out.
  */
+@ExperimentalNucleusApi
 public fun Modifier.tabStripGeometry(
     workspace: TabWorkspace,
     group: TabWindowGroup,
@@ -350,6 +357,7 @@ private class TabTransferTarget(
  * every tab, in strip order.
  */
 @OptIn(ExperimentalComposeUiApi::class)
+@ExperimentalNucleusApi
 public fun Modifier.tabSlot(
     group: TabWindowGroup,
     index: Int,

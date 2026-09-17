@@ -11,6 +11,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.ScreenDrag
 import dev.nucleusframework.window.tao.workspace.TransferDragGesture
 import dev.nucleusframework.window.tao.workspace.screenDragHandle
@@ -40,6 +41,7 @@ import dev.nucleusframework.window.tao.workspace.transferDragHandle
  *
  * No-op outside a Tao window.
  */
+@ExperimentalNucleusApi
 public fun Modifier.tabDragHandle(
     workspace: TabWorkspace,
     tab: TabEntry,

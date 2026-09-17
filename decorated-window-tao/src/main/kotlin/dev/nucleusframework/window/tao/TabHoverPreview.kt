@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupPositionProvider
 import androidx.compose.ui.window.PopupProperties
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import kotlinx.coroutines.delay
@@ -68,6 +69,7 @@ import kotlin.time.Duration.Companion.milliseconds
  * What the card of a hovered tab gets to see: the tab, its workspace, and the
  * last picture taken of its body.
  */
+@ExperimentalNucleusApi
 public interface TabHoverPreviewScope {
     /** The workspace the tab belongs to. */
     public val workspace: TabWorkspace
@@ -128,6 +130,7 @@ internal class TabHoverPreviewScopeImpl(
  * @property content the card. Composed with the hovered tab as receiver.
  */
 @Immutable
+@ExperimentalNucleusApi
 public class TabHoverPreview(
     public val delay: Duration = HoverPreviewDelay,
     public val offset: DpOffset = HoverPreviewOffset,
@@ -157,6 +160,7 @@ public class TabHoverPreview(
  * Published by [Modifier.tabSlot], so a strip written from scratch has it as
  * soon as it marks its slots.
  */
+@ExperimentalNucleusApi
 public val TabStripScope.hoveredTab: TabEntry?
     get() {
         if (workspace.draggedTab != null || group.hoverBlocked) return null
@@ -180,6 +184,7 @@ public val TabStripScope.hoveredTab: TabEntry?
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
 @Composable
+@ExperimentalNucleusApi
 public fun TabStripScope.TabHoverPreviewPopup(preview: TabHoverPreview = TabHoverPreview.Default) {
     val candidate = hoveredTab
     // The card waits out `delay` on the first tab and then follows the pointer
@@ -295,6 +300,7 @@ internal class TabHoverPreviewPosition(
  *   of a page. Nothing by default, since the workspace knows only the title.
  */
 @Composable
+@ExperimentalNucleusApi
 public fun TabHoverPreviewScope.TabHoverPreviewCard(
     modifier: Modifier = Modifier,
     subtitle: (@Composable () -> Unit)? = null,

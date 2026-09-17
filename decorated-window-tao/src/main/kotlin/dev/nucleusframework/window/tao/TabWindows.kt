@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.BasicTitleBar
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.tao.workspace.DragGhostWindow
@@ -39,6 +40,7 @@ import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
  * What a tab's body gets to see: the tab, its workspace, and the actions tab
  * chrome needs.
  */
+@ExperimentalNucleusApi
 public interface TabScope {
     /** The workspace the tab belongs to. */
     public val workspace: TabWorkspace
@@ -90,6 +92,7 @@ internal class TabScopeImpl(
 @Suppress("FunctionNaming")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun ApplicationScope.Tab(
     workspace: TabWorkspace,
     id: String,
@@ -145,6 +148,7 @@ public fun ApplicationScope.Tab(
  */
 @Suppress("LongParameterList", "FunctionNaming")
 @Composable
+@ExperimentalNucleusApi
 public fun ApplicationScope.TabWindows(
     workspace: TabWorkspace,
     compositionLocalContext: CompositionLocalContext? = null,

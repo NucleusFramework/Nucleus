@@ -32,6 +32,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.zIndex
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.noWindowDrag
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
@@ -42,6 +43,7 @@ import kotlinx.coroutines.launch
  * hand, or sliding into its new place on release: a soft spring, the motion of
  * a browser's tab strip.
  */
+@ExperimentalNucleusApi
 public val TabReorderAnimation: AnimationSpec<Float> = spring(stiffness = Spring.StiffnessMediumLow)
 
 /** How a tab opens: its width grows into the strip. */
