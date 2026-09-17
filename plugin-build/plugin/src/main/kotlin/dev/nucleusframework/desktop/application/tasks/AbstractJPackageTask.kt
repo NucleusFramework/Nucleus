@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.LaunchAgentDefinition
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.internal.LaunchAgentPlistGenerator
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -280,6 +281,16 @@ abstract class AbstractJPackageTask
         @get:Input
         internal val macLaunchAgents: ListProperty<LaunchAgentDefinition> =
             objects.listProperty(LaunchAgentDefinition::class.java).convention(emptyList())
+
+        @get:Internal
+        internal val macAppExtensions: ListProperty<MacAppExtension> =
+            objects.listProperty(MacAppExtension::class.java).convention(emptyList())
+
+        // Tracks the .appex payload + per-extension entitlements/profiles for up-to-date checks.
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macAppExtensionFiles: ConfigurableFileCollection = objects.fileCollection()
 
         @get:Input
         @get:Optional
@@ -727,6 +738,10 @@ abstract class AbstractJPackageTask
                 }
             }
 
+            // Embed and sign app extensions (.appex) into Contents/PlugIns before sealing the app.
+            embedAndSignAppExtensions(appDir, macSigner)
+            warnIfHostEntitlementsBlockExtensions(appEntitlementsFile)
+
             macSigner.sign(runtimeDir, runtimeEntitlementsFile, forceEntitlements = true)
             macSigner.sign(appDir, appEntitlementsFile, forceEntitlements = true)
 
@@ -738,6 +753,90 @@ abstract class AbstractJPackageTask
                     }
                 }
             }
+        }
+
+        /**
+         * Copies each configured app extension into `Contents/PlugIns/`, embeds its own
+         * provisioning profile, and signs it inside-out with its own entitlements. The outer
+         * app is sealed afterwards (without `--deep`), which preserves these signatures.
+         */
+        private fun embedAndSignAppExtensions(
+            appDir: File,
+            macSigner: MacSigner,
+        ) {
+            val extensions = macAppExtensions.get()
+            if (extensions.isEmpty()) return
+
+            val plugInsDir = appDir.resolve("Contents/PlugIns")
+            for (extension in extensions) {
+                val source =
+                    extension.appex
+                        ?: error("appExtension '${extension.name}': no .appex file configured (call appex(...))")
+                check(source.exists()) {
+                    "appExtension '${extension.name}': .appex not found at ${source.absolutePath}"
+                }
+                plugInsDir.mkdirs()
+                val dest = plugInsDir.resolve(source.name)
+                dest.deleteRecursively()
+                // `cp -R`, not `copyRecursively`: Kotlin's copy streams file contents and drops the
+                // POSIX mode, so the extension's executable lost its +x and launchd could not spawn
+                // it (#394). cp keeps the mode bits and any framework symlinks intact.
+                runExternalTool(File("/bin/cp"), listOf("-R", source.absolutePath, plugInsDir.absolutePath))
+
+                // Embed the extension's own provisioning profile.
+                extension.provisioningProfile?.copyTo(
+                    target = dest.resolve("Contents/embedded.provisionprofile"),
+                    overwrite = true,
+                )
+
+                // Sign the extension inside-out with its OWN entitlements.
+                signBundleInsideOut(dest, extension.entitlements, macSigner)
+            }
+        }
+
+        /**
+         * The default entitlements relax the hardened runtime for the JVM. A host app that ships a
+         * network extension has been reported not to launch with these keys (#394); the fix is a
+         * custom `entitlementsFile` without them — modern JDKs only need `allow-jit`.
+         */
+        private fun warnIfHostEntitlementsBlockExtensions(appEntitlementsFile: File?) {
+            if (macAppExtensions.get().isEmpty() || appEntitlementsFile == null) return
+            val offending =
+                listOf(
+                    "com.apple.security.cs.allow-unsigned-executable-memory",
+                    "com.apple.security.cs.disable-library-validation",
+                ).filter { appEntitlementsFile.readText().contains(it) }
+            if (offending.isNotEmpty()) {
+                logger.warn(
+                    "macOS app extensions are embedded but the host entitlements ($appEntitlementsFile) " +
+                        "still grant ${offending.joinToString()}. Apps hosting a Network Extension have " +
+                        "been reported to fail to launch with these keys; set macOS { entitlementsFile } " +
+                        "to a plist without them (allow-jit is enough for the JVM).",
+                )
+            }
+        }
+
+        /**
+         * Signs a nested bundle (e.g. an `.appex`) inside-out: nested executables/dylibs in its
+         * `Contents/Frameworks` first, then the bundle itself with its [entitlements].
+         */
+        private fun signBundleInsideOut(
+            bundle: File,
+            entitlements: File?,
+            macSigner: MacSigner,
+        ) {
+            val frameworks = bundle.resolve("Contents/Frameworks")
+            if (frameworks.exists()) {
+                frameworks.walk().forEach { file ->
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        macSigner.sign(file, entitlements)
+                    }
+                }
+            }
+            macSigner.sign(bundle, entitlements, forceEntitlements = true)
         }
 
         /**
