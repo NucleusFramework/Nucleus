@@ -32,6 +32,11 @@ import java.util.Locale
  *     }
  * }
  * ```
+ *
+ * After the last window closes (or [NucleusApplicationScope.exitApplication]
+ * is called), the JVM is terminated by default. Pass
+ * `exitProcessOnExit = false` to return normally instead, matching Compose
+ * Desktop's `application(exitProcessOnExit)`.
  */
 public fun nucleusApplication(
     args: Array<String> = emptyArray(),
@@ -44,6 +49,13 @@ public fun nucleusApplication(
     // back out of the Dock. Standalone tray popups never count. Ignored off
     // macOS.
     dockIconFollowsWindows: Boolean = false,
+    // When true (default), the JVM is terminated after the application exits
+    // (`exitProcess(0)` on a normal quit, `exitProcess(1)` after a fatal error).
+    // When false, [nucleusApplication] returns so the caller can continue
+    // in-process. The default matches Compose Desktop and is required because
+    // Compose/Skiko initialisation indirectly touches AWT, whose non-daemon
+    // EDT would otherwise keep the JVM alive after the Tao loop has shut down.
+    exitProcessOnExit: Boolean = true,
     content: @Composable NucleusApplicationScope.() -> Unit,
 ) {
     GraalVmInitializer.initialize()
@@ -78,5 +90,5 @@ public fun nucleusApplication(
     // classpath probe or a Compose composition local.
     WindowBackend.setActive(WindowBackend.Tao)
 
-    TaoLauncher.run(args, dockIconFollowsWindows, content)
+    TaoLauncher.run(args, dockIconFollowsWindows, exitProcessOnExit, content)
 }

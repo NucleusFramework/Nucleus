@@ -52,8 +52,8 @@ public final class dev/nucleusframework/application/DefaultNucleusWindowHost : d
 }
 
 public final class dev/nucleusframework/application/NucleusApplicationKt {
-	public static final fun nucleusApplication ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;)V
-	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+	public static final fun nucleusApplication ([Ljava/lang/String;ZLjava/util/Locale;ZZLkotlin/jvm/functions/Function3;)V
+	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;ZLjava/util/Locale;ZZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
 }
 
 public abstract interface class dev/nucleusframework/application/NucleusApplicationScope : androidx/compose/ui/window/ApplicationScope {
