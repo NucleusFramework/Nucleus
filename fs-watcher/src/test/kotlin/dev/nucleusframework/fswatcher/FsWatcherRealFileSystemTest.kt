@@ -3,6 +3,7 @@ package dev.nucleusframework.fswatcher
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -188,83 +189,257 @@ class FsWatcherRealFileSystemTest {
             }
         }
 
+    // #570: a rename must report the old path leaving. FSEvents attaches an inode's *historical*
+    // flags (ItemCreated, ItemModified, ...) to every event, which used to make the debouncer fold
+    // a rename of a long-existing file into a bare Created(new) — and a delete into Modified.
     @Test
-    fun defaultDebouncedWatcherTreatsRealRenameAsHostSensitiveObservation() =
+    fun debouncedRenameOfPreExistingFileReportsMoved() =
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
 
-            val root = createRealTempDirectory("fs-watcher-real-fs-debounced-rename")
+            val root = createRealTempDirectory("fs-watcher-real-fs-rename-pre-existing")
             val from = root.resolve("before.txt")
             val to = root.resolve("after.txt")
-
             try {
                 Files.writeString(from, "before-rename")
-
                 FsWatchers.create().use { watcher ->
                     val registration = watcher.watch(root, recursive = true)
-
-                    val seen = java.util.Collections.synchronizedList(mutableListOf<FsWatchEvent>())
-                    val collector =
-                        launch(start = CoroutineStart.UNDISPATCHED) {
-                            watcher.events.collect { seen += it }
-                        }
-
-                    try {
+                    collectingEvents(watcher) { seen ->
                         Files.move(from, to)
-
-                        awaitEvents {
-                            synchronized(seen) {
-                                seen.any { event ->
-                                    event.matchesSource(registration.source) &&
-                                        (event.matchesPath(from) || event.matchesPath(to))
-                                }
-                            }
-                        }
-
-                        val moved =
-                            synchronized(seen) {
-                                seen.filterIsInstance<FsWatchEvent.Moved>().firstOrNull {
-                                    it.source == registration.source
-                                }
-                            }
-                        val removedFrom =
-                            synchronized(seen) {
-                                seen.filterIsInstance<FsWatchEvent.Removed>().firstOrNull {
-                                    it.path == from && it.source == registration.source
-                                }
-                            }
-                        val createdTo =
-                            synchronized(seen) {
-                                seen.filterIsInstance<FsWatchEvent.Created>().firstOrNull {
-                                    it.path == to && it.source == registration.source
-                                }
-                            }
-                        val observedRenameLikeEvent =
-                            synchronized(seen) {
-                                seen.firstOrNull { event ->
-                                    event.matchesSource(registration.source) &&
-                                        (event.matchesPath(from) || event.matchesPath(to))
-                                }
-                            }
-
-                        if (moved != null) {
-                            assertEquals(from, moved.from)
-                            assertEquals(to, moved.to)
-                        } else {
-                            if (removedFrom != null || createdTo != null) {
-                                assertTrue(removedFrom != null || createdTo != null)
-                            } else {
-                                assertNotNull(observedRenameLikeEvent)
-                            }
-                        }
-                    } finally {
-                        collector.cancelAndJoin()
+                        awaitRenameSettled(seen, from, to)
+                        assertRenameReportedAsMoved(seen, from, to, registration.source)
                     }
                 }
             } finally {
                 deleteRecursively(root)
             }
         }
+
+    @Test
+    fun debouncedRenameOfFileCreatedAfterWatchReportsMoved() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-rename-fresh")
+            val from = root.resolve("fresh.txt")
+            val to = root.resolve("fresh-renamed.txt")
+            try {
+                FsWatchers.create().use { watcher ->
+                    val registration = watcher.watch(root, recursive = true)
+                    collectingEvents(watcher) { seen ->
+                        Files.writeString(from, "fresh")
+                        awaitEvents { seen.anyCreated(from) }
+                        // Let the creation leave the debounce window before renaming.
+                        delay(600)
+                        seen.clear()
+
+                        Files.move(from, to)
+                        awaitRenameSettled(seen, from, to)
+                        assertRenameReportedAsMoved(seen, from, to, registration.source)
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun debouncedMoveAcrossDirectoriesReportsMoved() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-move-across-dirs")
+            val from = Files.createDirectories(root.resolve("a")).resolve("mover.txt")
+            val to = Files.createDirectories(root.resolve("b")).resolve("mover.txt")
+            try {
+                Files.writeString(from, "mover")
+                FsWatchers.create().use { watcher ->
+                    val registration = watcher.watch(root, recursive = true)
+                    collectingEvents(watcher) { seen ->
+                        Files.move(from, to)
+                        awaitRenameSettled(seen, from, to)
+                        assertRenameReportedAsMoved(seen, from, to, registration.source)
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun debouncedDirectoryRenameReportsMoved() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-dir-rename")
+            val from = Files.createDirectories(root.resolve("adir"))
+            val to = root.resolve("bdir")
+            try {
+                Files.writeString(from.resolve("child.txt"), "child")
+                FsWatchers.create().use { watcher ->
+                    val registration = watcher.watch(root, recursive = true)
+                    collectingEvents(watcher) { seen ->
+                        Files.move(from, to)
+                        awaitRenameSettled(seen, from, to)
+                        assertRenameReportedAsMoved(seen, from, to, registration.source)
+                        val moved = seen.filterIsInstance<FsWatchEvent.Moved>().firstOrNull { it.from == from }
+                        if (moved != null) {
+                            assertTrue(moved.isDirectory != false, "directory rename flagged as a file: $moved")
+                        }
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun debouncedRenameUnderNonCanonicalRootReportsMovedInRegisteredSpelling() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            // Deliberately *not* canonicalized: on macOS this is /var/folders/... while FSEvents
+            // reports /private/var/folders/..., which used to defeat the file-id rename pairing.
+            val root = Files.createTempDirectory("fs-watcher-real-fs-rename-non-canonical")
+            val from = root.resolve("before.txt")
+            val to = root.resolve("after.txt")
+            try {
+                Files.writeString(from, "before-rename")
+                FsWatchers.create().use { watcher ->
+                    val registration = watcher.watch(root, recursive = true)
+                    collectingEvents(watcher) { seen ->
+                        Files.move(from, to)
+                        awaitRenameSettled(seen, from, to)
+                        assertRenameReportedAsMoved(seen, from, to, registration.source)
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun debouncedDeleteOfPreExistingFileReportsRemovedWithoutStaleModified() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-delete-pre-existing")
+            val target = root.resolve("doomed.txt")
+            try {
+                Files.writeString(target, "doomed")
+                FsWatchers.create().use { watcher ->
+                    watcher.watch(root, recursive = true)
+                    collectingEvents(watcher) { seen ->
+                        Files.delete(target)
+                        awaitEvents { seen.any { it.matchesPath(target) } }
+                        delay(RENAME_SETTLE_MILLIS)
+
+                        assertTrue(seen.anyRemoved(target), "delete not reported as Removed: $seen")
+                        assertFalse(
+                            seen.any { it is FsWatchEvent.Modified && it.path == target },
+                            "stale Modified reported for a deleted file: $seen",
+                        )
+                        assertFalse(seen.anyCreated(target), "stale Created reported for a deleted file: $seen")
+                    }
+                }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun rawRenameReportsOldPathRemovedAndNewPathCreated() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val root = createRealTempDirectory("fs-watcher-real-fs-raw-rename")
+            val from = root.resolve("before.txt")
+            val to = root.resolve("after.txt")
+            try {
+                Files.writeString(from, "before-rename")
+                FsWatchers
+                    .create(FsWatcherConfig(deliveryMode = FsWatchDeliveryMode.Raw))
+                    .use { watcher ->
+                        watcher.watch(root, recursive = true)
+                        collectingEvents(watcher) { seen ->
+                            Files.move(from, to)
+                            awaitEvents { seen.anyRemoved(from) && seen.anyCreated(to) }
+                            delay(RENAME_SETTLE_MILLIS)
+
+                            // Raw delivery never pairs renames; the contract is Removed(old) + Created(new).
+                            // (FSEvents may add the path's historical flags on top — raw means raw.)
+                            assertTrue(seen.anyRemoved(from), "raw rename lost the old path: $seen")
+                            assertTrue(seen.anyCreated(to), "raw rename lost the new path: $seen")
+                            assertTrue(seen.none { it is FsWatchEvent.Moved }, "raw delivery emitted Moved: $seen")
+                        }
+                    }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    // #571: every registration used to open its own native watcher — on Linux one inotify
+    // instance each, drawn from the machine-wide fs.inotify.max_user_instances budget.
+    @Test
+    fun manyRegistrationsOnOneDebouncedWatcherShareOneNativeWatcher() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+            assertRegistrationsShareOneNativeWatcher(FsWatcherConfig())
+        }
+
+    @Test
+    fun manyRegistrationsOnOneRawWatcherShareOneNativeWatcher() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+            assertRegistrationsShareOneNativeWatcher(FsWatcherConfig(deliveryMode = FsWatchDeliveryMode.Raw))
+        }
+
+    private suspend fun assertRegistrationsShareOneNativeWatcher(config: FsWatcherConfig) {
+        val registrationCount = 24
+        val root = createRealTempDirectory("fs-watcher-real-fs-shared-native")
+        val projects = List(registrationCount) { Files.createDirectories(root.resolve("project-$it")) }
+        try {
+            val baseline = NativeResourceSnapshot.take()
+            FsWatchers.create(config).use { watcher ->
+                collectingEvents(watcher) { seen ->
+                    val registrations =
+                        projects.map { project ->
+                            watcher.watch(project, recursive = true, name = project.fileName.toString())
+                        }
+                    // FSEvents restarts its stream on every watch(); let the backend settle.
+                    delay(500)
+                    NativeResourceSnapshot.take().assertSharedWith(baseline, registrationCount)
+
+                    // Events still route to their own registration through the shared watcher.
+                    val third = projects[3].resolve("third.txt")
+                    val seventeenth = projects[17].resolve("seventeenth.txt")
+                    Files.writeString(third, "3")
+                    Files.writeString(seventeenth, "17")
+                    awaitEvents {
+                        seen.hasEventFromSource(third, registrations[3].source) &&
+                            seen.hasEventFromSource(seventeenth, registrations[17].source)
+                    }
+                    assertFalse(
+                        seen.any { it.matchesPath(third) && !it.matchesSource(registrations[3].source) },
+                        "event for project 3 leaked to another registration: $seen",
+                    )
+
+                    // Closing one registration only stops its own path.
+                    registrations[3].close()
+                    seen.clear()
+                    val afterClose = projects[3].resolve("after-close.txt")
+                    val stillWatched = projects[17].resolve("still-watched.txt")
+                    Files.writeString(afterClose, "3")
+                    Files.writeString(stillWatched, "17")
+                    awaitEvents { seen.hasEventFromSource(stillWatched, registrations[17].source) }
+                    delay(400)
+                    assertFalse(seen.any { it.matchesPath(afterClose) }, "closed registration still delivered: $seen")
+                }
+            }
+        } finally {
+            deleteRecursively(root)
+        }
+    }
 
     @Test
     fun rawDeliveryModeStillDeliversCoreRealFileEvents() =
@@ -1312,3 +1487,120 @@ private fun tryDeleteRecursively(root: Path): Boolean =
     } catch (_: Exception) {
         false
     }
+
+private const val RENAME_SETTLE_MILLIS = 600L
+
+private suspend fun collectingEvents(
+    watcher: FsWatcher,
+    block: suspend (MutableList<FsWatchEvent>) -> Unit,
+) {
+    val seen = java.util.Collections.synchronizedList(mutableListOf<FsWatchEvent>())
+    coroutineScope {
+        val collector =
+            launch(start = CoroutineStart.UNDISPATCHED) {
+                watcher.events.collect { seen += it }
+            }
+        try {
+            block(seen)
+        } finally {
+            collector.cancelAndJoin()
+        }
+    }
+}
+
+// Waits for the first event about either rename endpoint, then lets the rest of the batch land.
+private suspend fun awaitRenameSettled(
+    seen: List<FsWatchEvent>,
+    from: Path,
+    to: Path,
+) {
+    awaitEvents { seen.any { it.matchesPath(from) || it.matchesPath(to) } }
+    delay(RENAME_SETTLE_MILLIS)
+}
+
+private fun assertRenameReportedAsMoved(
+    seen: List<FsWatchEvent>,
+    from: Path,
+    to: Path,
+    source: FsWatchSource,
+) {
+    val snapshot = synchronized(seen) { seen.toList() }
+    val moved =
+        snapshot.filterIsInstance<FsWatchEvent.Moved>().firstOrNull {
+            it.from == from && it.to == to && it.source == source
+        }
+    if (moved == null && isWindowsHost()) {
+        // ReadDirectoryChangesW pairs renames through file ids only; accept the degraded shape there.
+        assertTrue(
+            snapshot.anyRemoved(from) && snapshot.anyCreated(to),
+            "rename reported neither as Moved nor as Removed+Created: $snapshot",
+        )
+    } else {
+        assertNotNull(moved, "expected Moved($from -> $to), saw: $snapshot")
+    }
+    assertFalse(snapshot.anyCreated(from), "stale Created reported for the old path: $snapshot")
+    assertFalse(
+        snapshot.any { it is FsWatchEvent.Modified && it.path == from },
+        "stale Modified reported for the old path: $snapshot",
+    )
+}
+
+private fun isMacHost(): Boolean = System.getProperty("os.name").startsWith("Mac")
+
+// OS-level view of what a native watcher costs: inotify instances (Linux) and OS threads
+// (every notify backend runs one event-loop thread per watcher, plus one per debouncer).
+private data class NativeResourceSnapshot(
+    val inotifyInstances: Int?,
+    val osThreads: Int?,
+) {
+    fun assertSharedWith(
+        baseline: NativeResourceSnapshot,
+        registrationCount: Int,
+    ) {
+        if (inotifyInstances != null && baseline.inotifyInstances != null) {
+            val added = inotifyInstances - baseline.inotifyInstances
+            assertTrue(
+                added <= 1,
+                "$registrationCount registrations opened $added inotify instances; expected at most 1",
+            )
+        }
+        if (osThreads != null && baseline.osThreads != null) {
+            val added = osThreads - baseline.osThreads
+            assertTrue(
+                added < registrationCount,
+                "$registrationCount registrations started $added OS threads; a shared native watcher needs a handful",
+            )
+        }
+    }
+
+    companion object {
+        fun take(): NativeResourceSnapshot =
+            when {
+                isLinuxHost() -> NativeResourceSnapshot(countInotifyInstances(), countProcThreads())
+                isMacHost() -> NativeResourceSnapshot(inotifyInstances = null, osThreads = countPsThreads())
+                else -> NativeResourceSnapshot(inotifyInstances = null, osThreads = null)
+            }
+
+        private fun countInotifyInstances(): Int =
+            Files.list(Path.of("/proc/self/fd")).use { fds ->
+                fds
+                    .filter { fd ->
+                        runCatching { Files.readSymbolicLink(fd).toString() }.getOrNull() == "anon_inode:inotify"
+                    }.count()
+                    .toInt()
+            }
+
+        private fun countProcThreads(): Int = Files.list(Path.of("/proc/self/task")).use { it.count().toInt() }
+
+        private fun countPsThreads(): Int {
+            val process =
+                ProcessBuilder("ps", "-M", "-p", ProcessHandle.current().pid().toString())
+                    .redirectErrorStream(true)
+                    .start()
+            val lines = process.inputStream.bufferedReader().readLines()
+            process.waitFor()
+            // One header line, then one line per thread.
+            return (lines.size - 1).coerceAtLeast(0)
+        }
+    }
+}

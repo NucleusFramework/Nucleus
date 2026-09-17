@@ -3,18 +3,19 @@ use jni::sys::{jboolean, jint, jlong, JNI_FALSE, JNI_TRUE, JNI_VERSION_1_8};
 use jni::{JNIEnv, JavaVM};
 use notify::event::{ModifyKind, RenameMode};
 use notify::{
-    Config, Event, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode, Result as NotifyResult,
-    Watcher,
+    Config, Event, EventHandler, EventKind, PollWatcher, RecommendedWatcher, RecursiveMode,
+    Result as NotifyResult, Watcher, WatcherKind,
 };
+use notify_debouncer_full::file_id::FileId;
 use notify_debouncer_full::{
-    new_debouncer, new_debouncer_opt, DebounceEventResult, Debouncer, FileIdMap, RecommendedCache,
+    new_debouncer_opt, DebounceEventResult, Debouncer, FileIdCache, FileIdMap, RecommendedCache,
 };
 use once_cell::sync::{Lazy, OnceCell};
 use std::collections::HashMap;
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 const WATCHER_LEVEL_REGISTRATION_ID: i64 = 0;
@@ -37,25 +38,37 @@ static BRIDGE_CLASS: OnceCell<GlobalRef> = OnceCell::new();
 struct RegistrationState {
     original_root: PathBuf,
     resolved_root: PathBuf,
+    /// The spelling handed to the backend: the canonical one on macOS, where FSEvents reports
+    /// canonical paths and the debouncer's file-id cache is keyed by them.
+    watched_root: PathBuf,
     recursive: bool,
-    live: bool,
 }
 
+/// One `FsWatcher`. Every registration shares the single `native_watcher` — one inotify instance,
+/// one FSEvents stream, one `ReadDirectoryChangesW` loop per `FsWatcher` rather than per path
+/// (#571) — and events are routed back to registrations by matching their roots.
 struct WatcherState {
     registrations: HashMap<i64, RegistrationState>,
-    native_watchers: HashMap<i64, NativeWatcherHandle>,
+    native_watcher: Option<Arc<NativeWatcher>>,
+    /// Serialises watch / unwatch / close for this watcher. Never taken by a callback, so it may
+    /// be held while calling into notify (which joins backend threads).
+    mutation: Arc<Mutex<()>>,
     closed: Arc<AtomicBool>,
     follow_symlinks: bool,
     backend_mode: BackendMode,
     delivery_mode: DeliveryMode,
 }
 
-enum NativeWatcherHandle {
-    Raw(Arc<Mutex<RecommendedWatcher>>),
-    // RecommendedCache resolves to FileIdMap on macOS/Windows and NoCache on Linux.
-    Debounced(Arc<Mutex<Debouncer<RecommendedWatcher, RecommendedCache>>>),
-    Polling(Arc<Mutex<PollWatcher>>),
-    PollingDebounced(Arc<Mutex<Debouncer<PollWatcher, FileIdMap>>>),
+/// The debouncer's backend: the platform watcher with FSEvents normalisation in front of it.
+type DebouncedBackend = NormalizingWatcher<RecommendedWatcher>;
+
+enum NativeWatcher {
+    /// Raw delivery hands the backend's own events through untouched — on macOS that includes
+    /// the historical flags FSEvents attaches to a path.
+    Raw(Mutex<RecommendedWatcher>),
+    Debounced(Mutex<Debouncer<DebouncedBackend, SharedFileIdCache>>),
+    Polling(Mutex<PollWatcher>),
+    PollingDebounced(Mutex<Debouncer<PollWatcher, FileIdMap>>),
 }
 
 #[derive(Copy, Clone)]
@@ -78,6 +91,224 @@ enum MatchedRootKind {
     Original,
     Resolved,
 }
+
+// ---------------------------------------------------------------------------------------------
+// File-id cache shared between the debouncer and the FSEvents normaliser
+// ---------------------------------------------------------------------------------------------
+
+/// The debouncer's file-id store, shared with the event normaliser so the latter can tell a path
+/// the watch already tracks from a genuinely new one. `RecommendedCache` is `FileIdMap` on
+/// macOS / Windows and the no-op `NoCache` on Linux, where inotify cookies pair renames for free.
+#[derive(Clone, Default)]
+struct KnownPaths(Arc<Mutex<RecommendedCache>>);
+
+impl KnownPaths {
+    fn lock_store(&self) -> Option<MutexGuard<'_, RecommendedCache>> {
+        self.0.lock().ok()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn contains(&self, path: &Path) -> bool {
+        self.lock_store()
+            .map(|store| store.cached_file_id(path).is_some())
+            .unwrap_or(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn refresh_file(&self, path: &Path) {
+        if let Some(mut store) = self.lock_store() {
+            store.add_path(path, RecursiveMode::NonRecursive);
+        }
+    }
+}
+
+/// `FileIdCache` handed to the debouncer; every call goes to the shared [`KnownPaths`] store.
+struct SharedFileIdCache(KnownPaths);
+
+impl FileIdCache for SharedFileIdCache {
+    fn cached_file_id(&self, path: &Path) -> Option<impl AsRef<FileId>> {
+        self.0
+            .lock_store()
+            .and_then(|store| store.cached_file_id(path).map(|id| *id.as_ref()))
+    }
+
+    fn add_path(&mut self, path: &Path, recursive_mode: RecursiveMode) {
+        if let Some(mut store) = self.0.lock_store() {
+            store.add_path(path, recursive_mode);
+        }
+    }
+
+    fn remove_path(&mut self, path: &Path) {
+        if let Some(mut store) = self.0.lock_store() {
+            store.remove_path(path);
+        }
+    }
+
+    fn rescan(&mut self, root_paths: &[(PathBuf, RecursiveMode)]) {
+        if let Some(mut store) = self.0.lock_store() {
+            store.rescan(root_paths);
+        }
+    }
+}
+
+// notify constructs the debouncer's watcher itself (`T::new(handler, config)`) and offers no way
+// to hand it state, so the shared store travels through a thread-local set right before that
+// synchronous constructor call and cleared right after.
+#[cfg(target_os = "macos")]
+thread_local! {
+    static PENDING_KNOWN_PATHS: std::cell::RefCell<Option<KnownPaths>> = const { std::cell::RefCell::new(None) };
+}
+
+fn with_pending_known_paths<R>(known: &KnownPaths, create: impl FnOnce() -> R) -> R {
+    #[cfg(target_os = "macos")]
+    {
+        PENDING_KNOWN_PATHS.with(|slot| *slot.borrow_mut() = Some(known.clone()));
+        let result = create();
+        PENDING_KNOWN_PATHS.with(|slot| slot.borrow_mut().take());
+        result
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = known;
+        create()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn take_pending_known_paths() -> KnownPaths {
+    PENDING_KNOWN_PATHS
+        .with(|slot| slot.borrow_mut().take())
+        .unwrap_or_default()
+}
+
+// ---------------------------------------------------------------------------------------------
+// FSEvents normalisation (macOS)
+// ---------------------------------------------------------------------------------------------
+
+/// Makes FSEvents honest before the debouncer sees it (#570). Only the debounced backend is
+/// wrapped: raw delivery promises the backend's events as they come.
+///
+/// FSEvents attaches an inode's *accumulated* flags to every event it reports, so a plain rename
+/// of a long-existing file arrives as `Create` + `Rename` + `Modify` on the old path — and the
+/// debouncer, which reads `Create` as "created within this window", folds the rename into a bare
+/// `Create(new)` and a delete into `Modify`. Each rule below only drops what cannot be true of
+/// the path *right now*, which is all the debouncer needs to pair the rename through file ids.
+#[cfg(target_os = "macos")]
+#[derive(Default)]
+struct FsEventsNormalizer {
+    known: KnownPaths,
+    last_path: Option<PathBuf>,
+    removed_forwarded: bool,
+}
+
+#[cfg(target_os = "macos")]
+impl FsEventsNormalizer {
+    fn new(known: KnownPaths) -> Self {
+        Self {
+            known,
+            last_path: None,
+            removed_forwarded: false,
+        }
+    }
+
+    fn normalize(&mut self, event: Event) -> Option<Event> {
+        let Some(path) = event.paths.first() else {
+            return Some(event);
+        };
+        if self.last_path.as_deref() != Some(path.as_path()) {
+            self.last_path = Some(path.clone());
+            self.removed_forwarded = false;
+        }
+        let metadata = std::fs::symlink_metadata(path).ok();
+        let present = metadata.is_some();
+        match event.kind {
+            // A create for something that is not there is history: the rename or remove that
+            // follows for the same path says what actually happened.
+            EventKind::Create(_) if !present => None,
+            // A create for a path the watch already tracks is history too; keep its id fresh in
+            // case the file was replaced under the same name.
+            EventKind::Create(_) if self.known.contains(path) => {
+                if metadata.is_some_and(|m| !m.is_dir()) {
+                    self.known.refresh_file(path);
+                }
+                None
+            }
+            // Nothing that is gone was modified — and a trailing stale `Modify` would also
+            // displace the rename `From` the debouncer expects last in the path's queue.
+            EventKind::Modify(
+                ModifyKind::Data(_) | ModifyKind::Metadata(_) | ModifyKind::Any | ModifyKind::Other,
+            ) if !present => None,
+            // A remove for something that is present is history.
+            EventKind::Remove(_) if present => None,
+            EventKind::Remove(_) => {
+                self.removed_forwarded = true;
+                Some(event)
+            }
+            // `Removed | Renamed` on a gone path: the rename is the older half of the history.
+            EventKind::Modify(ModifyKind::Name(RenameMode::Any)) if !present && self.removed_forwarded => None,
+            _ => Some(event),
+        }
+    }
+}
+
+struct NormalizingHandler<F: EventHandler> {
+    inner: F,
+    #[cfg(target_os = "macos")]
+    normalizer: FsEventsNormalizer,
+}
+
+impl<F: EventHandler> EventHandler for NormalizingHandler<F> {
+    fn handle_event(&mut self, event: NotifyResult<Event>) {
+        #[cfg(target_os = "macos")]
+        let event = match event {
+            Ok(event) => match self.normalizer.normalize(event) {
+                Some(event) => Ok(event),
+                None => return,
+            },
+            Err(error) => Err(error),
+        };
+        self.inner.handle_event(event);
+    }
+}
+
+/// The platform watcher with [`NormalizingHandler`] in front of its event handler; a plain
+/// pass-through everywhere but macOS.
+struct NormalizingWatcher<W: Watcher> {
+    inner: W,
+}
+
+impl<W: Watcher> Watcher for NormalizingWatcher<W> {
+    fn new<F: EventHandler>(event_handler: F, config: Config) -> NotifyResult<Self> {
+        let handler = NormalizingHandler {
+            inner: event_handler,
+            #[cfg(target_os = "macos")]
+            normalizer: FsEventsNormalizer::new(take_pending_known_paths()),
+        };
+        Ok(Self {
+            inner: W::new(handler, config)?,
+        })
+    }
+
+    fn watch(&mut self, path: &Path, recursive_mode: RecursiveMode) -> NotifyResult<()> {
+        self.inner.watch(path, recursive_mode)
+    }
+
+    fn unwatch(&mut self, path: &Path) -> NotifyResult<()> {
+        self.inner.unwatch(path)
+    }
+
+    fn configure(&mut self, config: Config) -> NotifyResult<bool> {
+        self.inner.configure(config)
+    }
+
+    fn kind() -> WatcherKind {
+        W::kind()
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// JNI plumbing
+// ---------------------------------------------------------------------------------------------
 
 #[no_mangle]
 pub extern "system" fn JNI_OnLoad(vm: JavaVM, _reserved: *mut c_void) -> jint {
@@ -102,6 +333,13 @@ fn detect_is_directory(path: &Path) -> i32 {
     }
 }
 
+fn path_is_present(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok()
+}
+
+/// Maps a notify event onto the bridge's event kinds. Renames the backend could not pair are
+/// not discarded: the side that left is `Removed`, the side that appeared is `Created`, and an
+/// FSEvents `Any` is told apart by whether its path is still there.
 fn classify_event(event: &Event) -> Option<i32> {
     match event.kind {
         EventKind::Create(_) => Some(EVENT_KIND_CREATED),
@@ -110,6 +348,16 @@ fn classify_event(event: &Event) -> Option<i32> {
         }
         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) if event.paths.len() >= 2 => {
             Some(EVENT_KIND_MOVED)
+        }
+        EventKind::Modify(ModifyKind::Name(RenameMode::From)) => Some(EVENT_KIND_REMOVED),
+        EventKind::Modify(ModifyKind::Name(RenameMode::To)) => Some(EVENT_KIND_CREATED),
+        EventKind::Modify(ModifyKind::Name(RenameMode::Any | RenameMode::Both)) => {
+            let path = event.paths.first()?;
+            Some(if path_is_present(path) {
+                EVENT_KIND_CREATED
+            } else {
+                EVENT_KIND_REMOVED
+            })
         }
         EventKind::Remove(_) => Some(EVENT_KIND_REMOVED),
         _ => None,
@@ -214,6 +462,23 @@ fn emit_error(
     });
 }
 
+fn emit_overflow(watcher_handle: i64) {
+    emit_event(
+        watcher_handle,
+        WATCHER_LEVEL_REGISTRATION_ID,
+        None,
+        EVENT_KIND_OVERFLOW,
+        None,
+        None,
+        true,
+        -1,
+    );
+}
+
+// ---------------------------------------------------------------------------------------------
+// Routing: one shared backend, N registrations
+// ---------------------------------------------------------------------------------------------
+
 fn path_matches_root(root: &Path, recursive: bool, path: &Path) -> bool {
     if recursive {
         path == root || path.starts_with(root)
@@ -232,38 +497,7 @@ fn match_registration(registration: &RegistrationState, path: &Path) -> Option<M
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    fn event_with_paths(kind: EventKind, paths: &[&str]) -> Event {
-        Event {
-            kind,
-            paths: paths.iter().map(PathBuf::from).collect(),
-            attrs: Default::default(),
-        }
-    }
-
-    #[test]
-    fn classify_event_accepts_only_paired_rename_with_both_paths_for_moved() {
-        let paired_rename =
-            event_with_paths(EventKind::Modify(ModifyKind::Name(RenameMode::Both)), &["from", "to"]);
-        let paired_rename_missing_to =
-            event_with_paths(EventKind::Modify(ModifyKind::Name(RenameMode::Both)), &["from"]);
-        let rename_from =
-            event_with_paths(EventKind::Modify(ModifyKind::Name(RenameMode::From)), &["from"]);
-        let rename_to = event_with_paths(EventKind::Modify(ModifyKind::Name(RenameMode::To)), &["to"]);
-        let rename_any =
-            event_with_paths(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), &["from", "to"]);
-
-        assert_eq!(classify_event(&paired_rename), Some(EVENT_KIND_MOVED));
-        assert_eq!(classify_event(&paired_rename_missing_to), None);
-        assert_eq!(classify_event(&rename_from), None);
-        assert_eq!(classify_event(&rename_to), None);
-        assert_eq!(classify_event(&rename_any), None);
-    }
-}
-
-fn with_registration_by_id(registration_id: i64, watcher_handle: i64) -> Option<RegistrationState> {
+fn registration_by_id(registration_id: i64, watcher_handle: i64) -> Option<RegistrationState> {
     WATCHERS.lock().ok().and_then(|watchers| {
         watchers
             .get(&watcher_handle)
@@ -271,203 +505,214 @@ fn with_registration_by_id(registration_id: i64, watcher_handle: i64) -> Option<
     })
 }
 
-fn with_live_registration_by_id(registration_id: i64, watcher_handle: i64) -> Option<RegistrationState> {
-    with_registration_by_id(registration_id, watcher_handle).filter(|registration| registration.live)
+/// What the callback thread needs to route one event, read under the lock without cloning paths.
+struct Routing {
+    /// Ids of the registrations whose root covers the path(s) the event is about.
+    targets: Vec<i64>,
+    has_registrations: bool,
+    moved_supported: bool,
 }
 
-fn handle_debounce_result(
+fn routing_for(watcher_handle: i64, covers: impl Fn(&RegistrationState) -> bool) -> Option<Routing> {
+    let watchers = WATCHERS.lock().ok()?;
+    let state = watchers.get(&watcher_handle)?;
+    let mut targets: Vec<i64> = state
+        .registrations
+        .iter()
+        .filter(|(_, registration)| covers(registration))
+        .map(|(id, _)| *id)
+        .collect();
+    targets.sort_unstable();
+    Some(Routing {
+        targets,
+        has_registrations: !state.registrations.is_empty(),
+        moved_supported: matches!(state.backend_mode, BackendMode::Native)
+            && matches!(state.delivery_mode, DeliveryMode::Debounced { .. }),
+    })
+}
+
+/// Emits `event_kind` for `path` to every registration covering it; `true` when at least one did.
+fn emit_to_covering_registrations(
     watcher_handle: i64,
-    origin_native_registration_id: i64,
-    result: DebounceEventResult,
-) {
+    event_kind: i32,
+    path: &Path,
+    secondary_path: Option<&Path>,
+    needs_rescan: bool,
+    is_directory: i32,
+) -> bool {
+    let Some(routing) = routing_for(watcher_handle, |registration| {
+        match_registration(registration, path).is_some()
+            || secondary_path.is_some_and(|other| match_registration(registration, other).is_some())
+    }) else {
+        return false;
+    };
+    for registration_id in &routing.targets {
+        emit_event(
+            watcher_handle,
+            WATCHER_LEVEL_REGISTRATION_ID,
+            Some(*registration_id),
+            event_kind,
+            Some(path),
+            secondary_path,
+            needs_rescan,
+            is_directory,
+        );
+    }
+    !routing.targets.is_empty()
+}
+
+fn handle_debounce_result(watcher_handle: i64, result: DebounceEventResult) {
     match result {
         Ok(events) => {
             for debounced_event in events {
-                handle_notify_result(watcher_handle, origin_native_registration_id, Ok(debounced_event.event));
+                handle_notify_result(watcher_handle, Ok(debounced_event.event));
             }
         }
         Err(errors) => {
             for error in errors {
-                handle_notify_result(watcher_handle, origin_native_registration_id, Err(error));
+                handle_notify_result(watcher_handle, Err(error));
             }
         }
     }
 }
 
-fn handle_notify_result(watcher_handle: i64, origin_native_registration_id: i64, result: NotifyResult<Event>) {
+fn handle_notify_result(watcher_handle: i64, result: NotifyResult<Event>) {
     match result {
         Ok(event) => {
+            let Some(routing) = routing_for(watcher_handle, |_| false) else {
+                return;
+            };
+            if !routing.has_registrations {
+                return;
+            }
             let first_path = event.paths.first().map(PathBuf::as_path);
             let second_path = event.paths.get(1).map(PathBuf::as_path);
-            let registration = with_live_registration_by_id(origin_native_registration_id, watcher_handle);
-            let moved_supported = WATCHERS.lock().ok().and_then(|watchers| {
-                watchers.get(&watcher_handle).map(|state| {
-                    matches!(state.backend_mode, BackendMode::Native)
-                        && matches!(state.delivery_mode, DeliveryMode::Debounced { .. })
-                })
-            }) == Some(true);
+            let needs_rescan = event.need_rescan();
 
-            if let Some(event_kind) = classify_event(&event) {
-                if registration.is_some() && (event_kind != EVENT_KIND_MOVED || moved_supported) {
-                    emit_event(
-                        watcher_handle,
-                        WATCHER_LEVEL_REGISTRATION_ID,
-                        Some(origin_native_registration_id),
-                        event_kind,
-                        first_path,
-                        second_path,
-                        event.need_rescan(),
-                        first_path.map(detect_is_directory).unwrap_or(-1),
-                    );
-                } else if event_kind == EVENT_KIND_MOVED && registration.is_some() && event.need_rescan() {
-                    emit_event(
-                        watcher_handle,
-                        WATCHER_LEVEL_REGISTRATION_ID,
-                        None,
-                        EVENT_KIND_OVERFLOW,
-                        None,
-                        None,
-                        true,
-                        -1,
-                    );
+            let delivered = match (classify_event(&event), first_path) {
+                (Some(EVENT_KIND_MOVED), Some(from)) => {
+                    let Some(to) = second_path else {
+                        return;
+                    };
+                    if routing.moved_supported {
+                        emit_to_covering_registrations(
+                            watcher_handle,
+                            EVENT_KIND_MOVED,
+                            from,
+                            Some(to),
+                            needs_rescan,
+                            detect_is_directory(to),
+                        )
+                    } else {
+                        // Raw delivery never pairs renames; inotify's own `Both` duplicates the
+                        // `From` / `To` pair it just emitted, so it carries nothing new.
+                        false
+                    }
                 }
-            } else if registration.is_some() && event.need_rescan() {
-                emit_event(
+                (Some(event_kind), Some(path)) => emit_to_covering_registrations(
                     watcher_handle,
-                    WATCHER_LEVEL_REGISTRATION_ID,
+                    event_kind,
+                    path,
                     None,
-                    EVENT_KIND_OVERFLOW,
-                    None,
-                    None,
-                    true,
-                    -1,
-                );
+                    needs_rescan,
+                    detect_is_directory(path),
+                ),
+                _ => false,
+            };
+            if !delivered && needs_rescan {
+                emit_overflow(watcher_handle);
             }
         }
         Err(error) => {
             let first_path = error.paths.first().map(PathBuf::as_path);
-            let registration = with_live_registration_by_id(origin_native_registration_id, watcher_handle);
-
-            if let Some(registration) = registration {
-                let error_path = first_path.filter(|path| match_registration(&registration, path).is_some());
-                let callback_registration_id = if error_path.is_some() {
-                    WATCHER_LEVEL_REGISTRATION_ID
-                } else {
-                    origin_native_registration_id
-                };
-                emit_error(
-                    watcher_handle,
-                    callback_registration_id,
-                    Some(origin_native_registration_id),
-                    &error.to_string(),
-                    true,
-                    error_path,
-                );
-            } else if first_path.is_none() {
-                emit_error(
-                    watcher_handle,
-                    WATCHER_LEVEL_REGISTRATION_ID,
-                    None,
-                    &error.to_string(),
-                    true,
-                    None,
-                );
+            let Some(routing) = routing_for(watcher_handle, |registration| {
+                first_path.is_some_and(|path| match_registration(registration, path).is_some())
+            }) else {
+                return;
+            };
+            if !routing.has_registrations {
+                return;
+            }
+            let message = error.to_string();
+            match first_path {
+                Some(path) if !routing.targets.is_empty() => {
+                    for registration_id in &routing.targets {
+                        emit_error(
+                            watcher_handle,
+                            WATCHER_LEVEL_REGISTRATION_ID,
+                            Some(*registration_id),
+                            &message,
+                            true,
+                            Some(path),
+                        );
+                    }
+                }
+                // No registration owns it: the shared backend itself is complaining.
+                _ => emit_error(watcher_handle, WATCHER_LEVEL_REGISTRATION_ID, None, &message, true, None),
             }
         }
     }
 }
 
-fn native_handle_watch(
-    handle: &NativeWatcherHandle,
-    path: &Path,
-    recursive_mode: RecursiveMode,
-) -> notify::Result<()> {
-    match handle {
-        NativeWatcherHandle::Raw(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock raw watcher"))?;
-            watcher_guard.watch(path, recursive_mode)
-        }
-        NativeWatcherHandle::Debounced(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock debounced watcher"))?;
-            watcher_guard.watch(path, recursive_mode)
-        }
-        NativeWatcherHandle::Polling(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock poll watcher"))?;
-            watcher_guard.watch(path, recursive_mode)
-        }
-        NativeWatcherHandle::PollingDebounced(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock debounced poll watcher"))?;
-            watcher_guard.watch(path, recursive_mode)
-        }
+// ---------------------------------------------------------------------------------------------
+// Native watcher lifecycle
+// ---------------------------------------------------------------------------------------------
+
+fn native_watch(watcher: &NativeWatcher, path: &Path, recursive_mode: RecursiveMode) -> NotifyResult<()> {
+    match watcher {
+        NativeWatcher::Raw(inner) => lock_watcher(inner)?.watch(path, recursive_mode),
+        NativeWatcher::Debounced(inner) => lock_watcher(inner)?.watch(path, recursive_mode),
+        NativeWatcher::Polling(inner) => lock_watcher(inner)?.watch(path, recursive_mode),
+        NativeWatcher::PollingDebounced(inner) => lock_watcher(inner)?.watch(path, recursive_mode),
     }
 }
 
-fn native_handle_unwatch(handle: &NativeWatcherHandle, path: &Path) -> notify::Result<()> {
-    match handle {
-        NativeWatcherHandle::Raw(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock raw watcher"))?;
-            watcher_guard.unwatch(path)
-        }
-        NativeWatcherHandle::Debounced(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock debounced watcher"))?;
-            watcher_guard.unwatch(path)
-        }
-        NativeWatcherHandle::Polling(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock poll watcher"))?;
-            watcher_guard.unwatch(path)
-        }
-        NativeWatcherHandle::PollingDebounced(watcher) => {
-            let mut watcher_guard = watcher
-                .lock()
-                .map_err(|_| notify::Error::generic("failed to lock debounced poll watcher"))?;
-            watcher_guard.unwatch(path)
-        }
+fn native_unwatch(watcher: &NativeWatcher, path: &Path) -> NotifyResult<()> {
+    match watcher {
+        NativeWatcher::Raw(inner) => lock_watcher(inner)?.unwatch(path),
+        NativeWatcher::Debounced(inner) => lock_watcher(inner)?.unwatch(path),
+        NativeWatcher::Polling(inner) => lock_watcher(inner)?.unwatch(path),
+        NativeWatcher::PollingDebounced(inner) => lock_watcher(inner)?.unwatch(path),
     }
 }
 
-fn create_native_handle(
+fn lock_watcher<T>(watcher: &Mutex<T>) -> NotifyResult<MutexGuard<'_, T>> {
+    watcher
+        .lock()
+        .map_err(|_| notify::Error::generic("failed to lock native watcher"))
+}
+
+fn create_native_watcher(
     watcher_handle: i64,
-    registration_id: i64,
     follow_symlinks: bool,
     backend_mode: BackendMode,
     delivery_mode: DeliveryMode,
-) -> Option<NativeWatcherHandle> {
+) -> Option<NativeWatcher> {
     match backend_mode {
         BackendMode::Native => {
             let config = Config::default().with_follow_symlinks(follow_symlinks);
             match delivery_mode {
                 DeliveryMode::Raw => RecommendedWatcher::new(
-                    move |result| handle_notify_result(watcher_handle, registration_id, result),
+                    move |result| handle_notify_result(watcher_handle, result),
                     config,
                 )
                 .ok()
-                .map(|watcher| NativeWatcherHandle::Raw(Arc::new(Mutex::new(watcher)))),
-                DeliveryMode::Debounced { window } => new_debouncer(
-                    window,
-                    None,
-                    move |result| handle_debounce_result(watcher_handle, registration_id, result),
-                )
-                .ok()
-                .and_then(|mut debouncer| {
-                    if debouncer.configure(config).is_err() {
-                        return None;
-                    }
-                    Some(NativeWatcherHandle::Debounced(Arc::new(Mutex::new(debouncer))))
-                }),
+                .map(|watcher| NativeWatcher::Raw(Mutex::new(watcher))),
+                DeliveryMode::Debounced { window } => {
+                    let known = KnownPaths::default();
+                    let cache = SharedFileIdCache(known.clone());
+                    with_pending_known_paths(&known, || {
+                        new_debouncer_opt::<_, DebouncedBackend, SharedFileIdCache>(
+                            window,
+                            None,
+                            move |result| handle_debounce_result(watcher_handle, result),
+                            cache,
+                            config,
+                        )
+                    })
+                    .ok()
+                    .map(|debouncer| NativeWatcher::Debounced(Mutex::new(debouncer)))
+                }
             }
         }
         BackendMode::Polling {
@@ -480,24 +725,115 @@ fn create_native_handle(
                 .with_compare_contents(compare_contents);
             match delivery_mode {
                 DeliveryMode::Raw => PollWatcher::new(
-                    move |result| handle_notify_result(watcher_handle, registration_id, result),
+                    move |result| handle_notify_result(watcher_handle, result),
                     config,
                 )
                 .ok()
-                .map(|watcher| NativeWatcherHandle::Polling(Arc::new(Mutex::new(watcher)))),
+                .map(|watcher| NativeWatcher::Polling(Mutex::new(watcher))),
                 DeliveryMode::Debounced { window } => new_debouncer_opt::<_, PollWatcher, FileIdMap>(
                     window,
                     None,
-                    move |result| handle_debounce_result(watcher_handle, registration_id, result),
+                    move |result| handle_debounce_result(watcher_handle, result),
                     FileIdMap::new(),
                     config,
                 )
                 .ok()
-                .map(|watcher| NativeWatcherHandle::PollingDebounced(Arc::new(Mutex::new(watcher)))),
+                .map(|debouncer| NativeWatcher::PollingDebounced(Mutex::new(debouncer))),
             }
         }
     }
 }
+
+struct WatcherSettings {
+    mutation: Arc<Mutex<()>>,
+    follow_symlinks: bool,
+    backend_mode: BackendMode,
+    delivery_mode: DeliveryMode,
+}
+
+fn watcher_settings(watcher_handle: i64) -> Option<WatcherSettings> {
+    let watchers = WATCHERS.lock().ok()?;
+    let state = watchers.get(&watcher_handle)?;
+    Some(WatcherSettings {
+        mutation: Arc::clone(&state.mutation),
+        follow_symlinks: state.follow_symlinks,
+        backend_mode: state.backend_mode,
+        delivery_mode: state.delivery_mode,
+    })
+}
+
+/// How the backend currently covers `watched_root` through other registrations of this watcher.
+struct RootCoverage {
+    watched: bool,
+    recursive: bool,
+}
+
+fn root_coverage(watcher_handle: i64, watched_root: &Path, excluding: Option<i64>) -> Option<RootCoverage> {
+    let watchers = WATCHERS.lock().ok()?;
+    let state = watchers.get(&watcher_handle)?;
+    let mut coverage = RootCoverage {
+        watched: false,
+        recursive: false,
+    };
+    for (id, registration) in &state.registrations {
+        if Some(*id) == excluding || registration.watched_root != watched_root {
+            continue;
+        }
+        coverage.watched = true;
+        coverage.recursive |= registration.recursive;
+    }
+    Some(coverage)
+}
+
+/// Returns the watcher's shared backend, creating it on first use. `None` once the watcher is gone.
+fn shared_native_watcher(watcher_handle: i64, settings: &WatcherSettings) -> Option<Arc<NativeWatcher>> {
+    if let Some(existing) = WATCHERS
+        .lock()
+        .ok()?
+        .get(&watcher_handle)?
+        .native_watcher
+        .clone()
+    {
+        return Some(existing);
+    }
+    // Created outside the lock: backends spawn threads and the debouncer starts ticking.
+    let created = Arc::new(create_native_watcher(
+        watcher_handle,
+        settings.follow_symlinks,
+        settings.backend_mode,
+        settings.delivery_mode,
+    )?);
+    let mut watchers = WATCHERS.lock().ok()?;
+    let state = watchers.get_mut(&watcher_handle)?;
+    Some(Arc::clone(state.native_watcher.get_or_insert(created)))
+}
+
+/// Drops the shared backend once no registration needs it, releasing its inotify instance,
+/// FSEvents stream or directory handles. Returned so the caller drops it outside the lock.
+fn release_native_watcher_if_unused(watcher_handle: i64) -> Option<Arc<NativeWatcher>> {
+    let mut watchers = WATCHERS.lock().ok()?;
+    let state = watchers.get_mut(&watcher_handle)?;
+    if state.registrations.is_empty() {
+        state.native_watcher.take()
+    } else {
+        None
+    }
+}
+
+fn watched_root_for(original_root: &Path, resolved_root: &Path) -> PathBuf {
+    if cfg!(target_os = "macos") {
+        // FSEvents reports canonical paths and the debouncer keys its file-id cache by the root
+        // it was given: a `/var/...` root would never pair a rename reported under `/private/var`.
+        resolved_root.to_path_buf()
+    } else {
+        let _ = resolved_root;
+        original_root.to_path_buf()
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// JNI entry points
+// ---------------------------------------------------------------------------------------------
 
 #[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge_nativeIsSupported(
@@ -539,15 +875,15 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
     };
 
     let watcher_handle = NEXT_WATCHER_HANDLE.fetch_add(1, Ordering::Relaxed);
-    let closed = Arc::new(AtomicBool::new(false));
 
     if let Ok(mut watchers) = WATCHERS.lock() {
         watchers.insert(
             watcher_handle,
             WatcherState {
                 registrations: HashMap::new(),
-                native_watchers: HashMap::new(),
-                closed,
+                native_watcher: None,
+                mutation: Arc::new(Mutex::new(())),
+                closed: Arc::new(AtomicBool::new(false)),
                 follow_symlinks: follow_symlinks != JNI_FALSE,
                 backend_mode,
                 delivery_mode,
@@ -565,30 +901,19 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
     _class: JClass,
     watcher_handle: jlong,
 ) {
-    let Some((native_watchers, closed)) = WATCHERS.lock().ok().and_then(|mut watchers| {
-        let mut state = watchers.remove(&watcher_handle)?;
-        state.closed.store(true, Ordering::Release);
-        Some((
-            state
-                .native_watchers
-                .drain()
-                .into_iter()
-                .filter_map(|(registration_id, native_handle)| {
-                    state
-                        .registrations
-                        .get(&registration_id)
-                        .map(|registration| (native_handle, registration.original_root.clone()))
-                })
-                .collect::<Vec<_>>(),
-            Arc::clone(&state.closed),
-        ))
-    }) else {
+    // Removing the state first stops callbacks from matching anything; the mutation lock then
+    // waits for a watch / unwatch in flight before the backend is dropped outside every lock.
+    let Some(state) = WATCHERS
+        .lock()
+        .ok()
+        .and_then(|mut watchers| watchers.remove(&watcher_handle))
+    else {
         return;
     };
-    closed.store(true, Ordering::Release);
-    for (native_handle, path) in native_watchers {
-        let _ = native_handle_unwatch(&native_handle, &path);
-    }
+    state.closed.store(true, Ordering::Release);
+    let mutation = Arc::clone(&state.mutation);
+    let _mutation_guard = mutation.lock();
+    drop(state);
 }
 
 #[no_mangle]
@@ -610,76 +935,75 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
     let resolved_root = original_root
         .canonicalize()
         .unwrap_or_else(|_| original_root.clone());
-    let recursive_mode = if recursive == JNI_FALSE {
-        RecursiveMode::NonRecursive
-    } else {
+    let watched_root = watched_root_for(&original_root, &resolved_root);
+    let recursive = recursive != JNI_FALSE;
+    let recursive_mode = if recursive {
         RecursiveMode::Recursive
+    } else {
+        RecursiveMode::NonRecursive
     };
-    let follow_symlinks = {
-        let Ok(watchers) = WATCHERS.lock() else {
-            return JNI_FALSE;
-        };
-        let Some(state) = watchers.get(&watcher_handle) else {
-            return JNI_FALSE;
-        };
-        (state.follow_symlinks, state.backend_mode, state.delivery_mode)
+
+    let Some(settings) = watcher_settings(watcher_handle) else {
+        return JNI_FALSE;
     };
-    let (follow_symlinks, backend_mode, delivery_mode) = follow_symlinks;
-    if matches!(backend_mode, BackendMode::Polling { .. }) && std::fs::metadata(&original_root).is_err() {
+    let mutation = Arc::clone(&settings.mutation);
+    let Ok(_mutation_guard) = mutation.lock() else {
+        return JNI_FALSE;
+    };
+    if matches!(settings.backend_mode, BackendMode::Polling { .. }) && std::fs::metadata(&original_root).is_err() {
         return JNI_FALSE;
     }
-    let mut native_watcher = Some(match create_native_handle(
-        watcher_handle,
-        registration_id,
-        follow_symlinks,
-        backend_mode,
-        delivery_mode,
-    ) {
-        Some(native_watcher) => native_watcher,
-        None => return JNI_FALSE,
-    });
+    let Some(native_watcher) = shared_native_watcher(watcher_handle, &settings) else {
+        return JNI_FALSE;
+    };
+    let Some(coverage) = root_coverage(watcher_handle, &watched_root, None) else {
+        return JNI_FALSE;
+    };
 
-    if native_handle_watch(
-        native_watcher.as_ref().expect("native watcher must exist"),
-        &original_root,
-        recursive_mode,
-    )
-    .is_err()
-    {
+    // The backend watches a root once per watcher. A recursive registration arriving over a
+    // non-recursive one re-watches it: notify's backends do not widen an existing watch in place
+    // (ReadDirectoryChangesW would even leak the old handle and report everything twice).
+    let backend_result = if !coverage.watched {
+        native_watch(&native_watcher, &watched_root, recursive_mode)
+    } else if recursive && !coverage.recursive {
+        let _ = native_unwatch(&native_watcher, &watched_root);
+        native_watch(&native_watcher, &watched_root, recursive_mode)
+    } else {
+        Ok(())
+    };
+    if backend_result.is_err() {
+        drop(release_native_watcher_if_unused(watcher_handle));
         return JNI_FALSE;
     }
 
-    let registration = RegistrationState {
-        original_root,
-        resolved_root,
-        recursive: recursive != JNI_FALSE,
-        live: true,
-    };
-    let should_cleanup = {
-        let Ok(mut watchers) = WATCHERS.lock() else {
-            return JNI_FALSE;
-        };
-        match watchers.get_mut(&watcher_handle) {
-            Some(state) if !state.closed.load(Ordering::Acquire) => {
-                state.registrations.insert(registration_id, registration.clone());
-                state.native_watchers.insert(
-                    registration_id,
-                    native_watcher.take().expect("native watcher must exist"),
-                );
-                false
+    let registered = WATCHERS
+        .lock()
+        .ok()
+        .and_then(|mut watchers| {
+            let state = watchers.get_mut(&watcher_handle)?;
+            if state.closed.load(Ordering::Acquire) {
+                return None;
             }
-            _ => true,
-        }
-    };
+            state.registrations.insert(
+                registration_id,
+                RegistrationState {
+                    original_root,
+                    resolved_root,
+                    watched_root: watched_root.clone(),
+                    recursive,
+                },
+            );
+            Some(())
+        })
+        .is_some();
 
-    if should_cleanup {
-        let registration_path = registration.original_root.clone();
-        if let Some(native_handle) = native_watcher.take() {
-            let _ = native_handle_unwatch(&native_handle, &registration_path);
+    if registered {
+        JNI_TRUE
+    } else {
+        if !coverage.watched {
+            let _ = native_unwatch(&native_watcher, &watched_root);
         }
         JNI_FALSE
-    } else {
-        JNI_TRUE
     }
 }
 
@@ -690,16 +1014,30 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
     watcher_handle: jlong,
     registration_id: jlong,
 ) {
-    let Some((native_handle, path)) = WATCHERS.lock().ok().and_then(|mut watchers| {
-        let state = watchers.get_mut(&watcher_handle)?;
-        let registration = state.registrations.remove(&registration_id)?;
-        let path = registration.original_root;
-        let native_handle = state.native_watchers.remove(&registration_id)?;
-        Some((native_handle, path))
-    }) else {
+    let Some(settings) = watcher_settings(watcher_handle) else {
         return;
     };
-    let _ = native_handle_unwatch(&native_handle, &path);
+    let Ok(_mutation_guard) = settings.mutation.lock() else {
+        return;
+    };
+    let removed = WATCHERS.lock().ok().and_then(|mut watchers| {
+        let state = watchers.get_mut(&watcher_handle)?;
+        let registration = state.registrations.remove(&registration_id)?;
+        let native_watcher = state.native_watcher.clone();
+        Some((registration, native_watcher))
+    });
+    let Some((registration, Some(native_watcher))) = removed else {
+        return;
+    };
+    let Some(coverage) = root_coverage(watcher_handle, &registration.watched_root, None) else {
+        return;
+    };
+    // Dropping the whole backend stops every watch at once; otherwise the root is unwatched only
+    // when no other registration still relies on it.
+    let released = release_native_watcher_if_unused(watcher_handle);
+    if released.is_none() && !coverage.watched {
+        let _ = native_unwatch(&native_watcher, &registration.watched_root);
+    }
 }
 
 #[no_mangle]
@@ -735,7 +1073,7 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
         return JNI_FALSE;
     }
 
-    let Some(registration) = with_live_registration_by_id(origin_native_registration_id, watcher_handle) else {
+    let Some(registration) = registration_by_id(origin_native_registration_id, watcher_handle) else {
         return JNI_FALSE;
     };
     if match_registration(&registration, &first_path).is_none() {
@@ -774,7 +1112,7 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
     };
     let first_path = PathBuf::from(path.to_string_lossy().into_owned());
 
-    let Some(registration) = with_live_registration_by_id(origin_native_registration_id, watcher_handle) else {
+    let Some(registration) = registration_by_id(origin_native_registration_id, watcher_handle) else {
         return JNI_FALSE;
     };
     if match_registration(&registration, &first_path).is_none() {
@@ -807,9 +1145,9 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
         return JNI_FALSE;
     };
 
-    let Some(_registration) = with_live_registration_by_id(origin_native_registration_id, watcher_handle) else {
+    if registration_by_id(origin_native_registration_id, watcher_handle).is_none() {
         return JNI_FALSE;
-    };
+    }
 
     emit_error(
         watcher_handle,
@@ -820,4 +1158,105 @@ pub extern "system" fn Java_dev_nucleusframework_fswatcher_NativeFsWatcherBridge
         None,
     );
     JNI_TRUE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn event_with_paths(kind: EventKind, paths: &[&Path]) -> Event {
+        Event {
+            kind,
+            paths: paths.iter().map(|path| path.to_path_buf()).collect(),
+            attrs: Default::default(),
+        }
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("nucleus-fs-watcher-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn classify_event_maps_paired_rename_to_moved_and_unpaired_halves_to_their_effect() {
+        let dir = temp_dir("classify");
+        let present = dir.join("present.txt");
+        std::fs::write(&present, "x").unwrap();
+        let gone = dir.join("gone.txt");
+
+        let rename_kind = |mode| EventKind::Modify(ModifyKind::Name(mode));
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::Both), &[&gone, &present])),
+            Some(EVENT_KIND_MOVED)
+        );
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::From), &[&gone])),
+            Some(EVENT_KIND_REMOVED)
+        );
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::To), &[&present])),
+            Some(EVENT_KIND_CREATED)
+        );
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::Any), &[&gone])),
+            Some(EVENT_KIND_REMOVED)
+        );
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::Any), &[&present])),
+            Some(EVENT_KIND_CREATED)
+        );
+        // A `Both` that lost its second path degrades like an `Any`.
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::Both), &[&gone])),
+            Some(EVENT_KIND_REMOVED)
+        );
+        assert_eq!(
+            classify_event(&event_with_paths(rename_kind(RenameMode::Other), &[&gone])),
+            None
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn fsevents_normalizer_drops_history_and_keeps_what_is_true_now() {
+        use notify::event::{CreateKind, DataChange, MetadataKind, RemoveKind};
+
+        let dir = temp_dir("normalizer");
+        let known_file = dir.join("known.txt");
+        std::fs::write(&known_file, "known").unwrap();
+        let fresh_file = dir.join("fresh.txt");
+        std::fs::write(&fresh_file, "fresh").unwrap();
+        let gone = dir.join("gone.txt");
+
+        let known = KnownPaths::default();
+        known.lock_store().unwrap().add_path(&known_file, RecursiveMode::NonRecursive);
+        let mut normalizer = FsEventsNormalizer::new(known);
+        let mut normalize = |kind, path: &Path| normalizer.normalize(event_with_paths(kind, &[path])).is_some();
+
+        // The rename source as FSEvents reports it: Create + Rename + Modify on a gone path.
+        assert!(!normalize(EventKind::Create(CreateKind::File), &gone));
+        assert!(normalize(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), &gone));
+        assert!(!normalize(EventKind::Modify(ModifyKind::Metadata(MetadataKind::Extended)), &gone));
+        assert!(!normalize(EventKind::Modify(ModifyKind::Data(DataChange::Content)), &gone));
+
+        // A delete carrying the file's historical Created bit.
+        assert!(!normalize(EventKind::Create(CreateKind::File), &gone));
+        assert!(normalize(EventKind::Remove(RemoveKind::File), &gone));
+        // `Removed | Renamed` on the same gone path: the rename half is history.
+        assert!(!normalize(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), &gone));
+
+        // Stale Created on a file the watch already tracks vs a genuinely new file.
+        assert!(!normalize(EventKind::Create(CreateKind::File), &known_file));
+        assert!(normalize(EventKind::Create(CreateKind::File), &fresh_file));
+        // Present paths keep their modifications; a Remove for a present path is history.
+        assert!(normalize(EventKind::Modify(ModifyKind::Data(DataChange::Content)), &known_file));
+        assert!(!normalize(EventKind::Remove(RemoveKind::File), &known_file));
+        // The rename target is present and passes through untouched.
+        assert!(normalize(EventKind::Modify(ModifyKind::Name(RenameMode::Any)), &fresh_file));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
