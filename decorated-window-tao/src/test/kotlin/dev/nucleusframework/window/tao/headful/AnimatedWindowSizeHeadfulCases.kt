@@ -22,10 +22,14 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.TitleBar
+import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.scene.TaoPresentDiagnostics
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
@@ -43,7 +47,7 @@ import kotlin.math.roundToInt
  * vs Compose layout/scene each frame, and gates the tremble metric.
  */
 internal object AnimatedWindowSizeHeadfulCases {
-    fun all(): List<TaoWindowTestCase> = listOf(animatedHeightDoesNotTremble())
+    fun all(): List<TaoWindowTestCase> = listOf(animatedHeightDoesNotTremble(), zoomPresentsEveryStep())
 
     private data class LayoutPx(
         var x: Int = 0,
@@ -73,6 +77,31 @@ internal object AnimatedWindowSizeHeadfulCases {
         val contentW: Int,
         val contentH: Int,
     )
+
+    /**
+     * The title-bar double-click path (#576): a maximize / restore zoom is a
+     * run of frame steps, and each must have its content presented before
+     * the next arrives — otherwise the content trails the window edge for
+     * the whole animation. tao steps the zoom itself (vendored
+     * `set_maximized_async`), so the steps are plain resizes.
+     */
+    private fun zoomPresentsEveryStep(): TaoWindowTestCase =
+        TaoWindowTestCase(
+            name = "#576 maximize and restore zoom present every step in its own turn",
+            timeoutMillis = CASE_TIMEOUT_MILLIS,
+        ) {
+            awaitUntil("window mapped") { window.hasRealFramePx() }
+            settle()
+            val probe = PresentLagProbe(window, AtomicBoolean(true))
+            window.onResized { w, h -> probe.onResized(w, h) }
+            window.setMaximized(true)
+            awaitUntil("maximized") { window.isMaximized }
+            settle(ZOOM_SETTLE_MILLIS)
+            window.setMaximized(false)
+            awaitUntil("restored") { !window.isMaximized }
+            settle(ZOOM_SETTLE_MILLIS)
+            probe.assertNone()
+        }
 
     private fun animatedHeightDoesNotTremble(): TaoWindowTestCase {
         val windowState =
@@ -191,9 +220,11 @@ internal object AnimatedWindowSizeHeadfulCases {
             driver = {
                 awaitUntil("window mapped") { bounds() != null }
                 settle()
+                val presentLag = PresentLagProbe(window, recording)
                 window.onResized { w, h ->
                     innerW.set(w)
                     innerH.set(h)
+                    presentLag.onResized(w, h)
                 }
                 recording.set(true)
                 settle(BASELINE_MILLIS)
@@ -206,8 +237,61 @@ internal object AnimatedWindowSizeHeadfulCases {
                 val dump = writeSamples(samples)
                 System.err.println("[#576] wrote ${samples.size} samples to $dump")
                 assertNoTremble(samples)
+                presentLag.assertNone()
             },
         )
+    }
+
+    /**
+     * Counts resize events whose frame was not on its way by the time the
+     * next one arrived. The host presents a resize's frame at the end of the
+     * same run-loop turn (`MainEventsCleared`), after every listener has run —
+     * so this listener, at event N, checks that event N-1 has been presented,
+     * and [assertNone] that the last one has. Without the same-turn present
+     * the render loop trails by one to two steps and Core Animation shows the
+     * previous drawable stretched over the new bounds — the tremble itself
+     * (#576). Only the Metal host records presents, so the gate is macOS-only.
+     */
+    private class PresentLagProbe(
+        private val window: TaoWindow,
+        private val recording: AtomicBoolean,
+    ) {
+        private val checked = AtomicInteger(0)
+        private val lagging = AtomicInteger(0)
+        private val previous = AtomicReference<IntSize?>(null)
+
+        fun onResized(
+            w: Int,
+            h: Int,
+        ) {
+            if (Platform.Current != Platform.MacOS || !recording.get()) return
+            val size = IntSize(w, h)
+            // tao echoes a programmatic resize twice in one turn (its own
+            // dispatch and AppKit's `windowDidResize:`); only a size change
+            // closes the previous step.
+            if (previous.get() == size) return
+            val prev = previous.getAndSet(size) ?: return
+            checked.incrementAndGet()
+            // The host presents inside the resize dispatch, before this
+            // listener runs, so the last present is normally already this
+            // size; the previous one is the most that may still be pending.
+            val presented = TaoPresentDiagnostics.lastPresentedPx(window.handle)
+            if (presented != size && presented != prev) lagging.incrementAndGet()
+        }
+
+        fun assertNone() {
+            if (Platform.Current != Platform.MacOS) return
+            val last = previous.get()
+            if (last != null && TaoPresentDiagnostics.lastPresentedPx(window.handle) != last) lagging.incrementAndGet()
+            System.err.println("[#576] presentLag=${lagging.get()} of ${checked.get()} resize events")
+            check(checked.get() >= MIN_ANIM_SAMPLES) {
+                "only ${checked.get()} resize events reached the window during the animation"
+            }
+            check(lagging.get() == 0) {
+                "${lagging.get()} of ${checked.get()} resize events had no frame at their size presented before " +
+                    "the next one arrived — Core Animation stretches the previous drawable over the new bounds"
+            }
+        }
     }
 
     private fun writeSamples(samples: List<Sample>): File {
@@ -436,6 +520,9 @@ internal object AnimatedWindowSizeHeadfulCases {
     private const val START_HEIGHT_DP = 360
     private const val END_HEIGHT_DP = 560
     private const val ANIM_MILLIS = 500
+
+    // Past `animationResizeTime:` (~250 ms for a screen-sized zoom) with margin.
+    private const val ZOOM_SETTLE_MILLIS = 800L
     private const val BASELINE_MILLIS = 200L
     private const val SETTLE_AFTER_ANIM_MILLIS = 250L
     private const val CASE_TIMEOUT_MILLIS = 20_000L
