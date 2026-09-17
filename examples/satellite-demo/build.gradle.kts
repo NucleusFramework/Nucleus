@@ -31,6 +31,7 @@ java {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_17)
+        optIn.add("dev.nucleusframework.window.ExperimentalNucleusApi")
     }
 }
 

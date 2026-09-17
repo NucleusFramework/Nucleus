@@ -17,6 +17,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
 
 /**
@@ -24,6 +25,7 @@ import dev.nucleusframework.window.styling.LocalDecoratedWindowStyle
  * splitter resizes, along which axis, and the modifier that makes an element
  * the grip.
  */
+@ExperimentalNucleusApi
 public interface DockSplitterScope {
     /** The side this splitter belongs to. */
     public val side: DockSide
@@ -56,6 +58,7 @@ public interface DockSplitterScope {
  * border colour, the whole of it the grip.
  */
 @Composable
+@ExperimentalNucleusApi
 public fun DockSplitterScope.DefaultDockSplitter() {
     val color = LocalDecoratedWindowStyle.current.colors.border
     val sizeModifier =
@@ -126,4 +129,5 @@ internal fun moveWeight(
 }
 
 /** Thickness of the [DefaultDockSplitter] bar. */
+@ExperimentalNucleusApi
 public val DockSplitterThickness: Dp = 6.dp

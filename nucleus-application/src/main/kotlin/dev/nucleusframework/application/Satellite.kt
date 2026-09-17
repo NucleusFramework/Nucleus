@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoSatelliteWorkspaceAdapter
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.DefaultSatelliteHeader
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.SatellitePlacement
@@ -64,6 +65,7 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun NucleusApplicationScope.Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -109,6 +111,7 @@ public fun NucleusApplicationScope.Satellite(
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -148,6 +151,7 @@ public fun Satellite(
  * the owner of the workspace's floating satellites regardless of focus;
  * `null` returns to the focus-driven choice.
  */
+@ExperimentalNucleusApi
 public fun SatelliteWorkspace.pinTo(window: NucleusWindow?) {
     pinTo(window?.unsafe?.taoWindow)
 }

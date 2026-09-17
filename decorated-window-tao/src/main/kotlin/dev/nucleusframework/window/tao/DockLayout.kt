@@ -34,6 +34,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.RelocatedContentHost
 import dev.nucleusframework.window.tao.workspace.publishHostGeometry
 import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
@@ -112,6 +113,7 @@ import dev.nucleusframework.window.tao.workspace.rememberHostGeometry
  */
 @Suppress("LongParameterList")
 @Composable
+@ExperimentalNucleusApi
 public fun DockLayout(
     workspace: SatelliteWorkspace,
     modifier: Modifier = Modifier,
@@ -733,9 +735,11 @@ private fun DockPanel(
  * The default [DockLayout] side order: top and bottom run the full width and
  * own the corners, left and right sit between them — the classic border layout.
  */
+@ExperimentalNucleusApi
 public val DefaultDockSideOrder: List<DockSide> = listOf(DockSide.Top, DockSide.Bottom, DockSide.Left, DockSide.Right)
 
 /** Height of the [DefaultSatelliteHeader] strip above a docked panel's content. */
+@ExperimentalNucleusApi
 public val DockPanelHeaderHeight: Dp = 30.dp
 
 private const val CONTENT_KEY = "content"

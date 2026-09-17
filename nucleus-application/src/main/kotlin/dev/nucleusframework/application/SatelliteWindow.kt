@@ -13,6 +13,7 @@ import androidx.compose.ui.UiComposable
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.input.key.KeyEvent
 import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.SatelliteWindowState
 import dev.nucleusframework.window.tao.rememberSatelliteWindowState
 
@@ -61,6 +62,7 @@ import dev.nucleusframework.window.tao.rememberSatelliteWindowState
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun NucleusApplicationScope.SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: NucleusWindow? = null,
@@ -106,6 +108,7 @@ public fun NucleusApplicationScope.SatelliteWindow(
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: NucleusWindow? = null,

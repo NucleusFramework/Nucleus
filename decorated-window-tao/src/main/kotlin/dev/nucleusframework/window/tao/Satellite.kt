@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.nucleusframework.window.BasicTitleBar
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.TitleBarLayoutPolicy
 import dev.nucleusframework.window.WindowScaffold
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
@@ -63,6 +64,7 @@ import dev.nucleusframework.window.tao.workspace.screenDragHandle
  * "Dock" while floating and "Float" / "Close" while docked without knowing
  * which window it is being composed into.
  */
+@ExperimentalNucleusApi
 public interface SatelliteScope {
     /** The workspace the satellite belongs to. */
     public val workspace: SatelliteWorkspace
@@ -208,6 +210,7 @@ internal class SatelliteScopeImpl(
 @Suppress("LongParameterList", "FunctionNaming")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun ApplicationScope.Satellite(
     workspace: SatelliteWorkspace,
     id: String,
@@ -426,6 +429,7 @@ internal fun SatelliteGhostCard(
  *
  * Drives [SatelliteWorkspace.beginDrag].
  */
+@ExperimentalNucleusApi
 public fun Modifier.satelliteDragHandle(scope: SatelliteScope): Modifier =
     if (!scope.workspace.canBeDragged(scope.satellite)) {
         this
@@ -463,6 +467,7 @@ private fun SatelliteDragSession.asScreenDrag(): ScreenDrag =
  * the rest of the bar — the same bargain Chrome's tab strip makes with the
  * empty strip beside the last tab.
  */
+@ExperimentalNucleusApi
 public val SatelliteCaptionStripWidth: Dp = 56.dp
 
 /**
@@ -485,6 +490,7 @@ public val SatelliteCaptionStripWidth: Dp = 56.dp
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
+@ExperimentalNucleusApi
 public fun SatelliteScope.DefaultSatelliteHeader() {
     val colors = LocalTitleBarStyle.current.colors
     var hovered by remember { mutableStateOf(false) }

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.core.runtime.Platform
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDecoBridge
 import kotlinx.coroutines.delay
 
@@ -117,6 +118,7 @@ import kotlinx.coroutines.delay
 @Suppress("LongParameterList", "FunctionNaming", "LongMethod")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun ApplicationScope.SatelliteWindow(
     onCloseRequest: () -> Unit,
     parent: TaoWindow? = LocalTaoWindow.current,

@@ -5,6 +5,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 
 /**
  * Edge of a window's content area a docked satellite attaches to.
@@ -14,6 +15,7 @@ import androidx.compose.ui.unit.dp
  * panels on the right says [Right]. See [DockLayout] for how the four sides
  * nest.
  */
+@ExperimentalNucleusApi
 public enum class DockSide {
     /** Left edge; the panel runs the full content height. */
     Left,
@@ -51,6 +53,7 @@ public enum class DockSide {
  * the two with [SatelliteWorkspace.dock] and [SatelliteWorkspace.undock];
  * `rememberSaveable` state inside the satellite survives the move.
  */
+@ExperimentalNucleusApi
 public sealed interface SatellitePlacement {
     /**
      * An OS window owned by the workspace's current owner window: anchored

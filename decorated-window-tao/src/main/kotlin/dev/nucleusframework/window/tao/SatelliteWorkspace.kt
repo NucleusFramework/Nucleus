@@ -16,6 +16,7 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.roundToIntRect
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.workspace.DockDropZone
 import dev.nucleusframework.window.tao.workspace.DragController
 import dev.nucleusframework.window.tao.workspace.HostGeometry
@@ -37,6 +38,7 @@ import kotlin.math.abs
  * workspace, so a satellite the app takes out of composition and brings back
  * resumes where it was.
  */
+@ExperimentalNucleusApi
 public class SatelliteEntry internal constructor(
     /** Stable identity, the key used by every [SatelliteWorkspace] operation. */
     public val id: String,
@@ -149,6 +151,7 @@ public class SatelliteEntry internal constructor(
  *   the user's last position baked into its positioner.
  * @property isOpen whether it was open.
  */
+@ExperimentalNucleusApi
 public data class SatelliteSnapshot(
     val placement: SatellitePlacement,
     val isOpen: Boolean,
@@ -167,6 +170,7 @@ public data class SatelliteSnapshot(
  * @property dockExtents width (left/right) or height (top/bottom) of each
  *   split dock side, shared by the panels on it.
  */
+@ExperimentalNucleusApi
 public data class SatelliteLayoutSnapshot(
     val satellites: Map<String, SatelliteSnapshot>,
     val dockExtents: Map<DockSide, Dp>,
@@ -201,6 +205,7 @@ public data class SatelliteLayoutSnapshot(
  *   members; when `false`, it is the pinned member or the first to have joined.
  */
 @Suppress("TooManyFunctions")
+@ExperimentalNucleusApi
 public class SatelliteWorkspace(
     public val followFocus: Boolean = true,
 ) {
@@ -1071,6 +1076,7 @@ public class SatelliteWorkspace(
 /**
  * How a satellite drag in flight is carried — see [SatelliteWorkspace.dragKind].
  */
+@ExperimentalNucleusApi
 public enum class SatelliteDragKind {
     /**
      * The satellite's own window, or a ghost window standing in for a docked
@@ -1096,6 +1102,7 @@ public enum class SatelliteDragKind {
  * end. A drag resolves the rank from where the pointer is over the side's
  * stack, so a panel can be dropped between two others.
  */
+@ExperimentalNucleusApi
 public data class DockTarget(
     val host: TaoWindow,
     val side: DockSide,
@@ -1107,6 +1114,7 @@ public data class DockTarget(
  * and where it sits on screen right now (physical screen pixels, outer frame
  * of the ghost window).
  */
+@ExperimentalNucleusApi
 public data class DragGhost(
     val satellite: SatelliteEntry,
     val screenRectPx: Rect,
@@ -1119,6 +1127,7 @@ public data class DragGhost(
 )
 
 /** Where a satellite drag starts; see [SatelliteWorkspace.beginDrag]. */
+@ExperimentalNucleusApi
 public sealed interface SatelliteDragOrigin {
     /**
      * The satellite's own floating window, dragged by its header. The window
@@ -1152,6 +1161,7 @@ public sealed interface SatelliteDragOrigin {
  * layout, an infinity) are ignored rather than propagated into window
  * geometry; the last usable position stands.
  */
+@ExperimentalNucleusApi
 public interface SatelliteDragSession {
     /** The pointer moved. */
     public fun update(pointerScreenPx: Offset)
@@ -1335,6 +1345,7 @@ internal sealed interface DockHit {
 
 /** Remembers a [SatelliteWorkspace] for the lifetime of the calling composition. */
 @Composable
+@ExperimentalNucleusApi
 public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWorkspace =
     remember { SatelliteWorkspace(followFocus) }
 
@@ -1344,6 +1355,7 @@ public fun rememberSatelliteWorkspace(followFocus: Boolean = true): SatelliteWor
  * typically right under [DecoratedWindow].
  */
 @Composable
+@ExperimentalNucleusApi
 public fun JoinSatelliteWorkspace(
     workspace: SatelliteWorkspace,
     window: TaoWindow? = LocalTaoWindow.current,
