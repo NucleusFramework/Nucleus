@@ -112,6 +112,20 @@ class ChromeLogicTest {
     }
 
     @Test
+    fun `resolveWindowControl hides minimize when the window is not minimizable`() {
+        val idle = DecoratedWindowState.of(resizable = true)
+        val pinned = TaoWindow(handle = 0L, isMinimizable = false)
+        assertNull(
+            resolveWindowControl(WindowControlSlot.Minimize, pinned, idle, isFullscreen = false, null),
+        )
+        val regular = TaoWindow(handle = 0L)
+        assertEquals(
+            WindowControlType.Minimize,
+            resolveWindowControl(WindowControlSlot.Minimize, regular, idle, isFullscreen = false, null)?.type,
+        )
+    }
+
+    @Test
     fun `titleBarPadding matches the host platform chrome contract`() {
         val regular = titleBarPadding(40.dp, isFullscreen = false, controlIsRtl = false, linuxControlsOnRight = true)
         val fullscreen = titleBarPadding(40.dp, isFullscreen = true, controlIsRtl = true, linuxControlsOnRight = false)

@@ -360,6 +360,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                                 win = taoWindow,
                                 state = titleBarState,
                                 isResizable = taoWindow.isResizable,
+                                isMinimizable = taoWindow.isMinimizable,
                                 style = style,
                                 layout = linuxLayout,
                                 isFullscreen = titleBarState.isFullscreen,

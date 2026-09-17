@@ -557,6 +557,15 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetMinimizable { handle, minimizable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            // tao: styleMask on macOS, WS_MINIMIZEBOX on Windows, no-op on Linux.
+                            w.set_minimizable(minimizable);
+                        }
+                    }
+                }
                 UserEvent::SetMinimized { handle, minimized } => {
                     {
                         let guard = WINDOWS.lock().unwrap();

@@ -56,6 +56,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     win: TaoWindow,
     state: DecoratedWindowState,
     isResizable: Boolean,
+    isMinimizable: Boolean,
     style: TitleBarStyle,
     layout: LinuxButtonLayout = rememberLinuxButtonLayout(),
     isFullscreen: Boolean = false,
@@ -122,6 +123,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                 }
             }
             LinuxTitleBarButton.MINIMIZE -> {
+                if (!isMinimizable) continue
                 LinuxControlButton(
                     onClick = { win.minimize() },
                     icon = icons.minimize,

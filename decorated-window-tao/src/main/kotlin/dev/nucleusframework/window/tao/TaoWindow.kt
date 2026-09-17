@@ -32,6 +32,7 @@ import dev.nucleusframework.window.tao.event.MACOS_AWT_SCROLL_AMOUNT as SHARED_M
 public class TaoWindow internal constructor(
     public val handle: Long,
     isResizable: Boolean = true,
+    isMinimizable: Boolean = true,
     /**
      * `true` when the window was created as a popup overlay of another window
      * (`openWindow(popupOf = …)` — GTK_WINDOW_POPUP, mapped as a `wl_subsurface`
@@ -76,6 +77,33 @@ public class TaoWindow internal constructor(
         if (resizableState.value == resizable) return
         resizableState.value = resizable
         NativeTaoBridge.nativeSetResizable(handle, resizable)
+    }
+
+    // Same snapshot-backed shape as [resizableState]: the Compose chromes drop
+    // the minimize slot, the native side greys the affordance (#504).
+    private val minimizableState = mutableStateOf(isMinimizable)
+
+    /**
+     * `true` when the user can minimize the window. Initially the
+     * `minimizable` flag the window was created with; tracks runtime
+     * [setMinimizable] calls. Surfaced to Compose so [WindowControlsLinux] /
+     * [WindowControlsWindows] can drop the minimize button (#504).
+     */
+    public val isMinimizable: Boolean
+        get() = minimizableState.value
+
+    /**
+     * Enables/disables user minimizing at runtime. macOS clears
+     * `NSWindowStyleMaskMiniaturizable` (the yellow traffic-light greys out,
+     * Cmd+M and the Window menu follow); Windows drops `WS_MINIMIZEBOX`
+     * (taskbar click, Win+Down, system menu). Linux has no client-side hint
+     * in tao, so only the title-bar button disappears — the window manager's
+     * own shortcuts can still iconify the window.
+     */
+    public fun setMinimizable(minimizable: Boolean) {
+        if (minimizableState.value == minimizable) return
+        minimizableState.value = minimizable
+        NativeTaoBridge.nativeSetMinimizable(handle, minimizable)
     }
 
     @Volatile

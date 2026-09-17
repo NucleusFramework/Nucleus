@@ -138,6 +138,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMinimizable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    minimizable: jboolean,
+) {
+    send_user_event(UserEvent::SetMinimizable {
+        handle: handle as u64,
+        minimizable: minimizable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeRequestRedraw(
     _env: JNIEnv,
     _class: JClass,
