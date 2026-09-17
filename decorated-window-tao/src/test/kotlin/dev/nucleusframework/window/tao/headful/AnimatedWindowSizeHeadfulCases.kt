@@ -82,8 +82,10 @@ internal object AnimatedWindowSizeHeadfulCases {
      * The title-bar double-click path (#576): a maximize / restore zoom is a
      * run of frame steps, and each must have its content presented before
      * the next arrives — otherwise the content trails the window edge for
-     * the whole animation. tao steps the zoom itself (vendored
-     * `set_maximized_async`), so the steps are plain resizes.
+     * the whole animation. On macOS tao steps the zoom itself (vendored
+     * `set_maximized_async`), so the steps are plain resizes; on Windows the
+     * maximize is instant — one size change each way, and DWM stretches the
+     * previous frame over the new client area until it is presented.
      */
     private fun zoomPresentsEveryStep(): TaoWindowTestCase =
         TaoWindowTestCase(
@@ -92,7 +94,8 @@ internal object AnimatedWindowSizeHeadfulCases {
         ) {
             awaitUntil("window mapped") { window.hasRealFramePx() }
             settle()
-            val probe = PresentLagProbe(window, AtomicBoolean(true))
+            val minSteps = if (Platform.Current == Platform.MacOS) MIN_ANIM_SAMPLES else MIN_ZOOM_STEPS_INSTANT
+            val probe = PresentLagProbe(window, AtomicBoolean(true), minSteps)
             window.onResized { w, h -> probe.onResized(w, h) }
             window.setMaximized(true)
             awaitUntil("maximized") { window.isMaximized }
@@ -250,11 +253,13 @@ internal object AnimatedWindowSizeHeadfulCases {
      * and [assertNone] that the last one has. Without the same-turn present
      * the render loop trails by one to two steps and Core Animation shows the
      * previous drawable stretched over the new bounds — the tremble itself
-     * (#576). Only the Metal host records presents, so the gate is macOS-only.
+     * (#576). The Metal and ANGLE hosts record presents; the gate covers
+     * macOS and Windows.
      */
     private class PresentLagProbe(
         private val window: TaoWindow,
         private val recording: AtomicBoolean,
+        private val minChecked: Int = MIN_ANIM_SAMPLES,
     ) {
         private val checked = AtomicInteger(0)
         private val lagging = AtomicInteger(0)
@@ -264,7 +269,7 @@ internal object AnimatedWindowSizeHeadfulCases {
             w: Int,
             h: Int,
         ) {
-            if (Platform.Current != Platform.MacOS || !recording.get()) return
+            if (!recording.get()) return
             val size = IntSize(w, h)
             // tao echoes a programmatic resize twice in one turn (its own
             // dispatch and AppKit's `windowDidResize:`); only a size change
@@ -280,11 +285,10 @@ internal object AnimatedWindowSizeHeadfulCases {
         }
 
         fun assertNone() {
-            if (Platform.Current != Platform.MacOS) return
             val last = previous.get()
             if (last != null && TaoPresentDiagnostics.lastPresentedPx(window.handle) != last) lagging.incrementAndGet()
             System.err.println("[#576] presentLag=${lagging.get()} of ${checked.get()} resize events")
-            check(checked.get() >= MIN_ANIM_SAMPLES) {
+            check(checked.get() >= minChecked) {
                 "only ${checked.get()} resize events reached the window during the animation"
             }
             check(lagging.get() == 0) {
@@ -523,6 +527,10 @@ internal object AnimatedWindowSizeHeadfulCases {
 
     // Past `animationResizeTime:` (~250 ms for a screen-sized zoom) with margin.
     private const val ZOOM_SETTLE_MILLIS = 800L
+
+    // Windows maximizes without a zoom animation: the probe sees the restore
+    // step close the maximize one, and nothing more.
+    private const val MIN_ZOOM_STEPS_INSTANT = 1
     private const val BASELINE_MILLIS = 200L
     private const val SETTLE_AFTER_ANIM_MILLIS = 250L
     private const val CASE_TIMEOUT_MILLIS = 20_000L

@@ -843,7 +843,7 @@ internal class TaoComposeSceneHostWindows(
             // replaces the queued frame rather than lining up behind it, so
             // what the user sees during the drag stays current.
             val pacedByVSync = attachmentHandle != 0L
-            if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+            if (pacedByVSync) setVSyncEnabled(false)
             try {
                 dev.nucleusframework.window.tao.ffi.NativeTaoWindowsDndBridge.nativeStartDrag(
                     hwnd = hwnd,
@@ -853,7 +853,7 @@ internal class TaoComposeSceneHostWindows(
                     pump = OutboundDragPump(),
                 )
             } finally {
-                if (pacedByVSync) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+                if (pacedByVSync) setVSyncEnabled(true)
                 // Unwedge rendering: an invalidation raised during the drag
                 // latched `redrawPending` while DoDragDrop's pump ate the
                 // matching REDRAW_REQUESTED, which suppresses every later
@@ -1068,7 +1068,7 @@ internal class TaoComposeSceneHostWindows(
             onResized(widthPxNew, heightPxNew)
             return
         }
-        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        setVSyncEnabled(false)
         try {
             if (widthPxNew != widthPx || heightPxNew != heightPx) {
                 // Resize the child + immediately present a themed clear:
@@ -1085,8 +1085,22 @@ internal class TaoComposeSceneHostWindows(
             }
             onResized(widthPxNew, heightPxNew)
         } finally {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+            setVSyncEnabled(true)
         }
+    }
+
+    /**
+     * Swap interval as this host last set it — `true` = 1 (pace on the
+     * display refresh), `false` = 0 (present immediately, replacing a queued
+     * frame). Starts at ANGLE's default of 1; the modal resize/move loop, the
+     * outbound drag session and the fullscreen transition drop it for their
+     * duration.
+     */
+    private var vsyncEnabled = true
+
+    private fun setVSyncEnabled(enabled: Boolean) {
+        vsyncEnabled = enabled
+        NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, enabled)
     }
 
     fun onResized(
@@ -1106,19 +1120,22 @@ internal class TaoComposeSceneHostWindows(
         // the surface resize + present atomic (no black edge).
         pendingResizeApply = true
 
-        // Every WM_SIZE of the OS modal resize/move loop renders + presents
-        // inline, at swap interval 0 (see onResizeLoopChanged) — NEVER skip or
-        // coalesce a frame here. A skipped frame leaves the parent HWND at its
-        // new size while the child surface + content stay stale until the
-        // async redraw lands, and DWM composites that mismatch as the window
-        // trembling — the Windows twin of the macOS live-resize tremble
-        // (#476). Rendering inline is atomic instead: the modal loop is
-        // parked on this very call, so the geometry cannot advance while we
-        // paint, and each presented frame matches the window bounds exactly.
-        // The memory cost of the unpaced render loop (the #347 native-image
-        // leak) is bounded by the per-flush 256 MiB cache budget plus a
-        // periodic purge of the per-size GPU scratch accumulated by the drag;
-        // the drag-end path in onResizeLoopChanged reclaims the rest.
+        // Every size change renders + presents inline, in the dispatch that
+        // carried it — NEVER skip or coalesce a frame here. DWM registers the
+        // HWND resize at once and, until the next present, composites the
+        // previous frame over the new client area. In the OS modal
+        // resize/move loop (swap interval 0, see onResizeLoopChanged) a frame
+        // left to the async redraw shows as the window trembling — the
+        // Windows twin of the macOS live-resize tremble (#476); for a
+        // programmatic resize it is one stale step of a `WindowState.size`
+        // animation or of a maximize (#576). Rendering inline is atomic
+        // instead: the geometry cannot advance while we paint (the modal loop
+        // is parked on this very call; a programmatic SetWindowPos has
+        // returned), so each presented frame matches the window bounds
+        // exactly. The memory cost of the unpaced modal-loop render (the #347
+        // native-image leak) is bounded by the per-flush 256 MiB cache budget
+        // plus a periodic purge of the per-size GPU scratch accumulated by the
+        // drag; the drag-end path in onResizeLoopChanged reclaims the rest.
         if (resizeLoopActive) {
             val now = System.nanoTime()
             if (now - lastResizePurgeNs >= GPU_RESIZE_PURGE_INTERVAL_NS) {
@@ -1126,7 +1143,10 @@ internal class TaoComposeSceneHostWindows(
                 purgeGpuResourceCache()
             }
         }
-        onRedrawRequested()
+        // Outside the modal loop the resize is programmatic and the render
+        // loop is running alongside — see [renderFrame] for why this frame
+        // must neither park on VSync nor advance the frame clock.
+        renderFrame(sameTurnResize = !resizeLoopActive)
     }
 
     /**
@@ -1198,10 +1218,10 @@ internal class TaoComposeSceneHostWindows(
                             .isActive(it)
                 } == true
             if (!framePacedContent) {
-                NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+                setVSyncEnabled(false)
             }
         } else {
-            NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+            setVSyncEnabled(true)
             // Paint the settled size once more so the first steady-state frame
             // is already vsync-paced and current.
             pendingResizeApply = true
@@ -1282,7 +1302,75 @@ internal class TaoComposeSceneHostWindows(
      */
     private var lastPresentedClearArgb: Int? = null
 
-    fun onRedrawRequested() {
+    /** Timestamp the frame clock last advanced to — see [renderFrame]. */
+    private var lastFrameClockNanos = 0L
+
+    /** The frame clock's timestamp for this frame: frozen for a same-turn resize frame (see [renderFrame]). */
+    private fun frameClockNanos(sameTurnResize: Boolean): Long =
+        if (sameTurnResize && lastFrameClockNanos != 0L) {
+            lastFrameClockNanos
+        } else {
+            System.nanoTime().also { lastFrameClockNanos = it }
+        }
+
+    /** The present decision of [renderFrame] — see the comment block above its call site. */
+    private fun mustPresent(
+        visualFrame: Boolean,
+        resizeApplied: Boolean,
+        clearArgb: Int,
+    ): Boolean =
+        visualFrame ||
+            resizeApplied ||
+            resizeLoopActive ||
+            forcePresentOnce ||
+            lastPresentedClearArgb != clearArgb
+
+    /** Swaps the host surface; [unpaced] presents at interval 0 for this one swap (see [renderFrame]). */
+    private fun present(unpaced: Boolean) {
+        if (unpaced) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, false)
+        try {
+            NativeTaoGlBridge.nativePresent(attachmentHandle)
+        } finally {
+            if (unpaced) NativeTaoGlBridge.nativeSetVSyncEnabled(attachmentHandle, true)
+        }
+        TaoPresentDiagnostics.record(window.handle, IntSize(widthPx, heightPx))
+    }
+
+    /** A render-loop frame: WM_PAINT (`RedrawRequested`) or one of the in-loop pumps. */
+    fun onRedrawRequested() = renderFrame(sameTurnResize = false)
+
+    /**
+     * Records, presents and paces one frame.
+     *
+     * [sameTurnResize] marks the frame [onResized] paints inside a
+     * programmatic resize's own dispatch (#576, Windows half). Two things
+     * set it apart from a render-loop frame:
+     *
+     * - **It presents at swap interval 0.** `setInnerSize` is a tao user
+     *   event, so the animation step the loop frame ticked lands *after* that
+     *   frame's VSync-paced swap returned — the refresh slot is taken. A
+     *   paced present here would queue behind it and DWM would composite the
+     *   new bounds with the previous frame for a whole refresh: the content
+     *   trailing the window edge, one step in two (the other step finds the
+     *   slot free). Interval 0 puts this frame on screen at the next refresh
+     *   regardless — flip-model DXGI replaces a queued frame rather than
+     *   lining up behind it — and does not park the event-loop thread.
+     * - **It does not advance the frame clock.** With no VSync park left to
+     *   pace it, ticking here would run the next animation step from this
+     *   very frame: its `setInnerSize` user event is delivered before the
+     *   pending WM_PAINT, whose `Resized` paints another same-turn frame,
+     *   and so on — a chain of unpaced frames the render loop never gets a
+     *   word in (#484 pacing). Re-using the last loop frame's timestamp keeps
+     *   `withFrameNanos` animations exactly where that frame left them: the
+     *   pending recompositions still run, the layout is at the new size, and
+     *   time moves on in the paced loop frame that follows.
+     *
+     * The modal resize/move loop is not a same-turn resize: its WM_SIZE is
+     * delivered synchronously, the interval is already 0 (or deliberately 1,
+     * #484), and its inline frames are the only frames that run while the
+     * user drags, so they must keep ticking.
+     */
+    private fun renderFrame(sameTurnResize: Boolean) {
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         val sc = bundle.scene
@@ -1313,7 +1401,7 @@ internal class TaoComposeSceneHostWindows(
             pendingResizeApply = false
         }
 
-        val now = System.nanoTime()
+        val now = frameClockNanos(sameTurnResize)
 
         // ── Frame pump ────────────────────────────────────────────────────
         // Drain queued main-thread work (scroll dispatch, a11y, etc.) before
@@ -1460,18 +1548,13 @@ internal class TaoComposeSceneHostWindows(
         //    so it never raises a scene invalidation).
         // nativePresent defensively re-binds the host's window surface first
         // (a popup renderer may have left its pbuffer current) and
-        // eglSwapBuffers paces on the display refresh.
+        // eglSwapBuffers paces on the display refresh — except for the
+        // same-turn resize frame, presented at interval 0 (see above).
         val visualFrame = dirtyBeforeRender || bundle.visualDirty.get()
-        val mustPresent =
-            visualFrame ||
-                resizeApplied ||
-                resizeLoopActive ||
-                forcePresentOnce ||
-                lastPresentedClearArgb != clearArgb
-        if (mustPresent) {
+        if (mustPresent(visualFrame, resizeApplied, clearArgb)) {
             forcePresentOnce = false
             lastPresentedClearArgb = clearArgb
-            NativeTaoGlBridge.nativePresent(attachmentHandle)
+            present(unpaced = sameTurnResize && vsyncEnabled)
         }
 
         // Backstop for a continuation that landed after the post-record drain
