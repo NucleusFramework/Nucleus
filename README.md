@@ -37,24 +37,24 @@ version 69. The Tao backend is the recommended one for new projects —
 
 ## Used by
 
-Apps take the packaging plugin, a single runtime module, or the full windowing stack:
+Each line is the Nucleus surface that project actually depends on:
 
-- [AB Download Manager](https://github.com/amir1376/ab-download-manager) — packaging plugin
+- [AB Download Manager](https://github.com/amir1376/ab-download-manager) — packaging plugin, aot-runtime, tray
 - [SimpMusic](https://github.com/maxrave-dev/SimpMusic) — notifications
 - [Tasks.org](https://github.com/tasks/tasks) — notifications
-- [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) — system tray
-- [Husi](https://github.com/xchacha20-poly1305/husi) — notifications, autolaunch, dark mode, tray
-- [Flare](https://github.com/DimensionDev/Flare)
-- [Rush](https://github.com/shub39/Rush)
-- [Hammer](https://github.com/Darkrock-Studios/hammer-editor)
-- [OtakuWorld](https://github.com/jakepurple13/OtakuWorld)
-- [WG Tunnel](https://github.com/wgtunnel/desktop)
-- [Zayit](https://github.com/kdroidFilter/Zayit)
-- [NOMM](https://github.com/Combat787/NOMM)
-- [FuoEvolve](https://github.com/feeluown/FuoEvolve)
-- [CozySpace](https://github.com/terrakok/CozySpace)
-- [Amethyst](https://github.com/anthonyhfm/Amethyst)
-- [GitVantage](https://github.com/rocketraman/gitvantage)
+- [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) — tray
+- [Husi](https://github.com/xchacha20-poly1305/husi) — notifications, autolaunch, darkmode-detector, scheduler, core-runtime, tray
+- [Flare](https://github.com/DimensionDev/Flare) — packaging plugin, JNI window backend, darkmode-detector, aot-runtime
+- [Rush](https://github.com/shub39/Rush) — packaging plugin
+- [Hammer](https://github.com/Darkrock-Studios/hammer-editor) — Tao backend, nucleus-application, decorated-window-material3, darkmode-detector, launcher
+- [OtakuWorld](https://github.com/jakepurple13/OtakuWorld) — nucleus-application, notifications, scheduler, taskbar-progress, system-color, system-info, core-runtime, aot-runtime, updater
+- [WG Tunnel](https://github.com/wgtunnel/desktop) — packaging plugin, Tao backend, nucleus-application, decorated-window-material3, core-runtime, darkmode-detector, system-color, energy-manager, system-info, updater, graalvm-runtime, tray
+- [Zayit](https://github.com/kdroidFilter/Zayit) — packaging plugin, Tao backend, nucleus-application, decorated-window-core, decorated-window-jewel, core-runtime, darkmode-detector, system-color, system-info, energy-manager, notifications, updater, aot-runtime, graalvm-runtime, native-http, launcher, menu-macos, taskbar-progress-tao, sf-symbols
+- [NOMM](https://github.com/Combat787/NOMM) — packaging plugin, Tao backend, nucleus-application, decorated-window-material3, core-runtime, darkmode-detector, notifications, taskbar-progress, updater, aot-runtime, native-http, fs-watcher
+- [FuoEvolve](https://github.com/feeluown/FuoEvolve) — packaging plugin, Tao backend, nucleus-application, graalvm-runtime, media-control, notifications, launcher, tray
+- [CozySpace](https://github.com/terrakok/CozySpace) — packaging plugin, Tao backend, nucleus-application, decorated-window-core, darkmode-detector, tray
+- [Amethyst](https://github.com/anthonyhfm/Amethyst) — packaging plugin, Tao backend, nucleus-application, updater, menu-macos, global-hotkey, system-info
+- [GitVantage](https://github.com/rocketraman/gitvantage) — packaging plugin, Tao backend, nucleus-application, darkmode-detector, notifications, fs-watcher
 
 ## Showcase
 
