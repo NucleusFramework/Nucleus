@@ -164,7 +164,7 @@ internal class ElectronBuilderConfigGenerator {
         return yaml.toString()
     }
 
-    private fun generateMacConfig(
+    internal fun generateMacConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
@@ -185,6 +185,13 @@ internal class ElectronBuilderConfigGenerator {
                 ?.absolutePath,
         )
         appendIfNotNull(yaml, "  minimumSystemVersion", distributions.macOS.minimumSystemVersion)
+
+        // The PKG target is always App Store, and App Store binaries are not Developer ID, so
+        // notarytool returns "Invalid". Without this electron-builder submits the .app anyway
+        // whenever APPLE_ID / APPLE_API_KEY / APPLE_KEYCHAIN_PROFILE are in the environment (#650).
+        if (targetFormat == TargetFormat.Pkg) {
+            yaml.appendLine("  notarize: false")
+        }
 
         // When not signing, disable signature-related features
         if (distributions.macOS.signing.sign.orNull != true) {
