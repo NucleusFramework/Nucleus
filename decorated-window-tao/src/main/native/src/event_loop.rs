@@ -153,6 +153,17 @@ fn x11_display() -> Option<gtk::gdk::Display> {
 /// call site so a frame sees the work that produced it. A window destroyed
 /// meanwhile is skipped; one that asks again while being painted lands in the
 /// next batch, which the request itself wakes the loop for.
+/// Whether the thread's message queue currently holds mouse, keyboard or
+/// other hardware input — the high word of `GetQueueStatus` reports the
+/// kinds of messages present. See `UserEvent::Wake`.
+#[cfg(target_os = "windows")]
+fn input_pending() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetQueueStatus, QS_INPUT};
+    // SAFETY: plain query of the calling thread's queue, no pointers.
+    let status = unsafe { GetQueueStatus(QS_INPUT) };
+    (status >> 16) & QS_INPUT.0 != 0
+}
+
 #[cfg(target_os = "windows")]
 fn serve_pending_redraws(pending: &mut Vec<u64>) {
     if pending.is_empty() {
@@ -279,10 +290,26 @@ pub(crate) fn run_event_loop_blocking() {
                     // frames that work asks for, so the app keeps running *and*
                     // painting for as long as the menu is up. Outside a modal
                     // loop the tick that follows finds both queues empty.
+                    //
+                    // But never over pending input. A wake is a *posted*
+                    // message, and Win32 hands posted messages out before
+                    // hardware input; a frame served here resumes the
+                    // continuations that post the next wake, so a window that
+                    // animates (a `withFrameNanos` producer, an infinite
+                    // transition) keeps the posted queue non-empty and every
+                    // WM_MOUSEMOVE / WM_LBUTTONDOWN starves behind it — the
+                    // window paints at full rate and takes no clicks. The
+                    // WM_PAINT-derived `MainEventsCleared` never had that
+                    // problem: paint ranks below input. So a wake only serves
+                    // frames when the queue holds no input; otherwise the
+                    // requests stay pending and the tick that follows the
+                    // input serves them, exactly as before.
                     #[cfg(target_os = "windows")]
                     {
                         dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
-                        serve_pending_redraws(&mut pending_redraws);
+                        if !input_pending() {
+                            serve_pending_redraws(&mut pending_redraws);
+                        }
                     }
                 }
                 UserEvent::CreateWindow {

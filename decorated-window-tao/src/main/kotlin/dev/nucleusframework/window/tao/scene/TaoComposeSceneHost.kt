@@ -56,6 +56,7 @@ import dev.nucleusframework.window.tao.render.LocalTaoTextSelectionA11yPublisher
 import dev.nucleusframework.window.tao.render.TaoSelectionAccessibilityObserver
 import dev.nucleusframework.window.tao.shouldApplyLargeCornerRadius
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -718,11 +719,37 @@ internal class TaoComposeSceneHost(
         NativeMetalBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         scene?.size = IntSize(widthPx, heightPx)
         updateWindowInfoSize()
-        window.requestRedraw()
+        // Present a frame at the new size in this very run-loop turn (#576).
+        // AppKit has already applied the bounds; had the present waited for
+        // the display-link tick, Core Animation would show the new bounds
+        // with the *previous* drawable stretched over them
+        // (`kCAGravityResize`) — one stale frame per step of a
+        // `WindowState.size` animation or of the maximize/restore zoom, read
+        // as the whole content trembling and trailing the window edge.
+        // Same-turn presenting is what [prepareFullscreenFrame] already does
+        // for #327. No dispatcher pump here: we are inside the resize
+        // event's own dispatch, and draining Compose's queue at this point
+        // ran the next animation step — its `setInnerSize` — nested in this
+        // turn, after which AppKit delivered every `windowDidResize:` late,
+        // one stale size per turn, and the scene replayed the whole
+        // animation once it had ended.
+        if (renderFrameBlocking(pumpDispatcher = false)) presentedInDispatch = true else window.requestRedraw()
         purgeResizeScratchIfDue()
     }
 
     private var lastResizePurgeNs: Long = 0
+
+    /**
+     * Set by [onResized] once its same-turn present is on its way; the next
+     * render-loop frame then skips its own replay + present (#576). That frame
+     * would only put a second drawable in flight for the same vsync — and the
+     * next same-turn present would sit behind it in `nextDrawable`, turning a
+     * ~3 ms present into a ~15 ms one. The frame still records (the frame
+     * clock tick Compose animations run on) and paces, so the loop keeps
+     * waking the Tao loop. Read on the render thread, hence volatile.
+     */
+    @Volatile
+    private var presentedInDispatch: Boolean = false
 
     /**
      * Reclaims the per-size GPU scratch a live resize mints, while the sizes are
@@ -1694,7 +1721,9 @@ internal class TaoComposeSceneHost(
         // fullscreen/title-bar animation gaps don't flash. The clear itself runs
         // at replay time on the recorded surface.
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
+        val frameW = widthPx
+        val frameH = heightPx
+        val mainPicture = recordSceneToPicture(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
         // Drain Compose's async work (sendFrame continuations, recomposer steps)
         // synchronously so their state writes happen now and trigger invalidate →
@@ -1704,34 +1733,42 @@ internal class TaoComposeSceneHost(
 
         // ── replay + present + pace (render thread) ──
         var mainPresented = false
+        val skipMain = presentedInDispatch
+        presentedInDispatch = false
         withContext(renderDispatcher) {
             try {
-                mainPresented =
-                    replayPictureToFrame(handle, ctx, mainPicture, mainClear) { h, d ->
-                        if (needsTransaction) {
-                            // nativePresentWithInterop hops to the main queue
-                            // internally for the CATransaction + AppKit mutations;
-                            // the Runnable below therefore runs on the main thread.
-                            NativeMetalBridge.nativePresentWithInterop(
-                                h,
-                                d,
-                                Runnable {
-                                    tx.performTransaction()
-                                    if (!tx.isInteropActive) rendererIsInteropActive = false
-                                },
-                            )
-                        } else {
-                            NativeMetalBridge.nativePresent(h, d)
+                if (!skipMain) {
+                    mainPresented =
+                        replayPictureToFrame(handle, ctx, mainPicture, mainClear) { h, d ->
+                            if (needsTransaction) {
+                                // nativePresentWithInterop hops to the main queue
+                                // internally for the CATransaction + AppKit mutations;
+                                // the Runnable below therefore runs on the main thread.
+                                NativeMetalBridge.nativePresentWithInterop(
+                                    h,
+                                    d,
+                                    Runnable {
+                                        tx.performTransaction()
+                                        if (!tx.isInteropActive) rendererIsInteropActive = false
+                                    },
+                                )
+                            } else {
+                                NativeMetalBridge.nativePresent(h, d)
+                            }
                         }
-                    }
+                }
             } finally {
                 mainPicture.close()
             }
             replayPopups(popupSurfaces)
-            // Pace to the display: park a background thread on the vsync
-            // semaphore. Bounded native-side so a paused link can't deadlock.
-            NativeMetalBridge.nativeVSyncWait(handle)
         }
+        // Pace to the display: park a background thread on the vsync
+        // semaphore. Bounded native-side so a paused link can't deadlock.
+        // Off the render thread (#576): the same-turn present of a resize
+        // ([onResized]) must not queue behind this park — the frame it puts
+        // on screen is for the bounds AppKit is committing now.
+        withContext(Dispatchers.IO) { NativeMetalBridge.nativeVSyncWait(handle) }
+        if (mainPresented) TaoPresentDiagnostics.record(window.handle, IntSize(frameW, frameH))
 
         // ── interop skip-drain (main) ──
         // If the main frame was skipped before its present lambda fired
@@ -1788,23 +1825,33 @@ internal class TaoComposeSceneHost(
      * render thread is idle and no interop is active; the steady-state loop uses
      * [renderFrameSuspending].
      */
-    fun renderFrameBlocking() {
-        val bundle = sceneBundle ?: return
-        val ctx = directContext ?: return
-        if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return
+    fun renderFrameBlocking(
+        /** Drain [TaoMainDispatcher] before the replay; `false` from inside an event dispatch (see [onResized]). */
+        pumpDispatcher: Boolean = true,
+    ): Boolean {
+        val bundle = sceneBundle ?: return false
+        val ctx = directContext ?: return false
+        if (attachmentHandle == 0L || widthPx <= 0 || heightPx <= 0) return false
         val mainClear = if (glassBackgroundState.value) 0 else clearColorArgbState.value
-        val mainPicture = recordSceneToPicture(bundle, widthPx, heightPx)
+        val frameW = widthPx
+        val frameH = heightPx
+        val mainPicture = recordSceneToPicture(bundle, frameW, frameH)
         val popupSurfaces = recordPopupSurfaces()
-        TaoMainDispatcher.pump()
+        if (pumpDispatcher) TaoMainDispatcher.pump()
         val handle = attachmentHandle
-        runOnRenderThread {
-            try {
-                replayPictureToFrame(handle, ctx, mainPicture, mainClear)
-            } finally {
-                mainPicture.close()
+        val presented =
+            runOnRenderThread {
+                val ok =
+                    try {
+                        replayPictureToFrame(handle, ctx, mainPicture, mainClear)
+                    } finally {
+                        mainPicture.close()
+                    }
+                replayPopups(popupSurfaces)
+                ok
             }
-            replayPopups(popupSurfaces)
-        }
+        if (presented) TaoPresentDiagnostics.record(window.handle, IntSize(frameW, frameH))
+        return presented
     }
 
     fun detach() {

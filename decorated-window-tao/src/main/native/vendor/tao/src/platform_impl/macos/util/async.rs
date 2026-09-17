@@ -4,14 +4,16 @@
 
 use std::{
   ops::Deref,
-  sync::{Mutex, Weak},
+  sync::{Arc, Mutex, Weak},
 };
 
 use core_graphics::base::CGFloat;
-use dispatch2::{DispatchQueue, DispatchQueueAttr};
+use dispatch2::{DispatchQueue, DispatchQueueAttr, DispatchTime};
+use objc2::rc::Retained;
+use std::time::{Duration, Instant};
 use objc2::{rc::autoreleasepool, Message};
 use objc2_app_kit::{NSScreen, NSView, NSWindow, NSWindowStyleMask};
-use objc2_foundation::{MainThreadMarker, NSPoint, NSSize, NSString};
+use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString};
 
 use crate::{
   dpi::LogicalSize,
@@ -179,12 +181,11 @@ pub unsafe fn set_maximized_async(
       let mut shared_state_lock = shared_state.lock().unwrap();
 
       // Save the standard frame sized if it is not zoomed.
-      // PATCH(nucleus): only when actually maximizing — an unmaximize issued
-      // while the zoom animation is still running arrives with
-      // `is_zoomed == false` (frame mid-flight), and saving here would
-      // overwrite the real pre-zoom frame with a half-grown one, making the
-      // restore target wrong.
-      if !is_zoomed && maximized {
+      // PATCH(nucleus): only when actually maximizing and no zoom animation
+      // is in flight — a request issued mid-animation sees `is_zoomed ==
+      // false` (frame mid-flight), and saving here would overwrite the real
+      // pre-zoom frame with a half-grown one, making the restore target wrong.
+      if !is_zoomed && maximized && !shared_state_lock.zoom_animating {
         shared_state_lock.standard_frame = Some(NSWindow::frame(&ns_window));
       }
 
@@ -200,20 +201,24 @@ pub unsafe fn set_maximized_async(
         // PATCH(nucleus): upstream calls `ns_window.zoom(None)` here. AppKit's
         // `zoom:` runs its resize animation SYNCHRONOUSLY on the main thread
         // (~350 ms) in a private run-loop mode that services neither the main
-        // dispatch queue nor observers registered on `kCFRunLoopCommonModes`.
-        // Tao's run-loop observer therefore never drains the queued
-        // `WindowEvent::Resized` (windowDidResize: fires per animation step)
-        // until the animation completes — the embedder sees a single Resized
-        // at the end, so the content is stretched for the whole animation and
-        // snaps into place at the end.
+        // dispatch queue nor observers registered on `kCFRunLoopCommonModes`,
+        // so the embedder saw a single Resized at the end and the content
+        // snapped into place. Animating through the NSWindow animator proxy
+        // instead delivered a Resized per step, but the steps are Core
+        // Animation's: overlapping requests run overlapping animations whose
+        // final frame is whichever finishes last, and presenting the content
+        // synchronously on each step (Nucleus #576) left them stopping
+        // mid-flight.
         //
-        // Instead, compute the zoom target frame ourselves (the same frames
-        // `zoom:` uses: screen visibleFrame ⇄ saved standard frame) and
-        // animate via the NSWindow animator proxy, which is non-blocking: the
-        // run loop keeps turning in common modes, windowDidResize: fires per
-        // step, and the embedder receives live Resized events throughout.
-        // `is_zoomed()` is frame-based (see window.rs) so bypassing `zoom:`
-        // keeps the maximized-state tracking consistent.
+        // So step the frame ourselves, on the main queue, 60 times a second,
+        // easing between the current frame and the zoom target (the same
+        // frames `zoom:` uses: screen visibleFrame ⇄ saved standard frame)
+        // over `animationResizeTime:`. Every step is a plain `setFrame:`, so
+        // the embedder gets one Resized per step and can present the content
+        // for it in the same turn; a new request bumps `zoom_generation`,
+        // which stops the chain in flight and starts over from the frame it
+        // had reached. `is_zoomed()` is frame-based (see window.rs) so
+        // bypassing `zoom:` keeps the maximized-state tracking consistent.
         let mtm = MainThreadMarker::new_unchecked();
         let screen = ns_window.screen().or_else(|| NSScreen::mainScreen(mtm));
         let target = if maximized {
@@ -225,12 +230,21 @@ pub unsafe fn set_maximized_async(
           shared_state_lock.saved_standard_frame()
         };
         let duration: f64 = msg_send![&*ns_window, animationResizeTime: target];
-        let _: () = msg_send![class!(NSAnimationContext), beginGrouping];
-        let ctx: id = msg_send![class!(NSAnimationContext), currentContext];
-        let _: () = msg_send![ctx, setDuration: duration];
-        let animator: id = msg_send![&*ns_window, animator];
-        let _: () = msg_send![animator, setFrame: target, display: YES];
-        let _: () = msg_send![class!(NSAnimationContext), endGrouping];
+        shared_state_lock.zoom_generation += 1;
+        shared_state_lock.zoom_animating = true;
+        let generation = shared_state_lock.zoom_generation;
+        let from = NSWindow::frame(&ns_window);
+        drop(shared_state_lock);
+        zoom_step(
+          MainThreadSafe((*ns_window).retain()),
+          MainThreadSafe(Arc::downgrade(&shared_state)),
+          generation,
+          from,
+          target,
+          Instant::now(),
+          duration.max(ZOOM_MIN_DURATION_SECS),
+        );
+        return;
       } else {
         // if it's not resizable, we set the frame directly
         let new_rect = if maximized {
@@ -303,5 +317,50 @@ pub unsafe fn set_ignore_mouse_events(ns_window: &NSWindow, ignore: bool) {
   let ns_window = MainThreadSafe(ns_window.retain());
   DispatchQueue::main().exec_async(move || {
     ns_window.setIgnoresMouseEvents(ignore);
+  });
+}
+
+// PATCH(nucleus): one step of the zoom animation started by
+// `set_maximized_async`; re-schedules itself until the target is reached or
+// a newer request has bumped `zoom_generation`.
+const ZOOM_STEP_MS: u64 = 16;
+const ZOOM_MIN_DURATION_SECS: f64 = 0.05;
+
+unsafe fn zoom_step(
+  ns_window: MainThreadSafe<Retained<NSWindow>>,
+  shared_state: MainThreadSafe<Weak<Mutex<SharedState>>>,
+  generation: u64,
+  from: NSRect,
+  to: NSRect,
+  started: Instant,
+  duration: f64,
+) {
+  let when = DispatchTime::try_from(Duration::from_millis(ZOOM_STEP_MS)).unwrap_or(DispatchTime::NOW);
+  let _ = DispatchQueue::main().after(when, move || {
+    let Some(state) = shared_state.upgrade() else {
+      return;
+    };
+    if state.lock().unwrap().zoom_generation != generation {
+      return;
+    }
+    let t = (started.elapsed().as_secs_f64() / duration).min(1.0);
+    // Ease in-out, like AppKit's own window frame animation.
+    let e = 0.5 - 0.5 * (std::f64::consts::PI * t).cos();
+    let frame = NSRect::new(
+      NSPoint::new(
+        from.origin.x + (to.origin.x - from.origin.x) * e,
+        from.origin.y + (to.origin.y - from.origin.y) * e,
+      ),
+      NSSize::new(
+        from.size.width + (to.size.width - from.size.width) * e,
+        from.size.height + (to.size.height - from.size.height) * e,
+      ),
+    );
+    ns_window.setFrame_display(frame, true);
+    if t < 1.0 {
+      zoom_step(ns_window, shared_state, generation, from, to, started, duration);
+    } else {
+      state.lock().unwrap().zoom_animating = false;
+    }
   });
 }

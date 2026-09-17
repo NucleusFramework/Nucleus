@@ -462,6 +462,13 @@ pub struct SharedState {
   pub target_fullscreen: Option<Option<Fullscreen>>,
   pub maximized: bool,
   pub standard_frame: Option<NSRect>,
+  // PATCH(nucleus): the stepped zoom animation of `set_maximized_async`.
+  // Bumped by every request; a step whose generation is stale stops, so a
+  // new request cancels the animation in flight and restarts from the
+  // current frame. `zoom_animating` guards `standard_frame` against being
+  // overwritten with a mid-flight frame.
+  pub zoom_generation: u64,
+  pub zoom_animating: bool,
   is_simple_fullscreen: bool,
   pub saved_style: Option<NSWindowStyleMask>,
   /// Presentation options saved before entering `set_simple_fullscreen`, and
@@ -1035,6 +1042,18 @@ impl UnownedWindow {
     // which *does* call `zoom:` and produces exactly the animation we
     // just avoided. Frame comparison gives a consistent answer regardless
     // of how the maximized state was applied.
+    //
+    // While the stepped zoom of `set_maximized_async` is in flight the frame
+    // is half-way between the two states, so report the one it is heading to
+    // — the state the app asked for. A frame-based answer mid-animation reads
+    // "floating" half-way through a maximize, and the state-sync layer's
+    // un-zoom then no-ops because its bookkeeping already says Floating.
+    // `try_lock`: never block behind a caller holding the state.
+    if let Ok(state) = self.shared_state.try_lock() {
+      if state.zoom_animating {
+        return state.maximized;
+      }
+    }
     unsafe {
       if let Some(screen) = self.ns_window.screen() {
         let frame = self.ns_window.frame();
