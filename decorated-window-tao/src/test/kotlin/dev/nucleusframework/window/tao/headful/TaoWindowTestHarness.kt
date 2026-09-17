@@ -79,6 +79,13 @@ internal class TaoWindowTestCase(
     val dialogSize: DpSize? = null,
     val dialogContent: (@Composable TaoDecoratedDialogScope.() -> Unit)? = null,
     /**
+     * When true, the dialog is composed under this case's window as
+     * `LocalTaoWindow` — the parent an in-window `DecoratedDialog` call gets —
+     * and only once that window exists. Default: parentless, at application
+     * scope.
+     */
+    val dialogParentedToWindow: Boolean = false,
+    /**
      * Whether the dialog is in composition. Defaults to `true`; a driver flips
      * it to `false` to close the dialog the way an app would — by dropping it.
      */

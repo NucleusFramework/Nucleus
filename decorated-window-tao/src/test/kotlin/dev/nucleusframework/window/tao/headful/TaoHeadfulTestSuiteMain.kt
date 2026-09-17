@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
@@ -20,6 +21,7 @@ import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DecoratedDialog
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.SatelliteWindow
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
@@ -747,18 +749,21 @@ private fun ApplicationScope.CaseWindow(
         )
     }
     val dialogContent = case.dialogContent
-    if (dialogContent != null && case.dialogVisible.value) {
-        DecoratedDialog(
-            onCloseRequest = { /* cases drive their own lifecycle */ },
-            state =
-                rememberDialogState(
-                    size = case.dialogSize ?: DpSize(400.dp, 300.dp),
-                ),
-            title = "tao-headful-dialog: ${case.name}",
-        ) {
-            dialogContent()
-            val w = window
-            LaunchedEffect(w) { dialogHolder.value = w }
+    val dialogParent = if (case.dialogParentedToWindow) windowHolder.value else null
+    if (dialogContent != null && case.dialogVisible.value && (dialogParent != null || !case.dialogParentedToWindow)) {
+        CompositionLocalProvider(LocalTaoWindow provides dialogParent) {
+            DecoratedDialog(
+                onCloseRequest = { /* cases drive their own lifecycle */ },
+                state =
+                    rememberDialogState(
+                        size = case.dialogSize ?: DpSize(400.dp, 300.dp),
+                    ),
+                title = "tao-headful-dialog: ${case.name}",
+            ) {
+                dialogContent()
+                val w = window
+                LaunchedEffect(w) { dialogHolder.value = w }
+            }
         }
     }
 }
