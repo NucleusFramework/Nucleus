@@ -9,7 +9,9 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.IntSize
+import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.TaoWindow
+import dev.nucleusframework.window.tao.edgeStripPx
 
 /**
  * What a drop target inside a window publishes about itself: the window, the
@@ -32,23 +34,86 @@ internal class HostGeometry(
     /** The host's content size when [layoutBoundsInWindowPx] was captured. */
     var containerSizePx: IntSize = IntSize.Zero
 
+    /**
+     * The drop zones the target offers right now, in the host window
+     * (physical px) — exactly the rectangles it draws while a drag is in
+     * flight, so what a drag is hit-tested against is what the user sees.
+     * Empty while nothing is being dragged, or for a target that publishes
+     * none; the hit test then falls back to the edges of
+     * [layoutBoundsInWindowPx].
+     */
+    var zoneBoundsInWindowPx: Map<DockSide, DockDropZone> = emptyMap()
+
     /** Physical pixels per dp on the host, `1` while the window has none yet. */
     fun scaleOrOne(): Float = scaleFactor().takeIf { it > 0f } ?: 1f
 
     /**
      * Screen position of the host's content origin, `null` before the first
      * layout, while unmapped, or on a host whose screen position is not
-     * knowable ([supportsScreenPlacement] — native Wayland), where the origin
+     * knowable ([canPlaceOnScreen] — native Wayland), where the origin
      * GDK reports would place every window at the top-left of the screen.
      */
     fun clientOriginPx(): Offset? {
-        if (containerSizePx == IntSize.Zero || !host.supportsScreenPlacement) return null
+        if (containerSizePx == IntSize.Zero || !host.canPlaceOnScreen) return null
         val outer = outerBoundsPx() ?: return null
         return clientOriginPx(outer, containerSizePx)
     }
 
     /** The target's rect on screen (physical px), `null` while [clientOriginPx] is. */
     fun layoutScreenRectPx(): Rect? = clientOriginPx()?.let { layoutBoundsInWindowPx.translate(it) }
+
+    /**
+     * The drop zones on screen (physical px): the published
+     * [zoneBoundsInWindowPx], else a strip of [zoneWidthPx] inside each edge
+     * of the layout — the same four zones the pointer hit test uses. `null`
+     * while [clientOriginPx] is.
+     */
+    fun zoneScreenRectsPx(zoneWidthPx: Float): Map<DockSide, DockDropZone>? {
+        val origin = clientOriginPx() ?: return null
+        if (zoneBoundsInWindowPx.isNotEmpty()) {
+            return zoneBoundsInWindowPx.mapValues { (_, zone) -> zone.translate(origin) }
+        }
+        val rect = layoutBoundsInWindowPx.translate(origin)
+        return DockSide.entries.associateWith { side -> DockDropZone(edgeStripPx(rect, side, zoneWidthPx)) }
+    }
+}
+
+/**
+ * What one side of a drop target offers a drag, in whichever px space the
+ * holder says: the [strip] a satellite enters the side by, and — when panels
+ * are already docked there — one [slots] rect per rank the dropped panel can
+ * take among them, in rank order, covering the stack and the strip between
+ * them. Empty [slots] mean the side has no panel to order against.
+ */
+internal data class DockDropZone(
+    val strip: Rect,
+    val slots: List<Rect> = emptyList(),
+) {
+    fun translate(offset: Offset): DockDropZone =
+        DockDropZone(strip.translate(offset), slots.map { it.translate(offset) })
+
+    /** Whether [point] is on the strip or on one of the slots. */
+    fun contains(point: Offset): Boolean = strip.contains(point) || slots.any { it.contains(point) }
+
+    /**
+     * The rank [point] aims at: the slot it is in, else the nearest one, so a
+     * pointer past either end of the stack means its first or last rank.
+     * `null` without slots: nothing to order against. An empty slot is a rank
+     * that is not on offer (it would displace a pinned panel) and is skipped.
+     */
+    fun slotAt(point: Offset): Int? =
+        slots.indices
+            .filter { !slots[it].isEmpty }
+            .minByOrNull { distanceSquaredPx(slots[it], point) }
+
+    private fun distanceSquaredPx(
+        rect: Rect,
+        point: Offset,
+    ): Float {
+        val dx = maxOf(rect.left - point.x, 0f, point.x - rect.right)
+        val dy = maxOf(rect.top - point.y, 0f, point.y - rect.bottom)
+        return dx * dx + dy * dy
+    }
 }
 
 /**

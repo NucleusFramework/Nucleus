@@ -355,6 +355,10 @@ internal class TabSatellitesFixture(
     /** The floating window of each group's palette, by group id. */
     val floatingPalette = mutableStateOf<Map<String, TaoWindow>>(emptyMap())
 
+    /** Which palette body wrote [panelHost] / [floatingPalette] last, so only it may clear the entry. */
+    private val publishedPanel = HashMap<String, Any>()
+    private val publishedFloating = HashMap<String, Any>()
+
     /** The tab title each group's palette is currently drawing, by group id. */
     val paletteShows = mutableStateOf<Map<String, String?>>(emptyMap())
 
@@ -459,9 +463,13 @@ internal class TabSatellitesFixture(
                 paletteCounters.value = paletteCounters.value + (group.id to clicks)
                 paletteShows.value = paletteShows.value + (group.id to shown)
                 if (docked) {
-                    if (window != null) panelHost.value = panelHost.value + (group.id to window)
+                    if (window != null) {
+                        panelHost.value = panelHost.value + (group.id to window)
+                        publishedPanel[group.id] = incarnation
+                    }
                 } else if (window != null) {
                     floatingPalette.value = floatingPalette.value + (group.id to window)
+                    publishedFloating[group.id] = incarnation
                 }
             }
             DisposableEffect(incarnation) {
@@ -470,10 +478,19 @@ internal class TabSatellitesFixture(
                     paletteIncarnations.value + (group.id to (paletteIncarnations.value[group.id] ?: 0) + 1)
                 onDispose {
                     composedPalettes.value--
+                    // Only the body that published the entry may withdraw it.
+                    // A panel moving from one tab body's DockLayout to the
+                    // next is disposed *after* its successor composed — movable
+                    // content is released at the end of the frame — so the
+                    // leaving body must not erase what the arriving one wrote.
                     if (docked) {
-                        if (panelHost.value[group.id] === window) panelHost.value = panelHost.value - group.id
-                    } else if (floatingPalette.value[group.id] === window) {
+                        if (publishedPanel[group.id] === incarnation) {
+                            panelHost.value = panelHost.value - group.id
+                            publishedPanel.remove(group.id)
+                        }
+                    } else if (publishedFloating[group.id] === incarnation) {
                         floatingPalette.value = floatingPalette.value - group.id
+                        publishedFloating.remove(group.id)
                     }
                 }
             }

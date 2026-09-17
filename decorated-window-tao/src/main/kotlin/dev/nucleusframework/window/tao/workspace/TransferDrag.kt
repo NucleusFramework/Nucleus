@@ -3,6 +3,7 @@ package dev.nucleusframework.window.tao.workspace
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.awaitTouchSlopOrCancellation
+import androidx.compose.foundation.gestures.drag
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -52,7 +53,7 @@ import kotlin.math.roundToInt
 /**
  * A cross-window drag carried by the platform's drag-and-drop session — the
  * path taken where the client cannot read or set window positions (native
- * Wayland, see [supportsScreenPlacement]).
+ * Wayland, see [canPlaceOnScreen]).
  *
  * The roles are inverted with respect to [ScreenDrag]: the *source* learns
  * nothing about where the pointer is, and the *target* window — the one the
@@ -114,13 +115,41 @@ internal fun Modifier.transferDragHandle(
     key: Any?,
     window: TaoWindow,
     begin: () -> TransferDrag?,
+    gesture: TransferDragGesture = TransferDragGesture.Immediate,
 ): Modifier {
     val accent = LocalTitleBarStyle.current.colors.content
     val measurer = rememberTextMeasurer()
     val grab = remember { GrabCoordinates() }
     return this
         .onGloballyPositioned { grab.coordinates = it }
-        .then(TransferDragElement(key, window, grab, begin, accent, measurer))
+        .then(TransferDragElement(key, window, grab, begin, accent, measurer, gesture))
+}
+
+/**
+ * What a grip does with the gesture before the platform's drag-and-drop
+ * session takes it — the hook a tab strip uses to reorder locally first.
+ *
+ * [Immediate] hands over as soon as the touch slop is passed, which is what a
+ * palette wants. Anything else keeps the pointer for as long as [onDrag]
+ * answers `false`: every sample is the caller's, and the session starts on the
+ * first `true`.
+ *
+ * Starting it late is legal and is the only way a client that cannot place its
+ * windows can show a drop where it is aimed: until the platform session
+ * exists, no other window of the app hears anything about the pointer.
+ */
+internal interface TransferDragGesture {
+    /** The gesture has passed the slop, pressed at [pressPosition] in the grip. */
+    fun onStart(pressPosition: Offset) = Unit
+
+    /** A sample at [position] in the grip; `true` hands the gesture to the platform session. */
+    fun onDrag(position: Offset): Boolean = true
+
+    /** The gesture ended in the caller's hands; [released] tells a release from an abandon. */
+    fun onEnd(released: Boolean) = Unit
+
+    /** Hands over at once: every grip with nothing of its own to do. */
+    object Immediate : TransferDragGesture
 }
 
 /**
@@ -144,8 +173,9 @@ private data class TransferDragElement(
     val begin: () -> TransferDrag?,
     val accent: Color,
     val measurer: TextMeasurer,
+    val gesture: TransferDragGesture,
 ) : ModifierNodeElement<TransferDragNode>() {
-    override fun create(): TransferDragNode = TransferDragNode(window, grab, begin, accent, measurer)
+    override fun create(): TransferDragNode = TransferDragNode(window, grab, begin, accent, measurer, gesture)
 
     override fun update(node: TransferDragNode) {
         node.window = window
@@ -153,6 +183,7 @@ private data class TransferDragElement(
         node.begin = begin
         node.accent = accent
         node.measurer = measurer
+        node.gesture = gesture
     }
 
     override fun InspectorInfo.inspectableProperties() {
@@ -168,6 +199,7 @@ private class TransferDragNode(
     var begin: () -> TransferDrag?,
     var accent: Color,
     var measurer: TextMeasurer,
+    var gesture: TransferDragGesture,
 ) : DelegatingNode() {
     private val source =
         delegate(
@@ -193,20 +225,42 @@ private class TransferDragNode(
             TransferGhostSource.None -> null
         }
 
+    /**
+     * Hands the gesture to the platform, if [gesture] says so: from the
+     * *press* position, since Compose only starts a transfer for a point
+     * inside the source node — and by then the pointer is long gone from it.
+     */
+    private fun handOver(
+        pressPosition: Offset,
+        currentPosition: Offset,
+    ): Boolean {
+        if (!gesture.onDrag(currentPosition)) return false
+        if (!source.isRequestDragAndDropTransferRequired) return false
+        source.requestDragAndDropTransfer(pressPosition)
+        return true
+    }
+
     init {
         delegate(
             SuspendingPointerInputModifierNode {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     down.consume()
-                    awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
-                        ?: return@awaitEachGesture
-                    // The press position, not the post-slop one: Compose only
-                    // starts a transfer for a point inside the source node, and
-                    // a grip is narrower than the slop.
-                    if (source.isRequestDragAndDropTransferRequired) {
-                        source.requestDragAndDropTransfer(down.position)
-                    }
+                    val start =
+                        awaitTouchSlopOrCancellation(down.id) { change, _ -> change.consume() }
+                            ?: return@awaitEachGesture
+                    gesture.onStart(down.position)
+                    var handedOver = handOver(down.position, start.position)
+                    if (handedOver) return@awaitEachGesture
+                    // The caller's gesture until it says otherwise: it keeps
+                    // every sample, and the platform session starts on the
+                    // first one it hands over.
+                    val released =
+                        drag(start.id) { change ->
+                            change.consume()
+                            if (!handedOver) handedOver = handOver(down.position, change.position)
+                        }
+                    if (!handedOver) gesture.onEnd(released)
                 }
             },
         )

@@ -15,7 +15,9 @@ import androidx.compose.ui.geometry.Offset
  *     target, not a patchwork of a grip and a selector;
  *  4. **a hover across two strips and back**, where the preview follows the
  *     pointer from window to window and the drop acts on where it ended;
- *  5. **a flick**, delivering as few samples as the OS will give.
+ *  5. **a flick**, delivering as few samples as the OS will give;
+ *  6. **a pointer resting on a tab**, which offers that tab's hover card —
+ *     and every case where the card has to stay away.
  *
  * Native Wayland is skipped along with the rest of the tab suite; so is a host
  * that cannot inject input.
@@ -28,6 +30,7 @@ internal object TabWorkspaceMouseHeadfulCases {
             robotClicksAnywhereInATabSelectIt(),
             robotHoverCrossesTwoStripsAndComesBack(),
             robotFlickBetweenStripsMerges(),
+            robotRestingOnATabOffersItsCard(),
         )
 
     /**
@@ -323,4 +326,92 @@ internal object TabWorkspaceMouseHeadfulCases {
     private const val SLOT_NEAR_Y = 0.2f
     private const val SLOT_MID_Y = 0.5f
     private const val SLOT_FAR_Y = 0.88f
+
+    /**
+     * The hover card, under a real pointer: resting on a tab offers *that*
+     * tab's card, and the three places it has to stay away from — the tab
+     * already on screen, anywhere off the strip, and a tab that has just been
+     * clicked.
+     *
+     * The delay itself is not asserted. A wall-clock threshold on a loaded
+     * runner is exactly what makes a case flaky; what matters here is that a
+     * real pointer reaches the strip's slots at all, and that the popup opens
+     * over a real window — neither of which a headless case can tell.
+     */
+    private fun robotRestingOnATabOffersItsCard(): TaoWindowTestCase {
+        val fixture =
+            TabWorkspaceFixture(
+                initialTitles = listOf("Alpha", "Beta", "Gamma"),
+                hoverPreview = true,
+            )
+        return TaoWindowTestCase(
+            name = "tab mouse resting on a tab offers its hover card",
+            skip = { workspaceSkipReason() ?: robotSkipReason() },
+            windowState = idleCaseWindowState(),
+            size = idleCaseWindowSize(),
+            paintDefaultBackground = false,
+            applicationContent = { with(fixture) { Windows() } },
+            driver = {
+                val first = awaitTabWindows(fixture, "Alpha", "Beta", "Gamma")
+                val workspace = fixture.workspace
+                val alpha = fixture.tabId("Alpha")
+                val beta = fixture.tabId("Beta")
+                workspace.select(alpha)
+                awaitUntil("Alpha is the composed body") { fixture.windowOf("Alpha") === first }
+                first.focus()
+                awaitUntil("first window is focused") { first.isFocused }
+
+                val onAlpha = requireNotNull(fixture.tabCenterPx("Alpha"))
+                val onBeta = requireNotNull(fixture.tabCenterPx("Beta"))
+                val strip = requireNotNull(fixture.stripRectPx(requireNotNull(fixture.groupOf("Alpha"))))
+                val inTheBody = Offset(strip.center.x, strip.bottom + BELOW_STRIP_PX)
+
+                // Resting on a tab that is not the one being read: its card.
+                if (robotMoveTo(onBeta, first.scaleFactor) == null) {
+                    System.err.println("[tab-mouse] robot became unavailable, nothing to assert")
+                    return@TaoWindowTestCase
+                }
+                awaitUntil(
+                    "the strip offers Beta's card — ${robotAim()}; ${fixture.geometryReport("Beta")}",
+                ) { fixture.shownHoverCard.value == beta }
+
+                // The tab already on screen gets none: its body is right there.
+                checkNotNull(robotMoveTo(onAlpha, first.scaleFactor)) { "robot became unavailable mid-case" }
+                awaitUntil("the card goes away over the selected tab — ${robotAim()}") {
+                    fixture.shownHoverCard.value == null
+                }
+                settle(HOVER_HOLD_MILLIS)
+                check(fixture.shownHoverCard.value == null) { "a card was offered for the tab on screen" }
+
+                // Back on Beta, and it comes back.
+                checkNotNull(robotMoveTo(onBeta, first.scaleFactor)) { "robot became unavailable mid-case" }
+                awaitUntil("Beta's card comes back — ${robotAim()}") { fixture.shownHoverCard.value == beta }
+
+                // Off the strip entirely: nothing is being pointed at.
+                checkNotNull(robotMoveTo(inTheBody, first.scaleFactor)) { "robot became unavailable mid-case" }
+                awaitUntil("the card goes away below the strip — ${robotAim()}") {
+                    fixture.shownHoverCard.value == null
+                }
+
+                // A click leaves no card under the pointer, however long it
+                // rests there: the tab it selected is now the one on screen.
+                checkNotNull(
+                    robotPressAndDrag(onBeta, onBeta, first.scaleFactor, steps = 1, stepDelayMillis = 0),
+                ) { "robot became unavailable mid-case" }
+                checkNotNull(robotRelease()) { "robot became unavailable mid-case" }
+                awaitUntil("the click selected Beta — ${robotAim()}") {
+                    requireNotNull(fixture.groupOf("Beta")).selectedId == beta
+                }
+                settle(HOVER_HOLD_MILLIS)
+                check(fixture.shownHoverCard.value == null) { "a card sat under the tab that was just clicked" }
+                check(workspace.draggedTab == null && workspace.dragGhost == null) { "the click became a drag" }
+            },
+        )
+    }
 }
+
+/** How far below a strip a case reaches to leave it: well inside the body. */
+private const val BELOW_STRIP_PX = 80f
+
+/** Long enough for a card that should not be there to have shown up. */
+private const val HOVER_HOLD_MILLIS = 400L

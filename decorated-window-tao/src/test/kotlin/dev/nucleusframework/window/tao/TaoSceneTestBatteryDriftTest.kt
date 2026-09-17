@@ -91,12 +91,22 @@ class TaoSceneTestBatteryDriftTest {
             LcdTextTest::class.java,
             WindowPositionerTest::class.java,
             SatelliteWorkspaceTest::class.java,
+            SatelliteDockedGeometryTest::class.java,
+            DockLandingRectTest::class.java,
+            DockZoneHintSidesTest::class.java,
+            DockDropSlotsTest::class.java,
+            SatelliteDockRankTest::class.java,
+            SatelliteDockSidesTest::class.java,
+            SatelliteDragKindTest::class.java,
+            SatelliteFixedPanelTest::class.java,
+            DockTargetFromDraggedRectTest::class.java,
             RelocatingSaveableStateRegistryTest::class.java,
             WindowGroupTest::class.java,
             HostGeometryTest::class.java,
             DragControllerTest::class.java,
             TransferDragTest::class.java,
             TabWorkspaceTest::class.java,
+            TabHoverPreviewTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */

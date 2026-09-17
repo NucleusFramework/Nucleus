@@ -10,6 +10,7 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.window.tao.ApplicationScope
 import dev.nucleusframework.window.tao.DecoratedWindow
+import dev.nucleusframework.window.tao.TaoWindow
 
 /**
  * A borderless, click-through, always-on-top window covering [screenRectPx]
@@ -21,12 +22,18 @@ import dev.nucleusframework.window.tao.DecoratedWindow
  * never takes the pointer, so the drag gesture keeps running in the window
  * underneath.
  *
- * @param screenRectPx outer frame of the ghost, physical screen pixels.
+ * @param screenRectPx outer frame of the ghost, physical pixels — on screen,
+ *   or relative to [popupFor] when it is given, which is the space a popup
+ *   overlay is positioned in on a compositor-placed surface.
  * @param scaleFactor physical pixels per dp of the window the rect came from.
  *   The application scope this is composed in belongs to no window, so its
  *   density is always 1 and cannot be used to convert.
  * @param title the window title (invisible, but what a screen reader announces).
  * @param compositionLocalContext parent locals bridged into the ghost's scene.
+ * @param popupFor the window this ghost overlays, on Linux: a popup of it
+ *   rather than a toplevel of its own — a `wl_subsurface` on native Wayland,
+ *   the only window kind a client may position there, so the ghost can follow
+ *   the pointer at all. `null` is a plain window, placed on screen.
  * @param content what the ghost shows; fills the window.
  */
 @Suppress("FunctionNaming")
@@ -36,6 +43,7 @@ internal fun ApplicationScope.DragGhostWindow(
     scaleFactor: Float,
     title: String,
     compositionLocalContext: CompositionLocalContext?,
+    popupFor: TaoWindow? = null,
     content: @Composable () -> Unit,
 ) {
     val scale = scaleFactor.takeIf { it > 0f } ?: 1f
@@ -60,6 +68,7 @@ internal fun ApplicationScope.DragGhostWindow(
         focusable = false,
         clickThrough = true,
         alwaysOnTop = true,
+        popupFor = popupFor,
         compositionLocalContext = compositionLocalContext,
     ) {
         content()

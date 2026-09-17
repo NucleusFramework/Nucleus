@@ -5,6 +5,10 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.DockTarget
+import dev.nucleusframework.window.tao.DockTransferTarget
+import dev.nucleusframework.window.tao.SatelliteCaptionStripWidth
+import dev.nucleusframework.window.tao.SatelliteDragKind
+import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.TabDropTarget
 import dev.nucleusframework.window.tao.TransferDrop
 import kotlin.math.abs
@@ -30,7 +34,17 @@ import kotlin.math.abs
  *  5. the ownership half is untouched: a floating satellite still hides while
  *     its owner is maximized, and never publishes an owner offset it cannot
  *     know;
- *  6. tabs the same way: no record tears off, a record merges back.
+ *  6. tabs the same way: no record tears off, a record merges back;
+ *  9. the strip's own gesture: a tab carried along its strip reorders with no
+ *     screen coordinate at all, and leaving the strip hands the drag to the
+ *     platform's session, which is what lets another window preview the drop;
+ *  8. chrome is told the compositor places its window, the title bar reserves
+ *     the caption strip for the compositor's move and the app's slot is
+ *     composed inside it, and a satellite drag reports itself as carried by
+ *     the platform session with no ghost window;
+ *  7. a drop over a stack resolves the rank under the pointer from window
+ *     coordinates — its own rank being no move — and the record reorders the
+ *     layers without rebuilding one.
  *
  * The adversarial half — lifecycle, concurrency, bursts, edge cases — lives in
  * [WaylandWorkspaceStressHeadfulCases]. Skipped everywhere that has
@@ -44,7 +58,239 @@ internal object WaylandWorkspaceHeadfulCases {
             recordedZoneDocksAndNoRecordUndocks(),
             everyZoneResolvesFromAWindowCoordinate(),
             tabTransferDragTearsOffAndMergesBack(),
+            aTransferDropResolvesARankAndReorders(),
+            chromeIsToldTheCompositorPlacesTheWindow(),
+            theStripReordersAndDefersItsDrops(),
         )
+
+    /**
+     * The gesture a compositor-placed window *can* carry, on real windows.
+     *
+     * Reordering asks nothing of the screen: the strip is handed the travel in
+     * its own coordinates and answers with the place the tab would take. A
+     * release clear of the strip cannot be hit-tested — every toplevel reports
+     * a fake origin here — so the drop is deferred, and the window the
+     * compositor hands the pointer to next is the one that resolves it: into
+     * its strip, or into a window of its own. Nothing claims it and the tab is
+     * torn off, which is what a release over the desktop has always done.
+     */
+    private fun theStripReordersAndDefersItsDrops(): TaoWindowTestCase {
+        val fixture = TabWorkspaceFixture(initialTitles = listOf("Alpha", "Beta", "Gamma"))
+        return TaoWindowTestCase(
+            name = "native Wayland: the strip reorders without the screen and lets go when the tab leaves it",
+            skip = ::waylandSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            applicationContent = { with(fixture) { Windows() } },
+            driver = {
+                val first = awaitTabWindowsInWindow(fixture, "Alpha", "Beta", "Gamma")
+                val workspace = fixture.workspace
+                val group = requireNotNull(fixture.groupOf("Alpha"))
+                check(!first.canPlaceOnScreen) { "case premise: the window must be compositor-placed" }
+                check(workspace.beginDrag(fixture.tabId("Gamma"), stripOrigin(first), Offset.Zero) == null) {
+                    "the screen-space drag started on a window the app cannot place"
+                }
+
+                // ── a reorder, with nothing but window coordinates ──
+                val motion = requireNotNull(workspace.motionOf(group)) { "the strip published no motion" }
+                val gamma = fixture.tabId("Gamma")
+                val beta = fixture.tabId("Beta")
+                val alpha = fixture.tabId("Alpha")
+                val slot = requireNotNull(motion.slotOf(gamma))
+                val driver = SyntheticPointerDriver(first)
+                driver.moveTo(slot.center)
+                driver.press()
+                driver.moveTo(slot.center + Offset(-SLOP_PX, 0f))
+                driver.moveTo(slot.center + Offset(-slot.width * CARRY_FRACTION, 0f))
+                awaitUntil("the strip shows the tab landing before its neighbour") {
+                    workspace.dropPreview?.let { it.group === group && it.index == 1 } == true
+                }
+                check(workspace.dragGhost == null) { "a ghost window on a compositor-placed surface" }
+                driver.release()
+                awaitUntil("the reorder is applied once the tab has slid home") {
+                    group.ids == listOf(alpha, gamma, beta)
+                }
+
+                // ── leaving the strip hands the gesture to the platform ──
+                //
+                // The strip lets go the moment the pointer is out of it: from
+                // there the drag is the platform's own session, which is what
+                // gives every *other* window the pointer in its coordinates —
+                // the only way a compositor-placed client can preview a drop
+                // it does not own. The session itself is the compositor's to
+                // start, so what is asserted here is the strip's half: it
+                // stops carrying, and the tab is where it was.
+                val gammaSlot = requireNotNull(motion.slotOf(gamma))
+                driver.moveTo(gammaSlot.center)
+                driver.press()
+                driver.moveTo(gammaSlot.center + Offset(0f, SLOP_PX))
+                driver.moveTo(gammaSlot.center + Offset(0f, OUT_OF_STRIP_PX))
+                awaitUntil("the strip let go of the tab it was carrying") { motion.held == null }
+                driver.release()
+                // Released with nothing under it, the platform session leaves
+                // the tab a window of its own — the tear-out a void release has
+                // always been, now reached through the session that also gives
+                // another window the drop preview.
+                awaitUntil("the tab left the strip it was dragged out of") {
+                    !group.ids.contains(gamma) && workspace.tab(gamma) != null
+                }
+                check(workspace.dragGhost == null) { "a ghost window on a compositor-placed surface" }
+                check(group.ids == listOf(alpha, beta)) { "the tabs left behind are not in order: ${group.ids}" }
+            },
+        )
+    }
+
+    /**
+     * The other half of the X11 case in `DockLayoutHeadfulCases`: here the
+     * compositor places the window, so [SatelliteScope.isCompositorPlaced] is
+     * `true` for the floating palette, its title bar reserves
+     * [SatelliteCaptionStripWidth] for the compositor's move with the app's
+     * `floatingCaption` composed inside it, and a satellite drag is a
+     * [SatelliteDragKind.Transfer] that publishes no ghost window.
+     *
+     * The docked panel reads its host, which is compositor-placed too.
+     */
+    private fun chromeIsToldTheCompositorPlacesTheWindow(): TaoWindowTestCase {
+        val fixture =
+            DockLayoutFixture(
+                specs =
+                    listOf(
+                        DockPanelSpec(TREE, SatellitePlacement.Docked(DockSide.Right, extent = 120.dp)),
+                        DockPanelSpec(
+                            NOTES,
+                            SatellitePlacement.Floating(
+                                positioner = workspaceRightEdgePositioner(),
+                                size = workspaceSatelliteSize(),
+                            ),
+                        ),
+                    ),
+            )
+        return TaoWindowTestCase(
+            name = "native Wayland: chrome is told the compositor places the window, and the caption strip is reserved",
+            skip = ::waylandSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = { fixture.Body() },
+            applicationContent = { with(fixture) { Satellites() } },
+            driver = {
+                val workspace = fixture.workspace
+                awaitDockedBodiesInWindow(fixture, TREE)
+                awaitUntil("the palette floats") {
+                    fixture.floatingWindows.value[NOTES]?.hasRealFramePx() == true
+                }
+                settle(SETTLE_AFTER_MAP_MILLIS)
+                val floating = requireNotNull(fixture.floatingWindows.value[NOTES])
+                check(!floating.canPlaceOnScreen) { "case premise: the palette must be compositor-placed" }
+
+                awaitUntil("the palette's chrome learned how its window is placed") {
+                    fixture.compositorPlacedFloating.value[NOTES] == true
+                }
+                check(fixture.compositorPlacedDocked.value[TREE] == true) {
+                    "the panel was told its host places itself: ${fixture.compositorPlacedDocked.value}"
+                }
+                awaitUntil("the caption strip is composed") { fixture.captionBounds.value[NOTES] != null }
+                val caption = requireNotNull(fixture.captionBounds.value[NOTES])
+                val expectedPx = SatelliteCaptionStripWidth.value * floating.scaleFactor
+                check(abs(caption.width - expectedPx) <= LAYOUT_TOLERANCE_PX) {
+                    "the reserved strip is ${caption.width} px, SatelliteCaptionStripWidth is $expectedPx"
+                }
+                check(caption.height > 0f) { "the strip has no height, so nothing can be aimed at it" }
+
+                // The drag says how it is carried, and no ghost window follows.
+                check(workspace.dragKind == null) { "a drag is reported before one starts" }
+                val session = requireNotNull(workspace.beginTransferDrag(NOTES, floatingOrigin(floating)))
+                check(workspace.dragKind == SatelliteDragKind.Transfer) {
+                    "the platform session carries it, but the kind is ${workspace.dragKind}"
+                }
+                check(workspace.dragGhost == null) { "a ghost window followed a transfer drag" }
+                check(workspace.draggedSatellite?.id == NOTES) { "the dragged satellite is not published" }
+                session.cancel()
+                check(workspace.dragKind == null && workspace.publishesNoDragFeedback()) { "feedback left behind" }
+
+                // The screen-space API is still refused here, which is why the
+                // split exists in the first place.
+                check(workspace.beginDrag(NOTES, floatingOrigin(floating), Offset.Zero) == null) {
+                    "a screen drag started on a window the app cannot place"
+                }
+            },
+        )
+    }
+
+    private fun aTransferDropResolvesARankAndReorders(): TaoWindowTestCase {
+        val fixture =
+            DockLayoutFixture(
+                specs =
+                    listOf(
+                        DockPanelSpec(TREE, SatellitePlacement.Docked(DockSide.Right, order = 0, extent = 100.dp)),
+                        DockPanelSpec(TOC, SatellitePlacement.Docked(DockSide.Right, order = 1, extent = 120.dp)),
+                        DockPanelSpec(NOTES, SatellitePlacement.Docked(DockSide.Right, order = 2, extent = 90.dp)),
+                    ),
+                layeredSides = setOf(DockSide.Right),
+            )
+        return TaoWindowTestCase(
+            name = "native Wayland: a transfer drop over a stack resolves the rank under the pointer and reorders",
+            skip = ::waylandSkipReason,
+            windowState = workspaceParentWindowState(),
+            size = DpSize(PARENT_W_DP.dp, PARENT_H_DP.dp),
+            paintDefaultBackground = false,
+            content = { fixture.Body() },
+            applicationContent = { with(fixture) { Satellites() } },
+            driver = {
+                val workspace = fixture.workspace
+                awaitDockedBodiesInWindow(fixture, TREE, TOC, NOTES)
+                val geometry = requireNotNull(workspace.dockHostGeometry(window))
+                val layout = geometry.layoutBoundsInWindowPx
+                val tree = requireNotNull(fixture.panelBounds.value[TREE])
+                val notesBefore = requireNotNull(fixture.panelBounds.value[NOTES])
+
+                val session = requireNotNull(workspace.beginTransferDrag(NOTES, panelOrigin(window)))
+                awaitUntil("the layout published its drop zones") { geometry.zoneBoundsInWindowPx.isNotEmpty() }
+                val target = DockTransferTarget(workspace, window, geometry)
+                // Window coordinates, the only ones an inbound event carries.
+                val overTreeOuterHalf = Offset(tree.left + tree.width * OUTER_HALF, layout.center.y)
+                check(target.zoneAt(overTreeOuterHalf) == DockTarget(window, DockSide.Right, 0)) {
+                    "the outer half of the first layer did not resolve to rank 0: ${target.zoneAt(overTreeOuterHalf)}"
+                }
+                check(target.zoneAt(notesBefore.center) == DockTarget(window, DockSide.Right, 2)) {
+                    "the panel's own area did not resolve to its own rank: ${target.zoneAt(notesBefore.center)}"
+                }
+                check(
+                    target.zoneAt(notesBefore.center) == session.own,
+                ) { "its own rank is not what the session calls its own" }
+                // Clear of the left strip and short of the layers: content.
+                val content = Offset(layout.left + CONTENT_PROBE_DP * window.scaleFactor, layout.center.y)
+                check(target.zoneAt(content) == null) { "the content is no zone: ${target.zoneAt(content)}" }
+
+                session.drop = TransferDrop.Dock(requireNotNull(target.zoneAt(overTreeOuterHalf)))
+                session.end()
+                awaitUntil("the notes are the first rank") {
+                    (workspace.satellite(NOTES)?.placement as? SatellitePlacement.Docked)?.order == 0
+                }
+                awaitDockedBodiesInWindow(fixture, TREE, TOC, NOTES)
+                val notes = requireNotNull(fixture.panelBounds.value[NOTES])
+                val treeAfter = requireNotNull(fixture.panelBounds.value[TREE])
+                check(
+                    near(notes.right, layout.right, LAYOUT_TOLERANCE_PX * 2) &&
+                        treeAfter.right <= notes.left + LAYOUT_TOLERANCE_PX,
+                ) {
+                    "the notes are not the outermost layer: notes=$notes tree=$treeAfter"
+                }
+                check(
+                    near(notes.width, notesBefore.width),
+                ) { "the notes changed width: ${notesBefore.width} -> ${notes.width}" }
+                check(
+                    fixture.incarnationsOf(TREE) == 1 &&
+                        fixture.incarnationsOf(TOC) == 1 &&
+                        fixture.incarnationsOf(NOTES) == 1,
+                ) {
+                    "a reorder rebuilt a panel: ${fixture.incarnations.value}"
+                }
+                check(workspace.publishesNoDragFeedback()) { "feedback left behind after the session ended" }
+            },
+        )
+    }
 
     private fun screenApiRefusedTransferSessionStarts(): TaoWindowTestCase {
         val fixture = SatelliteWorkspaceFixture()
@@ -288,4 +534,23 @@ internal object WaylandWorkspaceHeadfulCases {
 
     /** Any finite point: neither the refusal nor a zone probe may depend on where it is. */
     private const val PROBE_PX = 100f
+
+    private const val TREE = "tree"
+    private const val TOC = "toc"
+    private const val NOTES = "notes"
+
+    /** Well inside the outer half of a layer: the rank ahead of it. */
+    private const val OUTER_HALF = 0.8f
+
+    /** A point past the left strip and well short of the 310 dp of layers on the right, in a 520 dp layout. */
+    private const val CONTENT_PROBE_DP = 100f
+
+    /** Past Compose's touch slop, so the gesture is a drag and not a click. */
+    private const val SLOP_PX = 24f
+
+    /** Far enough along the strip for the carried tab's edge to cross its neighbour's centre. */
+    private const val CARRY_FRACTION = 0.8f
+
+    /** Below the strip: the window's body, where a released tab is out of the strip's hands. */
+    private const val OUT_OF_STRIP_PX = 120f
 }

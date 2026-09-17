@@ -651,6 +651,111 @@ public object TaoSceneTestBattery {
             WindowPositionerTest().`an unconstrained placement is returned untouched by every adjustment`()
         }
 
+        run(
+            "SatelliteDockedGeometryTest: docking from a floating window brings its size along as the panel extent",
+        ) {
+            SatelliteDockedGeometryTest()
+                .`docking from a floating window brings its size along as the panel extent`()
+        }
+        run(
+            "SatelliteDockedGeometryTest: re-docking keeps the extent along the same axis and re-seeds it across axes",
+        ) {
+            SatelliteDockedGeometryTest()
+                .`re-docking keeps the extent along the same axis and re-seeds it across axes`()
+        }
+        run(
+            "SatelliteDockedGeometryTest: docked extent and weight are clamped and ignored for a floating satellite",
+        ) {
+            SatelliteDockedGeometryTest().`docked extent and weight are clamped and ignored for a floating satellite`()
+        }
+        run("SatelliteDockedGeometryTest: a panel moved between docks seeds its new side with the width it had") {
+            SatelliteDockedGeometryTest().`a panel moved between docks seeds its new side with the width it had`()
+        }
+        run("SatelliteDockedGeometryTest: a snapshot carries every panel's own extent and weight") {
+            SatelliteDockedGeometryTest().`a snapshot carries every panel's own extent and weight`()
+        }
+        run("SatelliteDockedGeometryTest: a docked placement refuses a weight that is not positive") {
+            SatelliteDockedGeometryTest().`a docked placement refuses a weight that is not positive`()
+        }
+        run("SatelliteDockedGeometryTest: every side has an opposite across the content") {
+            SatelliteDockedGeometryTest().`every side has an opposite across the content`()
+        }
+        run("DockLandingRectTest: a bottom preview spans the bottom band, not the layout") {
+            DockLandingRectTest().`a bottom preview spans the bottom band, not the layout`()
+        }
+        run("DockLandingRectTest: a layered side previews a new innermost layer") {
+            DockLandingRectTest().`a layered side previews a new innermost layer`()
+        }
+        run("DockLandingRectTest: a split side with a stack previews the stack the panel joins") {
+            DockLandingRectTest().`a split side with a stack previews the stack the panel joins`()
+        }
+        run("DockLandingRectTest: an empty side previews a strip at the edge of its band") {
+            DockLandingRectTest().`an empty side previews a strip at the edge of its band`()
+        }
+        run("DockLandingRectTest: the side the dragged panel frees is counted as already gone") {
+            DockLandingRectTest().`the side the dragged panel frees is counted as already gone`()
+        }
+        run("DockLandingRectTest: a side the dragged panel shares with another is not freed") {
+            DockLandingRectTest().`a side the dragged panel shares with another is not freed`()
+        }
+        run("DockLandingRectTest: without a measured band the layout itself is the band") {
+            DockLandingRectTest().`without a measured band the layout itself is the band`()
+        }
+        run("DockZoneHintSidesTest: a floating satellite is offered every side") {
+            DockZoneHintSidesTest().`a floating satellite is offered every side`()
+        }
+        run("DockZoneHintSidesTest: a docked panel is not offered the side it is alone on") {
+            DockZoneHintSidesTest().`a docked panel is not offered the side it is alone on`()
+        }
+        run("DockZoneHintSidesTest: a docked panel with a neighbour is offered its own side, to be ranked among them") {
+            DockZoneHintSidesTest().`a docked panel with a neighbour is offered its own side, to be ranked among them`()
+        }
+        run(
+            "DockDropSlotsTest: a layered side is cut at the layers' centres, from its edge through the strip",
+        ) {
+            DockDropSlotsTest()
+                .`a layered side is cut at the layers' centres, from its edge through the strip`()
+        }
+        run("DockDropSlotsTest: a split side is cut along its length, from the band's start") {
+            DockDropSlotsTest().`a split side is cut along its length, from the band's start`()
+        }
+        run("DockDropSlotsTest: no slots without another panel, or before it is placed") {
+            DockDropSlotsTest().`no slots without another panel, or before it is placed`()
+        }
+        run("DockDropSlotsTest: the pointer picks the slot it is in, else the nearest end") {
+            DockDropSlotsTest().`the pointer picks the slot it is in, else the nearest end`()
+        }
+        run("DockDropSlotsTest: a pinned layer hides the ranks in front of it, for itself and for the others") {
+            DockDropSlotsTest().`a pinned layer hides the ranks in front of it, for itself and for the others`()
+        }
+        run("DockDropSlotsTest: a layer dropped at a rank is drawn where that rank puts it, at its own extent") {
+            DockDropSlotsTest().`a layer dropped at a rank is drawn where that rank puts it, at its own extent`()
+        }
+        run("DockDropSlotsTest: a panel dropped in a split stack is drawn as the share the weights give it") {
+            DockDropSlotsTest().`a panel dropped in a split stack is drawn as the share the weights give it`()
+        }
+        run("DockDropSlotsTest: dropped on an empty side, the space is the strip along its edge") {
+            DockDropSlotsTest().`dropped on an empty side, the space is the strip along its edge`()
+        }
+        run("DockZoneHintSidesTest: another window offers the side too, since dropping there is a move") {
+            DockZoneHintSidesTest().`another window offers the side too, since dropping there is a move`()
+        }
+        run("DockTargetFromDraggedRectTest: the dragged rect decides the zone, not the pointer") {
+            DockTargetFromDraggedRectTest().`the dragged rect decides the zone, not the pointer`()
+        }
+        run("DockTargetFromDraggedRectTest: an inset zone is the target, not the window's own edge") {
+            DockTargetFromDraggedRectTest().`an inset zone is the target, not the window's own edge`()
+        }
+        run(
+            "DockTargetFromDraggedRectTest: the pointer over a stack picks a rank, and beats a strip across its corner",
+        ) {
+            DockTargetFromDraggedRectTest()
+                .`the pointer over a stack picks a rank, and beats a strip across its corner`()
+        }
+        run("DockTargetFromDraggedRectTest: a dragged rect covering every zone is resolved by the pointer") {
+            DockTargetFromDraggedRectTest().`a dragged rect covering every zone is resolved by the pointer`()
+        }
+
         run("SatelliteWorkspaceTest: the first member to join owns the satellites until focus moves") {
             SatelliteWorkspaceTest().`the first member to join owns the satellites until focus moves`()
         }
@@ -663,8 +768,77 @@ public object TaoSceneTestBattery {
         run("SatelliteWorkspaceTest: docking a floating satellite seeds the side extent and hosts it in the owner") {
             SatelliteWorkspaceTest().`docking a floating satellite seeds the side extent and hosts it in the owner`()
         }
-        run("SatelliteWorkspaceTest: dock order appends after the panels already on that side") {
-            SatelliteWorkspaceTest().`dock order appends after the panels already on that side`()
+        run("SatelliteDragKindTest: a pointer drag is carried by the window, and the kind clears with it") {
+            SatelliteDragKindTest().`a pointer drag is carried by the window, and the kind clears with it`()
+        }
+        run("SatelliteDragKindTest: a transfer drag is carried by the platform session, and publishes no ghost") {
+            SatelliteDragKindTest().`a transfer drag is carried by the platform session, and publishes no ghost`()
+        }
+        run("SatelliteDragKindTest: a window that is not a native Wayland surface places on screen") {
+            SatelliteDragKindTest().`a window that is not a native Wayland surface places on screen`()
+        }
+        run("SatelliteFixedPanelTest: undock refuses a fixed panel") {
+            SatelliteFixedPanelTest().`undock refuses a fixed panel`()
+        }
+        run("SatelliteFixedPanelTest: a fixed satellite must be declared docked") {
+            SatelliteFixedPanelTest().`a fixed satellite must be declared docked`()
+        }
+        run("SatelliteFixedPanelTest: a drag released over the content leaves a fixed panel docked, with no ghost") {
+            SatelliteFixedPanelTest().`a drag released over the content leaves a fixed panel docked, with no ghost`()
+        }
+        run("SatelliteFixedPanelTest: a transfer drag with no record leaves a fixed panel docked") {
+            SatelliteFixedPanelTest().`a transfer drag with no record leaves a fixed panel docked`()
+        }
+        run("SatelliteFixedPanelTest: a snapshot that floats a fixed panel is ignored, but its open state is not") {
+            SatelliteFixedPanelTest().`a snapshot that floats a fixed panel is ignored, but its open state is not`()
+        }
+        run(
+            "SatelliteFixedPanelTest: a pinned panel is offered no rank and its drag changes nothing",
+        ) {
+            SatelliteFixedPanelTest()
+                .`a pinned panel is offered no rank and its drag changes nothing`()
+        }
+        run("SatelliteFixedPanelTest: another panel is docked after the pinned ones, whatever rank it asks for") {
+            SatelliteFixedPanelTest().`another panel is docked after the pinned ones, whatever rank it asks for`()
+        }
+        run("SatelliteFixedPanelTest: a panel that can go nowhere is no drag handle") {
+            SatelliteFixedPanelTest().`a panel that can go nowhere is no drag handle`()
+        }
+        run("SatelliteDockSidesTest: dock refuses a side the satellite was not declared for") {
+            SatelliteDockSidesTest().`dock refuses a side the satellite was not declared for`()
+        }
+        run(
+            "SatelliteDockSidesTest: floating-only never docks, the preferred side follows the declaration",
+        ) {
+            SatelliteDockSidesTest()
+                .`floating-only never docks, the preferred side follows the declaration`()
+        }
+        run("SatelliteDockSidesTest: a declared docked placement must name an allowed side") {
+            SatelliteDockSidesTest().`a declared docked placement must name an allowed side`()
+        }
+        run(
+            "SatelliteDockSidesTest: a refused side is not hinted nor previewed, a release there keeps it floating",
+        ) {
+            SatelliteDockSidesTest()
+                .`a refused side is not hinted nor previewed, a release there keeps it floating`()
+        }
+        run("SatelliteDockSidesTest: a snapshot naming a refused side leaves the placement alone") {
+            SatelliteDockSidesTest().`a snapshot naming a refused side leaves the placement alone`()
+        }
+        run("SatelliteDockRankTest: dock order inserts at that rank and keeps the side contiguous") {
+            SatelliteDockRankTest().`dock order inserts at that rank and keeps the side contiguous`()
+        }
+        run("SatelliteDockRankTest: a satellite docked again on the side it left returns to its rank") {
+            SatelliteDockRankTest().`a satellite docked again on the side it left returns to its rank`()
+        }
+        run(
+            "SatelliteDockRankTest: a satellite new to a side is appended there and keeps its rank elsewhere",
+        ) {
+            SatelliteDockRankTest()
+                .`a satellite new to a side is appended there and keeps its rank elsewhere`()
+        }
+        run("SatelliteDockRankTest: a closed panel keeps its rank and the weight comes back with it") {
+            SatelliteDockRankTest().`a closed panel keeps its rank and the weight comes back with it`()
         }
         run("SatelliteWorkspaceTest: undock without host geometry returns to the last floating placement") {
             SatelliteWorkspaceTest().`undock without host geometry returns to the last floating placement`()
@@ -695,6 +869,9 @@ public object TaoSceneTestBattery {
         }
         run("SatelliteWorkspaceTest: a docked drag released in another zone re-docks and inside its own panel stays") {
             SatelliteWorkspaceTest().`a docked drag released in another zone re-docks and inside its own panel stays`()
+        }
+        run("SatelliteDockRankTest: a docked drag dropped on its own stack takes the rank under the pointer") {
+            SatelliteDockRankTest().`a docked drag dropped on its own stack takes the rank under the pointer`()
         }
         run("SatelliteWorkspaceTest: a cancelled drag leaves no feedback and no placement change") {
             SatelliteWorkspaceTest().`a cancelled drag leaves no feedback and no placement change`()
@@ -839,6 +1016,46 @@ public object TaoSceneTestBattery {
             TransferDragTest().`the hotspot follows the grab point into the reduced picture of a region`()
         }
 
+        run("TabHoverPreviewTest: the strip reports the tab the pointer rests on, and nothing once it leaves") {
+            TabHoverPreviewTest().`the strip reports the tab the pointer rests on, and nothing once it leaves`()
+        }
+        run("TabHoverPreviewTest: a press puts the card away until the pointer has been elsewhere") {
+            TabHoverPreviewTest().`a press puts the card away until the pointer has been elsewhere`()
+        }
+        run("TabHoverPreviewTest: a press on a tab the pointer is not on changes nothing") {
+            TabHoverPreviewTest().`a press on a tab the pointer is not on changes nothing`()
+        }
+        run("TabHoverPreviewTest: no card while a tab is being dragged") {
+            TabHoverPreviewTest().`no card while a tab is being dragged`()
+        }
+        run("TabHoverPreviewTest: a tab that has left the group is no longer hovered") {
+            TabHoverPreviewTest().`a tab that has left the group is no longer hovered`()
+        }
+        run("TabHoverPreviewTest: the anchor of a card is the tab's own slot, and nothing before it is placed") {
+            TabHoverPreviewTest().`the anchor of a card is the tab's own slot, and nothing before it is placed`()
+        }
+        run("TabHoverPreviewTest: the card hangs from the tab's leading edge, below it") {
+            TabHoverPreviewTest().`the card hangs from the tab's leading edge, below it`()
+        }
+        run("TabHoverPreviewTest: a right-to-left strip hangs the card from the tab's right edge") {
+            TabHoverPreviewTest().`a right-to-left strip hangs the card from the tab's right edge`()
+        }
+        run("TabHoverPreviewTest: a card that would run off the window is slid back in") {
+            TabHoverPreviewTest().`a card that would run off the window is slid back in`()
+        }
+        run("TabHoverPreviewTest: the selected tab has no card") {
+            TabHoverPreviewTest().`the selected tab has no card`()
+        }
+
+        run("TabWorkspaceTest: a drag selects the tab it lifted, so a click that drifts is never lost") {
+            TabWorkspaceTest().`a drag selects the tab it lifted, so a click that drifts is never lost`()
+        }
+        run("TabWorkspaceTest: taking a tab in hand inside its own strip selects it too") {
+            TabWorkspaceTest().`taking a tab in hand inside its own strip selects it too`()
+        }
+        run("TabWorkspaceTest: a right-to-left strip resolves its insertion indices from the right") {
+            TabWorkspaceTest().`a right-to-left strip resolves its insertion indices from the right`()
+        }
         run("TabWorkspaceTest: the first tab opens a window and the next ones join it") {
             TabWorkspaceTest().`the first tab opens a window and the next ones join it`()
         }
@@ -883,6 +1100,12 @@ public object TaoSceneTestBattery {
         }
         run("TabWorkspaceTest: tearing off an unknown tab changes nothing") {
             TabWorkspaceTest().`tearing off an unknown tab changes nothing`()
+        }
+        run("TabWorkspaceTest: the card entering a strip is a drop before the pointer reaches it") {
+            TabWorkspaceTest().`the card entering a strip is a drop before the pointer reaches it`()
+        }
+        run("TabWorkspaceTest: a dragged window's own strip never answers for the card either") {
+            TabWorkspaceTest().`a dragged window's own strip never answers for the card either`()
         }
         run("TabWorkspaceTest: a drop resolves to the strip under the pointer and the index it falls at") {
             TabWorkspaceTest().`a drop resolves to the strip under the pointer and the index it falls at`()

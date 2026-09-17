@@ -30,7 +30,16 @@ class Document(
  * user closes has to be dropped from it ([forget]) or it would be declared again.
  */
 class DemoState {
-    val workspace = TabWorkspace(defaultWindowSize = DpSize(WINDOW_WIDTH_DP.dp, WINDOW_HEIGHT_DP.dp))
+    // `captureThumbnails` keeps a reduced picture of each tab's editor for the
+    // hover card to draw. Off by default — a layer and a readback per tab.
+    val workspace =
+        TabWorkspace(
+            defaultWindowSize = DpSize(WINDOW_WIDTH_DP.dp, WINDOW_HEIGHT_DP.dp),
+            captureThumbnails = true,
+        )
+
+    /** The file behind a tab id, for chrome that draws more than a title. */
+    fun document(id: String): Document? = documents.firstOrNull { it.id == id }
 
     /** The open files, in declaration order. One tab each. */
     val documents =

@@ -70,7 +70,9 @@ private class FloatingDragSession(
         pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
         val topLeft = pointer - grabOffsetPx
         origin.move(topLeft.x.toWindowCoordinate(), topLeft.y.toWindowCoordinate())
-        workspace.dockPreview = workspace.dockTargetAt(pointer)
+        // From the window, not the pointer: the palette is what the user sees
+        // moving, so the zone its edge has reached is the one to preview.
+        workspace.dockPreview = workspace.dockTargetFor(entry, Rect(topLeft, windowSizePx()), pointer)
     }
 
     override fun end(pointerScreenPx: Offset) {
@@ -78,8 +80,13 @@ private class FloatingDragSession(
         update(pointerScreenPx)
         val target = workspace.dockPreview
         cancel()
-        if (target != null) workspace.dock(entry.id, target.side, host = target.host)
+        if (target != null) workspace.dropAt(entry.id, target)
     }
+
+    /** The window's own size; read live, since a resize mid-drag is allowed. */
+    @Suppress("MagicNumber") // outer frame is [x, y, w, h]
+    private fun windowSizePx(): Size =
+        origin.outerBoundsPx()?.let { Size(it[2].toFloat(), it[3].toFloat()) } ?: Size.Zero
 }
 
 private class DockedDragSession(
@@ -95,27 +102,39 @@ private class DockedDragSession(
     /** The host's px-per-dp, carried to the ghost window. */
     private val scaleFactor: Float,
 ) : SatelliteDragSessionBase(workspace) {
-    private val own: DockTarget? = (entry.placement as? SatellitePlacement.Docked)?.let { DockTarget(host, it.side) }
+    /** Its own slot on its own side: dropping there changes nothing. */
+    private val own: DockTarget? = workspace.ownTarget(entry, host)
 
     override fun update(pointerScreenPx: Offset) {
         if (!isLive) return
         pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
-        workspace.dockPreview = workspace.dockTargetAt(pointer)?.takeIf { it != own }
+        val ghost = ghostRectPx()
+        // From the ghost, not the pointer: it is the thing on screen standing
+        // in for the panel, so the zone its edge has reached is the one to
+        // preview — the same rule as for a floating palette's window.
+        workspace.dockPreview = workspace.dockTargetFor(entry, ghost, pointer)?.takeIf { it != own }
         // Follows the pointer for the whole gesture, including over a dock
         // zone: the panel is out of the layout as soon as the drag starts, and
-        // seeing it hover is what makes the tear-out read.
-        workspace.dragGhost = DragGhost(entry, Rect(pointer - grabOffsetPx, panelScreenRectPx.size), scaleFactor)
+        // seeing it hover is what makes the tear-out read. A fixed panel has
+        // no tear-out to read, so it stays where it is and only the zone
+        // feedback moves — showing a ghost would promise a window the release
+        // does not produce.
+        if (entry.isFloatable) workspace.dragGhost = DragGhost(entry, ghost, scaleFactor)
     }
+
+    private fun ghostRectPx(): Rect = Rect(pointer - grabOffsetPx, panelScreenRectPx.size)
 
     override fun end(pointerScreenPx: Offset) {
         if (!isLive) return
         pointer = pointerScreenPx.sanitizedOrNull() ?: pointer
         val drop = pointer
-        val target = workspace.dockTargetAt(drop)?.takeIf { it != own }
+        val target = workspace.dockTargetFor(entry, ghostRectPx(), drop)?.takeIf { it != own }
         cancel()
         when {
-            target != null -> workspace.dock(entry.id, target.side, host = target.host)
-            panelScreenRectPx.contains(drop) -> Unit
+            target != null -> workspace.dropAt(entry.id, target)
+            // Released on its own panel, or anywhere at all for a fixed one:
+            // the gesture was abandoned, not a tear-out.
+            !entry.isFloatable || panelScreenRectPx.contains(drop) -> Unit
             else -> workspace.undock(entry.id, workspace.floatingAtScreen(drop - grabOffsetPx, panelScreenRectPx.size))
         }
     }
@@ -154,18 +173,15 @@ internal class SatelliteTransferDrag(
     /** Written by the target that took the drop, read once the session ends. */
     var drop: TransferDrop? = null
 
-    /** The zone the dragged panel already occupies; dropping back onto it changes nothing. */
-    val own: DockTarget? =
-        (origin as? SatelliteDragOrigin.DockedPanel)?.let { panel ->
-            (entry.placement as? SatellitePlacement.Docked)?.let { DockTarget(panel.host, it.side) }
-        }
+    /** The slot the dragged panel already occupies; dropping back onto it changes nothing. */
+    val own: DockTarget? = (origin as? SatelliteDragOrigin.DockedPanel)?.let { workspace.ownTarget(entry, it.host) }
 
     override fun end() {
         if (!workspace.isLiveTransfer(this)) return
         val outcome = drop
         workspace.endTransferDrag(this)
         when (outcome) {
-            is TransferDrop.Dock -> workspace.dock(entry.id, outcome.target.side, host = outcome.target.host)
+            is TransferDrop.Dock -> workspace.dropAt(entry.id, outcome.target)
             TransferDrop.Stay -> Unit
             null -> if (origin is SatelliteDragOrigin.DockedPanel) workspace.undock(entry.id)
         }

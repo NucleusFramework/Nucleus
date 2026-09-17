@@ -15,11 +15,14 @@ import dev.nucleusframework.window.tao.TabWorkspace
  * @property id the tab's identity, stable for as long as the document is open.
  * @property title shown on the tab and, while it is the selected one, as the
  *   title of the window holding it.
+ * @property path shown under the title on the tab's hover card, the way an
+ *   editor's tooltip shows where a file lives.
  * @property draft what its editor starts with.
  */
 class Document(
     val id: String,
     val title: String,
+    val path: String,
     val draft: String,
 )
 
@@ -33,15 +36,35 @@ class Document(
  * declared all over again.
  */
 class DemoState {
-    val workspace = TabWorkspace(defaultWindowSize = DpSize(WINDOW_WIDTH_DP.dp, WINDOW_HEIGHT_DP.dp))
+    // `captureThumbnails` is what puts a picture of the document on its hover
+    // card: the workspace keeps a reduced snapshot of whatever body was last
+    // on screen for each tab. Off by default — it costs a layer and a readback.
+    val workspace =
+        TabWorkspace(
+            defaultWindowSize = DpSize(WINDOW_WIDTH_DP.dp, WINDOW_HEIGHT_DP.dp),
+            captureThumbnails = true,
+        )
 
     /** The open documents, in declaration order. One tab each. */
     val documents =
         mutableStateListOf(
-            Document("readme", "README.md", "# Tabs demo\n\nDrag a tab out of this window."),
-            Document("main", "Main.kt", "fun main() = nucleusApplication { }"),
-            Document("build", "build.gradle.kts", "plugins { id(\"dev.nucleusframework\") }"),
+            Document(
+                "readme",
+                "README.md",
+                "examples/tabs-demo/README.md",
+                "# Tabs demo\n\nDrag a tab out of this window.",
+            ),
+            Document("main", "Main.kt", "src/main/kotlin/Main.kt", "fun main() = nucleusApplication { }"),
+            Document(
+                "build",
+                "build.gradle.kts",
+                "examples/tabs-demo/build.gradle.kts",
+                "plugins { id(\"dev.nucleusframework\") }",
+            ),
         )
+
+    /** The document behind a tab id, for chrome that draws more than a title. */
+    fun document(id: String): Document? = documents.firstOrNull { it.id == id }
 
     /** The layout captured by "Save layout", ready for "Restore layout". */
     var savedLayout: TabLayoutSnapshot? by mutableStateOf(null)
@@ -56,7 +79,7 @@ class DemoState {
      */
     fun open() {
         opened++
-        documents += Document("note-$opened", "Untitled $opened", "")
+        documents += Document("note-$opened", "Untitled $opened", "untitled-$opened.txt", "")
     }
 
     /** Drops the document [id] once its tab is gone from the workspace. */

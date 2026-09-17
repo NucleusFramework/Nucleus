@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.DpRect
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.window.ExperimentalNucleusApi
 
 /**
  * State of a [SatelliteWindow]: the geometry inputs the app owns, plus the
@@ -25,6 +26,7 @@ import androidx.compose.ui.unit.dp
  *   own coordinate space (top-left of the parent frame = origin). `null`
  *   anchors to the whole parent frame, decorations included.
  */
+@ExperimentalNucleusApi
 public class SatelliteWindowState(
     size: DpSize = DpSize(DEFAULT_SATELLITE_WIDTH_DP.dp, DEFAULT_SATELLITE_HEIGHT_DP.dp),
     positioner: WindowPositioner = WindowPositioner(),
@@ -86,6 +88,7 @@ public class SatelliteWindowState(
 
 /** Remembers a [SatelliteWindowState] across recompositions. */
 @Composable
+@ExperimentalNucleusApi
 public fun rememberSatelliteWindowState(
     size: DpSize = DpSize(DEFAULT_SATELLITE_WIDTH_DP.dp, DEFAULT_SATELLITE_HEIGHT_DP.dp),
     positioner: WindowPositioner = WindowPositioner(),

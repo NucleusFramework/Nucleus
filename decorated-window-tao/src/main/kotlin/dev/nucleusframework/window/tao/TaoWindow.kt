@@ -836,6 +836,28 @@ public class TaoWindow internal constructor(
         get() = linuxSurfaceKind() == WAYLAND_HANDLE_KIND
 
     /**
+     * `true` when this window's position on screen is the client's to know and
+     * to set — every platform but a native Wayland surface, where xdg-shell
+     * gives the compositor full authority over toplevel placement: GDK reports
+     * every toplevel at `(0, 0)` there and ignores a move.
+     *
+     * This is the capability to branch on, rather than the platform
+     * ([isNativeWaylandSurface]): [outerBoundsPx] still carries a valid *size*
+     * where this is `false`, so a caller that needs only the size keeps using
+     * it, while anything that would treat its origin as a screen coordinate,
+     * move the window, or place another window against it must check here
+     * first.
+     *
+     * What it changes for an app: where it is `false`, moving the window is
+     * the compositor's gesture ([Modifier.windowDragArea]) and a cross-window
+     * drag rides the platform's drag-and-drop session instead of the window
+     * itself, so chrome that carries both has to give each one its own area —
+     * see [Satellite]'s `floatingCaption` and [SatelliteScope.isCompositorPlaced].
+     */
+    public val canPlaceOnScreen: Boolean
+        get() = !isNativeWaylandSurface
+
+    /**
      * `nativeLinuxHandles` slot 0, cached from the first call that returns a
      * realized surface: `0` while the native window does not exist yet (not
      * cached, so the next read asks again), `1` for Xlib, `2` for Wayland.

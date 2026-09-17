@@ -11,7 +11,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ComposableOpenTarget
 import androidx.compose.ui.UiComposable
 import dev.nucleusframework.application.internal.TaoSatelliteWorkspaceAdapter
+import dev.nucleusframework.window.ExperimentalNucleusApi
 import dev.nucleusframework.window.tao.DefaultSatelliteHeader
+import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.SatelliteScope
 import dev.nucleusframework.window.tao.SatelliteWorkspace
@@ -46,22 +48,38 @@ import dev.nucleusframework.window.tao.SatelliteWorkspace
  * the windows that joined. `rememberSatelliteWorkspace`, `JoinSatelliteWorkspace`
  * and `DockLayout` are used as-is from `decorated-window-tao`.
  *
+ * @param dockSides the sides the satellite may be docked on; the others are
+ *   never offered nor accepted. Empty: a floating-only palette.
+ * @param floatable whether the satellite can be a window of its own; `false`
+ *   is a fixed panel that cannot be torn out. Requires a docked
+ *   [initialPlacement].
+ * @param reorderable whether the user may change its rank on its side;
+ *   `false` pins it to the rank it was declared with. Requires a docked
+ *   [initialPlacement].
+ * @param floatingCaption composed in the strip of the floating title bar left
+ *   to the compositor's window move, where the window is placed by the
+ *   compositor; see [dev.nucleusframework.window.tao.Satellite].
  * @param nativeContextMenu whether text fields in the floating window get the
  *   native context menu, as for [SatelliteWindow].
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun NucleusApplicationScope.Satellite(
     workspace: SatelliteWorkspace,
     id: String,
     title: String,
     initialPlacement: SatellitePlacement = SatellitePlacement.Floating(),
     initiallyOpen: Boolean = true,
+    dockSides: Set<DockSide> = DockSide.entries.toSet(),
+    floatable: Boolean = true,
+    reorderable: Boolean = true,
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     when (this) {
@@ -73,10 +91,14 @@ public fun NucleusApplicationScope.Satellite(
                 title = title,
                 initialPlacement = initialPlacement,
                 initiallyOpen = initiallyOpen,
+                dockSides = dockSides,
+                floatable = floatable,
+                reorderable = reorderable,
                 resizable = resizable,
                 hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
                 nativeContextMenu = nativeContextMenu,
                 header = header,
+                floatingCaption = floatingCaption,
                 content = content,
             )
     }
@@ -89,16 +111,21 @@ public fun NucleusApplicationScope.Satellite(
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
 @ComposableOpenTarget(-1)
+@ExperimentalNucleusApi
 public fun Satellite(
     workspace: SatelliteWorkspace,
     id: String,
     title: String,
     initialPlacement: SatellitePlacement = SatellitePlacement.Floating(),
     initiallyOpen: Boolean = true,
+    dockSides: Set<DockSide> = DockSide.entries.toSet(),
+    floatable: Boolean = true,
+    reorderable: Boolean = true,
     resizable: Boolean = true,
     hideWhileOwnerFullscreenOrMaximized: Boolean = true,
     nativeContextMenu: Boolean = true,
     header: @Composable @UiComposable SatelliteScope.() -> Unit = { DefaultSatelliteHeader() },
+    floatingCaption: @Composable @UiComposable SatelliteScope.() -> Unit = {},
     content: @Composable @UiComposable SatelliteScope.() -> Unit,
 ) {
     LocalNucleusApplicationScope.current.Satellite(
@@ -107,10 +134,14 @@ public fun Satellite(
         title = title,
         initialPlacement = initialPlacement,
         initiallyOpen = initiallyOpen,
+        dockSides = dockSides,
+        floatable = floatable,
+        reorderable = reorderable,
         resizable = resizable,
         hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
         nativeContextMenu = nativeContextMenu,
         header = header,
+        floatingCaption = floatingCaption,
         content = content,
     )
 }
@@ -120,6 +151,7 @@ public fun Satellite(
  * the owner of the workspace's floating satellites regardless of focus;
  * `null` returns to the focus-driven choice.
  */
+@ExperimentalNucleusApi
 public fun SatelliteWorkspace.pinTo(window: NucleusWindow?) {
     pinTo(window?.unsafe?.taoWindow)
 }

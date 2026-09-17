@@ -480,7 +480,12 @@ internal object WorkspaceFileDropHeadfulCases {
                 session.update(away)
                 check(workspace.dragGhost != null) { "the tab tear-out must be previewed" }
 
+                // Lifting a tab selects it, so the body under the pointer is the
+                // dragged tab's from the grab onwards. Waited for rather than
+                // assumed: the files would otherwise land in whichever body was
+                // still composed a frame ago.
                 val selected = requireNotNull(workspace.selectedTab(group)).title
+                awaitUntil("the lifted tab's body is the one composed") { fixture.windowOf(selected) === first }
                 val point = contentPointPx(first, HALF, BOTTOM_QUARTER)
                 check(first.fileDragAndDrop(point, files)) { "the file drop was refused mid tab drag" }
                 awaitUntil("the files reached the selected tab") { fixture.dropLog(selected).drops.value == 1 }

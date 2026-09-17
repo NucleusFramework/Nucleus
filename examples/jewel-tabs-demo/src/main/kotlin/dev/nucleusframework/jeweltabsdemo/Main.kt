@@ -64,7 +64,7 @@ fun main() =
                 val panel = JewelTheme.globalColors.panelBackground
                 TabWindows(
                     workspace = demo.workspace,
-                    strip = { JewelEditorTabStrip(onNewTab = demo::open) },
+                    strip = { JewelEditorTabStrip(demo, onNewTab = demo::open) },
                     // Per-window chrome, since the app opens no window itself.
                     windowWrapper = { content ->
                         WindowBackground(panel)

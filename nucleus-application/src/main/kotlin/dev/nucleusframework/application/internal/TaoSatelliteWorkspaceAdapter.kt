@@ -5,6 +5,7 @@ import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import dev.nucleusframework.application.TaoNucleusApplicationScope
 import dev.nucleusframework.application.internal.TaoSatelliteWindowAdapter.NucleusSatelliteScene
+import dev.nucleusframework.window.tao.DockSide
 import dev.nucleusframework.window.tao.SatellitePlacement
 import dev.nucleusframework.window.tao.SatelliteScope
 import dev.nucleusframework.window.tao.SatelliteWorkspace
@@ -26,10 +27,14 @@ internal object TaoSatelliteWorkspaceAdapter {
         title: String,
         initialPlacement: SatellitePlacement,
         initiallyOpen: Boolean,
+        dockSides: Set<DockSide>,
+        floatable: Boolean,
+        reorderable: Boolean,
         resizable: Boolean,
         hideWhileOwnerFullscreenOrMaximized: Boolean,
         nativeContextMenu: Boolean,
         header: @Composable SatelliteScope.() -> Unit,
+        floatingCaption: @Composable SatelliteScope.() -> Unit,
         content: @Composable SatelliteScope.() -> Unit,
     ) {
         val outerLocals = currentCompositionLocalContext
@@ -41,6 +46,9 @@ internal object TaoSatelliteWorkspaceAdapter {
                 title = title,
                 initialPlacement = initialPlacement,
                 initiallyOpen = initiallyOpen,
+                dockSides = dockSides,
+                floatable = floatable,
+                reorderable = reorderable,
                 resizable = resizable,
                 hideWhileOwnerFullscreenOrMaximized = hideWhileOwnerFullscreenOrMaximized,
                 compositionLocalContext = outerLocals,
@@ -48,6 +56,7 @@ internal object TaoSatelliteWorkspaceAdapter {
                     NucleusSatelliteScene(outerLocals, parentLayoutDirection, nativeContextMenu) { inner() }
                 },
                 header = header,
+                floatingCaption = floatingCaption,
                 content = content,
             )
         }
