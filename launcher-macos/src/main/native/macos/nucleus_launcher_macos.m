@@ -11,6 +11,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <string.h>
 
 // ============================================================================
@@ -57,9 +58,7 @@ static void releaseEnv(BOOL didAttach) {
 }
 
 static void clearException(JNIEnv *env) {
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 // Helper: run a block on the main thread (sync if off-main, direct if on-main)

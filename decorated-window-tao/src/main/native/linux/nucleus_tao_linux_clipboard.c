@@ -46,6 +46,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -256,7 +257,7 @@ static jmethodID on_bytes_method(JNIEnv *env, jobject callback) {
     if (clazz == NULL) return NULL;
     jmethodID method = (*env)->GetMethodID(env, clazz, "onBytes", "([B)V");
     (*env)->DeleteLocalRef(env, clazz);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
     return method;
 }
 
@@ -321,7 +322,7 @@ static void deliver(jobject callback, const void *data, size_t len) {
     if (method != NULL) {
         jbyteArray arr = bytes_to_array(env, data, len);
         (*env)->CallVoidMethod(env, callback, method, arr);
-        if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+        nucleus_jni_clear_exception(env);
         if (arr != NULL) (*env)->DeleteLocalRef(env, arr);
     }
     (*env)->DeleteGlobalRef(env, callback);

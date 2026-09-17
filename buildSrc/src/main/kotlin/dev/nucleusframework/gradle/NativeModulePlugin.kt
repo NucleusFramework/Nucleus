@@ -116,6 +116,10 @@ open class NativeModuleExtension(
                     .files(nativeSources)
                     .withPropertyName("nativeSources")
                     .withPathSensitivity(PathSensitivity.RELATIVE)
+                inputs
+                    .file(project.rootProject.layout.projectDirectory.file("native-common/nucleus_jni.h"))
+                    .withPropertyName("nucleusJniHeader")
+                    .optional()
                 outputs.dir(resourceDir).withPropertyName("nativeLibraries")
                 onlyIf("native build task matches the current host OS") { target.isHost }
                 if (skipWhenPrebuilt) {

@@ -21,6 +21,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include "nucleus_tao_windows_overlay_internal.h"
@@ -194,7 +195,7 @@ static void dispatchPointer(OverlayState *s, int type, int button, LPARAM lParam
     int y = (short)HIWORD(lParam);
     (*env)->CallVoidMethod(env, s->pointerCb, sOnPointerMethod,
         (jint)type, (jfloat)x, (jfloat)y, (jint)button, (jint)modifierMask());
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static UINT gLastInputMsg;
@@ -240,7 +241,7 @@ static void dispatchScroll(OverlayState *s, int xLocal, int yLocal,
     if (!env || !sOnScrollMethod) return;
     (*env)->CallVoidMethod(env, s->pointerCb, sOnScrollMethod,
         (jfloat)xLocal, (jfloat)yLocal, (jfloat)dx, (jfloat)dy);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {

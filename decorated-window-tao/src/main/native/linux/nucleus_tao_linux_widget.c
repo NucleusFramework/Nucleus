@@ -37,6 +37,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -307,7 +308,7 @@ static void ensure_callback_cache(JNIEnv *env, jobject sample) {
     if (sCallbackClass == NULL) return;
     sOnEventMethod = (*env)->GetMethodID(env, sCallbackClass, "onEvent", "(IIIII)V");
     sOnScrollMethod = (*env)->GetMethodID(env, sCallbackClass, "onScroll", "(IIFF)V");
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static JNIEnv *attach_jvm_thread(void) {
@@ -347,7 +348,7 @@ static void invoke_callback(GtkWidget *box, int type, int x, int y, int button) 
     if (env == NULL) return;
     (*env)->CallVoidMethod(env, cb, sOnEventMethod, (jint) type, (jint) x, (jint) y,
                            (jint) button, (jint) (type == EVT_OVERLAY_PRESS ? 1 : 0));
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static void invoke_scroll_callback(GtkWidget *box, int x, int y, float dx, float dy) {
@@ -358,7 +359,7 @@ static void invoke_scroll_callback(GtkWidget *box, int x, int y, float dx, float
     if (env == NULL) return;
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
         (jint) x, (jint) y, (jfloat) dx, (jfloat) dy);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* ── Per-widget rect storage + overlay positioning ─────────────────── */
