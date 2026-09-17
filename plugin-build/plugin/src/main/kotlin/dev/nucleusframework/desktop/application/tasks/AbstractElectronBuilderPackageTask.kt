@@ -164,6 +164,26 @@ abstract class AbstractElectronBuilderPackageTask
 
         @get:InputFile
         @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxAfterInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxAfterRemove: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxBeforeInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxBeforeRemove: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
         @get:PathSensitive(PathSensitivity.ABSOLUTE)
         val appxStoreLogo: RegularFileProperty = objects.fileProperty()
 
@@ -1667,27 +1687,27 @@ abstract class AbstractElectronBuilderPackageTask
                 fi
                 """.trimIndent() + "\n"
 
-            val fullScript =
-                if (silentUpdate) {
-                    script + "\n" + LinuxUpdateHelper.polkitAfterInstallFragment()
-                } else {
-                    script
-                }
-            templateFile.writeText(fullScript)
+            val userScript =
+                linuxAfterInstall.orNull
+                    ?.asFile
+                    ?.takeIf { it.isFile }
+                    ?.readText()
+            templateFile.writeText(
+                LinuxUpdateHelper.composeAfterInstallScript(script, silentUpdate, userScript),
+            )
             logger.info("Generated Linux after-install template at: ${templateFile.absolutePath}")
             return templateFile
         }
 
         /**
-         * afterRemove template: removes the polkit policy for silent update (and keeps the
-         * default electron-builder unlink behavior via an empty base script when silent is off).
-         * Only generated when silent update is enabled.
+         * afterRemove template: removes the polkit policy for silent update and appends any
+         * user after-remove script. Omitted when neither is present so electron-builder keeps
+         * its default unlink behaviour.
          */
         private fun prepareLinuxAfterRemoveTemplate(
             outputDir: File,
             silentUpdate: Boolean,
         ): File? {
-            if (!silentUpdate) return null
             if (currentOS != OS.Linux) return null
             if (targetFormat != TargetFormat.Deb &&
                 targetFormat != TargetFormat.Rpm &&
@@ -1695,10 +1715,14 @@ abstract class AbstractElectronBuilderPackageTask
             ) {
                 return null
             }
+            val userScript =
+                linuxAfterRemove.orNull
+                    ?.asFile
+                    ?.takeIf { it.isFile }
+                    ?.readText()
+            val composed = LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate, userScript) ?: return null
             val templateFile = outputDir.resolve("after-remove-nucleus.tpl")
-            templateFile.writeText(
-                "#!/bin/bash\n" + LinuxUpdateHelper.polkitAfterRemoveFragment(),
-            )
+            templateFile.writeText(composed)
             logger.info("Generated Linux after-remove template at: ${templateFile.absolutePath}")
             return templateFile
         }

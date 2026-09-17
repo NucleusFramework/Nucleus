@@ -186,6 +186,52 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
     /** Additional pacman dependencies for .pacman packages. */
     var pacmanDepends: List<String> = emptyList()
 
+    /**
+     * User after-install script concatenated after Nucleus's own template (desktop
+     * integration, AppArmor, optional polkit silent-update helper). The combined
+     * script is then run through electron-builder, which substitutes macros such as
+     * `${sanitizedProductName}` and `${executable}` — but **only when the token is
+     * single-quoted**, e.g. `'${executable}-daemon.service'`. A double-quoted token
+     * (`"${executable}"`) is left as literal, unsubstituted text, so a systemd
+     * `systemctl enable "${executable}.service"` line will silently no-op instead
+     * of failing loudly.
+     */
+    val afterInstall: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User after-remove script concatenated after Nucleus's own template (polkit
+     * policy cleanup when silent update is enabled). Same electron-builder macro
+     * substitution rules as [afterInstall] apply: single-quoted `${executable}`
+     * tokens are substituted, double-quoted ones are not.
+     *
+     * On Pacman, `.INSTALL`'s `pre_remove` hook (which is where [beforeRemove] ends
+     * up) does not receive the deb-style `$1=upgrade` argument that would let a
+     * script distinguish an upgrade from a real removal. If your service needs to
+     * survive an upgrade, stop/disable it unconditionally here and re-enable it in
+     * [afterInstall] instead of trying to detect "is this an upgrade" in a remove hook.
+     */
+    val afterRemove: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User before-install script passed raw to fpm (`--before-install`) — it is
+     * **not** run through electron-builder, so none of the `${sanitizedProductName}`
+     * / `${executable}` macro substitution that [afterInstall] gets applies here.
+     * Hardcode unit/path names instead of relying on those tokens. Runs as root
+     * before the payload is unpacked — stop a packaged systemd service here so
+     * binaries in `/opt` can be replaced.
+     */
+    val beforeInstall: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User before-remove script passed raw to fpm (`--before-remove`) — like
+     * [beforeInstall], this gets no electron-builder macro substitution; hardcode
+     * unit/path names. Runs as root before the payload is deleted.
+     *
+     * See [afterRemove] for the Pacman `pre_remove` upgrade-detection caveat, which
+     * applies here too.
+     */
+    val beforeRemove: RegularFileProperty = objects.fileProperty()
+
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 
     fun snap(fn: Action<SnapSettings>) {

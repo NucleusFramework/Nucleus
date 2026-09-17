@@ -59,4 +59,56 @@ class LinuxUpdateHelperTest {
         )
         assertTrue("exits on non-upgrade", script.contains("refusing non-upgrade"))
     }
+
+    @Test
+    fun `after-install concatenates polkit then user script`() {
+        val composed =
+            LinuxUpdateHelper.composeAfterInstallScript(
+                baseScript = "#!/bin/bash\necho base\n",
+                silentUpdate = true,
+                userScript = "echo user\n",
+            )
+        assertTrue(composed.contains("echo base"))
+        assertTrue(composed.contains("Nucleus passwordless self-update"))
+        assertTrue(composed.contains("echo user"))
+        assertTrue(
+            "user script must run after the Nucleus template",
+            composed.indexOf("echo base") < composed.indexOf("echo user"),
+        )
+        assertTrue(
+            "polkit fragment must run before the user script",
+            composed.indexOf("Nucleus passwordless self-update") < composed.indexOf("echo user"),
+        )
+    }
+
+    @Test
+    fun `after-install without silent update still appends the user script`() {
+        val composed =
+            LinuxUpdateHelper.composeAfterInstallScript(
+                baseScript = "#!/bin/bash\necho base\n",
+                silentUpdate = false,
+                userScript = "systemctl enable wgtunnel-daemon.service",
+            )
+        assertFalse(composed.contains("Nucleus passwordless self-update"))
+        assertTrue(composed.contains("systemctl enable wgtunnel-daemon.service"))
+    }
+
+    @Test
+    fun `after-remove is omitted when silent update is off and there is no user script`() {
+        assertTrue(LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate = false, userScript = null) == null)
+        assertTrue(LinuxUpdateHelper.composeAfterRemoveScript(silentUpdate = false, userScript = "  \n") == null)
+    }
+
+    @Test
+    fun `after-remove includes the user script when silent update is off`() {
+        val composed =
+            LinuxUpdateHelper.composeAfterRemoveScript(
+                silentUpdate = false,
+                userScript = "systemctl disable wgtunnel-daemon.service",
+            )
+        assertTrue(composed != null)
+        assertTrue(composed!!.startsWith("#!/bin/bash"))
+        assertTrue(composed.contains("systemctl disable wgtunnel-daemon.service"))
+        assertFalse(composed.contains("Nucleus passwordless self-update cleanup"))
+    }
 }

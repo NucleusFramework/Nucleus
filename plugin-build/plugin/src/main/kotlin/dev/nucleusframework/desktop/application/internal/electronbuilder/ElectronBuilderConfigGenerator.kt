@@ -607,6 +607,7 @@ internal class ElectronBuilderConfigGenerator {
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = false))
             }
             TargetFormat.Rpm -> {
                 yaml.appendLine("rpm:")
@@ -626,8 +627,7 @@ internal class ElectronBuilderConfigGenerator {
                 // --rpm-auto-add-directories makes fpm own every payload directory (while still
                 // excluding the standard filesystem-package dirs), mirroring what jpackage's own
                 // template.spec does via `comm -23` against the filesystem package. See issue #251.
-                yaml.appendLine("  fpm:")
-                yaml.appendLine("    - \"--rpm-auto-add-directories\"")
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = true))
             }
             TargetFormat.Pacman -> {
                 yaml.appendLine("pacman:")
@@ -639,6 +639,7 @@ internal class ElectronBuilderConfigGenerator {
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = false))
             }
             TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)
@@ -792,6 +793,42 @@ internal class ElectronBuilderConfigGenerator {
      */
     @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
     private fun resolveInstallerIdentity(macOS: JvmMacOSPlatformSettings): String? = null
+
+    private fun fpmArgs(
+        distributions: JvmApplicationDistributions,
+        rpmAutoAddDirectories: Boolean,
+    ): List<String> {
+        val args = mutableListOf<String>()
+        if (rpmAutoAddDirectories) {
+            args += "--rpm-auto-add-directories"
+        }
+        distributions.linux.beforeInstall.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-install"
+                args += it.absolutePath
+            }
+        distributions.linux.beforeRemove.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-remove"
+                args += it.absolutePath
+            }
+        return args
+    }
+
+    private fun appendFpmArgs(
+        yaml: StringBuilder,
+        args: List<String>,
+    ) {
+        if (args.isEmpty()) return
+        yaml.appendLine("  fpm:")
+        for (arg in args) {
+            yaml.appendLine("    - \"${arg.escapeForYamlDoubleQuotes()}\"")
+        }
+    }
 
     private fun appendIfNotNull(
         yaml: StringBuilder,
