@@ -8,18 +8,18 @@ import javax.net.ssl.X509TrustManager
 
 private const val TAG = "NativeTrustManager"
 
-object NativeTrustManager {
+public object NativeTrustManager {
     private val combined: X509TrustManager by lazy { buildCombinedTrustManager() }
 
-    val trustManager: X509TrustManager get() = combined
+    public val trustManager: X509TrustManager get() = combined
 
-    val sslContext: SSLContext by lazy {
+    public val sslContext: SSLContext by lazy {
         SSLContext.getInstance("TLS").apply {
             init(null, arrayOf(combined), null)
         }
     }
 
-    val sslSocketFactory: SSLSocketFactory by lazy {
+    public val sslSocketFactory: SSLSocketFactory by lazy {
         sslContext.socketFactory
     }
 

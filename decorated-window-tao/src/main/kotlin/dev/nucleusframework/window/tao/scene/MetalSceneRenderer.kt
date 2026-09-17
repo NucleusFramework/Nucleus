@@ -1,10 +1,9 @@
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.ui.InternalComposeUiApi
-import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.scene.ComposeScene
+import androidx.compose.ui.unit.IntOffset
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
 import org.jetbrains.skia.BackendRenderTarget
+import org.jetbrains.skia.Canvas
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.Picture
@@ -39,19 +38,48 @@ import org.jetbrains.skia.SurfaceOrigin
  * drawable wraps a different texture, so the per-frame allocations in
  * [replayPictureToFrame] are unavoidable.
  */
-@OptIn(InternalComposeUiApi::class)
 internal fun recordSceneToPicture(
-    scene: ComposeScene,
+    bundle: TaoSceneBundle,
     widthPx: Int,
     heightPx: Int,
     nanoTime: Long = System.nanoTime(),
-): Picture {
-    val recorder = PictureRecorder()
-    // The cull bounds match the drawable size (physical pixels). The scene is
-    // rendered at this size; the clear happens at replay time, not here.
-    val canvas = recorder.beginRecording(Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()))
-    scene.render(canvas.asComposeCanvas(), nanoTime)
-    return recorder.finishRecordingAsPicture()
+    /**
+     * Where the drawable sits in the coordinate space the scene draws in.
+     * The window's own scene draws at the origin; a popup layer draws in
+     * owner-window coordinates and passes its draw bounds
+     * ([dev.nucleusframework.window.tao.popup.popupPictureCullRect]), because
+     * Skia quick-rejects a picture whose cull rect misses the replay matrix.
+     */
+    cullRect: Rect = Rect.makeWH(widthPx.toFloat(), heightPx.toFloat()),
+): Picture =
+    PictureRecorder().use { recorder ->
+        // The cull bounds match the drawable size (physical pixels). The scene is
+        // rendered at this size; the clear happens at replay time, not here.
+        val canvas = recorder.beginRecording(cullRect)
+        bundle.render(canvas, nanoTime)
+        // Closing the recorder here frees its native memory deterministically
+        // (one recorder per frame — a GC-driven Cleaner would lag far behind);
+        // the returned Picture owns its own native ref and survives the close.
+        recorder.finishRecordingAsPicture()
+    }
+
+/**
+ * Draws [picture] onto this canvas with its origin moved to [pictureOffset] —
+ * the one step of [replayPictureToFrame] that is pure Skia, split out so it can
+ * be exercised against a raster surface without a Metal device.
+ *
+ * The offset and the picture's cull rect are two halves of one contract: Skia
+ * quick-rejects a picture whose cull rect, mapped through the current matrix,
+ * misses the drawable, so a caller that translates here must record with a cull
+ * rect expressed in the same space as the content
+ * ([dev.nucleusframework.window.tao.popup.popupPictureCullRect]).
+ */
+internal fun Canvas.replayPicture(
+    picture: Picture,
+    pictureOffset: IntOffset,
+) {
+    translate(pictureOffset.x.toFloat(), pictureOffset.y.toFloat())
+    drawPicture(picture)
 }
 
 /**
@@ -80,6 +108,12 @@ internal fun replayPictureToFrame(
     directContext: DirectContext,
     picture: Picture,
     clearColor: Int,
+    /**
+     * Where the picture's origin lands on the surface. A popup layer records
+     * its scene in window coordinates and draws it into a surface rooted at
+     * the layer's draw bounds, so it passes `-drawBounds.topLeft`.
+     */
+    pictureOffset: IntOffset = IntOffset.Zero,
     present: (handle: Long, drawablePtr: Long) -> Unit = { h, d ->
         NativeMetalBridge.nativePresent(h, d)
     },
@@ -101,7 +135,7 @@ internal fun replayPictureToFrame(
             }
         try {
             surface.canvas.clear(clearColor)
-            surface.canvas.drawPicture(picture)
+            surface.canvas.replayPicture(picture, pictureOffset)
             surface.flushAndSubmit(syncCpu = false)
             present(attachmentHandle, frame.drawablePtr)
             presented = true
@@ -119,8 +153,8 @@ internal fun replayPictureToFrame(
 
 /**
  * A frame recorded on the main thread, ready to be replayed + presented on the
- * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer],
- * `NativeViewOverlayController`) and collected by [TaoComposeSceneHost] during
+ * render thread. Produced by overlay/popup surfaces ([TaoPopupSceneLayer])
+ * and collected by [TaoComposeSceneHost] during
  * its record pass; the host replays them on its render thread after the main
  * scene.
  *
@@ -139,4 +173,6 @@ internal class TaoRecordedSurface(
         NativeMetalBridge.nativePresent(h, d)
     },
     val isAlive: () -> Boolean = { true },
+    /** Translation applied before the picture is drawn — see [replayPictureToFrame]. */
+    val pictureOffset: IntOffset = IntOffset.Zero,
 )

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.TextSnippet
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FormatPaint
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Widgets
@@ -33,6 +34,7 @@ private data class GalleryTab(
 private val galleryTabs =
     listOf(
         GalleryTab("Components", Icons.Filled.Widgets),
+        GalleryTab("Expressive", Icons.Filled.AutoAwesome),
         GalleryTab("Color", Icons.Filled.FormatPaint),
         GalleryTab("Typography", Icons.AutoMirrored.Filled.TextSnippet),
         GalleryTab("Elevation", Icons.Filled.Opacity),
@@ -61,9 +63,10 @@ internal fun GalleryScreen(seedColor: Color) {
             }
             when (selectedIndex) {
                 0 -> ComponentScreen(snackbarHostState)
-                1 -> ColorScreen(seedColor)
-                2 -> TypographyScreen()
-                3 -> ElevationScreen()
+                1 -> ExpressiveScreen()
+                2 -> ColorScreen(seedColor)
+                3 -> TypographyScreen()
+                4 -> ElevationScreen()
             }
         }
     }

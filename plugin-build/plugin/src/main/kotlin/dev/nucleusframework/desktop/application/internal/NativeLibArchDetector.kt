@@ -18,11 +18,60 @@ internal object NativeLibArchDetector {
         val arch: NativeArch,
     )
 
+    /**
+     * Bytes to read from a native lib for [detectFromHeader] to reach the machine field.
+     * The PE one is the furthest away: it sits at `e_lfanew + 4`, and `e_lfanew` is routinely
+     * past the first 64 bytes (0x78 in the zstd-kmp dlls, for instance).
+     */
+    const val HEADER_BYTES = 4096
+
     private val NATIVE_EXTENSIONS = setOf(".dll", ".so", ".dylib", ".jnilib")
 
     fun isNativeLib(fileName: String): Boolean {
         val lower = fileName.lowercase()
         return NATIVE_EXTENSIONS.any { lower.endsWith(it) }
+    }
+
+    // --- Entry resolution (path + header) ---
+
+    /**
+     * Resolve a native lib entry, preferring path tokens and completing whatever they leave
+     * unresolved with the binary header.
+     *
+     * Neither source is sufficient on its own: `jni/aarch64/zstd-kmp.dll` names an arch but no
+     * OS, while a flat `libfoo.dylib` names neither. Replacing one with the other (rather than
+     * merging) let a wrong-arch lib pass the packaging filters, see issue #399.
+     *
+     * [readHeader] is invoked at most once, only when the path leaves a field unresolved, and
+     * must return up to [HEADER_BYTES] bytes from the start of the entry (empty if unreadable).
+     */
+    fun detectEntry(
+        entryPath: String,
+        readHeader: () -> ByteArray,
+    ): NativeInfo {
+        val pathInfo = detectFromPath(entryPath)
+        if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
+            return pathInfo
+        }
+        val header = readHeader()
+        if (header.isEmpty()) return pathInfo
+        val headerInfo = detectFromHeader(header)
+        return NativeInfo(
+            os = if (pathInfo.os != NativeOs.UNKNOWN) pathInfo.os else headerInfo.os,
+            arch = if (pathInfo.arch != NativeArch.UNKNOWN) pathInfo.arch else headerInfo.arch,
+        )
+    }
+
+    /** Reads up to [HEADER_BYTES] bytes from [input], returning exactly what was available. */
+    fun readHeaderBytes(input: java.io.InputStream): ByteArray {
+        val buffer = ByteArray(HEADER_BYTES)
+        var totalRead = 0
+        while (totalRead < buffer.size) {
+            val read = input.read(buffer, totalRead, buffer.size - totalRead)
+            if (read == -1) break
+            totalRead += read
+        }
+        return if (totalRead == buffer.size) buffer else buffer.copyOf(totalRead)
     }
 
     // --- Path-based detection ---
@@ -167,14 +216,19 @@ internal object NativeLibArchDetector {
             return detectELF(bytes)
         }
 
-        // Mach-O / fat binary
+        // Mach-O / fat binary. `magic` is the first 4 bytes read big-endian, so it tells us how
+        // the file itself is laid out: reading back MH_MAGIC_64 (0xFEEDFACF) means the file stores
+        // it big-endian, while the byte-swapped 0xCFFAEDFE means little-endian — which is what
+        // every macOS x86_64/arm64 dylib on disk actually starts with ("cf fa ed fe"). The rest of
+        // the header, cpu_type included, must be read in that same order.
         val magic = ByteBuffer.wrap(bytes, 0, 4).int
         return when (magic) {
-            0xFEEDFACF.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
-            0xCFFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
-            0xFEEDFACE.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
-            0xCEFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
-            0xCAFEBABE.toInt() -> NativeInfo(NativeOs.MACOS, NativeArch.UNIVERSAL)
+            0xFEEDFACF.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
+            0xCFFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
+            0xFEEDFACE.toInt() -> detectMachO(bytes, ByteOrder.BIG_ENDIAN)
+            0xCEFAEDFE.toInt() -> detectMachO(bytes, ByteOrder.LITTLE_ENDIAN)
+            // Fat headers are always big-endian; 0xCAFEBABF is the 64-bit variant.
+            0xCAFEBABE.toInt(), 0xCAFEBABF.toInt() -> NativeInfo(NativeOs.MACOS, NativeArch.UNIVERSAL)
             else -> NativeInfo(NativeOs.UNKNOWN, NativeArch.UNKNOWN)
         }
     }

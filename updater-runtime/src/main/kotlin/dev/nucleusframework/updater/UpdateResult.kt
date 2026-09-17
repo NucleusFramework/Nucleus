@@ -2,15 +2,15 @@ package dev.nucleusframework.updater
 
 import dev.nucleusframework.updater.exception.UpdateException
 
-sealed class UpdateResult {
-    data class Available(
+public sealed class UpdateResult {
+    public data class Available(
         val info: UpdateInfo,
         val level: UpdateLevel,
     ) : UpdateResult()
 
-    data object NotAvailable : UpdateResult()
+    public data object NotAvailable : UpdateResult()
 
-    data class Error(
+    public data class Error(
         val exception: UpdateException,
     ) : UpdateResult()
 }

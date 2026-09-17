@@ -2,10 +2,55 @@ package dev.nucleusframework.updater.internal
 
 import dev.nucleusframework.core.runtime.Platform
 import java.io.File
+import java.nio.file.Files
+import java.util.logging.Logger
 import kotlin.system.exitProcess
+
+/**
+ * Creates a fresh, owner-only (POSIX `0700`) working directory for the detached update
+ * scripts and their log.
+ *
+ * A predictable path in the shared temp dir — e.g. `/tmp/nucleus-update.sh` on Linux — lets
+ * any other local user pre-create that path as a file they own or as a symlink, so this
+ * process ends up writing the script body into (and then executing) a file the attacker
+ * controls. Each update run therefore gets its own unguessable private directory, mirroring
+ * the owner-only download staging directory used one layer up in `NucleusUpdater`.
+ *
+ * Exposed for unit tests.
+ */
+internal fun createUpdateWorkDir(): File = Files.createTempDirectory("nucleus-update-").toFile()
+
+/**
+ * Walks up from [launcher]'s directory looking for [PlatformInstaller.UPDATE_HELPER_NAME].
+ * Exposed for unit tests (jpackage may run as `/opt/App/bin/App` or `/usr/bin/App`).
+ */
+internal fun resolveUpdateHelperFromLauncher(
+    launcher: String,
+    helperName: String = PlatformInstaller.UPDATE_HELPER_NAME,
+    maxDepth: Int = PlatformInstaller.HELPER_SEARCH_MAX_DEPTH,
+): File? {
+    var dir = File(launcher).canonicalFile.parentFile ?: return null
+    repeat(maxDepth) {
+        val helper = dir.resolve(helperName)
+        if (helper.isFile) return helper
+        dir = dir.parentFile ?: return null
+    }
+    return null
+}
+
+private val logger: Logger = Logger.getLogger(PlatformInstaller::class.java.name)
 
 @Suppress("TooManyFunctions")
 internal object PlatformInstaller {
+    /**
+     * Package-owned silent-update helper file name (must match plugin
+     * `LinuxUpdateHelper.HELPER_FILE_NAME`).
+     */
+    internal const val UPDATE_HELPER_NAME = "nucleus-update-helper"
+
+    /** Max parents walked from the launcher path when looking for [UPDATE_HELPER_NAME]. */
+    internal const val HELPER_SEARCH_MAX_DEPTH = 3
+
     fun install(
         file: File,
         platform: Platform,
@@ -54,51 +99,69 @@ internal object PlatformInstaller {
         val currentAppImage =
             System.getenv("APPIMAGE")
                 ?: error("APPIMAGE environment variable not set — update is only supported from a packaged AppImage")
+        val destination = File(currentAppImage)
 
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch in a fully detached process\nnohup \"\$OLD_FILE\" > /dev/null 2>&1 &\n"
-            } else {
-                ""
-            }
+        // electron-updater pattern: unlink + replace while the running mount still holds the
+        // previous inode open. Avoids racing the FUSE unmount that follows process exit.
+        val replacedInPlace = replaceAppImageInPlace(newAppImage, destination)
 
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val workDir = createUpdateWorkDir()
+        val script = File(workDir, "nucleus-update.sh")
+        val logFile = File(workDir, "nucleus-update.log")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |set -e
-            |
-            |# Ignore SIGHUP to survive parent process exit
-            |trap '' HUP
-            |
-            |NEW_FILE="${newAppImage.absolutePath}"
-            |OLD_FILE="$currentAppImage"
-            |APP_PID=$pid
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |# Wait for the AppImage FUSE mount to fully clean up
-            |sleep 1
-            |
-            |# Replace the old AppImage with the new one
-            |mv -f "${'$'}NEW_FILE" "${'$'}OLD_FILE"
-            |chmod +x "${'$'}OLD_FILE"
-            |$relaunchCmd
-            |# Clean up this script
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildLinuxAppImageUpdateScript(
+                newFile = newAppImage.absolutePath,
+                oldFile = destination.absolutePath,
+                appPid = pid,
+                logFile = logFile.absolutePath,
+                restart = restart,
+                alreadyReplaced = replacedInPlace,
+            ),
         )
         script.setExecutable(true)
 
-        // Use setsid to start the script in a new session, fully detached
-        // from the current process tree
+        // New session, started from $HOME so a FUSE-mount CWD cannot poison the relaunch.
+        val home = File(System.getProperty("user.home") ?: workDir.absolutePath)
         ProcessBuilder("setsid", "bash", script.absolutePath)
+            .directory(home)
             .redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD)
             .start()
+    }
+
+    /**
+     * Swaps [newAppImage] onto [destination] while this process is still running.
+     *
+     * Returns `true` when [destination] holds the new bytes (caller may leave [newAppImage]
+     * missing). Returns `false` when the swap could not be completed; the detached script
+     * will retry after this process exits.
+     */
+    internal fun replaceAppImageInPlace(
+        newAppImage: File,
+        destination: File,
+    ): Boolean {
+        if (!newAppImage.isFile) return false
+        return try {
+            // Unlink first so a busy destination (open as the loop/FUSE backend) does not block
+            // the subsequent rename the way a direct overwrite can on some kernels.
+            if (destination.exists() && !destination.delete() && destination.exists()) {
+                return false
+            }
+            val moved =
+                newAppImage.renameTo(destination) ||
+                    run {
+                        newAppImage.copyTo(destination, overwrite = true)
+                        newAppImage.delete()
+                        destination.isFile
+                    }
+            if (moved) {
+                // ownerOnly = false: match `chmod +x` so any user can relaunch the AppImage
+                destination.setExecutable(true, false)
+            }
+            moved && destination.isFile
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun installLinuxPackage(
@@ -111,18 +174,23 @@ internal object PlatformInstaller {
             currentExecutablePath()
                 ?: error("Cannot resolve application launcher from the running process")
 
-        // Prefer the passwordless, signature-verifying update helper installed alongside the app
-        // (see the Gradle plugin's afterInstall script). It only runs without a password when its
-        // polkit policy is present, and only installs a package whose detached signature verifies
-        // against the bundled public key. Falls back to the standard prompting install otherwise.
+        // Prefer the passwordless, signature-verifying update helper (plugin silentUpdate).
+        // Both helper and detached <pkg>.asc are required for that path; otherwise we fall back
+        // to a password-prompting install and log why (no silent fallback without a reason).
         val helper = resolveUpdateHelper(launcher)
         val signatureFile = File("${packageFile.absolutePath}.asc")
         val installCmd =
             when {
                 helper != null && signatureFile.isFile ->
                     "pkexec \"${helper.absolutePath}\" \"\$PKG_FILE\""
-                extension == "deb" -> "pkexec dpkg -i \"\$PKG_FILE\""
-                extension == "rpm" -> "pkexec rpm -U \"\$PKG_FILE\""
+                extension == "deb" -> {
+                    logLinuxInstallFallback(helper, signatureFile)
+                    "pkexec dpkg -i \"\$PKG_FILE\""
+                }
+                extension == "rpm" -> {
+                    logLinuxInstallFallback(helper, signatureFile)
+                    "pkexec rpm -U \"\$PKG_FILE\""
+                }
                 else -> error("Unsupported package format: $extension")
             }
 
@@ -133,7 +201,7 @@ internal object PlatformInstaller {
                 ""
             }
 
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val script = File(createUpdateWorkDir(), "nucleus-update.sh")
         script.writeText(
             """
             |#!/usr/bin/env bash
@@ -152,7 +220,8 @@ internal object PlatformInstaller {
             |
             |sleep 1
             |
-            |# Install the package (shows graphical authentication dialog)
+            |# Install the package. Silent path uses the signature-verifying helper;
+            |# otherwise pkexec dpkg/rpm shows an authentication dialog.
             |# Do not use set -e: dpkg/rpm may return non-zero on warnings,
             |# which would prevent the application from relaunching.
             |$installCmd
@@ -173,16 +242,31 @@ internal object PlatformInstaller {
     }
 
     /**
-     * Resolves the passwordless update helper installed next to the app, or `null` if absent.
+     * Resolves the passwordless update helper installed in the app dir, or `null` if absent.
      *
-     * The helper lives beside the real launcher binary (e.g. `/opt/<App>/nucleus-update-helper`).
-     * The running launcher may be a `/usr/bin` symlink, so resolve through it to the install dir.
+     * The helper is packaged as `/opt/<App>/nucleus-update-helper`. The running process may be
+     * `/usr/bin/<app>` (symlink), `/opt/<App>/<app>`, or `/opt/<App>/bin/<app>` (jpackage layout),
+     * so walk up a few parents from the canonical launcher path until the helper is found.
      */
-    private fun resolveUpdateHelper(launcher: String): File? =
-        File(launcher)
-            .canonicalFile.parentFile
-            ?.resolve("nucleus-update-helper")
-            ?.takeIf { it.isFile }
+    internal fun resolveUpdateHelper(launcher: String): File? = resolveUpdateHelperFromLauncher(launcher)
+
+    private fun logLinuxInstallFallback(
+        helper: File?,
+        signatureFile: File,
+    ) {
+        val reason =
+            when {
+                helper == null ->
+                    "no $UPDATE_HELPER_NAME next to the launcher (app not packaged with silentUpdate?)"
+                !signatureFile.isFile ->
+                    "helper found at ${helper.absolutePath} but detached signature missing: " +
+                        "${signatureFile.absolutePath} (publish <pkg>.asc next to the package)"
+                else -> "unknown"
+            }
+        logger.warning {
+            "Passwordless Linux update unavailable ($reason); falling back to interactive pkexec install"
+        }
+    }
 
     /**
      * Resolves the absolute path of the executable that launched the current process.
@@ -209,52 +293,18 @@ internal object PlatformInstaller {
             resolveCurrentAppBundle()
                 ?: error("Cannot resolve current .app bundle from java.home")
         val installDir = appBundle.parentFile
-        val appName = appBundle.name
-        val appPath = File(installDir, appName).absolutePath
-        val pid = ProcessHandle.current().pid()
+        val workDir = createUpdateWorkDir()
 
-        val relaunchCmd =
-            if (restart) {
-                "\n# Relaunch the app\nopen \"\$APP_PATH\"\n"
-            } else {
-                ""
-            }
-
-        // Write a shell script that will:
-        // 1. Wait for our process to actually die
-        // 2. Replace the app bundle
-        // 3. Remove quarantine and optionally relaunch
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.sh")
+        val script = File(workDir, "nucleus-update.sh")
         script.writeText(
-            """
-            |#!/usr/bin/env bash
-            |set -e
-            |
-            |ZIP_FILE="${zipFile.absolutePath}"
-            |APP_PATH="$appPath"
-            |INSTALL_DIR="${installDir.absolutePath}"
-            |APP_PID=$pid
-            |
-            |# Wait for the app process to fully exit
-            |while kill -0 "${'$'}APP_PID" 2>/dev/null; do
-            |    sleep 0.5
-            |done
-            |
-            |# Remove old app bundle
-            |if [ -d "${'$'}APP_PATH" ]; then
-            |    rm -rf "${'$'}APP_PATH"
-            |fi
-            |
-            |# Extract the ZIP
-            |ditto -x -k "${'$'}ZIP_FILE" "${'$'}INSTALL_DIR"
-            |
-            |# Remove quarantine attribute
-            |xattr -r -d com.apple.quarantine "${'$'}APP_PATH" 2>/dev/null || true
-            |$relaunchCmd
-            |# Clean up
-            |rm -f "${'$'}ZIP_FILE"
-            |rm -f "${'$'}{0}"
-            """.trimMargin(),
+            buildMacZipUpdateScript(
+                zipFile = zipFile.absolutePath,
+                appPath = appBundle.absolutePath,
+                installDir = installDir.absolutePath,
+                appPid = ProcessHandle.current().pid(),
+                logFile = File(workDir, "nucleus-update.log").absolutePath,
+                restart = restart,
+            ),
         )
         script.setExecutable(true)
 
@@ -284,34 +334,15 @@ internal object PlatformInstaller {
     ) {
         val pid = ProcessHandle.current().pid()
         val launcher = currentExecutablePath()
-        val installerCmd =
-            when (extension) {
-                "msi" -> "Start-Process msiexec -ArgumentList '/i', '\"${file.absolutePath}\"', '/passive' -Wait"
-                else -> "Start-Process '${file.absolutePath}' -ArgumentList '/S', '--updated' -Wait"
-            }
-
-        val relaunchCmd =
-            if (restart && launcher != null) {
-                "\n|# Relaunch the application\n|Start-Process '$launcher'"
-            } else {
-                ""
-            }
-
-        val script = File(System.getProperty("java.io.tmpdir"), "nucleus-update.ps1")
+        val script = File(createUpdateWorkDir(), "nucleus-update.ps1")
         script.writeText(
-            """
-            |# Wait for the app process to fully exit
-            |while (Get-Process -Id $pid -ErrorAction SilentlyContinue) {
-            |    Start-Sleep -Milliseconds 500
-            |}
-            |
-            |# Run the installer silently
-            |$installerCmd
-            |$relaunchCmd
-            |# Clean up
-            |Remove-Item '${file.absolutePath}' -Force -ErrorAction SilentlyContinue
-            |Remove-Item '${script.absolutePath}' -Force -ErrorAction SilentlyContinue
-            """.trimMargin(),
+            buildWindowsUpdateScript(
+                pid = pid,
+                installerCommand = windowsInstallerCommand(file, extension),
+                relaunchCommand = windowsRelaunchCommand(restart, launcher),
+                artifactPath = file.absolutePath,
+                scriptPath = script.absolutePath,
+            ),
         )
 
         ProcessBuilder(

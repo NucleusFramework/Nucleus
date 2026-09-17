@@ -17,9 +17,9 @@ internal interface PlatformEnergyManager {
 
     fun disableThreadEfficiencyMode(): EnergyManager.Result
 
-    fun keepScreenAwake(): EnergyManager.Result
+    fun keepAwake(mode: AwakeMode): EnergyManager.Result
 
-    fun releaseScreenAwake(): EnergyManager.Result
+    fun releaseAwake(): EnergyManager.Result
 
-    fun isScreenAwakeActive(): Boolean
+    fun isAwakeActive(): Boolean
 }

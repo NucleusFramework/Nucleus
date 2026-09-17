@@ -12,7 +12,7 @@ use std::{
   time::Instant,
 };
 
-use cairo::{RectangleInt, Region};
+use cairo::Region;
 use crossbeam_channel::SendError;
 use gdk::{Cursor, CursorType, EventKey, EventMask, ScrollDirection, WindowEdge, WindowState};
 use gio::Cancellable;
@@ -26,6 +26,7 @@ use gtk::{
 
 #[cfg(feature = "x11")]
 use crate::platform_impl::platform::device;
+use crate::platform_impl::platform::ime::{Commit, ImeState};
 use crate::{
   dpi::{LogicalPosition, LogicalSize, PhysicalPosition},
   error::ExternalError,
@@ -45,10 +46,29 @@ use super::{
   keyboard,
   monitor::{self, MonitorHandle},
   taskbar, util,
-  window::{WindowId, WindowRequest},
+  window::{
+    content_geometry, event_coords_to_toplevel, is_csd_hidden_titlebar, WindowId, WindowRequest,
+  },
 };
 
 use taskbar::TaskbarIndicator;
+
+/// Whether GTK focus sits on a widget Nucleus did not create — an embedded
+/// native view (`NativeView`), which the widget bridge never marks with
+/// `nucleus_tao_input_box` the way it marks its own capture boxes. Keys then
+/// belong to the embed: no IME filtering on its behalf, no delivery to
+/// Compose, plain GTK propagation to the focus widget. Without this the
+/// toplevel's `GtkIMContext` consumed every printable key and the handler
+/// stopped propagation, so a `WebKitWebView` or a `GtkEntry` the user had
+/// clicked into never received a single character.
+fn embed_owns_keyboard(window: &gtk::Window) -> bool {
+  let Some(focus) = window.focused_widget() else {
+    return false;
+  };
+  // SAFETY: only the presence of the key is read; the pointer stored under it
+  // (a non-null marker set by the widget bridge) is never dereferenced.
+  unsafe { glib::prelude::ObjectExt::data::<()>(&focus, "nucleus_tao_input_box").is_none() }
+}
 
 #[derive(Clone)]
 pub struct EventLoopWindowTarget<T> {
@@ -303,6 +323,12 @@ impl<T: 'static> EventLoop<T> {
 
     // Window Request
     let popup_windows_ = popup_windows.clone();
+    // Nucleus patch (nucleusframework#558): input contexts keyed by window id.
+    // The context is created in the `WireUpEvents` arm and read back by the
+    // `SetImePosition` arm, both of which live inside this closure — so it
+    // needs no home on `EventLoopWindowTarget`.
+    let ime_contexts: Rc<RefCell<std::collections::HashMap<u32, gtk::IMMulticontext>>> =
+      Rc::new(RefCell::new(std::collections::HashMap::new()));
     window_requests_rx.attach(Some(&context), move |(id, request)| {
       // Nucleus patch: popup overlay windows are plain gtk::Windows with
       // synthesized ids — resolve them from the popup map when the
@@ -316,6 +342,13 @@ impl<T: 'static> EventLoop<T> {
         match request {
           WindowRequest::Title(title) => window.set_title(&title),
           WindowRequest::Position((x, y)) => window.move_(x, y),
+          WindowRequest::PopupAnchor {
+            x,
+            y,
+            width,
+            height,
+            shadow,
+          } => popup_anchor(&window, x, y, width, height, shadow),
           WindowRequest::Size((w, h)) => {
             // Nucleus patch: `gtk_window_resize` is a no-op on non-resizable
             // windows (GTK follows the content's natural size instead); route
@@ -492,16 +525,60 @@ impl<T: 'static> EventLoop<T> {
               }
             }
           }
+          // Nucleus patch (nucleusframework#558): hand the input method the
+          // area the caret covers so its preedit and candidate windows are
+          // placed clear of the text being typed, instead of over it.
+          WindowRequest::SetImeCursorArea((x, y, w, h)) => {
+            // The caret arrives in client-area coordinates — the contract
+            // `set_ime_position` documents. GTK wants it relative to the
+            // toplevel GdkWindow, and on a client-side-decorated window that
+            // window also spans the invisible resize border and drop shadow,
+            // so the two origins are apart by the content widget's allocation.
+            // Skipping the translation puts the caret a shadow's height too
+            // high, and the input method draws its candidate list straight
+            // over the composition it belongs to.
+            let (dx, dy) = window
+              .child()
+              .map(|child| {
+                let alloc = child.allocation();
+                // Before the first allocation the child reports a 1x1 dummy at
+                // the origin; (0, 0) is the right answer then anyway.
+                if alloc.width() > 1 || alloc.height() > 1 {
+                  (alloc.x(), alloc.y())
+                } else {
+                  (0, 0)
+                }
+              })
+              .unwrap_or((0, 0));
+            if let Some(ime) = ime_contexts.borrow().get(&id.0) {
+              ime.set_cursor_location(&gdk::Rectangle::new(x + dx, y + dy, w, h));
+            }
+          }
           WindowRequest::CursorIgnoreEvents(ignore) => {
-            if ignore {
-              let empty_region = Region::create_rectangle(&RectangleInt::new(0, 0, 1, 1));
-              window
-                .window()
-                .unwrap()
-                .input_shape_combine_region(&empty_region, 0, 0);
-            } else {
-              window.input_shape_combine_region(None)
-            };
+            // PATCH(nucleus): an *empty* region, not a 1x1 rectangle at the
+            // origin — upstream leaves the top-left pixel clickable. Both
+            // branches also go through the same GdkWindow: upstream cleared
+            // the shape on the GtkWidget, which is a no-op when the shape was
+            // installed on the GdkWindow, so click-through could never be
+            // turned back off.
+            if let Some(gdk_window) = window.window() {
+              if ignore {
+                gdk_window.input_shape_combine_region(&Region::create(), 0, 0);
+              } else {
+                // Only a NULL region clears the shape for good; a full-window
+                // region would go stale on the next resize, and the safe
+                // binding cannot express NULL.
+                use glib::translate::ToGlibPtr;
+                unsafe {
+                  gdk::ffi::gdk_window_input_shape_combine_region(
+                    gdk_window.to_glib_none().0,
+                    std::ptr::null_mut(),
+                    0,
+                    0,
+                  );
+                }
+              }
+            }
           }
           WindowRequest::ProgressBarState(_) => unreachable!(),
           WindowRequest::BadgeCount(_, _) => unreachable!(),
@@ -545,6 +622,106 @@ impl<T: 'static> EventLoop<T> {
             let _ = fullscreen;
             let _ = is_wayland;
 
+            // PATCH(nucleus): hidden-titlebar CSD — keep the embedder the
+            // SINGLE resize authority over the shadow ring. GtkWindow's own
+            // frame regions treat only a thin outer band of the ring as a
+            // resize edge and the rest as a TITLE region, so a press there
+            // starts a compositor MOVE grab (the window slides with the
+            // pointer instead of resizing — which side "wins" depended on
+            // exactly where the cursor was). The generic `::event` signal is
+            // RUN_LAST: this user handler runs BEFORE GtkWindow's class
+            // handler, so returning Stop for ring presses suppresses GTK's
+            // title-move/edge machinery entirely. The press/release/motion is
+            // re-forwarded to the embedder channel here (Stop also suppresses
+            // the specific button/motion signals connected below), translated
+            // to content coordinates, where the Compose edge band resolves the
+            // ring to the nearest edge and drives `drag_resize_window`.
+            let tx_clone = event_tx.clone();
+            window.connect_event(move |window, ev| {
+              if !is_csd_hidden_titlebar(window) {
+                return glib::Propagation::Proceed;
+              }
+              let ring_pos = |window: &gtk::Window, x: f64, y: f64| {
+                let (cx, cy, cw, ch) = content_geometry(window);
+                let inside = x >= cx as f64
+                  && y >= cy as f64
+                  && x < (cx + cw) as f64
+                  && y < (cy + ch) as f64;
+                if inside {
+                  None
+                } else {
+                  Some((x - cx as f64, y - cy as f64))
+                }
+              };
+              match ev.event_type() {
+                gdk::EventType::ButtonPress | gdk::EventType::ButtonRelease => {
+                  let (Some((x, y)), Some(button)) = (ev.coords(), ev.button()) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  // Ring events are delivered on GTK's input-only border-strip
+                  // GdkWindows with strip-LOCAL coordinates — normalize to the
+                  // toplevel space before the ring test.
+                  let (x, y) = event_coords_to_toplevel(window, ev.window(), x, y);
+                  let Some((tx_x, tx_y)) = ring_pos(window, x, y) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let scale_factor = window.scale_factor();
+                  let pressed = ev.event_type() == gdk::EventType::ButtonPress;
+                  // Ship the position first so the embedder's press-time edge
+                  // hit-test sees the ring coordinates it is about to act on.
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::CursorMoved {
+                      position: LogicalPosition::new(tx_x, tx_y)
+                        .to_physical(scale_factor as f64),
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::MouseInput {
+                      button: match button {
+                        1 => MouseButton::Left,
+                        2 => MouseButton::Middle,
+                        3 => MouseButton::Right,
+                        _ => MouseButton::Other(button as u16),
+                      },
+                      state: if pressed {
+                        ElementState::Pressed
+                      } else {
+                        ElementState::Released
+                      },
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  glib::Propagation::Stop
+                }
+                gdk::EventType::MotionNotify => {
+                  let Some((x, y)) = ev.coords() else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let (x, y) = event_coords_to_toplevel(window, ev.window(), x, y);
+                  let Some((tx_x, tx_y)) = ring_pos(window, x, y) else {
+                    return glib::Propagation::Proceed;
+                  };
+                  let scale_factor = window.scale_factor();
+                  let _ = tx_clone.send(Event::WindowEvent {
+                    window_id: RootWindowId(id),
+                    event: WindowEvent::CursorMoved {
+                      position: LogicalPosition::new(tx_x, tx_y)
+                        .to_physical(scale_factor as f64),
+                      device_id: DEVICE_ID,
+                      modifiers: ModifiersState::empty(),
+                    },
+                  });
+                  glib::Propagation::Stop
+                }
+                _ => glib::Propagation::Proceed,
+              }
+            });
+
             let tx_clone = event_tx.clone();
             window.connect_delete_event(move |_, _| {
               if let Err(e) = tx_clone.send(Event::WindowEvent {
@@ -573,7 +750,15 @@ impl<T: 'static> EventLoop<T> {
                 log::warn!("Failed to send window moved event to event channel: {}", e);
               }
 
-              let (w, h) = event.size();
+              // PATCH(nucleus): with hidden-titlebar CSD the configure event
+              // reports the full decorated surface (theme shadow margins
+              // included) — subtract the decoration insets for the client-area
+              // size the embedder actually renders (fresh, unlike
+              // `gtk_window_get_size` which reads the previous GdkWindow size
+              // and lags one configure during interactive resizes). Identity
+              // when CSD is off.
+              let (ew, eh) = event.size();
+              let (w, h) = super::window::configure_client_size(window, ew, eh);
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::Resized(
@@ -650,6 +835,17 @@ impl<T: 'static> EventLoop<T> {
               // targeting, where global coordinates don't exist).
               let scale_factor = window.scale_factor();
               let (x, y) = crossing.position();
+              // PATCH(nucleus): hidden-titlebar CSD — normalize border-strip
+              // GdkWindow coordinates to the toplevel, then shift into
+              // content-area coordinates so the embedder's (0,0) stays the
+              // visible window corner.
+              let (x, y) = if is_csd_hidden_titlebar(window) {
+                let (x, y) = event_coords_to_toplevel(window, crossing.window(), x, y);
+                let (cx, cy, _, _) = content_geometry(window);
+                (x - cx as f64, y - cy as f64)
+              } else {
+                (x, y)
+              };
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::CursorMoved {
@@ -676,6 +872,16 @@ impl<T: 'static> EventLoop<T> {
                 // (SetCapture) already behave this way.
                 let scale_factor = window.scale_factor();
                 let (x, y) = motion.position();
+                // PATCH(nucleus): hidden-titlebar CSD — translate from
+                // decorated-surface to content-area coordinates (see the
+                // crossing handler above).
+                let (x, y) = if is_csd_hidden_titlebar(window) {
+                  let (x, y) = event_coords_to_toplevel(window, motion.window(), x, y);
+                  let (cx, cy, _, _) = content_geometry(window);
+                  (x - cx as f64, y - cy as f64)
+                } else {
+                  (x, y)
+                };
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
                   event: WindowEvent::CursorMoved {
@@ -758,7 +964,20 @@ impl<T: 'static> EventLoop<T> {
 
             let tx_clone = event_tx.clone();
             window.connect_scroll_event(move |_, event| {
-              let (x, y) = event.delta();
+              // GDK only fills `delta_x`/`delta_y` for GDK_SCROLL_SMOOTH
+              // (trackpads). A discrete mouse wheel arrives with
+              // `direction = UP/DOWN/LEFT/RIGHT` and a zero delta, so the
+              // upstream `event.delta()` mapping drops the event entirely and
+              // the wheel never scrolls. Map the direction back onto a unit
+              // delta so discrete and smooth scrolls share one sign convention.
+              let (x, y) = match event.direction() {
+                ScrollDirection::Smooth => event.delta(),
+                ScrollDirection::Up => (0.0, -1.0),
+                ScrollDirection::Down => (0.0, 1.0),
+                ScrollDirection::Left => (-1.0, 0.0),
+                ScrollDirection::Right => (1.0, 0.0),
+                _ => (0.0, 0.0),
+              };
               if let Err(e) = tx_clone.send(Event::WindowEvent {
                 window_id: RootWindowId(id),
                 event: WindowEvent::MouseWheel {
@@ -768,6 +987,7 @@ impl<T: 'static> EventLoop<T> {
                     ScrollDirection::Smooth => TouchPhase::Moved,
                     _ => TouchPhase::Ended,
                   },
+                  scroll_phase: crate::event::ScrollPhase::None,
                   modifiers: ModifiersState::empty(),
                 },
               }) {
@@ -777,16 +997,28 @@ impl<T: 'static> EventLoop<T> {
             });
 
             let tx_clone = event_tx.clone();
+            let modifier_state = Rc::new(RefCell::new(ImeState::new()));
             let keyboard_handler = Rc::new(move |event_key: EventKey, element_state| {
-              // if we have a modifier lets send it
-              if !keyboard::get_modifiers(event_key.clone()).is_empty() {
-                // Nucleus patch: emit the FULL modifier state, not just the
-                // pressed key's own bit — upstream sent `{SHIFT}` when Shift
-                // was pressed while Ctrl was held, dropping Ctrl from the
-                // state and breaking every Ctrl+Shift+<key> shortcut.
-                let mods =
-                  keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
-
+              // Nucleus patch: emit the FULL modifier state, not just the
+              // pressed key's own bit — upstream sent `{SHIFT}` when Shift
+              // was pressed while Ctrl was held, dropping Ctrl from the
+              // state and breaking every Ctrl+Shift+<key> shortcut.
+              //
+              // Nucleus patch (nucleusframework#558): recompute it on *every*
+              // key, not just on modifier keys, and publish it whenever it
+              // changed. GDK reports the live modifier mask on every event, so
+              // deriving the state from the event instead of from press/release
+              // bookkeeping self-heals when a modifier's release goes missing.
+              // That is not hypothetical: on X11 an input method sits in the
+              // event path and re-injects what it forwards (ibus marks those
+              // events with its own reserved bits), and modifier releases are
+              // dropped along the way. The old code only ever revisited the
+              // state on a modifier key, so a lost Control release left Compose
+              // believing Ctrl was held — and a plain Return then read as
+              // Ctrl+Return for the rest of the session.
+              let mods =
+                keyboard::get_modifier_state(&event_key, ElementState::Pressed == element_state);
+              if let Some(mods) = modifier_state.borrow_mut().modifiers_changed(mods) {
                 if let Err(e) = tx_clone.send(Event::WindowEvent {
                   window_id: RootWindowId(id),
                   event: WindowEvent::ModifiersChanged(mods),
@@ -796,14 +1028,14 @@ impl<T: 'static> EventLoop<T> {
                     e
                   );
                 }
-                // Nucleus patch: fall through and *also* emit `KeyboardInput`
-                // for modifier-only keypresses so the JVM side can observe Alt
-                // / Ctrl / Shift / Super press/release as plain Compose key
-                // events (needed by app-level handlers like
-                // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
-                // Upstream tao stops here, which makes those handlers dead on
-                // the Linux backend.
               }
+              // Nucleus patch: fall through and *also* emit `KeyboardInput`
+              // for modifier-only keypresses so the JVM side can observe Alt
+              // / Ctrl / Shift / Super press/release as plain Compose key
+              // events (needed by app-level handlers like
+              // `(ev.key == Key.AltLeft) && ev.type == KeyEventType.KeyUp`).
+              // Upstream tao stops here, which makes those handlers dead on
+              // the Linux backend.
 
               // todo: implement repeat?
               let event = keyboard::make_key_event(&event_key, false, None, element_state);
@@ -823,35 +1055,151 @@ impl<T: 'static> EventLoop<T> {
               glib::ControlFlow::Continue
             });
 
-            let tx_clone = event_tx.clone();
-            // TODO Add actual IME from system
-            let ime = gtk::IMContextSimple::default();
+            // Nucleus patch (nucleusframework#558): the stock backend pinned
+            // `IMContextSimple`, GTK's built-in fallback that only knows
+            // Compose sequences and Ctrl+Shift+U — it never reaches the system
+            // input method, so CJK input was impossible. `IMMulticontext`
+            // resolves the platform module the same way GTK's own text widgets
+            // do (ibus / fcitx5 through the GTK immodule on X11, the
+            // text-input-v3 client on Wayland).
+            let ime = gtk::IMMulticontext::new();
             ime.set_client_window(window.window().as_ref());
-            ime.focus_in();
-            ime.connect_commit(move |_, s| {
-              if let Err(e) = tx_clone.send(Event::WindowEvent {
-                window_id: RootWindowId(id),
-                event: WindowEvent::ReceivedImeText(s.to_string()),
-              }) {
-                log::warn!(
-                  "Failed to send received IME text event to event channel: {}",
-                  e
-                );
+
+            // Everything about this window's input method that is state
+            // rather than plumbing — composition flag, the press/release
+            // pairing gate, and the last published modifier state. Split out
+            // so the behaviour can be unit-tested without a display; see
+            // `platform_impl::linux::ime`.
+            let ime_state = Rc::new(RefCell::new(ImeState::new()));
+
+            {
+              let ime_state = ime_state.clone();
+              ime.connect_preedit_start(move |_| ime_state.borrow_mut().preedit_started());
+            }
+
+            {
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_changed(move |ime| {
+                let (text, _, _) = ime.preedit_string();
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ImePreedit(text.to_string()),
+                }) {
+                  log::warn!("Failed to send IME preedit event to event channel: {}", e);
+                }
+              });
+            }
+
+            {
+              let ime_state = ime_state.clone();
+              let tx_clone = event_tx.clone();
+              ime.connect_preedit_end(move |_| {
+                ime_state.borrow_mut().preedit_ended();
+                // Empty preedit = "drop the marked text". A commit, when there
+                // is one, has already been delivered by `commit` above.
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event: WindowEvent::ImePreedit(String::new()),
+                }) {
+                  log::warn!("Failed to send IME preedit end event to event channel: {}", e);
+                }
+              });
+            }
+
+            {
+              let ime_state = ime_state.clone();
+              let tx_clone = event_tx.clone();
+              ime.connect_commit(move |_, s| {
+                let event = match ime_state.borrow().commit() {
+                  Commit::Ime => WindowEvent::ImeCommit(s.to_string()),
+                  Commit::Text => WindowEvent::ReceivedImeText(s.to_string()),
+                };
+                if let Err(e) = tx_clone.send(Event::WindowEvent {
+                  window_id: RootWindowId(id),
+                  event,
+                }) {
+                  log::warn!(
+                    "Failed to send received IME text event to event channel: {}",
+                    e
+                  );
+                }
+              });
+            }
+
+            // Follow the window's focus instead of latching `focus_in` once at
+            // construction: an input context that still believes it is focused
+            // keeps receiving key events meant for another window.
+            {
+              let ime = ime.clone();
+              window.connect_focus_in_event(move |_, _| {
+                ime.focus_in();
+                glib::Propagation::Proceed
+              });
+            }
+            {
+              let ime = ime.clone();
+              window.connect_focus_out_event(move |_, _| {
+                ime.focus_out();
+                glib::Propagation::Proceed
+              });
+            }
+            if window.is_active() {
+              ime.focus_in();
+            }
+
+            // Published so `WindowRequest::SetImePosition` can move the
+            // candidate window to the caret; dropped with the window.
+            {
+              let ime_contexts = ime_contexts.clone();
+              window.connect_destroy(move |_| {
+                ime_contexts.borrow_mut().remove(&id.0);
+              });
+            }
+            ime_contexts.borrow_mut().insert(id.0, ime.clone());
+
+            let handler = keyboard_handler.clone();
+            let ime_ = ime.clone();
+            let ime_state_press = ime_state.clone();
+            window.connect_key_press_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
               }
-            });
-
-            let handler = keyboard_handler.clone();
-            window.connect_key_press_event(move |_, event_key| {
+              // The IME gets first refusal, and a key it consumed must not also
+              // reach Compose — otherwise the Enter that confirms a conversion
+              // also inserts a newline, and the BackSpace that edits the
+              // composition also deletes committed text (the Linux twin of the
+              // VK_PROCESSKEY leak fixed for Windows in nucleusframework#558).
+              let filtered = ime_.filter_keypress(event_key);
+              if !ime_state_press
+                .borrow_mut()
+                .key_pressed(event_key.hardware_keycode(), filtered)
+              {
+                return glib::Propagation::Stop;
+              }
               handler(event_key.to_owned(), ElementState::Pressed);
-              ime.filter_keypress(event_key);
 
-              glib::Propagation::Proceed
+              // Compose owns the keyboard and has the key: stop here so GtkWindow's
+              // own bindings do not run on it too — an arrow or a Tab would
+              // otherwise `move-focus` into an embedded native view, which then
+              // steals every following keystroke from the Compose text field.
+              glib::Propagation::Stop
             });
 
             let handler = keyboard_handler.clone();
-            window.connect_key_release_event(move |_, event_key| {
+            let ime_state_release = ime_state;
+            window.connect_key_release_event(move |window, event_key| {
+              if embed_owns_keyboard(window) {
+                return glib::Propagation::Proceed;
+              }
+              let filtered = ime.filter_keypress(event_key);
+              if !ime_state_release
+                .borrow_mut()
+                .key_released(event_key.hardware_keycode(), filtered)
+              {
+                return glib::Propagation::Stop;
+              }
               handler(event_key.to_owned(), ElementState::Released);
-              glib::Propagation::Proceed
+              glib::Propagation::Stop
             });
 
             let tx_clone = event_tx.clone();
@@ -1298,5 +1646,79 @@ impl ResizeDirection {
       ResizeDirection::SouthWest => WindowEdge::SouthWest,
       ResizeDirection::West => WindowEdge::West,
     }
+  }
+}
+
+/// Nucleus patch: the compositor-positioned popup behind
+/// `Window::popup_anchor`. `gdk_window_move_to_rect` arrived in GDK 3.24; it
+/// is resolved at run time so the library still loads against 3.22, where the
+/// request degrades to the plain move a subsurface popup gets.
+fn popup_anchor(
+  window: &gtk::Window,
+  x: i32,
+  y: i32,
+  width: i32,
+  height: i32,
+  shadow: (i32, i32, i32, i32),
+) {
+  use glib::translate::ToGlibPtr;
+  type MoveToRect = unsafe extern "C" fn(
+    *mut gdk::ffi::GdkWindow,
+    *const gdk::ffi::GdkRectangle,
+    i32,
+    i32,
+    i32,
+    i32,
+    i32,
+  );
+  extern "C" {
+    fn dlsym(handle: *mut std::ffi::c_void, symbol: *const std::os::raw::c_char) -> *mut std::ffi::c_void;
+  }
+  const GDK_GRAVITY_NORTH_WEST: i32 = 1;
+  const GDK_ANCHOR_FLIP_X: i32 = 1 << 0;
+  const GDK_ANCHOR_FLIP_Y: i32 = 1 << 1;
+  const GDK_ANCHOR_SLIDE_X: i32 = 1 << 2;
+  const GDK_ANCHOR_SLIDE_Y: i32 = 1 << 3;
+  let (left, right, top, bottom) = shadow;
+  // RTLD_DEFAULT: GDK is already loaded into the process.
+  let symbol = unsafe { dlsym(std::ptr::null_mut(), b"gdk_window_move_to_rect\0".as_ptr() as *const _) };
+  if symbol.is_null() {
+    window.move_(x - left, y - top);
+    return;
+  }
+  let move_to_rect: MoveToRect = unsafe { std::mem::transmute(symbol) };
+  // A popup menu maps as an xdg_popup on Wayland even where GDK would ignore
+  // the positioner; harmless on X11 (a menu-typed override-redirect window).
+  window.set_type_hint(gdk::WindowTypeHint::PopupMenu);
+  // The positioner GDK builds at map time takes the window's geometry as it
+  // stands, so the real size must be in place *before* `move_to_rect` — hence
+  // the size request, the realize and the resize pass here rather than a
+  // separate `WindowRequest::Size`. Popup overlays are non-resizable, where
+  // `gtk_window_resize` is a no-op and the size request is what counts.
+  if width > 0 && height > 0 {
+    window.set_size_request(width, height);
+    window.resize(width, height);
+  }
+  if !window.is_realized() {
+    window.realize();
+  }
+  window.check_resize();
+  let Some(gdk_window) = window.window() else {
+    return;
+  };
+  // GTK only manages the shadow width of client-decorated windows, so this
+  // sticks: the xdg window geometry becomes the content, margins excluded.
+  gdk_window.set_shadow_width(left, right, top, bottom);
+  let rect = gdk::Rectangle::new(x, y, 1, 1);
+  unsafe {
+    move_to_rect(
+      gdk_window.to_glib_none().0,
+      rect.to_glib_none().0,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_GRAVITY_NORTH_WEST,
+      GDK_ANCHOR_FLIP_X | GDK_ANCHOR_FLIP_Y | GDK_ANCHOR_SLIDE_X | GDK_ANCHOR_SLIDE_Y,
+      0,
+      0,
+    );
   }
 }

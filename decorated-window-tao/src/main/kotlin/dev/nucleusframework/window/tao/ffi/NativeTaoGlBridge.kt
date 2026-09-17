@@ -92,6 +92,21 @@ internal object NativeTaoGlBridge {
     external fun nativePresent(handle: Long)
 
     /**
+     * Presents one frame cleared to [argb]. Used by the fullscreen toggle
+     * right after [nativeResize]: DWM registers the child HWND resize
+     * immediately but the resized swapchain's first buffer only reaches it
+     * at the next present — a composition falling into that gap shows an
+     * uninitialized (black) buffer. Sub-millisecond, shrinks the gap and
+     * colours it with the themed background. Callers must `resetGLAll()`
+     * the shared DirectContext afterwards.
+     */
+    @JvmStatic
+    external fun nativeClearPresent(
+        handle: Long,
+        argb: Int,
+    )
+
+    /**
      * Toggles VSync via `eglSwapInterval`: `true` = pace presents on the display
      * refresh (default), `false` = present immediately. Dropped to `false` for
      * the duration of the OS modal resize/move loop so the synchronous

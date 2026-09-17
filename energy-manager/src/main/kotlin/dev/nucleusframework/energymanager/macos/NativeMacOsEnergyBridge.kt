@@ -30,12 +30,21 @@ internal object NativeMacOsEnergyBridge {
     @JvmStatic
     external fun nativeDisableThreadEfficiencyMode(): Int
 
+    /** @param mode 0 = system + display, 1 = system only. */
     @JvmStatic
-    external fun nativeKeepScreenAwake(): Int
+    external fun nativeKeepAwake(mode: Int): Int
 
     @JvmStatic
-    external fun nativeReleaseScreenAwake(): Int
+    external fun nativeReleaseAwake(): Int
 
     @JvmStatic
-    external fun nativeIsScreenAwakeActive(): Boolean
+    external fun nativeIsAwakeActive(): Boolean
+
+    /**
+     * Returns the mode of the IOKit assertion this process currently holds
+     * (0 = system + display, 1 = system only, -1 = none), read back from the
+     * assertion's own properties. Exposed for verification.
+     */
+    @JvmStatic
+    external fun nativeQueryAwakeMode(): Int
 }

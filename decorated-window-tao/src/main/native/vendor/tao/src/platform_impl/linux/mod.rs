@@ -6,6 +6,7 @@
 mod device;
 mod event_loop;
 mod icon;
+mod ime;
 mod keyboard;
 mod keycode;
 mod monitor;
@@ -57,6 +58,16 @@ pub struct PlatformSpecificWindowBuilderAttributes {
   /// `wl_subsurface` of the parent — the only client-positionable window
   /// kind under xdg-shell. For cursor-following overlays (drag ghosts).
   pub popup_transient_for: Option<gtk::Window>,
+  /// Nucleus patch: yaru.dart-style hidden-titlebar client-side decorations.
+  /// Keeps the toplevel `decorated`, installs a real `GtkHeaderBar` via
+  /// `gtk_window_set_titlebar()` (which latches GTK3's `client_decorated`
+  /// flag, so GTK draws the theme drop shadow, rounded corners and invisible
+  /// resize border), then hides the header bar widget — it takes no space but
+  /// CSD stays latched. Exactly the pattern yaru.dart / the Flutter Linux
+  /// runner use (`gtk_window_set_titlebar` + `gtk_widget_hide`). Wayland only:
+  /// on X11 the EGL embedder renders straight into the toplevel, which is
+  /// incompatible with GTK-drawn frame pixels, so the flag is ignored there.
+  pub csd_hidden_titlebar: bool,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
@@ -71,6 +82,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
       cursor_moved: true,
       default_vbox: true,
       popup_transient_for: None,
+      csd_hidden_titlebar: false,
     }
   }
 }

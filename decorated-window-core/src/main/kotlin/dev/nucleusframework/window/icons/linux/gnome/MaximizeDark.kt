@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.MaximizeDark: ImageVector
+public val GnomeControlButtonsIcons.MaximizeDark: ImageVector
     get() {
         if (_MaximizeDark != null) {
             return _MaximizeDark!!

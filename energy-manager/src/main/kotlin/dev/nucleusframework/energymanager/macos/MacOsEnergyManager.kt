@@ -1,5 +1,6 @@
 package dev.nucleusframework.energymanager.macos
 
+import dev.nucleusframework.energymanager.AwakeMode
 import dev.nucleusframework.energymanager.EnergyManager
 import dev.nucleusframework.energymanager.PlatformEnergyManager
 
@@ -40,11 +41,27 @@ internal object MacOsEnergyManager : PlatformEnergyManager {
     override fun disableThreadEfficiencyMode(): EnergyManager.Result =
         callNative { NativeMacOsEnergyBridge.nativeDisableThreadEfficiencyMode() }
 
-    override fun keepScreenAwake() = callNative { NativeMacOsEnergyBridge.nativeKeepScreenAwake() }
+    /**
+     * [AwakeMode.SYSTEM_AND_DISPLAY] takes a kIOPMAssertPreventUserIdleDisplaySleep
+     * assertion, [AwakeMode.SYSTEM_ONLY] a kIOPMAssertPreventUserIdleSystemSleep one
+     * (what `caffeinate -i` holds). Both only inhibit *idle* sleep: closing the lid
+     * or choosing Sleep from the Apple menu still puts the machine to sleep.
+     */
+    @Synchronized
+    override fun keepAwake(mode: AwakeMode) = callNative { NativeMacOsEnergyBridge.nativeKeepAwake(mode.nativeCode) }
 
-    override fun releaseScreenAwake() = callNative { NativeMacOsEnergyBridge.nativeReleaseScreenAwake() }
+    @Synchronized
+    override fun releaseAwake() = callNative { NativeMacOsEnergyBridge.nativeReleaseAwake() }
 
-    override fun isScreenAwakeActive(): Boolean =
+    override fun isAwakeActive(): Boolean =
         NativeMacOsEnergyBridge.isLoaded &&
-            runCatching { NativeMacOsEnergyBridge.nativeIsScreenAwakeActive() }.getOrDefault(false)
+            runCatching { NativeMacOsEnergyBridge.nativeIsAwakeActive() }.getOrDefault(false)
+
+    /** Mirrors the AWAKE_* constants in the native bridge. */
+    private val AwakeMode.nativeCode: Int
+        get() =
+            when (this) {
+                AwakeMode.SYSTEM_AND_DISPLAY -> 0
+                AwakeMode.SYSTEM_ONLY -> 1
+            }
 }

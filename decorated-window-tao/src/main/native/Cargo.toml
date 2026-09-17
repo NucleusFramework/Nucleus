@@ -13,6 +13,11 @@ tao = "0.35"
 jni = "0.21"
 once_cell = "1.20"
 
+# Shared AccessKit tree model (wire → TreeUpdate). Linux projects via
+# accesskit_unix (AT-SPI2); Windows via accesskit_windows (UIA).
+[target.'cfg(any(target_os = "linux", target_os = "windows"))'.dependencies]
+accesskit = "0.24"
+
 # Tao 0.35 exposes window handles via raw-window-handle 0.6. We use it on
 # Linux to pull the underlying X11 (Xlib) or Wayland (wl_surface + wl_display)
 # pointers and hand them to the EGL helper so we can drive Skia's GL backend
@@ -30,32 +35,57 @@ gtk = "0.18"
 # the context, drawable and display to all come from the same X connection,
 # so reusing GDK's is the only way the GLX bridge can render into the GTK XID.
 gdkx11-sys = "0.18"
+# Same for Wayland: `gdk_wayland_window_export_handle` / `unexport_handle` so
+# we can mint an xdg_foreign token for XDG Desktop Portal dialog parenting
+# (FileKit, etc.). Transitive via tao; explicit for the FFI symbols.
+gdkwayland-sys = "0.18"
 glib = "0.18"
 # AT-SPI2 accessibility provider via AccessKit. Pure-Rust D-Bus (zbus) so we
 # don't have to link libatspi / libatk / glib at runtime. We're an XWayland
 # client (GDK_BACKEND=x11) so screen-space coordinates are available through
 # the X server — `Adapter::set_root_window_bounds` works correctly.
-accesskit = "0.21"
-accesskit_unix = "0.17"
+accesskit_unix = "0.22"
 # X11 for resolving outer/inner window geometry on every ConfigureNotify.
 x11-dl = "2"
+
+# UIA accessibility provider via AccessKit (replaces the hand-rolled
+# nucleus_tao_a11y.dll COM projector). SubclassingAdapter owns WM_GETOBJECT;
+# the same wire→TreeUpdate path as Linux feeds the tree.
+# accesskit_windows is path-patched below (UseComThreading for .NET events).
+[target.'cfg(target_os = "windows")'.dependencies]
+accesskit_windows = "0.34.0"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
 
 [build-dependencies]
 cc = "1.0"
 
-# Vendored fork of accesskit_atspi_common 0.14.2 with four local patches
-# that the upstream 0.14 release doesn't include:
-#   - State::Modal exposure when node.is_modal() (Compose IsDialog semantic)
+# Vendored fork of accesskit_atspi_common 0.19.1 with the local patches the
+# upstream release doesn't include (see vendor/*/VENDORED.md for the full
+# list and for what each bump dropped):
 #   - `level: N` attribute via Accessible.GetAttributes (heading level)
+#   - `container-live` attribute mirroring aria-live
+#   - State::InvalidEntry from AccessKit's `invalid()`
+#   - Enabled/Sensitive gated on !is_disabled()
 #   - custom actions projected through the AT-SPI Action interface
 #     (upstream only exposes the synthetic "click"; see node.rs n_actions)
-#   - (planned) Interface::EditableText for text inputs
+#   - Interface::EditableText + value-based Interface::Text for text inputs
 # accesskit_unix consumes accesskit_atspi_common transitively, so this
-# patch propagates without needing to fork accesskit_unix itself.
+# patch propagates without needing to fork accesskit_unix itself — but we
+# fork accesskit_unix 0.22.1 too, for set_app_name and the two extra
+# AT-SPI interface implementations.
 [patch.crates-io]
 tao = { path = "vendor/tao" }
 accesskit_atspi_common = { path = "vendor/accesskit_atspi_common" }
 accesskit_unix = { path = "vendor/accesskit_unix" }
+# Local fork of 0.34.0: ProviderOptions includes UseComThreading so
+# out-of-process .NET UIA clients receive PropertyChanged/Focus events, and
+# QueuedEvents::raise doesn't unwrap (a raise failure must not abort the JVM).
+accesskit_windows = { path = "vendor/accesskit_windows" }
 
 # Smaller binaries for shipping inside the JAR / native-image.
 [profile.release]

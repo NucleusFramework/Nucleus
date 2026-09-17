@@ -33,17 +33,32 @@
  *     `NativeTaoEglBridge.nativeAttachX11`, so EGL work stays on the
  *     same thread/connection.
  *   - Each panel owns an EVENT connection + thread: it opens its own
- *     `Display`, calls `XSelectInput` on the panel XID (event masks are
- *     per-client, so this works across connections) and blocks in a
- *     `poll()` loop on the X fd + a quit pipe. Input events are forwarded
- *     to Java through cached JNI method IDs (same pattern as
+ *     `Display`, **creates the X window** (so this client is the creator),
+ *     calls `XSelectInput` on the panel XID and blocks in a `poll()` loop
+ *     on the X fd + a quit pipe. Input events are forwarded to Java
+ *     through cached JNI method IDs (same pattern as
  *     `nucleus_tao_linux_widget.c`).
+ *
+ *     The window is created on the event connection on purpose: XDND
+ *     ClientMessages are sent with `event_mask = NoEventMask`, which the
+ *     X server delivers only to the *creating* client. The command
+ *     connection never pumps `XNextEvent`, so a command-created window
+ *     would queue every `XdndEnter`/`Position`/`Drop` forever. Creating
+ *     on the event thread makes that thread the creator and the XDND
+ *     destination. Move/map/cursor/destroy still go through the command
+ *     connection — those requests are XID-based and not creator-bound.
+ *     EGL attach keeps using the command `Display*` (`nativeDisplayPtr`);
+ *     `eglCreateWindowSurface` keys on the XID, which is server-global.
  *
  * Outside-click: XI2 raw ButtonPress on the root window — the X11 analog
  * of the Windows `WH_MOUSE_LL` hook (raw events are observe-only, don't
  * consume, and multiple clients may listen). Fully global on X11
  * sessions; under XWayland raw events only fire while X11 surfaces have
  * input focus — the tray-icon toggle covers the remaining cases.
+ *
+ * Inbound file DnD lives in `nucleus_tao_linux_popup_xdnd.c` — the event
+ * thread is the creating client, so it is the only place XDND
+ * ClientMessages (mask 0) arrive. This file just forwards them.
  *
  * Keyboard: clicking the panel while focusable calls
  * `XSetInputFocus(RevertToParent)` (the `takeKeyboardFocus()` equivalent).
@@ -63,30 +78,18 @@
  * union.
  */
 
-#include <jni.h>
+#include "nucleus_tao_linux_popup.h"
+
 #include <dlfcn.h>
+#include <errno.h>
 #include <poll.h>
-#include <pthread.h>
-#include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include <X11/Xatom.h>
 #include <X11/XKBlib.h>
 #include <X11/cursorfont.h>
-#include <X11/extensions/XInput2.h>
-#include <X11/extensions/Xrandr.h>
-
-#define NUCLEUS_TAO_POPUP_DEBUG 0
-#if NUCLEUS_TAO_POPUP_DEBUG
-#define DBG(...) fprintf(stderr, "[nucleus_tao_linux_popup] " __VA_ARGS__)
-#else
-#define DBG(...) ((void)0)
-#endif
 
 /* ── Wire format (must stay in sync with TaoNativeWireFormat.kt) ────────── */
 
@@ -125,67 +128,7 @@
 
 typedef struct xkb_keysym_dummy xkb_keysym_dummy; /* unused, keeps clang-tidy calm */
 
-static struct {
-    int initialized;
-
-    /* libX11 */
-    Display *(*XOpenDisplay)(const char *);
-    int (*XCloseDisplay)(Display *);
-    Window (*XCreateWindow)(Display *, Window, int, int, unsigned, unsigned,
-                            unsigned, int, unsigned, Visual *, unsigned long,
-                            XSetWindowAttributes *);
-    int (*XDestroyWindow)(Display *, Window);
-    int (*XMapRaised)(Display *, Window);
-    int (*XUnmapWindow)(Display *, Window);
-    int (*XRaiseWindow)(Display *, Window);
-    int (*XMoveResizeWindow)(Display *, Window, int, int, unsigned, unsigned);
-    int (*XFlush)(Display *);
-    int (*XSync)(Display *, Bool);
-    int (*XSelectInput)(Display *, Window, long);
-    int (*XNextEvent)(Display *, XEvent *);
-    int (*XPending)(Display *);
-    Colormap (*XCreateColormap)(Display *, Window, Visual *, int);
-    int (*XFreeColormap)(Display *, Colormap);
-    XVisualInfo *(*XGetVisualInfo)(Display *, long, XVisualInfo *, int *);
-    int (*XFree)(void *);
-    int (*XSetInputFocus)(Display *, Window, int, Time);
-    Cursor (*XCreateFontCursor)(Display *, unsigned int);
-    int (*XDefineCursor)(Display *, Window, Cursor);
-    int (*XFreeCursor)(Display *, Cursor);
-    int (*XStoreName)(Display *, Window, const char *);
-    char *(*XResourceManagerString)(Display *);
-    int (*XLookupString)(XKeyEvent *, char *, int, KeySym *, XComposeStatus *);
-    KeySym (*XkbKeycodeToKeysym)(Display *, KeyCode, unsigned, unsigned);
-    Bool (*XQueryExtension)(Display *, const char *, int *, int *, int *);
-    Bool (*XGetEventData)(Display *, XGenericEventCookie *);
-    void (*XFreeEventData)(Display *, XGenericEventCookie *);
-    Bool (*XQueryPointer)(Display *, Window, Window *, Window *, int *, int *,
-                          int *, int *, unsigned *);
-
-    Atom (*XInternAtom)(Display *, const char *, Bool);
-    int (*XGetWindowProperty)(Display *, Window, Atom, long, long, Bool, Atom,
-                              Atom *, int *, unsigned long *, unsigned long *,
-                              unsigned char **);
-
-    /* libXi */
-    int (*XISelectEvents)(Display *, Window, XIEventMask *, int);
-    int (*XIQueryVersion)(Display *, int *, int *);
-
-    /* libXrandr (optional — full-screen fallback without it) */
-    XRRMonitorInfo *(*XRRGetMonitors)(Display *, Window, Bool, int *);
-    void (*XRRFreeMonitors)(XRRMonitorInfo *);
-
-    /* libxkbcommon (optional — Latin-1 fallback without it) */
-    uint32_t (*xkb_keysym_to_utf32)(uint32_t keysym);
-
-    /* libEGL (visual selection only) */
-    void *(*eglGetPlatformDisplay)(unsigned, void *, const intptr_t *);
-    void *(*eglGetDisplay)(void *);
-    int (*eglInitialize)(void *, int *, int *);
-    int (*eglBindAPI)(unsigned);
-    int (*eglChooseConfig)(void *, const int *, void **, int, int *);
-    int (*eglGetConfigAttrib)(void *, void *, int, int *);
-} fn;
+PopupX11 fn;
 
 static void *load_first(const char *const *names) {
     for (int i = 0; names[i] != NULL; i++) {
@@ -228,6 +171,9 @@ static int ensure_libs_loaded(void) {
     X11_SYM(XQueryExtension);    X11_SYM(XGetEventData);
     X11_SYM(XFreeEventData);     X11_SYM(XQueryPointer);
     X11_SYM(XInternAtom);        X11_SYM(XGetWindowProperty);
+    X11_SYM(XChangeProperty);    X11_SYM(XDeleteProperty);
+    X11_SYM(XSendEvent);         X11_SYM(XConvertSelection);
+    X11_SYM(XSetSelectionOwner);
 #undef X11_SYM
 
     if (libxi != NULL) {
@@ -261,7 +207,10 @@ static int ensure_libs_loaded(void) {
         !fn.XFree || !fn.XSetInputFocus || !fn.XCreateFontCursor ||
         !fn.XDefineCursor || !fn.XFreeCursor || !fn.XLookupString ||
         !fn.XkbKeycodeToKeysym || !fn.XQueryPointer ||
-        !fn.XInternAtom || !fn.XGetWindowProperty) {
+        !fn.XInternAtom || !fn.XGetWindowProperty ||
+        !fn.XChangeProperty || !fn.XDeleteProperty ||
+        !fn.XSendEvent || !fn.XConvertSelection ||
+        !fn.XSetSelectionOwner) {
         DBG("missing libX11 symbols\n");
         return 0;
     }
@@ -288,7 +237,7 @@ static Display *ensure_cmd_display(void) {
 
 /* ── JNI callback plumbing ──────────────────────────────────────────────── */
 
-static JavaVM *g_jvm = NULL;
+JavaVM *g_jvm = NULL;
 
 /* Cached once per interface, from the first registered instance (all
  * implementors are the same named classes — GraalVM metadata requirement). */
@@ -342,30 +291,6 @@ static void cache_outside_listener_id(JNIEnv *env, jobject listener) {
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
-/* ── Panel state ────────────────────────────────────────────────────────── */
-
-typedef struct {
-    Window   win;
-    Colormap cmap;
-    Cursor   cursor;         /* current XCreateFontCursor, or None        */
-
-    /* Geometry mirror for the outside-click hit test (event thread reads,
-     * command thread writes). */
-    pthread_mutex_t lock;
-    int x, y, w, h;
-    int visible;
-    int focusable;
-
-    /* Event thread. */
-    pthread_t evt_thread;
-    int       evt_thread_started;
-    int       quit_pipe[2];
-
-    /* Java refs (guarded by [lock]; invoked from the event thread). */
-    jobject event_cb;    /* EventCallback global ref, or NULL   */
-    jobject outside_cb;  /* OutsideClickListener global ref     */
-} Panel;
-
 /* ── Keysym helpers ─────────────────────────────────────────────────────── */
 
 /* Active-layout keysym → Unicode code point. libxkbcommon handles every
@@ -411,6 +336,48 @@ static int wire_button(unsigned xbutton) {
         case Button3: return WIRE_BUTTON_SECONDARY;
         default:      return WIRE_BUTTON_NONE;
     }
+}
+
+static int create_panel_window(Display *dpy, Panel *p) {
+    Window root = DefaultRootWindow(dpy);
+    XVisualInfo tmpl;
+    memset(&tmpl, 0, sizeof(tmpl));
+    tmpl.visualid = p->visual_id;
+    int n = 0;
+    XVisualInfo *vi = fn.XGetVisualInfo(dpy, VisualIDMask, &tmpl, &n);
+    if (vi == NULL || n <= 0) {
+        if (vi != NULL) fn.XFree(vi);
+        DBG("event thread: visual 0x%lx not found\n", (unsigned long) p->visual_id);
+        return 0;
+    }
+    Visual *visual = vi[0].visual;
+    int depth = vi[0].depth;
+    fn.XFree(vi);
+
+    Colormap cmap = fn.XCreateColormap(dpy, root, visual, AllocNone);
+    XSetWindowAttributes swa;
+    memset(&swa, 0, sizeof(swa));
+    swa.colormap = cmap;
+    swa.border_pixel = 0;
+    swa.background_pixel = 0;
+    swa.override_redirect = True;
+    unsigned w = p->w > 0 ? (unsigned) p->w : 1;
+    unsigned h = p->h > 0 ? (unsigned) p->h : 1;
+    Window win = fn.XCreateWindow(
+        dpy, root, p->x, p->y, w, h, 0, depth, InputOutput, visual,
+        CWColormap | CWBorderPixel | CWBackPixel | CWOverrideRedirect, &swa);
+    if (win == 0) {
+        fn.XFreeColormap(dpy, cmap);
+        return 0;
+    }
+    if (fn.XStoreName != NULL) fn.XStoreName(dpy, win, "NucleusStandalonePopup");
+    p->win = win;
+    p->cmap = cmap;
+    popup_xdnd_intern_atoms(dpy, p);
+    popup_xdnd_set_aware(dpy, p);
+    fn.XSync(dpy, False);
+    DBG("event thread: window 0x%lx created (XdndAware)\n", (unsigned long) win);
+    return 1;
 }
 
 /* ── Event thread ───────────────────────────────────────────────────────── */
@@ -497,17 +464,34 @@ static void handle_key_event(JNIEnv *env, Display *dpy, Panel *p, XKeyEvent *ke,
     forward_key(env, p, wire_type, (int) vk, codepoint, wire_modifiers(ke->state));
 }
 
+static void signal_ready(Panel *p, int ready) {
+    pthread_mutex_lock(&p->lock);
+    p->ready = ready;
+    pthread_cond_signal(&p->ready_cond);
+    pthread_mutex_unlock(&p->lock);
+}
+
 static void *event_thread_main(void *arg) {
     Panel *p = (Panel *) arg;
 
     Display *dpy = fn.XOpenDisplay(NULL);
-    if (dpy == NULL) return NULL;
+    if (dpy == NULL) {
+        signal_ready(p, -1);
+        return NULL;
+    }
+    if (!create_panel_window(dpy, p)) {
+        fn.XCloseDisplay(dpy);
+        signal_ready(p, -1);
+        return NULL;
+    }
 
-    /* Per-client event mask on the shared XID — the command connection
-     * never selects anything, so ButtonPress ownership is uncontended. */
+    /* Per-client event mask. We are the creating client, so mask-0
+     * XDND ClientMessages land here too. SelectionNotify is always
+     * delivered to the converting client (also us). */
     fn.XSelectInput(dpy, p->win,
                     ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
-                    KeyPressMask | KeyReleaseMask | StructureNotifyMask);
+                    KeyPressMask | KeyReleaseMask | StructureNotifyMask |
+                    PropertyChangeMask);
 
     /* XI2 raw buttons on the root for the outside-click monitor. Selected
      * unconditionally (cheap); forwarding is gated on the Java listener. */
@@ -537,6 +521,9 @@ static void *event_thread_main(void *arg) {
     fn.XFlush(dpy);
 
     JNIEnv *env = attach_jvm_thread();
+    /* Ready only after the window exists AND JNI is attached — callers
+     * (including the XDND smoke source) may send ClientMessages immediately. */
+    signal_ready(p, 1);
 
     struct pollfd fds[2] = {
         { .fd = ConnectionNumber(dpy), .events = POLLIN },
@@ -599,6 +586,12 @@ static void *event_thread_main(void *arg) {
                 case DestroyNotify:
                     if (ev.xdestroywindow.window == p->win) running = 0;
                     break;
+                case ClientMessage:
+                    popup_xdnd_on_client_message(dpy, env, p, &ev.xclient);
+                    break;
+                case SelectionNotify:
+                    popup_xdnd_on_selection_notify(dpy, env, p, &ev.xselection);
+                    break;
                 case GenericEvent: {
                     XGenericEventCookie *cookie = &ev.xcookie;
                     if (xi_opcode >= 0 && cookie->extension == xi_opcode &&
@@ -620,14 +613,25 @@ static void *event_thread_main(void *arg) {
         if (fds[1].revents & POLLIN) break; /* quit pipe */
     }
 
+    /* We created the window + colormap on this connection. Default
+     * close-down mode is DestroyAll, so XCloseDisplay would destroy them
+     * — and the command thread's nativeRelease used to XDestroyWindow
+     * afterwards, which is a fatal BadWindow. Destroy here, once. */
+    if (p->win != 0) {
+        fn.XDestroyWindow(dpy, p->win);
+        p->win = 0;
+    }
+    if (p->cmap != 0) {
+        fn.XFreeColormap(dpy, p->cmap);
+        p->cmap = 0;
+    }
+    fn.XFlush(dpy);
     fn.XCloseDisplay(dpy);
     detach_jvm_thread();
     return NULL;
 }
 
 /* ── JNI exports ────────────────────────────────────────────────────────── */
-
-#define EXPORT JNIEXPORT __attribute__((visibility("default")))
 
 EXPORT jboolean JNICALL
 Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeIsAvailable(
@@ -841,6 +845,19 @@ static Visual *choose_argb_visual(Display *dpy, int *out_depth) {
     return NULL;
 }
 
+static void panel_free(JNIEnv *env, Panel *p) {
+    if (p->quit_pipe[0] >= 0) close(p->quit_pipe[0]);
+    if (p->quit_pipe[1] >= 0) close(p->quit_pipe[1]);
+    if (env != NULL) {
+        if (p->event_cb != NULL) (*env)->DeleteGlobalRef(env, p->event_cb);
+        if (p->outside_cb != NULL) (*env)->DeleteGlobalRef(env, p->outside_cb);
+        if (p->dnd_cb != NULL) (*env)->DeleteGlobalRef(env, p->dnd_cb);
+    }
+    pthread_cond_destroy(&p->ready_cond);
+    pthread_mutex_destroy(&p->lock);
+    free(p);
+}
+
 EXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeCreatePanel(
     JNIEnv *env, jclass clazz, jint xPx, jint yPx, jint widthPx, jint heightPx)
@@ -857,53 +874,55 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeCreatePane
         return 0;
     }
 
-    Window root = DefaultRootWindow(dpy);
-    Colormap cmap = fn.XCreateColormap(dpy, root, visual, AllocNone);
-
-    XSetWindowAttributes swa;
-    memset(&swa, 0, sizeof(swa));
-    swa.colormap = cmap;
-    swa.border_pixel = 0;
-    swa.background_pixel = 0;
-    swa.override_redirect = True;
-    /* No event_mask here: input is selected per-client by the event
-     * thread's own connection. */
-    unsigned w = widthPx > 0 ? (unsigned) widthPx : 1;
-    unsigned h = heightPx > 0 ? (unsigned) heightPx : 1;
-    Window win = fn.XCreateWindow(
-        dpy, root, xPx, yPx, w, h, 0, depth, InputOutput, visual,
-        CWColormap | CWBorderPixel | CWBackPixel | CWOverrideRedirect, &swa);
-    if (win == 0) {
-        fn.XFreeColormap(dpy, cmap);
-        return 0;
-    }
-    if (fn.XStoreName != NULL) fn.XStoreName(dpy, win, "NucleusStandalonePopup");
-    fn.XSync(dpy, False);
-
     Panel *p = (Panel *) calloc(1, sizeof(Panel));
-    if (p == NULL) {
-        fn.XDestroyWindow(dpy, win);
-        fn.XFreeColormap(dpy, cmap);
-        return 0;
-    }
-    p->win = win;
-    p->cmap = cmap;
+    if (p == NULL) return 0;
+    p->visual_id = visual->visualid;
+    p->depth = depth;
     p->x = xPx;
     p->y = yPx;
-    p->w = (int) w;
-    p->h = (int) h;
+    p->w = widthPx > 0 ? widthPx : 1;
+    p->h = heightPx > 0 ? heightPx : 1;
+    p->quit_pipe[0] = p->quit_pipe[1] = -1;
     pthread_mutex_init(&p->lock, NULL);
+    pthread_cond_init(&p->ready_cond, NULL);
     if (pipe(p->quit_pipe) != 0) {
         p->quit_pipe[0] = p->quit_pipe[1] = -1;
     }
 
-    if (pthread_create(&p->evt_thread, NULL, event_thread_main, p) == 0) {
-        p->evt_thread_started = 1;
-    } else {
+    if (pthread_create(&p->evt_thread, NULL, event_thread_main, p) != 0) {
         DBG("event thread creation failed\n");
+        panel_free(env, p);
+        return 0;
+    }
+    p->evt_thread_started = 1;
+
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += 2;
+    pthread_mutex_lock(&p->lock);
+    while (p->ready == 0) {
+        int rc = pthread_cond_timedwait(&p->ready_cond, &p->lock, &deadline);
+        if (rc == ETIMEDOUT) break;
+    }
+    int ready = p->ready;
+    Window win = p->win;
+    pthread_mutex_unlock(&p->lock);
+
+    if (ready != 1 || win == 0) {
+        DBG("event thread failed to create window\n");
+        if (p->quit_pipe[1] >= 0) {
+            char one = 1;
+            ssize_t ignored = write(p->quit_pipe[1], &one, 1);
+            (void) ignored;
+        }
+        pthread_join(p->evt_thread, NULL);
+        p->evt_thread_started = 0;
+        panel_free(env, p);
+        return 0;
     }
 
-    DBG("panel created: win=0x%lx depth=%d\n", win, depth);
+    DBG("panel created: win=0x%lx depth=%d visual=0x%lx\n",
+        (unsigned long) win, depth, (unsigned long) p->visual_id);
     return (jlong) (uintptr_t) p;
 }
 
@@ -1072,18 +1091,22 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridgeLinux_nativeRelease(
     pthread_mutex_lock(&p->lock);
     jobject event_cb = p->event_cb;
     jobject outside_cb = p->outside_cb;
+    jobject dnd_cb = p->dnd_cb;
     p->event_cb = NULL;
     p->outside_cb = NULL;
+    p->dnd_cb = NULL;
     pthread_mutex_unlock(&p->lock);
     if (event_cb != NULL) (*env)->DeleteGlobalRef(env, event_cb);
     if (outside_cb != NULL) (*env)->DeleteGlobalRef(env, outside_cb);
+    if (dnd_cb != NULL) (*env)->DeleteGlobalRef(env, dnd_cb);
 
     if (dpy != NULL) {
         if (p->cursor != None) fn.XFreeCursor(dpy, p->cursor);
-        fn.XDestroyWindow(dpy, p->win);
-        fn.XFreeColormap(dpy, p->cmap);
+        /* Window + colormap are destroyed by the event thread (creator)
+         * before it closes its Display. Touching them here is BadWindow. */
         fn.XFlush(dpy);
     }
+    pthread_cond_destroy(&p->ready_cond);
     pthread_mutex_destroy(&p->lock);
     free(p);
 }

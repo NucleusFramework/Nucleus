@@ -32,6 +32,33 @@ kotlin {
     }
 }
 
+// Forward the opt-in `nucleus.e2e.*` properties to the test JVM so MacRealArtifactUpdateTest can be
+// pointed at DMG/ZIP artifacts produced by a real packaging run. Read through the provider API so
+// the values stay a declared configuration-cache input instead of being baked into the cache entry.
+val e2eProperties = providers.systemPropertiesPrefixedBy("nucleus.e2e.")
+
+tasks.withType<Test>().configureEach {
+    systemProperties(e2eProperties.get())
+    // The real-artifact E2E tests hold a whole installer (100 MB+) in the loopback host.
+    maxHeapSize = "2g"
+}
+
+/**
+ * Prints the exact production AppImage update script (used by
+ * `scripts/e2e-appimage-gui-restart.sh`).
+ *
+ * ```
+ * ./gradlew :updater-runtime:dumpLinuxAppImageUpdateScript \
+ *   --args="'/tmp/new.AppImage' '/tmp/old.AppImage' 12345 '/tmp/update.log' true"
+ * ```
+ */
+tasks.register<JavaExec>("dumpLinuxAppImageUpdateScript") {
+    group = "verification"
+    description = "Emit the production Linux AppImage update shell script to stdout"
+    classpath = sourceSets["test"].runtimeClasspath
+    mainClass.set("dev.nucleusframework.updater.DumpLinuxAppImageUpdateScriptKt")
+}
+
 mavenPublishing {
     coordinates("dev.nucleusframework", "nucleus.updater-runtime", publishVersion)
 

@@ -265,7 +265,14 @@ fun A11yTab(modifier: Modifier = Modifier) {
                         cursorBrush =
                             androidx.compose.ui.graphics
                                 .SolidColor(Color(0xFF8AB4FF)),
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .testTag("a11y-text-field")
+                                .semantics {
+                                    // Named for UIA discovery + keyboard a11y probes.
+                                    contentDescription = "A11y text field"
+                                },
                     )
                 }
                 BasicText(

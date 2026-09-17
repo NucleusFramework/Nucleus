@@ -104,6 +104,12 @@ pub(crate) fn set_inner_size_physical(window: HWND, x: i32, y: i32, is_decorated
 
     let outer_x = (rect.right - rect.left).abs();
     let outer_y = (rect.top - rect.bottom).abs();
+    // PATCH(nucleus): do not use SWP_ASYNCWINDOWPOS. That flag updates the
+    // outer HWND (GetWindowRect) before WM_SIZE / GetClientRect catch up, so
+    // a programmatic WindowState.size animation (#576) leaves the Compose
+    // scene a frame behind the chrome — TitleBar + content tremble. Tao
+    // buffers nested WM_SIZE while a UserEvent is in flight, so a
+    // synchronous SetWindowPos does not re-enter the event handler.
     let _ = SetWindowPos(
       window,
       None,
@@ -111,7 +117,7 @@ pub(crate) fn set_inner_size_physical(window: HWND, x: i32, y: i32, is_decorated
       0,
       outer_x,
       outer_y,
-      SWP_ASYNCWINDOWPOS | SWP_NOZORDER | SWP_NOREPOSITION | SWP_NOMOVE | SWP_NOACTIVATE,
+      SWP_NOZORDER | SWP_NOREPOSITION | SWP_NOMOVE | SWP_NOACTIVATE,
     );
     let _ = InvalidateRgn(window, None, false);
   }

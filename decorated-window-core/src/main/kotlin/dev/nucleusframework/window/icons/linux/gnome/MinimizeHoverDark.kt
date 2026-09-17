@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.MinimizeHoverDark: ImageVector
+public val GnomeControlButtonsIcons.MinimizeHoverDark: ImageVector
     get() {
         if (_MinimizeHoverDark != null) {
             return _MinimizeHoverDark!!

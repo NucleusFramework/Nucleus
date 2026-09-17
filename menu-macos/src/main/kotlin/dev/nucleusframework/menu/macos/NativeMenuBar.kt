@@ -39,7 +39,7 @@ import androidx.compose.runtime.setValue
  * @param content Builder lambda executed in [NativeMenuBarScope].
  */
 @Composable
-fun NativeMenuBar(content: NativeMenuBarScope.() -> Unit) {
+public fun NativeMenuBar(content: NativeMenuBarScope.() -> Unit) {
     if (!NsMenu.isAvailable) return
 
     val savedMenu = remember { NsMenu.mainMenu }
@@ -79,8 +79,8 @@ fun NativeMenuBar(content: NativeMenuBarScope.() -> Unit) {
 // ─── Scopes ──────────────────────────────────────────────────────────────────
 
 /** Receiver scope for [NativeMenuBar]. Use [Menu] to add top-level menus. */
-class NativeMenuBarScope internal constructor() {
-    @PublishedApi internal val entries = mutableListOf<MenuBarEntry>()
+public class NativeMenuBarScope internal constructor() {
+    @PublishedApi internal val entries: MutableList<MenuBarEntry> = mutableListOf()
 
     /**
      * Adds a top-level menu to the menu bar.
@@ -91,7 +91,7 @@ class NativeMenuBarScope internal constructor() {
      * @param content Items inside this menu.
      */
     @Suppress("UnusedParameter")
-    fun Menu(
+    public fun Menu(
         text: String,
         enabled: Boolean = true,
         mnemonic: Char? = null,
@@ -116,7 +116,7 @@ class NativeMenuBarScope internal constructor() {
      * @param text Localized title shown in the menu bar.
      * @param content Items inside this menu (optional on macOS 13+; macOS adds its own).
      */
-    fun MenuWindow(
+    public fun MenuWindow(
         text: String,
         enabled: Boolean = true,
         content: NativeMenuScope.() -> Unit = {},
@@ -135,7 +135,7 @@ class NativeMenuBarScope internal constructor() {
      * @param text Localized title shown in the menu bar.
      * @param content Items inside this menu (optional; macOS adds its own).
      */
-    fun MenuHelp(
+    public fun MenuHelp(
         text: String,
         enabled: Boolean = true,
         content: NativeMenuScope.() -> Unit = {},
@@ -150,8 +150,8 @@ class NativeMenuBarScope internal constructor() {
  * Receiver scope for menu content. Provides [Item], [CheckboxItem],
  * [RadioButtonItem], [Separator], [SectionHeader], and nested [Menu].
  */
-class NativeMenuScope internal constructor() {
-    @PublishedApi internal val entries = mutableListOf<MenuItemEntry>()
+public class NativeMenuScope internal constructor() {
+    @PublishedApi internal val entries: MutableList<MenuItemEntry> = mutableListOf()
 
     // ── Item ─────────────────────────────────────────────────────────────
 
@@ -178,7 +178,7 @@ class NativeMenuScope internal constructor() {
      * @param onClick Callback when clicked (dispatched on Swing EDT). Trailing lambda.
      */
     @Suppress("UnusedParameter")
-    fun Item(
+    public fun Item(
         text: String,
         enabled: Boolean = true,
         mnemonic: Char? = null,
@@ -226,7 +226,7 @@ class NativeMenuScope internal constructor() {
      * Convenience wrapper around [Item] with automatic [NsMenuItemState] mapping.
      */
     @Suppress("UnusedParameter")
-    fun CheckboxItem(
+    public fun CheckboxItem(
         text: String,
         checked: Boolean,
         onCheckedChange: (Boolean) -> Unit,
@@ -264,7 +264,7 @@ class NativeMenuScope internal constructor() {
      * Group your radio items together and manage selection state externally.
      */
     @Suppress("UnusedParameter")
-    fun RadioButtonItem(
+    public fun RadioButtonItem(
         text: String,
         selected: Boolean,
         onClick: () -> Unit,
@@ -304,7 +304,7 @@ class NativeMenuScope internal constructor() {
      * @param placeholder Placeholder text shown in the empty field.
      * @param width Field width in points.
      */
-    fun SearchField(
+    public fun SearchField(
         placeholder: String = "",
         width: Double = 230.0,
     ) {
@@ -314,14 +314,14 @@ class NativeMenuScope internal constructor() {
     // ── Separator ────────────────────────────────────────────────────────
 
     /** Adds a horizontal separator line. */
-    fun Separator() {
+    public fun Separator() {
         entries += MenuItemEntry.SeparatorEntry
     }
 
     // ── SectionHeader ────────────────────────────────────────────────────
 
     /** Adds a non-clickable section header (macOS 14+). Falls back to a disabled item on older systems. */
-    fun SectionHeader(title: String) {
+    public fun SectionHeader(title: String) {
         entries += MenuItemEntry.SectionHeaderEntry(title)
     }
 
@@ -336,7 +336,7 @@ class NativeMenuScope internal constructor() {
      * @param content Items inside this submenu.
      */
     @Suppress("UnusedParameter")
-    fun Menu(
+    public fun Menu(
         text: String,
         enabled: Boolean = true,
         mnemonic: Char? = null,
@@ -352,7 +352,7 @@ class NativeMenuScope internal constructor() {
 // ─── Description types (internal) ────────────────────────────────────────────
 
 /** Role hint for macOS well-known menus. */
-enum class MenuRole { None, Window, Help }
+public enum class MenuRole { None, Window, Help }
 
 @PublishedApi
 internal data class MenuBarEntry(
@@ -497,7 +497,7 @@ private fun materializeItems(
  * @param control Control (⌃) modifier. Rarely used — prefer [command].
  * @param function Function (Fn) modifier.
  */
-data class NativeKeyShortcut(
+public data class NativeKeyShortcut(
     val key: String,
     val command: Boolean = true,
     val shift: Boolean = false,
@@ -507,32 +507,32 @@ data class NativeKeyShortcut(
 )
 
 /** Well-known non-printable key equivalent characters for [NativeKeyShortcut]. */
-object NativeKey {
-    const val ESCAPE: String = "\u001B"
-    const val RETURN: String = "\r"
-    const val TAB: String = "\t"
-    const val DELETE: String = "\u007F"
-    const val BACKSPACE: String = "\u0008"
-    const val UP: String = "\uF700"
-    const val DOWN: String = "\uF701"
-    const val LEFT: String = "\uF702"
-    const val RIGHT: String = "\uF703"
-    const val F1: String = "\uF704"
-    const val F2: String = "\uF705"
-    const val F3: String = "\uF706"
-    const val F4: String = "\uF707"
-    const val F5: String = "\uF708"
-    const val F6: String = "\uF709"
-    const val F7: String = "\uF70A"
-    const val F8: String = "\uF70B"
-    const val F9: String = "\uF70C"
-    const val F10: String = "\uF70D"
-    const val F11: String = "\uF70E"
-    const val F12: String = "\uF70F"
-    const val HOME: String = "\uF729"
-    const val END: String = "\uF72B"
-    const val PAGE_UP: String = "\uF72C"
-    const val PAGE_DOWN: String = "\uF72D"
+public object NativeKey {
+    public const val ESCAPE: String = "\u001B"
+    public const val RETURN: String = "\r"
+    public const val TAB: String = "\t"
+    public const val DELETE: String = "\u007F"
+    public const val BACKSPACE: String = "\u0008"
+    public const val UP: String = "\uF700"
+    public const val DOWN: String = "\uF701"
+    public const val LEFT: String = "\uF702"
+    public const val RIGHT: String = "\uF703"
+    public const val F1: String = "\uF704"
+    public const val F2: String = "\uF705"
+    public const val F3: String = "\uF706"
+    public const val F4: String = "\uF707"
+    public const val F5: String = "\uF708"
+    public const val F6: String = "\uF709"
+    public const val F7: String = "\uF70A"
+    public const val F8: String = "\uF70B"
+    public const val F9: String = "\uF70C"
+    public const val F10: String = "\uF70D"
+    public const val F11: String = "\uF70E"
+    public const val F12: String = "\uF70F"
+    public const val HOME: String = "\uF729"
+    public const val END: String = "\uF72B"
+    public const val PAGE_UP: String = "\uF72C"
+    public const val PAGE_DOWN: String = "\uF72D"
 }
 
 // ─── Shortcut → NSMenu key equivalent mapping ───────────────────────────────

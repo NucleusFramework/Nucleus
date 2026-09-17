@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.kotlinComposePlugin)
     alias(libs.plugins.jetbrainsCompose)
     alias(libs.plugins.vanniktechMavenPublish)
@@ -18,6 +18,9 @@ val publishVersion =
 dependencies {
     implementation(project(":core-runtime"))
     api(libs.compose.desktop.common)
+    testImplementation(kotlin("test"))
+    testImplementation(compose.desktop.currentOs)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {
@@ -31,75 +34,14 @@ kotlin {
     }
 }
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Objective-C JNI bridge into macOS dylibs (arm64 + x64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("darwin-aarch64")
-            .file("libnucleus_darkmode.dylib")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/macos")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
+tasks.test {
+    useJUnitPlatform()
 }
 
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into Linux shared libraries (x64 + aarch64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("linux-x64")
-            .file("libnucleus_linux_theme.so")
-            .asFile
-            .exists() ||
-            nativeResourceDir
-                .dir("linux-aarch64")
-                .file("libnucleus_linux_theme.so")
-                .asFile
-                .exists()
-    enabled = Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/linux")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into Windows DLLs (x64 + ARM64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("win32-x64")
-            .file("nucleus_windows_theme.dll")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_WINDOWS) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/windows")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", nativeDir.file("build.bat").asFile.absolutePath)
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs, buildNativeWindows, buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs, buildNativeWindows, buildNativeLinux)
-    }
+nucleusNative {
+    macos("nucleus_darkmode")
+    linux("nucleus_linux_theme")
+    windows("nucleus_windows_theme")
 }
 
 mavenPublishing {

@@ -119,6 +119,7 @@ fun main(args: Array<String>) =
         var themeMode by remember { mutableStateOf(ThemeMode.System) }
         var showInfoDialog by remember { mutableStateOf(false) }
         var isFillCenterWindowVisible by remember { mutableStateOf(false) }
+        var isTrackpadLabWindowVisible by remember { mutableStateOf(false) }
 
         val isDark =
             when (themeMode) {
@@ -147,14 +148,25 @@ fun main(args: Array<String>) =
                 onCloseRequest = ::exitApplication,
                 title = "Nucleus Demo",
                 minimumSize = DpSize(1300.dp, 480.dp),
-                nativePopupLayers = true,
+                nativeContextMenu = true,
+                nativePopupLayers = false,
             ) {
                 CompositionLocalProvider(
                     LocalLayoutDirection provides if (isRtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
                 ) {
                     val tabs =
                         buildList {
-                            addAll(listOf("Nucleus", "Fill Title", "Gallery", "Taskbar", "Scroll Test"))
+                            addAll(
+                                listOf(
+                                    "Nucleus",
+                                    "Fill Title",
+                                    "Gallery",
+                                    "Taskbar",
+                                    "Scroll Test",
+                                    "Trackpad Lab",
+                                    "Popups",
+                                ),
+                            )
                             add("Notifications (Common)")
                             add("Notifications")
                             add("Launcher")
@@ -165,7 +177,11 @@ fun main(args: Array<String>) =
                                 add("Menu")
                             }
                         }
-                    var selectedTab by remember { mutableStateOf("Nucleus") }
+                    // NUCLEUS_DEMO_TAB=<tab name> opens straight on a tab (manual
+                    // test rigs such as the Trackpad Lab, automation).
+                    var selectedTab by remember {
+                        mutableStateOf(System.getenv("NUCLEUS_DEMO_TAB")?.takeIf { it in tabs } ?: "Nucleus")
+                    }
 
                     MaterialTitleBar(modifier = Modifier.newFullscreenControls().macOSLargeCornerRadius()) { _ ->
                         val titleBarAlignment =
@@ -190,7 +206,7 @@ fun main(args: Array<String>) =
                         )
 
                         var caffeineActive by remember {
-                            mutableStateOf(EnergyManager.isScreenAwakeActive())
+                            mutableStateOf(EnergyManager.isAwakeActive())
                         }
                         TitleBarIconButton(
                             imageVector = if (caffeineActive) TablerCoffee else TablerCoffeeOff,
@@ -198,11 +214,11 @@ fun main(args: Array<String>) =
                             modifier = Modifier.align(titleBarAlignment),
                             onClick = {
                                 if (caffeineActive) {
-                                    EnergyManager.releaseScreenAwake()
+                                    EnergyManager.releaseAwake()
                                 } else {
-                                    EnergyManager.keepScreenAwake()
+                                    EnergyManager.keepAwake()
                                 }
-                                caffeineActive = EnergyManager.isScreenAwakeActive()
+                                caffeineActive = EnergyManager.isAwakeActive()
                             },
                         )
                         val isFullscreen = state.placement == WindowPlacement.Fullscreen
@@ -280,6 +296,12 @@ fun main(args: Array<String>) =
                         }
                         "Taskbar" -> TaskbarProgressScreen(nucleusWindow)
                         "Scroll Test" -> ScrollTestScreen()
+                        "Popups" -> PopupPlacementScreen(nucleusWindow.unsafe.taoWindow)
+                        "Trackpad Lab" ->
+                            TrackpadLabScreen(onOpenNativePopupWindow = {
+                                isTrackpadLabWindowVisible =
+                                    true
+                            })
                         "Notifications" -> {
                             when (Platform.Current) {
                                 Platform.MacOS -> NotificationsScreen()
@@ -354,13 +376,20 @@ fun main(args: Array<String>) =
                         }
                     }
                 }
-            }
 
-            FillCenterDemoWindow(
-                visible = isFillCenterWindowVisible,
-                onCloseRequest = { isFillCenterWindowVisible = false },
-                seedColor = seedColor,
-            )
+                // Declared inside the main window's content: the secondary
+                // window reaches the application scope through
+                // LocalNucleusApplicationScope, no receiver plumbing.
+                FillCenterDemoWindow(
+                    visible = isFillCenterWindowVisible,
+                    onCloseRequest = { isFillCenterWindowVisible = false },
+                    seedColor = seedColor,
+                )
+                TrackpadLabWindow(
+                    visible = isTrackpadLabWindowVisible,
+                    onCloseRequest = { isTrackpadLabWindowVisible = false },
+                )
+            }
         }
     }
 

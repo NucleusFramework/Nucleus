@@ -16,11 +16,12 @@ import dev.nucleusframework.window.styling.TitleBarColors
 import dev.nucleusframework.window.styling.TitleBarMetrics
 import dev.nucleusframework.window.styling.TitleBarStyle
 
-val LocalIsDarkTheme = androidx.compose.runtime.staticCompositionLocalOf { true }
+public val LocalIsDarkTheme: androidx.compose.runtime.ProvidableCompositionLocal<Boolean> =
+    androidx.compose.runtime.staticCompositionLocalOf { true }
 
 @Suppress("FunctionNaming")
 @Composable
-fun NucleusDecoratedWindowTheme(
+public fun NucleusDecoratedWindowTheme(
     isDark: Boolean = true,
     windowStyle: DecoratedWindowStyle =
         if (isDark) {
@@ -46,22 +47,22 @@ fun NucleusDecoratedWindowTheme(
 }
 
 @Suppress("MagicNumber")
-object DecoratedWindowDefaults {
+public object DecoratedWindowDefaults {
     private val isKde =
         Platform.Current == Platform.Linux && LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
 
-    fun lightWindowStyle(): DecoratedWindowStyle =
+    public fun lightWindowStyle(): DecoratedWindowStyle =
         DecoratedWindowStyle(
             colors =
                 DecoratedWindowColors(
-                    border = Color(0x12FFFFFF),
-                    borderInactive = Color(0x12FFFFFF),
+                    border = Color(0x0F000000),
+                    borderInactive = Color(0x0F000000),
                     background = Color.White,
                 ),
             metrics = DecoratedWindowMetrics(borderWidth = 1.dp),
         )
 
-    fun darkWindowStyle(): DecoratedWindowStyle =
+    public fun darkWindowStyle(): DecoratedWindowStyle =
         DecoratedWindowStyle(
             colors =
                 DecoratedWindowColors(
@@ -72,7 +73,7 @@ object DecoratedWindowDefaults {
             metrics = DecoratedWindowMetrics(borderWidth = 1.dp),
         )
 
-    fun lightTitleBarStyle(): TitleBarStyle =
+    public fun lightTitleBarStyle(): TitleBarStyle =
         TitleBarStyle(
             colors =
                 if (isKde) {
@@ -99,7 +100,7 @@ object DecoratedWindowDefaults {
                 ),
         )
 
-    fun darkTitleBarStyle(): TitleBarStyle =
+    public fun darkTitleBarStyle(): TitleBarStyle =
         TitleBarStyle(
             colors =
                 if (isKde) {

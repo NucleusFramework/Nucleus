@@ -5,6 +5,7 @@ import org.gradle.api.internal.project.ProjectInternal
 import org.gradle.process.ExecOperations
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assume
 import org.junit.Rule
@@ -13,11 +14,8 @@ import org.junit.rules.TemporaryFolder
 import java.io.File
 
 /**
- * End-to-end test of [LinuxSigner] against the real `gpg` / `rpm` / `rpmbuild` tools.
- *
- * Generates a throwaway key, exports the private key as an `.asc` (the [keyFile] a user/CI
- * supplies), builds a minimal `.rpm`, signs it through the production code path, then verifies
- * the signature in a clean rpm database using only the exported public key.
+ * End-to-end test of [LinuxSigner] against the real `gpg` / `rpm` / `rpmbuild` tools,
+ * plus [LinuxUpdateHelper] package-ownership and silent-update regressions.
  *
  * Skipped (not failed) on machines without the required tools, e.g. CI runners without rpm.
  */
@@ -36,7 +34,6 @@ class LinuxSignerTest {
         val privateKey = exportPrivateKey(keyHome, keyId)
         val rpm = buildMinimalRpm()
 
-        // --- code under test ---
         LinuxSigner(runner(), project.logger).sign(
             packages = listOf(rpm),
             keyId = keyId,
@@ -47,7 +44,6 @@ class LinuxSignerTest {
 
         val publicKey = File(rpm.parentFile, "${rpm.name}.pub.asc")
         assertTrue("public key not exported next to the package", publicKey.isFile && publicKey.length() > 0)
-
         assertTrue("rpm signature did not verify", rpmSignatureVerifies(rpm, publicKey))
     }
 
@@ -60,7 +56,6 @@ class LinuxSignerTest {
         val privateKey = exportPrivateKey(keyHome, keyId)
         val deb = tmp.newFile("app_1.0.0_amd64.deb").apply { writeBytes(ByteArray(4096) { it.toByte() }) }
 
-        // --- code under test ---
         LinuxSigner(runner(), project.logger).sign(
             packages = listOf(deb),
             keyId = keyId,
@@ -73,7 +68,6 @@ class LinuxSignerTest {
         val publicKey = File(deb.parentFile, "${deb.name}.pub.asc")
         assertTrue("detached signature not written", detachedSig.isFile && detachedSig.length() > 0)
         assertTrue("public key not exported", publicKey.isFile && publicKey.length() > 0)
-
         assertTrue("detached signature did not verify", detachedSignatureVerifies(deb, detachedSig, publicKey))
     }
 
@@ -86,7 +80,6 @@ class LinuxSignerTest {
         val privateKey = exportPrivateKey(keyHome, keyId)
         val rpm = buildMinimalRpm()
 
-        // --- code under test ---
         LinuxSigner(runner(), project.logger).sign(
             packages = listOf(rpm),
             keyId = keyId,
@@ -109,53 +102,117 @@ class LinuxSignerTest {
         val keyHome = tmp.newFolder().apply { restrict() }
         val keyId = generateKey(keyHome)
 
-        // Lay out the install dir exactly as the package would: helper + bundled public key.
         val appDir = tmp.newFolder()
-        val helper =
-            File(appDir, "nucleus-update-helper").apply {
-                writeText(LinuxUpdateHelper.SCRIPT)
-                setExecutable(true)
-            }
+        LinuxUpdateHelper.writeHelper(appDir)
+        val helper = File(appDir, LinuxUpdateHelper.HELPER_FILE_NAME)
         File(appDir, "resources").mkdirs()
-        File(appDir, "resources/nucleus-update.pub.asc")
+        File(appDir, LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH)
             .writeText(capture("gpg", "--homedir", keyHome.absolutePath, "--batch", "--armor", "--export", keyId))
 
-        val pkg = buildMinimalDeb(appDir)
+        val pkg = buildMinimalDeb(packageName = "nucleus-helper-test", version = "1.0.0")
         val sig = File("${pkg.absolutePath}.asc")
+        detachSign(keyHome, keyId, pkg, sig)
+
+        // Valid signature: passes verification, then stops at ownership (exit 3) — helper is not
+        // owned by an installed package in this temp layout.
+        assertEquals("valid signature must pass verification", 3, exitCodeOf("bash", helper.absolutePath, pkg.absolutePath))
+
+        pkg.appendBytes(byteArrayOf(0))
+        val tampered = exitCodeOf("bash", helper.absolutePath, pkg.absolutePath)
+        assertTrue("tampered package must be rejected (got $tampered)", tampered != 0 && tampered != 3)
+
+        sig.delete()
+        assertEquals("missing signature must be refused", 4, exitCodeOf("bash", helper.absolutePath, pkg.absolutePath))
+    }
+
+    /**
+     * CI-safe regression for the #158 ownership bug: the helper must appear in the package
+     * file list. Without that, `dpkg -S` is empty and every upgrade dies with exit 3.
+     * No root required.
+     */
+    @Test
+    fun `silent-update deb package lists helper and public key in payload`() {
+        Assume.assumeTrue("requires dpkg-deb", toolsAvailable("dpkg-deb"))
+
+        val packageName = "nucleus-silent-payload-test"
+        val productDir = "opt/$packageName"
+        val root = tmp.newFolder("payload")
+        val appDir = File(root, productDir).apply { mkdirs() }
+        File(appDir, "VERSION").writeText("1.0.0")
+        File(appDir, "resources").mkdirs()
+        File(appDir, LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH).writeText("-----BEGIN PGP PUBLIC KEY BLOCK-----\n")
+        LinuxUpdateHelper.writeHelper(appDir)
+
+        val deb =
+            buildMinimalDeb(
+                packageName = packageName,
+                version = "1.0.0",
+                payloadRoot = root,
+            )
+        val listing = capture("dpkg-deb", "-c", deb.absolutePath)
+        assertTrue(
+            "helper missing from package file list:\n$listing",
+            listing.contains(LinuxUpdateHelper.HELPER_FILE_NAME),
+        )
+        assertTrue(
+            "public key missing from package file list:\n$listing",
+            listing.contains("nucleus-update.pub.asc"),
+        )
+    }
+
+    @Test
+    fun `polkit afterInstall fragment does not rewrite the helper script`() {
+        val fragment = LinuxUpdateHelper.polkitAfterInstallFragment()
+        assertTrue(fragment.contains("allow_active>yes"))
+        assertTrue(fragment.contains("org.freedesktop.policykit.exec.path"))
+        assertTrue(fragment.contains(LinuxUpdateHelper.HELPER_FILE_NAME))
+        // Must not embed/rewrite the helper body (payload is the single source of truth).
+        assertFalse(
+            "afterInstall must not cat-rewrite the helper",
+            fragment.contains("NUCLEUS_HELPER_EOF") || fragment.contains("#!/usr/bin/env bash"),
+        )
+    }
+
+    @Test
+    fun `polkit afterRemove fragment removes the policy file`() {
+        val fragment = LinuxUpdateHelper.polkitAfterRemoveFragment()
+        assertTrue(fragment.contains("rm -f"))
+        assertTrue(fragment.contains("polkit-1/actions"))
+        assertTrue(fragment.contains(".update.policy"))
+        assertFalse(fragment.contains("#!/usr/bin/env bash"))
+    }
+
+    private fun detachSign(
+        keyHome: File,
+        keyId: String,
+        pkg: File,
+        sig: File,
+    ) {
         run(
             "gpg", "--homedir", keyHome.absolutePath, "--batch", "--yes",
             "--pinentry-mode", "loopback", "--passphrase", passphrase,
             "-u", keyId, "--detach-sign", "--armor", "-o", sig.absolutePath, pkg.absolutePath,
         )
-
-        // Valid signature: passes verification, then stops at the ownership check (exit 3) because
-        // the helper is not actually owned by an installed package in this test environment.
-        assertEquals("valid signature must pass verification", 3, exitCodeOf("bash", helper.absolutePath, pkg.absolutePath))
-
-        // Tampered package: the detached signature no longer matches → rejected at verification.
-        pkg.appendBytes(byteArrayOf(0))
-        val tampered = exitCodeOf("bash", helper.absolutePath, pkg.absolutePath)
-        assertTrue("tampered package must be rejected (got $tampered)", tampered != 0 && tampered != 3)
-
-        // Missing signature → explicit refusal (exit 4).
-        sig.delete()
-        assertEquals("missing signature must be refused", 4, exitCodeOf("bash", helper.absolutePath, pkg.absolutePath))
     }
 
-    private fun buildMinimalDeb(dir: File): File {
-        val root = tmp.newFolder()
+    private fun buildMinimalDeb(
+        packageName: String,
+        version: String,
+        payloadRoot: File? = null,
+    ): File {
+        val root = payloadRoot ?: tmp.newFolder()
         File(root, "DEBIAN").mkdirs()
         File(root, "DEBIAN/control").writeText(
             buildString {
-                appendLine("Package: nucleus-helper-test")
-                appendLine("Version: 1.0.0")
-                appendLine("Architecture: amd64")
+                appendLine("Package: $packageName")
+                appendLine("Version: $version")
+                appendLine("Architecture: all")
                 appendLine("Maintainer: Nucleus Test <test@nucleus.dev>")
-                appendLine("Description: helper test package")
+                appendLine("Description: helper test package $version")
             },
         )
-        val deb = File(dir, "nucleus-helper-test_1.0.0_amd64.deb")
-        run("dpkg-deb", "--build", "--nocheck", root.absolutePath, deb.absolutePath)
+        val deb = File(tmp.newFolder(), "${packageName}_${version}_all.deb")
+        run("dpkg-deb", "--build", "--root-owner-group", root.absolutePath, deb.absolutePath)
         return deb
     }
 
@@ -174,8 +231,6 @@ class LinuxSignerTest {
         return output.contains("Good signature")
     }
 
-    // ---- Gradle service wiring ----
-
     private val project by lazy { ProjectBuilder.builder().withProjectDir(tmp.root).build() }
 
     private fun runner(): ExternalToolRunner {
@@ -184,8 +239,6 @@ class LinuxSignerTest {
         val logsDir = project.objects.directoryProperty().convention(project.layout.buildDirectory.dir("logs"))
         return ExternalToolRunner(verbose, logsDir, execOps)
     }
-
-    // ---- test scaffolding (not under test) ----
 
     private fun generateKey(home: File): String {
         val params = File(home, "params")
@@ -255,8 +308,6 @@ class LinuxSignerTest {
         return output.contains("signatures OK")
     }
 
-    // ---- process helpers ----
-
     private fun toolsAvailable(vararg tools: String): Boolean {
         val path = System.getenv("PATH") ?: return false
         return tools.all { tool ->
@@ -271,7 +322,7 @@ class LinuxSignerTest {
 
     private fun exitCodeOf(vararg command: String): Int {
         val proc = process(command.toList(), emptyMap())
-        proc.inputStream.readBytes() // drain so the process never blocks on a full pipe
+        proc.inputStream.readBytes()
         return proc.waitFor()
     }
 

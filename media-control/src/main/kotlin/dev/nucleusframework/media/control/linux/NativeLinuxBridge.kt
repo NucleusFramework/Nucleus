@@ -1,10 +1,12 @@
 package dev.nucleusframework.media.control.linux
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import java.util.logging.Logger
 
 private const val LIBRARY_NAME = "nucleus_media_control_linux"
 
 internal object NativeLinuxBridge {
+    private val logger = Logger.getLogger(NativeLinuxBridge::class.java.name)
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeLinuxBridge::class.java)
     val isLoaded: Boolean get() = loaded
 
@@ -14,7 +16,13 @@ internal object NativeLinuxBridge {
     fun attach(callback: (String) -> Unit): Boolean {
         userCallback = callback
         if (!isLoaded) return false
-        return nativeStartListening()
+        val started = nativeStartListening()
+        if (!started) {
+            logger.warning(
+                "MPRIS registration failed (invalid or unavailable D-Bus name) — OS media controls disabled",
+            )
+        }
+        return started
     }
 
     fun detach() {

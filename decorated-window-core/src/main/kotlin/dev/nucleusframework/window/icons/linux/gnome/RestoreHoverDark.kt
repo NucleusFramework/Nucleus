@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.RestoreHoverDark: ImageVector
+public val GnomeControlButtonsIcons.RestoreHoverDark: ImageVector
     get() {
         if (_RestoreHoverDark != null) {
             return _RestoreHoverDark!!

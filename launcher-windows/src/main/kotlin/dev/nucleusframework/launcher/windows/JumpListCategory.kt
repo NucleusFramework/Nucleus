@@ -9,7 +9,7 @@ package dev.nucleusframework.launcher.windows
  * @property name The category display name (must be unique across categories).
  * @property items The items in this category.
  */
-data class JumpListCategory(
+public data class JumpListCategory(
     val name: String,
     val items: List<JumpListItem>,
 )

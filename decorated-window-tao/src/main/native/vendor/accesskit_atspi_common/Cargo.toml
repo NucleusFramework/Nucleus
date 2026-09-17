@@ -10,10 +10,10 @@
 # See Cargo.toml.orig for the original contents.
 
 [package]
-edition = "2021"
-rust-version = "1.77.2"
+edition = "2024"
+rust-version = "1.85"
 name = "accesskit_atspi_common"
-version = "0.14.2"
+version = "0.19.1"
 authors = ["The AccessKit contributors"]
 build = false
 autolib = false
@@ -31,6 +31,7 @@ keywords = [
 categories = ["gui"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/AccessKit/accesskit"
+resolver = "2"
 
 [features]
 simplified-api = []
@@ -40,19 +41,20 @@ name = "accesskit_atspi_common"
 path = "src/lib.rs"
 
 [dependencies.accesskit]
-version = "0.21.1"
+version = "0.24.1"
 
 [dependencies.accesskit_consumer]
-version = "0.31.0"
+version = "0.38.0"
 
 [dependencies.atspi-common]
-version = "0.9"
+version = "0.13"
 default-features = false
 
-[dependencies.serde]
-version = "1.0"
+[dependencies.phf]
+version = "0.13.1"
+features = ["macros"]
 
-[dependencies.thiserror]
+[dependencies.serde]
 version = "1.0"
 
 [dependencies.zvariant]

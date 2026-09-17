@@ -25,14 +25,17 @@
 #include <winstring.h>
 #include <shobjidl.h>
 #include <shlobj.h>
+#include <shlwapi.h>
 #include <propvarutil.h>
 #include <propkey.h>
 #include <strsafe.h>
 
 #include <wrl/implements.h>
 #include <wrl/event.h>
+#include <wrl/wrappers/corewrappers.h>
 #include <windows.media.h>
 #include <windows.foundation.h>
+#include <windows.storage.h>
 #include <windows.storage.streams.h>
 #include <systemmediatransportcontrolsinterop.h>
 
@@ -47,6 +50,7 @@
 #pragma comment(lib, "kernel32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "shlwapi.lib")
 #pragma comment(lib, "propsys.lib")
 
 using namespace Microsoft::WRL;
@@ -414,6 +418,83 @@ static void patchStartMenuShortcut(const std::wstring &appName, const std::wstri
 }
 
 // ============================================================================
+// Cover art
+// ============================================================================
+
+// A local file resolves in microseconds. The deadline is only here so that a wedged network
+// share cannot take the calling thread down with it.
+static constexpr DWORD COVER_DEADLINE_MS = 2000;
+
+/**
+ * Recognises a cover that lives on this machine and hands back its Win32 path: either a
+ * `file://` URI, which is what the Kotlin API asks callers for, or a bare path, which is what
+ * they tend to pass anyway. Anything naming a remote resource is left alone.
+ */
+static bool localCoverPath(const std::wstring &cover, std::wstring &path) {
+    if (cover.rfind(L"file:", 0) == 0) {
+        wchar_t buffer[MAX_PATH] = {};
+        DWORD length = MAX_PATH;
+        // Percent-decodes and flips the separators; a UNC URI comes back as \\host\share.
+        if (FAILED(PathCreateFromUrlW(cover.c_str(), buffer, &length, 0))) return false;
+        path.assign(buffer);
+        return !path.empty();
+    }
+    if (cover.find(L"://") != std::wstring::npos) return false;
+    path = cover;
+    return true;
+}
+
+/**
+ * Opens a local cover as a StorageFile.
+ *
+ * CreateFromUri cannot do this: the factory only resolves ms-appx, ms-appdata, http and https,
+ * and a file:// URI yields a reference that never opens - so the flyout keeps its blank square
+ * and nothing anywhere reports an error. StorageFile is the supported route, and it is
+ * asynchronous, so the operation is awaited here: nativeSetMetadata is a synchronous JNI call
+ * and the updater has to hold the thumbnail before Update() publishes it.
+ */
+static ComPtr<IRandomAccessStreamReference> coverFromLocalFile(
+    IRandomAccessStreamReferenceStatics *statics,
+    const std::wstring &path
+) {
+    ComPtr<IRandomAccessStreamReference> streamRef;
+
+    ComPtr<ABI::Windows::Storage::IStorageFileStatics> fileStatics;
+    if (FAILED(RoGetActivationFactory(
+            HStringWrapper(L"Windows.Storage.StorageFile").Get(),
+            IID_PPV_ARGS(&fileStatics)))) {
+        return streamRef;
+    }
+
+    ComPtr<IAsyncOperation<ABI::Windows::Storage::StorageFile *>> operation;
+    if (FAILED(fileStatics->GetFileFromPathAsync(HStringWrapper(path).Get(), &operation)) || !operation) {
+        return streamRef;
+    }
+
+    Microsoft::WRL::Wrappers::Event done(
+        CreateEventExW(nullptr, nullptr, CREATE_EVENT_MANUAL_RESET, EVENT_MODIFY_STATE | SYNCHRONIZE));
+    if (!done.IsValid()) return streamRef;
+
+    HANDLE signal = done.Get();
+    if (FAILED(operation->put_Completed(
+            Callback<IAsyncOperationCompletedHandler<ABI::Windows::Storage::StorageFile *>>(
+                [signal](IAsyncOperation<ABI::Windows::Storage::StorageFile *> *, AsyncStatus) -> HRESULT {
+                    SetEvent(signal);
+                    return S_OK;
+                }).Get()))) {
+        return streamRef;
+    }
+    if (WaitForSingleObject(signal, COVER_DEADLINE_MS) != WAIT_OBJECT_0) return streamRef;
+
+    ComPtr<ABI::Windows::Storage::IStorageFile> file;
+    // A cover that was deleted or is being rewritten fails here, which is the whole point of
+    // taking this route: the caller keeps the previous thumbnail rather than a broken one.
+    if (FAILED(operation->GetResults(&file)) || !file) return streamRef;
+    if (FAILED(statics->CreateFromFile(file.Get(), &streamRef))) streamRef.Reset();
+    return streamRef;
+}
+
+// ============================================================================
 // JNI exports
 // ============================================================================
 
@@ -483,29 +564,21 @@ Java_dev_nucleusframework_media_control_windows_NativeWindowsBridge_nativeSetMet
                 HStringWrapper(L"Windows.Storage.Streams.RandomAccessStreamReference").Get(),
                 IID_PPV_ARGS(&rasrStatics)))) {
             ComPtr<IRandomAccessStreamReference> streamRef;
-            HRESULT hr = S_OK;
-            if (cover.rfind(L"file://", 0) == 0) {
-                // Not straightforward to await StorageFile::GetFileFromPathAsync synchronously
-                // from JNI. Best-effort: just try a URI load; Windows accepts file:// for SMTC.
-                ComPtr<IUriRuntimeClassFactory> uriFactory;
-                if (SUCCEEDED(RoGetActivationFactory(
-                        HStringWrapper(L"Windows.Foundation.Uri").Get(),
-                        IID_PPV_ARGS(&uriFactory)))) {
-                    ComPtr<IUriRuntimeClass> uri;
-                    hr = uriFactory->CreateUri(HStringWrapper(cover).Get(), &uri);
-                    if (SUCCEEDED(hr)) hr = rasrStatics->CreateFromUri(uri.Get(), &streamRef);
-                }
+            std::wstring path;
+            if (localCoverPath(cover, path)) {
+                streamRef = coverFromLocalFile(rasrStatics.Get(), path);
             } else {
                 ComPtr<IUriRuntimeClassFactory> uriFactory;
                 if (SUCCEEDED(RoGetActivationFactory(
                         HStringWrapper(L"Windows.Foundation.Uri").Get(),
                         IID_PPV_ARGS(&uriFactory)))) {
                     ComPtr<IUriRuntimeClass> uri;
-                    hr = uriFactory->CreateUri(HStringWrapper(cover).Get(), &uri);
-                    if (SUCCEEDED(hr)) hr = rasrStatics->CreateFromUri(uri.Get(), &streamRef);
+                    if (SUCCEEDED(uriFactory->CreateUri(HStringWrapper(cover).Get(), &uri))) {
+                        rasrStatics->CreateFromUri(uri.Get(), &streamRef);
+                    }
                 }
             }
-            if (SUCCEEDED(hr) && streamRef) {
+            if (streamRef) {
                 g_updater->put_Thumbnail(streamRef.Get());
             }
         }

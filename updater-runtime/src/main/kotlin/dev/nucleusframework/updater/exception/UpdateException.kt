@@ -1,26 +1,26 @@
 package dev.nucleusframework.updater.exception
 
-open class UpdateException(
+public open class UpdateException(
     message: String,
     cause: Throwable? = null,
 ) : Exception(message, cause)
 
-class NetworkException(
+public class NetworkException(
     message: String,
     cause: Throwable? = null,
 ) : UpdateException(message, cause)
 
-class ChecksumException(
+public class ChecksumException(
     expected: String,
     actual: String,
 ) : UpdateException("SHA-512 mismatch: expected=$expected, actual=$actual")
 
-class NoMatchingFileException(
+public class NoMatchingFileException(
     platform: String,
     arch: String,
     format: String,
 ) : UpdateException("No matching file for $platform/$arch/$format")
 
-class ParseException(
+public class ParseException(
     message: String,
 ) : UpdateException(message)

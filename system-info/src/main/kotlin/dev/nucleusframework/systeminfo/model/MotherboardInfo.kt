@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class MotherboardInfo(
+public data class MotherboardInfo(
     val name: String?,
     val vendorName: String?,
     val version: String?,

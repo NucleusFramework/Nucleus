@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <inttypes.h>
+#include <errno.h>
+#include <time.h>
 
 /* ---- Constants -------------------------------------------------------- */
 
@@ -29,6 +31,8 @@
 #define STATUS_STOPPED 0
 #define STATUS_PAUSED  1
 #define STATUS_PLAYING 2
+
+#define NAME_ACQUISITION_TIMEOUT_SECONDS 10
 
 /* ---- Introspection XML ------------------------------------------------ */
 
@@ -625,6 +629,22 @@ static void *service_thread_func(void *arg) {
         NULL, NULL);
     g_free(bus_name);
 
+    if (g_own_id == 0) {
+        /* g_bus_own_name() rejected the name without invoking any callback
+           (e.g. failed g_dbus_is_name assertion): fail open so waiters in
+           nativeStartListening() are released instead of blocking forever. */
+        pthread_mutex_lock(&g_state_mutex);
+        g_ready = -1;
+        pthread_cond_broadcast(&g_ready_cond);
+        g_ctx = NULL;
+        g_running = 0;
+        pthread_mutex_unlock(&g_state_mutex);
+        pthread_detach(pthread_self());
+        g_main_context_pop_thread_default(ctx);
+        g_main_context_unref(ctx);
+        return NULL;
+    }
+
     GMainLoop *loop = g_main_loop_new(ctx, FALSE);
 
     pthread_mutex_lock(&g_state_mutex);
@@ -760,6 +780,12 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeStartListe
         pthread_mutex_unlock(&g_state_mutex);
         return JNI_FALSE;
     }
+    if (!g_dbus_is_name(g_bus_name) || g_dbus_is_unique_name(g_bus_name)) {
+        g_warning("nucleus-media-control: '%s' is not a valid D-Bus well-known name; "
+                  "MPRIS registration skipped", g_bus_name);
+        pthread_mutex_unlock(&g_state_mutex);
+        return JNI_FALSE;
+    }
     g_running = 1;
     g_ready   = 0;
     if (pthread_create(&g_thread, NULL, service_thread_func, NULL) != 0) {
@@ -767,9 +793,17 @@ Java_dev_nucleusframework_media_control_linux_NativeLinuxBridge_nativeStartListe
         pthread_mutex_unlock(&g_state_mutex);
         return JNI_FALSE;
     }
-    /* Wait until the bus name is acquired (or definitively lost) */
+    /* Wait until the bus name is acquired (or definitively lost). Bounded so a
+       stalled bus can never block the caller — often the UI thread — forever;
+       on timeout we fail open and the service thread keeps trying in the
+       background (controls simply appear if the name is acquired later). */
+    struct timespec deadline;
+    clock_gettime(CLOCK_REALTIME, &deadline);
+    deadline.tv_sec += NAME_ACQUISITION_TIMEOUT_SECONDS;
     while (g_ready == 0 && g_running) {
-        pthread_cond_wait(&g_ready_cond, &g_state_mutex);
+        if (pthread_cond_timedwait(&g_ready_cond, &g_state_mutex, &deadline) == ETIMEDOUT) {
+            break;
+        }
     }
     jboolean ok = (g_ready == 1) ? JNI_TRUE : JNI_FALSE;
     pthread_mutex_unlock(&g_state_mutex);

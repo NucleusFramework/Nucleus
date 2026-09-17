@@ -40,14 +40,6 @@ internal object LinuxSystemdScheduler : PlatformScheduler {
     private val appId: String
         get() = NucleusApp.appId
 
-    private val executablePath: String?
-        get() =
-            ProcessHandle
-                .current()
-                .info()
-                .command()
-                .orElse(null)
-
     // -- Unit naming ----------------------------------------------------------
 
     internal fun unitBaseName(taskId: TaskId): String = "$UNIT_PREFIX-$appId-${taskId.value}"
@@ -85,7 +77,7 @@ internal object LinuxSystemdScheduler : PlatformScheduler {
             }
         }
 
-        val execPath = executablePath
+        val execPath = SchedulerExecutable.path
         if (execPath == null) {
             logger.warning("Cannot resolve executable path — task '${request.taskId}' not scheduled")
             return false
@@ -104,6 +96,7 @@ internal object LinuxSystemdScheduler : PlatformScheduler {
                 appId = appId,
                 taskId = request.taskId,
                 execPath = execPath,
+                execArgs = SchedulerExecutable.arguments,
                 timerUnit = timerFileName(request.taskId),
                 serviceUnit = serviceFileName(request.taskId),
                 serviceFilePath = serviceFile.absolutePath,

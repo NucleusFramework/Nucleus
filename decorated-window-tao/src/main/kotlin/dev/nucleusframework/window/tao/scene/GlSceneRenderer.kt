@@ -1,8 +1,5 @@
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.ui.InternalComposeUiApi
-import androidx.compose.ui.graphics.asComposeCanvas
-import androidx.compose.ui.scene.ComposeScene
 import org.jetbrains.skia.BackendRenderTarget
 import org.jetbrains.skia.ColorSpace
 import org.jetbrains.skia.DirectContext
@@ -12,8 +9,8 @@ import org.jetbrains.skia.SurfaceColorFormat
 import org.jetbrains.skia.SurfaceOrigin
 
 /**
- * Per-frame Skia/GL rendering helper shared by the overlay controller
- * and the popup scene layer. Wraps the default GL framebuffer in a
+ * Per-frame Skia/GL rendering helper shared by the NativeView blending
+ * overlay and popup scene layers. Wraps the default GL framebuffer in a
  * Skia [Surface], lets the scene paint, then presents.
  *
  * Caller must:
@@ -22,13 +19,16 @@ import org.jetbrains.skia.SurfaceOrigin
  *     GL state cache reflects reality after the external surface switch,
  *  3. provide [present] (the bridge's `nativeSwapBuffers`).
  */
-@OptIn(InternalComposeUiApi::class)
 internal inline fun renderGlFrame(
     widthPx: Int,
     heightPx: Int,
     directContext: DirectContext,
-    scene: ComposeScene,
+    bundle: TaoSceneBundle,
     clearColorArgb: Int,
+    // No default on purpose: `false` attaches LCD SurfaceProps on Windows, and
+    // silently inheriting it on a per-pixel-alpha surface ships color-fringed
+    // text. Every call site must state its surface's alpha mode.
+    windowTransparent: Boolean,
     crossinline present: () -> Unit,
 ) {
     renderGlFrame(
@@ -36,18 +36,34 @@ internal inline fun renderGlFrame(
         heightPx = heightPx,
         directContext = directContext,
         clearColorArgb = clearColorArgb,
+        windowTransparent = windowTransparent,
         present = present,
     ) { canvas, nanoTime ->
-        scene.render(canvas.asComposeCanvas(), nanoTime)
+        bundle.render(canvas, nanoTime)
     }
 }
 
-@OptIn(InternalComposeUiApi::class)
+internal fun makeTaoGlSurface(
+    context: DirectContext,
+    rt: BackendRenderTarget,
+    windowTransparent: Boolean,
+): Surface? =
+    Surface.makeFromBackendRenderTarget(
+        context = context,
+        rt = rt,
+        origin = SurfaceOrigin.BOTTOM_LEFT,
+        colorFormat = SurfaceColorFormat.RGBA_8888,
+        colorSpace = ColorSpace.sRGB,
+        surfaceProps = lcdSurfaceProps(windowTransparent),
+    )
+
 internal inline fun renderGlFrame(
     widthPx: Int,
     heightPx: Int,
     directContext: DirectContext,
     clearColorArgb: Int,
+    // No default on purpose — see the overload above.
+    windowTransparent: Boolean,
     crossinline present: () -> Unit,
     crossinline render: (org.jetbrains.skia.Canvas, Long) -> Unit,
 ) {
@@ -62,13 +78,7 @@ internal inline fun renderGlFrame(
             fbFormat = FramebufferFormat.GR_GL_RGBA8,
         )
     val surface =
-        Surface.makeFromBackendRenderTarget(
-            context = directContext,
-            rt = rt,
-            origin = SurfaceOrigin.BOTTOM_LEFT,
-            colorFormat = SurfaceColorFormat.RGBA_8888,
-            colorSpace = ColorSpace.sRGB,
-        ) ?: run {
+        makeTaoGlSurface(directContext, rt, windowTransparent) ?: run {
             rt.close()
             return
         }

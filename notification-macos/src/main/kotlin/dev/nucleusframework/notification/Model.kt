@@ -1,7 +1,7 @@
 package dev.nucleusframework.notification
 
 /** Date components for calendar-based triggers. Null fields are ignored (wildcard). */
-data class DateComponents(
+public data class DateComponents(
     val year: Int? = null,
     val month: Int? = null,
     val day: Int? = null,
@@ -12,21 +12,21 @@ data class DateComponents(
 )
 
 /** Maps UNNotificationSound */
-sealed class NotificationSound {
-    data object Default : NotificationSound()
+public sealed class NotificationSound {
+    public data object Default : NotificationSound()
 
-    data class Named(
+    public data class Named(
         val name: String,
     ) : NotificationSound()
 
-    data object DefaultCritical : NotificationSound()
+    public data object DefaultCritical : NotificationSound()
 
-    data class CriticalNamed(
+    public data class CriticalNamed(
         val name: String,
         val volume: Float,
     ) : NotificationSound()
 
-    data class DefaultCriticalWithVolume(
+    public data class DefaultCriticalWithVolume(
         val volume: Float,
     ) : NotificationSound()
 
@@ -64,13 +64,13 @@ sealed class NotificationSound {
 }
 
 /** Maps UNNotificationAttachment */
-data class NotificationAttachment(
+public data class NotificationAttachment(
     val identifier: String,
     val url: String,
 )
 
 /** Maps UNMutableNotificationContent */
-data class NotificationContent(
+public data class NotificationContent(
     val title: String = "",
     val subtitle: String = "",
     val body: String = "",
@@ -86,13 +86,13 @@ data class NotificationContent(
 )
 
 /** Maps UNNotificationTrigger and subclasses */
-sealed class NotificationTrigger {
-    abstract val repeats: Boolean
+public sealed class NotificationTrigger {
+    public abstract val repeats: Boolean
 
     internal abstract val typeId: Int
 
     /** Maps UNTimeIntervalNotificationTrigger */
-    data class TimeInterval(
+    public data class TimeInterval(
         val interval: Double,
         override val repeats: Boolean = false,
     ) : NotificationTrigger() {
@@ -106,7 +106,7 @@ sealed class NotificationTrigger {
     }
 
     /** Maps UNCalendarNotificationTrigger */
-    data class Calendar(
+    public data class Calendar(
         val dateComponents: DateComponents,
         override val repeats: Boolean = false,
     ) : NotificationTrigger() {
@@ -121,29 +121,29 @@ sealed class NotificationTrigger {
 }
 
 /** Maps UNNotificationAction */
-open class NotificationAction(
-    val identifier: String,
-    val title: String,
-    val options: Set<ActionOption> = emptySet(),
+public open class NotificationAction(
+    public val identifier: String,
+    public val title: String,
+    public val options: Set<ActionOption> = emptySet(),
 ) {
     /** Default action identifier constant (user tapped the notification itself) */
-    companion object {
-        const val DEFAULT_ACTION_IDENTIFIER = "com.apple.UNNotificationDefaultActionIdentifier"
-        const val DISMISS_ACTION_IDENTIFIER = "com.apple.UNNotificationDismissActionIdentifier"
+    public companion object {
+        public const val DEFAULT_ACTION_IDENTIFIER: String = "com.apple.UNNotificationDefaultActionIdentifier"
+        public const val DISMISS_ACTION_IDENTIFIER: String = "com.apple.UNNotificationDismissActionIdentifier"
     }
 }
 
 /** Maps UNTextInputNotificationAction */
-class TextInputNotificationAction(
+public class TextInputNotificationAction(
     identifier: String,
     title: String,
     options: Set<ActionOption> = emptySet(),
-    val textInputButtonTitle: String,
-    val textInputPlaceholder: String,
+    public val textInputButtonTitle: String,
+    public val textInputPlaceholder: String,
 ) : NotificationAction(identifier, title, options)
 
 /** Maps UNNotificationCategory */
-data class NotificationCategory(
+public data class NotificationCategory(
     val identifier: String,
     val actions: List<NotificationAction> = emptyList(),
     val intentIdentifiers: List<String> = emptyList(),
@@ -151,14 +151,14 @@ data class NotificationCategory(
 )
 
 /** Maps UNNotificationRequest */
-data class NotificationRequest(
+public data class NotificationRequest(
     val identifier: String,
     val content: NotificationContent,
     val trigger: NotificationTrigger? = null,
 )
 
 /** Maps UNNotificationSettings (read-only) */
-data class NotificationSettings(
+public data class NotificationSettings(
     val authorizationStatus: AuthorizationStatus,
     val soundSetting: NotificationSetting,
     val badgeSetting: NotificationSetting,
@@ -175,7 +175,7 @@ data class NotificationSettings(
 )
 
 /** Maps UNNotification */
-data class DeliveredNotification(
+public data class DeliveredNotification(
     val identifier: String,
     val title: String,
     val subtitle: String,
@@ -186,14 +186,14 @@ data class DeliveredNotification(
 )
 
 /** Maps UNNotificationResponse */
-data class NotificationResponse(
+public data class NotificationResponse(
     val actionIdentifier: String,
     val notification: DeliveredNotification,
     val userText: String?,
 )
 
 /** Summary of a pending notification request returned by getPendingNotifications */
-data class PendingNotificationInfo(
+public data class PendingNotificationInfo(
     val identifier: String,
     val title: String,
     val subtitle: String,
@@ -206,14 +206,14 @@ data class PendingNotificationInfo(
 )
 
 /** Summary of a registered notification category returned by getNotificationCategories */
-data class RegisteredCategoryInfo(
+public data class RegisteredCategoryInfo(
     val identifier: String,
     val optionsMask: Int,
     val actions: List<RegisteredActionInfo>,
 )
 
 /** Summary of a registered notification action within a category */
-data class RegisteredActionInfo(
+public data class RegisteredActionInfo(
     val identifier: String,
     val title: String,
     val optionsMask: Int,

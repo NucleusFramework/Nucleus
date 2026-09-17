@@ -7,7 +7,13 @@
             "type": "kotlin.SafePublicationLazyImpl"
         },
         {
+            "type": "kotlinx.atomicfu.AtomicInt"
+        },
+        {
             "type": "kotlinx.atomicfu.AtomicLong"
+        },
+        {
+            "type": "kotlinx.atomicfu.AtomicRef"
         },
         {
             "type": "kotlin.coroutines.SafeContinuation"
@@ -126,6 +132,11 @@
                     "parameterTypes": []
                 }
             ]
+        }
+    ],
+    "resources": [
+        {
+            "glob": "kotlin/kotlin.kotlin_builtins"
         }
     ]
 }

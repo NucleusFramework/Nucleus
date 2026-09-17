@@ -2,9 +2,12 @@ package dev.nucleusframework.window.tao.popup
 
 import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.key.KeyEvent
+import androidx.compose.ui.platform.WindowInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.window.WindowExceptionHandler
 import org.jetbrains.skia.DirectContext
 import kotlin.coroutines.CoroutineContext
 
@@ -19,6 +22,7 @@ import kotlin.coroutines.CoroutineContext
  * Threading: every call must run on the host HWND's UI thread.
  */
 @Suppress("TooManyFunctions")
+@OptIn(ExperimentalComposeUiApi::class)
 internal interface TaoPopupHostWindows {
     /** HWND of the host (Tao main) window. */
     val parentHwnd: Long
@@ -28,6 +32,9 @@ internal interface TaoPopupHostWindows {
 
     /** Host window's content size in physical pixels. */
     val parentWindowSize: IntSize
+
+    /** The owner window's live `WindowInfo` — see [TaoPopupHost.parentWindowInfo]. */
+    val parentWindowInfo: WindowInfo
 
     /**
      * Screen work area in physical pixels. Used as the inner scene's
@@ -39,8 +46,23 @@ internal interface TaoPopupHostWindows {
      */
     val workAreaSize: IntSize get() = parentWindowSize
 
+    /**
+     * Owner client origin on screen + every display's work area, so a layer
+     * can clamp its native frame into the real screen instead of the
+     * window-rooted virtual one Compose positions against. See
+     * [TaoPopupHost.popupScreenGeometry].
+     */
+    val popupScreenGeometry: PopupScreenGeometry? get() = null
+
     /** Coroutine context to feed inner scenes. */
     val sceneCoroutineContext: CoroutineContext
+
+    /**
+     * The owner window's exception handler, so a popup scene reports failures
+     * through the same channel as the window it belongs to. See
+     * [TaoPopupHost.exceptionHandler].
+     */
+    val exceptionHandler: WindowExceptionHandler? get() = null
 
     /**
      * Offset added to a popup's `boundsInWindow` before positioning the
@@ -49,6 +71,15 @@ internal interface TaoPopupHostWindows {
      * top-left.
      */
     val coordinateOffset: IntOffset get() = IntOffset.Zero
+
+    /**
+     * Whether the owner window was created per-pixel transparent
+     * (`DecoratedWindow(transparent = true)`, #416). Overlay scenes render
+     * inside the owner's surface, so they forward this as
+     * `PlatformContext.isWindowTransparent` — the hint Compose uses to pick
+     * the alpha-aware dialog-scrim blend mode (#559).
+     */
+    val isOwnerWindowTransparent: Boolean get() = false
 
     /**
      * The HOST scene's Skia DirectContext — shared with every
@@ -60,6 +91,9 @@ internal interface TaoPopupHostWindows {
      * eglMakeCurrent swaps surfaces.
      */
     val hostDirectContext: DirectContext
+
+    /** The dialog scrims of this host's layers — see [TaoPopupHost.popupScrims]. */
+    val popupScrims: PopupScrimRegistry
 
     fun requestRedraw()
 
@@ -113,6 +147,16 @@ internal interface TaoPopupHostWindows {
     )
 
     fun unregisterRenderer(token: Any)
+
+    /**
+     * A layer this host handed out has closed and must leave the host's live
+     * set. Compose closes a native popup layer only when the layer's own
+     * disappearance animation finishes; an owner window torn down before
+     * that would otherwise leave the layer's window mapped for good, so the
+     * host tracks its layers and closes the survivors on detach.
+     */
+    @OptIn(androidx.compose.ui.InternalComposeUiApi::class)
+    fun onLayerClosed(layer: androidx.compose.ui.scene.ComposeSceneLayer) {}
 
     /**
      * Notify the host that a popup [TaoPopupSceneLayerWindows] is about

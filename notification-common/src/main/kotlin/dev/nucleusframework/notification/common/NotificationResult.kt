@@ -1,14 +1,14 @@
 package dev.nucleusframework.notification.common
 
 /** Result of sending a notification. */
-sealed class NotificationResult {
+public sealed class NotificationResult {
     /** The notification was sent successfully. */
-    data class Success(
+    public data class Success(
         val handle: NotificationHandle,
     ) : NotificationResult()
 
     /** The notification could not be sent. */
-    data class Failure(
+    public data class Failure(
         val reason: String,
     ) : NotificationResult()
 }

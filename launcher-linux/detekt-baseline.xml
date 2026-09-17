@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:DbusmenuItem.kt:DbusmenuItem$Companion</ID>
+    <ID>UndocumentedPublicClass:DbusmenuItem.kt:DbusmenuItem$Disposition</ID>
+    <ID>UndocumentedPublicClass:DbusmenuItem.kt:DbusmenuItem$ItemType</ID>
+    <ID>UndocumentedPublicClass:DbusmenuItem.kt:DbusmenuItem$ToggleType</ID>
+    <ID>UndocumentedPublicClass:LinuxQuicklist.kt:LinuxQuicklist$Listener</ID>
+    <ID>UndocumentedPublicFunction:LinuxQuicklist.kt:LinuxQuicklist.Listener$public fun onItemClicked</ID>
+  </CurrentIssues>
+</SmellBaseline>

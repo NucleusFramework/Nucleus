@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.MaximizePressedDark: ImageVector
+public val KdeControlButtonsIcons.MaximizePressedDark: ImageVector
     get() {
         if (_MaximizePressedDark != null) {
             return _MaximizePressedDark!!

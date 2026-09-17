@@ -1,0 +1,72 @@
+public final class dev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgress {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgress;
+	public final fun hideProgress (Ldev/nucleusframework/application/NucleusWindow;)Z
+	public final fun isAvailable ()Z
+	public final fun requestAttention (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestAttention$default (Ldev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgress;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public final fun setProgress (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public final fun setState (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public final fun showError (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static synthetic fun showError$default (Ldev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgress;Ldev/nucleusframework/application/NucleusWindow;DILjava/lang/Object;)Z
+	public final fun showIndeterminate (Ldev/nucleusframework/application/NucleusWindow;)Z
+	public final fun showPaused (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static synthetic fun showPaused$default (Ldev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgress;Ldev/nucleusframework/application/NucleusWindow;DILjava/lang/Object;)Z
+	public final fun showProgress (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public final fun stopAttention (Ldev/nucleusframework/application/NucleusWindow;)Z
+}
+
+public final class dev/nucleusframework/taskbarprogress/tao/NucleusTaskbarProgressKt {
+	public static final fun hideTaskbarProgress (Ldev/nucleusframework/application/NucleusWindow;)Z
+	public static final fun requestTaskbarAttention (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestTaskbarAttention$default (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public static final fun setTaskbarProgress (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static final fun setTaskbarState (Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public static final fun showTaskbarError (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static synthetic fun showTaskbarError$default (Ldev/nucleusframework/application/NucleusWindow;DILjava/lang/Object;)Z
+	public static final fun showTaskbarIndeterminate (Ldev/nucleusframework/application/NucleusWindow;)Z
+	public static final fun showTaskbarPaused (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static synthetic fun showTaskbarPaused$default (Ldev/nucleusframework/application/NucleusWindow;DILjava/lang/Object;)Z
+	public static final fun showTaskbarProgress (Ldev/nucleusframework/application/NucleusWindow;D)Z
+	public static final fun stopTaskbarAttention (Ldev/nucleusframework/application/NucleusWindow;)Z
+}
+
+public final class dev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgress {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgress;
+	public final fun hideProgress (Ldev/nucleusframework/window/tao/TaoWindow;)Z
+	public final fun isAvailable ()Z
+	public final fun requestAttention (Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestAttention$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgress;Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public final fun setProgress (Ldev/nucleusframework/window/tao/TaoWindow;D)Z
+	public final fun setState (Ldev/nucleusframework/window/tao/TaoWindow;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public final fun showError (Ldev/nucleusframework/window/tao/TaoWindow;D)Z
+	public static synthetic fun showError$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgress;Ldev/nucleusframework/window/tao/TaoWindow;DILjava/lang/Object;)Z
+	public final fun showIndeterminate (Ldev/nucleusframework/window/tao/TaoWindow;)Z
+	public final fun showPaused (Ldev/nucleusframework/window/tao/TaoWindow;D)Z
+	public static synthetic fun showPaused$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgress;Ldev/nucleusframework/window/tao/TaoWindow;DILjava/lang/Object;)Z
+	public final fun showProgress (Ldev/nucleusframework/window/tao/TaoWindow;D)Z
+	public final fun stopAttention (Ldev/nucleusframework/window/tao/TaoWindow;)Z
+}
+
+public final class dev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressKt {
+	public static final fun rememberTaoTaskbarProgress (Landroidx/compose/runtime/Composer;I)Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressScope;
+}
+
+public final class dev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressScope {
+	public static final field $stable I
+	public final fun getWindow ()Ldev/nucleusframework/window/tao/TaoWindow;
+	public final fun hideProgress ()Z
+	public final fun requestAttention (Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestAttention$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressScope;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public final fun setProgress (D)Z
+	public final fun setState (Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public final fun showError (D)Z
+	public static synthetic fun showError$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressScope;DILjava/lang/Object;)Z
+	public final fun showIndeterminate ()Z
+	public final fun showPaused (D)Z
+	public static synthetic fun showPaused$default (Ldev/nucleusframework/taskbarprogress/tao/TaoTaskbarProgressScope;DILjava/lang/Object;)Z
+	public final fun showProgress (D)Z
+	public final fun stopAttention ()Z
+}
+

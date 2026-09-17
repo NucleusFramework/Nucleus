@@ -74,23 +74,12 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
                 if (!entry.isDirectory && NativeLibArchDetector.isNativeLib(entry.name)) {
                     // Only process files with native extensions (.dll, .so, .dylib, .jnilib)
                     // Never touch .class or other Java files
-                    val pathInfo = NativeLibArchDetector.detectFromPath(entry.name)
-
-                    if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
-                        // Path has both OS and arch indicators
-                        if (shouldRemoveByInfo(pathInfo, expectedOs, expectedArch)) {
-                            entriesToRemove.add(entry.name)
+                    val remove =
+                        shouldRemoveNativeLib(entry.name, expectedOs, expectedArch) {
+                            NativeLibArchDetector.readHeaderBytes(zis)
                         }
-                    } else {
-                        // Fall back to binary header detection
-                        val header = ByteArray(64)
-                        val bytesRead = readFully(zis, header)
-                        if (bytesRead > 0) {
-                            val headerInfo = NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
-                            if (shouldRemoveByInfo(headerInfo, expectedOs, expectedArch)) {
-                                entriesToRemove.add(entry.name)
-                            }
-                        }
+                    if (remove) {
+                        entriesToRemove.add(entry.name)
                     }
                 }
                 entry = zis.nextEntry
@@ -133,28 +122,6 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
         }
     }
 
-    private fun shouldRemoveByInfo(
-        info: NativeInfo,
-        expectedOs: NativeOs,
-        expectedArch: NativeArch,
-    ): Boolean {
-        // Exotic/unsupported OS (freebsd, aix, android, etc.) → always remove
-        if (info.os == NativeOs.OTHER) return true
-        // Known OS that doesn't match target → remove
-        if (info.os != NativeOs.UNKNOWN && info.os != expectedOs) return true
-        // OS matches but exotic/unsupported arch (ppc, arm32, riscv, etc.) → remove
-        if (info.arch == NativeArch.OTHER) return true
-        // OS matches but arch doesn't → remove (unless arch is unknown/universal)
-        if (info.os == expectedOs &&
-            info.arch != NativeArch.UNKNOWN &&
-            info.arch != NativeArch.UNIVERSAL &&
-            info.arch != expectedArch
-        ) {
-            return true
-        }
-        return false
-    }
-
     private fun mapOs(os: String): NativeOs? =
         when (os) {
             "windows" -> NativeOs.WINDOWS
@@ -169,19 +136,42 @@ internal abstract class CleanNativeLibsTransform : TransformAction<CleanNativeLi
             "arm64" -> NativeArch.ARM64
             else -> null
         }
+}
 
-    private fun readFully(
-        input: java.io.InputStream,
-        buffer: ByteArray,
-    ): Int {
-        var totalRead = 0
-        while (totalRead < buffer.size) {
-            val read = input.read(buffer, totalRead, buffer.size - totalRead)
-            if (read == -1) break
-            totalRead += read
-        }
-        return totalRead
+/**
+ * Whether a native lib entry can be stripped from a JAR for the given target.
+ *
+ * Deliberately conservative: anything the detector can't pin down is kept, so an unrecognised
+ * layout costs a few bytes rather than a missing library at runtime. Extracted from the transform
+ * so the decision can be unit-tested without a Gradle artifact-transform execution.
+ */
+internal fun shouldRemoveNativeLib(
+    entryPath: String,
+    expectedOs: NativeOs,
+    expectedArch: NativeArch,
+    readHeader: () -> ByteArray,
+): Boolean = shouldRemoveByInfo(NativeLibArchDetector.detectEntry(entryPath, readHeader), expectedOs, expectedArch)
+
+private fun shouldRemoveByInfo(
+    info: NativeInfo,
+    expectedOs: NativeOs,
+    expectedArch: NativeArch,
+): Boolean {
+    // Exotic/unsupported OS (freebsd, aix, android, etc.) → always remove
+    if (info.os == NativeOs.OTHER) return true
+    // Known OS that doesn't match target → remove
+    if (info.os != NativeOs.UNKNOWN && info.os != expectedOs) return true
+    // OS matches but exotic/unsupported arch (ppc, arm32, riscv, etc.) → remove
+    if (info.arch == NativeArch.OTHER) return true
+    // OS matches but arch doesn't → remove (unless arch is unknown/universal)
+    if (info.os == expectedOs &&
+        info.arch != NativeArch.UNKNOWN &&
+        info.arch != NativeArch.UNIVERSAL &&
+        info.arch != expectedArch
+    ) {
+        return true
     }
+    return false
 }
 
 private val NATIVE_LIBS_CLEANED = Attribute.of("native-libs-cleaned", Boolean::class.javaObjectType)

@@ -16,7 +16,7 @@ import java.util.logging.Logger
 private const val TAG_MAX_LENGTH = 16
 
 internal class WindowsDispatcher private constructor() : PlatformDispatcher {
-    private val logger = Logger.getLogger(WindowsDispatcher::class.java.simpleName)
+    private val logger = Logger.getLogger(WindowsDispatcher::class.java.name)
     private val initialized = AtomicBoolean(false)
     private val tagCounter = AtomicLong(0)
 
@@ -111,8 +111,12 @@ internal class WindowsDispatcher private constructor() : PlatformDispatcher {
         val tag = generateTag()
         val platformId = toPlatformId(tag, GROUP)
 
+        val opts = notification.windows
         val toastContent =
             toast {
+                opts?.scenario?.let { scenario = it }
+                opts?.duration?.let { duration = it }
+
                 visual {
                     text(notification.title)
                     if (notification.message.isNotEmpty()) {

@@ -56,6 +56,13 @@ clang -shared -O2 -Wall -Wextra -std=c11 \
     -o "$OUT_DIR_ARM64/libnucleus_energy_manager.dylib"
 echo "  -> $OUT_DIR_ARM64/libnucleus_energy_manager.dylib"
 
+# Clear NativeLibraryLoader cache to avoid serving stale cached copy
+CACHE_DIR="${HOME}/.cache/nucleus/native"
+if [ -d "$CACHE_DIR" ]; then
+    find "$CACHE_DIR" -name "libnucleus_energy_manager.dylib" -delete 2>/dev/null || true
+    echo "Cleared NativeLibraryLoader cache"
+fi
+
 echo
 echo "Built dylibs:"
 [ -f "$OUT_DIR_X64/libnucleus_energy_manager.dylib" ] && echo "  $OUT_DIR_X64/libnucleus_energy_manager.dylib"

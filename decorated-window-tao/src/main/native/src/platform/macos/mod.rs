@@ -5,7 +5,7 @@
 //                       Objective-C helpers compiled by `build.rs`.
 //   - `main_thread`   — JWM-style main-thread bouncing (NSApplication's event
 //                       loop must run on the OS main thread).
-//   - `handles`       — NSView pointer JNI export.
+//   - `handles`       — NSView + NSWindow pointer JNI exports.
 //   - `ime`           — caret rectangle / input-context activation.
 //   - `apple_events`  — `kAEGetURL` deep-link bridge.
 //   - `a11y`          — VoiceOver bridge (snapshot push + action callbacks).

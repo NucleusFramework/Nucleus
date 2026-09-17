@@ -1,0 +1,159 @@
+public abstract class dev/nucleusframework/media/control/MediaControlEvent {
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Next : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Next;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$OpenUri : dev/nucleusframework/media/control/MediaControlEvent {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/media/control/MediaControlEvent$OpenUri;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaControlEvent$OpenUri;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaControlEvent$OpenUri;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getUri ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Pause : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Pause;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Play : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Play;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Previous : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Previous;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Quit : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Quit;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Raise : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Raise;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$SeekBy : dev/nucleusframework/media/control/MediaControlEvent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/nucleusframework/media/control/MediaControlEvent$SeekBy;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaControlEvent$SeekBy;JILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaControlEvent$SeekBy;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getOffsetMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$SetPosition : dev/nucleusframework/media/control/MediaControlEvent {
+	public fun <init> (J)V
+	public final fun component1 ()J
+	public final fun copy (J)Ldev/nucleusframework/media/control/MediaControlEvent$SetPosition;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaControlEvent$SetPosition;JILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaControlEvent$SetPosition;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPositionMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$SetVolume : dev/nucleusframework/media/control/MediaControlEvent {
+	public fun <init> (D)V
+	public final fun component1 ()D
+	public final fun copy (D)Ldev/nucleusframework/media/control/MediaControlEvent$SetVolume;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaControlEvent$SetVolume;DILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaControlEvent$SetVolume;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getVolume ()D
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Stop : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Stop;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlEvent$Toggle : dev/nucleusframework/media/control/MediaControlEvent {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlEvent$Toggle;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaControlService {
+	public static final field INSTANCE Ldev/nucleusframework/media/control/MediaControlService;
+	public final fun attach (Lkotlin/jvm/functions/Function1;)V
+	public final fun configure (Ljava/lang/String;Ljava/lang/String;)V
+	public static synthetic fun configure$default (Ldev/nucleusframework/media/control/MediaControlService;Ljava/lang/String;Ljava/lang/String;ILjava/lang/Object;)V
+	public final fun detach ()V
+	public final fun isAvailable ()Z
+	public final fun setMetadata (Ldev/nucleusframework/media/control/MediaMetadata;)V
+	public final fun setPlaybackState (Ldev/nucleusframework/media/control/MediaPlaybackState;)V
+	public final fun setVolume (D)V
+}
+
+public final class dev/nucleusframework/media/control/MediaMetadata {
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ljava/lang/String;
+	public final fun component5 ()Ljava/lang/Long;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;)Ldev/nucleusframework/media/control/MediaMetadata;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaMetadata;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/Long;ILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaMetadata;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getAlbum ()Ljava/lang/String;
+	public final fun getArtist ()Ljava/lang/String;
+	public final fun getCoverUrl ()Ljava/lang/String;
+	public final fun getDuration ()Ljava/lang/Long;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaPlaybackState {
+	public fun <init> (Ldev/nucleusframework/media/control/MediaPlaybackStatus;Ljava/lang/Long;)V
+	public synthetic fun <init> (Ldev/nucleusframework/media/control/MediaPlaybackStatus;Ljava/lang/Long;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public final fun component2 ()Ljava/lang/Long;
+	public final fun copy (Ldev/nucleusframework/media/control/MediaPlaybackStatus;Ljava/lang/Long;)Ldev/nucleusframework/media/control/MediaPlaybackState;
+	public static synthetic fun copy$default (Ldev/nucleusframework/media/control/MediaPlaybackState;Ldev/nucleusframework/media/control/MediaPlaybackStatus;Ljava/lang/Long;ILjava/lang/Object;)Ldev/nucleusframework/media/control/MediaPlaybackState;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPositionMs ()Ljava/lang/Long;
+	public final fun getStatus ()Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/media/control/MediaPlaybackStatus : java/lang/Enum {
+	public static final field PAUSED Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public static final field PLAYING Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public static final field STOPPED Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+	public static fun values ()[Ldev/nucleusframework/media/control/MediaPlaybackStatus;
+}
+

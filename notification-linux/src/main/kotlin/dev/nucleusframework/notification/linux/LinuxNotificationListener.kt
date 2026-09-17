@@ -7,14 +7,14 @@ package dev.nucleusframework.notification.linux
  * Register via [LinuxNotificationCenter.addListener]; signal monitoring starts automatically
  * when the first listener is added and stops when the last is removed.
  */
-interface LinuxNotificationListener {
+public interface LinuxNotificationListener {
     /**
      * Called when a notification is closed.
      *
      * @param notificationId The ID of the closed notification.
      * @param reason         Why the notification was closed.
      */
-    fun onClosed(
+    public fun onClosed(
         notificationId: Int,
         reason: CloseReason,
     ) {}
@@ -25,7 +25,7 @@ interface LinuxNotificationListener {
      * @param notificationId The ID of the notification whose action was invoked.
      * @param actionKey      The key of the invoked action (e.g. [NotificationAction.DEFAULT_KEY]).
      */
-    fun onActionInvoked(
+    public fun onActionInvoked(
         notificationId: Int,
         actionKey: String,
     ) {}
@@ -38,7 +38,7 @@ interface LinuxNotificationListener {
      * @param notificationId The ID of the notification.
      * @param token          The activation token string.
      */
-    fun onActivationToken(
+    public fun onActivationToken(
         notificationId: Int,
         token: String,
     ) {}

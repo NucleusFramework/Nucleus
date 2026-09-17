@@ -8,9 +8,9 @@ package dev.nucleusframework.freedesktop.icons
  *
  * Use [Custom] for icon names not covered by the spec, file paths, or `file://` URIs.
  */
-sealed interface FreedesktopIcon {
+public sealed interface FreedesktopIcon {
     /** The icon name, file path, or URI string sent over D-Bus. */
-    val value: String
+    public val value: String
 
     /**
      * A custom icon name, absolute file path, or `file://` URI.
@@ -22,11 +22,11 @@ sealed interface FreedesktopIcon {
      * ```
      */
     @JvmInline
-    value class Custom(
+    public value class Custom(
         override val value: String,
     ) : FreedesktopIcon
 
-    companion object {
+    public companion object {
         /**
          * Returns a country flag icon for the given ISO 3166-1 alpha-2 country code.
          *
@@ -34,11 +34,11 @@ sealed interface FreedesktopIcon {
          * FreedesktopIcon.flag("fr") // flag-fr
          * ```
          */
-        fun flag(countryCode: String): FreedesktopIcon = Custom("flag-${countryCode.lowercase()}")
+        public fun flag(countryCode: String): FreedesktopIcon = Custom("flag-${countryCode.lowercase()}")
     }
 
     // ── Actions ─────────────────────────────────────────────────────
-    enum class Action(
+    public enum class Action(
         override val value: String,
     ) : FreedesktopIcon {
         ADDRESS_BOOK_NEW("address-book-new"),
@@ -147,14 +147,14 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Animations ──────────────────────────────────────────────────
-    enum class Animation(
+    public enum class Animation(
         override val value: String,
     ) : FreedesktopIcon {
         PROCESS_WORKING("process-working"),
     }
 
     // ── Applications ────────────────────────────────────────────────
-    enum class Application(
+    public enum class Application(
         override val value: String,
     ) : FreedesktopIcon {
         ACCESSORIES_CALCULATOR("accessories-calculator"),
@@ -180,7 +180,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Categories ──────────────────────────────────────────────────
-    enum class Category(
+    public enum class Category(
         override val value: String,
     ) : FreedesktopIcon {
         APPLICATIONS_ACCESSORIES("applications-accessories"),
@@ -205,7 +205,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Devices ─────────────────────────────────────────────────────
-    enum class Device(
+    public enum class Device(
         override val value: String,
     ) : FreedesktopIcon {
         AUDIO_CARD("audio-card"),
@@ -238,7 +238,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Emblems ─────────────────────────────────────────────────────
-    enum class Emblem(
+    public enum class Emblem(
         override val value: String,
     ) : FreedesktopIcon {
         DEFAULT("emblem-default"),
@@ -257,7 +257,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Emotes ──────────────────────────────────────────────────────
-    enum class Emote(
+    public enum class Emote(
         override val value: String,
     ) : FreedesktopIcon {
         FACE_ANGEL("face-angel"),
@@ -284,7 +284,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── MIME Types ──────────────────────────────────────────────────
-    enum class MimeType(
+    public enum class MimeType(
         override val value: String,
     ) : FreedesktopIcon {
         APPLICATION_X_EXECUTABLE("application-x-executable"),
@@ -305,7 +305,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Places ──────────────────────────────────────────────────────
-    enum class Place(
+    public enum class Place(
         override val value: String,
     ) : FreedesktopIcon {
         FOLDER("folder"),
@@ -320,7 +320,7 @@ sealed interface FreedesktopIcon {
     }
 
     // ── Status ──────────────────────────────────────────────────────
-    enum class Status(
+    public enum class Status(
         override val value: String,
     ) : FreedesktopIcon {
         APPOINTMENT_MISSED("appointment-missed"),

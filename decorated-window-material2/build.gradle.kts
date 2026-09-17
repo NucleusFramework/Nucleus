@@ -15,14 +15,18 @@ val publishVersion =
         ?: "1.0.0"
 
 dependencies {
-    // Compile against decorated-window-jbr API but let the consumer choose the runtime
-    // implementation: either :decorated-window-jbr (JBR) or :decorated-window-jni.
-    compileOnly(project(":decorated-window-jbr"))
+    // Window/dialog wrappers only add styling on top of nucleus-application's
+    // Tao-backed window; the app brings both at runtime.
     compileOnly(project(":decorated-window-tao"))
     compileOnly(project(":nucleus-application"))
     api(project(":core-runtime"))
     api(libs.compose.desktop.common)
     implementation(libs.compose.material)
+    testImplementation(kotlin("test"))
+    testImplementation(project(":decorated-window-core"))
+    testImplementation(compose.desktop.currentOs)
+    testImplementation(libs.compose.material)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 java {

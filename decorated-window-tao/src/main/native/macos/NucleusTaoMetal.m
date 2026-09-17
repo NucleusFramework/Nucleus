@@ -22,6 +22,8 @@
 #import <stdatomic.h>
 #import <stdio.h>
 #include <stdint.h>
+#include <string.h>
+#include <math.h>
 #import <jni.h>
 
 // Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
@@ -96,6 +98,24 @@ static const char kTaoPassthroughViewKey = 13;
 // Last themed fallback background ARGB. Applied to NSWindow and CAMetalLayer so
 // AppKit fullscreen/title-bar animations never reveal the default white window.
 static const char kTaoBackgroundArgbKey = 14;
+// NSNumber(int): single window transparency mode.
+//   0 OFF     — opaque themed background
+//   1 REGIONS — window stays opaque (System Settings-style materials get a
+//               wallpaper-only backdrop); CAMetalLayer is non-opaque so
+//               in-window material panes show through alpha-0 Compose pixels
+//   2 FULL    — full-window per-pixel transparency (#416): window non-opaque,
+//               desktop composites through alpha-0 pixels
+// FULL is creation-time and is never demoted by glass REGIONS/OFF requests.
+static const char kTaoTransparentModeKey = 16;
+// Holds the NucleusTaoZoomButtonResponder that flips `isMovable` back on
+// while the cursor hovers the zoom button, so AppKit builds the full window
+// tiling hover menu ("Move & Resize" / "Fill & Arrange") despite the window
+// being kept non-movable at rest (issue #497).
+static const char kTaoZoomResponderKey = 19;
+
+#define TAO_TRANSPARENCY_OFF     0
+#define TAO_TRANSPARENCY_REGIONS 1
+#define TAO_TRANSPARENCY_FULL    2
 
 // Same metrics as decorated-window-jni's applyConstraints — keeps the
 // traffic-lights at the same offsets Apple's own apps use.
@@ -147,6 +167,7 @@ static void ensureTaoMenuBarEventHandler(void);
 static JavaVM *sMetalJVM = NULL;
 static jclass sMetalBridgeClass = NULL;       // global ref
 static jmethodID sMetalOnOffsetChanged = NULL;
+static jmethodID sMetalOnFullscreenPrepare = NULL;
 static atomic_bool sMetalCallbacksEnabled = ATOMIC_VAR_INIT(false);
 static atomic_bool sMetalShutdownInProgress = ATOMIC_VAR_INIT(false);
 
@@ -161,6 +182,8 @@ static void ensureMetalJVMCached(JNIEnv *env) {
             (*env)->DeleteLocalRef(env, local);
             sMetalOnOffsetChanged = (*env)->GetStaticMethodID(
                 env, sMetalBridgeClass, "onMenuBarOffsetChanged", "(JF)V");
+            sMetalOnFullscreenPrepare = (*env)->GetStaticMethodID(
+                env, sMetalBridgeClass, "onFullscreenPrepare", "(JII)V");
             atomic_store(&sMetalCallbacksEnabled, true);
         }
     });
@@ -191,6 +214,36 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOffsetChanged,
                                  nsViewPtr, (jfloat)offset);
     if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionClear(env);
+    }
+}
+
+// Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
+// and BLOCKS until the JVM side has presented that frame. Invoked from
+// `windowWillEnterFullScreen:` on the macOS main thread — the same thread the
+// Tao loop and the Compose host run on, so the host's blocking render runs
+// re-entrantly on this stack. That is the point: AppKit snapshots the window
+// as soon as this notification finishes, so the frame has to exist by then
+// (#327). No-op if the JVM side never registered a prepare for this view.
+static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx) {
+    if (!atomic_load(&sMetalCallbacksEnabled)) return;
+    if (!sMetalJVM || !sMetalBridgeClass || !sMetalOnFullscreenPrepare) return;
+
+    JNIEnv *env = NULL;
+    jint status = (*sMetalJVM)->GetEnv(sMetalJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sMetalJVM)->AttachCurrentThreadAsDaemon(sMetalJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+
+    (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
+                                 nsViewPtr, widthPx, heightPx);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
         (*env)->ExceptionClear(env);
     }
 }
@@ -240,6 +293,28 @@ typedef struct {
     // accurate; if render + present overruns a refresh it ends up in the past
     // and Metal presents immediately (graceful — not a hard 1:1 vsync).
     _Atomic uint64_t next_present_host_time;
+
+    // View size in points just before entering fullscreen. AppKit restores
+    // this frame on the way out, so it is the *final* layout for the exit
+    // transition — the size we must have rendered before AppKit snapshots
+    // (see willExitFS / #327). Zero until the first fullscreen entry.
+    double windowed_w_points;
+    double windowed_h_points;
+    // Previous NSWindow frame origin (bottom-left screen coords), used by
+    // nativeResize to pick a live-resize contentsGravity that anchors the
+    // stale drawable to the window's *fixed* corner instead of letting
+    // Core Animation rubber-band it around the layer centre. NAN until the
+    // first resize.
+    double prev_origin_x;
+    double prev_origin_y;
+
+    // YES for attachments created by nativeAttachOverlay (popup NSPanels,
+    // in-window NativeView overlay subviews). Overlays never install the
+    // window-level associated objects (fullscreen observer, attachment key —
+    // see the observer-skip note on nativeAttachOverlay); nativeDetach reads
+    // this so an overlay dispose can't tear down state owned by the host
+    // window's primary attachment.
+    BOOL isOverlay;
 } NucleusTaoMetalAttachment;
 
 #define HANDLE_OF(ptr) ((NucleusTaoMetalAttachment *)(uintptr_t)(ptr))
@@ -309,11 +384,94 @@ static void applyWindowBackgroundColor(NSWindow *window, NSView *view, jint argb
     }
 }
 
+static int taoTransparencyMode(NSWindow *window) {
+    NSNumber *mode = objc_getAssociatedObject(window, &kTaoTransparentModeKey);
+    return mode != nil ? mode.intValue : TAO_TRANSPARENCY_OFF;
+}
+
+// Clears the fallback layer backgrounds only, leaving the NSWindow color
+// untouched — used in regions mode where the window itself stays opaque.
+static void clearLayerBackgrounds(NSWindow *window, NSView *view) {
+    CGColorRef clear = [NSColor clearColor].CGColor;
+    NSView *contentView = window.contentView;
+    if (contentView != nil && contentView.layer != nil) {
+        contentView.layer.backgroundColor = clear;
+    }
+    if (view != nil && view.layer != nil) {
+        view.layer.backgroundColor = clear;
+    }
+    NucleusTaoMetalAttachment *att = attachmentForWindow(window);
+    if (att != NULL && att->layer != nil) {
+        att->layer.backgroundColor = clear;
+    }
+}
+
 static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
     if (window == nil) return;
+    // Glass regions active: never repaint the stored opaque color over the
+    // fallback layers — this path re-runs during fullscreen transitions and
+    // toolbar toggles, which would otherwise cover the native materials.
+    int mode = taoTransparencyMode(window);
     NSNumber *stored = objc_getAssociatedObject(window, &kTaoBackgroundArgbKey);
     jint argb = stored != nil ? stored.intValue : (jint)0xFFFFFFFF;
+    if (mode == TAO_TRANSPARENCY_FULL) {
+        // #416: non-opaque window; ARGB (incl. alpha) on NSWindow; layers clear
+        // so Compose clear alpha is what the compositor sees.
+        window.opaque = NO;
+        window.backgroundColor = colorFromArgb(argb);
+        clearLayerBackgrounds(window, view);
+        NucleusTaoMetalAttachment *att = attachmentForWindow(window);
+        if (att != NULL && att->layer != nil) {
+            att->layer.opaque = NO;
+        }
+        return;
+    }
+    if (mode == TAO_TRANSPARENCY_REGIONS) {
+        // Window keeps the themed color (it IS opaque — that is what makes
+        // WindowServer feed the materials the wallpaper-only backdrop), but
+        // the layers above the material views must stay clear.
+        window.backgroundColor = colorFromArgb(argb);
+        clearLayerBackgrounds(window, view);
+        return;
+    }
     applyWindowBackgroundColor(window, view, argb);
+}
+
+// Single transparency-mode applier: OFF / REGIONS / FULL.
+// FULL is sticky for the window lifetime of a DecoratedWindow(transparent=true):
+// glass REGIONS/OFF must not demote it (would re-opaque the top-level).
+static void taoApplyWindowTransparencyMode(NSWindow *win, NSView *view, int mode) {
+    if (win == nil) return;
+    int current = taoTransparencyMode(win);
+    if (current == TAO_TRANSPARENCY_FULL && mode != TAO_TRANSPARENCY_FULL) {
+        // Keep FULL. Glass still wants clear layers for material panes.
+        if (mode == TAO_TRANSPARENCY_REGIONS) {
+            NucleusTaoMetalAttachment *att = attachmentForWindow(win);
+            if (att != NULL && att->layer != nil) {
+                att->layer.opaque = NO;
+            }
+            clearLayerBackgrounds(win, view);
+        }
+        return;
+    }
+
+    objc_setAssociatedObject(win, &kTaoTransparentModeKey,
+                             @(mode),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+    // REGIONS needs an opaque window for System Settings materials.
+    // FULL needs a non-opaque window so the desktop composites through.
+    win.opaque = (mode == TAO_TRANSPARENCY_FULL) ? NO : YES;
+
+    // The CAMetalLayer is only ever made non-opaque, never opaque again: a
+    // live layer keeps already-issued opaque drawables, and the first frames
+    // after flipping back render alpha-0 pixels as solid black. Leaving it
+    // non-opaque costs nothing once the window itself is opaque again.
+    NucleusTaoMetalAttachment *att = attachmentForWindow(win);
+    if (att != NULL && att->layer != nil && mode != TAO_TRANSPARENCY_OFF) {
+        att->layer.opaque = NO;
+    }
+    applyStoredWindowBackground(win, view);
 }
 
 // ── Replacement traffic-light buttons for fullscreen ────────────────────
@@ -324,8 +482,14 @@ static void applyStoredWindowBackground(NSWindow *window, NSView *view) {
 // solution (matching JBR's AWTButtonsView) is to:
 //   1. Hide the AppKit titlebar container while in fullscreen,
 //   2. Install a custom NSView in the contentView containing 3 NSButtons
-//      created via [NSWindow standardWindowButton:forStyleMask:] — they look
-//      identical to the real traffic-lights and accept the standard actions.
+//      created via [NSWindow standardWindowButton:forStyleMask:].
+//
+// Copies built with the live fullscreen styleMask draw as inactive (gray)
+// because they are not the window's real title-bar widgets (issue #531).
+// At rest we therefore paint the standard active traffic-light colours
+// ourselves; on group hover we reveal the native close/zoom widgets (so the
+// glyphs match AppKit) and keep miniaturise hidden — performMiniaturize: is
+// a no-op in fullscreen, so the button is disabled rather than dead.
 
 // Neutralizes the NSToolbarFullScreenWindow overlay AppKit creates lazily in
 // fullscreen (despite its name it hosts the re-parented native title bar, so
@@ -352,12 +516,45 @@ static void neutralizeToolbarFullScreenWindows(void) {
     }
 }
 
+// Standard Big Sur+ traffic-light sRGB fills. Used for the rest-state
+// placeholders: copies of _NSThemeWidget draw inactive-gray when they are
+// not the window's real title-bar buttons (issue #531).
+static NSColor *taoTrafficCloseColor(void) {
+    return [NSColor colorWithSRGBRed:1.0 green:95.0 / 255.0 blue:87.0 / 255.0 alpha:1.0];
+}
+static NSColor *taoTrafficZoomColor(void) {
+    return [NSColor colorWithSRGBRed:40.0 / 255.0 green:200.0 / 255.0 blue:64.0 / 255.0 alpha:1.0];
+}
+static NSColor *taoTrafficDisabledColor(NSView *view) {
+    BOOL dark = NO;
+    if (@available(macOS 10.14, *)) {
+        NSAppearanceName name = [view.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[ NSAppearanceNameDarkAqua, NSAppearanceNameAqua ]];
+        dark = [name isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    return dark ? [NSColor colorWithWhite:0.40 alpha:1.0]
+                : [NSColor colorWithWhite:0.80 alpha:1.0];
+}
+
+static void taoFillTrafficCircle(NSView *button, NSColor *color) {
+    NSRect r = button.frame;
+    CGFloat d = fmin(MIN(r.size.width, r.size.height),
+                     isTahoeOrLater() ? 14.0 : 12.0);
+    NSRect oval = NSMakeRect(NSMidX(r) - d / 2.0, NSMidY(r) - d / 2.0, d, d);
+    [color setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:oval] fill];
+}
+
 @interface NucleusTaoButtonsView : NSView {
     BOOL _mouseInside;
 }
+- (void)applyHoverState;
 @end
 
 @implementation NucleusTaoButtonsView
+- (BOOL)isOpaque {
+    return NO;
+}
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     for (NSTrackingArea *ta in self.trackingAreas) {
@@ -372,30 +569,51 @@ static void neutralizeToolbarFullScreenWindows(void) {
             userInfo:nil];
     [self addTrackingArea:ta];
 }
-// The buttons only repaint their glyphs when explicitly invalidated: they
-// query _mouseInGroup: at draw time. Synthesizing mouseEntered:/mouseExited:
-// on the buttons instead leaves _NSThemeWidget in an inconsistent hover
-// state on pre-Tahoe macOS — only the zoom button repainted, and its glyph
-// never cleared on exit (issue #310 B1).
-- (void)setButtonsNeedDisplay {
-    for (NSView *btn in self.subviews) [btn setNeedsDisplay:YES];
+// Rest: hide the native copies and paint active-coloured circles (miniaturise
+// stays the disabled gray). Hover: reveal native close/zoom so AppKit draws
+// the glyphs; miniaturise stays hidden because it cannot work in fullscreen.
+- (void)applyHoverState {
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    NSButton *closeBtn = (NSButton *)buttons[0];
+    NSButton *minBtn = (NSButton *)buttons[1];
+    NSButton *zoomBtn = (NSButton *)buttons[2];
+    minBtn.enabled = NO;
+    minBtn.hidden = YES;
+    closeBtn.hidden = !_mouseInside;
+    zoomBtn.hidden = !_mouseInside;
+    [closeBtn setHighlighted:_mouseInside];
+    [zoomBtn setHighlighted:_mouseInside];
+    [self setNeedsDisplay:YES];
 }
 - (void)mouseEntered:(NSEvent *)event {
     (void)event;
     _mouseInside = YES;
-    [self setButtonsNeedDisplay];
+    [self applyHoverState];
 }
 - (void)mouseExited:(NSEvent *)event {
     (void)event;
     _mouseInside = NO;
-    [self setButtonsNeedDisplay];
+    [self applyHoverState];
+}
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSArray<NSView *> *buttons = self.subviews;
+    if (buttons.count < 3) return;
+    if (!_mouseInside) {
+        taoFillTrafficCircle(buttons[0], taoTrafficCloseColor());
+        taoFillTrafficCircle(buttons[1], taoTrafficDisabledColor(self));
+        taoFillTrafficCircle(buttons[2], taoTrafficZoomColor());
+    } else {
+        taoFillTrafficCircle(buttons[1], taoTrafficDisabledColor(self));
+    }
 }
 // Private AppKit hook: standard window buttons ask their superview whether
 // the traffic-light group is hovered before drawing the glyphs. Without it,
 // pre-Tahoe systems never show the symbols on hover (mirrors JBR's
-// AWTButtonsView).
+// AWTButtonsView). Miniaturise is never in the group — it is disabled.
 - (BOOL)_mouseInGroup:(NSButton *)button {
-    (void)button;
+    if (self.subviews.count >= 2 && button == self.subviews[1]) return NO;
     return _mouseInside;
 }
 @end
@@ -447,7 +665,9 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         ? (NSViewMinXMargin | NSViewMinYMargin)
         : NSViewMinYMargin;
 
-    NSUInteger masks = [window styleMask];
+    // Drop FullScreen from the mask: copies built with it draw as inactive
+    // gray and the miniaturise widget is born disabled (issue #531).
+    NSUInteger masks = [window styleMask] & ~NSWindowStyleMaskFullScreen;
     NSArray<NSNumber *> *types = @[
         @(NSWindowCloseButton), @(NSWindowMiniaturizeButton), @(NSWindowZoomButton)
     ];
@@ -470,12 +690,21 @@ static void installFullScreenButtons(NSWindow *window, float titleBarHeight) {
         [btn setFrame:NSMakeRect(centerX - btnWidth / 2.0f,
                                  centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
-        [btn setTarget:window];
-        [btn setAction:actions[idx]];
+        if (idx == 1) {
+            // Miniaturise is a no-op while the window is fullscreen.
+            [btn setEnabled:NO];
+            [btn setTarget:nil];
+            [btn setAction:NULL];
+        } else {
+            [btn setTarget:window];
+            [btn setAction:actions[idx]];
+        }
+        [btn setHidden:YES];
         [container addSubview:btn];
     }
 
     [parent addSubview:container];
+    [container applyHoverState];
     objc_setAssociatedObject(window, &kTaoFullscreenButtonsKey, container,
                              OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
@@ -531,6 +760,7 @@ static void updateFullScreenButtonsPosition(NSWindow *window) {
                                  centerY - btnHeight / 2.0f,
                                  btnWidth, btnHeight)];
     }
+    [container applyHoverState];
 }
 
 // ── Menu bar reveal tracking (Carbon) ───────────────────────────────────
@@ -764,20 +994,51 @@ static void removeMenuBarMonitor(NSWindow *window) {
         w.titleVisibility = NSWindowTitleVisible;
     }
     w.movableByWindowBackground = NO;
+    // Keep the window movable for the whole fullscreen session: the real zoom
+    // button (carrying the hover responder) is hidden in fullscreen, and the
+    // replacement button installed by installFullScreenButtons has none — a
+    // non-movable window would build its hover menu without the tiling
+    // sections again (issue #497). Restored to NO in didExitFS. Mirrors
+    // decorated-window-jni's willEnterFullScreen/didExitFullScreen.
+    [w setMovable:YES];
     // Drop the invisible toolbar to avoid AppKit's white-band glitch.
     if (w.toolbar != nil) {
         objc_setAssociatedObject(w, &kTaoHadToolbarKey, @YES,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         w.toolbar = nil;
     }
-    // Anchor the drawable top-left so AppKit's snapshot-stretch animation
-    // doesn't enlarge our 36 dp title bar visually. The unfilled area picks
-    // up the layer / window background.
+    // Render the final fullscreen layout NOW, then let AppKit scale it.
+    //
+    // AppKit resizes the window to its final size and snapshots it as soon as
+    // this notification returns, then stretches that snapshot for the whole
+    // ~550ms animation. Left alone, the snapshot holds the previous, smaller
+    // buffer: pinned top-left it sits 1:1 in the corner of an already
+    // fullscreen-sized window (frozen, then a snap at the end), and scaled it
+    // blows up past its final size (measured: a 28 dp bar reaching 1.74x
+    // before popping back). Neither is what AppKit's own apps do — they ramp
+    // the *final* layout from compressed to 1:1 (#327).
+    //
+    // So: hand the JVM the size the window is about to take and block until it
+    // has presented that frame, then ask for Resize gravity. The snapshot now
+    // holds the fullscreen layout, AppKit scales it down into the current
+    // frame and grows it to 1:1 — the native ramp. Exit needs no prepare: its
+    // pre-transition buffer is already the large one (see willExitFS).
     NucleusTaoMetalAttachment *att = [self attachment];
     if (att != NULL && att->layer != nil) {
+        // Capture before the prepare below resizes us: this is the frame
+        // AppKit will restore on exit, i.e. the exit transition's final layout.
+        NSSize windowed = _view.bounds.size;
+        att->windowed_w_points = windowed.width;
+        att->windowed_h_points = windowed.height;
+        NSScreen *screen = w.screen ?: [NSScreen mainScreen];
+        CGFloat scale = w.backingScaleFactor > 0 ? w.backingScaleFactor : screen.backingScaleFactor;
+        NSSize target = screen.frame.size;
+        notifyFullscreenPrepare((jlong)(uintptr_t)(__bridge void *) _view,
+                                (jint) lround(target.width * scale),
+                                (jint) lround(target.height * scale));
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
-        att->layer.contentsGravity = kCAGravityTopLeft;
+        att->layer.contentsGravity = kCAGravityResize;
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
@@ -790,13 +1051,25 @@ static void removeMenuBarMonitor(NSWindow *window) {
     // Tear down the menu bar monitor before the exit animation so AppKit
     // can transition its native chrome without our monitor racing it.
     removeMenuBarMonitor(w);
-    // Same gravity trick as willEnterFS: pin the drawable top-left so the
-    // shrink-animation doesn't crop the content visually.
+    // Mirror of willEnterFS: the transition snapshot has to hold the *final*
+    // layout, and on the way out that is the windowed one AppKit is about to
+    // restore — not the fullscreen buffer we currently hold. Measured against
+    // a native AppKit baseline, exiting stretches the windowed layout up and
+    // shrinks it to 1:1 (bar height 13 -> 16 -> 13); leaving the fullscreen
+    // buffer in place instead compresses it and pops at the end (#327).
     NucleusTaoMetalAttachment *att = [self attachment];
     if (att != NULL && att->layer != nil) {
+        if (att->windowed_w_points > 0 && att->windowed_h_points > 0) {
+            CGFloat scale = w.backingScaleFactor > 0
+                ? w.backingScaleFactor
+                : [NSScreen mainScreen].backingScaleFactor;
+            notifyFullscreenPrepare((jlong)(uintptr_t)(__bridge void *) _view,
+                                    (jint) lround(att->windowed_w_points * scale),
+                                    (jint) lround(att->windowed_h_points * scale));
+        }
         [CATransaction begin];
         [CATransaction setDisableActions:YES];
-        att->layer.contentsGravity = kCAGravityTopLeft;
+        att->layer.contentsGravity = kCAGravityResize;
         [CATransaction commit];
     }
     applyStoredWindowBackground(w, _view);
@@ -901,6 +1174,11 @@ static void removeMenuBarMonitor(NSWindow *window) {
     [[w standardWindowButton:NSWindowCloseButton] setHidden:NO];
     [[w standardWindowButton:NSWindowMiniaturizeButton] setHidden:NO];
     [[w standardWindowButton:NSWindowZoomButton] setHidden:NO];
+    // Back to the non-movable at-rest state (movable since willEnterFS). Also
+    // clears the latched movable=YES when fullscreen was entered by clicking
+    // the zoom button mid-hover — the button is hidden before mouseExited can
+    // deliver, so the responder never restores it (issue #497).
+    [w setMovable:NO];
     // Reinstall the invisible toolbar (corner radius) and reapply the
     // button-centering constraints for our custom title bar height.
     reinstallToolbarIfNeeded(w);
@@ -931,6 +1209,12 @@ static void ensureFrameClassLoaded(JNIEnv *env) {
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttach(
         JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    // Prime the native -> JVM callback plumbing for every window, not just the
+    // ones that happen to install a menu-bar monitor: the fullscreen-transition
+    // prepare (#327) fires from an AppKit notification with no JNIEnv of its
+    // own, so the JavaVM has to be cached by then.
+    ensureMetalJVMCached(env);
+
 
     NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
     NTLOG("nativeAttach view=%p", view);
@@ -965,6 +1249,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttach(
     att->device = device;
     att->queue  = [device newCommandQueue];
     att->view   = view;
+    att->prev_origin_x = NAN;
+    att->prev_origin_y = NAN;
 
     // Install fullscreen observer so the CAMetalLayer wiring survives an
     // AppKit toggleFullScreen: transition. We hang the attachment pointer
@@ -1047,6 +1333,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAttachOverlay(
     att->device = device;
     att->queue  = [device newCommandQueue];
     att->view   = view;
+    att->prev_origin_x = NAN;
+    att->prev_origin_y = NAN;
+    att->isOverlay = YES;
     return (jlong)(uintptr_t)att;
 }
 
@@ -1193,6 +1482,151 @@ static NucleusTaoPassthroughView *ensureTaoPassthroughView(NSWindow *window) {
     return view;
 }
 
+// ── Zoom-button hover: window tiling menu ────────────────────────────────
+//
+// nativeConfigureChrome keeps the window `isMovable == NO` so AppKit's
+// title-bar machinery doesn't intercept clicks meant for the Compose title
+// bar. But AppKit also gates window tiling on `isMovable`: hovering the zoom
+// button of a non-movable window builds a menu with only the "Full Screen"
+// section — the "Move & Resize" / "Fill & Arrange" tiling items are omitted
+// (issue #497). Flip movable back on while the cursor is over the zoom
+// button so the hover menu is built against a movable window, and restore it
+// when the cursor leaves. Ported from decorated-window-jni's
+// NucleusZoomButtonResponder (which mirrors JBR's
+// AWTWindowZoomButtonMouseResponder).
+@interface NucleusTaoZoomButtonResponder : NSObject
+@property (nonatomic, weak) NSWindow *window;
+@property (nonatomic, strong) NSTrackingArea *trackingArea;
+@end
+
+@implementation NucleusTaoZoomButtonResponder
+
+- (instancetype)initWithWindow:(NSWindow *)window {
+    self = [super init];
+    if (self) {
+        _window = window;
+        NSView *zoomButton = [window standardWindowButton:NSWindowZoomButton];
+        if (zoomButton) {
+            // NSTrackingInVisibleRect keeps the rect in sync with the button's
+            // current bounds, so constraint updates don't leave a stale hit area.
+            _trackingArea = [[NSTrackingArea alloc]
+                initWithRect:NSZeroRect
+                     options:(NSTrackingMouseEnteredAndExited |
+                              NSTrackingActiveInKeyWindow |
+                              NSTrackingInVisibleRect)
+                       owner:self
+                    userInfo:nil];
+            [zoomButton addTrackingArea:_trackingArea];
+        }
+    }
+    return self;
+}
+
+- (void)dealloc {
+    if (_trackingArea) {
+        NSView *zoomButton = _window ? [_window standardWindowButton:NSWindowZoomButton] : nil;
+        if (zoomButton) {
+            [zoomButton removeTrackingArea:_trackingArea];
+        }
+    }
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    (void)event;
+    NSWindow *w = self.window;
+    if (w && ![w isMovable]) {
+        [w setMovable:YES];
+    }
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    (void)event;
+    NSWindow *w = self.window;
+    if (w && objc_getAssociatedObject(w, &kTaoTitleBarHeightKey)) {
+        [w setMovable:NO];
+    }
+}
+
+@end
+
+static void installTaoZoomButtonResponder(NSWindow *window) {
+    if (objc_getAssociatedObject(window, &kTaoZoomResponderKey)) return;
+    NucleusTaoZoomButtonResponder *responder =
+        [[NucleusTaoZoomButtonResponder alloc] initWithWindow:window];
+    // Don't cache a dead responder when the zoom button wasn't there yet —
+    // a later call can then install a live one (mirrors
+    // ensureTaoPassthroughView's not-materialised-yet handling).
+    if (responder.trackingArea == nil) return;
+    objc_setAssociatedObject(window, &kTaoZoomResponderKey, responder,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// ── _adjustWindowToScreen swizzle ────────────────────────────────────────
+//
+// macOS routes window snapping/tiling moves through the private
+// _adjustWindowToScreen, which no-ops on a non-movable window. Temporarily
+// re-enable movable around the original implementation so a chosen tiling
+// item (or edge snap) actually moves the window even though movable is
+// normally NO. Ported from decorated-window-jni (mirrors JBR's
+// AWTWindow_Normal._adjustWindowToScreen). The re-entrancy guard prevents
+// crashes when the original IMP or updateFullScreenButtonsPosition triggers
+// another _adjustWindowToScreen call on older macOS versions.
+static IMP  sTaoOriginalAdjustWindowToScreen = NULL;
+static BOOL sTaoInAdjustWindow = NO;
+
+static void nucleus_tao_adjustWindowToScreen(id self, SEL _cmd) {
+    if (sTaoInAdjustWindow) {
+        // Re-entrant call — just forward to the original implementation.
+        if (sTaoOriginalAdjustWindowToScreen) {
+            ((void (*)(id, SEL))sTaoOriginalAdjustWindowToScreen)(self, _cmd);
+        }
+        return;
+    }
+    sTaoInAdjustWindow = YES;
+
+    NSNumber *storedHeight = objc_getAssociatedObject(self, &kTaoTitleBarHeightKey);
+    BOOL needsRestore = storedHeight != nil && ![(NSWindow *)self isMovable];
+    if (needsRestore) {
+        [(NSWindow *)self setMovable:YES];
+    }
+
+    if (sTaoOriginalAdjustWindowToScreen) {
+        ((void (*)(id, SEL))sTaoOriginalAdjustWindowToScreen)(self, _cmd);
+    }
+
+    updateFullScreenButtonsPosition((NSWindow *)self);
+
+    if (needsRestore) {
+        [(NSWindow *)self setMovable:NO];
+    }
+
+    sTaoInAdjustWindow = NO;
+}
+
+// Called only from the main thread (applyButtonConstraints call sites), so
+// no synchronization is needed beyond the idempotency check.
+static void ensureTaoAdjustWindowSwizzle(NSWindow *window) {
+    Class cls = object_getClass(window);
+    SEL sel = NSSelectorFromString(@"_adjustWindowToScreen");
+    Method method = class_getInstanceMethod(cls, sel);
+    if (!method) {
+        // Private AppKit method gone (future macOS): the hover menu will
+        // still show the tiling items but performing one no-ops, so leave a
+        // trace for diagnosis.
+        NTLOG("_adjustWindowToScreen not found — tiling moves stay blocked");
+        return;
+    }
+    // Already swizzled (this class or an ancestor we already patched).
+    if (method_getImplementation(method) == (IMP)nucleus_tao_adjustWindowToScreen) return;
+    // Capture exactly once: re-capturing after a third party wrapped our hook
+    // would store *their* hook (which chains back to ours) as the "original"
+    // and recurse on the next snap.
+    if (sTaoOriginalAdjustWindowToScreen == NULL) {
+        sTaoOriginalAdjustWindowToScreen = method_getImplementation(method);
+    }
+    method_setImplementation(method, (IMP)nucleus_tao_adjustWindowToScreen);
+}
+
 /**
  * Repositions the standard NSWindow buttons (close / miniaturise / zoom) so
  * they are vertically centred inside a custom-height title bar drawn by
@@ -1212,6 +1646,22 @@ static void applyButtonConstraints(NSWindow *window, float titleBarHeight) {
     NSView *titlebarContainer = titlebar ? titlebar.superview : nil;
     NSView *themeFrame        = titlebarContainer ? titlebarContainer.superview : nil;
     if (themeFrame == nil) return;
+
+    // Window tiling despite `isMovable == NO`: the hover responder makes the
+    // zoom-button menu offer the tiling sections, and the swizzle lets the
+    // chosen tile actually move the window (issue #497).
+    ensureTaoAdjustWindowSwizzle(window);
+    installTaoZoomButtonResponder(window);
+
+    // Re-assert the at-rest state on every layout push: a mouseExited the
+    // responder never received (zoom button hidden mid-hover, key-window
+    // change) would otherwise leave movable=YES latched, and AppKit would
+    // start intercepting title-bar mouse-downs meant for Compose. Skipped in
+    // fullscreen, where the window stays movable for the whole session (see
+    // willEnterFS). Mirrors decorated-window-jni's nativeApplyTitleBar.
+    if ((window.styleMask & NSWindowStyleMaskFullScreen) == 0) {
+        [window setMovable:NO];
+    }
 
     // Tear down our previously-applied constraint set + restore autoresizing.
     removeButtonConstraints(window);
@@ -1330,16 +1780,24 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetButtonLayout
                                  @((BOOL)(isRtl == JNI_TRUE)),
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         NSNumber *h = objc_getAssociatedObject(win, &kTaoTitleBarHeightKey);
-        if (h != nil) {
-            applyButtonConstraints(win, h.floatValue);
-        }
-        // If we're currently in fullscreen, re-install the replacement
-        // traffic-light container so the new RTL flag takes effect on the
-        // overlay buttons too (otherwise they'd stay anchored on the side
-        // matched at the moment fullscreen was entered).
-        if (([win styleMask] & NSWindowStyleMaskFullScreen) != 0 && h != nil) {
+        if (h == nil) return;
+        BOOL isFullScreen = ([win styleMask] & NSWindowStyleMaskFullScreen) != 0;
+        if (isFullScreen) {
+            // In fullscreen only re-install the replacement traffic-light
+            // container so the new RTL flag takes effect on the overlay
+            // buttons (otherwise they'd stay anchored on the side matched at
+            // the moment fullscreen was entered). Never touch the manual
+            // constraints here: willEnterFS removed them so AppKit's animated
+            // toggleFullScreen: can run, and re-activating them mid-session
+            // leaves them active during the exit animation — the exact
+            // constraint conflict removeButtonConstraints exists to prevent
+            // (issue #510). didExitFS re-applies them with the stored RTL
+            // flag, so the windowed layout picks up the new side on exit.
+            // Mirrors decorated-window-jni's nativeSetRTL.
             removeFullScreenButtons(win);
             installFullScreenButtons(win, h.floatValue);
+        } else {
+            applyButtonConstraints(win, h.floatValue);
         }
     };
     if ([NSThread isMainThread]) apply();
@@ -1425,6 +1883,307 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeApplyLargeCorne
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
+/*
+ * Window-level transparency for the glass regions. The window itself stays
+ * opaque — that is precisely what makes the system hand its behind-window
+ * materials the System Settings-style desktop-tinted backdrop — while the
+ * CAMetalLayer is cleared to alpha 0 so a material inserted below the content
+ * shows through wherever Compose paints nothing. Ref-counting lives on the
+ * Kotlin side (WindowTransparencyMode).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowTransparencyMode(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        // Glass regions: REGIONS on, OFF when the last region releases.
+        // No-op demotion if FULL is sticky (#416).
+        int current = taoTransparencyMode(win);
+        if (enabled == JNI_TRUE) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_REGIONS);
+        } else if (current == TAO_TRANSPARENCY_REGIONS) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_OFF);
+        }
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetFullyTransparent(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jboolean enabled) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        // #416: FULL mode on the single transparency-mode slot.
+        if (enabled == JNI_TRUE) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_FULL);
+        } else if (taoTransparencyMode(win) == TAO_TRANSPARENCY_FULL) {
+            taoApplyWindowTransparencyMode(win, view, TAO_TRANSPARENCY_OFF);
+        }
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsWindowOpaque(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return JNI_TRUE;
+    __block jboolean result = JNI_TRUE;
+    dispatch_block_t read = ^{
+        NSWindow *win = view.window;
+        result = (win != nil && win.opaque) ? JNI_TRUE : JNI_FALSE;
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return result;
+}
+
+// ── Glass regions: hosted NSSplitViewController (the Apple pattern) ──────
+//
+// Ground truth (validated empirically): a public NSVisualEffectView with
+// behind-window blending composites the REAL content behind the window —
+// other windows included. The System Settings/Finder sidebar look (desktop
+// wallpaper only, intervening windows ignored) is applied by AppKit's own
+// components: an NSSplitViewItem created with sidebar/contentList/inspector
+// factories gets the WindowServer desktop-tinted backdrop, and that plumbing
+// works even when the split view is hosted as a plain subview. So each glass
+// region hosts a real NSSplitViewController — public API used exactly as
+// intended, no private selectors — with the material pane pinned to the
+// region size and the filler pane clipped away by the container.
+
+static const char kTaoGlassRegionSplitVcKey = 17;
+static const char kTaoGlassRegionKindKey = 18;
+
+// Decorative-only container: the region renders BELOW the Compose surface
+// and must never capture mouse events — NSSplitView installs divider
+// tracking areas that would otherwise steal clicks/cursor updates from the
+// Compose content above. Returning nil makes the whole subtree
+// click-through (hitTest: covers cursorUpdate routing too).
+@interface TaoGlassRegionContainerView : NSView
+@end
+
+@implementation TaoGlassRegionContainerView
+- (NSView *)hitTest:(NSPoint)point {
+    return nil;
+}
+@end
+
+#define TAO_GLASS_REGION_KIND_SIDEBAR      0
+#define TAO_GLASS_REGION_KIND_CONTENT_LIST 1
+#define TAO_GLASS_REGION_KIND_INSPECTOR    2
+
+
+/*
+ * Inserts a region that renders AppKit's wallpaper-tinted material below the
+ * content view, sized later via nativeSetGlassRegionFrame from Compose
+ * layout coordinates. [kindOrdinal] is WindowGlassRegionKind.nativeValue
+ * (TAO_GLASS_REGION_KIND_*: 0 sidebar / 1 content list / 2 inspector) —
+ * not enum ordinal, so Kotlin reordering cannot swap materials.
+ * Returns a CFBridgingRetain'ed pointer; release via nativeRemoveGlassRegion.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAddGlassRegion(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jint kindOrdinal) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return 0;
+    __block jlong result = 0;
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        NSView *contentView = win.contentView;
+        NSView *frameView = contentView.superview;
+        if (win == nil || contentView == nil || frameView == nil) return;
+
+        NSView *container = [[TaoGlassRegionContainerView alloc] initWithFrame:NSZeroRect];
+        container.wantsLayer = YES;
+        container.layer.masksToBounds = YES;
+        // No implicit CoreAnimation on geometry: the region must track the
+        // Compose panel frame-for-frame, and the default ~0.25s animation
+        // reads as the material lagging behind during a live resize.
+        container.layer.actions = @{
+            @"position": [NSNull null],
+            @"bounds": [NSNull null],
+            @"frame": [NSNull null],
+            @"cornerRadius": [NSNull null],
+        };
+
+        NSViewController *paneVC = [[NSViewController alloc] init];
+        paneVC.view = [[NSView alloc] initWithFrame:NSZeroRect];
+        NSViewController *fillVC = [[NSViewController alloc] init];
+        fillVC.view = [[NSView alloc] initWithFrame:NSZeroRect];
+
+        NSSplitViewItem *pane = nil;
+        switch (kindOrdinal) {
+            case TAO_GLASS_REGION_KIND_CONTENT_LIST:
+                pane = [NSSplitViewItem contentListWithViewController:paneVC];
+                break;
+            case TAO_GLASS_REGION_KIND_INSPECTOR:
+                if ([NSSplitViewItem respondsToSelector:
+                        @selector(inspectorWithViewController:)]) {
+                    pane = [NSSplitViewItem inspectorWithViewController:paneVC];
+                } else {
+                    // macOS < 14: closest system pane material.
+                    pane = [NSSplitViewItem contentListWithViewController:paneVC];
+                }
+                break;
+            default:
+                pane = [NSSplitViewItem sidebarWithViewController:paneVC];
+                break;
+        }
+        pane.canCollapse = NO;
+
+        NSSplitViewController *split = [[NSSplitViewController alloc] init];
+        // Inspector panes sit on the trailing edge of their split view; the
+        // filler goes first so the material pane hugs the container.
+        if (kindOrdinal == TAO_GLASS_REGION_KIND_INSPECTOR) {
+            [split addSplitViewItem:
+                [NSSplitViewItem splitViewItemWithViewController:fillVC]];
+            [split addSplitViewItem:pane];
+        } else {
+            [split addSplitViewItem:pane];
+            [split addSplitViewItem:
+                [NSSplitViewItem splitViewItemWithViewController:fillVC]];
+        }
+        split.splitView.dividerStyle = NSSplitViewDividerStyleThin;
+        // The split view spans the WHOLE window, exactly like a real AppKit
+        // app — that is the layout AppKit expects, and it keeps the pane's
+        // safe-area/titlebar handling intact. The container simply clips it
+        // to the Compose panel's rect. Constraints are anchored to the theme
+        // frame (not the container), so they never need updating: only the
+        // pane thickness follows the region.
+        NSView *splitView = split.view;
+        splitView.translatesAutoresizingMaskIntoConstraints = NO;
+        [container addSubview:splitView];
+        // The container must already be in the window hierarchy: the
+        // constraints below reference the theme frame, and Auto Layout
+        // resolves them against the nearest common ancestor.
+        [frameView addSubview:container
+                   positioned:NSWindowBelow
+                   relativeTo:contentView];
+        [NSLayoutConstraint activateConstraints:@[
+            [splitView.leadingAnchor constraintEqualToAnchor:frameView.leadingAnchor],
+            [splitView.trailingAnchor constraintEqualToAnchor:frameView.trailingAnchor],
+            [splitView.topAnchor constraintEqualToAnchor:frameView.topAnchor],
+            [splitView.bottomAnchor constraintEqualToAnchor:frameView.bottomAnchor],
+        ]];
+        // The controller (and its view hierarchy) must outlive the JNI call.
+        objc_setAssociatedObject(container, &kTaoGlassRegionSplitVcKey, split,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(container, &kTaoGlassRegionKindKey,
+                                 @(kindOrdinal),
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+        result = (jlong)(uintptr_t)CFBridgingRetain(container);
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+    return result;
+}
+
+/* [x, y, w, h] in points, top-left origin in Compose scene coordinates
+ * (== content view coordinates: the window is fullSizeContentView).
+ * [cornerRadius] rounds the region's clip so the material can sit behind
+ * rounded panels (Tahoe floating sidebars). */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetGlassRegionFrame(
+        JNIEnv *env, jclass clazz, jlong regionPtr,
+        jfloat x, jfloat y, jfloat w, jfloat h, jfloat cornerRadius) {
+    NSView *region = (__bridge NSView *)(void *)(uintptr_t)regionPtr;
+    if (region == nil) return;
+    dispatch_block_t apply = ^{
+        NSView *superview = region.superview;
+        if (superview == nil) return;
+        CGFloat winH = superview.bounds.size.height;
+
+        // Geometry tracks the Compose panel exactly, with no implicit
+        // CoreAnimation: the default ~0.25s animation on a layer-backed
+        // view reads as the material lagging behind during a live resize.
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        region.frame = NSMakeRect((CGFloat)x, winH - (CGFloat)y - (CGFloat)h,
+                                  (CGFloat)w, (CGFloat)h);
+        if (region.layer != nil) {
+            region.layer.cornerRadius = (CGFloat)cornerRadius;
+            region.layer.cornerCurve = kCACornerCurveContinuous;
+        }
+
+        // Inside the same transaction: the pane thickness drives the split
+        // view's own layout, and left outside it AppKit animates that layout
+        // while the container frame snaps — the material edge would trail the
+        // clip by several frames for the whole resize.
+        NSSplitViewController *split =
+            objc_getAssociatedObject(region, &kTaoGlassRegionSplitVcKey);
+        if (split != nil) {
+            NSNumber *kind = objc_getAssociatedObject(region, &kTaoGlassRegionKindKey);
+            BOOL inspector = kind != nil &&
+                kind.intValue == TAO_GLASS_REGION_KIND_INSPECTOR;
+
+            // The split view spans the window; grow the material pane so its
+            // inner edge lines up with the region's inner edge — the container
+            // clips everything outside the region rect.
+            NSSplitViewItem *paneItem =
+                inspector ? split.splitViewItems.lastObject
+                          : split.splitViewItems.firstObject;
+            CGFloat thickness =
+                inspector ? superview.bounds.size.width - (CGFloat)x
+                          : (CGFloat)x + (CGFloat)w;
+            if (thickness < 1.0) thickness = 1.0;
+            paneItem.minimumThickness = thickness;
+            paneItem.maximumThickness = thickness;
+        }
+        [CATransaction commit];
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeRemoveGlassRegion(
+        JNIEnv *env, jclass clazz, jlong regionPtr) {
+    if (regionPtr == 0) return;
+    dispatch_block_t apply = ^{
+        NSView *region =
+            (NSView *)CFBridgingRelease((CFTypeRef)(uintptr_t)regionPtr);
+        [region removeFromSuperview];
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_sync(dispatch_get_main_queue(), apply);
+}
+
+/*
+ * Forces the window's NSAppearance so every native surface (glass regions,
+ * materials, traffic lights, menus) follows the APP's theme instead of the
+ * system one. Without it, an app running dark on a light system gets a light
+ * sidebar material under dark Compose content — unreadable.
+ * [mode] 0 = follow system, 1 = light (Aqua), 2 = dark (DarkAqua).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowAppearance(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr, jint mode) {
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    if (view == nil) return;
+    dispatch_block_t apply = ^{
+        NSWindow *win = view.window;
+        if (win == nil) return;
+        NSAppearance *appearance = nil;
+        if (mode == 1) {
+            appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        } else if (mode == 2) {
+            appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        }
+        win.appearance = appearance;
+    };
+    if ([NSThread isMainThread]) apply();
+    else                          dispatch_async(dispatch_get_main_queue(), apply);
+}
+
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowBackgroundColor(
         JNIEnv *env, jclass clazz, jlong nsViewPtr, jint argb) {
@@ -1436,7 +2195,11 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetWindowBackgr
         if (win == nil) return;
         objc_setAssociatedObject(win, &kTaoBackgroundArgbKey, @(argb),
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        applyWindowBackgroundColor(win, view, argb);
+        // Route through the stored-background path so the current
+        // transparency mode is honoured: full glass keeps everything clear,
+        // regions mode paints the window (which stays opaque) but leaves the
+        // layers clear, opaque mode paints everything.
+        applyStoredWindowBackground(win, view);
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_async(dispatch_get_main_queue(), apply);
@@ -1464,11 +2227,20 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDetach(
         att->vsyncSem = NULL;
     }
     NSWindow *win = att->view.window;
+    BOOL isOverlay = att->isOverlay;
     att->layer  = nil;
     att->device = nil;
     att->queue  = nil;
     att->view   = nil;
-    if (win != nil) {
+    // Overlay attachments (nativeAttachOverlay) never installed the
+    // window-level state below — it belongs to the primary attachment of the
+    // window hosting the overlay's parent NSView. Tearing it down here on an
+    // overlay dispose (e.g. a NativeView unmounting from the main window)
+    // would deallocate the window's NucleusTaoFSObserver out from under its
+    // still-alive primary attachment — permanently dropping the #327
+    // fullscreen-transition handling — and leave attachmentForWindow()
+    // returning NULL for the rest of the window's life.
+    if (win != nil && !isOverlay) {
         removeMenuBarMonitor(win);
         objc_setAssociatedObject(win, &kTaoFSObserverKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(win, &kTaoAttachmentKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -1508,10 +2280,82 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
+        // During an interactive live-resize the present always lags the
+        // bounds by one frame (the Resized event is queued and processed on
+        // a later runloop turn than the AppKit layout commit). With the
+        // default `kCAGravityResize`, Core Animation stretches the stale
+        // last drawable to the new — oscillating — bounds, which reads as
+        // the whole window trembling when the pointer circles a corner.
+        // Instead anchor the stale drawable to the window's *fixed* corner
+        // for the duration of the drag so it stops rubber-banding around
+        // the layer centre; the render thread still presents crisp frames
+        // at the new size, and `kCAGravityResize` is restored on drag end.
+        // The fixed corner is inferred from the NSWindow frame origin delta
+        // (macOS reports the origin at the bottom-left corner):
+        //   origin.x unchanged -> left edge fixed   (else right edge fixed)
+        //   origin.y unchanged -> bottom edge fixed (else top edge fixed)
+        NSString *gravity = kCAGravityResize;
+        NSWindow *win = att->view.window;
+        // Never anchor during an AppKit fullscreen transition: the #327
+        // snapshot ramp depends on Resize gravity for the whole animation,
+        // and AppKit may report inLiveResize while it animates the frame.
+        BOOL liveResize = att->view.inLiveResize &&
+                          atomic_load(&att->in_transition) == 0;
+        if (liveResize && win != nil &&
+            !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
+            NSRect fr = win.frame;
+            BOOL leftFixed   = fabs(fr.origin.x - att->prev_origin_x) < 0.5;
+            BOOL bottomFixed = fabs(fr.origin.y - att->prev_origin_y) < 0.5;
+            if (leftFixed) {
+                gravity = bottomFixed ? kCAGravityBottomLeft : kCAGravityTopLeft;
+            } else {
+                gravity = bottomFixed ? kCAGravityBottomRight : kCAGravityTopRight;
+            }
+        } else if (liveResize) {
+            // First tick of the drag: no prior origin to diff against. Pin
+            // top-left — the common bottom/right case — and let the next
+            // tick self-correct to the proper fixed corner.
+            gravity = kCAGravityTopLeft;
+        }
+        att->layer.contentsGravity = gravity;
+        if (win != nil) {
+            att->prev_origin_x = win.frame.origin.x;
+            att->prev_origin_y = win.frame.origin.y;
+        }
         [CATransaction commit];
     };
     if ([NSThread isMainThread]) resize();
     else                          dispatch_sync(dispatch_get_main_queue(), resize);
+}
+
+// ── Per-frame autorelease pool (#494) ────────────────────────────────────
+//
+// The JVM render thread ("TaoMetalRender") has no ObjC autorelease pool, so
+// the CAMetalDrawable returned by nextDrawable and the MTLCommandBuffer
+// autoreleased inside skiko's flushAndSubmit would "just leak" — one pair per
+// rendered frame (~20 MB/min while anything animates). The Kotlin side pushes
+// a pool before each render-thread task and pops it after, covering
+// beginFrame, skiko's flush (which runs between our JNI calls, so pools
+// inside the JNI functions alone would not reach it) and present in one
+// drain. These are the exact calls ARC emits for @autoreleasepool; exported
+// by libobjc with a stable ABI but only declared in objc-internal.h, hence
+// the local declarations.
+extern void *objc_autoreleasePoolPush(void);
+extern void objc_autoreleasePoolPop(void *pool);
+
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAutoreleasePoolPush(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    return (jlong)(uintptr_t) objc_autoreleasePoolPush();
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeAutoreleasePoolPop(
+        JNIEnv *env, jclass clazz, jlong pool) {
+    (void) env; (void) clazz;
+    if (pool == 0) return;
+    objc_autoreleasePoolPop((void *)(uintptr_t) pool);
 }
 
 JNIEXPORT jobject JNICALL
@@ -1653,6 +2497,35 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeSetPresentsWith
     else                          dispatch_sync(dispatch_get_main_queue(), apply);
 }
 
+/* Private run-loop mode for the interop callout below. Blocks scheduled in
+ * this mode (in addition to the common modes) can be executed by a main
+ * thread that is otherwise BLOCKED waiting on the render thread — it spins
+ * CFRunLoopRunInMode on this mode via nativeInteropPump. Tao's own run-loop
+ * observers/sources live in the default/common modes and never fire here, so
+ * pumping cannot re-enter event dispatch or Compose rendering. */
+static NSString *const kNucleusTaoInteropMode = @"NucleusTaoInteropMode";
+
+/* A mode that contains nothing but queued blocks is considered EMPTY by
+ * CFRunLoopRunInMode, which then returns kCFRunLoopRunFinished immediately
+ * WITHOUT executing them — the pump would spin uselessly and every blocked
+ * present would ride the 2s backstop (visible as a 2-3s freeze on fullscreen
+ * entry). This permanent no-op source keeps the mode non-empty; the
+ * scheduler signals it so a pumping main thread wakes instantly. */
+static CFRunLoopSourceRef sInteropModeSource = NULL;
+
+static void interopModeSourceNoop(void *info) { (void) info; }
+
+static void ensureInteropModeSource(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        CFRunLoopSourceContext ctx = {0};
+        ctx.perform = interopModeSourceNoop;
+        sInteropModeSource = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &ctx);
+        CFRunLoopAddSource(CFRunLoopGetMain(), sInteropModeSource,
+                           (__bridge CFStringRef) kNucleusTaoInteropMode);
+    });
+}
+
 /* Atomic present-with-transaction path. See the Kotlin doc on
  * NativeMetalBridge.nativePresentWithInterop for the full sequence.
  *
@@ -1669,11 +2542,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
     // Stage 2: this is invoked from the host's background render thread (after
     // the scene's GPU encode), but CATransaction + the explicit [drawable
     // present] + the AppKit mutations in `interopActions` must run on the macOS
-    // main thread. We therefore dispatch the whole atomic block to the main
-    // queue. The render thread blocks (dispatch_sync) until it completes, which
-    // is safe: the main thread is never itself blocked on the render thread
-    // while a frame's replay is in flight (all main→render hops happen during
-    // the main-thread record pass, when the render thread is idle).
+    // main thread. This used to be a plain dispatch_sync to the main queue on
+    // the assumption that "the main thread is never itself blocked on the
+    // render thread while a frame's replay is in flight" — which the
+    // fullscreen prepare (#327: windowWillEnterFullScreen → blocking frame via
+    // runOnRenderThread) and the NativeView overlay first-attach violate,
+    // deadlocking the app the moment either coincides with an in-flight
+    // interop present. The block is therefore scheduled on the main RUN LOOP
+    // instead, registered in the common modes (normal drain) AND the private
+    // kNucleusTaoInteropMode, which a blocked main thread pumps via
+    // nativeInteropPump while it waits on the render thread.
     ensureMetalJVMCached(env);
 
     // Promote the Runnable to a global ref: the local ref `interopActions` is
@@ -1736,8 +2614,69 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
         [CATransaction commit];
     };
 
-    if ([NSThread isMainThread]) work();
-    else                          dispatch_sync(dispatch_get_main_queue(), work);
+    if ([NSThread isMainThread]) {
+        work();
+        return;
+    }
+
+    // Once-guard shared by both mode registrations (copies of the same block
+    // share the __block slot; both callouts run on the main thread, so no
+    // atomics needed).
+    dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+    __block BOOL ran = NO;
+    void (^once)(void) = ^{
+        if (ran) return;
+        ran = YES;
+        work();
+        dispatch_semaphore_signal(sem);
+    };
+    ensureInteropModeSource();
+    CFRunLoopRef mainLoop = CFRunLoopGetMain();
+    CFRunLoopPerformBlock(mainLoop, kCFRunLoopCommonModes, once);
+    CFRunLoopPerformBlock(mainLoop, (__bridge CFStringRef) kNucleusTaoInteropMode, once);
+    // Wake a main thread parked inside nativeInteropPump's RunInMode as well
+    // as the regular event loop.
+    CFRunLoopSourceSignal(sInteropModeSource);
+    CFRunLoopWakeUp(mainLoop);
+    // Generous backstop: if the main thread is wedged somewhere that neither
+    // runs its loop nor pumps, degrade to a late/skipped transaction (the
+    // queued block still presents when the loop resumes) instead of parking
+    // the render thread forever.
+    if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) != 0) {
+        NTLOG("nativePresentWithInterop: main-thread callout timed out after 2s");
+    }
+}
+
+/* Executes any pending interop callouts while the caller (which must be the
+ * macOS main thread) is blocked waiting on the render thread — see
+ * kNucleusTaoInteropMode above and TaoComposeSceneHost.runOnRenderThread.
+ * Bounded: returns after one callout or ~4ms, whichever comes first. */
+/* True on the AppKit main thread. Kotlin cannot decide this itself: on macOS
+ * nativeRunBlocking marshals the event loop onto thread 0, so the JVM thread
+ * that entered taoApplication (TaoMainDispatcher.taoMainThread) is NOT the
+ * thread AppKit callbacks run on. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeIsMainThread(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    return [NSThread isMainThread] ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeInteropPump(
+        JNIEnv *env, jclass clazz) {
+    (void) env; (void) clazz;
+    if (![NSThread isMainThread]) return;
+    // The permanent source keeps the mode non-empty — without it RunInMode
+    // returns kCFRunLoopRunFinished at once and never executes queued blocks.
+    ensureInteropModeSource();
+    // Timeout 0: one non-blocking pass — run whatever callout is already
+    // queued and return. The caller (runOnRenderThread's cooperative wait)
+    // polls; a positive timeout here would PARK the main thread for its
+    // full duration on every pump with nothing queued, a fixed tax paid
+    // once per TextureView producer frame via the per-frame snapshot hop
+    // (measured 4.5ms/hop with 4ms — enough to halve 90Hz video to 45fps).
+    CFRunLoopRunInMode((__bridge CFStringRef) kNucleusTaoInteropMode, 0.0, true);
 }
 
 // ── newFullscreenControls JNI bridge ─────────────────────────────────────
@@ -1839,6 +2778,189 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeUpdateFullScree
     };
     if ([NSThread isMainThread]) apply();
     else                          dispatch_async(dispatch_get_main_queue(), apply);
+}
+
+// ── Window-state diagnostics (headful e2e probes) ────────────────────────
+//
+// Same role as nativeMacOsProbeSheetParent in the Tao bridge: tiny read-only
+// entry points the stage-2 headful suite uses to assert native invariants
+// that have no other JVM-visible signal. Not part of any production path.
+
+/* Bitmask of the window-level state nativeAttach installs on view.window:
+ * bit 0 = kTaoAttachmentKey (primary attachment reachable via
+ * attachmentForWindow), bit 1 = kTaoFSObserverKey (fullscreen-transition
+ * observer, #327). Returns -1 when the view or its window is gone. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowState(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jint state = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        state = 0;
+        if (objc_getAssociatedObject(w, &kTaoAttachmentKey) != nil) state |= 1;
+        if (objc_getAssociatedObject(w, &kTaoFSObserverKey) != nil) state |= 2;
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return state;
+}
+
+/* Frame SIZE of an arbitrary NSView in physical pixels (points scaled by
+ * its window's backingScaleFactor), packed (w << 32) | h. Lets the headful
+ * suite assert that an embedded NativeView subview actually tracked a layout
+ * change (e.g. across a fullscreen round-trip). Returns 0 when the view is
+ * gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewFrameSize(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return 0;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = 0;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        if (view == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        jlong w = (jlong) lround(view.frame.size.width * scale);
+        jlong h = (jlong) lround(view.frame.size.height * scale);
+        packed = (w << 32) | (h & 0xFFFFFFFFLL);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
+/* TOP-LEFT origin of an NSView within its superview, in physical pixels
+ * with a top-left coordinate system (Compose convention), packed as two
+ * signed 32-bit values (x << 32) | (y & 0xFFFFFFFF). Complements
+ * nativeDiagViewFrameSize: a subview can have the right SIZE but sit at the
+ * wrong offset after a fullscreen transition (bottom-left AppKit anchoring
+ * vs a stale parent height). Returns LLONG_MIN when the view is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagViewTopLeftPx(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return LLONG_MIN;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong packed = LLONG_MIN;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSView *parent = view.superview;
+        if (view == nil || parent == nil) return;
+        CGFloat scale = view.window.backingScaleFactor;
+        if (scale <= 0) scale = 1.0;
+        // Report in the content view's coordinate space (Compose
+        // `positionInRoot`): NativeView blending parents the child under
+        // the theme frame, below the content view, so a superview-local
+        // origin would not match the Compose slot.
+        NSView *content = view.window.contentView;
+        NSRect f = (content != nil && parent != content)
+            ? [parent convertRect:view.frame toView:content]
+            : view.frame;
+        NSView *space = (content != nil) ? content : parent;
+        CGFloat topPt = space.isFlipped
+            ? f.origin.y
+            : space.bounds.size.height - (f.origin.y + f.size.height);
+        int64_t x = (int64_t) lround(f.origin.x * scale);
+        int64_t y = (int64_t) lround(topPt * scale);
+        packed = (jlong)((((uint64_t)(uint32_t) x) << 32) | ((uint64_t)(uint32_t) y));
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return packed;
+}
+
+/* macOS only, headful e2e (#652 / #653 / #654): hands a synthetic
+ * `scrollWheel:` NSEvent to the tao NSView passed in — the entry point a real
+ * trackpad or wheel event takes once the WindowServer has routed it. Skipping
+ * the WindowServer (CGEventPost) means no Accessibility grant and no cursor
+ * parked over the window are needed, and the delivery is deterministic.
+ *
+ * (x, y) are view-local points with a top-left origin (Compose dp).
+ * (dx, dy) are AppKit `scrollingDelta*` values: points when `precise`
+ * (`hasPreciseScrollingDeltas == YES`, trackpad), lines otherwise (wheel).
+ * They are whole numbers by construction: the CGEvent point/line delta fields
+ * are integers and `+[NSEvent eventWithCGEvent:]` derives `scrollingDelta*`
+ * from them (setting the fixed-point fields only changes the legacy
+ * `deltaX/Y`) — verified, not assumed; cases that need sub-point steps have
+ * to go through the JVM-side scene harness instead.
+ * `phase` / `momentumPhase` use the IOHID field encodings that
+ * `+[NSEvent eventWithCGEvent:]` decodes into `NSEventPhase` — phase: 1 began,
+ * 2 changed, 4 ended, 8 cancelled, 128 may-begin; momentum: 1 began, 2 changed,
+ * 3 ended. 0 leaves the field unset (a wheel / phase-less device).
+ *
+ * A CGEvent-built NSEvent has no window: its `locationInWindow` is the CG
+ * location flipped against the primary display. The location is therefore
+ * chosen so that the flipped value equals the wanted window point, which is
+ * what tao's `mouse_motion` (run first by `scroll_wheel`) resolves back to
+ * the view-local cursor position.
+ *
+ * This DRIVES the app rather than reading it, so unlike the other nativeDiag*
+ * entries it is inert unless the process was started with
+ * NUCLEUS_TAO_INPUT_INJECTION=1 (the taoHeadfulTest Gradle task sets it) and
+ * it only runs on the main thread. Returns JNI false when disabled, off the
+ * main thread, or when the view, its window or the primary screen is gone;
+ * JNI true only once `scrollWheel:` was actually sent to the given view. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagInjectScrollWheel(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr,
+        jfloat x, jfloat y, jfloat dx, jfloat dy, jboolean precise,
+        jint phase, jint momentumPhase) {
+    (void)env; (void)clazz;
+    if (![NSThread isMainThread] || nsViewPtr == 0) return JNI_FALSE;
+    // Main thread only from here on, so the lazy flag needs no atomics.
+    static int sEnabled = -1;
+    if (sEnabled < 0) {
+        const char *flag = getenv("NUCLEUS_TAO_INPUT_INJECTION");
+        sEnabled = (flag != NULL && strcmp(flag, "1") == 0) ? 1 : 0;
+    }
+    if (!sEnabled) return JNI_FALSE;
+    NSView *view = (__bridge NSView *)(void *)(uintptr_t)nsViewPtr;
+    NSWindow *window = view.window;
+    NSScreen *primary = NSScreen.screens.firstObject;
+    if (window == nil || primary == nil) return JNI_FALSE;
+    // View-local top-left → window base coordinates (bottom-left).
+    NSPoint local = NSMakePoint(x, view.isFlipped ? y : view.bounds.size.height - y);
+    NSPoint inWindow = [view convertPoint:local toView:nil];
+    CGEventRef cg = CGEventCreateScrollWheelEvent(
+        NULL, precise ? kCGScrollEventUnitPixel : kCGScrollEventUnitLine, 2,
+        (int32_t)lroundf(dy), (int32_t)lroundf(dx));
+    if (cg == NULL) return JNI_FALSE;
+    if (phase != 0) {
+        CGEventSetIntegerValueField(cg, kCGScrollWheelEventScrollPhase, phase);
+    }
+    if (momentumPhase != 0) {
+        CGEventSetIntegerValueField(cg, kCGScrollWheelEventMomentumPhase, momentumPhase);
+    }
+    CGEventSetLocation(cg, CGPointMake(inWindow.x, primary.frame.size.height - inWindow.y));
+    NSEvent *event = [NSEvent eventWithCGEvent:cg];
+    CFRelease(cg);
+    if (event == nil) return JNI_FALSE;
+    [view scrollWheel:event];
+    return JNI_TRUE;
+}
+
+/* CFGetRetainCount of view.window. Only deltas are meaningful (AppKit holds
+ * its own references); the set_focusable leak regression compares the count
+ * before/after a burst of calls. Returns -1 when view/window is gone. */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeDiagWindowRetainCount(
+        JNIEnv *env, jclass clazz, jlong nsViewPtr) {
+    if (nsViewPtr == 0) return -1;
+    void *rawPtr = (void *)(uintptr_t)nsViewPtr;
+    __block jlong count = -1;
+    dispatch_block_t read = ^{
+        NSView *view = (__bridge NSView *)rawPtr;
+        NSWindow *w = view.window;
+        if (w == nil) return;
+        count = (jlong) CFGetRetainCount((__bridge CFTypeRef) w);
+    };
+    if ([NSThread isMainThread]) read();
+    else                          dispatch_sync(dispatch_get_main_queue(), read);
+    return count;
 }
 
 JNIEXPORT void JNICALL

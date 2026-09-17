@@ -6,6 +6,7 @@
 package dev.nucleusframework.desktop.application.internal.electronbuilder
 
 import dev.nucleusframework.desktop.application.dsl.AppXSettings
+import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.DmgSettings
 import dev.nucleusframework.desktop.application.dsl.FileAssociation
 import dev.nucleusframework.desktop.application.dsl.FlatpakSettings
@@ -19,6 +20,24 @@ import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
 import java.io.File
+
+/**
+ * Effective electron-builder compression for [targetFormat].
+ *
+ * Format-local overrides ([AppImageSettings.compressionLevel], [PortableSettings.compressionLevel])
+ * win over the root [JvmApplicationDistributions.compressionLevel].
+ */
+internal fun resolveCompressionLevel(
+    distributions: JvmApplicationDistributions,
+    targetFormat: TargetFormat,
+): CompressionLevel? =
+    when (targetFormat) {
+        TargetFormat.AppImage ->
+            distributions.linux.appImage.compressionLevel ?: distributions.compressionLevel
+        TargetFormat.Portable ->
+            distributions.windows.portable.compressionLevel ?: distributions.compressionLevel
+        else -> distributions.compressionLevel
+    }
 
 /**
  * Generates an electron-builder YAML configuration from the Gradle DSL settings.
@@ -47,16 +66,22 @@ internal class ElectronBuilderConfigGenerator {
         linuxIconOverride: File? = null,
         windowsIconOverride: File? = null,
         linuxAfterInstallTemplate: File? = null,
+        linuxAfterRemoveTemplate: File? = null,
         executableName: String? = null,
         dmgBackgroundOverride: File? = null,
         dmgWindowOverride: DmgWindowOverride? = null,
         nsisProtocolInclude: File? = null,
+        macBundleName: String? = null,
     ): String {
         val yaml = StringBuilder()
 
         // --- Common settings ---
+        // On macOS the product name must equal the prepackaged bundle's directory name: the DMG
+        // target stages the app as `${productFilename}.app` while the ZIP target archives the
+        // directory verbatim, so any mismatch ships two differently named bundles for one release.
         val resolvedProductName =
-            distributions.appName ?: distributions.packageName ?: executableName
+            macBundleName?.takeIf { currentOS == OS.MacOS && it.isNotBlank() }
+                ?: distributions.appName ?: distributions.packageName ?: executableName
                 ?: error(
                     "No appName, packageName, or executableName available for electron-builder config",
                 )
@@ -82,7 +107,7 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("directories:")
         yaml.appendLine("  output: .")
 
-        appendIfNotNull(yaml, "compression", distributions.compressionLevel?.id)
+        appendIfNotNull(yaml, "compression", resolveCompressionLevel(distributions, targetFormat)?.id)
         yaml.appendLine("artifactName: ${withTargetSuffix(distributions.artifactName, targetFormat)}")
         generateFileAssociations(yaml, distributions, targetFormat)
 
@@ -116,6 +141,7 @@ internal class ElectronBuilderConfigGenerator {
                     startupWMClass = startupWMClass,
                     linuxIconOverride = linuxIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                     executableName = executableName,
                 )
         }
@@ -251,7 +277,8 @@ internal class ElectronBuilderConfigGenerator {
         val height: Int,
     )
 
-    private fun generateWindowsConfig(
+    // internal (like generateLinuxConfig) so the rendered YAML can be asserted in unit tests
+    internal fun generateWindowsConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
@@ -279,19 +306,47 @@ internal class ElectronBuilderConfigGenerator {
         when (targetFormat) {
             TargetFormat.Nsis, TargetFormat.Exe -> {
                 yaml.appendLine("nsis:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
+                generateNsisSettings(
+                    yaml,
+                    distributions.windows.nsis,
+                    "  ",
+                    nsisProtocolInclude,
+                    menuCategoryDefault = distributions.windows.menuGroup,
+                )
             }
             TargetFormat.NsisWeb -> {
                 yaml.appendLine("nsisWeb:")
-                generateNsisSettings(yaml, distributions.windows.nsis, "  ", nsisProtocolInclude)
+                generateNsisSettings(
+                    yaml,
+                    distributions.windows.nsis,
+                    "  ",
+                    nsisProtocolInclude,
+                    menuCategoryDefault = distributions.windows.menuGroup,
+                )
             }
             TargetFormat.Msi -> {
+                val msi = distributions.windows.msi
                 yaml.appendLine("msi:")
                 appendIfNotNull(yaml, "  upgradeCode", distributions.windows.upgradeUuid)
-                yaml.appendLine("  perMachine: ${!distributions.windows.perUserInstall}")
+                @Suppress("DEPRECATION")
+                val perMachine = msi.explicitPerMachine
+                    ?: !distributions.windows.perUserInstall
+                yaml.appendLine("  perMachine: $perMachine")
+                yaml.appendLine("  oneClick: ${msi.oneClick}")
+                yaml.appendLine("  runAfterFinish: ${msi.runAfterFinish}")
+                yaml.appendLine("  createDesktopShortcut: ${msi.createDesktopShortcut}")
+                yaml.appendLine("  createStartMenuShortcut: ${msi.createStartMenuShortcut}")
+                // windows.menuGroup is the jpackage-era name for the same concept, so it acts as
+                // the default here; without it the shortcut lands in the start menu root.
+                appendIfNotNull(yaml, "  menuCategory", msi.menuCategory ?: distributions.windows.menuGroup)
+                appendIfNotNull(yaml, "  shortcutName", msi.shortcutName)
             }
             TargetFormat.AppX -> generateAppXConfig(yaml, distributions.windows.appx)
-            TargetFormat.Portable -> yaml.appendLine("portable: {}")
+            TargetFormat.Portable -> {
+                // electron-builder only honors top-level `compression` for portable;
+                // the block is still required so the target is configured.
+                yaml.appendLine("portable: {}")
+            }
             else -> {}
         }
     }
@@ -388,6 +443,7 @@ internal class ElectronBuilderConfigGenerator {
         nsis: NsisSettings,
         indent: String,
         protocolInclude: File? = null,
+        menuCategoryDefault: String? = null,
     ) {
         yaml.appendLine("${indent}oneClick: ${nsis.oneClick}")
         yaml.appendLine("${indent}allowElevation: ${nsis.allowElevation}")
@@ -396,6 +452,10 @@ internal class ElectronBuilderConfigGenerator {
         yaml.appendLine("${indent}createDesktopShortcut: ${nsis.createDesktopShortcut}")
         yaml.appendLine("${indent}createStartMenuShortcut: ${nsis.createStartMenuShortcut}")
         yaml.appendLine("${indent}runAfterFinish: ${nsis.runAfterFinish}")
+        // windows.menuGroup is the jpackage-era name for the same concept, so it acts as
+        // the default here; without it the shortcut lands in the start menu root.
+        appendIfNotNull(yaml, "${indent}menuCategory", nsis.menuCategory ?: menuCategoryDefault)
+        appendIfNotNull(yaml, "${indent}shortcutName", nsis.shortcutName)
         yaml.appendLine("${indent}deleteAppDataOnUninstall: ${nsis.deleteAppDataOnUninstall}")
         yaml.appendLine("${indent}warningsAsErrors: false")
 
@@ -514,6 +574,7 @@ internal class ElectronBuilderConfigGenerator {
         startupWMClass: String?,
         linuxIconOverride: File?,
         linuxAfterInstallTemplate: File?,
+        linuxAfterRemoveTemplate: File?,
         executableName: String?,
     ) {
         yaml.appendLine("linux:")
@@ -545,6 +606,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
             TargetFormat.Rpm -> {
                 yaml.appendLine("rpm:")
@@ -555,6 +617,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
                 // fpm-generated RPMs list only files, never %dir entries for the app's own
                 // directory tree. The jpackage launcher (libapplauncher.so) discovers the app
                 // and runtime dirs by scanning `rpm -ql <pkg>` for paths ending in /app and
@@ -575,6 +638,7 @@ internal class ElectronBuilderConfigGenerator {
                     }
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
+                appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
             }
             TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)

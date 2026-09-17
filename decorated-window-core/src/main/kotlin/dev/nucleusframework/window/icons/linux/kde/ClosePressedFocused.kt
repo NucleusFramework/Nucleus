@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.ClosePressedFocused: ImageVector
+public val KdeControlButtonsIcons.ClosePressedFocused: ImageVector
     get() {
         if (_ClosePressedFocused != null) {
             return _ClosePressedFocused!!

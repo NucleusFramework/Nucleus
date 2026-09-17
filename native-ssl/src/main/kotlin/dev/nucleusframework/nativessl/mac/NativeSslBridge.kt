@@ -9,7 +9,7 @@ private const val TAG = "NativeSslBridge"
 private const val LIBRARY_NAME = "nucleus_ssl"
 
 internal object NativeSslBridge {
-    private val logger = Logger.getLogger(NativeSslBridge::class.java.simpleName)
+    private val logger = Logger.getLogger(NativeSslBridge::class.java.name)
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeSslBridge::class.java)
 
     val isLoaded: Boolean get() = loaded

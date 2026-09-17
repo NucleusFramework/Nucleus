@@ -72,6 +72,23 @@ internal object NativeTaoMacOsDndBridge {
     external fun nativeRevoke(nsView: Long): Int
 
     /**
+     * Keeps the host alive while an outbound drag session owns the main thread.
+     *
+     * [pump] is upcalled ~120×/s off a run-loop timer that [nativeStartDrag]
+     * schedules for the session's lifetime, on the macOS main thread (= Tao
+     * event-loop thread). Implementations must drain the main dispatcher and
+     * schedule a frame — and must not block, since AppKit's drag tracking is
+     * waiting on the return.
+     *
+     * Must be a named class, not a lambda or anonymous object: GraalVM's
+     * `GetMethodID` does not pick up inherited interface methods on anonymous
+     * classes (same constraint as [Callback]).
+     */
+    interface DragPump {
+        fun pump()
+    }
+
+    /**
      * Starts an outbound OS drag session via
      * `[NSView beginDraggingSessionWithItems:event:source:]`.
      *
@@ -83,6 +100,8 @@ internal object NativeTaoMacOsDndBridge {
      *
      * @param allowedEffects bitmask of [DROP_EFFECT_COPY] / [DROP_EFFECT_MOVE] /
      *   [DROP_EFFECT_LINK]
+     * @param pump invoked repeatedly during the drag so the suppressed Tao tick
+     *   can still drain and render; see [DragPump]. `null` disables it.
      * @return one of [DROP_EFFECT_NONE]/[DROP_EFFECT_COPY]/[DROP_EFFECT_MOVE]/[DROP_EFFECT_LINK]
      */
     @JvmStatic
@@ -91,6 +110,7 @@ internal object NativeTaoMacOsDndBridge {
         files: Array<String>?,
         text: String?,
         allowedEffects: Int,
+        pump: DragPump?,
     ): Int
 
     const val DROP_EFFECT_NONE: Int = 0

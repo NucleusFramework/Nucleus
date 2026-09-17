@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:NativeOkHttpClient.kt:NativeOkHttpClient</ID>
+    <ID>UndocumentedPublicFunction:NativeOkHttpClient.kt:NativeOkHttpClient$public fun OkHttpClient.Builder.withNativeSsl: OkHttpClient.Builder</ID>
+    <ID>UndocumentedPublicFunction:NativeOkHttpClient.kt:NativeOkHttpClient$public fun create: OkHttpClient</ID>
+  </CurrentIssues>
+</SmellBaseline>

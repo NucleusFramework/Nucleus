@@ -1,21 +1,23 @@
 package dev.nucleusframework.desktop.application.dsl
 
 /**
- * Oracle GraalVM release channel used when the toolchain is auto-downloaded
+ * GraalVM release channel used when the toolchain is auto-downloaded
  * (see [GraalvmToolchainSettings]).
  *
- * Oracle publishes two lines of Oracle GraalVM (the former Enterprise Edition):
- * - **Innovation** releases (e.g. `25i1`) — newest compiler and runtime features,
- *   short support window, distributed via `gds.oracle.com`.
+ * Both lines exist for either [GraalvmDistribution]:
+ * - **Innovation** releases (e.g. `25i3`) — newest compiler and runtime features,
+ *   short support window. Oracle GraalVM ships them via `gds.oracle.com`, Community
+ *   Edition under the `graal-*` tags of `graalvm/graalvm-ce-builds`.
  * - **LTS** releases (e.g. `25`) — long-term support line updated with quarterly
- *   CPUs, distributed via `download.oracle.com`.
+ *   CPUs. Oracle GraalVM ships them via `download.oracle.com`, Community Edition
+ *   under the `jdk-*` tags of `graalvm/graalvm-ce-builds`.
  */
 enum class GraalvmChannel(
     val defaultVersion: String,
 ) {
-    /** Latest Oracle GraalVM innovation release. This is the default channel. */
-    INNOVATION("25i1"),
+    /** Latest innovation release. This is the default channel. */
+    INNOVATION("25i3"),
 
-    /** Latest Oracle GraalVM long-term-support release. */
+    /** Latest long-term-support release. */
     LTS("25"),
 }

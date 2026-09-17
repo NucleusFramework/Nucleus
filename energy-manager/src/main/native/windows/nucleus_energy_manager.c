@@ -102,9 +102,9 @@ static PFN_SetThreadInformation ResolveThreadFn(void) {
     return pfnSetThreadInfo;
 }
 
-/* ---- Screen-awake state ----------------------------------------- */
+/* ---- Awake state ------------------------------------------------- */
 
-static volatile BOOL g_screenAwakeActive = FALSE;
+static volatile BOOL g_awakeActive = FALSE;
 
 /* ---- nativeIsSupported ------------------------------------------- */
 
@@ -296,7 +296,7 @@ Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_native
     return 0;
 }
 
-/* ---- nativeKeepScreenAwake -------------------------------------- */
+/* ---- nativeKeepAwake -------------------------------------------- */
 
 #ifndef ES_CONTINUOUS
 #define ES_CONTINUOUS        0x80000000
@@ -308,25 +308,39 @@ Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_native
 #define ES_DISPLAY_REQUIRED  0x00000002
 #endif
 
+/* Must match AwakeMode.nativeCode in WindowsEnergyManager.kt */
+#define AWAKE_SYSTEM_AND_DISPLAY 0
+#define AWAKE_SYSTEM_ONLY        1
+
+/*
+ * SetThreadExecutionState is not additive: each call replaces the calling
+ * thread's request, so switching modes needs no explicit release first.
+ * ES_SYSTEM_REQUIRED alone keeps the machine running while leaving the
+ * display sleep / screen saver timers untouched.
+ */
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeKeepScreenAwake(
-    JNIEnv *env, jclass clazz)
+Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeKeepAwake(
+    JNIEnv *env, jclass clazz, jint mode)
 {
     (void)env; (void)clazz;
 
-    DWORD prev = SetThreadExecutionState(
-        ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED);
+    EXECUTION_STATE flags = ES_CONTINUOUS | ES_SYSTEM_REQUIRED;
+    if (mode != AWAKE_SYSTEM_ONLY) {
+        flags |= ES_DISPLAY_REQUIRED;
+    }
+
+    DWORD prev = SetThreadExecutionState(flags);
     if (prev == 0) {
         return (jint)GetLastError();
     }
-    g_screenAwakeActive = TRUE;
+    g_awakeActive = TRUE;
     return 0;
 }
 
-/* ---- nativeReleaseScreenAwake ----------------------------------- */
+/* ---- nativeReleaseAwake ----------------------------------------- */
 
 JNIEXPORT jint JNICALL
-Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeReleaseScreenAwake(
+Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeReleaseAwake(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
@@ -335,16 +349,38 @@ Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_native
     if (prev == 0) {
         return (jint)GetLastError();
     }
-    g_screenAwakeActive = FALSE;
+    g_awakeActive = FALSE;
     return 0;
 }
 
-/* ---- nativeIsScreenAwakeActive ---------------------------------- */
+/* ---- nativeQueryAwakeFlags -------------------------------------- */
 
-JNIEXPORT jboolean JNICALL
-Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeIsScreenAwakeActive(
+/*
+ * Reads back the execution state Windows currently holds for the calling
+ * thread. There is no getter in the Win32 API, so the state is replaced by a
+ * bare ES_CONTINUOUS — which returns the previous flags — and immediately
+ * restored. Used to verify the flags the kernel actually recorded.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeQueryAwakeFlags(
     JNIEnv *env, jclass clazz)
 {
     (void)env; (void)clazz;
-    return g_screenAwakeActive ? JNI_TRUE : JNI_FALSE;
+
+    DWORD prev = SetThreadExecutionState(ES_CONTINUOUS);
+    if (prev == 0) {
+        return 0;
+    }
+    SetThreadExecutionState(prev);
+    return (jint)prev;
+}
+
+/* ---- nativeIsAwakeActive ---------------------------------------- */
+
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_energymanager_windows_NativeWindowsEnergyBridge_nativeIsAwakeActive(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    return g_awakeActive ? JNI_TRUE : JNI_FALSE;
 }

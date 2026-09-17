@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -21,14 +22,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.onPointerEvent
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.LocalControlButtonsDirection
 import dev.nucleusframework.window.LocalIsDarkTheme
+import dev.nucleusframework.window.WindowControlSlot
+import dev.nucleusframework.window.WindowControlType
 import dev.nucleusframework.window.icons.windows.Close
 import dev.nucleusframework.window.icons.windows.CloseDark
 import dev.nucleusframework.window.icons.windows.CloseFullscreen
@@ -51,31 +57,20 @@ import dev.nucleusframework.window.icons.windows.RestoreDark
 import dev.nucleusframework.window.icons.windows.RestoreInactive
 import dev.nucleusframework.window.icons.windows.RestoreInactiveDark
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
+import dev.nucleusframework.window.internal.WindowsCaptionButtonStyle
+import dev.nucleusframework.window.internal.animateWindowsCaptionColor
+import dev.nucleusframework.window.internal.windowsCaptionButtonBackground
+import dev.nucleusframework.window.resolveWindowControl
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.LocalTaoWindow
 import dev.nucleusframework.window.tao.TaoWindow
 
-// Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so the visual
+// Mirrors the legacy AWT backend's `WindowsWindowControlArea` so the visual
 // output is identical between the AWT-based backend and the Tao backend.
 
 private val WINDOWS_BUTTON_WIDTH = 46.dp
 
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredLight = Color(0x1A000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonHoveredDark = Color(0x1AFFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedLight = Color(0x33000000)
-
-@Suppress("MagicNumber")
-private val WindowsButtonPressedDark = Color(0x33FFFFFF)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonHovered = Color(0xFFE81123)
-
-@Suppress("MagicNumber")
-private val WindowsCloseButtonPressed = Color(0xFFF1707A)
+private const val CLOSE_HOVER_ALPHA_EPSILON = 0.02f
 
 /**
  * Windows-style window controls (minimize / maximize-restore / close).
@@ -86,11 +81,14 @@ private val WindowsCloseButtonPressed = Color(0xFFF1707A)
  * hover/pressed colors, same active/inactive variants) so the two backends
  * stay visually consistent.
  *
- * Hit-testing rule: drawn entirely in Compose because the WndProc subclass
- * returns HTCLIENT for the title bar zone — DWM never repaints native buttons
- * on top, which would otherwise happen on non-JBR JDKs.
+ * Drawn and handled entirely in Compose, but each button publishes its rect
+ * to the native hit-test ([CaptionButtonHitZones]) so `WM_NCHITTEST` can
+ * answer `HTMINBUTTON`/`HTMAXBUTTON`/`HTCLOSE` over it — which is what makes
+ * Windows 11 show the Snap Layouts flyout on maximize hover. The native side
+ * forwards the resulting NC clicks back as client messages, so hover, press
+ * and click still run through the Compose handlers below.
  */
-@Suppress("FunctionNaming", "CyclomaticComplexMethod")
+@Suppress("FunctionNaming")
 @Composable
 internal fun WindowControlsWindows(
     win: TaoWindow,
@@ -100,116 +98,153 @@ internal fun WindowControlsWindows(
     isFullscreen: Boolean = false,
     onExitFullscreen: (() -> Unit)? = null,
 ) {
-    val isDark = LocalIsDarkTheme.current
-    // Match decorated-window-jni's WindowsWindowControlArea: LTR renders
+    // Match the legacy AWT backend's window controls: LTR renders
     // Minimize/Maximize/Close, RTL mirrors it to Close/Maximize/Minimize.
     CompositionLocalProvider(LocalLayoutDirection provides LocalControlButtonsDirection.current) {
         Row(modifier = modifier.fillMaxHeight()) {
-            // Minimize
-            WindowsCaptionButton(
-                onClick = { win.minimize() },
-                isDark = isDark,
-                style = style,
-                icon =
-                    if (state.isActive) {
-                        if (isDark) WindowsControlButtonIcons.MinimizeDark else WindowsControlButtonIcons.Minimize
-                    } else {
-                        if (isDark) {
-                            WindowsControlButtonIcons.MinimizeInactiveDark
-                        } else {
-                            WindowsControlButtonIcons.MinimizeInactive
-                        }
-                    },
-                contentDescription = "Minimize",
-            )
-
-            // Fullscreen → exit-fullscreen button replaces maximize/restore.
-            // Mirrors decorated-window-jni's WindowsWindowControlArea behaviour.
-            if (isFullscreen && onExitFullscreen != null) {
-                WindowsCaptionButton(
-                    onClick = onExitFullscreen,
-                    isDark = isDark,
-                    style = style,
-                    icon =
-                        if (state.isActive) {
-                            if (isDark) {
-                                WindowsControlButtonIcons.CloseFullscreenDark
-                            } else {
-                                WindowsControlButtonIcons.CloseFullscreen
-                            }
-                        } else {
-                            if (isDark) {
-                                WindowsControlButtonIcons.CloseFullscreenInactiveDark
-                            } else {
-                                WindowsControlButtonIcons.CloseFullscreenInactive
-                            }
-                        },
-                    contentDescription = "Exit fullscreen",
-                )
-            } else if (win.isResizable && state.isMaximized) {
-                // Maximize / Restore — switches icon based on actual window state.
-                // Hidden when non-resizable (win.isResizable is snapshot-backed,
-                // so runtime setResizable() recomposes — mirrors the AWT
-                // backends' WindowsWindowControlArea gating, #260).
-                WindowsCaptionButton(
-                    onClick = { win.setMaximized(false) },
-                    isDark = isDark,
-                    style = style,
-                    icon =
-                        if (state.isActive) {
-                            if (isDark) WindowsControlButtonIcons.RestoreDark else WindowsControlButtonIcons.Restore
-                        } else {
-                            if (isDark) {
-                                WindowsControlButtonIcons.RestoreInactiveDark
-                            } else {
-                                WindowsControlButtonIcons.RestoreInactive
-                            }
-                        },
-                    contentDescription = "Restore",
-                )
-            } else if (win.isResizable) {
-                WindowsCaptionButton(
-                    onClick = { win.setMaximized(true) },
-                    isDark = isDark,
-                    style = style,
-                    icon =
-                        if (state.isActive) {
-                            if (isDark) WindowsControlButtonIcons.MaximizeDark else WindowsControlButtonIcons.Maximize
-                        } else {
-                            if (isDark) {
-                                WindowsControlButtonIcons.MaximizeInactiveDark
-                            } else {
-                                WindowsControlButtonIcons.MaximizeInactive
-                            }
-                        },
-                    contentDescription = "Maximize",
-                )
+            for (slot in WindowControlSlot.entries) {
+                val action = resolveWindowControl(slot, win, state, isFullscreen, onExitFullscreen)
+                if (action != null) WindowsWindowControl(action.type, state, style, action.onClick)
             }
-
-            // Close — fire user's onCloseRequest (mirrors AWT's WINDOW_CLOSING
-            // dispatch). Calling `requestClose()` directly would destroy the
-            // window without giving the app a chance to exit the Tao event loop.
-            WindowsCaptionButton(
-                onClick = { win.requestUserClose() },
-                isDark = isDark,
-                style = style,
-                icon =
-                    if (state.isActive) {
-                        if (isDark) WindowsControlButtonIcons.CloseDark else WindowsControlButtonIcons.Close
-                    } else {
-                        if (isDark) {
-                            WindowsControlButtonIcons.CloseInactiveDark
-                        } else {
-                            WindowsControlButtonIcons.CloseInactive
-                        }
-                    },
-                iconHover = WindowsControlButtonIcons.CloseHover,
-                isCloseButton = true,
-                contentDescription = "Close",
-            )
         }
     }
 }
+
+/**
+ * Draws a single Fluent caption button. Shared by the [TitleBar]-injected
+ * [WindowControlsWindows] row and the standalone `WindowControls` composable,
+ * so both paths are pixel-identical.
+ */
+@Suppress("FunctionNaming")
+@Composable
+internal fun WindowsWindowControl(
+    type: WindowControlType,
+    state: DecoratedWindowState,
+    style: TitleBarStyle,
+    onClick: () -> Unit,
+) {
+    val isDark = LocalIsDarkTheme.current
+    val isCloseButton = type == WindowControlType.Close
+    val window = LocalTaoWindow.current
+
+    // Deliberately no background of their own: under a backdrop the buttons
+    // sit directly on the material, exactly like Windows 11's native caption
+    // buttons on Mica — glyph and hover overlay only.
+
+    // Feed the button's window-space rect to the native hit-test so hovering
+    // maximize shows the Windows 11 Snap Layouts flyout; clear it when the
+    // button leaves the composition.
+    val positionModifier =
+        if (window != null) {
+            Modifier.onGloballyPositioned { coordinates ->
+                CaptionButtonHitZones.publish(window, type, coordinates.boundsInWindow())
+            }
+        } else {
+            Modifier
+        }
+    if (window != null) {
+        DisposableEffect(window, type) {
+            onDispose { CaptionButtonHitZones.publish(window, type, null) }
+        }
+    }
+
+    WindowsCaptionButton(
+        onClick = onClick,
+        isDark = isDark,
+        style = style,
+        icon = windowsControlIcon(type, active = state.isActive, isDark = isDark),
+        contentDescription = windowsControlDescription(type),
+        iconHover = if (isCloseButton) WindowsControlButtonIcons.CloseHover else null,
+        isCloseButton = isCloseButton,
+        modifier = positionModifier,
+    )
+}
+
+/**
+ * Icon artwork per control, in the four active/inactive x light/dark variants
+ * `decorated-window-core`'s `WindowsWindowControlArea` uses. Exit-fullscreen
+ * has its own set (the "collapse" glyph), matching the legacy AWT backend.
+ */
+private fun windowsControlIcon(
+    type: WindowControlType,
+    active: Boolean,
+    isDark: Boolean,
+): ImageVector =
+    when (type) {
+        WindowControlType.Minimize ->
+            pickVariant(
+                active,
+                isDark,
+                WindowsControlButtonIcons.Minimize,
+                WindowsControlButtonIcons.MinimizeDark,
+                WindowsControlButtonIcons.MinimizeInactive,
+                WindowsControlButtonIcons.MinimizeInactiveDark,
+            )
+
+        WindowControlType.Maximize ->
+            pickVariant(
+                active,
+                isDark,
+                WindowsControlButtonIcons.Maximize,
+                WindowsControlButtonIcons.MaximizeDark,
+                WindowsControlButtonIcons.MaximizeInactive,
+                WindowsControlButtonIcons.MaximizeInactiveDark,
+            )
+
+        WindowControlType.Restore ->
+            pickVariant(
+                active,
+                isDark,
+                WindowsControlButtonIcons.Restore,
+                WindowsControlButtonIcons.RestoreDark,
+                WindowsControlButtonIcons.RestoreInactive,
+                WindowsControlButtonIcons.RestoreInactiveDark,
+            )
+
+        WindowControlType.ExitFullscreen ->
+            pickVariant(
+                active,
+                isDark,
+                WindowsControlButtonIcons.CloseFullscreen,
+                WindowsControlButtonIcons.CloseFullscreenDark,
+                WindowsControlButtonIcons.CloseFullscreenInactive,
+                WindowsControlButtonIcons.CloseFullscreenInactiveDark,
+            )
+
+        WindowControlType.Close ->
+            pickVariant(
+                active,
+                isDark,
+                WindowsControlButtonIcons.Close,
+                WindowsControlButtonIcons.CloseDark,
+                WindowsControlButtonIcons.CloseInactive,
+                WindowsControlButtonIcons.CloseInactiveDark,
+            )
+    }
+
+@Suppress("LongParameterList")
+private fun pickVariant(
+    active: Boolean,
+    isDark: Boolean,
+    light: ImageVector,
+    dark: ImageVector,
+    inactiveLight: ImageVector,
+    inactiveDark: ImageVector,
+): ImageVector =
+    if (active) {
+        if (isDark) dark else light
+    } else {
+        if (isDark) inactiveDark else inactiveLight
+    }
+
+private fun windowsControlDescription(type: WindowControlType): String =
+    when (type) {
+        WindowControlType.Minimize -> "Minimize"
+        WindowControlType.Maximize -> "Maximize"
+        WindowControlType.Restore -> "Restore"
+        WindowControlType.Close -> "Close"
+        WindowControlType.ExitFullscreen -> "Exit fullscreen"
+    }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("FunctionNaming")
@@ -218,24 +253,37 @@ private fun WindowsCaptionButton(
     onClick: () -> Unit,
     isDark: Boolean,
     style: TitleBarStyle,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     contentDescription: String,
-    iconHover: androidx.compose.ui.graphics.vector.ImageVector? = null,
+    iconHover: ImageVector? = null,
     isCloseButton: Boolean = false,
+    modifier: Modifier = Modifier,
 ) {
     var hovered by remember { mutableStateOf(false) }
     var pressed by remember { mutableStateOf(false) }
+    val appearing = hovered || pressed
 
-    val backgroundColor =
-        captionButtonBackground(
+    val targetBackground =
+        windowsCaptionButtonBackground(
             hovered = hovered,
             pressed = pressed,
             isCloseButton = isCloseButton,
             isDark = isDark,
-            style = style,
+            customHover = style.colors.iconButtonHoveredBackground,
+            customPressed = style.colors.iconButtonPressedBackground,
+        )
+    val backgroundColor =
+        animateWindowsCaptionColor(
+            targetBackground,
+            appearing = appearing,
+            durationMillis = WindowsCaptionButtonStyle.BACKGROUND_FADE_OUT_MILLIS,
         )
 
-    val isCloseHovered = (hovered || pressed) && isCloseButton
+    // Keep the white close glyph while the red fill is still fading out so
+    // the X does not snap back to gray on a still-red background.
+    val isCloseHovered =
+        isCloseButton &&
+            (appearing || backgroundColor.alpha > CLOSE_HOVER_ALPHA_EPSILON)
     val currentIcon: Painter =
         rememberVectorPainter(
             if (isCloseHovered && iconHover != null) iconHover else icon,
@@ -251,7 +299,7 @@ private fun WindowsCaptionButton(
 
     Box(
         modifier =
-            Modifier
+            modifier
                 .focusable(false)
                 .fillMaxHeight()
                 .width(WINDOWS_BUTTON_WIDTH)
@@ -270,33 +318,6 @@ private fun WindowsCaptionButton(
         contentAlignment = Alignment.Center,
     ) {
         Image(painter = currentIcon, contentDescription = contentDescription, colorFilter = colorFilter)
-    }
-}
-
-// Mirrors `decorated-window-core/WindowsWindowControlArea.kt` so custom
-// [TitleBarStyle] colors apply identically on the Tao backend. Close-button
-// hover/pressed always use the fixed Windows red — matching AWT.
-private fun captionButtonBackground(
-    hovered: Boolean,
-    pressed: Boolean,
-    isCloseButton: Boolean,
-    isDark: Boolean,
-    style: TitleBarStyle,
-): Color {
-    val customHover = style.colors.iconButtonHoveredBackground
-    val customPressed = style.colors.iconButtonPressedBackground
-    val pressedColor =
-        customPressed.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonPressedDark else WindowsButtonPressedLight
-    val hoveredColor =
-        customHover.takeUnless { it == Color.Transparent }
-            ?: if (isDark) WindowsButtonHoveredDark else WindowsButtonHoveredLight
-    return when {
-        pressed && isCloseButton -> WindowsCloseButtonPressed
-        pressed -> pressedColor
-        hovered && isCloseButton -> WindowsCloseButtonHovered
-        hovered -> hoveredColor
-        else -> Color.Transparent
     }
 }
 

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.RestoreDark: ImageVector
+public val WindowsControlButtonIcons.RestoreDark: ImageVector
     get() {
         if (_RestoreDark != null) {
             return _RestoreDark!!

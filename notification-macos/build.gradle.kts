@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -15,6 +15,7 @@ val publishVersion =
 
 dependencies {
     implementation(project(":core-runtime"))
+    testImplementation(kotlin("test"))
 }
 
 java {
@@ -28,34 +29,8 @@ kotlin {
     }
 }
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the Objective-C JNI bridge into macOS dylibs (arm64 + x64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("darwin-aarch64")
-            .file("libnucleus_notification.dylib")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/macos")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", "build.sh")
-}
-
-tasks.processResources {
-    dependsOn(buildNativeMacOs)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeMacOs)
-    }
+nucleusNative {
+    macos("nucleus_notification")
 }
 
 mavenPublishing {

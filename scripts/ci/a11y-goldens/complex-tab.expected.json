@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "windowTitle": "Tao Backend Demo",
+  "tab": "Complex",
+  "sourceOfTruth": "examples/shared/.../ComplexTab.kt",
+  "description": "Exact expected UIA nodes for the Complex stress tab (initial state after select).",
+  "tabs": [
+    { "name": "Demo", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Scroll", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Zoom", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Window actions", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "A11y", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true },
+    { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "WebView", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Texture", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+  ],
+  "nodes": [
+    {
+      "id": "heading",
+      "name": "Complex a11y stress",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "section-todo",
+      "name": "Todo list",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "todo-status",
+      "name": "\\d+ items, \\d+ done, showing \\d+",
+      "nameMatch": "regex",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": true
+    },
+    {
+      "id": "add-item",
+      "name": "Add item",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "clear-done",
+      "name": "Clear done",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "reset",
+      "name": "Reset",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "toggle-buy-milk",
+      "name": "Toggle done for Buy milk",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "item-buy-milk",
+      "name": "Buy milk",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": true
+    },
+    {
+      "id": "toggle-write-tests",
+      "name": "Toggle done for Write tests",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "item-write-tests",
+      "name": "Write tests",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": true
+    },
+    {
+      "id": "toggle-ship-it",
+      "name": "Toggle done for Ship it",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "item-ship-it",
+      "name": "Ship it",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": true
+    },
+    {
+      "id": "delete-buttons",
+      "name": "Delete",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-ticker",
+      "name": "Auto-ticking progress (high-frequency partials)",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "start-stop",
+      "name": "^(Start|Stop)$",
+      "nameMatch": "regex",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "auto-ticker",
+      "name": "Auto-ticker",
+      "nameMatch": "exact",
+      "controlType": "ProgressBar",
+      "enabled": true,
+      "patternsAll": ["RangeValue"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-expandables",
+      "name": "Expandable groups",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "group-a",
+      "name": "(settings)",
+      "nameMatch": "contains",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["ExpandCollapse"],
+      "requireValidBounds": true,
+      "notes": "Title uses Greek alpha (U+03B1), not Latin 'a'"
+    },
+    {
+      "id": "group-b",
+      "name": "(advanced)",
+      "nameMatch": "contains",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["ExpandCollapse"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "group-c",
+      "name": "(always shown)",
+      "nameMatch": "contains",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["ExpandCollapse"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-form",
+      "name": "Conditional form (subtree replacement)",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "form-basic",
+      "name": "Form mode: basic",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "form-advanced",
+      "name": "Form mode: advanced",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "form-off",
+      "name": "Form mode: off",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "option-a",
+      "name": "Option A (basic)",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "option-b",
+      "name": "Option B (basic)",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "nav-tabs-group",
+      "name": "Main navigation tabs",
+      "nameMatch": "exact",
+      "controlType": "Group",
+      "enabled": true,
+      "requireValidBounds": true
+    }
+  ]
+}

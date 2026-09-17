@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Communication (101 symbols). */
-enum class SFSymbolCommunication(
+public enum class SFSymbolCommunication(
     override val symbolName: String,
 ) : SFSymbol {
     ANTENNA_RADIOWAVES_LEFT_AND_RIGHT("antenna.radiowaves.left.and.right"),

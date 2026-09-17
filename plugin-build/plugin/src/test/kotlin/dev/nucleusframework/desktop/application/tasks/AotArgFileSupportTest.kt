@@ -25,11 +25,66 @@ class AotArgFileSupportTest {
 
         assertEquals("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}", args[0])
         assertEquals("-Dnucleus.aot.mode=training", args[1])
-        assertEquals("-cp", args[2])
-        assertEquals("/tmp/lib/a.jar:/tmp/lib/b.jar", args[3])
-        assertEquals("-Xmx1g", args[4])
-        assertEquals("-Dfoo=bar", args[5])
-        assertEquals("com.example.Main", args[6])
+        assertEquals("-Dnucleus.tao.fatalErrorDialog=false", args[2])
+        assertEquals("-cp", args[3])
+        assertEquals("/tmp/lib/a.jar:/tmp/lib/b.jar", args[4])
+        assertEquals("-Xmx1g", args[5])
+        assertEquals("-Dfoo=bar", args[6])
+        assertEquals("com.example.Main", args[7])
+    }
+
+    @Test
+    fun `buildAotJavaArgs inserts tuning args right after the cache output`() {
+        val aotCacheFile = tmpDir.newFile("tuned.aot")
+        val args =
+            buildAotJavaArgs(
+                classpath = "/tmp/lib/a.jar",
+                javaOptions = listOf("-Xmx1g"),
+                mainClass = "com.example.Main",
+                aotCacheFile = aotCacheFile,
+                tuningArgs = listOf("-XX:+UnlockDiagnosticVMOptions", "-XX:-AOTAdapterCaching"),
+            )
+
+        assertEquals("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}", args[0])
+        assertEquals("-XX:+UnlockDiagnosticVMOptions", args[1])
+        assertEquals("-XX:-AOTAdapterCaching", args[2])
+        assertEquals("-Dnucleus.aot.mode=training", args[3])
+        assertEquals("-Dnucleus.tao.fatalErrorDialog=false", args[4])
+        assertEquals("com.example.Main", args.last())
+    }
+
+    @Test
+    fun `buildAotAdapterCachingArgs disables adapter caching by default and keeps it when opted in`() {
+        assertEquals(
+            listOf("-XX:+UnlockDiagnosticVMOptions", "-XX:-AOTAdapterCaching"),
+            buildAotAdapterCachingArgs(adapterCaching = false),
+        )
+        assertEquals(emptyList<String>(), buildAotAdapterCachingArgs(adapterCaching = true))
+    }
+
+    @Test
+    fun `buildAotTrainingTuningArgs keeps portability flags before user args`() {
+        val args =
+            buildAotTrainingTuningArgs(
+                adapterCachingArgs = buildAotAdapterCachingArgs(adapterCaching = false),
+                extraArgs = listOf("-Dfoo=bar"),
+            )
+
+        assertEquals(
+            listOf("-XX:+UnlockDiagnosticVMOptions", "-XX:-AOTAdapterCaching", "-Dfoo=bar"),
+            args,
+        )
+    }
+
+    @Test
+    fun `buildAotTrainingTuningArgs stays empty in native mode without user args`() {
+        val args =
+            buildAotTrainingTuningArgs(
+                adapterCachingArgs = buildAotAdapterCachingArgs(adapterCaching = true),
+                extraArgs = emptyList(),
+            )
+
+        assertEquals(emptyList<String>(), args)
     }
 
     @Test

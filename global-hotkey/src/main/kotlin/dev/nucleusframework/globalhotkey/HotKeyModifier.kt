@@ -6,7 +6,7 @@ package dev.nucleusframework.globalhotkey
  * Combine using addition: `HotKeyModifier.CONTROL + HotKeyModifier.SHIFT`
  */
 @Suppress("MagicNumber")
-enum class HotKeyModifier(
+public enum class HotKeyModifier(
     internal val nativeFlag: Int,
 ) {
     /** Alt key (Option on macOS). */
@@ -22,8 +22,8 @@ enum class HotKeyModifier(
     META(0x0008),
     ;
 
-    operator fun plus(other: HotKeyModifier): Int = nativeFlag or other.nativeFlag
+    public operator fun plus(other: HotKeyModifier): Int = nativeFlag or other.nativeFlag
 }
 
 /** Combines an existing modifier bitmask with another modifier. */
-operator fun Int.plus(modifier: HotKeyModifier): Int = this or modifier.nativeFlag
+public operator fun Int.plus(modifier: HotKeyModifier): Int = this or modifier.nativeFlag

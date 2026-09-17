@@ -1,0 +1,10 @@
+{
+  "name": "nucleus-electron-builder-toolchain",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Pinned electron-builder toolchain used by the Nucleus Gradle plugin.",
+  "license": "MIT",
+  "dependencies": {
+    "electron-builder": "26.15.5"
+  }
+}

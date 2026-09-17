@@ -33,10 +33,18 @@ class TaoRuntimeResizableSmokeTest {
 
         // The tao event loop takes over this thread; if exitApplication is
         // never reached the forked test JVM would hang with no timeout.
-        thread(isDaemon = true, name = "tao-smoke-watchdog") {
-            Thread.sleep(WATCHDOG_MS)
-            Runtime.getRuntime().halt(WATCHDOG_EXIT_CODE)
-        }
+        // Disarmed via interrupt once the loop returns: the Gradle executor
+        // JVM is shared, and a still-armed watchdog would halt whatever test
+        // class happens to run WATCHDOG_MS later.
+        val watchdog =
+            thread(isDaemon = true, name = "tao-smoke-watchdog") {
+                try {
+                    Thread.sleep(WATCHDOG_MS)
+                } catch (_: InterruptedException) {
+                    return@thread // test finished in time
+                }
+                Runtime.getRuntime().halt(WATCHDOG_EXIT_CODE)
+            }
 
         taoApplication {
             var resizable by remember { mutableStateOf(true) }
@@ -56,6 +64,7 @@ class TaoRuntimeResizableSmokeTest {
                 }
             }
         }
+        watchdog.interrupt()
 
         assertEquals(
             false,

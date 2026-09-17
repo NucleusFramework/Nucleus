@@ -55,7 +55,9 @@ abstract class GraalvmSettings
         // generally a small win, but it is Oracle-specific and non-deterministic across GraalVM
         // versions. Set to `false` to opt out (`-H:-MLProfileInference`), yielding `PGO: off`. Only
         // effective at optimization levels that run the ML pass (i.e. `-O2`); ignored under `-Os`.
-        // Defaults to `true` to match Oracle GraalVM's out-of-the-box behavior.
+        // Ignored on non-Oracle toolchains (a warning is logged) — community builds have no ML
+        // profile inference, so they already behave as if it were disabled. Defaults to `true` to
+        // match Oracle GraalVM's out-of-the-box behavior.
         val mlProfileInference: Property<Boolean> = objects.notNullProperty(true)
 
         // Automatically register the project's own resources (its source-set resource directories
@@ -90,6 +92,61 @@ abstract class GraalvmSettings
         val maxHeapSize: Property<String> = objects.nullableProperty()
         val maxHeapSizePercent: Property<Int> = objects.notNullProperty(25)
 
+        // Garbage collector baked into the image (`--gc=`). Unlike the JVM, the collector is fixed
+        // at build time. Leave unset to keep native-image's default (Serial GC, the right fit for a
+        // desktop app's small heap). [NativeImageGarbageCollector.G1] is for heaps that outgrow it,
+        // and is Oracle GraalVM + Linux only — elsewhere it degrades to a warning instead of
+        // failing the build. [maxHeapSizePercent] follows the selected collector: it is baked as
+        // `-R:MaximumHeapSizePercent` under Serial/Epsilon and as `-R:MaxRAMPercentage` under G1,
+        // which does not know the former option.
+        val garbageCollector: Property<NativeImageGarbageCollector> = objects.nullableProperty()
+
+        // Exact reachability metadata on the `runGraalvmNative` (quick-build) dev loop only.
+        // Unregistered reflective lookups then throw `MissingReflectionRegistrationError` naming
+        // the missing element, instead of a nested ClassNotFoundException chain. Never applied to
+        // create/package distributable tasks — optional-dependency probes in third-party code die
+        // under exact mode. Defaults to [ExactReachabilityMetadata.APP_PACKAGES] (scoped to the
+        // package of mainClass). Set [ExactReachabilityMetadata.OFF] to opt out, or
+        // [ExactReachabilityMetadata.packages] for multi-root apps.
+        // Runtime reporting mode is selected with `-Pnucleus.graalvm.missingRegistration=warn|exit|throw`
+        // (default warn) so one run surfaces every missing registration.
+        val exactReachabilityMetadata: Property<ExactReachabilityMetadata> =
+            objects.notNullProperty(ExactReachabilityMetadata.APP_PACKAGES)
+
+        // Detect project classes that no bytecode on the classpath references and register a
+        // public no-arg `<init>` for them. Covers annotation-processor output loaded by naming
+        // convention (Room `*_Impl`, Dagger/Hilt `*_Factory`, Moshi adapters, …) that L1/L2/L3
+        // and literal `Class.forName` analysis cannot see. Guards: concrete public class with a
+        // public no-arg ctor, and a supertype (≠ Object) or interface referenced by app code —
+        // so Kotlin file facades and most dead leaves stay out. Defaults to `true`; set `false`
+        // to opt out. See #441.
+        val detectOrphanProjectClasses: Property<Boolean> = objects.notNullProperty(true)
+
+        // Sledgehammer: register a public no-arg `<init>` for every project class that has one.
+        // Unblocks a missing reflective type in ~30s at the cost of measurable image growth.
+        // Strictly opt-in — never a default. Prefer [detectOrphanProjectClasses] first. See #441.
+        val reflectionForProjectClasses: Property<Boolean> = objects.notNullProperty(false)
+
+        // Extra `native-image` arguments appended verbatim, after everything the plugin derives.
+        //
+        // Nucleus deliberately leaves the SLF4J lifecycle alone: the API and the app-selected
+        // backend both initialize at RUN time, so the app keeps control of its provider, log
+        // levels and environment-dependent configuration. Forcing `org.slf4j` to build time from
+        // a shared runtime module breaks any backend that stays run-time initialized — SLF4J 2.x
+        // provider discovery would then park backend objects (Logback's `LogbackMDCAdapter` behind
+        // `MDC.MDC_ADAPTER`, its `LoggerContext` behind `LoggerFactory.PROVIDER`) in the image heap,
+        // which native-image rejects. Adding the backend's classes one by one only surfaces the
+        // next object in that graph.
+        //
+        // An app with a fixed, tested backend can still opt in here:
+        //
+        //     graalvm { buildArgs.add("--initialize-at-build-time=org.slf4j") }
+        //
+        // That trades flexibility for a cheaper first logging call and a deterministic setup: the
+        // provider is frozen at build time, and system properties / levels / other environment
+        // state can be captured from the build machine. Backend-specific reflection and resource
+        // metadata are a separate requirement either way. Worth it only after measuring a real
+        // benefit on the backend and platforms you ship.
         val buildArgs: ListProperty<String> = objects.listProperty(String::class.java)
         val nativeImageConfigBaseDir: DirectoryProperty = objects.directoryProperty()
         val toolchain: GraalvmToolchainSettings = objects.new()
@@ -122,19 +179,25 @@ abstract class GraalvmSettings
 /**
  * GraalVM JDK toolchain acquisition.
  *
- * By default the plugin downloads Oracle GraalVM (the former Enterprise Edition) on first
- * use and caches it under `<gradle-user-home>/nucleus/graalvm` — no locally installed
- * GraalVM is required. Innovation releases (the default [channel]) come from
- * `gds.oracle.com`, LTS and pinned releases from `download.oracle.com`. On Intel macs,
- * which Oracle stopped supporting after GraalVM 25.0.1, the plugin falls back to BellSoft
- * Liberica NIK (resolved through the BellSoft discovery API).
+ * By default the plugin downloads **GraalVM Community Edition** on first use and caches it
+ * under `<gradle-user-home>/nucleus/graalvm` — no locally installed GraalVM is required.
+ * Community builds come from the `graalvm/graalvm-ce-builds` GitHub releases; setting
+ * [distribution] to [GraalvmDistribution.ORACLE] switches to Oracle GraalVM instead
+ * (innovation releases from `gds.oracle.com`, LTS and pinned releases from
+ * `download.oracle.com`) and logs a licensing warning. On Intel macs, which both
+ * distributions stopped shipping after 25.0.1, the plugin falls back to BellSoft Liberica
+ * NIK (resolved through the BellSoft discovery API). Only the JDK feature version carries
+ * over to that fallback — BellSoft ships the LTS line only, so an Intel mac gets the newest
+ * NIK 25.0.x even when [channel] selects an innovation release.
  *
  * A `GRAALVM_HOME` environment variable pointing at a valid GraalVM installation always
  * wins over the download — useful on CI where `setup-graalvm` already provisioned one.
  * Set [autoDownload] to `false` to resolve through the regular Gradle toolchain machinery
- * instead ([GraalvmSettings.javaLanguageVersion] / [GraalvmSettings.jvmVendor]).
+ * instead ([GraalvmSettings.javaLanguageVersion] / [GraalvmSettings.jvmVendor]); note that
+ * [distribution] still declares intent in that case, since it also gates the Oracle-only
+ * tasks (`runWithPgoInstrument`).
  *
- * "latest" versions ("25", "25i1") are sticky once downloaded; delete the corresponding
+ * "latest" versions ("25", "25i3") are sticky once downloaded; delete the corresponding
  * directory under [installDir] to pick up a newer build.
  */
 abstract class GraalvmToolchainSettings
@@ -145,12 +208,21 @@ abstract class GraalvmToolchainSettings
         /** Download and cache the GraalVM JDK automatically. Defaults to `true`. */
         val autoDownload: Property<Boolean> = objects.notNullProperty(true)
 
+        /**
+         * Which GraalVM build to use. Defaults to [GraalvmDistribution.COMMUNITY] (GPLv2 with
+         * the Classpath Exception, no restriction on redistributing it inside a paid app).
+         * [GraalvmDistribution.ORACLE] unlocks PGO, `-O3` and advanced obfuscation but is
+         * governed by the GraalVM Free Terms and Conditions; selecting it logs a warning.
+         */
+        val distribution: Property<GraalvmDistribution> =
+            objects.notNullProperty(GraalvmDistribution.COMMUNITY)
+
         /** Release channel used when [version] is not set. Defaults to [GraalvmChannel.INNOVATION]. */
         val channel: Property<GraalvmChannel> = objects.notNullProperty(GraalvmChannel.INNOVATION)
 
         /**
-         * Explicit Oracle GraalVM version, overriding [channel]: an innovation release
-         * (`"25i1"`), a feature version tracking the latest CPU (`"25"`), or a pinned
+         * Explicit GraalVM version, overriding [channel]: an innovation release
+         * (`"25i3"`), a feature version tracking the latest CPU (`"25"`), or a pinned
          * patch release (`"25.0.1"`).
          */
         val version: Property<String> = objects.nullableProperty()
@@ -167,6 +239,10 @@ abstract class GraalvmToolchainSettings
 
 /**
  * Profile-Guided Optimization settings (Oracle GraalVM only).
+ *
+ * Requires `graalvm { toolchain { distribution = GraalvmDistribution.ORACLE } }`: under the
+ * default [GraalvmDistribution.COMMUNITY] toolchain the `runWithPgoInstrument` task is not
+ * registered at all, and a recorded [profile] is ignored with a warning.
  *
  * Workflow:
  * 1. `./gradlew runWithPgoInstrument` — builds an instrumented native image, packages and runs

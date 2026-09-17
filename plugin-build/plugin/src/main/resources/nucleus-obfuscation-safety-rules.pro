@@ -7,8 +7,10 @@
 # open-source and carry no IP to protect, so their *names* are preserved while everything the
 # application declares (its own packages) is still obfuscated.
 #
-# `allowshrinking,allowoptimization` keeps ProGuard's shrinking and optimization passes fully
-# active on these classes (dead Compose code is still stripped, methods still optimized) — only
-# the renaming pass is held back.
--keep,allowshrinking,allowoptimization class androidx.** { *; }
--keep,allowshrinking,allowoptimization class kotlinx.** { *; }
+# `allowshrinking` keeps the shrinking pass fully active on these classes (dead Compose code
+# is still stripped) — renaming AND optimization are held back. Optimization must stay off for
+# kept-by-name framework classes: ProGuard's method specialization/class merging rewrites
+# signatures inside kotlinx.coroutines inconsistently with their call sites, producing
+# `VerifyError: Bad type on operand stack` in ChannelsKt.trySendBlocking at runtime.
+-keep,allowshrinking class androidx.** { *; }
+-keep,allowshrinking class kotlinx.** { *; }

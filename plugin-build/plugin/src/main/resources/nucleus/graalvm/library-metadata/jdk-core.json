@@ -84,6 +84,9 @@
             "type": "java.io.Reader"
         },
         {
+            "type": "java.io.Serializable"
+        },
+        {
             "type": "java.lang.Boolean",
             "jniAccessible": true,
             "methods": [
@@ -151,6 +154,14 @@
             "methods": [
                 {
                     "name": "getComponentType",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "getModule",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "isSealed",
                     "parameterTypes": []
                 }
             ]
@@ -355,19 +366,177 @@
             ]
         },
         {
+            "type": "java.lang.Module",
+            "methods": [
+                {
+                    "name": "isNativeAccessEnabled",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "java.lang.foreign.FunctionDescriptor",
+            "methods": [
+                {
+                    "name": "of",
+                    "parameterTypes": [
+                        "java.lang.foreign.MemoryLayout",
+                        "java.lang.foreign.MemoryLayout[]"
+                    ]
+                },
+                {
+                    "name": "ofVoid",
+                    "parameterTypes": [
+                        "java.lang.foreign.MemoryLayout[]"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "java.lang.foreign.Linker",
+            "methods": [
+                {
+                    "name": "defaultLookup",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "downcallHandle",
+                    "parameterTypes": [
+                        "java.lang.foreign.MemorySegment",
+                        "java.lang.foreign.FunctionDescriptor",
+                        "java.lang.foreign.Linker$Option[]"
+                    ]
+                },
+                {
+                    "name": "nativeLinker",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "java.lang.foreign.Linker$Option[]"
+        },
+        {
+            "type": "java.lang.foreign.MemoryLayout",
+            "methods": [
+                {
+                    "name": "byteSize",
+                    "parameterTypes": []
+                }
+            ]
+        },
+        {
+            "type": "java.lang.foreign.MemoryLayout[]"
+        },
+        {
+            "type": "java.lang.foreign.MemorySegment",
+            "methods": [
+                {
+                    "name": "address",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "asByteBuffer",
+                    "parameterTypes": []
+                },
+                {
+                    "name": "ofAddress",
+                    "parameterTypes": [
+                        "long"
+                    ]
+                },
+                {
+                    "name": "ofBuffer",
+                    "parameterTypes": [
+                        "java.nio.Buffer"
+                    ]
+                },
+                {
+                    "name": "reinterpret",
+                    "parameterTypes": [
+                        "long"
+                    ]
+                }
+            ]
+        },
+        {
             "type": "java.lang.foreign.MemorySegment[]"
+        },
+        {
+            "type": "java.lang.foreign.SymbolLookup",
+            "methods": [
+                {
+                    "name": "findOrThrow",
+                    "parameterTypes": [
+                        "java.lang.String"
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "java.lang.foreign.ValueLayout",
+            "fields": [
+                {
+                    "name": "ADDRESS"
+                },
+                {
+                    "name": "JAVA_LONG"
+                }
+            ]
         },
         {
             "type": "java.lang.invoke.MethodHandle"
         },
         {
-            "type": "java.lang.invoke.MethodHandles"
+            "type": "java.lang.invoke.MethodHandles",
+            "methods": [
+                {
+                    "name": "byteArrayViewVarHandle",
+                    "parameterTypes": [
+                        "java.lang.Class",
+                        "java.nio.ByteOrder"
+                    ]
+                },
+                {
+                    "name": "byteBufferViewVarHandle",
+                    "parameterTypes": [
+                        "java.lang.Class",
+                        "java.nio.ByteOrder"
+                    ]
+                },
+                {
+                    "name": "privateLookupIn",
+                    "parameterTypes": [
+                        "java.lang.Class",
+                        "java.lang.invoke.MethodHandles$Lookup"
+                    ]
+                }
+            ]
         },
         {
-            "type": "java.lang.invoke.MethodHandles$Lookup"
+            "type": "java.lang.invoke.MethodHandles$Lookup",
+            "methods": [
+                {
+                    "name": "findVarHandle",
+                    "parameterTypes": [
+                        "java.lang.Class",
+                        "java.lang.String",
+                        "java.lang.Class"
+                    ]
+                }
+            ]
         },
         {
             "type": "java.lang.invoke.MethodType"
+        },
+        {
+            "type": "java.lang.invoke.VarHandle",
+            "methods": [
+                {
+                    "name": "acquireFence",
+                    "parameterTypes": []
+                }
+            ]
         },
         {
             "type": "java.lang.reflect.Method",
@@ -408,12 +577,43 @@
             "jniAccessible": true,
             "methods": [
                 {
+                    "name": "alignedSlice",
+                    "parameterTypes": [
+                        "int"
+                    ]
+                },
+                {
                     "name": "array",
                     "parameterTypes": []
                 },
                 {
                     "name": "arrayOffset",
                     "parameterTypes": []
+                },
+                {
+                    "name": "put",
+                    "parameterTypes": [
+                        "int",
+                        "java.nio.ByteBuffer",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "put",
+                    "parameterTypes": [
+                        "int",
+                        "byte[]",
+                        "int",
+                        "int"
+                    ]
+                },
+                {
+                    "name": "slice",
+                    "parameterTypes": [
+                        "int",
+                        "int"
+                    ]
                 }
             ]
         },

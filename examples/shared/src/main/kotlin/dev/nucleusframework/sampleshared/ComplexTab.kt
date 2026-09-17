@@ -574,12 +574,20 @@ private fun ComplexButton(
             .clip(RoundedCornerShape(6.dp))
             .background(if (enabled) Color(0xFF1F2937) else Color(0xFF11151B))
             .padding(horizontal = 10.dp, vertical = 5.dp)
+    // mergeDescendants + contentDescription: label is the accessible name;
+    // clickable must stay outside a bare semantics {} that would drop OnClick.
     val mod =
         if (enabled) {
-            base.clickable { onClick() }.semantics { role = Role.Button }
+            base
+                .clickable { onClick() }
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    contentDescription = label
+                }
         } else {
-            base.semantics {
+            base.semantics(mergeDescendants = true) {
                 role = Role.Button
+                contentDescription = label
                 this[androidx.compose.ui.semantics.SemanticsProperties.Disabled] = Unit
             }
         }

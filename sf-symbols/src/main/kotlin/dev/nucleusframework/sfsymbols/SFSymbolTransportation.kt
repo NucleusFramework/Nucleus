@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Transportation (417 symbols). */
-enum class SFSymbolTransportation(
+public enum class SFSymbolTransportation(
     override val symbolName: String,
 ) : SFSymbol {
     AIRPLANE("airplane"),

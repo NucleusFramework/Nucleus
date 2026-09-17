@@ -35,6 +35,21 @@ abstract class AbstractPlatformSettings {
 abstract class AbstractMacOSPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
 
+    /**
+     * Name of the `.app` bundle directory, without the `.app` extension.
+     *
+     * Every macOS artifact — DMG, ZIP, PKG, the raw app image and the GraalVM bundle — ships the
+     * bundle under this exact name, so an app installed from one format can be updated from another.
+     *
+     * Defaults to [AbstractDistributions.appName], falling back to [packageName] and then to the
+     * root `packageName`. The value is sanitized the same way electron-builder sanitizes
+     * `productName`, so characters that are illegal in a filename are dropped.
+     *
+     * Note that this only renames the bundle directory: the launcher stays at
+     * `Contents/MacOS/<packageName>` and `CFBundleName` keeps using `appName`.
+     */
+    var bundleName: String? = null
+
     var packageBuildVersion: String? = null
     var dmgPackageVersion: String? = null
     var dmgPackageBuildVersion: String? = null
@@ -222,6 +237,11 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
     var packageName: String? = null
     var console: Boolean = false
     var dirChooser: Boolean = true
+
+    @Deprecated(
+        "Use msi { perMachine = ... } instead. Note the inverted meaning: " +
+            "perUserInstall = true is equivalent to msi.perMachine = false.",
+    )
     var perUserInstall: Boolean = false
     var shortcut: Boolean = false
     var menu: Boolean = false
@@ -237,10 +257,22 @@ abstract class WindowsPlatformSettings : AbstractPlatformSettings() {
         fn.execute(nsis)
     }
 
+    val msi: MsiSettings = objects.newInstance(MsiSettings::class.java)
+
+    fun msi(fn: Action<MsiSettings>) {
+        fn.execute(msi)
+    }
+
     val appx: AppXSettings = objects.newInstance(AppXSettings::class.java)
 
     fun appx(fn: Action<AppXSettings>) {
         fn.execute(appx)
+    }
+
+    val portable: PortableSettings = objects.newInstance(PortableSettings::class.java)
+
+    fun portable(fn: Action<PortableSettings>) {
+        fn.execute(portable)
     }
 
     val signing: WindowsSigningSettings = objects.newInstance(WindowsSigningSettings::class.java)

@@ -143,7 +143,7 @@ internal object SystemdUserBackend : AutoLaunchBackend {
                 null
             }
 
-    private fun buildUnitContent(execPath: String): String {
+    internal fun buildUnitContent(execPath: String): String {
         val description = NucleusApp.appName ?: NucleusApp.appId
         // systemd ExecStart accepts a double-quoted string for paths with spaces;
         // internal double quotes are backslash-escaped per systemd.unit(5).
@@ -152,10 +152,30 @@ internal object SystemdUserBackend : AutoLaunchBackend {
         // / XAUTHORITY into the user systemd environment (gnome-session, plasma-workspace,
         // etc. call `systemctl --user import-environment` early in session setup). Firing
         // before that yields HeadlessException in AWT/Compose.
+        //
+        // The environment is imported by then, but the *appearance* settings are not: on
+        // GNOME, gsd-xsettings publishes Xft.dpi into the X resource database later still.
+        // Toolkits that sample the display scale once at startup (skiko's autodpi freezes
+        // sun.java2d.uiScale at library load) then read an empty resource database and stay
+        // at 1.0 for the life of the process — a HiDPI app auto-started at login renders at
+        // half size while a manual launch is always correct.
+        //
+        // gnome-session-x11-services-ready.target is the synchronization point ordered AFTER
+        // org.gnome.SettingsDaemon.XSettings.service (which declares
+        // `Before=gnome-session-x11-services-ready.target`); the non-"ready" target is ordered
+        // *before* it, so both names are listed and only the ready one actually closes the gap.
+        // It is active on Wayland sessions too, since Xwayland clients need XSETTINGS. systemd
+        // silently ignores ordering dependencies on units that do not exist, so this is a no-op
+        // on non-GNOME desktops and on pure-Wayland sessions that publish no Xft.dpi anyway.
+        //
+        // Caveat: XSettings.service is Type=dbus, so systemd considers it active once the bus
+        // name is acquired, not once RESOURCE_MANAGER has been written to the root window. This
+        // narrows the race to sub-second rather than provably closing it.
         return """
             |[Unit]
             |Description=$description autostart
             |After=graphical-session.target
+            |After=gnome-session-x11-services.target gnome-session-x11-services-ready.target
             |PartOf=graphical-session.target
             |
             |[Service]

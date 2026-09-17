@@ -19,7 +19,7 @@ import dev.nucleusframework.systeminfo.model.UserInfo
 import dev.nucleusframework.systeminfo.windows.WindowsSystemInfo
 
 @Suppress("TooManyFunctions")
-object SystemInfo {
+public object SystemInfo {
     private val delegate: PlatformSystemInfo? =
         when (Platform.Current) {
             Platform.Windows -> WindowsSystemInfo
@@ -28,35 +28,35 @@ object SystemInfo {
             else -> null
         }
 
-    fun isAvailable(): Boolean = delegate?.isAvailable() ?: false
+    public fun isAvailable(): Boolean = delegate?.isAvailable() ?: false
 
-    fun osInfo(): OsInfo? = delegate?.osInfo()
+    public fun osInfo(): OsInfo? = delegate?.osInfo()
 
-    fun memoryInfo(): MemoryInfo? = delegate?.memoryInfo()
+    public fun memoryInfo(): MemoryInfo? = delegate?.memoryInfo()
 
-    fun cpuInfo(): CpuGlobalInfo? = delegate?.cpuInfo()
+    public fun cpuInfo(): CpuGlobalInfo? = delegate?.cpuInfo()
 
-    fun disks(): List<DiskInfo> = delegate?.disks() ?: emptyList()
+    public fun disks(): List<DiskInfo> = delegate?.disks() ?: emptyList()
 
-    fun components(): List<ComponentInfo> = delegate?.components() ?: emptyList()
+    public fun components(): List<ComponentInfo> = delegate?.components() ?: emptyList()
 
-    fun networks(): List<NetworkInterfaceInfo> = delegate?.networks() ?: emptyList()
+    public fun networks(): List<NetworkInterfaceInfo> = delegate?.networks() ?: emptyList()
 
-    fun users(): List<UserInfo> = delegate?.users() ?: emptyList()
+    public fun users(): List<UserInfo> = delegate?.users() ?: emptyList()
 
-    fun motherboard(): MotherboardInfo? = delegate?.motherboard()
+    public fun motherboard(): MotherboardInfo? = delegate?.motherboard()
 
-    fun product(): ProductInfo? = delegate?.product()
+    public fun product(): ProductInfo? = delegate?.product()
 
-    fun processes(): List<ProcessInfo> = delegate?.processes() ?: emptyList()
+    public fun processes(): List<ProcessInfo> = delegate?.processes() ?: emptyList()
 
-    fun process(pid: Long): ProcessInfo? = delegate?.process(pid)
+    public fun process(pid: Long): ProcessInfo? = delegate?.process(pid)
 
-    fun gpus(): List<GpuInfo> = delegate?.gpus() ?: emptyList()
+    public fun gpus(): List<GpuInfo> = delegate?.gpus() ?: emptyList()
 
-    fun batteryInfo(): BatteryInfo? = delegate?.batteryInfo()
+    public fun batteryInfo(): BatteryInfo? = delegate?.batteryInfo()
 
-    fun idleTime(): Long = delegate?.idleTime() ?: -1L
+    public fun idleTime(): Long = delegate?.idleTime() ?: -1L
 
-    fun connectivityInfo(): ConnectivityInfo? = delegate?.connectivityInfo()
+    public fun connectivityInfo(): ConnectivityInfo? = delegate?.connectivityInfo()
 }

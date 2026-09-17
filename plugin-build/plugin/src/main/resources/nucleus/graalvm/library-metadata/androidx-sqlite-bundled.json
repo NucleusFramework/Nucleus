@@ -1,0 +1,22 @@
+{
+    "_meta": {
+        "description": "AndroidX SQLite bundled driver (FFM/JNI bridges used by Room on desktop)",
+        "matchPackages": [
+            "androidx.sqlite"
+        ]
+    },
+    "reflection": [
+        {
+            "type": "androidx.sqlite.driver.bundled.BundledSQLiteConnectionKt",
+            "jniAccessible": true
+        },
+        {
+            "type": "androidx.sqlite.driver.bundled.BundledSQLiteDriverKt",
+            "jniAccessible": true
+        },
+        {
+            "type": "androidx.sqlite.driver.bundled.BundledSQLiteStatementKt",
+            "jniAccessible": true
+        }
+    ]
+}

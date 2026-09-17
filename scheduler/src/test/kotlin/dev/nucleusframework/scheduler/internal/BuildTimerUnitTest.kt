@@ -82,4 +82,23 @@ class BuildTimerUnitTest {
         assertTrue(unit.contains("[Install]"))
         assertTrue(unit.contains("WantedBy=timers.target"))
     }
+
+    @Test
+    fun `onBoot timer has no OnCalendar or OnUnitInactiveSec`() {
+        val request = TaskRequest.onBoot(TaskId("startup"))
+        val unit = LinuxSystemdScheduler.buildTimerUnit(request)
+
+        assertFalse(unit.contains("OnUnitInactiveSec="))
+        assertFalse(unit.contains("OnCalendar="))
+        assertFalse(unit.contains("OnActiveSec="))
+        assertTrue(unit.contains("Persistent=true"))
+        assertTrue(unit.contains("Description=Nucleus timer: startup"))
+    }
+
+    @Test
+    fun `hourly cron calendar lands in OnCalendar`() {
+        val request = TaskRequest.calendar(TaskId("hourly"), CronExpression.everyHour())
+        val unit = LinuxSystemdScheduler.buildTimerUnit(request)
+        assertTrue(unit.contains("OnCalendar=*-*-* *:00:00"))
+    }
 }

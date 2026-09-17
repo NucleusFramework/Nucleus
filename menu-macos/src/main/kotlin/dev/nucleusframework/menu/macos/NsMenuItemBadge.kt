@@ -7,37 +7,37 @@ package dev.nucleusframework.menu.macos
  * Use the factory methods for predefined badge types that the system
  * automatically localizes and pluralizes.
  */
-sealed class NsMenuItemBadge {
+public sealed class NsMenuItemBadge {
     /** Badge displaying a numeric count. */
-    data class Count(
+    public data class Count(
         val count: Int,
     ) : NsMenuItemBadge()
 
     /** Badge displaying a custom string. Must be localized by the caller. */
-    data class Text(
+    public data class Text(
         val string: String,
     ) : NsMenuItemBadge()
 
     /** Alert-style badge with a predefined, system-localized label. */
-    data class Alerts(
+    public data class Alerts(
         val count: Int,
     ) : NsMenuItemBadge()
 
     /** New-items-style badge with a predefined, system-localized label. */
-    data class NewItems(
+    public data class NewItems(
         val count: Int,
     ) : NsMenuItemBadge()
 
     /** Updates-style badge with a predefined, system-localized label. */
-    data class Updates(
+    public data class Updates(
         val count: Int,
     ) : NsMenuItemBadge()
 
-    companion object {
-        fun alerts(count: Int): NsMenuItemBadge = Alerts(count)
+    public companion object {
+        public fun alerts(count: Int): NsMenuItemBadge = Alerts(count)
 
-        fun newItems(count: Int): NsMenuItemBadge = NewItems(count)
+        public fun newItems(count: Int): NsMenuItemBadge = NewItems(count)
 
-        fun updates(count: Int): NsMenuItemBadge = Updates(count)
+        public fun updates(count: Int): NsMenuItemBadge = Updates(count)
     }
 }

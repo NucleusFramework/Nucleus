@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class BatteryInfo(
+public data class BatteryInfo(
     val stateOfCharge: Float,
     val state: BatteryState,
     val isPluggedIn: Boolean,

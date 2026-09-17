@@ -22,6 +22,7 @@ import dev.nucleusframework.desktop.application.internal.MacAssetsTool
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
 import dev.nucleusframework.desktop.application.internal.NoCertificateSigner
+import dev.nucleusframework.desktop.application.internal.PathingJarClasspath
 import dev.nucleusframework.desktop.application.internal.PlistKeys
 import dev.nucleusframework.desktop.application.internal.SKIKO_LIBRARY_PATH
 import dev.nucleusframework.desktop.application.internal.cliArg
@@ -37,6 +38,7 @@ import dev.nucleusframework.desktop.application.internal.files.mangledName
 import dev.nucleusframework.desktop.application.internal.files.normalizedPath
 import dev.nucleusframework.desktop.application.internal.files.transformJar
 import dev.nucleusframework.desktop.application.internal.javaOption
+import dev.nucleusframework.desktop.application.internal.renameMacAppBundle
 import dev.nucleusframework.desktop.application.internal.validation.validate
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.clearDirs
@@ -51,6 +53,7 @@ import dev.nucleusframework.internal.utils.notNullProperty
 import dev.nucleusframework.internal.utils.nullableProperty
 import dev.nucleusframework.internal.utils.stacktraceToString
 import dev.nucleusframework.desktop.application.dsl.AdditionalLauncher
+import org.gradle.api.GradleException
 import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.Directory
 import org.gradle.api.file.DirectoryProperty
@@ -168,6 +171,19 @@ abstract class AbstractJPackageTask
         @get:Input
         @get:Optional
         val appName: Property<String> = objects.nullableProperty()
+
+        /**
+         * Name of the macOS `.app` bundle directory produced by this task, without the `.app`
+         * extension.
+         *
+         * jpackage always names the bundle after its `--name` argument ([packageName]), which also
+         * names the launcher and the `.icns`. Renaming only the directory afterwards keeps the app
+         * image aligned with the DMG and ZIP built from it, without touching the launcher name the
+         * jpackage runtime resolves its `.cfg` from.
+         */
+        @get:Input
+        @get:Optional
+        val macBundleName: Property<String> = objects.nullableProperty()
 
         @get:Input
         @get:Optional
@@ -309,8 +325,7 @@ abstract class AbstractJPackageTask
                         }
                     }
                 }
-            val appDir = destinationDir.ioFile.resolve("${packageName.get()}.app")
-            val iconsDir = appDir.resolve("Contents").resolve("Resources")
+            val iconsDir = macAppDir.resolve("Contents").resolve("Resources")
             if (iconsDir.exists()) {
                 iconsDir.deleteRecursively()
             }
@@ -624,15 +639,56 @@ abstract class AbstractJPackageTask
         override fun checkResult(result: ExecResult) {
             super.checkResult(result)
             modifyRuntimeOnMacOsIfNeeded()
+            // Linux only: shrink the jpackage launcher's serialized classpath so the parent
+            // process's single pipe read cannot short-read (JDK-8380085 / Nucleus #454).
+            if (currentOS == OS.Linux && targetFormat == TargetFormat.RawAppImage) {
+                PathingJarClasspath.collapseInLinuxAppImage(
+                    destinationDir = destinationDir.ioFile,
+                    packageName = packageName.get(),
+                    logger = logger,
+                )
+            }
             val outputFile = findOutputFileOrDir(destinationDir.ioFile, targetFormat)
             logger.lifecycle("The distribution is written to ${outputFile.canonicalPath}")
+        }
+
+        /** Bundle directory name jpackage's macOS output is renamed to, without the `.app` suffix. */
+        private val macAppDirName: String
+            get() = macBundleName.orNull?.takeIf { it.isNotBlank() } ?: packageName.get()
+
+        /** Final location of the macOS `.app` bundle, after [renameMacAppDirIfNeeded]. */
+        private val macAppDir: File
+            get() = destinationDir.ioFile.resolve("$macAppDirName.app")
+
+        /**
+         * Renames jpackage's `<packageName>.app` output to `<macBundleName>.app`.
+         *
+         * Runs before signing so the signature is produced against the final layout, and only
+         * renames the directory: `Contents/MacOS/<packageName>` and `<packageName>.icns` keep their
+         * names because the jpackage launcher resolves `Contents/app/<launcher>.cfg` from its own
+         * executable name.
+         */
+        private fun renameMacAppDirIfNeeded() {
+            val jpackageAppDir = destinationDir.ioFile.resolve("${packageName.get()}.app")
+            val target = macAppDir
+            val renamed =
+                try {
+                    renameMacAppBundle(from = jpackageAppDir, to = target)
+                } catch (e: IllegalStateException) {
+                    throw GradleException(e.message ?: "Unable to rename the app bundle", e)
+                }
+            if (renamed) {
+                logger.info("Renamed app bundle to the resolved macOS bundle name: ${target.name}")
+            }
         }
 
         @Suppress("NestedBlockDepth")
         private fun modifyRuntimeOnMacOsIfNeeded() {
             if (currentOS != OS.MacOS || targetFormat != TargetFormat.RawAppImage) return
 
-            val appDir = destinationDir.ioFile.resolve("${packageName.get()}.app")
+            renameMacAppDirIfNeeded()
+
+            val appDir = macAppDir
             val runtimeDir = appDir.resolve("Contents/runtime")
 
             macAssetsTool.assetsFile(workingDir.ioFile).apply {

@@ -1,7 +1,8 @@
 package dev.nucleusframework.window.tao.popup
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.key.KeyEvent
@@ -9,21 +10,33 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.TaoScreenGeometry
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
+import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+import dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeMetalBridge
+import dev.nucleusframework.window.tao.ffi.NativeTaoMacOsDndBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridge
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.scene.LocalTaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.MetalTextureHostCache
+import dev.nucleusframework.window.tao.scene.TaoMetalTextureHost
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.TaoSceneScrollRouter
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
+import dev.nucleusframework.window.tao.scene.newMetalRenderExecutor
 import dev.nucleusframework.window.tao.scene.recordSceneToPicture
 import dev.nucleusframework.window.tao.scene.replayPictureToFrame
 import org.jetbrains.skia.DirectContext
@@ -34,7 +47,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
-import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
 
 /**
@@ -66,7 +78,8 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private var panel: Long = 0
     private var attachmentHandle: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
     private var disposed = false
 
     /**
@@ -81,11 +94,21 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     override var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     override var onKeyEvent: ((KeyEvent) -> Boolean)? = null
 
-    private val frameClock = BroadcastFrameClock { scheduleRender() }
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
-    private val renderPending = AtomicBoolean(false)
+    private val framePump = StandaloneFramePump { renderNow() }
+
+    // Wheel → Scroll, trackpad gesture → Pan, same as the window host (#654).
+    private val scrollRouter =
+        TaoSceneScrollRouter(
+            object : TaoSceneScrollRouter.Target {
+                override val scene: ComposeScene? get() = this@TaoStandalonePopupHostMac.scene
+                override val scale: Float get() = this@TaoStandalonePopupHostMac.scale
+
+                override fun guard(block: () -> Unit) = framePump.nonReentrant(block)
+            },
+        )
     private val replayInFlight = AtomicBoolean(false)
     private var nextFrameNs = 0L
     private var visible = false
@@ -95,10 +118,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     // init blocks in declaration order — a later-declared executor would be
     // null at that point. (Skia's Metal context is thread-affine, so it is owned
     // by this single-thread executor for the lifetime of the host.)
+    // Every task drains its own ObjC autorelease pool — see
+    // newMetalRenderExecutor (#494).
     private val renderExecutor: ExecutorService =
-        Executors.newSingleThreadExecutor { r ->
-            Thread(r, "TaoStandalonePopupMetalRender").apply { isDaemon = true }
-        }
+        newMetalRenderExecutor("TaoStandalonePopupMetalRender")
 
     init {
         var valid = false
@@ -132,16 +155,21 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     val queuePtr = NativeMetalBridge.nativeQueuePtr(attachmentHandle)
                     directContext =
                         runOnRenderThread { DirectContext.makeMetal(devicePtr, queuePtr) }
-                    scene =
-                        CanvasLayersComposeScene(
+                    val dndManager =
+                        TaoDragAndDropManager(
+                            getRootNode = { scene!!.rootDragAndDropNode },
+                        )
+                    sceneBundle =
+                        canvasLayersSceneBundle(
+                            coroutineContext = flushingDispatcher,
                             density = Density(scale),
                             layoutDirection = GlobalLayoutDirection,
                             size = IntSize(1, 1),
-                            coroutineContext = flushingDispatcher + frameClock,
-                            platformContext = StandalonePopupPlatformContext(),
-                            invalidate = { scheduleRender() },
+                            platformContext = StandalonePopupPlatformContext(dndManager),
+                            requestFrame = { scheduleRender() },
                         )
                     PopupNativeBridge.nativeSetEventCallback(panel, PanelEventCallback())
+                    registerInboundDnD()
                     PopupNativeBridge.nativeOrderOut(panel) // hidden until first setVisible(true)
                     valid = true
                     logger.fine { "Standalone popup panel ready (panel=$panel, scale=$scale)" }
@@ -152,8 +180,37 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        // Initial composition dispatches coroutines (LaunchedEffects) into the
+        // scene dispatcher; rendering inline from those would race the apply
+        // pass still on the stack. Same guard as the input entry points below.
+        framePump.nonReentrant { scene?.setContent(content = content) }
         scheduleRender()
+    }
+
+    /**
+     * This panel owns its Skia context and render thread, so `TextureView`s
+     * inside it import onto that context rather than a window scene's.
+     */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoMetalTextureHost provides metalTextureHost()) {
+            content()
+        }
+    }
+
+    /** This panel's handle for `TextureView`s composed inside it — see [MetalTextureHostCache]. */
+    private val metalTextureHostCache = MetalTextureHostCache()
+
+    private fun metalTextureHost(): TaoMetalTextureHost? {
+        val outer = this
+        return metalTextureHostCache.get(attachmentHandle, directContext) { device, ctx ->
+            object : TaoMetalTextureHost {
+                override val metalDevicePtr: Long = device
+                override val directContext: DirectContext = ctx
+
+                override fun <T> runOnRenderThread(block: () -> T): T = outer.runOnRenderThread(block)
+            }
+        }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -238,12 +295,25 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     }
 
     override fun dispose() {
-        if (!isValid || disposed) return
+        if (disposed) return
         disposed = true
+        framePump.disposed = true
+        if (!isValid) {
+            // Never came up (bridges missing, panel creation failed): only the
+            // eagerly created pieces need releasing.
+            scrollRouter.cancel()
+            renderExecutor.shutdown()
+            return
+        }
+        revokeInboundDnD()
         PopupNativeBridge.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridge.nativeSetEventCallback(panel, null)
-        scene?.close()
-        scene = null
+        // After the native callback is gone: no scroll can reach a router
+        // whose timer scope is already dead.
+        scrollRouter.cancel()
+        sceneBundle?.close()
+        sceneBundle = null
+        metalTextureHostCache.invalidate()
         val ctx = directContext
         directContext = null
         if (ctx != null) runCatching { runOnRenderThread { ctx.close() } }
@@ -258,15 +328,12 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     // ── Rendering ─────────────────────────────────────────────────────────
 
     private fun scheduleRender() {
-        if (disposed) return
-        if (!renderPending.compareAndSet(false, true)) return
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() }
+        framePump.schedule()
     }
 
     private fun renderNow() {
-        renderPending.set(false)
         if (disposed) return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         val handle = attachmentHandle
         if (handle == 0L || widthPx <= 0 || heightPx <= 0) return
@@ -295,13 +362,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                 if (now < nextFrameNs) nextFrameNs - now else 0L
             }
         if (retryNs > 0L) {
-            if (renderPending.compareAndSet(false, true)) {
-                pacer.schedule(
-                    { TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() } },
-                    retryNs,
-                    TimeUnit.NANOSECONDS,
-                )
-            }
+            pacer.schedule({ scheduleRender() }, retryNs, TimeUnit.NANOSECONDS)
             return
         }
         val now = System.nanoTime()
@@ -310,9 +371,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
         // Record on the main thread (Compose state lives here). The Picture is
         // a thread-safe snapshot — safe to hand to the render thread for replay.
-        frameClock.sendFrame(frameNs)
+        // `recordSceneToPicture` ticks the scene's frame clock with the paced
+        // `frameNs` (via FrameRecomposer.performFrame) before drawing.
         flushingDispatcher.drain()
-        val picture = recordSceneToPicture(sc, widthPx, heightPx, frameNs)
+        val picture = recordSceneToPicture(bundle, widthPx, heightPx, frameNs)
         replayInFlight.set(true)
         renderExecutor.submit {
             try {
@@ -337,16 +399,14 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
      */
     private fun renderFrameBlocking() {
         if (disposed) return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         val ctx = directContext ?: return
         val handle = attachmentHandle
         if (handle == 0L || widthPx <= 0 || heightPx <= 0) return
         flushingDispatcher.drain()
         val frameNs = System.nanoTime()
         nextFrameNs = frameNs + FRAME_INTERVAL_NS
-        frameClock.sendFrame(frameNs)
-        flushingDispatcher.drain()
-        val picture = recordSceneToPicture(sc, widthPx, heightPx, frameNs)
+        val picture = recordSceneToPicture(bundle, widthPx, heightPx, frameNs)
         runOnRenderThread {
             try {
                 replayPictureToFrame(handle, ctx, picture, clearColor = 0x00000000)
@@ -358,6 +418,10 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
 
     // ── Input ─────────────────────────────────────────────────────────────
 
+    // Every scene dispatch below runs inside framePump.nonReentrant: a drag
+    // gesture can force a measure pass synchronously (scrollbar drag →
+    // LazyListState.onScroll → forceRemeasure), and a coroutine dispatched
+    // from within it must post the next frame instead of rendering inline.
     private inner class PanelEventCallback : PopupNativeBridge.EventCallback {
         override fun onPointerEvent(
             type: Int,
@@ -379,12 +443,17 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
                     TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                     else -> PointerEventType.Move
                 }
-            sc.sendPointerEvent(
-                eventType = eventType,
-                position = Offset(x, y),
-                type = PointerType.Mouse,
-                button = pointerButton,
-            )
+            framePump.nonReentrant {
+                // A click ends an open trackpad pan first — inside the pump,
+                // like every other scene dispatch here.
+                if (eventType == PointerEventType.Press) scrollRouter.finishPan()
+                sc.sendPointerEvent(
+                    eventType = eventType,
+                    position = Offset(x, y),
+                    type = PointerType.Mouse,
+                    button = pointerButton,
+                )
+            }
         }
 
         override fun onScroll(
@@ -392,13 +461,12 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             y: Float,
             dx: Float,
             dy: Float,
+            precise: Boolean,
+            gesturePhase: Int,
         ) {
-            scene?.sendPointerEvent(
-                eventType = PointerEventType.Scroll,
-                position = Offset(x, y),
-                scrollDelta = Offset(dx, dy),
-                type = PointerType.Mouse,
-            )
+            framePump.nonReentrant {
+                scrollRouter.onScroll(x, y, appKitWheelToAwtScrollEvent(dx, dy, precise, gesturePhase))
+            }
         }
 
         override fun onKeyEvent(
@@ -407,21 +475,117 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
             codePoint: Int,
             modifiers: Int,
         ) {
-            scene?.dispatchNativeKeyEvent(
-                type = type,
-                vkCode = vkCode,
-                codePoint = codePoint,
-                modifiers = modifiers,
-                onPreviewKeyEvent = onPreviewKeyEvent,
-                onKeyEvent = onKeyEvent,
-            )
+            framePump.nonReentrant {
+                scene?.dispatchNativeKeyEvent(
+                    type = type,
+                    vkCode = vkCode,
+                    codePoint = codePoint,
+                    modifiers = modifiers,
+                    onPreviewKeyEvent = onPreviewKeyEvent,
+                    onKeyEvent = onKeyEvent,
+                )
+            }
+        }
+    }
+
+    // ── Inbound drag-and-drop ─────────────────────────────────────────────
+    //
+    // Ownerless NSPanel content views never go through DecoratedWindow's
+    // NSDraggingDestination install. Register here so Modifier.dragAndDropTarget
+    // inside a TrayApp (e.g. a file converter) receives OS drops.
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!NativeTaoMacOsDndBridge.isLoaded) {
+            TaoDnDDiagnostics.log("macOS standalone popup DnD lib not loaded — inbound disabled")
+            return
+        }
+        val nsView = PopupNativeBridge.nativeContentNsView(panel)
+        if (nsView == 0L) {
+            TaoDnDDiagnostics.log("macOS standalone popup has no NSView — inbound disabled")
+            return
+        }
+        val rc = NativeTaoMacOsDndBridge.nativeRegister(nsView = nsView, callback = InboundDnDCallback())
+        TaoDnDDiagnostics.log("standalone popup nativeRegister rc=$rc")
+    }
+
+    private fun revokeInboundDnD() {
+        if (!NativeTaoMacOsDndBridge.isLoaded) return
+        val nsView = PopupNativeBridge.nativeContentNsView(panel)
+        if (nsView == 0L) return
+        NativeTaoMacOsDndBridge.nativeRevoke(nsView)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability metadata
+     * can register it explicitly — same constraint as the DecoratedWindow host.
+     */
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private inner class InboundDnDCallback : NativeTaoMacOsDndBridge.Callback {
+        private fun node() = scene?.rootDragAndDropNode
+
+        override fun onDragEnter(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
+            if (!hasFiles) return NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            return if (TaoSceneDnD.onDragEnter(node(), x, y)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
+        }
+
+        override fun onDragOver(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int =
+            if (TaoSceneDnD.onDragOver(node(), x, y)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
+
+        override fun onDragLeave(nsView: Long) {
+            TaoDnDDiagnostics.log("standalone popup onDragLeave")
+            TaoSceneDnD.onDragLeave(node())
+        }
+
+        override fun onDrop(
+            nsView: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int {
+            TaoDnDDiagnostics.log("standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
+            return if (TaoSceneDnD.onDrop(node(), x, y, files)) {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_COPY
+            } else {
+                NativeTaoMacOsDndBridge.DROP_EFFECT_NONE
+            }
         }
     }
 
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : PlatformContext.Empty() {
+    private inner class StandalonePopupPlatformContext(
+        override val dragAndDropManager: PlatformDragAndDropManager,
+    ) : TaoPlatformContextBase() {
+        override val sceneScale: Float get() = this@TaoStandalonePopupHostMac.scale
+
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostMac.windowInfo
+
+        // Standalone popup surfaces are always per-pixel transparent, so
+        // dialog scrims must use the alpha-aware blend (#559).
+        override val isWindowTransparent: Boolean get() = true
 
         override fun setPointerIcon(pointerIcon: PointerIcon) {
             if (!isValid || disposed) return
@@ -462,7 +626,7 @@ internal class TaoStandalonePopupHostMac : StandalonePopupHost {
     private companion object {
         val logger: java.util.logging.Logger =
             java.util.logging.Logger
-                .getLogger(TaoStandalonePopupHostMac::class.java.simpleName)
+                .getLogger(TaoStandalonePopupHostMac::class.java.name)
 
         const val HIDDEN_X_PX: Int = -32_000
         const val HIDDEN_Y_PX: Int = -32_000

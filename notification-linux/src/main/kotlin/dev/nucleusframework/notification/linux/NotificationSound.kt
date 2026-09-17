@@ -8,9 +8,9 @@ package dev.nucleusframework.notification.linux
  *
  * Use [Custom] for sound names not covered by the spec.
  */
-sealed interface NotificationSound {
+public sealed interface NotificationSound {
     /** The sound name string sent over D-Bus via the `sound-name` hint. */
-    val value: String
+    public val value: String
 
     /**
      * A custom sound name not in the freedesktop specification.
@@ -20,12 +20,12 @@ sealed interface NotificationSound {
      * ```
      */
     @JvmInline
-    value class Custom(
+    public value class Custom(
         override val value: String,
     ) : NotificationSound
 
     // ── Alerts ──────────────────────────────────────────────────────
-    enum class Alert(
+    public enum class Alert(
         override val value: String,
     ) : NotificationSound {
         NETWORK_CONNECTIVITY_LOST("network-connectivity-lost"),
@@ -38,7 +38,7 @@ sealed interface NotificationSound {
     }
 
     // ── Notifications ───────────────────────────────────────────────
-    enum class Notification(
+    public enum class Notification(
         override val value: String,
     ) : NotificationSound {
         MESSAGE_NEW_INSTANT("message-new-instant"),
@@ -84,7 +84,7 @@ sealed interface NotificationSound {
     }
 
     // ── Actions ─────────────────────────────────────────────────────
-    enum class Action(
+    public enum class Action(
         override val value: String,
     ) : NotificationSound {
         PHONE_OUTGOING_CALLING("phone-outgoing-calling"),
@@ -119,7 +119,7 @@ sealed interface NotificationSound {
     }
 
     // ── Input Feedback ──────────────────────────────────────────────
-    enum class InputFeedback(
+    public enum class InputFeedback(
         override val value: String,
     ) : NotificationSound {
         WINDOW_CLOSE("window-close"),
@@ -169,7 +169,7 @@ sealed interface NotificationSound {
     }
 
     // ── Game ────────────────────────────────────────────────────────
-    enum class Game(
+    public enum class Game(
         override val value: String,
     ) : NotificationSound {
         GAME_OVER_WINNER("game-over-winner"),

@@ -1,37 +1,50 @@
 package dev.nucleusframework.window.tao.popup
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.InternalComposeUiApi
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asComposeCanvas
 import androidx.compose.ui.input.key.KeyEvent
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.platform.PlatformContext
+import androidx.compose.ui.platform.PlatformDragAndDropManager
 import androidx.compose.ui.platform.WindowInfo
-import androidx.compose.ui.scene.CanvasLayersComposeScene
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.IntSize
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoCursorIcon
+import dev.nucleusframework.window.tao.TaoDnDDiagnostics
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
+import dev.nucleusframework.window.tao.dnd.TaoDragAndDropManager
+import dev.nucleusframework.window.tao.dnd.TaoSceneDnD
+import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.linuxWheelToAwtScrollEvent
 import dev.nucleusframework.window.tao.event.toTaoCursorIconCode
 import dev.nucleusframework.window.tao.ffi.NativeTaoEglBridge
 import dev.nucleusframework.window.tao.ffi.PopupNativeBridgeLinux
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
+import dev.nucleusframework.window.tao.releaseGlTextureImports
+import dev.nucleusframework.window.tao.scene.LocalTaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoGlTextureHost
+import dev.nucleusframework.window.tao.scene.TaoPlatformContextBase
+import dev.nucleusframework.window.tao.scene.TaoSceneBundle
+import dev.nucleusframework.window.tao.scene.canvasLayersSceneBundle
+import dev.nucleusframework.window.tao.scene.preservingEglBinding
 import dev.nucleusframework.window.tao.scene.renderGlFrame
+import dev.nucleusframework.window.tao.scene.withEglContextCurrent
 import org.jetbrains.skia.DirectContext
 import org.jetbrains.skia.GLAssembledInterface
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 import kotlin.math.roundToInt
@@ -59,14 +72,15 @@ import kotlin.math.roundToInt
  * on the panel's X event thread and hop to the main thread before touching
  * the scene.
  */
-@OptIn(InternalComposeUiApi::class)
+@OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
 internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override val isValid: Boolean
 
     private var panel: Long = 0
     private var attachment: Long = 0
     private var directContext: DirectContext? = null
-    private var scene: ComposeScene? = null
+    private var sceneBundle: TaoSceneBundle? = null
+    private val scene: ComposeScene? get() = sceneBundle?.scene
     private var disposed = false
 
     /**
@@ -82,87 +96,149 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override var onPreviewKeyEvent: ((KeyEvent) -> Boolean)? = null
     override var onKeyEvent: ((KeyEvent) -> Boolean)? = null
 
-    private val frameClock = BroadcastFrameClock { scheduleRender() }
     private val flushingDispatcher = FlushingDispatcher()
     private val windowInfo = StandalonePopupWindowInfo()
 
-    private val renderPending = AtomicBoolean(false)
+    private val framePump = StandaloneFramePump { renderNow() }
     private var nextFrameNs = 0L
     private var visible = false
+
+    /**
+     * Handle for `TextureView`s composed inside this panel. Published as **state**,
+     * like the window scene and popup layers: the composition reads it, so
+     * dropping it in [dispose] takes effect instead of leaving a live composition
+     * importing onto a context that is about to be destroyed.
+     *
+     * Declared **before** [init], which publishes into it: Kotlin runs property
+     * initializers and `init` blocks in declaration order, so a state declared
+     * below would still be null when the panel comes up.
+     */
+    private val glTextureHostState: MutableState<TaoGlTextureHost?> = mutableStateOf(null)
 
     init {
         var valid = false
         var panelScale = 1f
-        if (!PopupNativeBridgeLinux.isLoaded || !NativeTaoEglBridge.isLoaded) {
-            logger.warning("Standalone popup unavailable: native bridges not loaded")
-        } else if (!PopupNativeBridgeLinux.nativeIsAvailable()) {
-            logger.warning("Standalone popup unavailable: no X server (DISPLAY unset, no XWayland?)")
-        } else {
-            panelScale = PopupNativeBridgeLinux.nativeScale()
-            panel =
-                PopupNativeBridgeLinux.nativeCreatePanel(
-                    xPx = HIDDEN_X_PX,
-                    yPx = HIDDEN_Y_PX,
-                    widthPx = 1,
-                    heightPx = 1,
-                )
-            if (panel == 0L) {
-                logger.warning("Standalone popup unavailable: panel creation failed (no ARGB visual?)")
+        // The bring-up below leaves the panel's EGL context current, and it runs
+        // wherever the panel was composed — `TaoStandalonePopup` builds the host
+        // from `remember {}`, so for a panel added to a live window that is inside
+        // the window scene's render pass. Put back whatever binding we displace,
+        // or the remainder of that frame draws into this 1x1 panel context; see
+        // [preservingEglBinding].
+        preservingEglBinding {
+            if (!PopupNativeBridgeLinux.isLoaded || !NativeTaoEglBridge.isLoaded) {
+                logger.warning("Standalone popup unavailable: native bridges not loaded")
+            } else if (!PopupNativeBridgeLinux.nativeIsAvailable()) {
+                logger.warning("Standalone popup unavailable: no X server (DISPLAY unset, no XWayland?)")
             } else {
-                attachment =
-                    NativeTaoEglBridge.nativeAttachX11(
-                        displayPtr = PopupNativeBridgeLinux.nativeDisplayPtr(),
-                        xid = PopupNativeBridgeLinux.nativeWindowXid(panel),
+                panelScale = PopupNativeBridgeLinux.nativeScale()
+                panel =
+                    PopupNativeBridgeLinux.nativeCreatePanel(
+                        xPx = HIDDEN_X_PX,
+                        yPx = HIDDEN_Y_PX,
                         widthPx = 1,
                         heightPx = 1,
                     )
-                if (attachment == 0L) {
-                    logger.warning("Standalone popup unavailable: EGL attach failed")
-                    PopupNativeBridgeLinux.nativeRelease(panel)
-                    panel = 0
-                } else {
-                    // attachX11 left the context current with swap interval 1;
-                    // never block the Tao main thread on the compositor's vsync.
-                    NativeTaoEglBridge.nativeSetSwapInterval(attachment, 0)
-                    directContext =
-                        runCatching {
-                            val intf =
-                                GLAssembledInterface.createFromNativePointers(
-                                    0L,
-                                    NativeTaoEglBridge.nativeGetProcAddrFunctionPointer(),
-                                )
-                            DirectContext.makeGLWithInterface(intf)
-                        }.getOrNull()
-                    if (directContext != null) {
-                        scene =
-                            CanvasLayersComposeScene(
-                                density = Density(panelScale),
-                                layoutDirection = GlobalLayoutDirection,
-                                size = IntSize(1, 1),
-                                coroutineContext = flushingDispatcher + frameClock,
-                                platformContext = StandalonePopupPlatformContext(),
-                                invalidate = { scheduleRender() },
-                            )
-                        PopupNativeBridgeLinux.nativeSetEventCallback(panel, PanelEventCallback())
-                        valid = true
-                        logger.fine { "Standalone popup panel ready (panel=$panel, scale=$panelScale)" }
-                    } else {
-                        logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
-                        NativeTaoEglBridge.nativeDetach(attachment)
-                        attachment = 0
-                        PopupNativeBridgeLinux.nativeRelease(panel)
-                        panel = 0
-                    }
-                }
+                valid = attachGpu(panelScale)
             }
         }
         scale = panelScale
         isValid = valid
     }
 
+    /**
+     * EGL attach + Skia context + scene, once the X11 panel exists. Returns
+     * whether the panel came up; releases everything it allocated when it did
+     * not. Runs inside [preservingEglBinding] — the attach leaves this panel's
+     * context current on the calling thread.
+     */
+    private fun attachGpu(panelScale: Float): Boolean {
+        if (panel == 0L) {
+            logger.warning("Standalone popup unavailable: panel creation failed (no ARGB visual?)")
+            return false
+        }
+        attachment =
+            NativeTaoEglBridge.nativeAttachX11(
+                displayPtr = PopupNativeBridgeLinux.nativeDisplayPtr(),
+                xid = PopupNativeBridgeLinux.nativeWindowXid(panel),
+                widthPx = 1,
+                heightPx = 1,
+            )
+        if (attachment == 0L) {
+            logger.warning("Standalone popup unavailable: EGL attach failed")
+            PopupNativeBridgeLinux.nativeRelease(panel)
+            panel = 0
+            return false
+        }
+        // attachX11 left the context current with swap interval 1;
+        // never block the Tao main thread on the compositor's vsync.
+        NativeTaoEglBridge.nativeSetSwapInterval(attachment, 0)
+        directContext =
+            runCatching {
+                val intf =
+                    GLAssembledInterface.createFromNativePointers(
+                        0L,
+                        NativeTaoEglBridge.nativeGetProcAddrFunctionPointer(),
+                    )
+                DirectContext.makeGLWithInterface(intf)
+            }.getOrNull()
+        if (directContext == null) {
+            logger.warning("Standalone popup unavailable: Skia DirectContext creation failed")
+            NativeTaoEglBridge.nativeDetach(attachment)
+            attachment = 0
+            PopupNativeBridgeLinux.nativeRelease(panel)
+            panel = 0
+            return false
+        }
+        val dndManager =
+            TaoDragAndDropManager(
+                getRootNode = { scene!!.rootDragAndDropNode },
+            )
+        sceneBundle =
+            canvasLayersSceneBundle(
+                coroutineContext = flushingDispatcher,
+                density = Density(panelScale),
+                layoutDirection = GlobalLayoutDirection,
+                size = IntSize(1, 1),
+                platformContext = StandalonePopupPlatformContext(dndManager),
+                requestFrame = { scheduleRender() },
+            )
+        PopupNativeBridgeLinux.nativeSetEventCallback(panel, PanelEventCallback())
+        publishGlTextureHost()
+        registerInboundDnD()
+        logger.fine { "Standalone popup panel ready (panel=$panel, scale=$panelScale)" }
+        return true
+    }
+
     override fun setContent(content: @Composable () -> Unit) {
-        scene?.setContent(content)
+        // Initial composition dispatches coroutines (LaunchedEffects) into the
+        // scene dispatcher; rendering inline from those would race the apply
+        // pass still on the stack. Same guard as the input entry points below.
+        framePump.nonReentrant { scene?.setContent(content = content) }
         scheduleRender()
+    }
+
+    /**
+     * This panel owns its EGL and Skia contexts, so `TextureView`s inside it
+     * import onto those rather than a window scene's.
+     */
+    @Composable
+    override fun ProvidePanelLocals(content: @Composable () -> Unit) {
+        CompositionLocalProvider(LocalTaoGlTextureHost provides glTextureHostState.value) {
+            content()
+        }
+    }
+
+    private fun publishGlTextureHost() {
+        val ctx = directContext ?: return
+        if (attachment == 0L) return
+        glTextureHostState.value =
+            object : TaoGlTextureHost {
+                override val directContext: DirectContext = ctx
+
+                // Read live: 0 once the panel disposed, so a late disposal can't
+                // bind (nor dereference) a freed attachment.
+                override fun <T> withContextCurrent(block: () -> T): T? = withEglContextCurrent(attachment, block)
+            }
     }
 
     /** Logical (dp) screen position and size of the panel. */
@@ -242,15 +318,31 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     override fun dispose() {
         if (!isValid || disposed) return
         disposed = true
+        framePump.disposed = true
+        revokeInboundDnD()
         PopupNativeBridgeLinux.nativeUninstallOutsideClickMonitor(panel)
         PopupNativeBridgeLinux.nativeSetEventCallback(panel, null)
-        scene?.close()
-        scene = null
-        NativeTaoEglBridge.nativeMakeCurrent(attachment)
-        directContext?.close()
-        directContext = null
-        NativeTaoEglBridge.nativeDetach(attachment)
-        attachment = 0
+        // Teardown binds this panel's context for the Skia frees below and then
+        // destroys it, and it arrives from `DisposableEffect.onDispose` — i.e.
+        // from the caller's composition, inside the window scene's render pass.
+        // Restoring the binding we displace is what keeps the remainder of that
+        // frame (glyph-atlas uploads, flushAndSubmit) from running with a
+        // destroyed context: it would fail silently and leave the window unable
+        // to raster new text until something rebuilt its surface.
+        preservingEglBinding {
+            // Drop the TextureView handle before the context it points at dies.
+            glTextureHostState.value = null
+            sceneBundle?.close()
+            sceneBundle = null
+            NativeTaoEglBridge.nativeMakeCurrent(attachment)
+            // Belt for imports a leaked composition may still hold; scene.close()
+            // above released the leases of every live one.
+            directContext?.let(::releaseGlTextureImports)
+            directContext?.close()
+            directContext = null
+            NativeTaoEglBridge.nativeDetach(attachment)
+            attachment = 0
+        }
         PopupNativeBridgeLinux.nativeRelease(panel)
         panel = 0
     }
@@ -258,16 +350,13 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     // ── Rendering ─────────────────────────────────────────────────────────
 
     private fun scheduleRender() {
-        if (disposed) return
-        if (!renderPending.compareAndSet(false, true)) return
-        TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() }
+        framePump.schedule()
     }
 
     private fun renderNow() {
-        renderPending.set(false)
         if (disposed) return
         val ctx = directContext ?: return
-        val sc = scene ?: return
+        val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
 
         // Keep the scene's coroutine work (recomposer steps, effects) moving
@@ -282,36 +371,42 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         // clock is fed evenly spaced timestamps.
         val now = System.nanoTime()
         if (now < nextFrameNs) {
-            if (renderPending.compareAndSet(false, true)) {
-                pacer.schedule(
-                    { TaoMainDispatcher.dispatch(EmptyCoroutineContext) { renderNow() } },
-                    nextFrameNs - now,
-                    TimeUnit.NANOSECONDS,
-                )
-            }
+            pacer.schedule(
+                { scheduleRender() },
+                nextFrameNs - now,
+                TimeUnit.NANOSECONDS,
+            )
             return
         }
         // Resynchronize after an idle gap; otherwise stay on the fixed grid.
         val frameNs = if (now - nextFrameNs > FRAME_INTERVAL_NS) now else nextFrameNs
         nextFrameNs = frameNs + FRAME_INTERVAL_NS
 
-        // Tick the frame clock before rendering (same ordering as the window
-        // hosts) so withFrameNanos-driven animation state is current.
-        frameClock.sendFrame(frameNs)
+        // Drain queued main-thread work before the frame. The scene's frame
+        // clock is ticked inside `bundle.render` (FrameRecomposer.performFrame)
+        // with the paced `frameNs` timestamp, so withFrameNanos-driven
+        // animations are fed evenly spaced times for smooth motion.
         flushingDispatcher.drain()
 
-        NativeTaoEglBridge.nativeMakeCurrent(attachment)
-        // The attachment owns a private EGL context that only this host's
-        // Skia DirectContext ever touches — no resetGLAll needed (unlike the
-        // Windows shared-process-context path).
-        renderGlFrame(
-            widthPx = widthPx,
-            heightPx = heightPx,
-            directContext = ctx,
-            clearColorArgb = 0x00000000,
-            present = { NativeTaoEglBridge.nativePresent(attachment) },
-        ) { canvas, nanoTime ->
-            sc.render(canvas.asComposeCanvas(), nanoTime)
+        // Context-neutral, like the bring-up: whatever bound the thread's context
+        // before this render task gets it back.
+        preservingEglBinding {
+            NativeTaoEglBridge.nativeMakeCurrent(attachment)
+            // The attachment owns a private EGL context that only this host's
+            // Skia DirectContext ever touches — no resetGLAll needed (unlike the
+            // Windows shared-process-context path).
+            renderGlFrame(
+                widthPx = widthPx,
+                heightPx = heightPx,
+                directContext = ctx,
+                clearColorArgb = 0x00000000,
+                // Per-pixel-alpha popup surface (no-op on Linux today, but the
+                // alpha mode must be stated — see renderGlFrame).
+                windowTransparent = true,
+                present = { NativeTaoEglBridge.nativePresent(attachment) },
+            ) { canvas, _ ->
+                bundle.render(canvas, frameNs)
+            }
         }
     }
 
@@ -319,7 +414,11 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
 
     /**
      * Arrives on the panel's X event thread; every scene interaction hops
-     * to the Tao main thread (the scene is not thread-safe).
+     * to the Tao main thread (the scene is not thread-safe). Once there, the
+     * scene dispatch runs inside `framePump.nonReentrant`: a drag gesture can
+     * force a measure pass synchronously (scrollbar drag →
+     * `LazyListState.onScroll` → `forceRemeasure`), and a coroutine dispatched
+     * from within it must post the next frame instead of rendering inline.
      */
     private inner class PanelEventCallback : PopupNativeBridgeLinux.EventCallback {
         override fun onPointerEvent(
@@ -344,12 +443,14 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
                         TaoNativeWireFormat.PTR_UP -> PointerEventType.Release
                         else -> PointerEventType.Move
                     }
-                sc.sendPointerEvent(
-                    eventType = eventType,
-                    position = Offset(x, y),
-                    type = PointerType.Mouse,
-                    button = pointerButton,
-                )
+                framePump.nonReentrant {
+                    sc.sendPointerEvent(
+                        eventType = eventType,
+                        position = Offset(x, y),
+                        type = PointerType.Mouse,
+                        button = pointerButton,
+                    )
+                }
             }
         }
 
@@ -361,12 +462,9 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
-                scene?.sendPointerEvent(
-                    eventType = PointerEventType.Scroll,
-                    position = Offset(x, y),
-                    scrollDelta = Offset(dx, dy),
-                    type = PointerType.Mouse,
-                )
+                framePump.nonReentrant {
+                    scene?.dispatchAwtShapedScroll(x, y, linuxWheelToAwtScrollEvent(dx, dy))
+                }
             }
         }
 
@@ -378,22 +476,120 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
         ) {
             TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
                 if (disposed) return@dispatch
-                scene?.dispatchNativeKeyEvent(
-                    type = type,
-                    vkCode = vkCode,
-                    codePoint = codePoint,
-                    modifiers = modifiers,
-                    onPreviewKeyEvent = onPreviewKeyEvent,
-                    onKeyEvent = onKeyEvent,
-                )
+                framePump.nonReentrant {
+                    scene?.dispatchNativeKeyEvent(
+                        type = type,
+                        vkCode = vkCode,
+                        codePoint = codePoint,
+                        modifiers = modifiers,
+                        onPreviewKeyEvent = onPreviewKeyEvent,
+                        onKeyEvent = onKeyEvent,
+                    )
+                }
             }
+        }
+    }
+
+    // ── Inbound drag-and-drop ─────────────────────────────────────────────
+    //
+    // The panel is a raw X11 window, not a GtkWindow, so NativeTaoLinuxDndBridge
+    // cannot hang gtk_drag_dest_set on it. Register an XDND helper on the
+    // panel XID instead — same TaoSceneDnD dispatch as the Windows/macOS
+    // standalone hosts (#605).
+
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private fun registerInboundDnD() {
+        if (!PopupNativeBridgeLinux.isLoaded) {
+            TaoDnDDiagnostics.log("linux standalone popup DnD lib not loaded — inbound disabled")
+            return
+        }
+        if (panel == 0L) {
+            TaoDnDDiagnostics.log("linux standalone popup has no panel — inbound disabled")
+            return
+        }
+        PopupNativeBridgeLinux.nativeSetDnDCallback(panel, InboundDnDCallback())
+        TaoDnDDiagnostics.log("linux standalone popup XDND callback installed")
+    }
+
+    private fun revokeInboundDnD() {
+        if (!PopupNativeBridgeLinux.isLoaded || panel == 0L) return
+        PopupNativeBridgeLinux.nativeSetDnDCallback(panel, null)
+    }
+
+    /**
+     * Named (non-anonymous) callback class so GraalVM JNI reachability metadata
+     * can register it explicitly — same constraint as the DecoratedWindow host.
+     *
+     * JNI arrives on the panel's X event thread. Hop async onto Tao main
+     * like pointer events — the dispatcher queue keeps enter/over/drop in
+     * order. [XdndStatus] uses an optimistic COPY when the source offers
+     * files: a tray popup is a drop zone, and blocking the event thread
+     * for Compose would deadlock dispose.
+     */
+    @OptIn(InternalComposeUiApi::class, ExperimentalComposeUiApi::class)
+    private inner class InboundDnDCallback : PopupNativeBridgeLinux.DnDCallback {
+        private fun node() = scene?.rootDragAndDropNode
+
+        private fun onMain(block: () -> Unit) {
+            TaoMainDispatcher.dispatch(EmptyCoroutineContext) {
+                if (!disposed) block()
+            }
+        }
+
+        override fun onDragEnter(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            TaoDnDDiagnostics.log("linux standalone popup onDragEnter x=$x y=$y hasFiles=$hasFiles")
+            if (!hasFiles) return PopupNativeBridgeLinux.DROP_EFFECT_NONE
+            onMain { TaoSceneDnD.onDragEnter(node(), x, y) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        }
+
+        override fun onDragOver(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            hasFiles: Boolean,
+        ): Int {
+            onMain { TaoSceneDnD.onDragOver(node(), x, y) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
+        }
+
+        override fun onDragLeave(handle: Long) {
+            TaoDnDDiagnostics.log("linux standalone popup onDragLeave")
+            onMain { TaoSceneDnD.onDragLeave(node()) }
+        }
+
+        override fun onDrop(
+            handle: Long,
+            x: Int,
+            y: Int,
+            modState: Int,
+            files: Array<String>?,
+        ): Int {
+            TaoDnDDiagnostics.log("linux standalone popup onDrop x=$x y=$y files=${files?.size ?: 0}")
+            onMain { TaoSceneDnD.onDrop(node(), x, y, files) }
+            return PopupNativeBridgeLinux.DROP_EFFECT_COPY
         }
     }
 
     // ── Platform plumbing ─────────────────────────────────────────────────
 
-    private inner class StandalonePopupPlatformContext : PlatformContext.Empty() {
+    private inner class StandalonePopupPlatformContext(
+        override val dragAndDropManager: PlatformDragAndDropManager,
+    ) : TaoPlatformContextBase() {
+        override val sceneScale: Float get() = this@TaoStandalonePopupHostLinux.scale
+
         override val windowInfo: WindowInfo get() = this@TaoStandalonePopupHostLinux.windowInfo
+
+        // Standalone popup surfaces are always per-pixel transparent, so
+        // dialog scrims must use the alpha-aware blend (#559).
+        override val isWindowTransparent: Boolean get() = true
 
         override fun setPointerIcon(pointerIcon: PointerIcon) {
             if (!isValid || disposed) return
@@ -430,7 +626,7 @@ internal class TaoStandalonePopupHostLinux : StandalonePopupHost {
     private companion object {
         val logger: java.util.logging.Logger =
             java.util.logging.Logger
-                .getLogger(TaoStandalonePopupHostLinux::class.java.simpleName)
+                .getLogger(TaoStandalonePopupHostLinux::class.java.name)
 
         const val HIDDEN_X_PX: Int = -32_000
         const val HIDDEN_Y_PX: Int = -32_000

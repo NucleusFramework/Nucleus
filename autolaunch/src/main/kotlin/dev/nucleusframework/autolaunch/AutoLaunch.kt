@@ -31,7 +31,8 @@ private const val MAC_SMAPPSERVICE_BACKEND_CLASS =
  * Items → Open at Login**. Requires macOS 13+; older releases return
  * [AutoLaunchState.UNSUPPORTED].
  *
- * Linux is no-op in this version.
+ * Linux uses a systemd user service on the host, or the XDG Desktop Portal
+ * Background API inside a Flatpak sandbox.
  */
 @Suppress("TooManyFunctions")
 public object AutoLaunch {

@@ -14,7 +14,14 @@ import org.gradle.api.Project
 import org.gradle.api.plugins.ExtensionAware
 import org.gradle.api.tasks.JavaExec
 
-private const val DECORATED_WINDOW_TAO_DEPENDENCY_NAME = "decorated-window-tao"
+// Published Maven artifact id (`dev.nucleusframework:nucleus.decorated-window-tao`)
+// and monorepo project name (`:decorated-window-tao`). Dependency.getName() returns
+// the module/project name only — never the group id.
+private val DECORATED_WINDOW_TAO_DEPENDENCY_NAMES =
+    setOf(
+        "nucleus.decorated-window-tao",
+        "decorated-window-tao",
+    )
 
 internal fun configureDesktop(
     project: Project,
@@ -169,12 +176,13 @@ private fun isComposeJvmApplicationInitialized(desktop: ExtensionAware): Boolean
 
 /**
  * Adds `-XstartOnFirstThread` to Compose Hot Reload's `JavaExec` tasks on macOS when the
- * project depends on `decorated-window-tao`. The TAO backend drives a winit/Tao native
- * event loop that must run on macOS thread 0; the standard `compose.desktop.application.run`
- * relies on AWT seizing the main thread to provide a reachable run loop, but Hot Reload's
- * JavaExec doesn't add the flag and the agent classloader can change AWT init ordering
- * enough to leave TAO's main-thread bouncing without a target — manifests as a launched
- * process with no visible window.
+ * project depends on `nucleus.decorated-window-tao` (or the monorepo project
+ * `:decorated-window-tao`). The TAO backend drives a winit/Tao native event loop that
+ * must run on macOS thread 0; the standard `compose.desktop.application.run` relies on
+ * AWT seizing the main thread to provide a reachable run loop, but Hot Reload's JavaExec
+ * doesn't add the flag and the agent classloader can change AWT init ordering enough to
+ * leave TAO's main-thread bouncing without a target — manifests as a launched process
+ * with no visible window.
  *
  * The flag is harmless on JBR (the runtime Hot Reload requires), and is gated on TAO
  * presence to avoid affecting plain AWT/Skiko Compose Desktop projects.
@@ -191,7 +199,7 @@ private fun injectStartOnFirstThreadForTaoHotReload(project: Project) {
 
 private fun projectUsesTaoBackend(project: Project): Boolean =
     project.configurations.any { config ->
-        config.dependencies.any { it.name == DECORATED_WINDOW_TAO_DEPENDENCY_NAME }
+        config.dependencies.any { it.name in DECORATED_WINDOW_TAO_DEPENDENCY_NAMES }
     }
 
 private fun JavaExec.isHotReloadJavaExec(): Boolean =

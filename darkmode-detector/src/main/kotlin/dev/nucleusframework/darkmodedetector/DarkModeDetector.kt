@@ -6,20 +6,20 @@ import dev.nucleusframework.darkmodedetector.mac.MacOSThemeDetector
 import dev.nucleusframework.darkmodedetector.windows.WindowsThemeDetector
 import java.util.function.Consumer
 
-interface IDarkModeDetector {
-    fun isDark(): Boolean
+public interface IDarkModeDetector {
+    public fun isDark(): Boolean
 
-    fun registerListener(listener: Consumer<Boolean>)
+    public fun registerListener(listener: Consumer<Boolean>)
 
-    fun removeListener(listener: Consumer<Boolean>)
+    public fun removeListener(listener: Consumer<Boolean>)
 }
 
-object NoopDarkModeDetector : IDarkModeDetector {
+public object NoopDarkModeDetector : IDarkModeDetector {
     override fun isDark(): Boolean = false
 
-    override fun registerListener(listener: Consumer<Boolean>) = Unit
+    override fun registerListener(listener: Consumer<Boolean>): Unit = Unit
 
-    override fun removeListener(listener: Consumer<Boolean>) = Unit
+    override fun removeListener(listener: Consumer<Boolean>): Unit = Unit
 }
 
 public fun getPlatformDarkModeDetector(): IDarkModeDetector =

@@ -1,4 +1,17 @@
 # Problem: UIA PropertyChanged events fire from a custom IRawElementProviderSimple but don't reach AutomationPropertyChangedEventHandler subscribers
+#
+# STATUS (AccessKit Windows path, 2026):
+# - RESOLVED for real UIA clients: AccessKit raises ToggleState/Name/RangeValue
+#   via UiaRaiseAutomationPropertyChangedEvent (HRESULT S_OK) and the COM
+#   UIA client (Interop.UIAutomationClient / scripts/uia-listener) RECEIVES them
+#   (ToggleState 30086, Name 30005, RangeValue 30047, FocusChanged).
+# - STILL BROKEN for legacy System.Windows.Automation managed handlers only —
+#   PowerShell `AutomationPropertyChangedEventHandler` gets 0 events even when
+#   subscribed on the element with TreeScope.Element. This is a client-stack
+#   limitation of System.Windows.Automation with ServerSideProvider fragment
+#   trees, not a missing raise. Gate with scripts/ci/verify-uia-events.ps1 (COM).
+# - Provider fixes applied: accesskit_windows UseComThreading, deferred
+#   PostMessage event flush on the HWND message pump.
 
 ## Context
 

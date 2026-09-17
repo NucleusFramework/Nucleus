@@ -111,20 +111,8 @@ abstract class AbstractExtractNativeLibsTask : AbstractNucleusTask() {
     private fun detectInfo(
         entryName: String,
         zis: ZipInputStream,
-    ): NativeLibArchDetector.NativeInfo {
-        val pathInfo = NativeLibArchDetector.detectFromPath(entryName)
-        if (pathInfo.os != NativeOs.UNKNOWN && pathInfo.arch != NativeArch.UNKNOWN) {
-            return pathInfo
-        }
-        // Fall back to binary header detection
-        @Suppress("MagicNumber")
-        val header = ByteArray(64)
-        val bytesRead = readFully(zis, header)
-        if (bytesRead > 0) {
-            return NativeLibArchDetector.detectFromHeader(header.copyOf(bytesRead))
-        }
-        return pathInfo
-    }
+    ): NativeLibArchDetector.NativeInfo =
+        NativeLibArchDetector.detectEntry(entryName) { NativeLibArchDetector.readHeaderBytes(zis) }
 
     private fun shouldExtract(
         info: NativeLibArchDetector.NativeInfo,
@@ -182,16 +170,4 @@ abstract class AbstractExtractNativeLibsTask : AbstractNucleusTask() {
             else -> null
         }
 
-    private fun readFully(
-        input: java.io.InputStream,
-        buffer: ByteArray,
-    ): Int {
-        var totalRead = 0
-        while (totalRead < buffer.size) {
-            val read = input.read(buffer, totalRead, buffer.size - totalRead)
-            if (read == -1) break
-            totalRead += read
-        }
-        return totalRead
-    }
 }

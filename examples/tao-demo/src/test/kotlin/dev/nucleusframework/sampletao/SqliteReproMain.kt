@@ -10,7 +10,6 @@ import androidx.sqlite.SQLiteStatement
 import androidx.sqlite.driver.bundled.BundledSQLiteDriver
 import androidx.sqlite.execSQL
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import kotlinx.coroutines.Dispatchers
@@ -24,9 +23,9 @@ import kotlin.system.exitProcess
  * Room/androidx-sqlite *bundled* driver write runs after a Tao decorated
  * window opened.
  *
- * Mechanism under test: nucleus_tao_linux_shadow.c dlopen()s GTK with
- * RTLD_GLOBAL at window creation. On distros where GTK's dependency
- * closure includes libsqlite3 (NixOS: gtk3 -> tinysparql -> sqlite), the
+ * Mechanism under test: nucleus_tao_linux_widget.c dlopen()s GTK. With
+ * RTLD_GLOBAL, on distros where GTK's dependency closure includes
+ * libsqlite3 (NixOS: gtk3 -> tinysparql -> sqlite), the
  * system libsqlite3 enters the *global* symbol scope. The androidx
  * bundled-sqlite JNI library binds its sqlite3_* PLT entries lazily, so
  * every sqlite entry point first called *after* the window opened resolves
@@ -57,7 +56,7 @@ fun main() {
         println("[repro] phase 1 read OK, count=${st.getLong(0)}")
     }
 
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         NucleusDecoratedWindowTheme(isDark = true) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,
@@ -65,16 +64,17 @@ fun main() {
             ) {
                 LaunchedEffect(Unit) {
                     delay(3_000)
-                    // Prove the GTK shadow machinery still works (theme stamp
-                    // requires GTK to be loaded and functional).
+                    // Prove the widget helper dlopen-ed a functional GTK
+                    // (the version probe goes through the same RTLD_LOCAL
+                    // load path as every other entry point).
                     val stamp =
                         runCatching {
                             Class
-                                .forName("dev.nucleusframework.window.tao.ffi.NativeTaoLinuxShadowBridge")
-                                .getMethod("nativeShadowThemeStamp")
+                                .forName("dev.nucleusframework.window.tao.ffi.NativeTaoLinuxWidgetBridge")
+                                .getMethod("nativeGtkVersion")
                                 .invoke(null)
                         }.getOrElse { "error: $it" }
-                    println("[repro] shadow theme stamp = $stamp")
+                    println("[repro] gtk probe version = $stamp")
                     println("[repro] phase 2: text-bound WRITE after window opened")
                     withContext(Dispatchers.IO) {
                         conn.prepare("INSERT INTO track(name) VALUES (?)").use { st ->

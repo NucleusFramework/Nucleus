@@ -31,9 +31,10 @@ use objc2_foundation::{
 use once_cell::sync::Lazy;
 
 use crate::{
-  dpi::LogicalPosition,
+  dpi::{LogicalPosition, PhysicalPosition},
   event::{
-    DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, TouchPhase, WindowEvent,
+    DeviceEvent, ElementState, Event, MouseButton, MouseScrollDelta, ScrollPhase, TouchPhase,
+    WindowEvent,
   },
   keyboard::{KeyCode, ModifiersState},
   platform_impl::platform::{
@@ -74,6 +75,15 @@ pub(super) struct ViewState {
   /// If a key-press does not cause an ime event, that means
   /// that the key-press cancelled the ime session. (Except arrow keys)
   key_triggered_ime: bool,
+
+  /// The last `keyDown` was consumed by the IME. The matching `keyUp`
+  /// must not be forwarded either (Nucleus patch, nucleusframework#595).
+  ime_consumed_keydown: bool,
+
+  /// Selection within marked text, as last given by `setMarkedText:`.
+  /// UTF-16 units relative to the start of the marked range. `EMPTY_RANGE`
+  /// when there is no marked text.
+  ime_selected_range: NSRange,
   // Not Needed Anymore
   //raw_characters: Option<String>,
   is_key_down: bool,
@@ -98,6 +108,8 @@ pub fn new_view(ns_window: &NSWindow) -> (Option<Retained<NSView>>, Weak<Mutex<C
     ime_spot: None,
     in_ime_preedit: false,
     key_triggered_ime: false,
+    ime_consumed_keydown: false,
+    ime_selected_range: util::EMPTY_RANGE,
     is_key_down: false,
     modifiers: Default::default(),
     phys_modifiers: Default::default(),
@@ -130,6 +142,47 @@ fn is_arrow_key(keycode: KeyCode) -> bool {
     keycode,
     KeyCode::ArrowUp | KeyCode::ArrowDown | KeyCode::ArrowLeft | KeyCode::ArrowRight
   )
+}
+
+/// Keys that must not cancel an active composition: arrows navigate the
+/// candidate window; Enter / NumpadEnter typically *commit* asynchronously
+/// (IMKit delivers `insertText:` after `keyDown` returns).
+fn is_ime_navigation_key(keycode: KeyCode) -> bool {
+  is_arrow_key(keycode) || matches!(keycode, KeyCode::Enter | KeyCode::NumpadEnter)
+}
+
+fn queue_window_event(state: &ViewState, event: WindowEvent<'static>) {
+  AppState::queue_event(EventWrapper::StaticEvent(Event::WindowEvent {
+    window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
+    event,
+  }));
+}
+
+fn cancel_preedit(state: &mut ViewState) {
+  if !state.in_ime_preedit {
+    return;
+  }
+  state.in_ime_preedit = false;
+  queue_window_event(state, WindowEvent::ImePreedit(String::new()));
+}
+
+fn reset_marked_text_ivar(this: &mut Object) {
+  unsafe {
+    let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
+    let () = msg_send![(*marked_text_ref), release];
+    *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
+  }
+}
+
+fn clamp_ime_selected_range(selected: NSRange, marked_len: NSUInteger) -> NSRange {
+  if marked_len == 0 {
+    return util::EMPTY_RANGE;
+  }
+  if selected.location == NSNotFound as NSUInteger {
+    return NSRange::new(marked_len, 0);
+  }
+  let loc = selected.location.min(marked_len);
+  NSRange::new(loc, selected.length.min(marked_len.saturating_sub(loc)))
 }
 
 struct ViewClass(&'static Class);
@@ -403,18 +456,37 @@ extern "C" fn marked_range(this: &Object, _sel: Sel) -> NSRange {
     let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
     let length = marked_text.length();
     trace!("Completed `markedRange`");
+    // Nucleus patch (nucleusframework#595): IMKit cross-checks this against
+    // the marked string. The previous `length - 1` was off-by-one and made
+    // Kotoeri / ATOK "commit" a function-key character instead of the
+    // composition. Empty marked text is `{NSNotFound, 0}`.
     if length > 0 {
-      NSRange::new(0, length - 1)
+      NSRange::new(0, length)
     } else {
       util::EMPTY_RANGE
     }
   }
 }
 
-extern "C" fn selected_range(_this: &Object, _sel: Sel) -> NSRange {
-  trace!("Triggered `selectedRange`");
-  trace!("Completed `selectedRange`");
-  util::EMPTY_RANGE
+extern "C" fn selected_range(this: &Object, _sel: Sel) -> NSRange {
+  unsafe {
+    trace!("Triggered `selectedRange`");
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let marked_len = marked_text.length();
+    let state_ptr: *mut c_void = *this.get_ivar("taoState");
+    let state = &*(state_ptr as *const ViewState);
+    // `selectedRange` is an insertion point, never `{NSNotFound, 0}` —
+    // that token is only valid for `markedRange` when nothing is marked.
+    let range = if marked_len == 0 {
+      NSRange::new(0, 0)
+    } else if state.ime_selected_range.location == NSNotFound as NSUInteger {
+      NSRange::new(marked_len, 0)
+    } else {
+      clamp_ime_selected_range(state.ime_selected_range, marked_len)
+    };
+    trace!("Completed `selectedRange`");
+    range
+  }
 }
 
 /// An IME pre-edit operation happened, changing the text that's
@@ -424,7 +496,7 @@ extern "C" fn set_marked_text(
   this: &mut Object,
   _sel: Sel,
   string: id,
-  _selected_range: NSRange,
+  selected_range: NSRange,
   _replacement_range: NSRange,
 ) {
   trace!("Triggered `setMarkedText`");
@@ -444,11 +516,38 @@ extern "C" fn set_marked_text(
     let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
     let () = msg_send![(*marked_text_ref), release];
     *marked_text_ref = Retained::into_raw(marked_text);
+    let marked_len: NSUInteger = msg_send![*marked_text_ref, length];
 
     let state_ptr: *mut c_void = *this.get_ivar("taoState");
     let state = &mut *(state_ptr as *mut ViewState);
-    state.in_ime_preedit = true;
     state.key_triggered_ime = true;
+
+    // Nucleus patch (nucleusframework#595): forward the preedit to the app.
+    // The IME's inner selection is not representable through Compose's
+    // TextEditingScope and is not forwarded. Corporate characters stay in
+    // the ivar (IMKit's bookkeeping) but must not reach Compose.
+    // Empty `setMarkedText:` is `unmarkText` — do not collapse it with
+    // corporate-only marked text, which must leave Compose composing.
+    let preedit: String = if has_attr {
+      let s: &NSString = msg_send![string, string];
+      s.to_string()
+    } else {
+      (*(string as *const NSString)).to_string()
+    };
+    let visible: String = preedit
+      .chars()
+      .filter(|c| !is_corporate_character(*c))
+      .collect();
+    if preedit.is_empty() {
+      state.ime_selected_range = util::EMPTY_RANGE;
+      cancel_preedit(state);
+    } else {
+      state.in_ime_preedit = true;
+      state.ime_selected_range = clamp_ime_selected_range(selected_range, marked_len);
+      if !visible.is_empty() {
+        queue_window_event(state, WindowEvent::ImePreedit(visible));
+      }
+    }
   }
   trace!("Completed `setMarkedText`");
 }
@@ -456,9 +555,13 @@ extern "C" fn set_marked_text(
 extern "C" fn unmark_text(this: &mut Object, _sel: Sel) {
   trace!("Triggered `unmarkText`");
   unsafe {
-    let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
-    let () = msg_send![(*marked_text_ref), release];
-    *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
+    // Nucleus patch (nucleusframework#595): composition cancelled. No-op when
+    // we were not composing (AppKit also calls this after a commit).
+    let state_ptr: *mut c_void = *this.get_ivar("taoState");
+    let state = &mut *(state_ptr as *mut ViewState);
+    cancel_preedit(state);
+    state.ime_selected_range = util::EMPTY_RANGE;
+    reset_marked_text_ivar(this);
     let input_context: id = msg_send![this, inputContext];
     let _: () = msg_send![input_context, discardMarkedText];
   }
@@ -472,20 +575,43 @@ extern "C" fn valid_attributes_for_marked_text(_this: &Object, _sel: Sel) -> id 
 }
 
 extern "C" fn attributed_substring_for_proposed_range(
-  _this: &Object,
+  this: &Object,
   _sel: Sel,
-  _range: NSRange,
-  _actual_range: *mut c_void, // *mut NSRange
+  range: NSRange,
+  actual_range: *mut c_void, // *mut NSRange
 ) -> id {
-  trace!("Triggered `attributedSubstringForProposedRange`");
-  trace!("Completed `attributedSubstringForProposedRange`");
-  nil
+  unsafe {
+    trace!("Triggered `attributedSubstringForProposedRange`");
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let length = marked_text.length();
+    if length == 0 || range.location == NSNotFound as NSUInteger || range.location >= length
+    {
+      trace!("Completed `attributedSubstringForProposedRange`");
+      return nil;
+    }
+    let loc = range.location;
+    let len = range.length.min(length - loc);
+    let clamped = NSRange::new(loc, len);
+    if !actual_range.is_null() {
+      *(actual_range as *mut NSRange) = clamped;
+    }
+    trace!("Completed `attributedSubstringForProposedRange`");
+    msg_send![marked_text, attributedSubstringFromRange: clamped]
+  }
 }
 
-extern "C" fn character_index_for_point(_this: &Object, _sel: Sel, _point: NSPoint) -> NSUInteger {
-  trace!("Triggered `characterIndexForPoint`");
-  trace!("Completed `characterIndexForPoint`");
-  0
+extern "C" fn character_index_for_point(this: &Object, _sel: Sel, _point: NSPoint) -> NSUInteger {
+  unsafe {
+    trace!("Triggered `characterIndexForPoint`");
+    // Nucleus patch (nucleusframework#595): IMKit uses this as the caret
+    // index. Returning 0 while composing made live conversion treat the
+    // caret as the start of the marked text. We have no glyph map, so
+    // report the insertion point at the end of the marked range.
+    let marked_text: &NSMutableAttributedString = *this.get_ivar("markedText");
+    let index = marked_text.length();
+    trace!("Completed `characterIndexForPoint`");
+    index
+  }
 }
 
 extern "C" fn first_rect_for_character_range(
@@ -513,10 +639,10 @@ extern "C" fn first_rect_for_character_range(
 }
 
 extern "C" fn insert_text(
-  this: &Object,
+  this: &mut Object,
   _sel: Sel,
   string: &NSString,
-  _replacement_range: NSRange,
+  replacement_range: NSRange,
 ) {
   trace!("Triggered `insertText`");
   unsafe {
@@ -542,13 +668,49 @@ extern "C" fn insert_text(
     // We don't need this now, but it's here if that changes.
     //let event: id = msg_send![NSApp(), currentEvent];
 
-    AppState::queue_event(EventWrapper::StaticEvent(Event::WindowEvent {
-      window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
-      event: WindowEvent::ReceivedImeText(string),
-    }));
+    // Nucleus patch (nucleusframework#595): `insertText:` during an active
+    // preedit is a composition commit — one event, replaced in place via
+    // Compose `commitText`. Ordinary insert (no composition) stays
+    // `ReceivedImeText` → KEY_TYPED.
+    //
+    // An empty string after corporate-character filtering is not a real
+    // commit: IMKit is passing through the function-key char of the key
+    // that should have confirmed the composition. Leave the preedit up so
+    // Compose and IMKit stay in sync.
     if state.in_ime_preedit {
-      state.in_ime_preedit = false;
       state.key_triggered_ime = true;
+      if !string.is_empty() {
+        state.in_ime_preedit = false;
+        state.ime_selected_range = util::EMPTY_RANGE;
+        reset_marked_text_ivar(this);
+        queue_window_event(state, WindowEvent::ImeCommit(string));
+      }
+    } else if replacement_range.location != NSNotFound as NSUInteger && !string.is_empty() {
+      // Nucleus patch (nucleusframework#611/#612): a valid replacementRange
+      // outside a composition is a replacement commit — the press-and-hold
+      // accent picker replacing the base letter on a document-backed client.
+      // Chromium parity (`RenderWidgetHostViewCocoa insertText:`): a valid
+      // range routes to an immediate replace-commit, everything else stays
+      // ordinary insertion. The range is UTF-16, in the document-absolute
+      // space the client reports through `selectedRange`.
+      //
+      // The input method consumed this keystroke, so it must not also be
+      // delivered as a raw key event (#595 invariant): the accent is picked
+      // with a number key, and an app shortcut bound to that digit must not
+      // fire while the user is only choosing an accent. Chromium forwards
+      // the RawKeyDown because the web platform mandates a `keydown`; the
+      // AWT/Compose contract this backend follows does not.
+      state.key_triggered_ime = true;
+      queue_window_event(
+        state,
+        WindowEvent::ImeReplaceCommit {
+          text: string,
+          start: replacement_range.location as u64,
+          length: replacement_range.length as u64,
+        },
+      );
+    } else if !string.is_empty() {
+      queue_window_event(state, WindowEvent::ReceivedImeText(string));
     }
   }
   trace!("Completed `insertText`");
@@ -680,48 +842,70 @@ extern "C" fn key_down(this: &mut Object, _sel: Sel, event: &NSEvent) {
 
     update_potentially_stale_modifiers(state, event);
 
-    let pass_along = !is_repeat || !state.is_key_down;
-    if pass_along {
-      // See below for why we do this.
+    // Always feed the event to the input context — including key-repeat
+    // events. AppKit's PressAndHold (long-press a letter → accent picker)
+    // is an input method that only engages on the first *repeat* after the
+    // initial keyDown. The previous `!is_repeat` skip was a leftover from
+    // when characters were synthesized both here and in `insertText:`;
+    // Nucleus inserts solely via `ReceivedImeText`, so repeats no longer
+    // double-type. They either start PressAndHold or produce genuine
+    // key-repeat `insertText:` calls (eeee).
+    //
+    // During an active preedit (dead key or the accent picker) we must
+    // keep `hasMarkedText == YES`. Clearing the ivar made a follow-up
+    // key (e.g. "2" to pick é) look like a regular insert.
+    if !state.in_ime_preedit {
       let marked_text_ref: &mut *mut NSMutableAttributedString = this.get_mut_ivar("markedText");
       let () = msg_send![(*marked_text_ref), release];
       *marked_text_ref = Retained::into_raw(NSMutableAttributedString::new());
-      state.key_triggered_ime = false;
-
-      // Some keys (and only *some*, with no known reason) don't trigger `insertText`, while others do...
-      // So, we don't give repeats the opportunity to trigger that, since otherwise our hack will cause some
-      // keys to generate twice as many characters.
-      let array: id = msg_send![class!(NSArray), arrayWithObject: event];
-      let () = msg_send![&*this, interpretKeyEvents: array];
     }
-    // The `interpretKeyEvents` above, may invoke `set_marked_text` or `insert_text`,
-    // if the event corresponds to an IME event.
+    state.key_triggered_ime = false;
+    let was_preediting: bool = state.in_ime_preedit;
+
+    let array: id = msg_send![class!(NSArray), arrayWithObject: event];
+    let () = msg_send![&*this, interpretKeyEvents: array];
+
+    // The `interpretKeyEvents` above may invoke `set_marked_text` or `insert_text`.
     let in_ime = state.key_triggered_ime;
     let key_event = create_key_event(event, true, is_repeat, in_ime, None);
-    let is_arrow_key = is_arrow_key(key_event.physical_key);
-    if pass_along {
-      // The `interpretKeyEvents` above, may invoke `set_marked_text` or `insert_text`,
-      // if the event corresponds to an IME event.
-      // If `set_marked_text` or `insert_text` were not invoked, then the IME was deactivated,
-      // and we should cancel the IME session.
-      // When using arrow keys in an IME window, the input context won't invoke the
-      // IME related methods, so in that case we shouldn't cancel the IME session.
-      let is_preediting: bool = state.in_ime_preedit;
-      if is_preediting && !state.key_triggered_ime && !is_arrow_key {
-        // In this case we should cancel the IME session.
-        let () = msg_send![this, unmarkText];
-        state.in_ime_preedit = false;
-      }
+    // If `set_marked_text` or `insert_text` were not invoked, then the IME
+    // was deactivated, and we should cancel the IME session. Arrow keys
+    // inside an IME window don't invoke those methods — don't cancel then.
+    // Enter typically *commits* asynchronously (IMKit delivers `insertText:`
+    // after `keyDown` returns); cancelling would drop the composition and
+    // leak the raw Enter as a newline. Repeat keyDowns while PressAndHold
+    // is showing the picker also don't re-enter those methods.
+    let is_preediting: bool = state.in_ime_preedit;
+    if is_preediting
+      && !state.key_triggered_ime
+      && !is_ime_navigation_key(key_event.physical_key)
+      && !is_repeat
+    {
+      let () = msg_send![this, unmarkText];
     }
-    let window_event = Event::WindowEvent {
-      window_id,
-      event: WindowEvent::KeyboardInput {
-        device_id: DEVICE_ID,
-        event: key_event,
-        is_synthetic: false,
-      },
-    };
-    AppState::queue_event(EventWrapper::StaticEvent(window_event));
+    // Nucleus patch (nucleusframework#595): keys the IME consumed must not be
+    // double-delivered as raw key events — AWT never delivers a key past
+    // `InputContext.dispatchEvent` once the input method used it. That is:
+    //   - the key produced IME activity (`set_marked_text` / a commit while
+    //     preediting): romaji keystrokes, the conversion Space, Backspace
+    //     editing the preedit, the committing Enter;
+    //   - the key left an active preedit untouched (candidate-window arrows,
+    //     Enter waiting for an async commit, repeats).
+    // A key that *cancelled* the session (branch above) is still delivered,
+    // matching the dead-key behavior of native text views.
+    let ime_consumed = in_ime || (was_preediting && state.in_ime_preedit);
+    state.ime_consumed_keydown = ime_consumed;
+    if !ime_consumed {
+      let window_event = Event::WindowEvent {
+        window_id,
+        event: WindowEvent::KeyboardInput {
+          device_id: DEVICE_ID,
+          event: key_event,
+          is_synthetic: false,
+        },
+      };
+      AppState::queue_event(EventWrapper::StaticEvent(window_event));
+    }
   }
   trace!("Completed `keyDown`");
 }
@@ -735,6 +919,15 @@ extern "C" fn key_up(this: &Object, _sel: Sel, event: &NSEvent) {
     state.is_key_down = false;
 
     update_potentially_stale_modifiers(state, event);
+
+    // Nucleus patch (nucleusframework#595): drop the matching keyUp when
+    // keyDown was consumed by the IME.
+    let ime_consumed = state.ime_consumed_keydown;
+    state.ime_consumed_keydown = false;
+    if ime_consumed {
+      trace!("Completed `keyUp` (IME-consumed)");
+      return;
+    }
 
     let window_event = Event::WindowEvent {
       window_id: WindowId(get_window_id(&state.ns_window.load().unwrap())),
@@ -1067,15 +1260,22 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
 
   unsafe {
-    let state_ptr: *mut c_void = *this.get_ivar("taoState");
-    let state = &mut *(state_ptr as *mut ViewState);
-
     let delta = {
-      // macOS horizontal sign convention is the inverse of tao.
-      let (x, y) = (event.scrollingDeltaX() * -1.0, event.scrollingDeltaY());
+      // PATCH(nucleus): keep AppKit's sign on both axes — positive means the
+      // content moves down / right, which is exactly the convention
+      // `MouseScrollDelta` documents. Upstream negated X here "because macOS
+      // is the inverse of tao"; it is not, and a consumer that negates both
+      // axes for the AWT convention then ended up with X reversed (Nucleus
+      // #652). Same as winit.
+      let (x, y) = (event.scrollingDeltaX(), event.scrollingDeltaY());
       if event.hasPreciseScrollingDeltas() {
-        let delta = LogicalPosition::new(x, y).to_physical(state.get_scale_factor());
-        MouseScrollDelta::PixelDelta(delta)
+        // PATCH(nucleus): carry AppKit's LOGICAL points as-is instead of
+        // multiplying by the view's cached backing scale. The only consumer
+        // (the Nucleus loop) wants points — AWT's `preciseWheelRotation` is
+        // `scrollingDelta / 10` with no display scale (Nucleus #653) — and
+        // converting back with a second, independently cached scale can
+        // disagree with this one for a frame during a display hop.
+        MouseScrollDelta::PixelDelta(PhysicalPosition::new(x, y))
       } else {
         MouseScrollDelta::LineDelta(x as f32, y as f32)
       }
@@ -1084,6 +1284,34 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
       NSEventPhase::MayBegin | NSEventPhase::Began => TouchPhase::Started,
       NSEventPhase::Ended => TouchPhase::Ended,
       _ => TouchPhase::Moved,
+    };
+    // PATCH(nucleus): full gesture / momentum phase (Nucleus #654). AppKit
+    // reports the fingers-on-glass part in `phase` and the inertial tail that
+    // follows in `momentumPhase`, never both at once; a wheel notch or a
+    // phase-less device has neither.
+    // `NSEventPhase` is an NS_OPTIONS mask: test bits, do not match values.
+    let scroll_phase = {
+      let p = event.phase();
+      let m = event.momentumPhase();
+      if p.contains(NSEventPhase::MayBegin) {
+        ScrollPhase::MayBegin
+      } else if p.contains(NSEventPhase::Began) {
+        ScrollPhase::Began
+      } else if p.intersects(NSEventPhase::Changed | NSEventPhase::Stationary) {
+        ScrollPhase::Changed
+      } else if p.contains(NSEventPhase::Ended) {
+        ScrollPhase::Ended
+      } else if p.contains(NSEventPhase::Cancelled) {
+        ScrollPhase::Cancelled
+      } else if m.contains(NSEventPhase::Began) {
+        ScrollPhase::MomentumBegan
+      } else if m.contains(NSEventPhase::Changed) {
+        ScrollPhase::MomentumChanged
+      } else if m.intersects(NSEventPhase::Ended | NSEventPhase::Cancelled) {
+        ScrollPhase::MomentumEnded
+      } else {
+        ScrollPhase::None
+      }
     };
 
     let device_event = Event::DeviceEvent {
@@ -1102,6 +1330,7 @@ extern "C" fn scroll_wheel(this: &NSView, _sel: Sel, event: &NSEvent) {
         device_id: DEVICE_ID,
         delta,
         phase,
+        scroll_phase,
         modifiers: event_mods(event),
       },
     };

@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.Maximize: ImageVector
+public val GnomeControlButtonsIcons.Maximize: ImageVector
     get() {
         if (_Maximize != null) {
             return _Maximize!!

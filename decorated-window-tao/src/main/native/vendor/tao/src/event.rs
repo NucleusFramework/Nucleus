@@ -335,6 +335,61 @@ pub enum WindowEvent<'a> {
   /// The window received a unicode character.
   ReceivedImeText(String),
 
+  /// The IME composition (marked text / preedit) changed. Nucleus patch for
+  /// nucleusframework#595 — mirrors `setMarkedText:` / `unmarkText`.
+  ///
+  /// Carries the current preedit string. Empty when the composition was
+  /// cancelled (`unmarkText` without a commit).
+  ///
+  /// ## Platform-specific
+  /// - **macOS**: `setMarkedText:` / `unmarkText` (nucleusframework#595).
+  /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_COMPSTR`
+  ///   (nucleusframework#558).
+  /// - **Linux**: the GTK input context's `preedit-changed`, and
+  ///   `preedit-end` as an empty string (nucleusframework#558).
+  /// - Not emitted on other platforms.
+  ImePreedit(String),
+
+  /// The IME committed the current composition. Nucleus patch for
+  /// nucleusframework#595 — `insertText:` while marked text is active.
+  ///
+  /// Distinct from [`ReceivedImeText`], which is ordinary character insert
+  /// (no composition) and is forwarded as KEY_TYPED.
+  ///
+  /// ## Platform-specific
+  /// - **macOS**: `insertText:` while marked text is active
+  ///   (nucleusframework#595).
+  /// - **Windows**: `WM_IME_COMPOSITION` with `GCS_RESULTSTR`
+  ///   (nucleusframework#558).
+  /// - **Linux**: the GTK input context's `commit`, when it arrives while a
+  ///   composition is in flight (nucleusframework#558).
+  /// - Not emitted on other platforms.
+  ImeCommit(String),
+
+  /// The input system committed text in place of a committed-text range.
+  /// Nucleus patch for nucleusframework#611/#612 — `insertText:` with a
+  /// valid (non-`NSNotFound`) `replacementRange`, outside any composition.
+  ///
+  /// This is how the macOS press-and-hold accent picker replaces the base
+  /// letter on a document-backed `NSTextInputClient` (Chromium parity:
+  /// `ImeCommitText(text, replacementRange)`): the range carries everything,
+  /// no client-side heuristics. [`ImeReplaceCommit::start`] /
+  /// [`ImeReplaceCommit::length`] are UTF-16 offsets in the same
+  /// document-absolute space the client reports through `selectedRange`.
+  ///
+  /// ## Platform-specific
+  /// - **macOS**: `insertText:replacementRange:` with a valid range while no
+  ///   marked text is active.
+  /// - Not emitted on other platforms.
+  ImeReplaceCommit {
+    /// The committed text.
+    text: String,
+    /// UTF-16 start offset of the range to replace (document-absolute).
+    start: u64,
+    /// UTF-16 length of the range to replace.
+    length: u64,
+  },
+
   /// The window gained or lost focus.
   ///
   /// The parameter is true if the window has gained focus, and false if it has lost focus.
@@ -389,6 +444,9 @@ pub enum WindowEvent<'a> {
     device_id: DeviceId,
     delta: MouseScrollDelta,
     phase: TouchPhase,
+    /// PATCH(nucleus): fine-grained trackpad gesture / momentum phase;
+    /// [`ScrollPhase::None`] for a mouse wheel. See [`ScrollPhase`].
+    scroll_phase: ScrollPhase,
     #[deprecated = "Deprecated in favor of WindowEvent::ModifiersChanged"]
     modifiers: ModifiersState,
   },
@@ -471,6 +529,17 @@ impl Clone for WindowEvent<'static> {
       HoveredFile(file) => HoveredFile(file.clone()),
       HoveredFileCancelled => HoveredFileCancelled,
       ReceivedImeText(c) => ReceivedImeText(c.clone()),
+      ImePreedit(text) => ImePreedit(text.clone()),
+      ImeCommit(text) => ImeCommit(text.clone()),
+      ImeReplaceCommit {
+        text,
+        start,
+        length,
+      } => ImeReplaceCommit {
+        text: text.clone(),
+        start: *start,
+        length: *length,
+      },
       Focused(f) => Focused(*f),
       KeyboardInput {
         device_id,
@@ -504,11 +573,13 @@ impl Clone for WindowEvent<'static> {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       } => MouseWheel {
         device_id: *device_id,
         delta: *delta,
         phase: *phase,
+        scroll_phase: *scroll_phase,
         modifiers: *modifiers,
       },
       #[allow(deprecated)]
@@ -563,6 +634,17 @@ impl<'a> WindowEvent<'a> {
       HoveredFile(file) => Some(HoveredFile(file)),
       HoveredFileCancelled => Some(HoveredFileCancelled),
       ReceivedImeText(c) => Some(ReceivedImeText(c)),
+      ImePreedit(text) => Some(ImePreedit(text)),
+      ImeCommit(text) => Some(ImeCommit(text)),
+      ImeReplaceCommit {
+        text,
+        start,
+        length,
+      } => Some(ImeReplaceCommit {
+        text,
+        start,
+        length,
+      }),
       Focused(focused) => Some(Focused(focused)),
       KeyboardInput {
         device_id,
@@ -591,11 +673,13 @@ impl<'a> WindowEvent<'a> {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       } => Some(MouseWheel {
         device_id,
         delta,
         phase,
+        scroll_phase,
         modifiers,
       }),
       #[allow(deprecated)]
@@ -825,6 +909,27 @@ pub enum TouchPhase {
   Moved,
   Ended,
   Cancelled,
+}
+
+/// PATCH(nucleus): fine-grained phase of a trackpad scroll, next to the
+/// coarser [`TouchPhase`] on [`WindowEvent::MouseWheel`]. `TouchPhase` can
+/// neither say "not a gesture at all" (a mouse wheel notch) nor tell the
+/// inertial momentum tail that follows a swipe from the fingers-on-glass part;
+/// a toolkit that routes trackpad panning and wheel scrolling differently
+/// needs both. Only the macOS backend reports anything but `None`.
+#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy)]
+pub enum ScrollPhase {
+  /// Not part of a gesture: mouse wheel, or a device without phase reporting.
+  None,
+  /// Fingers touched the trackpad, no scroll yet (`NSEventPhaseMayBegin`).
+  MayBegin,
+  Began,
+  Changed,
+  Ended,
+  Cancelled,
+  MomentumBegan,
+  MomentumChanged,
+  MomentumEnded,
 }
 
 /// Represents a touch event

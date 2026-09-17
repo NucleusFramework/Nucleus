@@ -19,7 +19,7 @@ plugins {
 dependencies {
     implementation(compose.desktop.currentOs)
     implementation(compose.components.resources)
-    implementation("org.jetbrains.compose.material3:material3:1.9.0")
+    implementation(libs.compose.material3)
     implementation(project(":core-runtime"))
     implementation(project(":aot-runtime"))
     implementation(project(":updater-runtime"))
@@ -49,6 +49,12 @@ dependencies {
     implementation(libs.reorderable)
     implementation("com.materialkolor:material-kolor:4.1.1")
     implementation(libs.compose.material.icons.extended)
+    // Trackpad Lab: an embedded native WebView (WKWebView / WebKitGTK / WebView2)
+    // to check trackpad scrolling over a NativeView. The published artifact was
+    // built against an older Nucleus; the in-tree modules must win.
+    implementation(libs.composewebview) {
+        exclude(group = "dev.nucleusframework")
+    }
 }
 
 java {
@@ -79,6 +85,7 @@ val nativePackageVersion = releaseVersion.substringBefore("-")
 
 nucleus.application {
     mainClass = "com.example.demo.MainKt"
+    nucleusOptimization = true
 
     buildTypes {
         release {
@@ -93,8 +100,6 @@ nucleus.application {
     graalvm {
         isEnabled = true
         javaLanguageVersion = 25
-        advancedObfuscation = true
-        jvmVendor = JvmVendorSpec.ORACLE
         imageName = "nucleus-sample"
     }
 
@@ -115,11 +120,16 @@ nucleus.application {
 
         // --- Native libs handling ---
         cleanupNativeLibs = true // Auto cleanup native libraries
+        // --- AOT cache (JDK 25+) ---
+        // Defaults to a portable cache (metadata only), safe to build in CI and ship to any CPU.
+        // Opt into cached adapter code with aotCache { compatibility = AotCacheCompatibility.NATIVE }.
         enableAotCache = System.getenv("GITHUB_REF") != null
 //        splashImage = "splash.png" // Splash screen image file
         homepage = "https://github.com/KdroidFilter/NucleusDemo"
 
         // --- Compression ---
+        // Ultra enables DEB xz -9e + DMG LZMA post-processing. AppImage/portable should stay
+        // lighter (FUSE/squashfs cold start and portable self-extract) via format overrides below.
         compressionLevel = CompressionLevel.Ultra
 
         // --- Artifact naming ---
@@ -184,6 +194,8 @@ nucleus.application {
                 category = AppImageCategory.Utility
                 genericName = "Nucleus Demo"
                 synopsis = "Demo app using Nucleus"
+                // Override root Ultra: maximum squashfs compression makes AppImage cold starts very slow.
+                compressionLevel = CompressionLevel.Normal
             }
 
             // --- Snap (NEW) ---
@@ -209,20 +221,31 @@ nucleus.application {
                 finishArgs = listOf("--share=ipc", "--socket=x11", "--socket=wayland")
             }
 
-            // --- GPG signing (deb/rpm), for distribution outside a store ---
-            // Values default from `compose.desktop.linux.signing.*` properties / env vars,
-            // so CI can just export the secrets and leave this block as-is.
-            // A `<package>.pub.asc` public key is written next to each signed artifact.
-            //   deb: gpg --import app.deb.pub.asc && gpg --verify app.deb.asc app.deb
-            //   rpm: rpm --import app.rpm.pub.asc && rpm -K app.rpm
+            // --- GPG signing (deb/rpm) + passwordless self-update ---
+            // Keys: LinuxSigningSettings defaults from compose.desktop.linux.signing.*
+            //   CI: LINUX_GPG_* secrets → root gradle.properties (release-desktop / test-packaging)
+            //   Local: packaging/linux-signing.local.properties (gitignored) — see .example
+            // Verify: gpg --import <pkg>.pub.asc && gpg --verify <pkg>.asc <pkg>
             signing {
-                // enabled.set(true)
-                // keyId.set("ABCD1234DEADBEEF")          // GPG key id / fingerprint / email
-                // keyFile.set(file("packaging/signing-key.asc")) // optional: imported into a throwaway keyring
+                enabled.set(true)
+                silentUpdate.set(true)
+                val localSigning = file("packaging/linux-signing.local.properties")
+                if (localSigning.isFile) {
+                    val props =
+                        localSigning
+                            .readLines()
+                            .map { it.trim() }
+                            .filter { it.isNotEmpty() && !it.startsWith("#") && it.contains("=") }
+                            .associate { line ->
+                                val i = line.indexOf('=')
+                                line.substring(0, i).trim() to line.substring(i + 1).trim()
+                            }
 
-                // Passwordless self-update: installs a signature-verifying helper + polkit policy so
-                // the app applies a verified update without a root password prompt. Requires enabled = true.
-                // silentUpdate.set(true)
+                    fun local(name: String): String? = props[name]?.takeIf { it.isNotEmpty() }
+                    local("compose.desktop.linux.signing.keyId")?.let { keyId.set(it) }
+                    local("compose.desktop.linux.signing.keyFile")?.let { keyFile.set(file(it)) }
+                    local("compose.desktop.linux.signing.passphrase")?.let { passphrase.set(it) }
+                }
             }
         }
 
@@ -259,6 +282,12 @@ nucleus.application {
                 multiLanguageInstaller = true // Default: false
                 // Languages: "en_US", "fr_FR", "de_DE", "es_ES", "ja_JP", "zh_CN", etc.
                 installerLanguages = listOf("en_US", "fr_FR")
+            }
+
+            // --- Portable EXE ---
+            // Override root Ultra so self-extract stays reasonable while NSIS/DEB keep max packing.
+            portable {
+                compressionLevel = CompressionLevel.Normal
             }
 
             // --- AppX/Windows Store (NEW) ---

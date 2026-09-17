@@ -1,6 +1,8 @@
 package dev.nucleusframework.window.tao.scene
 
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.input.pointer.PointerButton
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.window.tao.TaoMouseButton
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
@@ -19,7 +21,24 @@ import java.util.concurrent.TimeUnit
  * The one place the shared a11y code touches the platform is the debounced
  * walk dispatch, exposed as the [dispatchA11yWalk] hook.
  */
+@OptIn(ExperimentalComposeUiApi::class)
 internal abstract class AbstractTaoComposeSceneHost {
+    /**
+     * Handler for exceptions raised by user code reached through this host —
+     * input dispatch, IME callbacks and the accessibility walk. Frames and the
+     * scene's own coroutines are covered one level down, by the same handler
+     * installed on [TaoSceneBundle], which every platform funnels through.
+     *
+     * Set once when the window opens, from the
+     * [dev.nucleusframework.window.tao.LocalWindowExceptionHandlerFactory] read
+     * in the parent composition — a plain field rather than a CompositionLocal
+     * read, because it must also cover exceptions that break the composition
+     * itself. Volatile: written on the Tao main thread before `attach()`, read
+     * on the platform render thread on Windows/Linux.
+     */
+    @Volatile
+    var exceptionHandler: WindowExceptionHandler? = null
+
     // The SemanticsOwner walk in TaoSemanticsObserver is O(N); during a scroll
     // `onLayoutChange`/`onSemanticsChange` fire every frame, so a per-frame walk
     // stutters scrolling — most visibly once an AX client (PopClip, VoiceOver,
@@ -73,7 +92,9 @@ internal abstract class AbstractTaoComposeSceneHost {
                             a11yFirstRequestNs = 0L
                             if (b != null) {
                                 // Hop to the platform UI thread — the walk touches Compose state.
-                                dispatchA11yWalk(b)
+                                // Guarded there, not here: the block runs on the UI thread, which
+                                // is where the window's handler is contractually invoked.
+                                dispatchA11yWalk { exceptionHandler.catchExceptions(b) }
                             }
                         } else {
                             // No AT client is listening: park the walk and poll the

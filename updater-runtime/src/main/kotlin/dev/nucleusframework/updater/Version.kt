@@ -2,7 +2,7 @@ package dev.nucleusframework.updater
 
 import kotlin.math.min
 
-data class Version(
+public data class Version(
     val major: Int,
     val minor: Int,
     val patch: Int,
@@ -22,7 +22,7 @@ data class Version(
             if (meta.isNotEmpty()) append("-$meta")
         }
 
-    fun levelFrom(other: Version): UpdateLevel =
+    public fun levelFrom(other: Version): UpdateLevel =
         when {
             major != other.major -> UpdateLevel.MAJOR
             minor != other.minor -> UpdateLevel.MINOR
@@ -30,7 +30,7 @@ data class Version(
             else -> UpdateLevel.PRE_RELEASE
         }
 
-    companion object {
+    public companion object {
         private val SEMVER_REGEXP = """^(\d+)(?:\.(\d*))?(?:\.(\d*))?(?:-(.*))?${'$'}""".toRegex()
 
         private const val GROUP_MAJOR = 1
@@ -38,13 +38,13 @@ data class Version(
         private const val GROUP_PATCH = 3
         private const val GROUP_META = 4
 
-        fun fromString(versionString: String): Version {
+        public fun fromString(versionString: String): Version {
             val matchResult =
                 SEMVER_REGEXP.matchEntire(versionString.trim())
                     ?: return Version(0, 0, 0, "")
-            val major = matchResult.groups[GROUP_MAJOR]?.value?.toInt() ?: 0
-            val minor = matchResult.groups[GROUP_MINOR]?.value?.toInt() ?: 0
-            val patch = matchResult.groups[GROUP_PATCH]?.value?.toInt() ?: 0
+            val major = matchResult.groups[GROUP_MAJOR]?.value?.toIntOrNull() ?: 0
+            val minor = matchResult.groups[GROUP_MINOR]?.value?.toIntOrNull() ?: 0
+            val patch = matchResult.groups[GROUP_PATCH]?.value?.toIntOrNull() ?: 0
             val meta = matchResult.groups[GROUP_META]?.value ?: ""
             return Version(major, minor, patch, meta)
         }

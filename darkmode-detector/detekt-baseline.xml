@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:DarkModeDetector.kt:IDarkModeDetector</ID>
+    <ID>UndocumentedPublicClass:DarkModeDetector.kt:NoopDarkModeDetector : IDarkModeDetector</ID>
+    <ID>UndocumentedPublicFunction:DarkModeDetector.kt:IDarkModeDetector$public fun isDark: Boolean</ID>
+    <ID>UndocumentedPublicFunction:DarkModeDetector.kt:IDarkModeDetector$public fun registerListener</ID>
+    <ID>UndocumentedPublicFunction:DarkModeDetector.kt:IDarkModeDetector$public fun removeListener</ID>
+    <ID>UndocumentedPublicFunction:DarkModeDetector.kt:public fun getPlatformDarkModeDetector: IDarkModeDetector</ID>
+  </CurrentIssues>
+</SmellBaseline>

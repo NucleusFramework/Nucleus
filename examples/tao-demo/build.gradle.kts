@@ -17,6 +17,13 @@ dependencies {
     implementation(project(":examples:shared"))
     implementation(project(":core-runtime"))
     implementation(compose.desktop.currentOs)
+    // Native WebView via ComposeNativeWebView (WKWebView / WebKit2GTK / WebView2).
+    // Exclude published Nucleus artifacts so the in-tree modules win — this
+    // branch's NativeView blending is newer than the version the library
+    // was published against.
+    implementation(libs.composewebview) {
+        exclude(group = "dev.nucleusframework")
+    }
     // Extract-and-load native lib (issue #317): zstd-kmp ships libzstd-kmp.{dylib,so,dll} inside
     // its JAR and loads a temp-extracted copy via System.load(temp). Adding it here + the Pkg
     // store format below activates the sandboxed pipeline so the marker/shim rewrite is exercised
@@ -78,11 +85,29 @@ nucleus.application {
     }
 
     nativeDistributions {
-        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Pkg)
+        targetFormats(TargetFormat.Dmg, TargetFormat.Nsis, TargetFormat.Pkg, TargetFormat.AppX)
         compressionLevel = CompressionLevel.Maximum
         appName = "Sample Tao"
         packageName = "SampleTao"
         packageVersion = "1.0.0"
+
+        windows {
+            // AppX (Windows Store) is a store format → activates the sandboxed pipeline, so the
+            // zstd-kmp marker/shim rewrite is exercised end-to-end on Windows too (issue #399/#317),
+            // mirroring what the Pkg format does on macOS.
+            //
+            // To actually sideload + launch it locally (`:examples:tao-demo:runAppX`), add a
+            // `signing { certificateFile = … }` block with a dev cert trusted on the machine and set
+            // `publisher` to that cert's subject — Windows refuses unsigned AppX packages.
+            appx {
+                identityName = "NucleusFramework.SampleTao"
+                publisher = "CN=NucleusFramework"
+                publisherDisplayName = "Nucleus Framework"
+                displayName = "Sample Tao"
+                applicationId = "SampleTao"
+                languages = listOf("en-US")
+            }
+        }
 
         macOS {
             bundleID = "dev.nucleusframework.sampletao"

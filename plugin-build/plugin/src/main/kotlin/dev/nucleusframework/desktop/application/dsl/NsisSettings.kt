@@ -31,6 +31,18 @@ abstract class NsisSettings {
     /** Create start menu shortcut. Default: true */
     var createStartMenuShortcut: Boolean = true
 
+    /**
+     * Start menu submenu (and program files subdirectory) holding the shortcut.
+     *
+     * `null` (default) puts the shortcut directly under the start menu root. When left unset,
+     * [WindowsPlatformSettings.menuGroup] is used instead, so the group declared for
+     * jpackage-based packaging keeps working on the NSIS targets. Mirrors [MsiSettings.menuCategory].
+     */
+    var menuCategory: String? = null
+
+    /** Name used for the shortcuts. Defaults to the application name. */
+    var shortcutName: String? = null
+
     /** Run app after install finishes. Default: true */
     var runAfterFinish: Boolean = true
 

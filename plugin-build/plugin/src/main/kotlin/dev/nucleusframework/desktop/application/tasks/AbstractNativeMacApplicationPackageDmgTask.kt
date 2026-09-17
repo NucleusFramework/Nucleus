@@ -97,12 +97,12 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
         destinationDir: File,
         workingDir: File,
     ) {
-        val packageName = packageName.get()
+        val bundleName = bundleName.get()
         val volumeName =
             dmgTitle.orNull
-                ?.replace("\${productName}", packageName)
+                ?.replace("\${productName}", bundleName)
                 ?.replace("\${version}", packageVersion.get())
-                ?: packageName
+                ?: bundleName
         val fullPackageName = fullPackageName.get()
         val tmpImage = workingDir.resolve("$fullPackageName.tmp.dmg")
         val finalImage = destinationDir.resolve("$fullPackageName.dmg")
@@ -110,7 +110,8 @@ abstract class AbstractNativeMacApplicationPackageDmgTask : AbstractNativeMacApp
         createImage(volumeName = volumeName, imageFile = tmpImage, srcDir = appDir.ioFile)
         val mounted = mountImage(volumeName = volumeName, imageFile = tmpImage)
         try {
-            runSetupScript(appName = packageName, mounted)
+            // Must match the .app directory name inside the image, which is the bundle name.
+            runSetupScript(appName = bundleName, mounted)
         } finally {
             unmountImage(mounted)
         }

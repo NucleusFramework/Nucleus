@@ -1,8 +1,11 @@
 package dev.nucleusframework.taonativetest
 
+import ch.qos.logback.classic.LoggerContext
 import dev.nucleusframework.graalvm.GraalVmInitializer
 import dev.nucleusframework.window.tao.TaoSceneTestBattery
 import dev.nucleusframework.window.tao.headful.TaoHeadfulTestSuiteMain
+import org.slf4j.LoggerFactory
+import org.slf4j.MDC
 import kotlin.system.exitProcess
 
 /**
@@ -26,6 +29,7 @@ import kotlin.system.exitProcess
  */
 fun main(args: Array<String>) {
     GraalVmInitializer.initialize()
+    checkLoggingBackend()
 
     when (args.firstOrNull() ?: "battery") {
         "battery" -> {
@@ -51,4 +55,25 @@ fun main(args: Array<String>) {
             exitProcess(2)
         }
     }
+}
+
+/**
+ * Regression guard for issue #443: SLF4J and its backend must initialize at RUN time.
+ *
+ * Restoring `--initialize-at-build-time=org.slf4j` anywhere in the Nucleus metadata
+ * breaks the *build* long before this runs — analysis puts `MDC.MDC_ADAPTER` (a
+ * `LogbackMDCAdapter`) in the image heap while its class stays run-time initialized,
+ * which native-image rejects. What this checks at run time is the other half: that the
+ * Logback provider is really discovered and MDC round-trips inside the binary.
+ */
+private fun checkLoggingBackend() {
+    val factory = LoggerFactory.getILoggerFactory()
+    check(factory is LoggerContext) { "expected the Logback provider, got ${factory.javaClass.name}" }
+
+    MDC.put("requestId", "native-image")
+    check(MDC.get("requestId") == "native-image") { "MDC did not round-trip" }
+    MDC.remove("requestId")
+
+    LoggerFactory.getLogger("tao-native-test").info("Logback is available (run-time initialized)")
+    println("── slf4j provider: ${factory.javaClass.name} — MDC ok ──")
 }

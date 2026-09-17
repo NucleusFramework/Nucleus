@@ -2,6 +2,7 @@ package dev.nucleusframework.autolaunch
 
 import dev.nucleusframework.autolaunch.windows.NativeAutoLaunchBridge
 import dev.nucleusframework.autolaunch.windows.Win32RegistryBackend
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -19,6 +20,10 @@ class Win32RegistryBackendTest {
 
     @BeforeTest
     fun setUp() {
+        assumeTrue(
+            System.getProperty("os.name").lowercase().contains("win"),
+            "Win32 registry tests only run on Windows",
+        )
         assertTrue(NativeAutoLaunchBridge.isLoaded, "native bridge must load on Windows")
         AutoLaunchConfig.registryValueName = testValueName
         AutoLaunchConfig.executablePath = "C:\\Windows\\System32\\notepad.exe"
@@ -28,6 +33,7 @@ class Win32RegistryBackendTest {
 
     @AfterTest
     fun tearDown() {
+        if (!System.getProperty("os.name").lowercase().contains("win")) return
         cleanup()
         AutoLaunchConfig.registryValueName = null
         AutoLaunchConfig.executablePath = null

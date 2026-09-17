@@ -1,0 +1,10 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicFunction:JewelColorMapping.kt:@Composable public fun rememberJewelTitleBarStyle: TitleBarStyle</ID>
+    <ID>UndocumentedPublicFunction:JewelColorMapping.kt:@Composable public fun rememberJewelWindowStyle: DecoratedWindowStyle</ID>
+    <ID>UndocumentedPublicFunction:JewelDialogTitleBar.kt:@Suppress("FunctionNaming") @Composable public fun DecoratedDialogScope.JewelDialogTitleBar</ID>
+    <ID>UndocumentedPublicFunction:JewelTitleBar.kt:@Suppress("FunctionNaming") @Composable public fun DecoratedWindowScope.JewelTitleBar</ID>
+  </CurrentIssues>
+</SmellBaseline>

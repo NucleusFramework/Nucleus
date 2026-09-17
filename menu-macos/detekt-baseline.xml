@@ -1,0 +1,12 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:NsMenuItemBadge.kt:NsMenuItemBadge$Companion</ID>
+    <ID>UndocumentedPublicClass:NsMenuTypes.kt:NsMenuItemState$Companion</ID>
+    <ID>UndocumentedPublicFunction:NsMenuItemBadge.kt:NsMenuItemBadge.Companion$public fun alerts: NsMenuItemBadge</ID>
+    <ID>UndocumentedPublicFunction:NsMenuItemBadge.kt:NsMenuItemBadge.Companion$public fun newItems: NsMenuItemBadge</ID>
+    <ID>UndocumentedPublicFunction:NsMenuItemBadge.kt:NsMenuItemBadge.Companion$public fun updates: NsMenuItemBadge</ID>
+    <ID>UndocumentedPublicFunction:NsMenuTypes.kt:NsMenuItemState.Companion$public fun fromNative: NsMenuItemState</ID>
+  </CurrentIssues>
+</SmellBaseline>

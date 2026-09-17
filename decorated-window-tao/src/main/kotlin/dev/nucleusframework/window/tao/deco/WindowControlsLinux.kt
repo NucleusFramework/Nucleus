@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import dev.nucleusframework.core.runtime.LinuxDesktopEnvironment
 import dev.nucleusframework.window.DecoratedWindowState
 import dev.nucleusframework.window.TitleBarScope
+import dev.nucleusframework.window.WindowControlType
 import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.utils.linux.LinuxButtonLayout
@@ -66,7 +67,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     // Iterate over `layout.buttons` in natural order — `layout.buttons[0]` is
     // "closest to the edge". Core's `TitleBarMeasurePolicy` places End items
     // first-declared = rightmost (controls-on-right) and Start items
-    // first-declared = leftmost. Mirrors `decorated-window-jni`'s
+    // first-declared = leftmost. Mirrors the legacy AWT backend's
     // `WindowControlArea.kt` exactly.
     for (button in layout.buttons) {
         when (button) {
@@ -80,7 +81,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                     iconPressed = closePressed,
                     contentDescription = "Close",
                     style = style,
-                    alignment = buttonAlignment,
+                    modifier = Modifier.align(buttonAlignment),
                     isCloseButton = true,
                 )
             }
@@ -93,7 +94,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconPressed = icons.maximizePressed,
                         contentDescription = "Exit fullscreen",
                         style = style,
-                        alignment = buttonAlignment,
+                        modifier = Modifier.align(buttonAlignment),
                     )
                     continue
                 }
@@ -106,7 +107,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconPressed = icons.restorePressed,
                         contentDescription = "Restore",
                         style = style,
-                        alignment = buttonAlignment,
+                        modifier = Modifier.align(buttonAlignment),
                     )
                 } else {
                     LinuxControlButton(
@@ -116,7 +117,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         iconPressed = icons.maximizePressed,
                         contentDescription = "Maximize",
                         style = style,
-                        alignment = buttonAlignment,
+                        modifier = Modifier.align(buttonAlignment),
                     )
                 }
             }
@@ -128,7 +129,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                     iconPressed = icons.minimizePressed,
                     contentDescription = "Minimize",
                     style = style,
-                    alignment = buttonAlignment,
+                    modifier = Modifier.align(buttonAlignment),
                 )
             }
         }
@@ -138,22 +139,21 @@ internal fun TitleBarScope.WindowControlsLinux(
 @Suppress("FunctionNaming", "LongParameterList")
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-private fun TitleBarScope.LinuxControlButton(
+private fun LinuxControlButton(
     onClick: () -> Unit,
     icon: Painter,
     iconHover: Painter,
     iconPressed: Painter,
     contentDescription: String,
     style: TitleBarStyle,
-    alignment: Alignment.Horizontal,
+    modifier: Modifier = Modifier,
     isCloseButton: Boolean = false,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
 
     Box(
         modifier =
-            Modifier
-                .align(alignment)
+            modifier
                 .focusable(false)
                 .let { if (isKde) it.offset(y = (-2).dp) else it }
                 .size(LINUX_BUTTON_SIZE)
@@ -206,5 +206,71 @@ private fun TitleBarScope.LinuxControlButton(
                     }.onPointerEvent(PointerEventType.Press) { pressed = true }
                     .onPointerEvent(PointerEventType.Release) { pressed = false },
         )
+    }
+}
+
+/**
+ * Draws a single GNOME/KDE control button. Shared with the standalone
+ * `WindowControls` composable so a scaffold-based window gets the same
+ * artwork the [TitleBar]-injected row uses; the button *order* still comes
+ * from the desktop's own layout setting.
+ */
+@Suppress("FunctionNaming")
+@Composable
+internal fun LinuxWindowControl(
+    type: WindowControlType,
+    state: DecoratedWindowState,
+    style: TitleBarStyle,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    val icons = linuxTitleBarIcons()
+    when (type) {
+        WindowControlType.Close ->
+            LinuxControlButton(
+                onClick = onClick,
+                icon = icons.close,
+                iconHover = if (state.isActive) icons.closeHoverFocused else icons.closeHover,
+                iconPressed = if (state.isActive) icons.closePressedFocused else icons.closePressed,
+                contentDescription = "Close",
+                style = style,
+                modifier = modifier,
+                isCloseButton = true,
+            )
+
+        WindowControlType.Minimize ->
+            LinuxControlButton(
+                onClick = onClick,
+                icon = icons.minimize,
+                iconHover = icons.minimizeHover,
+                iconPressed = icons.minimizePressed,
+                contentDescription = "Minimize",
+                style = style,
+                modifier = modifier,
+            )
+
+        WindowControlType.Restore ->
+            LinuxControlButton(
+                onClick = onClick,
+                icon = icons.restore,
+                iconHover = icons.restoreHover,
+                iconPressed = icons.restorePressed,
+                contentDescription = "Restore",
+                style = style,
+                modifier = modifier,
+            )
+
+        // Exit-fullscreen reuses the maximize artwork, like the title-bar row.
+        WindowControlType.Maximize, WindowControlType.ExitFullscreen ->
+            LinuxControlButton(
+                onClick = onClick,
+                icon = icons.maximize,
+                iconHover = icons.maximizeHover,
+                iconPressed = icons.maximizePressed,
+                contentDescription =
+                    if (type == WindowControlType.ExitFullscreen) "Exit fullscreen" else "Maximize",
+                style = style,
+                modifier = modifier,
+            )
     }
 }

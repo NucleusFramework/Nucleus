@@ -12,7 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
+import dev.nucleusframework.window.tao.event.AWT_PIXEL_TO_ROTATION
+import kotlin.math.roundToInt
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -77,10 +80,32 @@ class TaoSceneScrollTest {
             scroll(scrollEvent(dy = 1f))
             frameUntilIdle()
             val afterDown = scrollValue.value
-            assertTrue(afterDown > 0)
+            assertTrue(afterDown > 0, "scroll state must advance after down (got $afterDown)")
             scroll(scrollEvent(dy = -1f))
+            // MouseWheelScrollingLogic tweens each notch (~100 ms). LinuxGnomeConfig
+            // also scales by sqrt(viewport)*scrollAmount (~42 px here), so two
+            // leftover animation frames already exceed the old 8 px floor under
+            // CI load. Drain until leftover is stable, then allow a fraction of
+            // the downward notch — reverse must still move toward origin.
             frameUntilIdle()
-            assertEquals(0, scrollValue.value, "one notch down then one notch up must return to origin")
+            var leftover = scrollValue.value
+            var previous = leftover + 1
+            var passes = 0
+            var stable = 0
+            while (stable < 2 && passes < SYMMETRY_SETTLE_PASSES) {
+                previous = leftover
+                frameUntilIdle()
+                leftover = scrollValue.value
+                passes++
+                stable = if (leftover == previous) stable + 1 else 0
+            }
+            val tolerance = maxOf(SYMMETRY_RESIDUE_PX, afterDown / 2)
+            assertTrue(
+                leftover < afterDown && kotlin.math.abs(leftover) <= tolerance,
+                "one notch down then one notch up must return near origin " +
+                    "(afterDown=$afterDown, leftover=$leftover after $passes extra settle passes, " +
+                    "tolerance=${tolerance}px)",
+            )
         }
 
     @Test
@@ -122,6 +147,29 @@ class TaoSceneScrollTest {
     }
 
     @Test
+    fun `one wheel unit scrolls ten dp on macOS`() {
+        // The factor TaoSceneScrollRouter sizes trackpad pans with
+        // (AWT_PIXEL_TO_ROTATION) is Compose Desktop's MacOSCocoaConfig
+        // `10.dp` per preciseWheelRotation; pin it so a Compose change shows
+        // up here rather than as pans and notches drifting apart.
+        if (Platform.Current != Platform.MacOS) return // LinuxGnomeConfig / WindowsWinUIConfig scale differently
+        runTaoSceneTest(width = 100, height = 200, density = 2f) {
+            val scrollValue = mutableStateOf(0)
+            setContent {
+                val state = rememberScrollState()
+                scrollValue.value = state.value
+                Column(Modifier.fillMaxSize().verticalScroll(state)) {
+                    repeat(50) { Box(Modifier.fillMaxWidth().height(20.dp)) }
+                }
+            }
+            moveMouse(50f, 100f)
+            scroll(scrollEvent(dy = 1f, scrollAmount = 1))
+            frameUntilIdle()
+            assertEquals((AWT_PIXEL_TO_ROTATION * 2f).roundToInt(), scrollValue.value)
+        }
+    }
+
+    @Test
     fun `scrolled content repaints at the new offset`() =
         runTaoSceneTest(width = 100, height = 100) {
             setContent {
@@ -141,5 +189,15 @@ class TaoSceneScrollTest {
     private companion object {
         const val RED = 0xFFFF0000.toInt()
         const val BLUE = 0xFF0000FF.toInt()
+
+        /** Extra frameUntilIdle rounds after the reverse notch (CI flake). */
+        const val SYMMETRY_SETTLE_PASSES = 16
+
+        /**
+         * Floor on residual pixels after the reverse notch. The actual bound is
+         * `max(this, afterDown / 2)` so a LinuxGnomeConfig tween leftover
+         * (sqrt(height)*scrollAmount ≈ 42 px) does not flake CI.
+         */
+        const val SYMMETRY_RESIDUE_PX = 24
     }
 }

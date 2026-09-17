@@ -18,6 +18,8 @@ internal val DEFAULT_RUNTIME_MODULES =
         "java.net.http",
         "jdk.accessibility",
         "jdk.crypto.ec",
+        // sun.misc.Unsafe — required by JNA, Jewel and many common libraries
+        "jdk.unsupported",
     )
 
 abstract class JvmApplicationDistributions : AbstractDistributions() {
@@ -36,8 +38,24 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
     /** Splash screen image filename relative to appResources (e.g. "splash.png"). */
     var splashImage: String? = null
 
-    /** Enable JDK 25+ AOT cache generation for faster application startup. */
-    var enableAotCache: Boolean = false
+    /**
+     * JDK 25+ AOT cache settings. See [AotCacheSettings].
+     */
+    val aotCache: AotCacheSettings = objects.newInstance(AotCacheSettings::class.java)
+
+    fun aotCache(fn: Action<AotCacheSettings>) {
+        fn.execute(aotCache)
+    }
+
+    /**
+     * Enable JDK 25+ AOT cache generation for faster application startup.
+     * Shorthand for `aotCache { enabled = ... }`.
+     */
+    var enableAotCache: Boolean
+        get() = aotCache.enabled
+        set(value) {
+            aotCache.enabled = value
+        }
 
     /**
      * Whether any of the configured target formats require sandboxing
@@ -105,6 +123,16 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
 
     // --- Compression level for archive formats ---
 
+    /**
+     * Default archive compression for electron-builder packages.
+     *
+     * Per-format overrides take precedence when set:
+     * - AppImage: [LinuxPlatformSettings.appImage] → [AppImageSettings.compressionLevel]
+     * - Windows portable: [WindowsPlatformSettings.portable] → [PortableSettings.compressionLevel]
+     *
+     * [CompressionLevel.Maximum] / [CompressionLevel.Ultra] are not recommended for AppImage
+     * (slow FUSE/squashfs cold start); override that format to [CompressionLevel.Normal] instead.
+     */
     var compressionLevel: CompressionLevel? = null
 
     // --- Artifact name template (e.g., "\${name}-\${version}-\${arch}.\${ext}") ---

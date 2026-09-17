@@ -14,6 +14,7 @@ private const val LIBRARY_NAME = "nucleus_tao_linux_widget"
  * Threading: every entry point must run on the GTK main thread (=
  * Tao event-loop thread = Compose dispatcher thread).
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoLinuxWidgetBridge {
     val isLoaded: Boolean =
         NativeLibraryLoader.load(
@@ -22,10 +23,22 @@ internal object NativeTaoLinuxWidgetBridge {
         )
 
     /**
-     * Reparents [widgetPtr] (a raw `GtkWidget*` cast to Long) into a
-     * `GtkFixed` lazily injected inside Tao's content `GtkBox`. No-op
-     * if Tao's content isn't a GtkBox (other layout backends would
-     * need their own embedding path).
+     * Loads GTK through the same `RTLD_LOCAL` dlopen path as every other
+     * entry point and returns its runtime version (e.g. "3.24.49"), or null
+     * when GTK is unavailable. Probe for the issue-#366 regression test:
+     * proves GTK was dlopen-ed and is functional in this process.
+     */
+    @JvmStatic
+    external fun nativeGtkVersion(): String?
+
+    /**
+     * Registers [widgetPtr] (a raw `GtkWidget*` cast to Long) for
+     * embedding into a `GtkOverlay` lazily injected inside Tao's
+     * content `GtkBox`. The actual mount happens on the first
+     * [nativeSetFrame] with a real rect, so the widget realizes
+     * directly at its final size. No-op if Tao's content isn't a
+     * GtkBox (other layout backends would need their own embedding
+     * path).
      */
     @JvmStatic
     external fun nativeAttach(
@@ -100,9 +113,10 @@ internal object NativeTaoLinuxWidgetBridge {
 
     /**
      * Receives motion / press / release events forwarded from the
-     * native EventBox handlers. Coords are **logical pixels** in
-     * GtkApplicationWindow space (already translated via
-     * `gtk_widget_translate_coordinates`).
+     * native EventBox handlers. Coords are **logical pixels** in the
+     * window content area (bin child), matching Tao's CSD-normalised
+     * pointer path and Compose's (0,0) — not the decorated toplevel
+     * (which includes theme shadow margins under hidden-titlebar CSD).
      *
      * `type`: 0 = move, 1 = press, 2 = release.
      * `pressed`: 1 if currently pressed, 0 otherwise.
@@ -116,6 +130,15 @@ internal object NativeTaoLinuxWidgetBridge {
             button: Int,
             pressed: Int,
         )
+
+        /** Widget-content logical pixels; [dx]/[dy] are GTK scroll deltas. */
+        fun onScroll(
+            xLogical: Int,
+            yLogical: Int,
+            dx: Float,
+            dy: Float,
+        ) {
+        }
     }
 
     /**
@@ -134,4 +157,93 @@ internal object NativeTaoLinuxWidgetBridge {
         boxPtr: Long,
         callback: OverlayInputCallback?,
     )
+
+    /**
+     * Forwards the live GDK pointer event captured by the EventBox onto
+     * [widgetPtr], retargeted to widget-local logical pixels. [type]:
+     * 1 down, 2 up, 3 move. Used to redispatch Compose-unconsumed hits
+     * to the embedded GTK widget after interop blending captured them.
+     * No-op outside an EventBox signal callback — GdkEvents are never
+     * synthesised (a device-less event crashes WebKit).
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        widgetPtr: Long,
+        type: Int,
+        xLogical: Int,
+        yLogical: Int,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /**
+     * Forwards the live GDK scroll event captured by the EventBox onto
+     * [widgetPtr] at widget-local logical pixels. No-op outside an
+     * EventBox scroll callback (never synthesised).
+     */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        widgetPtr: Long,
+        xLogical: Int,
+        yLogical: Int,
+        dx: Float,
+        dy: Float,
+    )
+
+    /**
+     * Gives the keyboard back to Compose after a press Compose kept: clears
+     * the GTK focus widget when it is an embed (not one of the suite's own
+     * input boxes), so keys route to Tao's toplevel handler again. `true`
+     * when it did.
+     */
+    @JvmStatic
+    external fun nativeClaimKeyboardForCompose(gtkWindowPtr: Long): Boolean
+
+    /**
+     * GDK's live pointer button mask (`GDK_BUTTON1_MASK = 1 shl 8`,
+     * `GDK_BUTTON3_MASK = 1 shl 10`, …), or -1 when unavailable.
+     */
+    @JvmStatic
+    external fun nativeQueryPointerButtons(gtkWindowPtr: Long): Int
+
+    /** `gtk_widget_queue_draw` on the toplevel: GTK paints and commits it on its next frame. */
+    @JvmStatic
+    external fun nativeQueueToplevelDraw(gtkWindowPtr: Long)
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A fresh, unparented `GtkEntry` for a headful case to embed through
+     * `NativeView` — the test module cannot fabricate a `GtkWidget*` on
+     * its own. 0 when GTK is unavailable. Destroy with
+     * [nativeDiagDestroyWidget].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateEntry(): Long
+
+    /** Detaches and destroys a widget from [nativeDiagCreateEntry]. */
+    @JvmStatic
+    external fun nativeDiagDestroyWidget(widgetPtr: Long)
+
+    /** The widget [gtkWindowPtr] routes keys to (`gtk_window_get_focus`), or 0. */
+    @JvmStatic
+    external fun nativeDiagFocusWidget(gtkWindowPtr: Long): Long
+
+    /** Whether [widgetPtr] itself holds GTK focus. */
+    @JvmStatic
+    external fun nativeDiagWidgetHasFocus(widgetPtr: Long): Boolean
+
+    /** The text of an entry from [nativeDiagCreateEntry], or null. */
+    @JvmStatic
+    external fun nativeDiagEntryText(widgetPtr: Long): String?
+
+    /**
+     * Where a widget sits, in Tao's content-box coordinates and logical px,
+     * as `[x, y, w, h]` — null while it is not mapped.
+     */
+    @JvmStatic
+    external fun nativeDiagWidgetFrame(
+        gtkWindowPtr: Long,
+        widgetPtr: Long,
+    ): IntArray?
 }

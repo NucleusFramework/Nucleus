@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicFunction:MaterialDecoratedDialog.kt:@Suppress("FunctionNaming", "LongParameterList") @Composable public fun MaterialDecoratedDialog</ID>
+    <ID>UndocumentedPublicFunction:MaterialDecoratedWindow.kt:@Suppress("FunctionNaming", "LongParameterList") @Composable public fun MaterialDecoratedWindow</ID>
+    <ID>UndocumentedPublicFunction:MaterialDialogTitleBar.kt:@Suppress("FunctionNaming") @Composable public fun DecoratedDialogScope.MaterialDialogTitleBar</ID>
+  </CurrentIssues>
+</SmellBaseline>

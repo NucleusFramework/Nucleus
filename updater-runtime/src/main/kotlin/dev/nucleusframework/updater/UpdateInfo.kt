@@ -1,13 +1,13 @@
 package dev.nucleusframework.updater
 
-data class UpdateInfo(
+public data class UpdateInfo(
     val version: String,
     val releaseDate: String,
     val files: List<UpdateFile>,
     val currentFile: UpdateFile,
 )
 
-data class UpdateFile(
+public data class UpdateFile(
     val url: String,
     val sha512: String,
     val size: Long,

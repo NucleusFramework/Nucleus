@@ -18,12 +18,12 @@ import java.nio.file.Path
  * Integrates with [SingleInstanceManager] to forward deep links from secondary instances
  * to the primary instance via the restore request file mechanism.
  */
-object DeepLinkHandler {
+public object DeepLinkHandler {
     private const val TAG = "DeepLinkHandler"
 
     /** The last received deep link URI. */
     @Volatile
-    var uri: URI? = null
+    public var uri: URI? = null
         private set
 
     private var onDeepLink: ((URI) -> Unit)? = null
@@ -54,7 +54,7 @@ object DeepLinkHandler {
         "Use nucleusApplication { onDeepLink { … } } — safe across AWT and Tao backends. " +
             "This entry point installs an AWT-only handler and is incompatible with the Tao backend on macOS.",
     )
-    fun register(
+    public fun register(
         args: Array<String>,
         onDeepLink: (URI) -> Unit,
     ) {
@@ -70,7 +70,7 @@ object DeepLinkHandler {
      *
      * Used internally by `nucleusApplication`'s `onDeepLink { … }` builder.
      */
-    fun setHandler(
+    public fun setHandler(
         args: Array<String>,
         onDeepLink: (URI) -> Unit,
     ) {
@@ -96,7 +96,7 @@ object DeepLinkHandler {
      * forwarding it via [writeUriTo] and exiting — well before the composition
      * (and its `onDeepLink { … }` registration) would ever run.
      */
-    fun captureFromArgs(args: Array<String>) {
+    public fun captureFromArgs(args: Array<String>) {
         parseUriFromArgs(args)
     }
 
@@ -104,7 +104,7 @@ object DeepLinkHandler {
      * Installs the AWT-based macOS Apple Events handler. **Calling this
      * initialises AWT** — only invoke from an AWT-driven application launch.
      */
-    fun installAwtAppleEventHandler() {
+    public fun installAwtAppleEventHandler() {
         if (!Desktop.isDesktopSupported()) return
         try {
             Desktop.getDesktop().setOpenURIHandler { event ->
@@ -117,7 +117,9 @@ object DeepLinkHandler {
     }
 
     private fun parseUriFromArgs(args: Array<String>) {
-        val raw = args.firstOrNull { it.contains("://") } ?: return
+        // Accept hierarchical (`myapp://host`) and opaque (`myapp:?q=1`) forms.
+        // The previous `://` filter dropped valid scheme-only URIs (issue #414).
+        val raw = args.firstOrNull(::isDeepLinkArg) ?: return
         try {
             val parsed = URI(raw)
             debugLog { "Received URI via CLI args: $parsed" }
@@ -131,7 +133,7 @@ object DeepLinkHandler {
      * Writes the current [uri] to the given file path.
      * Intended to be called from [SingleInstanceManager]'s `onRestoreFileCreated` callback.
      */
-    fun writeUriTo(path: Path) {
+    public fun writeUriTo(path: Path) {
         val currentUri = uri ?: return
         try {
             Files.writeString(path, currentUri.toString())
@@ -145,7 +147,7 @@ object DeepLinkHandler {
      * Reads a URI from the given file path and triggers the [onDeepLink] callback.
      * Intended to be called from [SingleInstanceManager]'s `onRestoreRequest` callback.
      */
-    fun readUriFrom(path: Path) {
+    public fun readUriFrom(path: Path) {
         try {
             val content = Files.readString(path).trim()
             if (content.isNotEmpty()) {
@@ -165,7 +167,7 @@ object DeepLinkHandler {
      * delivery paths (e.g. the Tao backend's native Apple Events handler) so
      * the [SingleInstanceManager] persistence still sees the latest URI.
      */
-    fun deliver(newUri: URI) {
+    public fun deliver(newUri: URI) {
         handleUri(newUri)
     }
 
@@ -181,4 +183,26 @@ object DeepLinkHandler {
     private fun errorLog(msg: () -> String) {
         errorln { "[$TAG] ${msg()}" }
     }
+}
+
+/**
+ * Whether [arg] looks like a deep-link URI (RFC 3986 scheme).
+ *
+ * Matches `scheme:` for any valid scheme so opaque URIs such as
+ * `myapp:?queryParam=123` are accepted alongside hierarchical
+ * `myapp://host/path` forms. Windows drive paths (`C:\…`, `D:/…`)
+ * are rejected even though they contain a colon.
+ */
+internal fun isDeepLinkArg(arg: String): Boolean {
+    val colon = arg.indexOf(':')
+    if (colon <= 0) return false
+    val scheme = arg.substring(0, colon)
+    if (!scheme[0].isLetter()) return false
+    if (scheme.any { !it.isLetterOrDigit() && it != '+' && it != '-' && it != '.' }) return false
+    // Windows absolute paths: single-letter scheme + \ or /
+    if (scheme.length == 1 && arg.length > colon + 1) {
+        val next = arg[colon + 1]
+        if (next == '\\' || next == '/') return false
+    }
+    return true
 }

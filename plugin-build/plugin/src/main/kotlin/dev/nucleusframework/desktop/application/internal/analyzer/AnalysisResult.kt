@@ -45,22 +45,29 @@ internal data class ResourcePattern(
 
 /**
  * Aggregated results from all detectors running over a set of JARs.
+ *
+ * [projectClassEntries] are orphan / blanket project-class registrations (#441),
+ * kept separate so the Gradle task can log them without re-deriving the set.
+ * They are included in [allReflectionEntries].
  */
 internal data class AnalysisResult(
     val reflectionEntries: Set<ReflectionEntry> = emptySet(),
     val jniEntries: Set<JniEntry> = emptySet(),
     val resourcePatterns: Set<ResourcePattern> = emptySet(),
     val serviceLoaderEntries: Set<ReflectionEntry> = emptySet(),
+    val projectClassEntries: Set<ReflectionEntry> = emptySet(),
 ) {
     /**
-     * All reflection entries including service loader implementations,
-     * merged by type so each type appears only once with combined methods/fields/flags.
+     * All reflection entries including service loader implementations and project-class
+     * detector output, merged by type so each type appears only once with combined
+     * methods/fields/flags.
      */
     val allReflectionEntries: Set<ReflectionEntry>
-        get() = mergeReflectionEntries(reflectionEntries + serviceLoaderEntries)
+        get() = mergeReflectionEntries(reflectionEntries + serviceLoaderEntries + projectClassEntries)
 
     /**
-     * Merges this result with another.
+     * Merges this result with another. [projectClassEntries] are unioned (used when
+     * partial scans are merged before the orphan pass attaches the final set once).
      */
     operator fun plus(other: AnalysisResult): AnalysisResult =
         AnalysisResult(
@@ -68,6 +75,7 @@ internal data class AnalysisResult(
             jniEntries = jniEntries + other.jniEntries,
             resourcePatterns = resourcePatterns + other.resourcePatterns,
             serviceLoaderEntries = serviceLoaderEntries + other.serviceLoaderEntries,
+            projectClassEntries = projectClassEntries + other.projectClassEntries,
         )
 }
 

@@ -1,8 +1,7 @@
-@file:OptIn(InternalComposeUiApi::class)
+@file:OptIn(InternalComposeUiApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package dev.nucleusframework.window.tao.scene
 
-import androidx.compose.runtime.BroadcastFrameClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.InternalComposeUiApi
@@ -11,7 +10,7 @@ import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.PointerType
 import androidx.compose.ui.platform.PlatformContext
-import androidx.compose.ui.scene.CanvasLayersComposeScene
+import androidx.compose.ui.platform.PlatformTextInputMethodRequest
 import androidx.compose.ui.scene.ComposeScene
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsOwner
@@ -21,17 +20,21 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.WindowExceptionHandler
 import dev.nucleusframework.core.runtime.Platform
 import dev.nucleusframework.window.tao.GlobalLayoutDirection
 import dev.nucleusframework.window.tao.TaoPointerScrollEvent
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEvent
 import dev.nucleusframework.window.tao.event.dispatchNativeKeyEvent
+import dev.nucleusframework.window.tao.event.dispatchTrackpadPan
 import dev.nucleusframework.window.tao.event.taoKeyboardModifiers
 import dev.nucleusframework.window.tao.ffi.TaoNativeWireFormat
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.awaitCancellation
 import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ImageInfo
 import org.jetbrains.skia.Picture
+import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import kotlin.coroutines.CoroutineContext
 
@@ -46,17 +49,18 @@ import kotlin.coroutines.CoroutineContext
  * - the event-translation layer: [dispatchNativeKeyEvent], [taoKeyboardModifiers],
  *   [TaoSyntheticMouseWheelEvent], mac/linux key tables;
  * - the CPU record path [recordSceneToPicture] the host uses for every frame;
- * - the [CanvasLayersComposeScene] configuration mirrored from
+ * - the `CanvasLayersComposeScene` configuration mirrored from
  *   `TaoComposeSceneHost.attach()` (same scene type, same clock/dispatcher
  *   context shape).
  *
  * What is replicated from the host (kept in sync deliberately): the thin
  * `sendPointerEvent` dispatch shapes of `onPointerMove` / `onPointerButton` /
  * `onPointerScroll`, including the cursor-move-before-click and press-dedup
- * guards, so a regression in those contracts fails here first.
+ * guards and the sub-pixel deadband ([TaoPointerDeadband], #615), so a
+ * regression in those contracts fails here first.
  *
  * Time is fully synthetic: [frame] advances a virtual clock, pumps the
- * single-threaded dispatcher, delivers [BroadcastFrameClock] frames and
+ * single-threaded dispatcher, delivers frame-clock ticks and
  * records the scene through [recordSceneToPicture] — one call, one frame,
  * bit-for-bit reproducible.
  */
@@ -188,10 +192,9 @@ private class QueueDispatcher :
 internal class TaoSceneTestScope(
     val width: Int,
     val height: Int,
-    density: Float,
+    val density: Float,
 ) {
     private val dispatcher = QueueDispatcher()
-    private val frameClock = BroadcastFrameClock()
     private var timeNanos = 0L
     private var invalidated = false
 
@@ -207,8 +210,24 @@ internal class TaoSceneTestScope(
         }
 
     private val platformContext =
-        object : PlatformContext.Empty() {
+        object : TaoPlatformContextBase() {
+            override val sceneScale: Float get() = this@TaoSceneTestScope.density
+
             override val windowInfo: TaoWindowInfo = this@TaoSceneTestScope.windowInfo
+
+            // Mirrors `TaoPlatformContext.startInputMethod`: publish the text-input
+            // session request so IME callbacks can edit the focused field, clear it
+            // when the session ends (focus loss / field disposal).
+            override suspend fun startInputMethod(request: PlatformTextInputMethodRequest): Nothing {
+                inputMethodRequest = request
+                imeSession.onInputSession(request)
+                try {
+                    awaitCancellation()
+                } finally {
+                    inputMethodRequest = null
+                    imeSession.onInputSession(null)
+                }
+            }
 
             override val semanticsOwnerListener =
                 object : PlatformContext.SemanticsOwnerListener {
@@ -229,28 +248,98 @@ internal class TaoSceneTestScope(
                 }
         }
 
-    val scene: ComposeScene =
-        CanvasLayersComposeScene(
+    private val sceneBundle: TaoSceneBundle =
+        canvasLayersSceneBundle(
+            coroutineContext = dispatcher,
             density = Density(density),
             layoutDirection = GlobalLayoutDirection,
             size = IntSize(width, height),
-            coroutineContext = dispatcher + frameClock,
             platformContext = platformContext,
-            invalidate = { invalidated = true },
+            requestFrame = { invalidated = true },
         )
 
+    val scene: ComposeScene get() = sceneBundle.scene
+
+    /**
+     * Mirrors [TaoSceneBundle.renderOverlay] — what a popup layer paints into
+     * the same picture *after* its scene (the scrims of the layers stacked
+     * above it). Recorded inside the frame, so it counts towards the picture's
+     * op count exactly as it does in production.
+     */
+    var renderOverlay: ((org.jetbrains.skia.Canvas) -> Unit)?
+        get() = sceneBundle.renderOverlay
+        set(value) {
+            sceneBundle.renderOverlay = value
+        }
+
+    /**
+     * Mirrors the scene host's `exceptionHandler` field (#621): installed on the
+     * bundle, so frames go through the production guard in
+     * [TaoSceneBundle.render], and consulted at the input / IME entry points the
+     * host guards in `DecoratedWindow`. `null` — the default — propagates, like
+     * a window whose app installed no factory and whose default one rethrows.
+     */
+    var exceptionHandler: WindowExceptionHandler? = null
+        set(value) {
+            field = value
+            sceneBundle.exceptionHandler = value
+        }
+
+    /** See [TaoSceneBundle.isRecomposerAlive] — false once the scene can no longer recompose. */
+    val isRecomposerAlive: Boolean get() = sceneBundle.isRecomposerAlive
+
+    /** True while the scene has asked for another frame — the host's repaint signal. */
+    val isSceneInvalidated: Boolean get() = invalidated
+
     // ── Host-mirrored pointer state (same guards as TaoComposeSceneHost) ────
-    private var lastPointerX = 0f
-    private var lastPointerY = 0f
+    private val pointerDeadband = TaoPointerDeadband()
     private var hasReceivedCursorMove = false
     private var isPressed = false
     private var modifierState = 0
+
+    // Manual clock of the scroll routers, advanced by their timers when fired.
+    private var routerNowMillis = 0L
+
+    /** A router's deferred PanEnd, fired by hand (see [elapsePanGrace]); one slot per router. */
+    private inner class ManualPanTimer {
+        private var pending: (() -> Unit)? = null
+        private var fireAtMillis = 0L
+
+        fun schedule(
+            delayMillis: Long,
+            action: () -> Unit,
+        ): () -> Unit {
+            fireAtMillis = routerNowMillis + delayMillis
+            pending = action
+            return { if (pending === action) pending = null }
+        }
+
+        fun fire() {
+            val action = pending ?: return
+            pending = null
+            routerNowMillis = fireAtMillis
+            action()
+        }
+    }
+
+    private val scrollTarget =
+        object : TaoSceneScrollRouter.Target {
+            override val scene: ComposeScene get() = this@TaoSceneTestScope.scene
+            override val scale: Float get() = density
+        }
+
+    private val panTimer = ManualPanTimer()
+    private val legacyPanTimer = ManualPanTimer()
+    private val scrollRouter =
+        TaoSceneScrollRouter(scrollTarget, panTimer::schedule, panEnabled = true, clock = { routerNowMillis })
+    private val legacyScrollRouter =
+        TaoSceneScrollRouter(scrollTarget, legacyPanTimer::schedule, panEnabled = false, clock = { routerNowMillis })
 
     var lastPicture: Picture? = null
         private set
 
     fun setContent(content: @Composable () -> Unit) {
-        scene.setContent(content)
+        exceptionHandler.catchExceptions { scene.setContent(content = content) }
         frame()
     }
 
@@ -267,7 +356,16 @@ internal class TaoSceneTestScope(
      * render pass: pump continuations, deliver the frame clock, then record
      * the scene through the production CPU record path.
      */
-    fun frame(deltaMillis: Long = FRAME_DELTA_MILLIS): Picture {
+    fun frame(
+        deltaMillis: Long = FRAME_DELTA_MILLIS,
+        /**
+         * Cull rect handed to the picture recorder. Defaults to the scene size,
+         * as a window host records; a popup layer records the same scene with a
+         * rect rooted at its draw bounds, which is what
+         * `MacPopupPictureCullTest` exercises.
+         */
+        cullRect: Rect? = null,
+    ): Picture {
         timeNanos += deltaMillis * NANOS_PER_MILLI
         // Release virtual-clock timers (delay / withTimeout) due at the new
         // time BEFORE pumping, so their continuations run in this frame.
@@ -277,9 +375,18 @@ internal class TaoSceneTestScope(
         // withFrameNanos) marks the scene dirty for frameUntilIdle.
         invalidated = false
         pumpUntilIdle()
-        frameClock.sendFrame(timeNanos)
-        pumpUntilIdle()
-        return recordSceneToPicture(scene, width, height, timeNanos).also { lastPicture = it }
+        // The frame clock is ticked inside `recordSceneToPicture` (Compose 1.12
+        // drives it through `FrameRecomposer.performFrame`, which flushes its own
+        // dispatchers around the tick), so the recompose triggered by this
+        // frame's `withFrameNanos` continuations is part of the recorded picture
+        // — same guarantee the explicit sendFrame + pump used to give.
+        return recordSceneToPicture(
+            bundle = sceneBundle,
+            widthPx = width,
+            heightPx = height,
+            nanoTime = timeNanos,
+            cullRect = cullRect ?: Rect.makeWH(width.toFloat(), height.toFloat()),
+        ).also { lastPicture = it }
     }
 
     /**
@@ -319,23 +426,30 @@ internal class TaoSceneTestScope(
         modifierState = modifiers
     }
 
-    /** Mirrors `TaoComposeSceneHost.onPointerMove` (fixed-point 1024 wire format). */
+    /**
+     * Mirrors `TaoComposeSceneHost.onPointerMove` (fixed-point 1024 wire
+     * format), including the sub-pixel deadband (#615).
+     */
     fun moveMouseFixed(
         aFixed: Int,
         bFixed: Int,
     ) {
         val xPx = aFixed / FIXED_POINT_SCALE
         val yPx = bFixed / FIXED_POINT_SCALE
-        lastPointerX = xPx
-        lastPointerY = yPx
         hasReceivedCursorMove = true
         windowInfo.keyboardModifiers = taoKeyboardModifiers(modifierState)
-        scene.sendPointerEvent(
-            eventType = PointerEventType.Move,
-            position = Offset(xPx, yPx),
-            type = PointerType.Mouse,
-            keyboardModifiers = taoKeyboardModifiers(modifierState),
-        )
+        if (!pointerDeadband.shouldDispatchMove(xPx, yPx, density)) {
+            frame()
+            return
+        }
+        exceptionHandler.catchExceptions {
+            scene.sendPointerEvent(
+                eventType = PointerEventType.Move,
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
+                type = PointerType.Mouse,
+                keyboardModifiers = taoKeyboardModifiers(modifierState),
+            )
+        }
         frame()
     }
 
@@ -350,11 +464,16 @@ internal class TaoSceneTestScope(
         pressed: Boolean,
     ) {
         if (!hasReceivedCursorMove) return // host guard: no click before a cursor move
+        // Like the host, after the guard: a click ends an open trackpad pan first.
+        if (pressed) {
+            scrollRouter.finishPan()
+            legacyScrollRouter.finishPan()
+        }
         val modifiers = taoKeyboardModifiers(modifierState)
         if (pressed && isPressed) {
             scene.sendPointerEvent(
                 eventType = PointerEventType.Release,
-                position = Offset(lastPointerX, lastPointerY),
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
                 type = PointerType.Mouse,
                 keyboardModifiers = modifiers,
                 button = button,
@@ -363,13 +482,15 @@ internal class TaoSceneTestScope(
             return // host guard: stray release
         }
         isPressed = pressed
-        scene.sendPointerEvent(
-            eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
-            position = Offset(lastPointerX, lastPointerY),
-            type = PointerType.Mouse,
-            keyboardModifiers = modifiers,
-            button = button,
-        )
+        exceptionHandler.catchExceptions {
+            scene.sendPointerEvent(
+                eventType = if (pressed) PointerEventType.Press else PointerEventType.Release,
+                position = Offset(pointerDeadband.x, pointerDeadband.y),
+                type = PointerType.Mouse,
+                keyboardModifiers = modifiers,
+                button = button,
+            )
+        }
         frame()
     }
 
@@ -386,8 +507,49 @@ internal class TaoSceneTestScope(
     fun exitPointer() {
         scene.sendPointerEvent(
             eventType = PointerEventType.Exit,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             type = PointerType.Mouse,
+            keyboardModifiers = taoKeyboardModifiers(modifierState),
+        )
+        frame()
+    }
+
+    /**
+     * Full production scroll routing (`TaoSceneScrollRouter`, as the macOS
+     * hosts call it from `onPointerScroll` / popup `onScroll`): wheel notches
+     * become Scroll, trackpad gesture steps become Pan — or Scroll too when
+     * [panEvents] is false, mirroring `-Dnucleus.tao.trackpadPanEvents=false`.
+     */
+    fun routeScroll(
+        event: TaoPointerScrollEvent,
+        panEvents: Boolean = true,
+    ) {
+        val router = if (panEvents) scrollRouter else legacyScrollRouter
+        router.onScroll(pointerDeadband.x, pointerDeadband.y, event, taoKeyboardModifiers(modifierState))
+        frame()
+    }
+
+    /** Fires the deferred PanEnd the momentum grace timer would, on both routers. */
+    fun elapsePanGrace() {
+        panTimer.fire()
+        legacyPanTimer.fire()
+        frame()
+    }
+
+    /**
+     * Mirrors the scene host's trackpad pan dispatch (`dispatchTrackpadPan`,
+     * #654): [panOffsetPx] is in pixels with Compose's sign — positive =
+     * content scrolls down / right.
+     */
+    fun pan(
+        type: PointerEventType,
+        panOffsetPx: Offset,
+    ) {
+        scene.dispatchTrackpadPan(
+            x = pointerDeadband.x,
+            y = pointerDeadband.y,
+            type = type,
+            panOffset = panOffsetPx,
             keyboardModifiers = taoKeyboardModifiers(modifierState),
         )
         frame()
@@ -398,15 +560,15 @@ internal class TaoSceneTestScope(
         val modifiers = taoKeyboardModifiers(modifierState)
         scene.sendPointerEvent(
             eventType = PointerEventType.Scroll,
-            position = Offset(lastPointerX, lastPointerY),
+            position = Offset(pointerDeadband.x, pointerDeadband.y),
             scrollDelta = Offset(event.dxAwt, event.dyAwt),
             type = PointerType.Mouse,
             keyboardModifiers = modifiers,
             nativeEvent =
                 TaoSyntheticMouseWheelEvent.create(
                     event = event,
-                    x = lastPointerX,
-                    y = lastPointerY,
+                    x = pointerDeadband.x,
+                    y = pointerDeadband.y,
                     keyboardModifiers = modifiers,
                 ),
         )
@@ -424,7 +586,9 @@ internal class TaoSceneTestScope(
         codePoint: Int = 0,
         modifiers: Int = modifierState,
     ) {
-        scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_DOWN, vkCode, codePoint, modifiers)
+        exceptionHandler.catchExceptions {
+            scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_DOWN, vkCode, codePoint, modifiers)
+        }
         frame()
     }
 
@@ -433,7 +597,9 @@ internal class TaoSceneTestScope(
         codePoint: Int = 0,
         modifiers: Int = modifierState,
     ) {
-        scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_UP, vkCode, codePoint, modifiers)
+        exceptionHandler.catchExceptions {
+            scene.dispatchNativeKeyEvent(TaoNativeWireFormat.KEY_UP, vkCode, codePoint, modifiers)
+        }
         frame()
     }
 
@@ -452,6 +618,55 @@ internal class TaoSceneTestScope(
             val vk = ch.uppercaseChar().code
             pressKey(vkCode = vk, codePoint = ch.code)
         }
+    }
+
+    // ── IME input (macOS marked-text / NSTextInputClient wire) ──────────────
+
+    /**
+     * The active Compose text-input session request, captured through the same
+     * `startInputMethod` hook the host's `TaoPlatformContext` implements.
+     * Non-null while an editable field is focused.
+     */
+    @Volatile
+    var inputMethodRequest: PlatformTextInputMethodRequest? = null
+
+    /** Production IME routing under test — the host owns the same object. */
+    val imeSession: TaoImeSession = TaoImeSession()
+
+    /**
+     * Simulates the IME updating the marked text (macOS `setMarkedText:`), as
+     * delivered to the JVM by the native side. Mirrors the host's
+     * `window.imePreedit` wiring. An empty [text] is `unmarkText`.
+     */
+    fun imePreedit(text: String) {
+        exceptionHandler.catchExceptions { imeSession.preedit(text) }
+        frame()
+    }
+
+    /**
+     * Simulates the IME committing the composition (macOS `insertText:`
+     * while marked text is active). Mirrors the host's `window.imeCommit`
+     * wiring (`TextEditingScope.commitText`).
+     */
+    fun imeCommit(text: String) {
+        exceptionHandler.catchExceptions { imeSession.commit(text) }
+        frame()
+    }
+
+    /**
+     * Simulates a replacement commit (macOS `insertText:` with a valid
+     * `replacementRange`, outside a composition — the press-and-hold accent
+     * picker replacing its base letter, #611/#612). [start] / [length] are
+     * UTF-16 document-absolute offsets. Mirrors the host's
+     * `window.imeReplaceCommit` wiring.
+     */
+    fun imeReplaceCommit(
+        text: String,
+        start: Long,
+        length: Long,
+    ) {
+        imeSession.replaceCommit(text, start, length)
+        frame()
     }
 
     /**
@@ -493,9 +708,17 @@ internal class TaoSceneTestScope(
     // ── Pixels ──────────────────────────────────────────────────────────────
 
     /** Rasterizes the last recorded frame (CPU) and returns it as a Skia bitmap. */
-    fun renderToBitmap(clearColor: Int = COLOR_WHITE): Bitmap {
+    fun renderToBitmap(
+        clearColor: Int = COLOR_WHITE,
+        surfaceProps: org.jetbrains.skia.SurfaceProps? = null,
+    ): Bitmap {
         val picture = lastPicture ?: frame()
-        val surface = Surface.makeRasterN32Premul(width, height)
+        val surface =
+            Surface.makeRaster(
+                ImageInfo.makeN32Premul(width, height),
+                0,
+                surfaceProps,
+            )
         surface.canvas.clear(clearColor)
         surface.canvas.drawPicture(picture)
         val bitmap = Bitmap()
@@ -553,7 +776,7 @@ internal class TaoSceneTestScope(
     }
 
     fun close() {
-        scene.close()
+        sceneBundle.close()
         dispatcher.pump()
     }
 

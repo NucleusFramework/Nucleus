@@ -14,9 +14,11 @@ val publishVersion =
 
 dependencies {
     implementation(project(":core-runtime"))
-    implementation(project(":notification-linux"))
-    implementation(project(":notification-windows"))
-    implementation(project(":notification-macos"))
+    // api (not implementation): the per-platform DSL blocks expose these modules' public types
+    // (Urgency, InterruptionLevel, ToastScenario, ...) so consumers can name them.
+    api(project(":notification-linux"))
+    api(project(":notification-windows"))
+    api(project(":notification-macos"))
     implementation(project(":freedesktop-icons"))
     testImplementation(kotlin("test"))
 }

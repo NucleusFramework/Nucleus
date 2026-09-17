@@ -49,7 +49,7 @@
 static JavaVM *sJVM = NULL;
 static jclass sCallbackClass = NULL;          // global ref to the Java callback interface
 static jmethodID sOnPointerMethod = NULL;     // (IFFII)V — type, x, y, button, modifiers
-static jmethodID sOnScrollMethod = NULL;      // (FFFF)V  — x, y, dx, dy
+static jmethodID sOnScrollMethod = NULL;      // (FFFFZI)V — x, y, dx, dy, precise, gesturePhase
 static jmethodID sOnKeyMethod = NULL;         // (IIII)V  — type, vkCode, codePoint, modifiers
 static jclass sOutsideListenerClass = NULL;
 static jmethodID sOutsideOnClickMethod = NULL; // (II)V  — eventType, button
@@ -70,7 +70,7 @@ static void ensureCallbackCache(JNIEnv *env, jobject cbSample, jobject outsideSa
             sCallbackClass = (*env)->NewGlobalRef(env, local);
             (*env)->DeleteLocalRef(env, local);
             sOnPointerMethod = (*env)->GetMethodID(env, sCallbackClass, "onPointerEvent", "(IFFII)V");
-            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFF)V");
+            sOnScrollMethod  = (*env)->GetMethodID(env, sCallbackClass, "onScroll",       "(FFFFZI)V");
             sOnKeyMethod     = (*env)->GetMethodID(env, sCallbackClass, "onKeyEvent",     "(IIII)V");
         }
     }
@@ -275,6 +275,39 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
 - (void)rightMouseDown:(NSEvent *)event  { [self maybeBecomeKey:event]; [self dispatchPointer:event type:EVT_PTR_DOWN button:2]; }
 - (void)rightMouseUp:(NSEvent *)event    { [self dispatchPointer:event type:EVT_PTR_UP   button:2]; }
 
+/* Trackpad gesture phase wire codes: one copy of the vendored tao's
+ * `ScrollPhase` -> Kotlin `TaoScrollGesturePhase` mapping (events.rs
+ * SCROLL_GESTURE_*), so a popup routes a two-finger swipe exactly like the
+ * window behind it (#654). Kept in sync by TaoScrollWireDriftTest. */
+typedef NS_ENUM(jint, NucleusScrollGesture) {
+    NucleusScrollGestureNone            = -1,
+    NucleusScrollGestureBegan           = 0,
+    NucleusScrollGestureChanged         = 1,
+    NucleusScrollGestureEnded           = 2,
+    NucleusScrollGestureCancelled       = 3,
+    NucleusScrollGestureMomentumBegan   = 4,
+    NucleusScrollGestureMomentumChanged = 5,
+    NucleusScrollGestureMomentumEnded   = 6,
+    NucleusScrollGestureMayBegin        = 7,
+};
+
+/* AppKit sets `phase` for the fingers-on-glass part and `momentumPhase` for the
+ * inertial tail, never both; a wheel notch has neither. NSEventPhase is an
+ * NS_OPTIONS mask, so bits are tested rather than switched on. Same order as
+ * the vendored tao `scroll_wheel`. */
+static jint scrollGesturePhase(NSEvent *event) {
+    NSEventPhase p = event.phase, m = event.momentumPhase;
+    if (p & NSEventPhaseMayBegin)                            return NucleusScrollGestureMayBegin;
+    if (p & NSEventPhaseBegan)                               return NucleusScrollGestureBegan;
+    if (p & (NSEventPhaseChanged | NSEventPhaseStationary))  return NucleusScrollGestureChanged;
+    if (p & NSEventPhaseEnded)                               return NucleusScrollGestureEnded;
+    if (p & NSEventPhaseCancelled)                           return NucleusScrollGestureCancelled;
+    if (m & NSEventPhaseBegan)                               return NucleusScrollGestureMomentumBegan;
+    if (m & NSEventPhaseChanged)                             return NucleusScrollGestureMomentumChanged;
+    if (m & (NSEventPhaseEnded | NSEventPhaseCancelled))     return NucleusScrollGestureMomentumEnded;
+    return NucleusScrollGestureNone;
+}
+
 - (void)scrollWheel:(NSEvent *)event {
     jobject cb = [self takeCallbackOrNil];
     if (cb == NULL) { [super scrollWheel:event]; return; }
@@ -283,7 +316,9 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
-        x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY);
+        x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY,
+        event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE,
+        scrollGesturePhase(event));
     if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
 }
 
@@ -458,6 +493,15 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeCreatePanel(
         panel.animationBehavior = NSWindowAnimationBehaviorNone;
         panel.movableByWindowBackground = NO;
         panel.releasedWhenClosed = NO;
+        // Stationary: macOS Sonoma+ "Click wallpaper to reveal desktop" otherwise
+        // Exposé-slides this panel off-screen while the Kotlin outside-click
+        // listener is already fading it — a visible glitch when the desktop is
+        // the only click target. We dismiss ourselves; the system must not.
+        panel.collectionBehavior =
+            NSWindowCollectionBehaviorCanJoinAllSpaces |
+            NSWindowCollectionBehaviorStationary |
+            NSWindowCollectionBehaviorFullScreenAuxiliary |
+            NSWindowCollectionBehaviorIgnoresCycle;
         // Standalone tray popups need keyboard focus without activating the
         // app: `becomesKeyOnlyIfNeeded` + the explicit makeKeyWindow we trigger
         // from nativeSetFocusable (no host window to lose its active look).
@@ -728,6 +772,20 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetEventCallbac
     objc_setAssociatedObject(content, &kCallbackEnableKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
+/* Status-item button windows and AppKit menu windows. Clicks there are not
+ * "outside" a standalone tray popup: left-click is the tray toggle, right-click
+ * opens the context menu. Treating those mouseDowns as outside-clicks hides
+ * the popup before the menu appears. */
+static BOOL nucleus_isStatusItemOrMenuWindow(NSWindow *window) {
+    if (window == nil) return NO;
+    if (window.level == NSStatusWindowLevel) return YES;
+    Class statusBarWindow = NSClassFromString(@"NSStatusBarWindow");
+    if (statusBarWindow != Nil && [window isKindOfClass:statusBarWindow]) return YES;
+    if ([window isKindOfClass:[NucleusTaoPopupPanel class]]) return NO;
+    NSString *name = NSStringFromClass([window class]);
+    return [name containsString:@"MenuWindow"] || [name containsString:@"MenuPanel"];
+}
+
 /* Installs an NSEvent monitor that fires for every left/right/other
  * mouseDown and calls back into Java's `OutsideClickListener.onOutsideClick`
  * (wired to Compose's `dismissOnClickOutside`) when the click does NOT target
@@ -736,8 +794,9 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeSetEventCallbac
  * Two scopes:
  *  - A **local** monitor always installed: sees events delivered to *this
  *    app*. Same-window clicks (inside the popup) are skipped; any other
- *    in-app click (e.g. on the tray status item, or another window of the
- *    app) fires the listener. This is what owner-based popups need.
+ *    in-app click (e.g. another window of the app) fires the listener.
+ *    Standalone tray panels also skip the status item and native menu
+ *    windows — those clicks belong to the tray toggle / context menu.
  *  - A **global** monitor installed only for standalone (ownerless) panels:
  *    sees mouseDowns delivered to *other* applications (global monitors never
  *    receive events for our own app). A tray popup with no backing window
@@ -784,6 +843,8 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         // fire the outside listener (Popup content handles it via the
         // event-callback path).
         if (e.window == p) return e;
+        // Tray icon / context menu: the tray callback owns these clicks.
+        if (p.isStandalone && nucleus_isStatusItemOrMenuWindow(e.window)) return e;
         NSValue *box = p.outsideListenerVal;
         if (box == nil) return e;
         jobject cb = (jobject)box.pointerValue;

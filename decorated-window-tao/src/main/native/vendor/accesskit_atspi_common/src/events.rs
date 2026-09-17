@@ -3,7 +3,7 @@
 // the LICENSE-APACHE file) or the MIT license (found in
 // the LICENSE-MIT file), at your option.
 
-use accesskit::NodeId;
+use accesskit_consumer::NodeId;
 use atspi_common::{Politeness, Role, State};
 
 use crate::{NodeIdOrRoot, Rect};
@@ -19,6 +19,13 @@ pub enum Event {
         name: String,
         event: WindowEvent,
     },
+    Cache(CacheEvent),
+}
+
+#[derive(Debug)]
+pub enum CacheEvent {
+    Added(NodeId),
+    Removed(NodeId),
 }
 
 #[derive(Debug)]

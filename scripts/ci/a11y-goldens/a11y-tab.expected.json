@@ -1,0 +1,299 @@
+{
+  "schemaVersion": 1,
+  "windowTitle": "Tao Backend Demo",
+  "tab": "A11y",
+  "sourceOfTruth": "examples/shared/.../A11yTab.kt",
+  "description": "Exact expected UIA nodes for the A11y tab. Measured via RawViewWalker; compared field-by-field against live tree.",
+  "notes": [
+    "Dynamic names use nameMatch=regex (click counter, notification clicks, textfield status).",
+    "Role.Switch maps to UIA Button + Toggle (AccessKit), not ControlType.Switch.",
+    "Bare toggleable (no Role) must still surface as CheckBox + Toggle.",
+    "requireValidBounds=false for content that may sit below the scroll fold.",
+    "OS chrome (title bar Minimize/Maximize) is not asserted — only app-owned tree."
+  ],
+  "tabs": [
+    { "name": "Demo", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Scroll", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Zoom", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Window actions", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "A11y", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true, "selected": true },
+    { "name": "Complex", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Events", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "WebView", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "SwiftUI", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true },
+    { "name": "Texture", "controlType": "TabItem", "patternsAny": ["Invoke", "SelectionItem"], "keyboardFocusable": true }
+  ],
+  "nodes": [
+    {
+      "id": "heading-surface",
+      "name": "Accessibility Test Surface",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "section-button",
+      "name": "Button",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "increment",
+      "name": "Increment",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "click-counter",
+      "name": "^click counter \\d+$",
+      "nameMatch": "regex",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-disabled",
+      "name": "Disabled button",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "cannot-press",
+      "name": "Cannot press",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": false,
+      "keyboardFocusable": false,
+      "patternsNone": ["Invoke"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-checkbox",
+      "name": "Checkbox",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "tri-state-checkbox",
+      "name": "Tri-state checkbox",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-switch",
+      "name": "Switch",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "notifications-switch",
+      "name": "Notifications switch",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": true,
+      "notes": "Role.Switch -> UIA Button+Toggle via AccessKit"
+    },
+    {
+      "id": "section-radio",
+      "name": "Radio buttons",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "priority-low",
+      "name": "Priority Low",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "priority-medium",
+      "name": "Priority Medium",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "priority-high",
+      "name": "Priority High",
+      "nameMatch": "exact",
+      "controlType": "RadioButton",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["SelectionItem"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-slider",
+      "name": "Slider",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "volume",
+      "name": "Volume",
+      "nameMatch": "exact",
+      "controlType": "Slider",
+      "enabled": true,
+      "patternsAll": ["RangeValue"],
+      "rangeMin": 0,
+      "rangeMax": 1,
+      "requireValidBounds": true
+    },
+    {
+      "id": "section-textfield",
+      "name": "Text field",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "a11y-text-field",
+      "name": "A11y text field",
+      "nameMatch": "exact",
+      "controlType": "Edit",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Value"],
+      "requireValidBounds": true
+    },
+    {
+      "id": "textfield-status",
+      "name": "^TextField status: text='.*'$",
+      "nameMatch": "regex",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "section-custom",
+      "name": "Custom actions",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "notification",
+      "name": "^Notification \\(clicks: \\d+\\)$",
+      "nameMatch": "regex",
+      "controlType": "Button",
+      "enabled": true,
+      "requireValidBounds": false,
+      "notes": "CustomActions surface on macOS/AT-SPI; UIA may omit Invoke when only custom actions exist"
+    },
+    {
+      "id": "section-live",
+      "name": "Live region (assertive)",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "update-status",
+      "name": "Update status",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "section-bare-toggle",
+      "name": "Toggleable (no role)",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "bare-toggleable",
+      "name": "Bare toggleable",
+      "nameMatch": "exact",
+      "controlType": "CheckBox",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Toggle"],
+      "requireValidBounds": false,
+      "notes": "No Compose Role — must still project as checkable"
+    },
+    {
+      "id": "section-validation",
+      "name": "Validation error",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "email-invalid-value",
+      "nameMatch": "any",
+      "controlType": "Edit",
+      "enabled": true,
+      "patternsAll": ["Value"],
+      "valueMatch": "regex",
+      "value": "not-an-email|.*@.*",
+      "requireValidBounds": false,
+      "notes": "Email field has empty Name; matched by ControlType+Value"
+    },
+    {
+      "id": "section-dialog",
+      "name": "Modal dialog",
+      "nameMatch": "exact",
+      "controlType": "Text",
+      "enabled": true,
+      "requireValidBounds": false
+    },
+    {
+      "id": "open-dialog",
+      "name": "Open dialog",
+      "nameMatch": "exact",
+      "controlType": "Button",
+      "enabled": true,
+      "keyboardFocusable": true,
+      "patternsAll": ["Invoke"],
+      "requireValidBounds": false
+    },
+    {
+      "id": "nav-tabs-group",
+      "name": "Main navigation tabs",
+      "nameMatch": "exact",
+      "controlType": "Group",
+      "enabled": true,
+      "requireValidBounds": true
+    }
+  ]
+}

@@ -15,14 +15,14 @@ package dev.nucleusframework.launcher.macos
  * @property enabled Whether the item is clickable.
  * @property children Sub-menu items. Non-empty means this item has a submenu.
  */
-data class DockMenuItem(
+public data class DockMenuItem(
     val id: Int,
     val title: String = "",
     val enabled: Boolean = true,
     val children: List<DockMenuItem> = emptyList(),
 ) {
-    companion object {
+    public companion object {
         /** Creates a separator item. */
-        fun separator(id: Int): DockMenuItem = DockMenuItem(id = id, title = "-")
+        public fun separator(id: Int): DockMenuItem = DockMenuItem(id = id, title = "-")
     }
 }

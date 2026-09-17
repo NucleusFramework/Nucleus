@@ -72,7 +72,7 @@ abstract class AbstractNativeMacApplicationPackageAppDirTask : AbstractNativeMac
         workingDir: File,
     ) {
         val packageName = packageName.get()
-        val appDir = destinationDir.resolve("$packageName.app").apply { mkdirs() }
+        val appDir = destinationDir.resolve("${bundleName.get()}.app").apply { mkdirs() }
         val contentsDir = appDir.resolve("Contents").apply { mkdirs() }
         val macOSDir = contentsDir.resolve("MacOS").apply { mkdirs() }
         val appResourcesDir = contentsDir.resolve("Resources").apply { mkdirs() }

@@ -15,8 +15,8 @@ import java.nio.file.Path
  * 4. `/proc/self/exe` executable name → `{name}.desktop`
  * 5. Scanning XDG application directories for a `.desktop` file whose `Exec` matches the process
  */
-object LinuxDesktopFileDetector {
-    val desktopFilename: String? by lazy { detect() }
+public object LinuxDesktopFileDetector {
+    public val desktopFilename: String? by lazy { detect() }
 
     @Suppress("TooGenericExceptionCaught", "CyclomaticComplexMethod")
     private fun detect(): String? {

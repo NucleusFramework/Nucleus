@@ -52,6 +52,14 @@ import kotlin.math.roundToInt
  *    i.e. after Compose's WindowsWinUIConfig `height/20` scaling).
  */
 private const val IDLE_MS = 180L
+
+/**
+ * Pixels of trackpad pan per AWT wheel unit on the Tao backend: Compose
+ * Desktop's `MacOSCocoaConfig` turns one `preciseWheelRotation` into 10 dp,
+ * and Nucleus sizes `panOffset` the same way so both gestures move content
+ * equally (`decorated-window-tao` `AWT_PIXEL_TO_ROTATION`).
+ */
+private const val PAN_DP_PER_WHEEL_UNIT = 10f
 private const val ROWS = 600
 private const val MAX_LOG = 14
 
@@ -116,37 +124,42 @@ fun ScrollTestScreen() {
         }
     }
 
-    // Finalize a gesture once the scroll events go quiet for IDLE_MS. Both this
-    // ticker and the pointer handler run on the UI dispatcher, so the shared
-    // ScrollMeter needs no extra synchronization.
+    // Closes the open gesture and logs it. Called inline on a PanEnd or on the
+    // next PanStart (trackpad on Tao — two quick swipes must not merge, nor
+    // lose the first one to a ticker race) and by the idle ticker below for
+    // wheel input and backends without pan events. Everything here runs on the
+    // UI dispatcher, so the shared ScrollMeter needs no extra synchronization.
+    fun finalizeGesture(now: Long) {
+        if (!meter.inGesture) return
+        val px = scrollState.value - meter.startValuePx
+        // Render FPS over the whole gesture window (start → finalize, i.e.
+        // including the post-input animation tail) = frames rendered ÷
+        // wall-clock. This is what the cadence fix should lift toward the
+        // display refresh; ~20 means the tween only ticks at wheel rate.
+        val windowMs = (now - meter.startTimeMs).coerceAtLeast(1)
+        val gestureFrames = meter.frameCount - meter.startFrameCount
+        gestures.add(
+            0,
+            GestureStat(
+                index = ++counter,
+                events = meter.events,
+                rawSumY = meter.rawSumY,
+                pxScrolled = px,
+                durationMs = (meter.lastTimeMs - meter.startTimeMs).coerceAtLeast(0),
+                maxRawAbsY = meter.maxRawAbsY,
+                fps = (gestureFrames * 1000L / windowMs).toInt(),
+            ),
+        )
+        if (gestures.size > MAX_LOG) gestures.removeAt(gestures.lastIndex)
+        meter.inGesture = false
+    }
+
     LaunchedEffect(Unit) {
         while (true) {
             delay(40)
             liveValue = scrollState.value
             val now = System.nanoTime() / 1_000_000
-            if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) {
-                val px = scrollState.value - meter.startValuePx
-                // Render FPS over the whole gesture window (start → finalize, i.e.
-                // including the post-input animation tail) = frames rendered ÷
-                // wall-clock. This is what the cadence fix should lift toward the
-                // display refresh; ~20 means the tween only ticks at wheel rate.
-                val windowMs = (now - meter.startTimeMs).coerceAtLeast(1)
-                val gestureFrames = meter.frameCount - meter.startFrameCount
-                gestures.add(
-                    0,
-                    GestureStat(
-                        index = ++counter,
-                        events = meter.events,
-                        rawSumY = meter.rawSumY,
-                        pxScrolled = px,
-                        durationMs = (meter.lastTimeMs - meter.startTimeMs).coerceAtLeast(0),
-                        maxRawAbsY = meter.maxRawAbsY,
-                        fps = (gestureFrames * 1000L / windowMs).toInt(),
-                    ),
-                )
-                if (gestures.size > MAX_LOG) gestures.removeAt(gestures.lastIndex)
-                meter.inGesture = false
-            }
+            if (meter.inGesture && now - meter.lastTimeMs >= IDLE_MS) finalizeGesture(now)
         }
     }
 
@@ -178,9 +191,27 @@ fun ScrollTestScreen() {
                                         // consumes it. We never consume — scrolling
                                         // must still happen normally.
                                         val event = awaitPointerEvent(PointerEventPass.Initial)
-                                        if (event.type != PointerEventType.Scroll) continue
-                                        val d = event.changes.first().scrollDelta
+                                        // Wheel notches arrive as Scroll (AWT wheel units);
+                                        // on the Tao backend a trackpad gesture arrives as
+                                        // PanStart / PanMove / PanEnd with a pixel offset,
+                                        // logged in wheel units via PAN_DP_PER_WHEEL_UNIT.
+                                        val change = event.changes.first()
                                         val now = System.nanoTime() / 1_000_000
+                                        val d =
+                                            when (event.type) {
+                                                PointerEventType.Scroll -> change.scrollDelta
+                                                PointerEventType.PanMove ->
+                                                    change.panOffset / (PAN_DP_PER_WHEEL_UNIT * density)
+                                                PointerEventType.PanStart,
+                                                PointerEventType.PanEnd,
+                                                -> {
+                                                    // A gesture boundary: log the open gesture
+                                                    // now instead of merging across IDLE_MS.
+                                                    finalizeGesture(now)
+                                                    continue
+                                                }
+                                                else -> continue
+                                            }
                                         if (!meter.inGesture || now - meter.lastTimeMs > IDLE_MS) {
                                             meter.inGesture = true
                                             meter.startValuePx = scrollState.value

@@ -1,0 +1,295 @@
+public final class dev/nucleusframework/launcher/windows/BadgeGlyph : java/lang/Enum {
+	public static final field ACTIVITY Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field ALARM Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field ALERT Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field ATTENTION Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field AVAILABLE Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field AWAY Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field BUSY Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field ERROR Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field NEW_MESSAGE Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field NONE Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field PAUSED Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field PLAYING Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static final field UNAVAILABLE Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+	public static fun values ()[Ldev/nucleusframework/launcher/windows/BadgeGlyph;
+}
+
+public final class dev/nucleusframework/launcher/windows/JumpListCategory {
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/util/List;
+	public final fun copy (Ljava/lang/String;Ljava/util/List;)Ldev/nucleusframework/launcher/windows/JumpListCategory;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/JumpListCategory;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/JumpListCategory;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getItems ()Ljava/util/List;
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/windows/JumpListItem {
+	public static final field Companion Ldev/nucleusframework/launcher/windows/JumpListItem$Companion;
+	public fun <init> ()V
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;Z)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/lang/String;
+	public final fun component4 ()Ldev/nucleusframework/launcher/windows/TaskbarIconSource;
+	public final fun component5 ()Z
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;Z)Ldev/nucleusframework/launcher/windows/JumpListItem;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/JumpListItem;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/JumpListItem;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getArguments ()Ljava/lang/String;
+	public final fun getDescription ()Ljava/lang/String;
+	public final fun getIcon ()Ldev/nucleusframework/launcher/windows/TaskbarIconSource;
+	public final fun getTitle ()Ljava/lang/String;
+	public fun hashCode ()I
+	public final fun isSeparator ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/windows/JumpListItem$Companion {
+	public final fun getSEPARATOR ()Ldev/nucleusframework/launcher/windows/JumpListItem;
+}
+
+public final class dev/nucleusframework/launcher/windows/KnownCategory : java/lang/Enum {
+	public static final field FREQUENT Ldev/nucleusframework/launcher/windows/KnownCategory;
+	public static final field RECENT Ldev/nucleusframework/launcher/windows/KnownCategory;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getValue ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/launcher/windows/KnownCategory;
+	public static fun values ()[Ldev/nucleusframework/launcher/windows/KnownCategory;
+}
+
+public final class dev/nucleusframework/launcher/windows/StockIcon : java/lang/Enum {
+	public static final field APPLICATION Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field AUDIO_FILES Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field AUTO_LIST Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DELETE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DESKTOP_PC Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DEVICE_AUDIO_PLAYER Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DEVICE_CAMERA Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DEVICE_CELL_PHONE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DEVICE_VIDEO_CAMERA Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DOCUMENT_NO_ASSOCIATION Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DOCUMENT_WITH_ASSOCIATION Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_BD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_CD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_CLUSTERED Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_FIXED Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_FLOPPY_35 Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_FLOPPY_525 Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_HD_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_NETWORK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_NETWORK_DISABLED Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_RAM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_REMOVABLE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field DRIVE_UNKNOWN Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field ERROR Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field FIND Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field FOLDER Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field FOLDER_BACK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field FOLDER_FRONT Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field FOLDER_OPEN Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field HELP Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field IMAGE_FILES Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field INFO Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field INTERNET Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field KEY Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field LINK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field LOCK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_AUDIO_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_BD_R Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_BD_RE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_BD_ROM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_BLANK_CD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_BLURAY Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_AUDIO Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_AUDIO_PLUS Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_BURN Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_R Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_ROM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_CD_RW Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_COMPACT_FLASH Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_PLUS_R Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_PLUS_RW Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_R Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_RAM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_ROM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_DVD_RW Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_ENHANCED_CD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_ENHANCED_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_HD_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_HD_DVD_R Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_HD_DVD_RAM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_HD_DVD_ROM Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_MOVIE_DVD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_SMART_MEDIA Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_SVCD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MEDIA_VCD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MIXED_FILES Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MOBILE_PC Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field MY_NETWORK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field NETWORK_CONNECT Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field PRINTER Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field PRINTER_FAX Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field PRINTER_FAX_NETWORK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field PRINTER_FILE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field PRINTER_NETWORK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field RECYCLER_EMPTY Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field RECYCLER_FULL Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field RENAME Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SERVER Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SERVER_SHARE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SETTINGS Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SHARE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SHIELD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SLOW_FILE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field SOFTWARE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field STACK Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field STUFFED_FOLDER Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field USERS Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field VIDEO_FILES Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field WARNING Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field WORLD Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static final field ZIP_FILE Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public final fun getId ()I
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/launcher/windows/StockIcon;
+	public static fun values ()[Ldev/nucleusframework/launcher/windows/StockIcon;
+}
+
+public abstract class dev/nucleusframework/launcher/windows/TaskbarIconSource {
+}
+
+public final class dev/nucleusframework/launcher/windows/TaskbarIconSource$FromFile : dev/nucleusframework/launcher/windows/TaskbarIconSource {
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromFile;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromFile;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromFile;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/windows/TaskbarIconSource$FromResource : dev/nucleusframework/launcher/windows/TaskbarIconSource {
+	public fun <init> (Ljava/lang/String;I)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()I
+	public final fun copy (Ljava/lang/String;I)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromResource;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromResource;Ljava/lang/String;IILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromResource;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDllPath ()Ljava/lang/String;
+	public final fun getIndex ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/windows/TaskbarIconSource$FromStock : dev/nucleusframework/launcher/windows/TaskbarIconSource {
+	public fun <init> (Ldev/nucleusframework/launcher/windows/StockIcon;)V
+	public final fun component1 ()Ldev/nucleusframework/launcher/windows/StockIcon;
+	public final fun copy (Ldev/nucleusframework/launcher/windows/StockIcon;)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromStock;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromStock;Ldev/nucleusframework/launcher/windows/StockIcon;ILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/TaskbarIconSource$FromStock;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getStockIcon ()Ldev/nucleusframework/launcher/windows/StockIcon;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/launcher/windows/ThumbBarClickListener {
+	public abstract fun onThumbButtonClick (I)V
+}
+
+public final class dev/nucleusframework/launcher/windows/ThumbnailToolbarButton {
+	public static final field Companion Ldev/nucleusframework/launcher/windows/ThumbnailToolbarButton$Companion;
+	public static final field MAX_BUTTONS I
+	public fun <init> (ILjava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZZZZZ)V
+	public synthetic fun <init> (ILjava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZZZZZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/launcher/windows/TaskbarIconSource;
+	public final fun component4 ()Z
+	public final fun component5 ()Z
+	public final fun component6 ()Z
+	public final fun component7 ()Z
+	public final fun component8 ()Z
+	public final fun copy (ILjava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZZZZZ)Ldev/nucleusframework/launcher/windows/ThumbnailToolbarButton;
+	public static synthetic fun copy$default (Ldev/nucleusframework/launcher/windows/ThumbnailToolbarButton;ILjava/lang/String;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;ZZZZZILjava/lang/Object;)Ldev/nucleusframework/launcher/windows/ThumbnailToolbarButton;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getDismissOnClick ()Z
+	public final fun getEnabled ()Z
+	public final fun getHidden ()Z
+	public final fun getIcon ()Ldev/nucleusframework/launcher/windows/TaskbarIconSource;
+	public final fun getId ()I
+	public final fun getNoBackground ()Z
+	public final fun getNonInteractive ()Z
+	public final fun getTooltip ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/launcher/windows/ThumbnailToolbarButton$Companion {
+}
+
+public final class dev/nucleusframework/launcher/windows/WindowsBadgeManager {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/windows/WindowsBadgeManager;
+	public final fun clear ()Z
+	public final fun getLastError ()Ljava/lang/String;
+	public final fun initialize (Ljava/lang/String;)Z
+	public static synthetic fun initialize$default (Ldev/nucleusframework/launcher/windows/WindowsBadgeManager;Ljava/lang/String;ILjava/lang/Object;)Z
+	public final fun isAvailable ()Z
+	public final fun setCount (I)Z
+	public final fun setGlyph (Ldev/nucleusframework/launcher/windows/BadgeGlyph;)Z
+	public final fun uninitialize ()V
+}
+
+public final class dev/nucleusframework/launcher/windows/WindowsJumpListManager {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/windows/WindowsJumpListManager;
+	public final fun clearJumpList ()Z
+	public final fun getLastError ()Ljava/lang/String;
+	public final fun isAvailable ()Z
+	public final fun setJumpList (Ljava/util/List;Ljava/util/List;Ljava/util/List;)Z
+	public static synthetic fun setJumpList$default (Ldev/nucleusframework/launcher/windows/WindowsJumpListManager;Ljava/util/List;Ljava/util/List;Ljava/util/List;ILjava/lang/Object;)Z
+	public final fun setProcessAppId (Ljava/lang/String;)Z
+	public static synthetic fun setProcessAppId$default (Ldev/nucleusframework/launcher/windows/WindowsJumpListManager;Ljava/lang/String;ILjava/lang/Object;)Z
+}
+
+public final class dev/nucleusframework/launcher/windows/WindowsOverlayIcon {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/windows/WindowsOverlayIcon;
+	public final fun clearIcon (J)Z
+	public final fun clearIcon (Ljava/awt/Window;)Z
+	public final fun getLastError ()Ljava/lang/String;
+	public final fun isAvailable ()Z
+	public final fun setIcon (JLdev/nucleusframework/launcher/windows/TaskbarIconSource;Ljava/lang/String;)Z
+	public final fun setIcon (Ljava/awt/Window;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;Ljava/lang/String;)Z
+	public static synthetic fun setIcon$default (Ldev/nucleusframework/launcher/windows/WindowsOverlayIcon;JLdev/nucleusframework/launcher/windows/TaskbarIconSource;Ljava/lang/String;ILjava/lang/Object;)Z
+	public static synthetic fun setIcon$default (Ldev/nucleusframework/launcher/windows/WindowsOverlayIcon;Ljava/awt/Window;Ldev/nucleusframework/launcher/windows/TaskbarIconSource;Ljava/lang/String;ILjava/lang/Object;)Z
+}
+
+public final class dev/nucleusframework/launcher/windows/WindowsThumbnailToolbar {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/windows/WindowsThumbnailToolbar;
+	public final fun getLastError ()Ljava/lang/String;
+	public final fun isAvailable ()Z
+	public final fun setButtons (JLjava/util/List;Ldev/nucleusframework/launcher/windows/ThumbBarClickListener;)Z
+	public final fun setButtons (Ljava/awt/Window;Ljava/util/List;Ldev/nucleusframework/launcher/windows/ThumbBarClickListener;)Z
+	public static synthetic fun setButtons$default (Ldev/nucleusframework/launcher/windows/WindowsThumbnailToolbar;JLjava/util/List;Ldev/nucleusframework/launcher/windows/ThumbBarClickListener;ILjava/lang/Object;)Z
+	public static synthetic fun setButtons$default (Ldev/nucleusframework/launcher/windows/WindowsThumbnailToolbar;Ljava/awt/Window;Ljava/util/List;Ldev/nucleusframework/launcher/windows/ThumbBarClickListener;ILjava/lang/Object;)Z
+	public final fun unregister (J)Z
+	public final fun unregister (Ljava/awt/Window;)Z
+	public final fun updateButtons (JLjava/util/List;)Z
+	public final fun updateButtons (Ljava/awt/Window;Ljava/util/List;)Z
+}
+
+public final class dev/nucleusframework/launcher/windows/WindowsWindowHandle {
+	public static final field INSTANCE Ldev/nucleusframework/launcher/windows/WindowsWindowHandle;
+	public final fun of (Ljava/awt/Window;)J
+}
+

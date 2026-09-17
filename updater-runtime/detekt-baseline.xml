@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:GenericProvider.kt:GenericProvider : UpdateProvider</ID>
+    <ID>UndocumentedPublicClass:GitHubProvider.kt:GitHubProvider : UpdateProvider</ID>
+    <ID>UndocumentedPublicClass:NucleusUpdater.kt:NucleusUpdater</ID>
+    <ID>UndocumentedPublicClass:NucleusUpdater.kt:NucleusUpdater$Companion</ID>
+    <ID>UndocumentedPublicClass:UpdateException.kt:ChecksumException : UpdateException</ID>
+    <ID>UndocumentedPublicClass:UpdateException.kt:NetworkException : UpdateException</ID>
+    <ID>UndocumentedPublicClass:UpdateException.kt:NoMatchingFileException : UpdateException</ID>
+    <ID>UndocumentedPublicClass:UpdateException.kt:ParseException : UpdateException</ID>
+    <ID>UndocumentedPublicClass:UpdateException.kt:UpdateException : Exception</ID>
+    <ID>UndocumentedPublicClass:UpdateInfo.kt:UpdateFile</ID>
+    <ID>UndocumentedPublicClass:UpdateInfo.kt:UpdateInfo</ID>
+    <ID>UndocumentedPublicClass:UpdateLevel.kt:UpdateLevel</ID>
+    <ID>UndocumentedPublicClass:UpdateProvider.kt:UpdateProvider</ID>
+    <ID>UndocumentedPublicClass:UpdateResult.kt:UpdateResult</ID>
+    <ID>UndocumentedPublicClass:UpdateResult.kt:UpdateResult$Available : UpdateResult</ID>
+    <ID>UndocumentedPublicClass:UpdateResult.kt:UpdateResult$Error : UpdateResult</ID>
+    <ID>UndocumentedPublicClass:UpdateResult.kt:UpdateResult$NotAvailable : UpdateResult</ID>
+    <ID>UndocumentedPublicClass:UpdaterConfig.kt:UpdaterConfig</ID>
+    <ID>UndocumentedPublicClass:UpdaterConfig.kt:UpdaterConfig$Companion</ID>
+    <ID>UndocumentedPublicClass:Version.kt:Version : Comparable</ID>
+    <ID>UndocumentedPublicClass:Version.kt:Version$Companion</ID>
+    <ID>UndocumentedPublicFunction:NucleusUpdater.kt:NucleusUpdater$public fun downloadUpdate: Flow&lt;DownloadProgress&gt;</ID>
+    <ID>UndocumentedPublicFunction:NucleusUpdater.kt:NucleusUpdater$public fun installAndQuit</ID>
+    <ID>UndocumentedPublicFunction:NucleusUpdater.kt:NucleusUpdater$public fun installAndRestart</ID>
+    <ID>UndocumentedPublicFunction:NucleusUpdater.kt:NucleusUpdater$public fun isUpdateSupported: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusUpdater.kt:NucleusUpdater$public suspend fun checkForUpdates: UpdateResult</ID>
+    <ID>UndocumentedPublicFunction:UpdateProvider.kt:UpdateProvider$public fun authHeaders: Map&lt;String, String&gt;</ID>
+    <ID>UndocumentedPublicFunction:UpdateProvider.kt:UpdateProvider$public fun getDownloadUrl: String</ID>
+    <ID>UndocumentedPublicFunction:UpdateProvider.kt:UpdateProvider$public fun getUpdateMetadataUrl: String</ID>
+    <ID>UndocumentedPublicFunction:UpdaterConfig.kt:public fun NucleusUpdater: NucleusUpdater</ID>
+    <ID>UndocumentedPublicFunction:Version.kt:Version$public fun levelFrom: UpdateLevel</ID>
+    <ID>UndocumentedPublicFunction:Version.kt:Version.Companion$public fun fromString: Version</ID>
+  </CurrentIssues>
+</SmellBaseline>

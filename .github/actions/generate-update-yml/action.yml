@@ -51,6 +51,21 @@ runs:
           fi
         }
 
+        # Length of the block map electron-builder appended to an AppImage, read from the
+        # big-endian uint32 that terminates the file. AppImages carry their block map inside
+        # themselves instead of in a standalone <artifact>.blockmap, so this is the only place
+        # the length exists — and the updater needs it to locate the map and download only the
+        # blocks that changed. Prints nothing when the value is not plausible.
+        embedded_blockmap_size() {
+          local file="$1" hex size
+          hex="$(tail -c 4 "$file" | od -An -tx1 | tr -d ' \n')"
+          [ "${#hex}" -eq 8 ] || return 0
+          size="$(printf '%d' "0x${hex}" 2>/dev/null)" || return 0
+          [ "$size" -gt 0 ] 2>/dev/null || return 0
+          [ "$((size + 4))" -lt "$(file_size "$file")" ] || return 0
+          echo "$size"
+        }
+
         # Map artifact directory name to platform yml suffix
         platform_suffix() {
           local dir_name="$1"
@@ -98,10 +113,13 @@ runs:
             hash="$(sha512_base64 "$file")"
             size="$(file_size "$file")"
 
-            # Check for corresponding blockmap
+            # Block map length: the standalone companion file for formats that publish one
+            # (NSIS, macOS ZIP/DMG), the appended payload's own length for AppImages.
             blockmap_size=""
             if [ -f "${file}.blockmap" ]; then
               blockmap_size="$(file_size "${file}.blockmap")"
+            elif [ "${basename_file##*.}" = "AppImage" ]; then
+              blockmap_size="$(embedded_blockmap_size "$file")"
             fi
 
             # Build YAML entry

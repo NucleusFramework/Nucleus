@@ -95,13 +95,7 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
         val destinationDir = destinationDir.ioFile.absoluteFile
 
         // todo: can be cached for a jdk
-        val jmods =
-            javaHome
-                .resolve("jmods")
-                .walk()
-                .filter {
-                    it.isFile && it.path.endsWith("jmod", ignoreCase = true)
-                }.toList()
+        val libraryJarsConfig = jdkLibraryJarsConfig(javaHome)
 
         val inputToOutputJars = LinkedHashMap<File, File>()
         // avoid mangling mainJar
@@ -126,8 +120,8 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
                 writer.writeLn("-outjars '${mainJarInDestinationDir.ioFile.normalizedPath()}'")
             }
 
-            for (jmod in jmods) {
-                writer.writeLn("-libraryjars '${jmod.normalizedPath()}'(!**.jar;!module-info.class)")
+            for (libraryJar in libraryJarsConfig) {
+                writer.writeLn(libraryJar)
             }
         }
 
@@ -178,6 +172,46 @@ abstract class AbstractProguardTask : AbstractNucleusTask() {
             environment = emptyMap(),
             logToConsole = ExternalToolRunner.LogToConsole.Always,
         ).assertNormalExitValue()
+    }
+
+    /**
+     * `-libraryjars` lines covering the JDK's own classes.
+     *
+     * Modular JDKs ship them as jmod files under `jmods`, but distributions built with run-time image linking
+     * (JEP 493, JDK 25+) drop that directory entirely — Temurin 25 is one of them. With no library
+     * jars ProGuard cannot resolve even `java.lang.Object` and aborts after several hundred thousand
+     * "can't find referenced class" warnings, so fall back to extracting the run-time image with
+     * `jimage` and hand ProGuard one class root per module.
+     */
+    private fun jdkLibraryJarsConfig(javaHome: File): List<String> {
+        val jmodsDir = javaHome.resolve("jmods")
+        val jmods =
+            jmodsDir
+                .walk()
+                .filter {
+                    it.isFile && it.path.endsWith("jmod", ignoreCase = true)
+                }.toList()
+        if (jmods.isNotEmpty()) {
+            return jmods.map { "-libraryjars '${it.normalizedPath()}'(!**.jar;!module-info.class)" }
+        }
+
+        val runtimeImage = javaHome.resolve("lib").resolve("modules")
+        check(runtimeImage.isFile) {
+            "Cannot resolve the JDK classes required by ProGuard: neither '$jmodsDir' nor " +
+                "'$runtimeImage' exists. Point the application's javaHome at a JDK."
+        }
+
+        val modulesDir = workingDir.ioFile.resolve("jdk-modules")
+        runExternalTool(
+            tool = jvmToolFile(toolName = "jimage", javaHome = javaHome),
+            args = listOf("extract", "--dir", modulesDir.normalizedPath(), runtimeImage.normalizedPath()),
+        ).assertNormalExitValue()
+
+        val moduleDirs = modulesDir.listFiles().orEmpty().filter { it.isDirectory }
+        check(moduleDirs.isNotEmpty()) {
+            "Extracting '$runtimeImage' produced no modules in '$modulesDir'."
+        }
+        return moduleDirs.map { "-libraryjars '${it.normalizedPath()}'(!module-info.class,**.class)" }
     }
 
     private fun Writer.writeLn(s: String) {

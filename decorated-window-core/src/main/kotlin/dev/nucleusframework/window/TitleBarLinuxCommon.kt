@@ -10,7 +10,7 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 import dev.nucleusframework.window.utils.linux.LinuxButtonLayout
 
 @Composable
-fun createLinuxTitleBarStyle(style: TitleBarStyle): TitleBarStyle =
+public fun createLinuxTitleBarStyle(style: TitleBarStyle): TitleBarStyle =
     remember(style) {
         style.copy(
             colors =
@@ -25,7 +25,7 @@ fun createLinuxTitleBarStyle(style: TitleBarStyle): TitleBarStyle =
  * Returns KDE edge padding on the side where control buttons are placed.
  * On non-KDE desktops returns zero padding.
  */
-fun kdePaddingForButtonLayout(): PaddingValues {
+public fun kdePaddingForButtonLayout(): PaddingValues {
     if (LinuxDesktopEnvironment.Current != LinuxDesktopEnvironment.KDE) {
         return PaddingValues(0.dp)
     }

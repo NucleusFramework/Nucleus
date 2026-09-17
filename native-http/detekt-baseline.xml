@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:NativeHttpClient.kt:NativeHttpClient</ID>
+    <ID>UndocumentedPublicFunction:NativeHttpClient.kt:NativeHttpClient$public fun HttpClient.Builder.withNativeSsl: HttpClient.Builder</ID>
+    <ID>UndocumentedPublicFunction:NativeHttpClient.kt:NativeHttpClient$public fun create: HttpClient</ID>
+  </CurrentIssues>
+</SmellBaseline>

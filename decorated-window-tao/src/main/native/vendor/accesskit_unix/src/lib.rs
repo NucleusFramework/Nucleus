@@ -25,4 +25,5 @@ mod executor;
 mod util;
 
 pub use adapter::Adapter;
+// Vendored-fork addition: app-name override for JVM-hosted toolkits.
 pub use context::set_app_name;

@@ -1,0 +1,43 @@
+public final class dev/nucleusframework/taskbarprogress/TaskbarProgress {
+	public static final field INSTANCE Ldev/nucleusframework/taskbarprogress/TaskbarProgress;
+	public final fun getLinuxDesktopFilename ()Ljava/lang/String;
+	public final fun hideProgress (Ljava/awt/Window;)Z
+	public final fun isAvailable ()Z
+	public final fun requestAttention (Ljava/awt/Window;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestAttention$default (Ldev/nucleusframework/taskbarprogress/TaskbarProgress;Ljava/awt/Window;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public final fun requestAttentionForHwnd (JLdev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;)Z
+	public static synthetic fun requestAttentionForHwnd$default (Ldev/nucleusframework/taskbarprogress/TaskbarProgress;JLdev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;ILjava/lang/Object;)Z
+	public final fun setLinuxDesktopFilename (Ljava/lang/String;)V
+	public final fun setProgress (Ljava/awt/Window;D)Z
+	public final fun setProgressForHwnd (JD)Z
+	public final fun setState (Ljava/awt/Window;Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public final fun setStateForHwnd (JLdev/nucleusframework/taskbarprogress/TaskbarProgress$State;)Z
+	public final fun showError (Ljava/awt/Window;D)Z
+	public static synthetic fun showError$default (Ldev/nucleusframework/taskbarprogress/TaskbarProgress;Ljava/awt/Window;DILjava/lang/Object;)Z
+	public final fun showIndeterminate (Ljava/awt/Window;)Z
+	public final fun showPaused (Ljava/awt/Window;D)Z
+	public static synthetic fun showPaused$default (Ldev/nucleusframework/taskbarprogress/TaskbarProgress;Ljava/awt/Window;DILjava/lang/Object;)Z
+	public final fun showProgress (Ljava/awt/Window;D)Z
+	public final fun stopAttention (Ljava/awt/Window;)Z
+	public final fun stopAttentionForHwnd (J)Z
+}
+
+public final class dev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType : java/lang/Enum {
+	public static final field CRITICAL Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;
+	public static final field INFORMATIONAL Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;
+	public static fun values ()[Ldev/nucleusframework/taskbarprogress/TaskbarProgress$AttentionType;
+}
+
+public final class dev/nucleusframework/taskbarprogress/TaskbarProgress$State : java/lang/Enum {
+	public static final field ERROR Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static final field INDETERMINATE Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static final field NORMAL Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static final field NO_PROGRESS Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static final field PAUSED Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+	public static fun values ()[Ldev/nucleusframework/taskbarprogress/TaskbarProgress$State;
+}
+

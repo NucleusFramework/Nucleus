@@ -1,0 +1,68 @@
+public final class dev/nucleusframework/scheduler/testing/TestConstraintChecker : dev/nucleusframework/scheduler/internal/ConstraintChecker, java/io/Closeable {
+	public static final field BATTERY_LOW_THRESHOLD F
+	public static final field IDLE_THRESHOLD_SECONDS J
+	public fun <init> ()V
+	public fun check (Ldev/nucleusframework/scheduler/Constraints;)Ldev/nucleusframework/scheduler/internal/ConstraintResult;
+	public fun close ()V
+	public final fun getAvailableStorageBytes ()J
+	public final fun getBatteryLevel ()Ljava/lang/Float;
+	public final fun getIdleTimeSeconds ()J
+	public final fun getNetworkConnected ()Z
+	public final fun getNetworkUnmetered ()Z
+	public final fun install ()V
+	public final fun isCharging ()Z
+	public final fun setAvailableStorageBytes (J)V
+	public final fun setBatteryLevel (Ljava/lang/Float;)V
+	public final fun setCharging (Z)V
+	public final fun setIdleTimeSeconds (J)V
+	public final fun setNetworkConnected (Z)V
+	public final fun setNetworkUnmetered (Z)V
+	public final fun uninstall ()V
+}
+
+public final class dev/nucleusframework/scheduler/testing/TestDesktopTaskScheduler : dev/nucleusframework/scheduler/internal/PlatformScheduler, java/io/Closeable {
+	public fun <init> ()V
+	public fun <init> (Ldev/nucleusframework/scheduler/testing/TestConstraintChecker;)V
+	public synthetic fun <init> (Ldev/nucleusframework/scheduler/testing/TestConstraintChecker;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun advanceTimeBy-KLykuaI (JLdev/nucleusframework/scheduler/TaskRegistry;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public fun cancel-dGNPp5w (Ljava/lang/String;)Z
+	public fun cancelAll ()V
+	public fun close ()V
+	public fun enqueue (Ldev/nucleusframework/scheduler/TaskRequest;)Z
+	public final fun getAllExecutionHistory ()Ljava/util/List;
+	public fun getAllTasks ()Ljava/util/List;
+	public final fun getConstraintChecker ()Ldev/nucleusframework/scheduler/testing/TestConstraintChecker;
+	public final fun getCurrentVirtualTimeMs ()J
+	public final fun getEnqueuedRequest-dGNPp5w (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskRequest;
+	public final fun getEnqueuedRequests ()Ljava/util/List;
+	public final fun getExecutionHistory-dGNPp5w (Ljava/lang/String;)Ljava/util/List;
+	public fun getTaskInfo-dGNPp5w (Ljava/lang/String;)Ldev/nucleusframework/scheduler/TaskInfo;
+	public final fun install ()V
+	public fun isScheduled-dGNPp5w (Ljava/lang/String;)Z
+	public final fun runTask-hkJBKmQ (Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskRegistry;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun uninstall ()V
+}
+
+public final class dev/nucleusframework/scheduler/testing/TestDesktopTaskScheduler$ExecutionRecord {
+	public synthetic fun <init> (Ljava/lang/String;Ldev/nucleusframework/scheduler/LastTaskResult;IJLkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1-637zNrU ()Ljava/lang/String;
+	public final fun component2 ()Ldev/nucleusframework/scheduler/LastTaskResult;
+	public final fun component3 ()I
+	public final fun component4 ()J
+	public final fun copy-VyTNCN0 (Ljava/lang/String;Ldev/nucleusframework/scheduler/LastTaskResult;IJ)Ldev/nucleusframework/scheduler/testing/TestDesktopTaskScheduler$ExecutionRecord;
+	public static synthetic fun copy-VyTNCN0$default (Ldev/nucleusframework/scheduler/testing/TestDesktopTaskScheduler$ExecutionRecord;Ljava/lang/String;Ldev/nucleusframework/scheduler/LastTaskResult;IJILjava/lang/Object;)Ldev/nucleusframework/scheduler/testing/TestDesktopTaskScheduler$ExecutionRecord;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getResult ()Ldev/nucleusframework/scheduler/LastTaskResult;
+	public final fun getRunAttemptCount ()I
+	public final fun getTaskId-637zNrU ()Ljava/lang/String;
+	public final fun getVirtualTimeMs ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/scheduler/testing/TestTaskRunner {
+	public static final field INSTANCE Ldev/nucleusframework/scheduler/testing/TestTaskRunner;
+	public final fun runTask-SS5u6EM (Ldev/nucleusframework/scheduler/DesktopTask;Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public static synthetic fun runTask-SS5u6EM$default (Ldev/nucleusframework/scheduler/testing/TestTaskRunner;Ldev/nucleusframework/scheduler/DesktopTask;Ljava/lang/String;Ldev/nucleusframework/scheduler/TaskData;ILkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+}
+

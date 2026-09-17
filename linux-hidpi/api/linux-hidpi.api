@@ -1,0 +1,5 @@
+public final class dev/nucleusframework/hidpi/LinuxHiDpiKt {
+	public static final fun applyLinuxHiDpiScale ()V
+	public static final fun getLinuxNativeScaleFactor ()D
+}
+

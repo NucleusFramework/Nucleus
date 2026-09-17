@@ -8,8 +8,8 @@ package dev.nucleusframework.launcher.windows
  *
  * @property value The XML value string used in the badge XML schema.
  */
-enum class BadgeGlyph(
-    val value: String,
+public enum class BadgeGlyph(
+    public val value: String,
 ) {
     NONE("none"),
     ACTIVITY("activity"),

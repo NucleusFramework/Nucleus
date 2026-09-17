@@ -1,4 +1,4 @@
-# CI probe: verifies the Tao Windows UIA provider end-to-end against a
+﻿# CI probe: verifies the Tao Windows UIA provider end-to-end against a
 # running tao-demo (launched with NUCLEUS_DEMO_TAB=A11y).
 #
 # Asserts, through the OS accessibility API only (no app internals):
@@ -8,7 +8,7 @@
 #   4. RangeValuePattern sets the Volume slider.
 #
 # Traversal uses TreeWalker.RawViewWalker, exactly like the proven manual
-# tool scripts/dump-uia-tree.ps1 — the filtered control view may not descend
+# tool scripts/dump-uia-tree.ps1 - the filtered control view may not descend
 # into the custom provider. Exit 0 = all assertions hold.
 param(
     [string]$Title = "Tao Backend Demo",
@@ -79,14 +79,14 @@ function Assert($cond, [string]$what) {
 }
 
 $failures = 0
-Write-Host "── UIA a11y verification ──"
+Write-Host "-- UIA a11y verification --"
 $win = Find-Window $Title $TimeoutSec
 Write-Host "window: '$($win.Current.Name)'"
 
 # The demo should start on the A11y tab (NUCLEUS_DEMO_TAB). Belt-and-braces:
 # if the tab content isn't there, click the 'A11y' tab through UIA itself.
 if ($null -eq (Find-ByName $win "Increment" 30)) {
-    Write-Host "A11y content not visible yet — dumping tree and trying the 'A11y' tab"
+    Write-Host "A11y content not visible yet - dumping tree and trying the 'A11y' tab"
     Dump-Names $win
     $tab = Find-ByName $win "A11y" 10
     if ($null -ne $tab) {
@@ -102,8 +102,8 @@ if ($null -eq (Find-ByName $win "Increment" 30)) {
 }
 
 # Hosted-runner self-skip (mirrors the macOS TCC skip in verify-ax.swift):
-# when the UIA provider is COMPLETELY unreachable — only the OS nonclient
-# elements exist, not even a Compose pane — the app's scene never attached,
+# when the UIA provider is COMPLETELY unreachable - only the OS nonclient
+# elements exist, not even a Compose pane - the app's scene never attached,
 # which on GitHub-hosted Windows runners means no usable WGL context on the
 # software display adapter. There is nothing this environment can assert;
 # a machine with a real GL context runs the full hard gate.
@@ -120,7 +120,7 @@ foreach ($el in $probeList) {
     } catch {}
 }
 if ($probeList.Count -le 12 -and $namedNonSystem -eq 0) {
-    Write-Host "SKIPPED: UIA provider unreachable — only $($probeList.Count) OS nonclient elements exposed."
+    Write-Host "SKIPPED: UIA provider unreachable - only $($probeList.Count) OS nonclient elements exposed."
     Write-Host "This is the hosted-runner limitation (no WGL context, scene never attaches)."
     Write-Host "Run this probe on a GPU-capable Windows machine for the hard gate."
     exit 0
@@ -131,11 +131,20 @@ foreach ($name in @("Increment", "Tri-state checkbox", "Notifications switch", "
     Assert ($null -ne (Find-ByName $win $name 20)) "element '$name' exposed"
 }
 
-# 2. InvokePattern round-trip: Increment -> click counter updates.
+# 2. InvokePattern round-trip: Increment -> click counter advances (any N -> N+1).
+function Read-ClickCounter($window) {
+    foreach ($n in 0..80) {
+        if ($null -ne (Find-ByName $window "click counter $n" 1)) { return $n }
+    }
+    return -1
+}
 $inc = Find-ByName $win "Increment"
 if ($null -ne $inc) {
+    $before = Read-ClickCounter $win
     $inc.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
-    Assert ($null -ne (Find-ByName $win "click counter 1")) "Invoke(Increment) -> 'click counter 1'"
+    Start-Sleep -Milliseconds 800
+    $after = Read-ClickCounter $win
+    Assert (($after -gt $before) -and ($after -ge 0)) ("Invoke(Increment) advances counter: {0} => {1}" -f $before, $after)
 } else { Assert $false "Invoke(Increment) skipped: element missing" }
 
 # 3. TogglePattern on the tri-state checkbox.
@@ -161,7 +170,7 @@ if ($null -ne $vol) {
     Assert ([math]::Abs($newVal - 0.7) -lt 0.05) "RangeValue.SetValue(0.7) -> $newVal"
 } else { Assert $false "RangeValue skipped: element missing" }
 
-# ── Advanced semantics ───────────────────────────────────────────────────
+# -- Advanced semantics ---------------------------------------------------
 function Find-ByPrefix($window, [string]$prefix, [int]$timeoutSec = 20) {
     $deadline = (Get-Date).AddSeconds($timeoutSec)
     while ((Get-Date) -lt $deadline) {
@@ -198,5 +207,5 @@ if ($null -ne $upd) {
 # the AT-SPI (Linux) and AX (macOS) probes.
 
 if ($failures -gt 0) { Dump-Names $win }
-Write-Host "── $failures failure(s) ──"
+Write-Host "-- $failures failure(s) --"
 exit $(if ($failures -gt 0) { 1 } else { 0 })

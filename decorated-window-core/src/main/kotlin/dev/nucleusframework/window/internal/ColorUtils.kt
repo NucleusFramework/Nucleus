@@ -7,7 +7,7 @@ private const val LUMINANCE_R = 0.299f
 private const val LUMINANCE_G = 0.587f
 private const val LUMINANCE_B = 0.114f
 
-fun Color.isDark(): Boolean {
+public fun Color.isDark(): Boolean {
     val luminance = LUMINANCE_R * red + LUMINANCE_G * green + LUMINANCE_B * blue
     return luminance < LUMINANCE_THRESHOLD
 }

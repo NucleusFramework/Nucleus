@@ -273,6 +273,9 @@ internal class NsMenu internal constructor(
         atY: Float,
     ): Boolean = NativeNsMenuBridge.nativeMenuPopUp(handle, positioningItem?.handle ?: 0L, atX, atY)
 
+    /** Pops the menu at the current mouse location (`NSEvent.mouseLocation`). */
+    fun popUpAtCursor(): Boolean = NativeNsMenuBridge.nativeMenuPopUpAtCursor(handle)
+
     // ---- Delegate ----
 
     var delegate: NsMenuDelegate?

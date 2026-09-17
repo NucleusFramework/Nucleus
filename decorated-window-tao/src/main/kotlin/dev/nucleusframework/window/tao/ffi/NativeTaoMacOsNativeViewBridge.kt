@@ -11,20 +11,18 @@ private const val LIBRARY_NAME = "nucleus_tao_macos_native_view"
  * Two distinct surfaces:
  *  - **Generic NSView interop** (`nativeAddSubview` /
  *    `nativeRemoveSubview` / `nativeSetSubviewFrame`) — used by the
- *    `NativeView` composable to mount user-supplied NSViews as
- *    subviews of the host content view.
- *  - **Sibling overlay NSView** (`nativeCreateOverlay` /
- *    `nativeSetOverlayFrame` / `nativeSetOverlayCallback` /
- *    `nativeSetOverlayRegions` / `nativeReleaseOverlay`) — used by the
- *    overlay slot of `NativeView`. The overlay is itself an NSView
- *    sibling of the user's native subview; its `hitTest:` returns nil
- *    for points outside any registered interactive region, so AppKit
- *    falls through to the next sibling (the user's native view) for
- *    transparent regions. That's how a Compose watermark over a
- *    `WKWebView` can let the page underneath receive scroll/clicks.
+ *    `NativeView` composable to mount user-supplied NSViews **below**
+ *    the host content view so Compose can blend over them.
+ *  - **Pointer redispatch** (`nativeDispatchPointer` /
+ *    `nativeDispatchScroll`) — Compose sits on top and forwards events
+ *    it does not consume to the embedded view.
+ *  - **Sibling overlay NSView** (`nativeCreateOverlay` / …) — leftover
+ *    second Compose surface; live `NativeView` content renders in the
+ *    host scene. Kept for headful tests that fabricate an NSView.
  *
  * Threading: every entry point must run on the macOS main thread.
  */
+@Suppress("TooManyFunctions")
 internal object NativeTaoMacOsNativeViewBridge {
     val isLoaded: Boolean = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoMacOsNativeViewBridge::class.java)
 
@@ -63,6 +61,61 @@ internal object NativeTaoMacOsNativeViewBridge {
         childNsView: Long,
         radiusPx: Float,
     )
+
+    /**
+     * Synthesises an AppKit mouse event onto [childNsView] at the Compose
+     * (content-view local, top-left, physical pixels) coordinate.
+     * [type]: 1 down, 2 up, 3 move. [button]: 0 none, 1 primary, 2 secondary.
+     * A move with [pressed] `true` is delivered as a drag.
+     */
+    @JvmStatic
+    external fun nativeDispatchPointer(
+        contentNsView: Long,
+        childNsView: Long,
+        type: Int,
+        xPx: Float,
+        yPx: Float,
+        button: Int,
+        pressed: Boolean,
+    )
+
+    /** Forwards a Compose scroll delta as an `NSEventTypeScrollWheel`. */
+    @JvmStatic
+    external fun nativeDispatchScroll(
+        contentNsView: Long,
+        childNsView: Long,
+        xPx: Float,
+        yPx: Float,
+        dx: Float,
+        dy: Float,
+        phase: Int,
+    )
+
+    /** Makes [nsView] the window's first responder (native IME / typing). */
+    @JvmStatic
+    external fun nativeMakeFirstResponder(nsView: Long)
+
+    /** Restores the Tao content view as first responder after Compose consumes a click. */
+    @JvmStatic
+    external fun nativeMakeContentViewFirstResponder(contentNsView: Long)
+
+    /**
+     * Delivers a Tao key event to the window's first responder when that
+     * responder is an embedded native view (or its field editor), not the
+     * Tao content view. Synthetic keys never enter AppKit's responder chain,
+     * so an `NSTextField` that holds first responder would otherwise never
+     * see a letter typed through the in-process driver.
+     *
+     * [type] is a `TaoEventCode` (`KEY_DOWN` / `KEY_UP` / `KEY_TYPED`).
+     * Returns `true` when the embed took the event.
+     */
+    @JvmStatic
+    external fun nativeDispatchKeyToFirstResponder(
+        contentNsView: Long,
+        type: Int,
+        vkCode: Int,
+        codePoint: Int,
+    ): Boolean
 
     // ── Sibling overlay NSView ────────────────────────────────────────
 
@@ -164,4 +217,37 @@ internal object NativeTaoMacOsNativeViewBridge {
      */
     @JvmStatic
     external fun nativeIsFirstResponder(overlayNsView: Long): Boolean
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A retained, unparented `NSTextField` for a headful case to embed
+     * through `NativeView`. 0 on failure. Release with [nativeDiagReleaseView].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateTextField(): Long
+
+    /** Removes a view from [nativeDiagCreateTextField] from its superview and releases it. */
+    @JvmStatic
+    external fun nativeDiagReleaseView(nsView: Long)
+
+    /**
+     * Whether [nsView] is editing: its window's first responder is the view
+     * or the field editor working on its behalf — the AppKit shape of
+     * "keystrokes go to the embed".
+     */
+    @JvmStatic
+    external fun nativeDiagViewIsEditing(nsView: Long): Boolean
+
+    /** Whether [contentNsView] itself is its window's first responder — keystrokes go to Compose. */
+    @JvmStatic
+    external fun nativeDiagViewIsFirstResponder(contentNsView: Long): Boolean
+
+    /** The string value of a field from [nativeDiagCreateTextField], or null. */
+    @JvmStatic
+    external fun nativeDiagTextFieldString(nsView: Long): String?
+
+    /** A subview's frame in physical px with a top-left origin, as `[x, y, w, h]`, or null. */
+    @JvmStatic
+    external fun nativeDiagViewFrame(nsView: Long): IntArray?
 }

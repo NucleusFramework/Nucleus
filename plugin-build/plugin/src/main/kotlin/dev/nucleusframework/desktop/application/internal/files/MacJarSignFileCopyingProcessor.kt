@@ -8,6 +8,7 @@ package dev.nucleusframework.desktop.application.internal.files
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import java.io.File
 import java.util.zip.ZipEntry
+import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
@@ -21,7 +22,15 @@ internal class MacJarSignFileCopyingProcessor(
         target: File,
     ) {
         if (source.isJarFile) {
-            signNativeLibsInJar(source, target)
+            // Re-zipping is only needed to sign native libraries, and the vast majority of jars
+            // carry none. Copying those verbatim keeps them byte-identical from one build to the
+            // next, which is what lets a differential update reuse their blocks instead of
+            // refetching them — and skips re-deflating tens of megabytes of unchanged classes.
+            if (source.containsNativeLibToSign()) {
+                signNativeLibsInJar(source, target)
+            } else {
+                SimpleFileCopyingProcessor.copy(source, target)
+            }
         } else {
             SimpleFileCopyingProcessor.copy(source, target)
             if (source.name.isDylibPath) {
@@ -53,6 +62,12 @@ internal class MacJarSignFileCopyingProcessor(
             }
         }
     }
+
+    /** Reads the central directory only: cheap next to re-deflating the whole archive. */
+    private fun File.containsNativeLibToSign(): Boolean =
+        ZipFile(this).use { jar ->
+            jar.entries().iterator().asSequence().any { !it.isDirectory && it.name.isDylibPath }
+        }
 
     private fun signNativeLibsInJar(
         source: File,

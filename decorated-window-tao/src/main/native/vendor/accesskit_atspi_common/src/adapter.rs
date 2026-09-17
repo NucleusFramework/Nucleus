@@ -9,21 +9,21 @@
 // found in the LICENSE.chromium file.
 
 use crate::{
+    AdapterCallback, CacheEvent, Event, ObjectEvent, WindowEvent,
     context::{ActionHandlerNoMut, ActionHandlerWrapper, AppContext, Context},
     filters::filter,
     node::{NodeIdOrRoot, NodeWrapper, PlatformNode, PlatformRoot},
     util::WindowBounds,
-    AdapterCallback, Event, ObjectEvent, WindowEvent,
 };
-use accesskit::{ActionHandler, NodeId, Role, TreeUpdate};
-use accesskit_consumer::{FilterResult, Node, Tree, TreeChangeHandler, TreeState};
+use accesskit::{ActionHandler, Role, TreeUpdate};
+use accesskit_consumer::{FilterResult, Node, NodeId, Tree, TreeChangeHandler, TreeState};
 use atspi_common::{InterfaceSet, Politeness, State};
 use std::fmt::{Debug, Formatter};
 use std::{
     collections::HashSet,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, RwLock,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -58,14 +58,20 @@ impl<'a> AdapterChangeHandler<'a> {
         let wrapper = NodeWrapper(node);
         let interfaces = wrapper.interfaces();
         self.adapter.register_interfaces(node.id(), interfaces);
+        self.adapter.emit_cache_added(node.id());
         if is_root && role == Role::Window {
-            let adapter_index = self
+            // PATCH(nucleus): skip the announcement when this adapter is not in
+            // the app context rather than unwrapping. The crate is built with
+            // `panic = "abort"`, so the miss took the whole application down —
+            // `node.rs` treats the same miss as `Error::Defunct`.
+            if let Ok(adapter_index) = self
                 .adapter
                 .context
                 .read_app_context()
                 .adapter_index(self.adapter.id)
-                .unwrap();
-            self.adapter.window_created(adapter_index, node.id());
+            {
+                self.adapter.window_created(adapter_index, node.id());
+            }
         }
 
         let live = wrapper.live();
@@ -102,6 +108,7 @@ impl<'a> AdapterChangeHandler<'a> {
         }
         self.adapter
             .emit_object_event(node.id(), ObjectEvent::StateChanged(State::Defunct, true));
+        self.adapter.emit_cache_removed(node.id());
         self.adapter
             .unregister_interfaces(node.id(), wrapper.interfaces());
         if let Some(true) = node.is_selected() {
@@ -187,7 +194,7 @@ impl<'a> AdapterChangeHandler<'a> {
 
     /// Vendored-fork addition: text-changed events for nodes that expose a
     /// `value` but don't populate text-runs. Mirrors the diff in
-    /// emit_text_change_if_needed_parent but reads from `node.value()` so
+    /// `emit_text_change_if_needed_parent` but reads from `node.value()` so
     /// Compose's TextField (which our bridge serves through SimpleTextInterface)
     /// can announce typed characters via Orca.
     fn emit_simple_text_change_if_needed(&mut self, old_node: &Node, new_node: &Node) {
@@ -252,6 +259,34 @@ impl<'a> AdapterChangeHandler<'a> {
                     },
                 );
             }
+        }
+    }
+
+    /// Vendored-fork addition: caret-moved events for SimpleText nodes (text
+    /// inputs that don't populate text-runs). Reads the raw selection focus
+    /// directly so we don't need TextRun children.
+    fn emit_simple_caret_change_if_needed(&self, old_node: Option<&Node>, new_node: &Node) {
+        if !new_node.is_text_input() {
+            return;
+        }
+        let new_focus = new_node
+            .raw_text_selection()
+            .map(|s| s.focus.character_index);
+        let old_focus = old_node
+            .and_then(|n| n.raw_text_selection())
+            .map(|s| s.focus.character_index);
+        if old_focus == new_focus {
+            return;
+        }
+        if let Some(idx) = new_focus {
+            if let Ok(offset) = i32::try_from(idx) {
+                self.adapter
+                    .emit_object_event(new_node.id(), ObjectEvent::CaretMoved(offset));
+            }
+            // Also signal a selection-changed when anchor != focus or just to
+            // keep AT clients in sync when the caret jumps.
+            self.adapter
+                .emit_object_event(new_node.id(), ObjectEvent::TextSelectionChanged);
         }
     }
 
@@ -322,34 +357,6 @@ impl<'a> AdapterChangeHandler<'a> {
                         .emit_object_event(new_node.id(), ObjectEvent::CaretMoved(offset));
                 }
             }
-        }
-    }
-
-    /// Vendored-fork addition: caret-moved events for SimpleText nodes (text
-    /// inputs that don't populate text-runs). Reads the raw selection focus
-    /// directly so we don't need TextRun children.
-    fn emit_simple_caret_change_if_needed(&self, old_node: Option<&Node>, new_node: &Node) {
-        if !new_node.is_text_input() {
-            return;
-        }
-        let new_focus = new_node
-            .raw_text_selection()
-            .map(|s| s.focus.character_index);
-        let old_focus = old_node
-            .and_then(|n| n.raw_text_selection())
-            .map(|s| s.focus.character_index);
-        if old_focus == new_focus {
-            return;
-        }
-        if let Some(idx) = new_focus {
-            if let Ok(offset) = i32::try_from(idx) {
-                self.adapter
-                    .emit_object_event(new_node.id(), ObjectEvent::CaretMoved(offset));
-            }
-            // Also signal a selection-changed when anchor != focus or just to
-            // keep AT clients in sync when the caret jumps.
-            self.adapter
-                .emit_object_event(new_node.id(), ObjectEvent::TextSelectionChanged);
         }
     }
 
@@ -533,7 +540,7 @@ impl Adapter {
         action_handler: Arc<dyn ActionHandlerNoMut + Send + Sync>,
     ) -> Self {
         let tree = Tree::new(initial_state, is_window_focused);
-        let focus_id = tree.state().focus_id();
+        let focus_id = tree.state().focus().map(|node| node.id());
         let context = Context::new(app_context, tree, action_handler, root_window_bounds);
         context.write_app_context().push_adapter(id, &context);
         let adapter = Self {
@@ -565,9 +572,12 @@ impl Adapter {
             let tree = self.context.read_tree();
             let tree_state = tree.state();
             let mut app_context = self.context.write_app_context();
-            app_context.toolkit_name = tree_state.toolkit_name().map(|s| s.to_string());
+            app_context.toolkit_name = Some(tree_state.toolkit_name().to_string());
             app_context.toolkit_version = tree_state.toolkit_version().map(|s| s.to_string());
-            let adapter_index = app_context.adapter_index(self.id).unwrap();
+            // PATCH(nucleus): see the miss handling above — an adapter whose
+            // registration has not been processed yet publishes its tree
+            // without the root announcement instead of aborting.
+            let adapter_index = app_context.adapter_index(self.id).ok();
             let root = tree_state.root();
             let root_id = root.id();
             let wrapper = NodeWrapper(&root);
@@ -579,7 +589,9 @@ impl Adapter {
         for (id, interfaces) in objects_to_add {
             self.register_interfaces(id, interfaces);
             if id == root_id {
-                self.window_created(adapter_index, id);
+                if let Some(index) = adapter_index {
+                    self.window_created(index, id);
+                }
             }
         }
     }
@@ -615,6 +627,16 @@ impl Adapter {
         let target = NodeIdOrRoot::Root;
         self.callback
             .emit_event(self, Event::Object { target, event });
+    }
+
+    fn emit_cache_added(&self, target: NodeId) {
+        self.callback
+            .emit_event(self, Event::Cache(CacheEvent::Added(target)));
+    }
+
+    fn emit_cache_removed(&self, target: NodeId) {
+        self.callback
+            .emit_event(self, Event::Cache(CacheEvent::Removed(target)));
     }
 
     pub fn set_root_window_bounds(&mut self, new_bounds: WindowBounds) {
@@ -706,5 +728,214 @@ impl Drop for Adapter {
         // implementation on context, because AppContext owns a second
         // strong reference to Context, and we need that to be released.
         self.context.write_app_context().remove_adapter(self.id);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Adapter;
+    use crate::{AdapterCallback, AppContext, CacheEvent, Event, InterfaceSet, WindowBounds};
+    use accesskit::{
+        ActionHandler, ActionRequest, Node, NodeId as LocalNodeId, Role, Tree, TreeId, TreeUpdate,
+    };
+    use accesskit_consumer::NodeId;
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone, Copy, Debug, PartialEq)]
+    enum CacheOp {
+        Added(NodeId),
+        Removed(NodeId),
+    }
+
+    struct CapturingCallback {
+        ops: Arc<Mutex<Vec<CacheOp>>>,
+    }
+
+    impl AdapterCallback for CapturingCallback {
+        fn register_interfaces(&self, _: &Adapter, _: NodeId, _: InterfaceSet) {}
+        fn unregister_interfaces(&self, _: &Adapter, _: NodeId, _: InterfaceSet) {}
+        fn emit_event(&self, _: &Adapter, event: Event) {
+            let mut ops = self.ops.lock().unwrap();
+            match event {
+                Event::Cache(CacheEvent::Added(id)) => ops.push(CacheOp::Added(id)),
+                Event::Cache(CacheEvent::Removed(id)) => ops.push(CacheOp::Removed(id)),
+                _ => {}
+            }
+        }
+    }
+
+    struct NoOpActionHandler;
+    impl ActionHandler for NoOpActionHandler {
+        fn do_action(&mut self, _request: ActionRequest) {}
+    }
+
+    fn with_children(role: Role, children: &[LocalNodeId]) -> Node {
+        let mut node = Node::new(role);
+        node.set_children(children.to_vec());
+        node
+    }
+
+    fn build(initial: TreeUpdate) -> (Adapter, Arc<Mutex<Vec<CacheOp>>>) {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let app_context = AppContext::new(None);
+        let adapter = Adapter::new(
+            &app_context,
+            CapturingCallback { ops: ops.clone() },
+            initial,
+            false,
+            WindowBounds::default(),
+            NoOpActionHandler,
+        );
+        (adapter, ops)
+    }
+
+    fn initial_tree() -> TreeUpdate {
+        TreeUpdate {
+            nodes: vec![
+                (
+                    LocalNodeId(0),
+                    with_children(Role::Window, &[LocalNodeId(1)]),
+                ),
+                (LocalNodeId(1), Node::new(Role::Button)),
+            ],
+            tree: Some(Tree::new(LocalNodeId(0))),
+            tree_id: TreeId::ROOT,
+            focus: LocalNodeId(0),
+        }
+    }
+
+    fn update(nodes: Vec<(LocalNodeId, Node)>) -> TreeUpdate {
+        TreeUpdate {
+            nodes,
+            tree: None,
+            tree_id: TreeId::ROOT,
+            focus: LocalNodeId(0),
+        }
+    }
+
+    #[test]
+    fn no_cache_events_on_construction() {
+        let (_adapter, ops) = build(initial_tree());
+        assert!(ops.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn add_node_emits_one_added() {
+        let (mut adapter, ops) = build(initial_tree());
+        ops.lock().unwrap().clear();
+        adapter.update(update(vec![
+            (
+                LocalNodeId(0),
+                with_children(Role::Window, &[LocalNodeId(1), LocalNodeId(2)]),
+            ),
+            (LocalNodeId(2), Node::new(Role::Button)),
+        ]));
+        let ops = ops.lock().unwrap();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(ops[0], CacheOp::Added(_)));
+    }
+
+    #[test]
+    fn remove_node_emits_removed_for_same_id() {
+        let (mut adapter, ops) = build(initial_tree());
+        adapter.update(update(vec![
+            (
+                LocalNodeId(0),
+                with_children(Role::Window, &[LocalNodeId(1), LocalNodeId(2)]),
+            ),
+            (LocalNodeId(2), Node::new(Role::Button)),
+        ]));
+        let added_id = match ops.lock().unwrap().as_slice() {
+            [CacheOp::Added(id)] => *id,
+            other => panic!("expected exactly one Added, got {other:?}"),
+        };
+        ops.lock().unwrap().clear();
+        adapter.update(update(vec![(
+            LocalNodeId(0),
+            with_children(Role::Window, &[LocalNodeId(1)]),
+        )]));
+        assert_eq!(*ops.lock().unwrap(), vec![CacheOp::Removed(added_id)]);
+    }
+
+    #[test]
+    fn subtree_add_emits_added_per_node() {
+        let (mut adapter, ops) = build(initial_tree());
+        ops.lock().unwrap().clear();
+        adapter.update(update(vec![
+            (
+                LocalNodeId(0),
+                with_children(Role::Window, &[LocalNodeId(1), LocalNodeId(2)]),
+            ),
+            (
+                LocalNodeId(2),
+                with_children(Role::Group, &[LocalNodeId(3), LocalNodeId(4)]),
+            ),
+            (LocalNodeId(3), Node::new(Role::Button)),
+            (LocalNodeId(4), Node::new(Role::Button)),
+        ]));
+        let ops = ops.lock().unwrap();
+        assert_eq!(ops.len(), 3);
+        assert!(ops.iter().all(|op| matches!(op, CacheOp::Added(_))));
+    }
+
+    #[test]
+    fn subtree_remove_emits_removed_per_node() {
+        let (mut adapter, ops) = build(initial_tree());
+        adapter.update(update(vec![
+            (
+                LocalNodeId(0),
+                with_children(Role::Window, &[LocalNodeId(1), LocalNodeId(2)]),
+            ),
+            (
+                LocalNodeId(2),
+                with_children(Role::Group, &[LocalNodeId(3), LocalNodeId(4)]),
+            ),
+            (LocalNodeId(3), Node::new(Role::Button)),
+            (LocalNodeId(4), Node::new(Role::Button)),
+        ]));
+        ops.lock().unwrap().clear();
+        adapter.update(update(vec![(
+            LocalNodeId(0),
+            with_children(Role::Window, &[LocalNodeId(1)]),
+        )]));
+        let ops = ops.lock().unwrap();
+        assert_eq!(ops.len(), 3);
+        assert!(ops.iter().all(|op| matches!(op, CacheOp::Removed(_))));
+    }
+
+    #[test]
+    fn filter_transition_into_tree_emits_added() {
+        let mut hidden = Node::new(Role::Button);
+        hidden.set_hidden();
+        let (mut adapter, ops) = build(TreeUpdate {
+            nodes: vec![
+                (
+                    LocalNodeId(0),
+                    with_children(Role::Window, &[LocalNodeId(1), LocalNodeId(2)]),
+                ),
+                (LocalNodeId(1), Node::new(Role::Button)),
+                (LocalNodeId(2), hidden),
+            ],
+            tree: Some(Tree::new(LocalNodeId(0))),
+            tree_id: TreeId::ROOT,
+            focus: LocalNodeId(0),
+        });
+        ops.lock().unwrap().clear();
+        adapter.update(update(vec![(LocalNodeId(2), Node::new(Role::Button))]));
+        let ops = ops.lock().unwrap();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(ops[0], CacheOp::Added(_)));
+    }
+
+    #[test]
+    fn filter_transition_out_of_tree_emits_removed() {
+        let (mut adapter, ops) = build(initial_tree());
+        ops.lock().unwrap().clear();
+        let mut hidden = Node::new(Role::Button);
+        hidden.set_hidden();
+        adapter.update(update(vec![(LocalNodeId(1), hidden)]));
+        let ops = ops.lock().unwrap();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(ops[0], CacheOp::Removed(_)));
     }
 }

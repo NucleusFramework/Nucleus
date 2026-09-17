@@ -11,6 +11,7 @@ import dev.nucleusframework.internal.utils.notNullProperty
 import org.gradle.api.GradleException
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
@@ -26,7 +27,9 @@ import java.io.IOException
 
 private const val AOT_CACHE_FILENAME = "app.aot"
 private const val MIN_AOT_JDK_VERSION = 25
+private const val MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION = 27
 private const val DEFAULT_SAFETY_TIMEOUT_SECONDS = 300L
+private const val UNLOCK_DIAGNOSTIC_VM_OPTIONS = "-XX:+UnlockDiagnosticVMOptions"
 
 /**
  * Builds the Java launcher argument list for AOT training (excluding the java executable path).
@@ -36,15 +39,51 @@ internal fun buildAotJavaArgs(
     javaOptions: List<String>,
     mainClass: String,
     aotCacheFile: File,
+    tuningArgs: List<String> = emptyList(),
 ): List<String> =
     buildList {
         add("-XX:AOTCacheOutput=${aotCacheFile.absolutePath}")
+        addAll(tuningArgs)
         add("-Dnucleus.aot.mode=training")
+        // Training is unattended: a crash must exit with the SEVERE log, not
+        // block in the Tao fatal-error dialog (#622) until the safety timeout
+        // kills the run.
+        add("-Dnucleus.tao.fatalErrorDialog=false")
         add("-cp")
         add(classpath)
         addAll(javaOptions)
         add(mainClass)
     }
+
+/**
+ * Flags disabling the cached machine-code (adapter) region of the AOT cache.
+ *
+ * The region is generated for the CPU features of the training machine, so a cache built in CI
+ * and shipped to end users crashes with `EXCEPTION_ILLEGAL_INSTRUCTION` / `SIGILL` inside
+ * `~AdapterBlob` on any narrower CPU (issue #400). Class metadata — the bulk of the startup win —
+ * is unaffected and stays fully portable.
+ *
+ * Must be passed to both the training run and the shipped launcher so the JVM never tries to
+ * consume an adapter region.
+ */
+internal fun buildAotAdapterCachingArgs(adapterCaching: Boolean): List<String> =
+    if (adapterCaching) {
+        emptyList()
+    } else {
+        listOf(UNLOCK_DIAGNOSTIC_VM_OPTIONS, "-XX:-AOTAdapterCaching")
+    }
+
+/**
+ * Assembles the training-run tuning args: the portability flags first, then the user escape hatch.
+ *
+ * A diagnostic flag added through `extraTrainingJvmArgs` needs its own
+ * `-XX:+UnlockDiagnosticVMOptions` when the portability flags did not already emit one, since the
+ * JVM rejects a diagnostic flag whose unlock option does not precede it.
+ */
+internal fun buildAotTrainingTuningArgs(
+    adapterCachingArgs: List<String>,
+    extraArgs: List<String>,
+): List<String> = adapterCachingArgs + extraArgs
 
 /**
  * Writes Java launcher arguments as a UTF-8 argument file (`@argfile`), one argument per line.
@@ -172,6 +211,20 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             set(DEFAULT_SAFETY_TIMEOUT_SECONDS)
         }
 
+    /**
+     * Whether the cache may contain CPU-specific adapter code. `false` (the default) keeps the
+     * cache portable across CPUs. See [buildAotAdapterCachingArgs].
+     */
+    @get:Input
+    val adapterCaching: Property<Boolean> =
+        objects.notNullProperty<Boolean>().apply {
+            set(false)
+        }
+
+    /** Extra JVM arguments passed to the training run only. */
+    @get:Input
+    val extraTrainingJvmArgs: ListProperty<String> = objects.listProperty(String::class.java)
+
     @TaskAction
     fun execute() {
         checkJdkVersion()
@@ -189,10 +242,23 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                 ?: throw GradleException("No .cfg file found in $appJarDir")
         val (classpath, javaOptions, mainClass) = parseCfgFile(cfgFile, appJarDir)
 
+        val runtimeTuningArgs = buildAotAdapterCachingArgs(adapterCaching.get())
         val aotCacheFile = File(appJarDir, AOT_CACHE_FILENAME)
-        generateAotCache(javaExe, appDir, appJarDir, classpath, javaOptions, mainClass, aotCacheFile)
+        val spec =
+            TrainingSpec(
+                classpath = classpath,
+                javaOptions = javaOptions,
+                mainClass = mainClass,
+                tuningArgs =
+                    buildAotTrainingTuningArgs(
+                        adapterCachingArgs = runtimeTuningArgs,
+                        extraArgs = extraTrainingJvmArgs.get(),
+                    ),
+            )
 
-        injectAotCacheIntoCfg(cfgFile)
+        generateAotCache(javaExe, appDir, appJarDir, aotCacheFile, spec)
+
+        injectAotCacheIntoCfg(cfgFile, runtimeTuningArgs)
 
         logger.lifecycle("[aotCache] Complete: ${aotCacheFile.absolutePath} (${aotCacheFile.length() / 1024}KB)")
     }
@@ -208,6 +274,27 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
                     "Set enableAotCache = false or configure a JDK $MIN_AOT_JDK_VERSION+ runtime.",
             )
         }
+        warnIfCachedCodeIsUnvalidated(props.majorVersion)
+    }
+
+    /**
+     * Cached machine code is only guarded by a CPU-feature check from
+     * [MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION] onwards (`AOTCodeCache::verify_cpu_features`).
+     *
+     * On JDK 25 the AOT code cache header records the GC, compressed-oops and debug-VM
+     * configuration but no ISA information at all, so a cache trained on a wide CPU is mapped and
+     * executed on a narrower one and crashes with an illegal instruction instead of being
+     * rejected (issue #400).
+     */
+    private fun warnIfCachedCodeIsUnvalidated(majorVersion: Int) {
+        if (!adapterCaching.get() || majorVersion >= MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION) return
+        logger.warn(
+            "[aotCache] WARNING: compatibility = NATIVE caches machine code, but JDK $majorVersion " +
+                "does not validate CPU features when loading it. The application will crash with an " +
+                "illegal instruction on any CPU narrower than this build machine. Use the default " +
+                "COMPATIBILITY profile, or a JDK $MIN_AOT_CPU_FEATURE_CHECK_JDK_VERSION+ runtime " +
+                "where the JVM disables the cached code instead of crashing.",
+        )
     }
 
     private fun findAppDir(baseDir: File): File {
@@ -407,14 +494,20 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         }
     }
 
+    /** Everything the training run needs beyond the file layout. */
+    private data class TrainingSpec(
+        val classpath: String,
+        val javaOptions: List<String>,
+        val mainClass: String,
+        val tuningArgs: List<String>,
+    )
+
     private fun generateAotCache(
         javaExe: String,
         appDir: File,
         appJarDir: File,
-        classpath: String,
-        javaOptions: List<String>,
-        mainClass: String,
         aotCacheFile: File,
+        spec: TrainingSpec,
     ) {
         unsealConflictingJars(appJarDir)
 
@@ -423,9 +516,12 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
             unsandboxJspawnhelper(jspawnhelper)
         }
 
+        if (spec.tuningArgs.isNotEmpty()) {
+            logger.lifecycle("[aotCache] Tuning: ${spec.tuningArgs.joinToString(" ")}")
+        }
         logger.lifecycle("[aotCache] Training – waiting for the application to exit...")
         try {
-            runAotCacheCreation(javaExe, appDir, classpath, javaOptions, mainClass, aotCacheFile)
+            runAotCacheCreation(javaExe, appDir, aotCacheFile, spec)
         } finally {
             if (jspawnhelper != null) {
                 resandboxJspawnhelper(jspawnhelper)
@@ -440,17 +536,16 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
     private fun runAotCacheCreation(
         javaExe: String,
         appDir: File,
-        classpath: String,
-        javaOptions: List<String>,
-        mainClass: String,
         aotCacheFile: File,
+        spec: TrainingSpec,
     ) {
         val javaArgs =
             buildAotJavaArgs(
-                classpath = classpath,
-                javaOptions = javaOptions,
-                mainClass = mainClass,
+                classpath = spec.classpath,
+                javaOptions = spec.javaOptions,
+                mainClass = spec.mainClass,
                 aotCacheFile = aotCacheFile,
+                tuningArgs = spec.tuningArgs,
             )
         val candidateDirs = buildAotTempFileCandidateDirs(appDir, aotCacheFile)
         var argFile: File? = null
@@ -531,13 +626,17 @@ abstract class AbstractGenerateAotCacheTask : AbstractNucleusTask() {
         }
     }
 
-    private fun injectAotCacheIntoCfg(cfgFile: File) {
+    private fun injectAotCacheIntoCfg(
+        cfgFile: File,
+        runtimeTuningArgs: List<String>,
+    ) {
         val content = cfgFile.readText()
         if (content.contains("AOTCache")) return
+        val injectedOptions = runtimeTuningArgs + "-XX:AOTCache=\$APPDIR/$AOT_CACHE_FILENAME"
         val updatedContent =
             content.replace(
                 "[JavaOptions]",
-                "[JavaOptions]\njava-options=-XX:AOTCache=\$APPDIR/$AOT_CACHE_FILENAME",
+                injectedOptions.joinToString(separator = "\n", prefix = "[JavaOptions]\n") { "java-options=$it" },
             )
         cfgFile.writeText(updatedContent)
         logger.lifecycle("[aotCache] Injected AOTCache into ${cfgFile.name}")

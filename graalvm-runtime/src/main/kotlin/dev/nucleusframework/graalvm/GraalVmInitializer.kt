@@ -8,12 +8,12 @@ import java.io.File
 import java.nio.charset.Charset
 import java.util.Locale
 
-object GraalVmInitializer {
-    val isNativeImage: Boolean =
+public object GraalVmInitializer {
+    public val isNativeImage: Boolean =
         System.getProperty("org.graalvm.nativeimage.imagecode") != null
 
     /** Call once at the very start of main(), before any AWT/Compose usage. */
-    fun initialize() {
+    public fun initialize() {
         if (isNativeImage) {
             // Initialize the JDK platform (JNU) encoding FIRST, before any AWT/font native library
             // loads. Oracle GraalVM's SVM — unlike BellSoft Liberica NIK — never calls the JDK's
@@ -32,6 +32,10 @@ object GraalVmInitializer {
             // Resolve the executable directory
             val execDir = resolveExecDir()
             System.setProperty("java.home", execDir)
+            // Match JVM `run` / jpackage: sidecars from appResourcesRootDir live next to the exe.
+            if (System.getProperty("compose.application.resources.dir").isNullOrBlank()) {
+                System.setProperty("compose.application.resources.dir", execDir)
+            }
 
             // java.library.path → execDir + execDir/bin
             // Must be set BEFORE any System.loadLibrary() call (including HiDPI JNI below).

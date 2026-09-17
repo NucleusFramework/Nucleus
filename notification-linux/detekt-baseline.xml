@@ -1,0 +1,16 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:Enums.kt:CloseReason$Companion</ID>
+    <ID>UndocumentedPublicClass:Enums.kt:Urgency$Companion</ID>
+    <ID>UndocumentedPublicClass:Model.kt:NotificationAction$Companion</ID>
+    <ID>UndocumentedPublicClass:NotificationSound.kt:NotificationSound$Action : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:NotificationSound.kt:NotificationSound$Alert : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:NotificationSound.kt:NotificationSound$Game : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:NotificationSound.kt:NotificationSound$InputFeedback : NotificationSound</ID>
+    <ID>UndocumentedPublicClass:NotificationSound.kt:NotificationSound$Notification : NotificationSound</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:CloseReason.Companion$public fun fromValue: CloseReason</ID>
+    <ID>UndocumentedPublicFunction:Enums.kt:Urgency.Companion$public fun fromValue: Urgency</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,29 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Created : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Modified : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Moved : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Other : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Overflow : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchEvent$Removed : FsWatchEvent</ID>
+    <ID>UndocumentedPublicClass:FsWatchEvent.kt:FsWatchSource</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchBackendStrategy</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchBackendStrategy$Auto : FsWatchBackendStrategy</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchBackendStrategy$NativeOnly : FsWatchBackendStrategy</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchBackendStrategy$Polling : FsWatchBackendStrategy</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchDeliveryMode</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchDeliveryMode$Debounced : FsWatchDeliveryMode</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchDeliveryMode$Raw : FsWatchDeliveryMode</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchError</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchException : RuntimeException</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchRegistration : AutoCloseable</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatcher : AutoCloseable</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatcherConfig</ID>
+    <ID>UndocumentedPublicClass:FsWatcher.kt:FsWatchers</ID>
+    <ID>UndocumentedPublicFunction:FsWatcher.kt:FsWatchers$public fun create: FsWatcher</ID>
+    <ID>UndocumentedPublicFunction:FsWatcher.kt:FsWatchers$public fun isSupported: Boolean</ID>
+  </CurrentIssues>
+</SmellBaseline>

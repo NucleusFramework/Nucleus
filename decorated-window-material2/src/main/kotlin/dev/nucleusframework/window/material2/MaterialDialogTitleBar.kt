@@ -15,7 +15,7 @@ import dev.nucleusframework.window.styling.TitleBarStyle
 
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedDialogScope.MaterialDialogTitleBar(
+public fun DecoratedDialogScope.MaterialDialogTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

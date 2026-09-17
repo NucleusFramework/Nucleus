@@ -13,7 +13,7 @@ import java.util.function.Consumer
  * It handles macOS, Windows, and Linux.
  */
 @Composable
-fun isSystemInDarkMode(): Boolean {
+public fun isSystemInDarkMode(): Boolean {
     val isInPreview = LocalInspectionMode.current
     if (isInPreview) {
         return isSystemInDarkTheme()

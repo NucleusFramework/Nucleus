@@ -16,7 +16,7 @@ import dev.nucleusframework.systemcolor.windows.windowsHighContrast
 /**
  * Returns whether the current platform supports system accent color detection.
  */
-fun isSystemAccentColorSupported(): Boolean =
+public fun isSystemAccentColorSupported(): Boolean =
     when (Platform.Current) {
         Platform.MacOS -> MacSystemColorDetector.isAccentColorSupported()
         Platform.Windows -> WindowsSystemColorDetector.isAccentColorSupported()
@@ -30,7 +30,7 @@ fun isSystemAccentColorSupported(): Boolean =
  * Automatically updates when the user changes the system accent color.
  */
 @Composable
-fun systemAccentColor(): Color? =
+public fun systemAccentColor(): Color? =
     when (Platform.Current) {
         Platform.MacOS -> macOsAccentColor()
         Platform.Windows -> windowsAccentColor()
@@ -43,7 +43,7 @@ fun systemAccentColor(): Color? =
  * Automatically updates when the user toggles the accessibility contrast setting.
  */
 @Composable
-fun isSystemInHighContrast(): Boolean =
+public fun isSystemInHighContrast(): Boolean =
     when (Platform.Current) {
         Platform.MacOS -> isMacOsInHighContrast()
         Platform.Windows -> windowsHighContrast()

@@ -393,6 +393,110 @@ static jint map_result(NSDragOperation op) {
     return DROP_EFFECT_NONE;
 }
 
+// ── Outbound: host pump upcall ─────────────────────────────────────────────
+//
+// Lets the host breathe while a drag session owns the main thread. Two things
+// conspire to freeze the window for the whole drag:
+//
+//  1. `nativeStartDrag` is entered from inside a Tao event callback (Compose
+//     starts the session from `sendPointerEvent`), so tao's `in_callback` flag
+//     stays set until it returns. Tao's `kCFRunLoopBeforeWaiting` observer is
+//     the only thing that emits `MainEventsCleared` and flushes the queued
+//     redraws, and it bails out on exactly that flag (`AppState::cleared` in
+//     tao's `platform_impl/macos/app_state.rs`). So `TaoMainDispatcher` is never
+//     drained and the render coroutine that lives on it never resumes.
+//  2. AppKit tracks the drag *inside* `nextEventMatchingMask:`, so the
+//     session-wait loop below is not a pump either — measured over a ~5 s drag,
+//     its body ran exactly once, after the drop.
+//
+// The tick therefore has to come from something AppKit's tracking loop does run.
+// A repeating CFRunLoopTimer in `kCFRunLoopCommonModes` is that: measured over
+// the same drag it fired ~120×/s from `willBeginAtPoint` to `endedAtPoint`,
+// including throughout a 2 s stretch with the cursor held perfectly still.
+//
+// The Windows backend fixes the same freeze by upcalling this same `DragPump`
+// from `IDropSource::QueryContinueDrag` (see `windows/nucleus_tao_dnd.c`). Its
+// known trade-off does not apply here: `QueryContinueDrag` only fires on input
+// state changes, so a still cursor stalls animations over there, whereas the
+// timer keeps ticking. `NSDraggingSource`'s `draggingSession:movedToPoint:` is
+// the closer analogue of `QueryContinueDrag` — and inherits exactly that
+// limitation (measured: 60 movement-driven callbacks against the timer's 586),
+// which is why the timer drives the pump instead.
+//
+// No GlobalRef and no AttachCurrentThread, unlike Windows: the timer is created
+// and invalidated inside this JNI frame and fires on this same (already
+// attached) main thread, so the borrowed `pump` local ref and `env` stay valid
+// for every callback.
+
+// Pump cadence — ~8 ms, same figure as the Windows backend's
+// MIN_DRAG_FRAME_INTERVAL_NANOS. It bounds how often the host is *offered* a
+// tick, not the frame rate: the frames themselves are paced by the render
+// thread's vsync wait, and CFRunLoopTimer coalesces rather than queues if a
+// tick overruns.
+static const CFTimeInterval kDragPumpTickSeconds = 1.0 / 120.0;
+
+typedef struct NucleusDragPump {
+    JNIEnv   *env;    /* borrowed, owned by the enclosing JNI frame */
+    jobject   ref;    /* borrowed local ref, same */
+    jmethodID method; /* DragPump.pump()V, or NULL once disabled */
+} NucleusDragPump;
+
+static void drag_pump_resolve(JNIEnv *env, jobject pump, NucleusDragPump *out) {
+    out->env = env;
+    out->ref = NULL;
+    out->method = NULL;
+    if (!pump) return;
+    jclass cls = (*env)->GetObjectClass(env, pump);
+    if (cls) {
+        out->method = (*env)->GetMethodID(env, cls, "pump", "()V");
+        (*env)->DeleteLocalRef(env, cls);
+    }
+    if (out->method) out->ref = pump;
+    /* Optional: a failure here only costs the host its frames during the drag,
+     * so keep the session going. */
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+/* CFRunLoopTimerCallBack. Fires on the main thread for as long as the timer is
+ * scheduled, which is exactly the lifetime of the drag session. */
+static void drag_pump_tick(CFRunLoopTimerRef timer, void *info) {
+    (void)timer;
+    NucleusDragPump *p = (NucleusDragPump *)info;
+    if (!p || !p->ref || !p->method) return;
+    JNIEnv *env = p->env;
+    (*env)->CallVoidMethod(env, p->ref, p->method);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+        /* Whatever broke (Metal layer, Skia recording) will break again on the
+         * next tick, and we tick ~120×/s — latch the pump off so one failure
+         * reports once instead of flooding stderr. The drag degrades to the old
+         * frozen-but-quiet behaviour and still completes normally. */
+        p->method = NULL;
+    }
+}
+
+/* Schedules [drag_pump_tick] on the current run loop for the session's
+ * lifetime. `kCFRunLoopCommonModes` is what makes it fire from inside AppKit's
+ * drag tracking, which runs in `NSEventTrackingRunLoopMode`. Returns NULL when
+ * there is nothing to pump; the caller must invalidate a non-NULL timer before
+ * its frame — which owns `p` — unwinds. */
+static CFRunLoopTimerRef drag_pump_schedule(NucleusDragPump *p) {
+    if (!p->ref || !p->method) return NULL;
+    CFRunLoopTimerContext ctx = { 0, p, NULL, NULL, NULL };
+    CFRunLoopTimerRef timer =
+        CFRunLoopTimerCreate(NULL, CFAbsoluteTimeGetCurrent() + kDragPumpTickSeconds,
+                             kDragPumpTickSeconds, 0, 0, drag_pump_tick, &ctx);
+    if (timer) CFRunLoopAddTimer(CFRunLoopGetCurrent(), timer, kCFRunLoopCommonModes);
+    return timer;
+}
+
+static void drag_pump_cancel(CFRunLoopTimerRef timer) {
+    if (!timer) return;
+    CFRunLoopTimerInvalidate(timer);
+    CFRelease(timer);
+}
+
 // ── JNI exports ────────────────────────────────────────────────────────────
 
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -454,16 +558,19 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDndBridge_nativeRevoke(
 }
 
 /*
- * nativeStartDrag(nsView, files, text, allowedEffects): synchronously runs an
- * outbound drag session. Returns the negotiated drop effect or 0 if cancelled.
+ * nativeStartDrag(nsView, files, text, allowedEffects, pump): synchronously runs
+ * an outbound drag session. Returns the negotiated drop effect or 0 if
+ * cancelled.
  *
  * Must be called on the macOS main thread (= Tao event-loop thread). Pumps
  * AppKit events while the drag is in flight so the call appears blocking from
- * Kotlin's perspective — matches the Win32 `DoDragDrop` contract.
+ * Kotlin's perspective — matches the Win32 `DoDragDrop` contract — and ticks
+ * `pump` off a run-loop timer so the host keeps drawing (see NucleusDragPump).
  */
 JNIEXPORT jint JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDndBridge_nativeStartDrag(
-    JNIEnv *env, jclass cls, jlong nsView, jobjectArray files, jstring text, jint allowedEffects)
+    JNIEnv *env, jclass cls, jlong nsView, jobjectArray files, jstring text, jint allowedEffects,
+    jobject pump)
 {
     (void)cls;
     if (!nsView) return DROP_EFFECT_NONE;
@@ -540,14 +647,23 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDndBridge_nativeStartDrag
         source->_resultOperation = NSDragOperationNone;
         source->_done = NO;
 
+        NucleusDragPump pumpUpcall;
+        drag_pump_resolve(env, pump, &pumpUpcall);
+
         NSDraggingSession *session __unused = [view beginDraggingSessionWithItems:items
                                                                             event:event
                                                                            source:source];
 
-        // Pump the AppKit run loop until the session ends. We're on the main
-        // thread so simply waiting would freeze the UI; manually dispatching
-        // events keeps everything responsive (mirrors what Win32 DoDragDrop
-        // does internally with its modal message loop).
+        // Keep the host drawing for the duration of the session. Dispatching
+        // AppKit events below is not enough on its own — tao's own tick is
+        // suppressed the whole time. See NucleusDragPump.
+        CFRunLoopTimerRef pumpTimer = drag_pump_schedule(&pumpUpcall);
+
+        // Wait for the session to end. We're on the main thread so simply
+        // sleeping would freeze the UI; going through the run loop lets AppKit
+        // track the drag (which it does inside this very call) and keeps the
+        // pump timer above firing. Mirrors what Win32 DoDragDrop does
+        // internally with its modal message loop.
         while (!source->_done) {
             @autoreleasepool {
                 NSEvent *ev = [NSApp nextEventMatchingMask:NSEventMaskAny
@@ -557,6 +673,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoMacOsDndBridge_nativeStartDrag
                 if (ev) [NSApp sendEvent:ev];
             }
         }
+        drag_pump_cancel(pumpTimer);
         return map_result(source->_resultOperation);
     }
 }

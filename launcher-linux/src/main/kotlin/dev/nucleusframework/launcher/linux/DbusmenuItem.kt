@@ -21,7 +21,7 @@ import dev.nucleusframework.freedesktop.icons.FreedesktopIcon
  *   [Disposition.WARNING], or [Disposition.ALERT].
  * @property children Sub-menu items. Non-empty means this item has a submenu.
  */
-data class DbusmenuItem(
+public data class DbusmenuItem(
     val id: Int,
     val label: String = "",
     val icon: FreedesktopIcon? = null,
@@ -34,23 +34,23 @@ data class DbusmenuItem(
     val disposition: Disposition = Disposition.NORMAL,
     val children: List<DbusmenuItem> = emptyList(),
 ) {
-    enum class ItemType(
-        val value: String,
+    public enum class ItemType(
+        public val value: String,
     ) {
         STANDARD("standard"),
         SEPARATOR("separator"),
     }
 
-    enum class ToggleType(
-        val value: String,
+    public enum class ToggleType(
+        public val value: String,
     ) {
         NONE(""),
         CHECKBOX("checkmark"),
         RADIO("radio"),
     }
 
-    enum class Disposition(
-        val value: String,
+    public enum class Disposition(
+        public val value: String,
     ) {
         NORMAL("normal"),
         INFORMATIONAL("informational"),
@@ -58,8 +58,8 @@ data class DbusmenuItem(
         ALERT("alert"),
     }
 
-    companion object {
+    public companion object {
         /** Creates a separator item. */
-        fun separator(id: Int): DbusmenuItem = DbusmenuItem(id = id, type = ItemType.SEPARATOR)
+        public fun separator(id: Int): DbusmenuItem = DbusmenuItem(id = id, type = ItemType.SEPARATOR)
     }
 }

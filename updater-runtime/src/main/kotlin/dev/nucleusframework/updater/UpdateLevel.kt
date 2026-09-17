@@ -1,6 +1,6 @@
 package dev.nucleusframework.updater
 
-enum class UpdateLevel {
+public enum class UpdateLevel {
     MAJOR,
     MINOR,
     PATCH,

@@ -77,7 +77,7 @@ pub(crate) fn current_modifier_bits() -> i32 {
     const VK_SHIFT: i32 = 0x10;
     const VK_CONTROL: i32 = 0x11;
     const VK_MENU: i32 = 0x12; // Alt
-    // High-order bit set means the key is currently physically down.
+                               // High-order bit set means the key is currently physically down.
     let down = |vk: i32| unsafe { (GetAsyncKeyState(vk) as u16) & 0x8000 != 0 };
     let mut m = 0;
     if down(VK_SHIFT) {
@@ -137,13 +137,36 @@ pub(crate) const EVENT_MAIN_EVENTS_CLEARED: jint = 20;
 // the JVM side using the cached scale factor.
 pub(crate) const EVENT_MOVED: jint = 21;
 pub(crate) const EVENT_WINDOW_READY: jint = 16; // a = width, b = height (logical)
-                                                // Scroll deltas come either as line counts (mouse wheel) or pixel deltas
-                                                // (trackpad). Compose's `MacOSCocoaConfig` (cf. compose-multiplatform-core)
-                                                // expects each kind to be shaped like AWT `MouseWheelEvent.preciseWheelRotation`,
-                                                // which has different scaling: lines map ≈ 1 notch, pixels map ≈ scrollingDelta/10.
-                                                // We split the event code so the JVM side can apply the right factor.
+
+// Scroll deltas come either as line counts (mouse wheel) or precise deltas
+// (trackpad, smooth-scroll mice). Compose's `MacOSCocoaConfig` (cf.
+// compose-multiplatform-core) expects each kind to be shaped like AWT
+// `MouseWheelEvent.preciseWheelRotation`, which has different scaling: lines
+// map ≈ 1 notch, precise deltas map ≈ scrollingDelta/10. We split the event
+// code so the JVM side can apply the right factor. Both carry tao's sign
+// (positive = content moves down / right, i.e. AppKit's); the JVM negates.
 pub(crate) const EVENT_SCROLL_LINE: jint = 17; // a = dx * SCROLL_FIXED_SCALE, b = dy * SCROLL_FIXED_SCALE
+
+// a/b = LOGICAL points (AppKit `scrollingDelta*`) * SCROLL_FIXED_SCALE — the
+// vendored tao (patch 0007) leaves `PixelDelta` in points because AWT never
+// applies the display scale to `preciseWheelRotation` (Nucleus #653).
 pub(crate) const EVENT_SCROLL_PIXEL: jint = 18;
+// Trackpad scroll gesture phases (`EventCallback.onScrollGesture`); mirror
+// Kotlin `TaoScrollGesturePhase`. A precise scroll that belongs to a gesture
+// (AppKit `phase` / `momentumPhase` set) takes this callback instead of
+// EVENT_SCROLL_PIXEL so the JVM can surface it as Compose Pan events (#654).
+pub(crate) const SCROLL_GESTURE_BEGAN: jint = 0;
+pub(crate) const SCROLL_GESTURE_CHANGED: jint = 1;
+pub(crate) const SCROLL_GESTURE_ENDED: jint = 2;
+pub(crate) const SCROLL_GESTURE_CANCELLED: jint = 3;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_BEGAN: jint = 4;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_CHANGED: jint = 5;
+pub(crate) const SCROLL_GESTURE_MOMENTUM_ENDED: jint = 6;
+pub(crate) const SCROLL_GESTURE_MAY_BEGIN: jint = 7;
+// AWT: one wheel line is one unit of `preciseWheelRotation`, one point of a
+// precise delta is a tenth of one — so a gesture step that arrives in lines is
+// scaled to its point equivalent before it joins the (point-shaped) gesture wire.
+pub(crate) const AWT_LINE_TO_POINTS: f64 = 10.0;
 pub(crate) const EVENT_MODIFIERS_CHANGED: jint = 22;
 // Linux only. Dispatched synchronously on the event-loop thread right
 // BEFORE the GTK window is hidden, so the JVM can suspend its EGL rendering
@@ -265,6 +288,24 @@ pub(crate) enum UserEvent {
         // XWayland, ignored on native Wayland. Ignored on macOS (Dock hiding
         // goes through the activation policy).
         skip_taskbar: bool,
+        // Full-window per-pixel transparency (#416). Maps to tao's
+        // `WindowBuilder::with_transparent(true)` so alpha-0 pixels composite
+        // the desktop. Linux always requests an ARGB visual for EGL regardless
+        // of this flag (canonical visual); the flag still controls whether the
+        // host starts with an alpha-0 clear and keeps the top-level non-opaque.
+        transparent: bool,
+        // Drop shadow for borderless windows. Windows:
+        // `with_undecorated_shadow` (DWM + outer-rect inset). macOS:
+        // `with_has_shadow` (NSWindow). Linux: yaru.dart-style hidden-titlebar
+        // CSD (`with_csd_hidden_titlebar`, Wayland only). False for borderless
+        // overlays.
+        undecorated_shadow: bool,
+        // Linux: put this window on an X11 screen even when the process runs
+        // on native Wayland, so it can use the window-management features
+        // Wayland has no protocol for (stacking, programmatic positioning,
+        // workspace stickiness). Ignored elsewhere, and already satisfied when
+        // the process is an X11/XWayland client.
+        force_x11: bool,
     },
     SetVisible {
         handle: u64,
@@ -306,9 +347,21 @@ pub(crate) enum UserEvent {
         handle: u64,
         always_on_top: bool,
     },
+    SetAlwaysOnBottom {
+        handle: u64,
+        always_on_bottom: bool,
+    },
     SetFocusable {
         handle: u64,
         focusable: bool,
+    },
+    SetIgnoreCursorEvents {
+        handle: u64,
+        ignore: bool,
+    },
+    SetVisibleOnAllWorkspaces {
+        handle: u64,
+        visible: bool,
     },
     Focus {
         handle: u64,
@@ -316,6 +369,12 @@ pub(crate) enum UserEvent {
     SetMinInnerSize {
         handle: u64,
         // Negative width/height means "clear the minimum".
+        width: f64,
+        height: f64,
+    },
+    SetMaxInnerSize {
+        handle: u64,
+        // Negative width/height means "clear the maximum".
         width: f64,
         height: f64,
     },
@@ -335,6 +394,19 @@ pub(crate) enum UserEvent {
         handle: u64,
         x: f64,
         y: f64,
+    },
+    /// Linux: anchor a popup overlay at a logical point of its parent so GDK
+    /// maps it as a compositor-positioned `xdg_popup` (see `popup_anchor`).
+    PopupAnchor {
+        handle: u64,
+        x: i32,
+        y: i32,
+        width: i32,
+        height: i32,
+        shadow_left: i32,
+        shadow_top: i32,
+        shadow_right: i32,
+        shadow_bottom: i32,
     },
     SetFullscreen {
         handle: u64,
@@ -403,6 +475,100 @@ pub(crate) fn dispatch_key(
             JValue::Int(location),
             JValue::Int(modifiers),
             JValue::Int(code_point),
+        ],
+    );
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+/// Calls an `EventCallback` method whose first two arguments are the window
+/// handle and a string, plus any [extra] trailing arguments.
+fn dispatch_ime_string_with(
+    handle: u64,
+    method: &str,
+    signature: &str,
+    text: &str,
+    extra: &[jlong],
+) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let Ok(jstr) = env.new_string(text) else {
+        return;
+    };
+    let jobj = jstr.into();
+    let mut args = vec![JValue::Long(handle as jlong), JValue::Object(&jobj)];
+    args.extend(extra.iter().map(|v| JValue::Long(*v)));
+    let _ = env.call_method(callback.as_obj(), method, signature, &args);
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
+    }
+}
+
+fn dispatch_ime_string(handle: u64, method: &str, text: &str) {
+    dispatch_ime_string_with(handle, method, "(JLjava/lang/String;)V", text, &[]);
+}
+
+/// IME composition (marked text) update — macOS only. Empty [text] cancels
+/// the composition (`unmarkText`). See issue #595.
+pub(crate) fn dispatch_ime_preedit(handle: u64, text: &str) {
+    dispatch_ime_string(handle, "onImePreedit", text);
+}
+
+/// IME composition commit — macOS only. `insertText:` while marked text is
+/// active; the JVM replaces the composing region via `commitText` (#595).
+pub(crate) fn dispatch_ime_commit(handle: u64, text: &str) {
+    dispatch_ime_string(handle, "onImeCommit", text);
+}
+
+/// Replacement commit — macOS only (#611/#612). `insertText:` with a valid
+/// `replacementRange` outside a composition (the press-and-hold accent
+/// picker). [start] / [length] are UTF-16 offsets in the document-absolute
+/// space the JVM pushed through `nativeSetImeDocument`.
+pub(crate) fn dispatch_ime_replace_commit(handle: u64, text: &str, start: u64, length: u64) {
+    dispatch_ime_string_with(
+        handle,
+        "onImeReplaceCommit",
+        "(JLjava/lang/String;JJ)V",
+        text,
+        &[start as jlong, length as jlong],
+    );
+}
+
+/// Trackpad scroll gesture (macOS): `EventCallback.onScrollGesture`. [phase]
+/// is one of the `SCROLL_GESTURE_*` codes; the deltas are LOGICAL points
+/// (AppKit `scrollingDelta*`, tao's sign) × SCROLL_FIXED_SCALE, like
+/// EVENT_SCROLL_PIXEL.
+pub(crate) fn dispatch_scroll_gesture(handle: u64, phase: jint, dx_fixed: jint, dy_fixed: jint) {
+    let Some(vm) = JAVA_VM.get() else { return };
+    let Ok(guard) = EVENT_CALLBACK.lock() else {
+        return;
+    };
+    let Some(callback) = guard.as_ref() else {
+        return;
+    };
+    let Ok(mut env) = vm.attach_current_thread_permanently() else {
+        return;
+    };
+    let _ = env.call_method(
+        callback.as_obj(),
+        "onScrollGesture",
+        "(JIII)V",
+        &[
+            JValue::Long(handle as jlong),
+            JValue::Int(phase),
+            JValue::Int(dx_fixed),
+            JValue::Int(dy_fixed),
         ],
     );
     if env.exception_check().unwrap_or(false) {

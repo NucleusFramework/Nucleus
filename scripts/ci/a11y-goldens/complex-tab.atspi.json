@@ -1,0 +1,185 @@
+{
+  "_comment": "Golden AT-SPI projection of tao-demo's Complex tab (Linux / accesskit_unix). Verified by scripts/ci/verify-atspi-tree-golden.py --fixture complex-tab. Names that mutate with app state (item counts, expand markers) use prefix/contains matching.",
+  "appName": "Sample Tao",
+  "tab": "Complex",
+  "tabs": [
+    { "name": "Demo", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Scroll", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Zoom", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Window actions", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "A11y", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Complex", "role": "page tab", "actionsAll": ["click"], "statesAll": ["selected", "selectable"] },
+    { "name": "Events", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "WebView", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "SwiftUI", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Texture", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Spellcheck", "role": "page tab", "actionsAll": ["click"] }
+  ],
+  "nodes": [
+    {
+      "id": "heading-stress",
+      "name": "Complex a11y stress",
+      "role": "heading",
+      "attributes": { "level": "2" },
+      "requireValidExtents": true
+    },
+    { "id": "heading-todo", "name": "Todo list", "role": "heading", "attributes": { "level": "2" } },
+    {
+      "id": "heading-ticker",
+      "name": "Auto-ticking progress (high-frequency partials)",
+      "role": "heading",
+      "attributes": { "level": "2" }
+    },
+    { "id": "heading-groups", "name": "Expandable groups", "role": "heading", "attributes": { "level": "2" } },
+    {
+      "id": "heading-form",
+      "name": "Conditional form (subtree replacement)",
+      "role": "heading",
+      "attributes": { "level": "2" }
+    },
+    {
+      "id": "todo-summary",
+      "name": " items, ",
+      "nameMatch": "contains",
+      "role": "label",
+      "attributes": { "container-live": "polite" }
+    },
+    {
+      "id": "add-item",
+      "name": "Add item",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "clear-done",
+      "name": "Clear done",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "reset",
+      "name": "Reset",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "filter-entry",
+      "name": "",
+      "nameMatch": "any",
+      "role": "entry",
+      "statesAll": ["editable", "enabled", "sensitive", "focusable"],
+      "interfacesAll": ["EditableText", "Text"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "todo-buy-milk",
+      "name": "Toggle done for Buy milk",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "todo-write-tests",
+      "name": "Toggle done for Write tests",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "todo-ship-it",
+      "name": "Toggle done for Ship it",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "todo-delete",
+      "name": "Delete",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "ticker-start",
+      "name": "Start",
+      "nameMatch": "prefix",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "ticker-progress",
+      "name": "Auto-ticker",
+      "role": "progress bar",
+      "interfacesAll": ["Value", "Component"],
+      "valueMin": 0.0,
+      "valueMax": 1.0,
+      "requireValidExtents": true
+    },
+    {
+      "id": "group-settings",
+      "name": "Group α (settings)",
+      "nameMatch": "prefix",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "group-advanced",
+      "name": "Group β (advanced)",
+      "nameMatch": "prefix",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "group-always",
+      "name": "Group γ (always shown)",
+      "nameMatch": "prefix",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "form-basic",
+      "name": "Form mode: basic",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "form-advanced",
+      "name": "Form mode: advanced",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "form-off",
+      "name": "Form mode: off",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "option-a",
+      "name": "Option A (basic)",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "option-b",
+      "name": "Option B (basic)",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    }
+  ]
+}

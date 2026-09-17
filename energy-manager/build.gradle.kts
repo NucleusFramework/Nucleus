@@ -1,8 +1,8 @@
-import org.apache.tools.ant.taskdefs.condition.Os
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     kotlin("jvm")
+    id("nucleus.native-module")
     alias(libs.plugins.vanniktechMavenPublish)
 }
 
@@ -30,70 +30,10 @@ kotlin {
     }
 }
 
-val nativeResourceDir = layout.projectDirectory.dir("src/main/resources/nucleus/native")
-
-val buildNativeWindows by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into Windows DLLs (x64 + ARM64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("win32-x64")
-            .file("nucleus_energy_manager.dll")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_WINDOWS) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/windows")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("cmd", "/c", nativeDir.file("build.bat").asFile.absolutePath)
-}
-
-val buildNativeMacOs by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into macOS dylibs (x64 + arm64)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("darwin-aarch64")
-            .file("libnucleus_energy_manager.dylib")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/macos")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", nativeDir.file("build.sh").asFile.absolutePath)
-}
-
-val buildNativeLinux by tasks.registering(Exec::class) {
-    description = "Compiles the C JNI bridge into Linux shared libraries (.so)"
-    group = "build"
-    val hasPrebuilt =
-        nativeResourceDir
-            .dir("linux-x64")
-            .file("libnucleus_energy_manager.so")
-            .asFile
-            .exists()
-    enabled = Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC) && !hasPrebuilt
-
-    val nativeDir = layout.projectDirectory.dir("src/main/native/linux")
-    inputs.dir(nativeDir)
-    outputs.dir(nativeResourceDir)
-    workingDir(nativeDir)
-    commandLine("bash", nativeDir.file("build.sh").asFile.absolutePath)
-}
-
-tasks.processResources {
-    dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
-}
-
-tasks.configureEach {
-    if (name == "sourcesJar") {
-        dependsOn(buildNativeWindows, buildNativeMacOs, buildNativeLinux)
-    }
+nucleusNative {
+    windows("nucleus_energy_manager")
+    macos("nucleus_energy_manager")
+    linux("nucleus_energy_manager")
 }
 
 mavenPublishing {

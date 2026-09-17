@@ -19,48 +19,48 @@ import androidx.compose.ui.unit.offset
 import kotlin.math.max
 
 @Stable
-interface TitleBarLayoutPolicy {
-    fun MeasureScope.prepareMeasure(scope: TitleBarMeasureScope): TitleBarMeasureResult
+public interface TitleBarLayoutPolicy {
+    public fun MeasureScope.prepareMeasure(scope: TitleBarMeasureScope): TitleBarMeasureResult
 
-    fun MeasureScope.measureTitleBar(scope: TitleBarPlacementScope): MeasureResult
+    public fun MeasureScope.measureTitleBar(scope: TitleBarPlacementScope): MeasureResult
 
-    companion object {
-        val Default: TitleBarLayoutPolicy = DefaultTitleBarLayoutPolicy
-        val FillCenter: TitleBarLayoutPolicy = FillCenterTitleBarLayoutPolicy
+    public companion object {
+        public val Default: TitleBarLayoutPolicy = DefaultTitleBarLayoutPolicy
+        public val FillCenter: TitleBarLayoutPolicy = FillCenterTitleBarLayoutPolicy
     }
 }
 
 @Stable
-interface TitleBarMeasureScope {
-    val children: List<TitleBarLayoutChild>
-    val constraints: Constraints
-    val layoutDirection: LayoutDirection
-    val controlButtonsDirection: LayoutDirection
+public interface TitleBarMeasureScope {
+    public val children: List<TitleBarLayoutChild>
+    public val constraints: Constraints
+    public val layoutDirection: LayoutDirection
+    public val controlButtonsDirection: LayoutDirection
 }
 
 @Stable
-interface TitleBarPlacementScope {
-    val children: List<TitleBarLayoutChild>
-    val constraints: Constraints
-    val layoutDirection: LayoutDirection
-    val controlButtonsDirection: LayoutDirection
-    val contentPadding: PaddingValues
-    val measureResult: TitleBarMeasureResult
+public interface TitleBarPlacementScope {
+    public val children: List<TitleBarLayoutChild>
+    public val constraints: Constraints
+    public val layoutDirection: LayoutDirection
+    public val controlButtonsDirection: LayoutDirection
+    public val contentPadding: PaddingValues
+    public val measureResult: TitleBarMeasureResult
 }
 
 @Stable
-interface TitleBarMeasureResult {
-    val heightPx: Int
+public interface TitleBarMeasureResult {
+    public val heightPx: Int
 }
 
 @Stable
-interface TitleBarLayoutChild {
-    val measurable: Measurable
-    val alignment: Alignment.Horizontal
+public interface TitleBarLayoutChild {
+    public val measurable: Measurable
+    public val alignment: Alignment.Horizontal
 }
 
 @Composable
-fun rememberTitleBarMeasurePolicy(
+public fun rememberTitleBarMeasurePolicy(
     state: DecoratedWindowState,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     controlButtonsDirection: LayoutDirection,
@@ -76,7 +76,7 @@ fun rememberTitleBarMeasurePolicy(
     }
 
 @Composable
-fun rememberTitleBarMeasurePolicy(
+public fun rememberTitleBarMeasurePolicy(
     state: DecoratedWindowState,
     applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     controlButtonsDirection: LayoutDirection = LocalLayoutDirection.current,
@@ -91,7 +91,7 @@ fun rememberTitleBarMeasurePolicy(
         )
     }
 
-class TitleBarMeasurePolicy(
+public class TitleBarMeasurePolicy(
     private val state: DecoratedWindowState,
     private val applyTitleBar: (Dp, DecoratedWindowState) -> PaddingValues,
     private val controlButtonsDirection: LayoutDirection,

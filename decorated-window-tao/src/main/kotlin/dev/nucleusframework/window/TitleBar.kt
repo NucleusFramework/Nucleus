@@ -9,8 +9,8 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -20,12 +20,11 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.PointerButton
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.PointerType
-import androidx.compose.ui.input.pointer.onPointerEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -40,8 +39,8 @@ import dev.nucleusframework.window.hasMacOSLargeCornerRadius
 import dev.nucleusframework.window.hasNewFullscreenControls
 import dev.nucleusframework.window.styling.LocalTitleBarStyle
 import dev.nucleusframework.window.styling.TitleBarStyle
-import dev.nucleusframework.window.tao.LocalRequestedClearColor
 import dev.nucleusframework.window.tao.LocalRequestedTitleBarHeight
+import dev.nucleusframework.window.tao.LocalWindowClearColorLayers
 import dev.nucleusframework.window.tao.TaoDecoratedWindowScope
 import dev.nucleusframework.window.tao.TaoWindow
 import dev.nucleusframework.window.tao.deco.LocalFullscreenTitleBarHolder
@@ -68,7 +67,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
 /**
  * Platform-aware title bar for the Tao-backed [DecoratedWindow].
  *
- * Signature mirrors `decorated-window-jbr` / `decorated-window-jni` so an app
+ * Signature mirrors the legacy AWT backend so an app
  * can swap backends without touching call sites:
  * - [gradientStartColor] enables the optional centered horizontal gradient.
  * - [style] resolves all metrics + colors via [LocalTitleBarStyle]; the default
@@ -81,7 +80,7 @@ private const val SCREEN_POINT_COMPONENT_COUNT = 2
  * - `windowDragHandler` consumes title-bar press events and dispatches them to
  *   `TaoWindow.dragWindow()`, with double-press → toggle-maximize.
  * - macOS native traffic-light area is reserved via [PaddingValues] (78 dp on
- *   each side), matching `decorated-window-jni`'s JBR-driven inset path.
+ *   each side), matching the legacy AWT backend's JBR-driven inset path.
  * - KDE breeze 4 dp edge padding applied on the controls side.
  * - Linux + Windows control buttons are injected here (no native chrome).
  */
@@ -106,6 +105,21 @@ public fun DecoratedWindowScope.TitleBar(
     )
 }
 
+/**
+ * [TitleBar] with the measure policy left open, for chrome that needs a
+ * different arrangement than the platform default — a strip that fills the
+ * space between the platform controls, for instance
+ * ([TitleBarLayoutPolicy.FillCenter]).
+ *
+ * @param nativeWindowDrag whether pressing the bar starts the platform's own
+ *   interactive move. On by default, which is what gives the window the OS
+ *   snapping and tiling. Turn it off for a window that moves *itself* during
+ *   the gesture: the platform move is a compositor grab that swallows every
+ *   pointer event up to and including the release, so a window moved that way
+ *   cannot decide anything when it lands. The caller then supplies its own
+ *   drag through [modifier], which covers the whole bar rather than only the
+ *   part its content happens to occupy.
+ */
 @Suppress("FunctionNaming", "LongParameterList", "LongMethod", "CyclomaticComplexMethod")
 @Composable
 public fun DecoratedWindowScope.BasicTitleBar(
@@ -114,6 +128,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     style: TitleBarStyle = LocalTitleBarStyle.current,
     controlButtonsDirection: ControlButtonsDirection = ControlButtonsDirection.Auto,
     layoutPolicy: TitleBarLayoutPolicy = TitleBarLayoutPolicy.Default,
+    nativeWindowDrag: Boolean = true,
     backgroundContent: @Composable () -> Unit = {},
     content: @Composable TitleBarScope.(DecoratedWindowState) -> Unit = {},
 ) {
@@ -145,7 +160,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     }
 
     // ── newFullscreenControls (macOS) ─────────────────────────────────────
-    // Mirrors `decorated-window-jni/TitleBar.MacOS.kt`. In native fullscreen
+    // Mirrors the legacy AWT backend's macOS title bar. In native fullscreen
     // on a non-notch screen the system menu bar auto-hides; when it slides
     // back in we offset the title bar (and the AppKit traffic-light
     // replacements) by the menu bar height so they read like Safari.
@@ -222,12 +237,23 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // the desktop through the transparent CSD clear. This is the Tao
     // equivalent of the AWT NSWindow background that jbr/jni get for free from
     // the user's theme (see `DecoratedWindowBody`'s `Modifier.background`).
-    // On Linux the host still carves the CSD shadow margins / rounded corners
-    // back to transparent after rendering, so the drop shadow is unaffected.
+    // On Linux the host still carves the rounded corners back to transparent
+    // after rendering.
+    // Keyed content stack: co-composed WindowBackground survives when this
+    // TitleBar is removed (clearContent only drops this writer).
+    // Fully transparent windows (#416): WindowClearColorLayers coerces opaque
+    // chrome colours to alpha-0 for the clear only — the TitleBar still paints
+    // its own bar; empty client regions stay see-through.
     val titleBarBackground by style.colors.backgroundFor(currentState)
-    val clearColorState = LocalRequestedClearColor.current
+    val clearColorLayers = LocalWindowClearColorLayers.current
+    val clearColorKey = remember { Any() }
     SideEffect {
-        clearColorState?.value = titleBarBackground.toArgb()
+        clearColorLayers?.setContent(clearColorKey, titleBarBackground.toArgb())
+    }
+    DisposableEffect(clearColorKey) {
+        onDispose {
+            clearColorLayers?.clearContent(clearColorKey)
+        }
     }
 
     // Push the animated offset back to native so the AppKit traffic-light
@@ -250,7 +276,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
     val controlsPlacementDir = controlDir
 
     // macOS: flip the AppKit traffic-lights to the right edge when RTL is
-    // active. Mirrors `decorated-window-jni`'s `nativeSetRTL` call path.
+    // active. Mirrors the legacy AWT backend's `nativeSetRTL` call path.
     if (Platform.Current == Platform.MacOS) {
         LaunchedEffect(taoWindow, controlIsRtl) {
             val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
@@ -260,11 +286,6 @@ public fun DecoratedWindowScope.BasicTitleBar(
         }
     }
 
-    val viewConfig = LocalViewConfiguration.current
-
-    var lastPress by remember { mutableLongStateOf(0L) }
-
-    @OptIn(ExperimentalComposeUiApi::class)
     val rootModifier =
         Modifier
             // macOS only — slide the title bar down when the system menu bar
@@ -273,47 +294,15 @@ public fun DecoratedWindowScope.BasicTitleBar(
             .let {
                 if (isMacOS) it.offset(y = menuBarOffset).zIndex(if (menuBarOffset > 0.dp) 1f else 0f) else it
             }.then(modifier)
-            .titleBarHitTestHandler(taoWindow)
-            .onPointerEvent(PointerEventType.Press, PointerEventPass.Final) {
-                // Suppress the double-click → toggle-maximize gesture while the
-                // window is fullscreen. On macOS `[NSWindow zoom:]` exits
-                // fullscreen, so without this guard a double-click anywhere in
-                // the title bar would unexpectedly leave fullscreen — and with
-                // `[setMovable:NO]` AppKit no longer handles that itself.
-                if (currentState.isFullscreen) return@onPointerEvent
-                // Touch has no PointerButton — Compose leaves `button` null for
-                // touch presses (the Linux scene host sends touch contacts via the
-                // multi-pointer `sendPointerEvent` overload with no button), so the
-                // mouse-centric Primary gate would never match a finger tap. Linux
-                // (Wayland) is the only backend that routes title-bar touch to
-                // Compose: macOS has no touchscreen, and on Windows the native
-                // WndProc captures caption touch and lets the OS handle double-tap.
-                // A single touch contact is the touch-equivalent of a primary click.
-                val isPrimaryOrTouch =
-                    this.currentEvent.button == PointerButton.Primary ||
-                        (
-                            Platform.Current == Platform.Linux &&
-                                this.currentEvent.changes.any { it.type == PointerType.Touch }
-                        )
-                if (
-                    isPrimaryOrTouch &&
-                    this.currentEvent.changes.any { !it.isConsumed }
-                ) {
-                    val now = System.currentTimeMillis()
-                    if (now - lastPress in
-                        viewConfig.doubleTapMinTimeMillis..viewConfig.doubleTapTimeoutMillis &&
-                        (taoWindow.isMaximized || taoWindow.isResizable)
-                    ) {
-                        taoWindow.setMaximized(!taoWindow.isMaximized)
-                        // Cancel any in-flight touch drag — the second press
-                        // armed one with the pre-toggle maximize state, and
-                        // a tiny finger jitter would otherwise run
-                        // `SetWindowPos` on the now-toggled window.
-                        taoWindow.cancelWindowsTitleBarTouchDrag()
-                    }
-                    lastPress = now
-                }
-            }
+            // Bind drag to [taoWindow] explicitly (not only LocalTaoWindow) so
+            // secondary windows stay movable when parent CompositionLocals are
+            // bridged into this scene and would otherwise clobber LocalTaoWindow.
+            //
+            // Opted out of by a window that moves itself, which is the only way
+            // a move can decide anything on release: `windowDragArea` hands the
+            // gesture to the compositor, and the compositor then swallows every
+            // pointer event including the release. See [nativeWindowDrag].
+            .let { if (nativeWindowDrag) it.windowDragArea(window = taoWindow) else it }
 
     val overlayHolder = LocalFullscreenTitleBarHolder.current
     val useOverlay =
@@ -348,7 +337,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
             onPlace = {
                 // macOS fullscreen: keep the AppKit replacement traffic-lights
                 // pinned to whatever Y the Compose title bar is currently at.
-                // Mirrors `decorated-window-jni`'s `nativeUpdateFullScreenButtons`.
+                // Mirrors the legacy AWT backend's `nativeUpdateFullScreenButtons`.
                 if (isMacOS && currentState.isFullscreen && NativeMetalBridge.isLoaded) {
                     val nsView = NativeTaoBridge.nativeNsViewHandle(taoWindow.handle)
                     if (nsView != 0L) {
@@ -361,7 +350,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
                 // Window controls are declared BEFORE user content so core's
                 // [TitleBarMeasurePolicy] places them at the extreme edge first
                 // (first-declared End item = rightmost in LTR; first-declared
-                // Start item = leftmost). Mirrors `decorated-window-jni`'s
+                // Start item = leftmost). Mirrors the legacy AWT backend's
                 // TitleBar.{Linux,Windows}.kt where WindowControlArea is invoked
                 // ahead of `content()`.
                 when (Platform.Current) {
@@ -399,16 +388,34 @@ public fun DecoratedWindowScope.BasicTitleBar(
     // based on pointer Y. The inline slot collapses to nothing so the user
     // content fills the screen, and the deco's caption zone is zeroed so the
     // WndProc returns HTCLIENT everywhere (the overlay handles its own input).
+    //
+    // The handoff runs during COMPOSITION, not in a SideEffect: these state
+    // writes invalidate FullscreenOverlayHost's scope within the SAME frame,
+    // so the first fullscreen composition already shows a collapsed inline
+    // slot AND the armed overlay. Publishing from a SideEffect landed one
+    // frame late — a composited frame with no title bar at all mid-toggle
+    // (the issue-413 layout corruption); the LaunchedEffect-based clear on
+    // exit was likewise one frame late (a frame with both bars).
+    val latestTitleBarRendering by rememberUpdatedState(titleBarRendering)
+    val overlayContent = remember { @Composable { latestTitleBarRendering() } }
     if (useOverlay && overlayHolder != null) {
         val ctx = currentCompositionLocalContext
-        SideEffect {
-            heightHolder.value = 0f
-            overlayHolder.titleBarHeight = style.metrics.height
+        heightHolder.value = 0f
+        overlayHolder.titleBarHeight = style.metrics.height
+        if (overlayHolder.compositionLocalContext !== ctx) {
             overlayHolder.compositionLocalContext = ctx
-            overlayHolder.content = titleBarRendering
+        }
+        // Stable lambda: assigning the same instance on every recomposition
+        // keeps the holder's state from invalidating the overlay each frame.
+        if (overlayHolder.content !== overlayContent) {
+            overlayHolder.content = overlayContent
         }
     } else {
         titleBarRendering()
+        // Same-frame clear on the recomposition that turns the overlay off.
+        if (overlayHolder != null && overlayHolder.content === overlayContent) {
+            overlayHolder.content = null
+        }
     }
 
     // Push the resolved caption height to the deco WndProc on every overlay
@@ -428,7 +435,7 @@ public fun DecoratedWindowScope.BasicTitleBar(
 
 /**
  * Platform-specific reservation insets returned to [GenericTitleBarImpl]'s
- * `applyTitleBar` callback. Mirrors `decorated-window-jni`'s `MacOSTitleBar`
+ * `applyTitleBar` callback. Mirrors the legacy AWT backend's `MacOSTitleBar`
  * exactly:
  * - macOS in fullscreen: 80 dp on the controls edge.
  * - macOS otherwise: Apple's traffic-light formula
@@ -478,115 +485,139 @@ private fun macTrafficLightInset(height: Dp): Dp {
 
 // ── Drag ──────────────────────────────────────────────────────────────────
 
-// Mirrors `decorated-window-jni/TitleBar.MacOS.kt::titleBarHitTestHandler`.
+// Mirrors the legacy AWT backend's `titleBarHitTestHandler`.
 // Press → mark pendingDrag (no consumption). Move while pending → start the
 // native window drag. Consumed Press → enter `inUserControl` and skip drag.
+//
+// Pointer pass is Final (leaf → root), not Main: Main walks root → leaf, so
+// this handler would arm pendingDrag *before* a child could claim the press
+// (`clickable`, `noWindowDrag`, etc.). Final runs after Main, so consumption
+// by descendants is already visible — which is what makes `noWindowDrag` and
+// interactive chrome children actually opt out of the window move.
 //
 // On macOS this is the *only* path that drags the window — AppKit's native
 // title-bar drag is disabled by `[NSWindow setMovable:NO]` in
 // `nativeConfigureChrome`, so clicks in the title bar reach Compose
 // undisturbed. The native side defers `performWindowDragWithEvent:` via
 // `dispatch_async`, mirroring JNI exactly.
+//
+// Deliberately does NOT opt into `sharePointerInputWithSiblings`: that flag is
+// read per layout node (`InnerNodeCoordinator` consults the immediate child's
+// chain), so it would not help the `TitleBarPlacement.Overlay` case it looks
+// like it addresses — but it WOULD let every overlapping sibling below a
+// `windowDragArea` (the macOS fullscreen bar, which is offset over the content
+// in the same Column; any app stacking chrome over content in a Box) receive
+// presses aimed at the opaque chrome. Pass-through is opted into explicitly,
+// at the scaffold level — see `Modifier.shareHitTestWithSiblings`.
+internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
+    pointerInput(window) { titleBarDragPointerLoop(window) }
+
 @OptIn(ExperimentalComposeUiApi::class)
 @Suppress("CyclomaticComplexMethod")
-internal fun Modifier.titleBarHitTestHandler(window: TaoWindow): Modifier =
-    pointerInput(window) {
-        val ctx = currentCoroutineContext()
-        awaitPointerEventScope {
-            var inUserControl = false
-            var pendingDrag = false
-            // Windows touch drag state lives in [TaoWindow] and is driven by
-            // raw Tao touch events (see `TaoComposeSceneHostWindows.onTouchInput`
-            // → `window.updateWindowsTitleBarTouchDrag(…)`), so the drag keeps
-            // running even if Compose's pointer pipeline routing is disrupted
-            // by the layout-size change of a `maximized → floating` restore.
-            while (ctx.isActive) {
-                val event = awaitPointerEvent(PointerEventPass.Main)
-                event.changes.forEach {
-                    val isTouch = it.type == androidx.compose.ui.input.pointer.PointerType.Touch
-                    if (!it.isConsumed && !inUserControl) {
-                        when (event.type) {
-                            PointerEventType.Press -> {
-                                val touchOnWindows =
-                                    isTouch &&
-                                        Platform.Current == Platform.Windows &&
-                                        NativeTaoWindowsDecoBridge.isLoaded
-                                // Only the primary button (or touch) may drag the window.
-                                // A secondary/middle press must not arm the drag: on Linux
-                                // `dragWindow()` starts an interactive compositor move grab
-                                // that swallows every subsequent pointer event.
-                                val isPrimaryOrTouch =
-                                    event.button == PointerButton.Primary || isTouch
-                                pendingDrag = isPrimaryOrTouch && !touchOnWindows
-                                if (touchOnWindows) {
-                                    // Fallback touch drag (no Aero Snap): only reached if the
-                                    // native WndProc did NOT capture this title-bar touch (it
-                                    // normally consumes the whole interaction from WM_POINTERDOWN
-                                    // and hands it to the OS move loop). Subsequent samples run
-                                    // via `TaoComposeSceneHostWindows.onTouchInput` →
-                                    // `window.updateWindowsTitleBarTouchDrag(...)`, applying
-                                    // `SetWindowPos` directly so the window still follows the
-                                    // finger even when the OS-driven path is unavailable.
-                                    val hwnd =
-                                        dev.nucleusframework.window.tao.ffi.NativeTaoBridge
-                                            .nativeHwndHandle(window.handle)
-                                    val rect =
-                                        if (hwnd != 0L) {
-                                            NativeTaoWindowsDecoBridge
-                                                .nativeGetWindowRect(hwnd)
-                                        } else {
-                                            null
-                                        }
-                                    val screen =
-                                        if (hwnd != 0L) {
-                                            NativeTaoWindowsDecoBridge
-                                                .nativeClientToScreen(
-                                                    hwnd,
-                                                    it.position.x.toInt(),
-                                                    it.position.y.toInt(),
-                                                )
-                                        } else {
-                                            null
-                                        }
-                                    if (
-                                        rect != null &&
-                                        rect.size == WINDOW_RECT_COMPONENT_COUNT &&
-                                        screen != null &&
-                                        screen.size == SCREEN_POINT_COMPONENT_COUNT
-                                    ) {
-                                        window.beginWindowsTitleBarTouchDrag(
-                                            touchId = it.id.value,
-                                            hwnd = hwnd,
-                                            startScreenX = screen[0],
-                                            startScreenY = screen[1],
-                                            startOuterX = rect[0],
-                                            startOuterY = rect[1],
-                                            maximized =
-                                                NativeTaoWindowsDecoBridge
-                                                    .nativeIsMaximized(hwnd),
-                                        )
+private suspend fun PointerInputScope.titleBarDragPointerLoop(window: TaoWindow) {
+    val ctx = currentCoroutineContext()
+    awaitPointerEventScope {
+        var inUserControl = false
+        var pendingDrag = false
+        // Windows touch drag state lives in [TaoWindow] and is driven by
+        // raw Tao touch events (see `TaoComposeSceneHostWindows.onTouchInput`
+        // → `window.updateWindowsTitleBarTouchDrag(…)`), so the drag keeps
+        // running even if Compose's pointer pipeline routing is disrupted
+        // by the layout-size change of a `maximized → floating` restore.
+        while (ctx.isActive) {
+            val event = awaitPointerEvent(PointerEventPass.Final)
+            event.changes.forEach {
+                val isTouch = it.type == PointerType.Touch
+                if (!it.isConsumed && !inUserControl) {
+                    when (event.type) {
+                        PointerEventType.Press -> {
+                            val touchOnWindows =
+                                isTouch &&
+                                    Platform.Current == Platform.Windows &&
+                                    NativeTaoWindowsDecoBridge.isLoaded
+                            // Only the primary button (or touch) may drag the window.
+                            // A secondary/middle press must not arm the drag: on Linux
+                            // `dragWindow()` starts an interactive compositor move grab
+                            // that swallows every subsequent pointer event.
+                            val isPrimaryOrTouch =
+                                event.button == PointerButton.Primary || isTouch
+                            pendingDrag = isPrimaryOrTouch && !touchOnWindows
+                            if (touchOnWindows) {
+                                // Fallback touch drag (no Aero Snap): only reached if the
+                                // native WndProc did NOT capture this title-bar touch (it
+                                // normally consumes the whole interaction from WM_POINTERDOWN
+                                // and hands it to the OS move loop). Subsequent samples run
+                                // via `TaoComposeSceneHostWindows.onTouchInput` →
+                                // `window.updateWindowsTitleBarTouchDrag(...)`, applying
+                                // `SetWindowPos` directly so the window still follows the
+                                // finger even when the OS-driven path is unavailable.
+                                val hwnd =
+                                    dev.nucleusframework.window.tao.ffi.NativeTaoBridge
+                                        .nativeHwndHandle(window.handle)
+                                val rect =
+                                    if (hwnd != 0L) {
+                                        NativeTaoWindowsDecoBridge
+                                            .nativeGetWindowRect(hwnd)
+                                    } else {
+                                        null
                                     }
+                                val screen =
+                                    if (hwnd != 0L) {
+                                        NativeTaoWindowsDecoBridge
+                                            .nativeClientToScreen(
+                                                hwnd,
+                                                it.position.x.toInt(),
+                                                it.position.y.toInt(),
+                                            )
+                                    } else {
+                                        null
+                                    }
+                                if (
+                                    rect != null &&
+                                    rect.size == WINDOW_RECT_COMPONENT_COUNT &&
+                                    screen != null &&
+                                    screen.size == SCREEN_POINT_COMPONENT_COUNT
+                                ) {
+                                    window.beginWindowsTitleBarTouchDrag(
+                                        touchId = it.id.value,
+                                        hwnd = hwnd,
+                                        startScreenX = screen[0],
+                                        startScreenY = screen[1],
+                                        startOuterX = rect[0],
+                                        startOuterY = rect[1],
+                                        maximized =
+                                            NativeTaoWindowsDecoBridge
+                                                .nativeIsMaximized(hwnd),
+                                    )
                                 }
                             }
-                            PointerEventType.Move ->
-                                if (pendingDrag) {
-                                    window.dragWindow()
-                                    pendingDrag = false
-                                }
-                            PointerEventType.Release -> {
+                        }
+                        PointerEventType.Move ->
+                            if (pendingDrag) {
+                                window.dragWindow()
                                 pendingDrag = false
                             }
-                        }
-                    } else {
-                        if (event.type == PointerEventType.Press) {
-                            inUserControl = true
+                        PointerEventType.Release -> {
                             pendingDrag = false
                         }
-                        if (event.type == PointerEventType.Release) {
-                            inUserControl = false
-                        }
+                    }
+                } else {
+                    // Someone else claimed this sample — a child gesture
+                    // detector, or (under an Overlay bar sharing its hit test)
+                    // a scrollable sibling below. Disarm: a consumer that stops
+                    // consuming mid-gesture — a list reaching its scroll limit —
+                    // would otherwise hand the still-pending drag a later
+                    // unconsumed Move and start a compositor move grab in the
+                    // middle of the scroll.
+                    pendingDrag = false
+                    if (event.type == PointerEventType.Press) {
+                        inUserControl = true
+                    }
+                    if (event.type == PointerEventType.Release) {
+                        inUserControl = false
                     }
                 }
             }
         }
     }
+}

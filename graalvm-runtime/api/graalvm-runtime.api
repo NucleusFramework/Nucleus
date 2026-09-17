@@ -1,0 +1,10 @@
+public final class dev/nucleusframework/graalvm/GraalVmInitializer {
+	public static final field INSTANCE Ldev/nucleusframework/graalvm/GraalVmInitializer;
+	public final fun initialize ()V
+	public final fun isNativeImage ()Z
+}
+
+public final class dev/nucleusframework/graalvm/encoding/PlatformEncodingInitializer {
+	public static fun initialize ()V
+}
+

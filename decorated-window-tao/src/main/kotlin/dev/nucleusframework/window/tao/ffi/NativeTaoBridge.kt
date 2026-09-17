@@ -2,7 +2,10 @@ package dev.nucleusframework.window.tao.ffi
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
 import dev.nucleusframework.window.tao.TaoAccessibilityRegistry
+import dev.nucleusframework.window.tao.TaoApplication
 import dev.nucleusframework.window.tao.TaoDeepLinkBridge
+import java.util.logging.Level
+import java.util.logging.Logger
 
 private const val LIBRARY_NAME = "nucleus_tao"
 
@@ -18,9 +21,42 @@ private const val LIBRARY_NAME = "nucleus_tao"
  */
 @Suppress("TooManyFunctions")
 internal object NativeTaoBridge {
+    private val logger = Logger.getLogger(NativeTaoBridge::class.java.name)
     private val loaded = NativeLibraryLoader.load(LIBRARY_NAME, NativeTaoBridge::class.java)
 
     val isLoaded: Boolean get() = loaded
+
+    /**
+     * Guard for native → JVM upcalls that run framework plumbing only (deep
+     * links). An exception escaping into JNI is cleared silently by the Rust
+     * side (#622) — log it at SEVERE instead. One-shot handlers, not the
+     * render/dispatch path, so a failure is loud but non-fatal.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun upcall(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            logger.log(Level.SEVERE, "Unhandled exception in a native → JVM upcall", t)
+        }
+    }
+
+    /**
+     * Guard for native → JVM upcalls that run **app code** — a11y actions
+     * invoke the same semantics lambdas (e.g. `Modifier.clickable` onClick)
+     * that are fatal when reached via mouse or keyboard (#622). A crash must
+     * behave identically regardless of input modality, so these route to
+     * [TaoApplication.reportFatal] instead of a log-only swallow that would
+     * leave screen-reader users with an app whose state desynced mid-action.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private inline fun fatalUpcall(block: () -> Unit) {
+        try {
+            block()
+        } catch (t: Throwable) {
+            TaoApplication.reportFatal(t)
+        }
+    }
 
     /**
      * Receives events dispatched from the Rust event loop, called on the
@@ -81,6 +117,24 @@ internal object NativeTaoBridge {
         }
 
         /**
+         * macOS-only trackpad scroll gesture (#654): a precise scroll whose
+         * AppKit `phase` / `momentumPhase` is set. It takes this callback
+         * instead of [onEvent] `SCROLL_PIXEL` so the host can surface Compose
+         * Pan events. [phase] is a [dev.nucleusframework.window.tao.TaoScrollGesturePhase]
+         * code; [dxFixed] / [dyFixed] are logical points (AppKit
+         * `scrollingDelta*`, tao sign) × 100, exactly like `SCROLL_PIXEL`.
+         *
+         * Default implementation no-ops so non-macOS callers can ignore it.
+         */
+        fun onScrollGesture(
+            handle: Long,
+            phase: Int,
+            dxFixed: Int,
+            dyFixed: Int,
+        ) {
+        }
+
+        /**
          * Windows touchscreen input. Tao emits one `WindowEvent::Touch` per
          * finger update (WM_POINTER / WM_TOUCH), forwarded here verbatim.
          * The JVM side aggregates the active set before issuing
@@ -103,6 +157,46 @@ internal object NativeTaoBridge {
             xFixed: Int,
             yFixed: Int,
             forceFixed: Int,
+        ) {
+        }
+
+        /**
+         * macOS replacement commit: `insertText:` with a valid
+         * `replacementRange` outside a composition — how the press-and-hold
+         * accent picker replaces the base letter on a document-backed client
+         * (#611/#612). [replacementStart] / [replacementLength] are UTF-16
+         * offsets in the same document-absolute space the host pushed
+         * through [nativeSetImeDocument]; the host replaces that range via
+         * Compose `TextEditingScope` (select-then-insert, Chromium's
+         * `ImeCommitText` semantics). Default no-op.
+         */
+        fun onImeReplaceCommit(
+            handle: Long,
+            text: String,
+            replacementStart: Long,
+            replacementLength: Long,
+        ) {
+        }
+
+        /**
+         * macOS IME composition update (`setMarkedText:` / `unmarkText`).
+         * [text] is the current marked text — empty when the composition
+         * was cancelled. Default no-op. See issue #595.
+         */
+        fun onImePreedit(
+            handle: Long,
+            text: String,
+        ) {
+        }
+
+        /**
+         * macOS IME composition commit (`insertText:` while marked text is
+         * active). [text] replaces the composing region via
+         * `TextEditingScope.commitText`. Default no-op. See issue #595.
+         */
+        fun onImeCommit(
+            handle: Long,
+            text: String,
         ) {
         }
     }
@@ -134,6 +228,23 @@ internal object NativeTaoBridge {
         // XWayland, ignored on native Wayland (no taskbar opt-out protocol).
         // Ignored on macOS (Dock hiding uses the activation policy).
         skipTaskbar: Boolean,
+        // Full-window per-pixel transparency (#416). Creation-time only —
+        // maps to tao `with_transparent`. Pair with an alpha-0 clear
+        // (`WindowBackground(Color.Transparent)` or the transparent=true
+        // default style path) so the desktop shows through empty regions.
+        transparent: Boolean,
+        // Drop shadow for borderless windows. Windows: DWM undecorated shadow
+        // (outer-rect inset). macOS: NSWindow.hasShadow. Ghost overlays pass
+        // false (`DecoratedWindow(undecorated = true)`). Ignored on Linux
+        // (CSD shadow is gated in the host).
+        undecoratedShadow: Boolean,
+        // Linux: give this window an X11 surface even when the process runs on
+        // native Wayland, by re-homing it on a second GdkDisplay opened on
+        // DISPLAY. Creation-time only. Ignored elsewhere and when the process
+        // is already an X11/XWayland client. Silently keeps the Wayland surface
+        // when no X server is reachable — callers check the surface kind
+        // (`nativeLinuxHandles`) rather than a return value.
+        forceX11: Boolean,
     )
 
     @JvmStatic
@@ -158,6 +269,29 @@ internal object NativeTaoBridge {
     external fun nativeExit()
 
     /**
+     * Shows a blocking native error dialog — the no-AWT replacement for
+     * Compose Desktop's Swing default (#622). macOS (NSAlert run by an
+     * out-of-process osascript child — our own NSApp is unusable after the
+     * Tao loop; falls back to a compact CFUserNotificationDisplayAlert when
+     * the child cannot run), Windows (in-memory DLGTEMPLATE dialog run on a
+     * fresh thread; falls back to a compact MessageBoxW when the dialog
+     * cannot be created) and Linux (modal GtkMessageDialog —
+     * GTK-main-thread only, i.e. the thread that ran the Tao loop).
+     * [detail] is the full stack trace: all three platforms render it in a
+     * scrollable monospace view with a Copy button; the macOS and Windows
+     * fallbacks keep the compact alert and show only its first
+     * `toString()` line after [message].
+     * Call it only outside tao callback frames — a modal pump inside one
+     * re-enters tao's non-reentrant handler mutex.
+     */
+    @JvmStatic
+    external fun nativeShowErrorDialog(
+        title: String,
+        message: String,
+        detail: String,
+    )
+
+    /**
      * Wakes the Tao event loop so a coroutine just posted to
      * [TaoMainDispatcher] runs on the next tick. Required because Tao runs
      * with `ControlFlow::Wait` and would otherwise sleep until an OS event
@@ -173,7 +307,7 @@ internal object NativeTaoBridge {
     @JvmStatic
     @Suppress("unused") // called from JNI (macOS Event::Opened → apple_events::dispatch_deep_link)
     fun dispatchDeepLink(uri: String) {
-        TaoDeepLinkBridge.onUrlFromNative(uri)
+        upcall { TaoDeepLinkBridge.onUrlFromNative(uri) }
     }
 
     /**
@@ -181,9 +315,121 @@ internal object NativeTaoBridge {
      * be called on the macOS main thread. Returns 0 if the window does not
      * exist (yet) or has been closed. Only resolvable on macOS — calling on
      * other platforms throws `UnsatisfiedLinkError`.
+     *
+     * Prefer [nativeNsWindowHandle] / [TaoWindow.nsWindowHandle] when the goal
+     * is dialog parenting (sheets) rather than rendering into the view.
      */
     @JvmStatic
     external fun nativeNsViewHandle(handle: Long): Long
+
+    /**
+     * macOS only: returns the owning `NSWindow*` for [handle] (cast to
+     * `Long`), or 0 if the window is unknown / not yet realized.
+     *
+     * Intended for native dialog parenting (`beginSheetModalForWindow:`,
+     * future FileKit `FileKitDialogParent.macos`). Distinct from
+     * [nativeNsViewHandle] — an NSView is not a valid sheet parent.
+     */
+    @JvmStatic
+    external fun nativeNsWindowHandle(handle: Long): Long
+
+    /**
+     * macOS only, headful e2e: present a real `NSOpenPanel` as a sheet on
+     * [nsWindow], confirm attachment (and that [nsView] is in that window's
+     * hierarchy), then cancel. Return codes:
+     * `1` ok, `0` window not found, `-1` view not in hierarchy,
+     * `-2` sheet did not attach, `-3` sheet did not dismiss cleanly.
+     */
+    @JvmStatic
+    external fun nativeMacOsProbeSheetParent(
+        nsWindow: Long,
+        nsView: Long,
+    ): Int
+
+    /**
+     * macOS only, headful e2e: `true` when Japanese Kotoeri (romaji/hiragana)
+     * is installed and can be selected — even if it is currently disabled in
+     * the input-source menu.
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriAvailable(): Boolean
+
+    /**
+     * macOS only, headful e2e: enable Kotoeri if needed, select Hiragana,
+     * make [handle]'s view first responder and activate its input context.
+     * Saves the previous input source for [nativeMacOsKotoeriRestore].
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriSelect(handle: Long): Boolean
+
+    /**
+     * macOS only, headful e2e: restore the input source saved by
+     * [nativeMacOsKotoeriSelect] and disable Kotoeri again if this process
+     * enabled it. No-op when select was never called.
+     */
+    @JvmStatic
+    external fun nativeMacOsKotoeriRestore()
+
+    /** macOS only, headful e2e: current TIS keyboard input source id. */
+    @JvmStatic
+    external fun nativeMacOsCurrentInputSource(): String
+
+    /**
+     * macOS only, headful e2e: deliver a real AppKit `keyDown:` / `keyUp:`
+     * to TaoView for [handle]. [keyCode] is a Carbon virtual key
+     * (`kVK_ANSI_*`). This is the same path a physical keystroke takes, so
+     * Kotoeri's `interpretKeyEvents:` → `setMarkedText:` / `insertText:`
+     * runs for real. [autorepeat] marks the event as a key repeat (held
+     * key) — what AppKit's press-and-hold machinery engages on.
+     */
+    @JvmStatic
+    external fun nativeMacOsPostKeyToView(
+        handle: Long,
+        keyCode: Int,
+        characters: String,
+        down: Boolean,
+        autorepeat: Boolean,
+    ): Boolean
+
+    /**
+     * macOS only, headful e2e: query TaoView's `NSTextInputClient` in one
+     * snapshot. Fills [rangesOut] (length ≥ 5) with
+     * `[markedLoc, markedLen, selectedLoc, selectedLen, charIndex]`
+     * (`NSNotFound` is `-1`) and returns the marked-range substring, or
+     * empty when the client returns `nil`.
+     */
+    @JvmStatic
+    external fun nativeMacOsQueryTextInputClient(
+        handle: Long,
+        rangesOut: LongArray,
+    ): String
+
+    /**
+     * macOS only, headful e2e: invoke `setMarkedText:selectedRange:replacementRange:`
+     * on TaoView (the same entry IMKit uses).
+     */
+    @JvmStatic
+    external fun nativeMacOsInjectMarkedText(
+        handle: Long,
+        text: String,
+        selectedLocation: Int,
+        selectedLength: Int,
+    ): Boolean
+
+    /**
+     * macOS only, headful e2e: invoke `insertText:replacementRange:` on
+     * TaoView. A negative [replacementLocation] injects `{NSNotFound, 0}`
+     * (ordinary typing); a non-negative one replays the accent-picker
+     * replacement commit (`insertText:"é" replacementRange:{caret-1, 1}`,
+     * UTF-16 document-absolute).
+     */
+    @JvmStatic
+    external fun nativeMacOsInjectInsertText(
+        handle: Long,
+        text: String,
+        replacementLocation: Long,
+        replacementLength: Long,
+    ): Boolean
 
     /**
      * Windows counterpart of [nativeNsViewHandle]: returns the HWND so the JVM
@@ -199,9 +445,36 @@ internal object NativeTaoBridge {
      * For Xlib, `display` is `Display*` and `nativeWindow` is the X11 `Window`
      * (XID). For Wayland, `display` is `wl_display*` and `nativeWindow` is
      * `wl_surface*`. Only resolvable on Linux.
+     *
+     * Prefer [TaoWindow.x11WindowId] / [TaoWindow.exportXdgForeignHandle] when
+     * the goal is XDG Desktop Portal dialog parenting rather than EGL.
      */
     @JvmStatic
     external fun nativeLinuxHandles(handle: Long): LongArray?
+
+    /**
+     * Linux/Wayland only: export this window's surface via `xdg_foreign` and
+     * return the **unprefixed** opaque handle string (for
+     * `FileKitDialogParent.wayland` / portal `wayland:<handle>`).
+     *
+     * Blocks until the compositor delivers the handle or [timeoutMs] elapses.
+     * Returns `null` on X11, when the window is not realized, or on failure.
+     * Pair with [nativeLinuxUnexportXdgForeignHandle] when the portal dialogs
+     * finish — FileKit borrows the handle and does not extend its lifetime.
+     */
+    @JvmStatic
+    external fun nativeLinuxExportXdgForeignHandle(
+        handle: Long,
+        timeoutMs: Int,
+    ): String?
+
+    /**
+     * Linux/Wayland only: drop the `xdg_foreign` export created by
+     * [nativeLinuxExportXdgForeignHandle]. No-op when never exported or not
+     * on Wayland.
+     */
+    @JvmStatic
+    external fun nativeLinuxUnexportXdgForeignHandle(handle: Long)
 
     /**
      * Linux only: returns the underlying `GtkApplicationWindow*` (cast
@@ -211,6 +484,55 @@ internal object NativeTaoBridge {
      */
     @JvmStatic
     external fun nativeLinuxGtkWindow(handle: Long): Long
+
+    /**
+     * Linux only, headful e2e: synthesize a `GdkEventScroll` on [handle] and
+     * deliver it through GTK's `scroll-event` signal — the same path a real
+     * mouse wheel uses.
+     *
+     * [direction] is a `GdkScrollDirection` (`0=UP`, `1=DOWN`, `2=LEFT`,
+     * `3=RIGHT`, `4=SMOOTH`). Discrete directions force `delta_x`/`delta_y`
+     * to zero (GTK 3's mouse-wheel payload). SMOOTH uses [deltaXMilli] /
+     * [deltaYMilli] as thousandths.
+     *
+     * Coordinates are widget-local logical px. The caller should first
+     * dispatch `CURSOR_MOVED` so Compose's last pointer sits over the
+     * target — this function only delivers the scroll.
+     *
+     * Must run on the Tao / GTK main thread. Returns `false` when the handle
+     * is unknown, the window is not realized, or [direction] is out of range.
+     */
+    @JvmStatic
+    external fun nativeLinuxInjectGdkScroll(
+        handle: Long,
+        direction: Int,
+        deltaXMilli: Int,
+        deltaYMilli: Int,
+        x: Int,
+        y: Int,
+    ): Boolean
+
+    /**
+     * Linux only: origin of the content area (the child GTK allocated inside
+     * any client-side decorations) in logical toplevel coordinates, packed as
+     * `(x shl 32) or (y and 0xffffffff)`. `(0, 0)` for plain undecorated
+     * windows; the GTK theme's shadow margins when the yaru-style
+     * hidden-titlebar CSD is active. Feed into
+     * [NativeTaoEglBridge.nativeSetContentOffset].
+     */
+    @JvmStatic
+    external fun nativeLinuxContentOrigin(handle: Long): Long
+
+    /**
+     * Linux only: rounds the GTK-drawn CSD frame (decoration node + window
+     * background) to [radiusPx] on all four corners via a `GtkCssProvider`,
+     * so the native frame matches the Compose-carved content corners exactly.
+     */
+    @JvmStatic
+    external fun nativeLinuxSetCsdCornerRadius(
+        handle: Long,
+        radiusPx: Int,
+    )
 
     /** Scale factor encoded as `(scale * 1000) as Int` to keep a single signature. */
     @JvmStatic
@@ -236,16 +558,34 @@ internal object NativeTaoBridge {
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /**
+     * Linux only: returns one descriptor per GDK monitor, encoded as documented
+     * in [dev.nucleusframework.window.tao.TaoMonitor].
+     *
+     * [handle] may be `0` — monitors are a display-wide property, so the
+     * default GDK display is used when no window is available. `null` when GDK
+     * has no display.
+     */
+    @JvmStatic
+    external fun nativeLinuxMonitors(handle: Long): Array<String>?
+
+    /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
-     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
-     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
-     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
-     * [ownerHandle] to clear the relationship.
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint`). Mirrors the Win32
+     * `GWLP_HWNDPARENT` and AppKit `addChildWindow:` paths used by
+     * `DecoratedDialog`. Pass `0` for [ownerHandle] to clear the relationship.
+     *
+     * [destroyWithOwner] adds `gtk_window_set_destroy_with_parent`, which is
+     * the JDialog behaviour a dialog wants and the opposite of what a
+     * satellite wants: a satellite outlives the window it is anchored to (the
+     * workspace hands it to another one). GTK destroying it behind tao's back
+     * leaves a live `TaoWindow` whose toplevel is gone — a window that reports
+     * no geometry and can never be shown again.
      */
     @JvmStatic
     external fun nativeLinuxSetDialogOwner(
         childHandle: Long,
         ownerHandle: Long,
+        destroyWithOwner: Boolean,
     )
 
     /**
@@ -311,9 +651,27 @@ internal object NativeTaoBridge {
     )
 
     @JvmStatic
+    external fun nativeSetAlwaysOnBottom(
+        handle: Long,
+        alwaysOnBottom: Boolean,
+    )
+
+    @JvmStatic
     external fun nativeSetFocusable(
         handle: Long,
         focusable: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetIgnoreCursorEvents(
+        handle: Long,
+        ignore: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetVisibleOnAllWorkspaces(
+        handle: Long,
+        visible: Boolean,
     )
 
     /**
@@ -328,6 +686,14 @@ internal object NativeTaoBridge {
     /** [width]/[height] in logical pixels; pass negative values to clear. */
     @JvmStatic
     external fun nativeSetMinInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMaxInnerSize(
         handle: Long,
         width: Double,
         height: Double,
@@ -358,6 +724,24 @@ internal object NativeTaoBridge {
         y: Double,
     )
 
+    /**
+     * Linux only: anchors a popup overlay (`popupOf`) at a logical point of
+     * its parent window through GDK's `move_to_rect`, so GDK maps it as a
+     * compositor-positioned `xdg_popup` — see [TaoWindow.anchorPopupInParent].
+     */
+    @JvmStatic
+    external fun nativeLinuxPopupAnchor(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        shadowLeft: Int,
+        shadowTop: Int,
+        shadowRight: Int,
+        shadowBottom: Int,
+    )
+
     @JvmStatic
     external fun nativeIsFullscreen(handle: Long): Boolean
 
@@ -367,7 +751,10 @@ internal object NativeTaoBridge {
         fullscreen: Boolean,
     )
 
-    /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
+    /**
+     * Sets the OS cursor for the window. [code] follows [TaoCursorIcon].
+     * Callers go through [setCursorIcon], which records the request first.
+     */
     @JvmStatic
     external fun nativeSetCursorIcon(
         handle: Long,
@@ -375,9 +762,33 @@ internal object NativeTaoBridge {
     )
 
     /**
-     * Anchors macOS IME UI at the given window-local rect in *physical pixels*
-     * (top-left origin). Tao's stock `firstRectForCharacterRange:` returns
-     * 0×0; we override it so candidate windows can follow the caret.
+     * The last cursor code requested per window handle, exactly as it was
+     * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
+     * read back portably (and never under Xvfb), so this is what the headful
+     * suite asserts against: a `BasicTextField` under a still pointer must
+     * have left a `TEXT` here, and a native view under it must not have
+     * flipped it back.
+     */
+    val lastCursorIcon: java.util.concurrent.ConcurrentHashMap<Long, Int> = java.util.concurrent.ConcurrentHashMap()
+
+    /** Records the request in [lastCursorIcon] and applies it. */
+    fun setCursorIcon(
+        handle: Long,
+        code: Int,
+    ) {
+        lastCursorIcon[handle] = code
+        nativeSetCursorIcon(handle, code)
+    }
+
+    /**
+     * Anchors the platform IME UI at the given window-local rect in *physical
+     * pixels* (top-left origin), so preedit and candidate windows follow the
+     * caret.
+     *
+     * - **macOS**: tao's stock `firstRectForCharacterRange:` returns 0×0; the
+     *   rect is stored for a swizzled implementation to return.
+     * - **Windows** (#558): forwarded to `Window::set_ime_position`, which
+     *   sets both `COMPOSITIONFORM` and `CANDIDATEFORM` on the input context.
      */
     @JvmStatic
     external fun nativeSetImeRect(
@@ -386,6 +797,26 @@ internal object NativeTaoBridge {
         y: Int,
         width: Int,
         height: Int,
+    )
+
+    /**
+     * macOS only: pushes the focused field's committed text (a bounded
+     * window), the window's document-absolute offset and the selection to
+     * the native `NSTextInputClient` cache — all offsets in UTF-16 code
+     * units. AppKit reads `selectedRange` / `attributedSubstringForProposedRange`
+     * from this cache (Chromium parity: the renderer→browser selection +
+     * surrounding-text push), which is what lets the press-and-hold accent
+     * picker engage and commit through `insertText:replacementRange:`.
+     *
+     * A negative [selectionStart] invalidates the cache (no focused field).
+     */
+    @JvmStatic
+    external fun nativeSetImeDocument(
+        handle: Long,
+        text: String,
+        offset: Long,
+        selectionStart: Long,
+        selectionEnd: Long,
     )
 
     /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
@@ -558,7 +989,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchAction(handle, nodeId, action) }
     }
 
     @JvmStatic
@@ -568,7 +999,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         action: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchActionByNsView(nsView, nodeId, action) }
     }
 
     @JvmStatic
@@ -578,7 +1009,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         text: String,
     ) {
-        TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetText(nsView, nodeId, text) }
     }
 
     @JvmStatic
@@ -589,7 +1020,7 @@ internal object NativeTaoBridge {
         start: Int,
         end: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetSelection(nsView, nodeId, start, end) }
     }
 
     @JvmStatic
@@ -599,7 +1030,7 @@ internal object NativeTaoBridge {
         nodeId: Long,
         index: Int,
     ) {
-        TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchCustomAction(nsView, nodeId, index) }
     }
 
     @JvmStatic
@@ -610,7 +1041,7 @@ internal object NativeTaoBridge {
         dx: Float,
         dy: Float,
     ) {
-        TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchScrollBy(nsView, nodeId, dx, dy) }
     }
 
     /**
@@ -625,6 +1056,6 @@ internal object NativeTaoBridge {
         nodeId: Long,
         value: Double,
     ) {
-        TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value)
+        fatalUpcall { TaoAccessibilityRegistry.dispatchSetValue(nsView, nodeId, value) }
     }
 }

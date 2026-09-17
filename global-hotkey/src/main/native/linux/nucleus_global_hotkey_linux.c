@@ -10,6 +10,10 @@
  *   - The portal thread stays permanently attached to the JVM.
  *   - GNOME requires the app_id to pass g_application_id_is_valid (reverse-DNS).
  *   - BindShortcuts sends the full shortcut set each time (portal API design).
+ *   - shortcut_id is stable (mods+keyCode), not a per-process counter — the portal
+ *     persists grants by (app_id, shortcut_id) across launches (issue #264).
+ *   - nativeRegister only stores; nativeBindShortcuts performs BindShortcuts so a
+ *     burst of register() calls can share a single system dialog.
  */
 
 #include <jni.h>
@@ -46,8 +50,9 @@ typedef struct {
     /* X11 */
     unsigned int x11_keycode;
     unsigned int x11_modifiers;
-    /* Portal */
-    char shortcut_id[32];
+    /* Portal — shortcut_id must be stable across launches (portal persistence key).
+     * Derived from modifiers+keyCode, NOT from the per-process listener handle. */
+    char shortcut_id[64];
     char description[256];   /* user-readable action label for the portal dialog */
 } HotKeyEntry;
 
@@ -586,22 +591,39 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeInit(
     return NULL;
 }
 
+/* Stable portal shortcut id: same physical chord → same id across launches and
+ * registration order. The portal persists grants by (app_id, shortcut_id); a
+ * registration-order counter (nucleus_1, nucleus_2, …) re-prompts every time the
+ * app starts with a different register() order (issue #264). */
+static void format_shortcut_id(char *buf, int sz, int modifiers, int keyCode) {
+    snprintf(buf, sz, "nucleus_m%x_k%x", (unsigned)modifiers, (unsigned)keyCode);
+}
+
 JNIEXPORT jstring JNICALL
 Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegister(
     JNIEnv *env, jclass clazz, jlong id, jint modifiers, jint keyCode, jstring description) {
     (void)clazz;
     if (!g_running) return (*env)->NewStringUTF(env, "Not initialized");
 
+    char sid[64];
+    format_shortcut_id(sid, sizeof(sid), modifiers, keyCode);
+
     pthread_mutex_lock(&g_mutex);
     if (g_hotkeyCount >= MAX_HOTKEYS) {
         pthread_mutex_unlock(&g_mutex);
         return (*env)->NewStringUTF(env, "Max hotkeys reached");
     }
+    for (int i = 0; i < g_hotkeyCount; i++) {
+        if (strcmp(g_hotkeys[i].shortcut_id, sid) == 0) {
+            pthread_mutex_unlock(&g_mutex);
+            return (*env)->NewStringUTF(env, "Hotkey already registered");
+        }
+    }
 
     HotKeyEntry *e = &g_hotkeys[g_hotkeyCount];
     e->id = id; e->keyCode = keyCode; e->modifiers = modifiers;
     e->x11_keycode = 0; e->x11_modifiers = 0;
-    snprintf(e->shortcut_id, sizeof(e->shortcut_id), "nucleus_%ld", (long)id);
+    snprintf(e->shortcut_id, sizeof(e->shortcut_id), "%s", sid);
 
     e->description[0] = '\0';
     if (description) {
@@ -626,13 +648,10 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeRegis
         }
 
     } else if (g_backend == BACKEND_PORTAL) {
+        /* Store only — BindShortcuts is deferred to nativeBindShortcuts so a
+         * loop of register() can coalesce into a single portal dialog. */
         g_hotkeyCount++;
         pthread_mutex_unlock(&g_mutex);
-        char err[512] = {0};
-        if (portal_bind_sync(err, sizeof(err)) != 0) {
-            pthread_mutex_lock(&g_mutex); g_hotkeyCount--; pthread_mutex_unlock(&g_mutex);
-            return (*env)->NewStringUTF(env, err);
-        }
 
     } else {
         pthread_mutex_unlock(&g_mutex);
@@ -660,10 +679,42 @@ Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeUnreg
     pthread_mutex_unlock(&g_mutex);
 
     if (g_backend == BACKEND_X11) x11_ungrab(&entry);
-    else if (g_backend == BACKEND_PORTAL) {
-        char err[512] = {0};
-        portal_bind_sync(err, sizeof(err)); /* rebind remaining; errors are non-fatal */
+    /* Portal: rebind is deferred to nativeBindShortcuts (coalesced). */
+    return NULL;
+}
+
+/**
+ * Push the current hotkey set to the portal via BindShortcuts.
+ * No-op (success) on X11. On portal, recreates the session and binds once —
+ * call after a batch of nativeRegister/nativeUnregister to show a single dialog.
+ */
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeBindShortcuts(
+    JNIEnv *env, jclass clazz) {
+    (void)clazz;
+    if (!g_running) return (*env)->NewStringUTF(env, "Not initialized");
+    if (g_backend != BACKEND_PORTAL) return NULL;
+
+    char err[512] = {0};
+    if (portal_bind_sync(err, sizeof(err)) != 0)
+        return (*env)->NewStringUTF(env, err);
+    return NULL;
+}
+
+/** Debug/test: copy the portal shortcut_id for a listener handle into outBuf. */
+JNIEXPORT jstring JNICALL
+Java_dev_nucleusframework_globalhotkey_linux_NativeLinuxHotKeyBridge_nativeShortcutId(
+    JNIEnv *env, jclass clazz, jlong id) {
+    (void)clazz;
+    pthread_mutex_lock(&g_mutex);
+    for (int i = 0; i < g_hotkeyCount; i++) {
+        if (g_hotkeys[i].id == id) {
+            jstring s = (*env)->NewStringUTF(env, g_hotkeys[i].shortcut_id);
+            pthread_mutex_unlock(&g_mutex);
+            return s;
+        }
     }
+    pthread_mutex_unlock(&g_mutex);
     return NULL;
 }
 

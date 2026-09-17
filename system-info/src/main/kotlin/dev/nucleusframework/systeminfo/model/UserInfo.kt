@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class UserInfo(
+public data class UserInfo(
     val name: String,
     val id: String,
     val groupId: String,

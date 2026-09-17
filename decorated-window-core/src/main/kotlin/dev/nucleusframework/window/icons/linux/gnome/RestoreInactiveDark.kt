@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.RestoreInactiveDark: ImageVector
+public val GnomeControlButtonsIcons.RestoreInactiveDark: ImageVector
     get() {
         if (_RestoreInactiveDark != null) {
             return _RestoreInactiveDark!!

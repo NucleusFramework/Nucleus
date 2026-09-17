@@ -30,12 +30,21 @@ internal object NativeWindowsEnergyBridge {
     @JvmStatic
     external fun nativeDisableLightEfficiencyMode(): Int
 
+    /** @param mode 0 = system + display, 1 = system only. */
     @JvmStatic
-    external fun nativeKeepScreenAwake(): Int
+    external fun nativeKeepAwake(mode: Int): Int
 
     @JvmStatic
-    external fun nativeReleaseScreenAwake(): Int
+    external fun nativeReleaseAwake(): Int
 
     @JvmStatic
-    external fun nativeIsScreenAwakeActive(): Boolean
+    external fun nativeIsAwakeActive(): Boolean
+
+    /**
+     * Returns the EXECUTION_STATE flags Windows currently holds for the calling
+     * thread (ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED), or 0 if
+     * the query failed. Exposed for verification — the state is per-thread.
+     */
+    @JvmStatic
+    external fun nativeQueryAwakeFlags(): Int
 }

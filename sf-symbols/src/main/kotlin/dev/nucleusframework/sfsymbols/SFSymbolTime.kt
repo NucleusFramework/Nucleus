@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — Time (45 symbols). */
-enum class SFSymbolTime(
+public enum class SFSymbolTime(
     override val symbolName: String,
 ) : SFSymbol {
     ALARM("alarm"),

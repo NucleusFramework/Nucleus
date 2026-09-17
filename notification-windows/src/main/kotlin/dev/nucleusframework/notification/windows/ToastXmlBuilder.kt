@@ -18,6 +18,9 @@ internal object ToastXmlBuilder {
         if (toast.scenario != ToastScenario.DEFAULT) {
             sb.attr("scenario", toast.scenario.xmlValue)
         }
+        if (toast.duration != ToastDuration.DEFAULT) {
+            sb.attr("duration", toast.duration.xmlValue)
+        }
         toast.displayTimestamp?.let { sb.attr("displayTimestamp", it) }
         sb.append(">")
 

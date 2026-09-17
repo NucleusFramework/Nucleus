@@ -1,0 +1,45 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:TaoTaskbarProgress.kt:TaoTaskbarProgressScope</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun hideProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun isAvailable: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun requestAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun setProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun setState: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun showError: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun showIndeterminate: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun showPaused: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun showProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:NucleusTaskbarProgress$public fun stopAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.hideTaskbarProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.requestTaskbarAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.setTaskbarProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.setTaskbarState: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.showTaskbarError: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.showTaskbarIndeterminate: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.showTaskbarPaused: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.showTaskbarProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:NucleusTaskbarProgress.kt:public fun NucleusWindow.stopTaskbarAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun hideProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun isAvailable: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun requestAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun setProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun setState: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun showError: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun showIndeterminate: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun showPaused: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun showProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgress$public fun stopAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun hideProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun requestAttention: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun setProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun setState: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun showError: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun showIndeterminate: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun showPaused: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun showProgress: Boolean</ID>
+    <ID>UndocumentedPublicFunction:TaoTaskbarProgress.kt:TaoTaskbarProgressScope$public fun stopAttention: Boolean</ID>
+  </CurrentIssues>
+</SmellBaseline>

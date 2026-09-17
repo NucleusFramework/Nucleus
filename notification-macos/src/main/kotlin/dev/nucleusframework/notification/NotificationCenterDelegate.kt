@@ -9,7 +9,7 @@ package dev.nucleusframework.notification
  * Callbacks are not dispatched to AWT/Swing. Marshal to the active UI
  * dispatcher before touching UI state.
  */
-interface NotificationCenterDelegate {
+public interface NotificationCenterDelegate {
     /**
      * Called when a notification is about to be presented while the app is in the foreground.
      * Return the set of presentation options to use. Return an empty set to silently handle it.
@@ -17,14 +17,14 @@ interface NotificationCenterDelegate {
      *
      * Maps: userNotificationCenter(_:willPresent:withCompletionHandler:)
      */
-    fun willPresent(notification: DeliveredNotification): Set<PresentationOption>
+    public fun willPresent(notification: DeliveredNotification): Set<PresentationOption>
 
     /**
      * Called when the user interacts with a notification (taps it or an action button).
      *
      * Maps: userNotificationCenter(_:didReceive:withCompletionHandler:)
      */
-    fun didReceive(response: NotificationResponse)
+    public fun didReceive(response: NotificationResponse)
 
     /**
      * Called when the user taps the notification settings button.
@@ -32,5 +32,5 @@ interface NotificationCenterDelegate {
      *
      * Maps: userNotificationCenter(_:openSettingsFor:)
      */
-    fun openSettings(notification: DeliveredNotification?) {}
+    public fun openSettings(notification: DeliveredNotification?) {}
 }

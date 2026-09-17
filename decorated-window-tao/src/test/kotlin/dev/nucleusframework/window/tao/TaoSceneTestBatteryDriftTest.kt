@@ -1,19 +1,41 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.window.TitleBarHitTestTest
 import dev.nucleusframework.window.tao.a11y.TaoA11yProjectionTest
 import dev.nucleusframework.window.tao.dnd.TaoSyntheticDndTest
 import dev.nucleusframework.window.tao.dnd.TaoTransferableAccessGuardTest
+import dev.nucleusframework.window.tao.event.LinuxWheelDeltaTest
+import dev.nucleusframework.window.tao.event.MacOsWheelDeltaTest
 import dev.nucleusframework.window.tao.event.TaoKeyMappingTest
 import dev.nucleusframework.window.tao.event.TaoKeyboardModifiersDecodeTest
 import dev.nucleusframework.window.tao.event.TaoSyntheticMouseWheelEventTest
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoomTest
+import dev.nucleusframework.window.tao.event.Win32WheelDeltaTest
+import dev.nucleusframework.window.tao.popup.StandaloneFramePumpTest
+import dev.nucleusframework.window.tao.popup.StandalonePopupRenderReentryTest
+import dev.nucleusframework.window.tao.scene.LcdTextCaptureTest
+import dev.nucleusframework.window.tao.scene.LcdTextTest
 import dev.nucleusframework.window.tao.scene.TaoSceneAnimationTest
+import dev.nucleusframework.window.tao.scene.TaoSceneContentSwapTest
+import dev.nucleusframework.window.tao.scene.TaoSceneExceptionHandlerTest
+import dev.nucleusframework.window.tao.scene.TaoSceneExceptionRouterTest
+import dev.nucleusframework.window.tao.scene.TaoSceneImeTest
 import dev.nucleusframework.window.tao.scene.TaoSceneKeyboardTest
+import dev.nucleusframework.window.tao.scene.TaoSceneOuterLocalsBridgeTest
+import dev.nucleusframework.window.tao.scene.TaoScenePointerSlopTest
 import dev.nucleusframework.window.tao.scene.TaoScenePointerTest
 import dev.nucleusframework.window.tao.scene.TaoScenePopupTest
+import dev.nucleusframework.window.tao.scene.TaoSceneRectManagerRaceTest
 import dev.nucleusframework.window.tao.scene.TaoSceneRenderTest
 import dev.nucleusframework.window.tao.scene.TaoSceneScrollTest
 import dev.nucleusframework.window.tao.scene.TaoSceneSemanticsTest
+import dev.nucleusframework.window.tao.scene.TaoSceneTrackpadPanTest
+import dev.nucleusframework.window.tao.scene.TaoTrackpadPanRouterTest
+import dev.nucleusframework.window.tao.workspace.DragControllerTest
+import dev.nucleusframework.window.tao.workspace.HostGeometryTest
+import dev.nucleusframework.window.tao.workspace.RelocatingSaveableStateRegistryTest
+import dev.nucleusframework.window.tao.workspace.TransferDragTest
+import dev.nucleusframework.window.tao.workspace.WindowGroupTest
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -36,19 +58,55 @@ class TaoSceneTestBatteryDriftTest {
     private val batteryClasses: List<Class<*>> =
         listOf(
             TaoKeyMappingTest::class.java,
+            NativePopupLayersTest::class.java,
+            dev.nucleusframework.window.tao.popup.MacPopupPictureCullTest::class.java,
             TaoKeyboardModifiersDecodeTest::class.java,
             TaoSyntheticMouseWheelEventTest::class.java,
+            Win32WheelDeltaTest::class.java,
+            LinuxWheelDeltaTest::class.java,
+            MacOsWheelDeltaTest::class.java,
+            StandaloneFramePumpTest::class.java,
+            StandalonePopupRenderReentryTest::class.java,
             TaoWheelPinchZoomTest::class.java,
             TaoWindowScrollTest::class.java,
             TaoWindowResizableTest::class.java,
+            WindowWrapContentTest::class.java,
             TaoSceneRenderTest::class.java,
             TaoSceneKeyboardTest::class.java,
+            TaoSceneImeTest::class.java,
             TaoScenePointerTest::class.java,
+            TaoScenePointerSlopTest::class.java,
             TaoSceneScrollTest::class.java,
+            TaoSceneTrackpadPanTest::class.java,
+            TaoTrackpadPanRouterTest::class.java,
             TaoScenePopupTest::class.java,
+            TaoSceneOuterLocalsBridgeTest::class.java,
             TaoSceneAnimationTest::class.java,
+            TaoSceneContentSwapTest::class.java,
+            TaoSceneExceptionHandlerTest::class.java,
+            TaoSceneExceptionRouterTest::class.java,
             TaoSceneSemanticsTest::class.java,
             TaoA11yProjectionTest::class.java,
+            TitleBarHitTestTest::class.java,
+            LcdTextTest::class.java,
+            WindowPositionerTest::class.java,
+            SatelliteWorkspaceTest::class.java,
+            SatelliteDockedGeometryTest::class.java,
+            DockLandingRectTest::class.java,
+            DockZoneHintSidesTest::class.java,
+            DockDropSlotsTest::class.java,
+            SatelliteDockRankTest::class.java,
+            SatelliteDockSidesTest::class.java,
+            SatelliteDragKindTest::class.java,
+            SatelliteFixedPanelTest::class.java,
+            DockTargetFromDraggedRectTest::class.java,
+            RelocatingSaveableStateRegistryTest::class.java,
+            WindowGroupTest::class.java,
+            HostGeometryTest::class.java,
+            DragControllerTest::class.java,
+            TransferDragTest::class.java,
+            TabWorkspaceTest::class.java,
+            TabHoverPreviewTest::class.java,
         )
 
     /** Classes that must stay out of the battery, with the reason. */
@@ -58,10 +116,41 @@ class TaoSceneTestBatteryDriftTest {
             TaoMainDispatcherReproTest::class.java to "spawns real threads against the JVM dispatcher",
             StandalonePanelNativeSmokeTest::class.java to "loads the Windows native popup chain",
             StandalonePanelLinuxNativeSmokeTest::class.java to "loads the Linux native popup chain",
+            OutboundDragPumpNativeSmokeTest::class.java to "resolves the platform DnD JNI entry points",
+            MacExternalTextureNativeSmokeTest::class.java to "drives a real Metal device + IOSurface import",
+            LinuxExternalTextureNativeSmokeTest::class.java to "drives a real GBM/EGL device + DMA-BUF import",
             TaoRuntimeResizableSmokeTest::class.java to "opt-in headful smoke (NUCLEUS_TAO_SMOKE=1)",
+            TaoMetalMissingPoolE2ETest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
+            TaoPressAndHoldE2ETest::class.java to
+                "opt-in headful e2e (NUCLEUS_TAO_SMOKE=1); spawns a child JVM",
             TaoSyntheticDndTest::class.java to "pins an AWT DropTarget; the no-AWT image never initialises AWT",
+            TaoSceneRectManagerRaceTest::class.java to
+                "races the real AWT EDT against wall-clock frames; the no-AWT image never initialises AWT",
             TaoTransferableAccessGuardTest::class.java to "Compose interop ABI guard, not a scene behaviour",
+            TaoScrollWireDriftTest::class.java to
+                "reads popup_panel.m / events.rs from the repo; wire guard, not a scene behaviour",
+            dev.nucleusframework.window.tao.scene.TaoKeepScreenOnTest::class.java to
+                "acquires real EnergyManager awake handles against the host OS",
             TaoSceneTestBatteryDriftTest::class.java to "meta-test for the battery itself",
+            dev.nucleusframework.window.tao.scene.WaylandBufferScaleTest::class.java to
+                "pure-function buffer alignment; already covered via TaoScenePopupTest in the battery",
+            XdgPortalParentTest::class.java to
+                "pure-Kotlin portal parent / xdg_foreign handle formatting, no scene",
+            dev.nucleusframework.window.ChromeLogicTest::class.java to
+                "unit tests for chrome helpers; no ComposeScene",
+            NucleusWindowV2BridgeTest::class.java to
+                "pure state mapping + geometry provider evaluation, no ComposeScene",
+            TaoMonitorsTest::class.java to
+                "parses the native monitor wire format; no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScreenClampTest::class.java to
+                "pure-function popup screen clamp geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupDrawInflateTest::class.java to
+                "pure-function popup draw margin geometry (#569); no ComposeScene",
+            dev.nucleusframework.window.tao.popup.PopupScrimRegistryTest::class.java to
+                "scrim bookkeeping + raster blend on a CPU bitmap (#569); no ComposeScene",
+            LcdTextCaptureTest::class.java to
+                "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =

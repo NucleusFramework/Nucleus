@@ -66,4 +66,33 @@ class AppendCalendarIntervalTest {
             generate("*-*-01 00:00:00")
         }
     }
+
+    @Test
+    fun `saturday and wednesday weekdays`() {
+        val saturday = generate("Sat *-*-* 22:00:00")
+        assertTrue(saturday.contains("<integer>6</integer>"), "Saturday should be weekday 6")
+        val wednesday = generate("Wed *-*-* 04:15:00")
+        assertTrue(wednesday.contains("<integer>3</integer>"), "Wednesday should be weekday 3")
+        assertTrue(wednesday.contains("<integer>4</integer>"))
+        assertTrue(wednesday.contains("<integer>15</integer>"))
+    }
+
+    @Test
+    fun `daily dict omits Weekday`() {
+        val plist = generate("*-*-* 14:05:00")
+        assertTrue(plist.contains("<key>StartCalendarInterval</key>"))
+        assertTrue(plist.contains("<key>Hour</key>"))
+        assertTrue(plist.contains("<integer>14</integer>"))
+        assertTrue(plist.contains("<integer>5</integer>"))
+        assertTrue(!plist.contains("<key>Weekday</key>"))
+        assertTrue(!plist.contains("<array>"))
+    }
+
+    @Test
+    fun `weekend range includes Saturday and Sunday`() {
+        val plist = generate("Sat..Sun *-*-* 09:00:00")
+        assertTrue(plist.contains("<array>"))
+        assertTrue(plist.contains("<integer>6</integer>"), "Saturday")
+        assertTrue(plist.contains("<integer>0</integer>"), "Sunday")
+    }
 }

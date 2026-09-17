@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class DiskInfo(
+public data class DiskInfo(
     val name: String,
     val fileSystem: String,
     val mountPoint: String,

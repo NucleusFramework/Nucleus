@@ -23,6 +23,11 @@ jobs:
   gradle:
     needs: build-natives
     runs-on: ubuntu-latest
+    # `preMerge` normally finishes in 6-10 min. Without an explicit cap a task
+    # that blocks on a native call sits until Actions' 6h default and holds the
+    # concurrency slot the whole time — `:launcher-linux:test` has done exactly
+    # that three times (g_bus_get_sync on a runner with no session bus).
+    timeout-minutes: 30
     env:
       GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
       GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
@@ -49,16 +54,14 @@ jobs:
             "native-ssl/src/main/resources/nucleus/native/darwin-x64/libnucleus_ssl.dylib"
             "native-ssl/src/main/resources/nucleus/native/win32-x64/nucleus_ssl.dll"
             "native-ssl/src/main/resources/nucleus/native/win32-aarch64/nucleus_ssl.dll"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos.dylib"
-            "decorated-window-jbr/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/darwin-x64/libnucleus_macos_jni.dylib"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_jni.so"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-x64/nucleus_windows_decoration.dll"
-            "decorated-window-jni/src/main/resources/nucleus/native/win32-aarch64/nucleus_windows_decoration.dll"
             "linux-hidpi/src/main/resources/nucleus/native/linux-x64/libnucleus_linux_hidpi_jni.so"
             "linux-hidpi/src/main/resources/nucleus/native/linux-aarch64/libnucleus_linux_hidpi_jni.so"
+            "spellcheck/src/main/resources/nucleus/native/linux-x64/libnucleus_spellcheck.so"
+            "spellcheck/src/main/resources/nucleus/native/linux-aarch64/libnucleus_spellcheck.so"
+            "spellcheck/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_spellcheck.dylib"
+            "spellcheck/src/main/resources/nucleus/native/darwin-x64/libnucleus_spellcheck.dylib"
+            "spellcheck/src/main/resources/nucleus/native/win32-x64/nucleus_spellcheck.dll"
+            "spellcheck/src/main/resources/nucleus/native/win32-aarch64/nucleus_spellcheck.dll"
             "system-color/src/main/resources/nucleus/native/linux-x64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/linux-aarch64/libnucleus_systemcolor.so"
             "system-color/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_systemcolor.dylib"
@@ -137,8 +140,6 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_windows_deco.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_gl.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_gl.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_a11y.dll"
-            "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_a11y.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_dnd.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-aarch64/nucleus_tao_dnd.dll"
             "decorated-window-tao/src/main/resources/nucleus/native/win32-x64/nucleus_tao_windows_native_view.dll"
@@ -167,6 +168,8 @@ jobs:
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_widget.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_popup.so"
             "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_popup.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-x64/libnucleus_tao_linux_clipboard.so"
+            "decorated-window-tao/src/main/resources/nucleus/native/linux-aarch64/libnucleus_tao_linux_clipboard.so"
             "graalvm-runtime/src/main/resources/nucleus/native/darwin-aarch64/libnucleus_locale.dylib"
             "graalvm-runtime/src/main/resources/nucleus/native/darwin-x64/libnucleus_locale.dylib"
           )
@@ -197,8 +200,12 @@ jobs:
   # headless (CPU-recorded ComposeScene, no display), so plain runners work on
   # all three platforms; the native artifacts are downloaded for the
   # native-load smoke tests, which self-skip when their platform libs are absent.
+  # Runs in parallel with `gradle` — both are the cheap gate for everything else.
+  # fail-fast stays false here: these are cheap (~2–3 min) and platform-specific
+  # native-load failures are common, so we want all three OS results.
   tao-tests:
     needs: build-natives
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -230,8 +237,11 @@ jobs:
   # (taoHeadfulTest JavaExec). macOS/Windows runners have a real graphical
   # session; Linux gets Xvfb + openbox (floating WM, so move/resize/maximize
   # requests behave — the suite still skips the WM-owned-geometry cases there).
+  # Gated on gradle + tao-tests so a compile/unit-test failure never burns
+  # three display-stack runners for nothing.
   tao-headful:
-    needs: build-natives
+    needs: [build-natives, gradle, tao-tests]
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -297,8 +307,10 @@ jobs:
   # APIs assistive tech uses — UIA on Windows (hard gate), AT-SPI via pyatspi
   # on Linux (hard gate), the AX client API on macOS (self-skips on runners:
   # AX clients need the TCC Accessibility permission, which CI cannot grant).
+  # Gated on gradle + tao-tests — same rationale as tao-headful.
   tao-a11y:
-    needs: build-natives
+    needs: [build-natives, gradle, tao-tests]
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -349,8 +361,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
+          # libwebkit2gtk: tao-demo's WebView tab now hosts ComposeNativeWebView,
+          # whose Linux backend dlopens libwebkit2gtk-4.1. The multi-tab a11y
+          # probe (verify-atspi-all-tabs.py) visits that tab and would crash the
+          # app on runners, which don't ship webkit2gtk by default.
           sudo apt-get install -y xvfb openbox mesa-utils libegl1 libgl1-mesa-dri libgtk-3-0 \
-            at-spi2-core python3-pyatspi dbus-x11
+            libwebkit2gtk-4.1-0 \
+            at-spi2-core python3-pyatspi dbus-x11 xdotool
 
       - name: Verify AT-SPI projection (Linux)
         if: runner.os == 'Linux'
@@ -368,7 +385,20 @@ jobs:
             string:org.a11y.Status string:IsEnabled variant:boolean:true
           NUCLEUS_DEMO_TAB=A11y ./gradlew --no-daemon :examples:tao-demo:run > /tmp/tao-demo.log 2>&1 &
           status=0
+          # Ordered so the mutation-sensitive probe runs on a pristine tree:
+          # verify-atspi.py asserts the exact 'click counter 1' transition.
           python3 scripts/ci/verify-atspi.py || status=$?
+          python3 scripts/ci/verify-atspi-tree-golden.py --fixture a11y-tab --strict-extra \
+            --out-dir /tmp/a11y-diff || status=$?
+          python3 scripts/ci/verify-atspi-tree-golden.py --fixture complex-tab --strict-extra \
+            --out-dir /tmp/a11y-diff || status=$?
+          python3 scripts/ci/verify-atspi-all-tabs.py || status=$?
+          python3 scripts/ci/verify-atspi-events.py || status=$?
+          python3 scripts/ci/verify-atspi-keyboard.py || status=$?
+          if [ $status -ne 0 ]; then
+            echo "── tao-demo log ($(wc -l < /tmp/tao-demo.log) lines) ──"
+            cat /tmp/tao-demo.log || true
+          fi
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
 
@@ -403,3 +433,21 @@ jobs:
           swift scripts/ci/verify-ax.swift "$APP_PID" || status=$?
           pkill -f dev.nucleusframework.sampletao.MainKt || true
           exit $status
+
+  # ── Expensive PR-only stages ───────────────────────────────────────────
+  # Packaging and GraalVM used to be independent workflows that each re-ran
+  # build-natives and started immediately on every PR push. They now reuse
+  # this run's natives artifacts and only start after the cheap JVM gates
+  # (gradle + tao-tests) succeed — so a unit-test failure never burns 6
+  # packaging runners + 3 GraalVM runners for nothing.
+  test-packaging:
+    if: github.event_name == 'pull_request'
+    needs: [build-natives, gradle, tao-tests]
+    uses: ./.github/workflows/test-packaging.yaml
+    secrets: inherit
+
+  test-graalvm:
+    if: github.event_name == 'pull_request'
+    needs: [build-natives, gradle, tao-tests]
+    uses: ./.github/workflows/test-graalvm.yaml
+    secrets: inherit

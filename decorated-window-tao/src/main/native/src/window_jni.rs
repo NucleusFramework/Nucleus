@@ -69,6 +69,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     maximized: jboolean,
     popup_of: jlong,
     skip_taskbar: jboolean,
+    transparent: jboolean,
+    undecorated_shadow: jboolean,
+    force_x11: jboolean,
 ) {
     let title: String = match env.get_string(&title) {
         Ok(s) => s.into(),
@@ -85,6 +88,9 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         maximized: maximized != JNI_FALSE,
         popup_of: popup_of as u64,
         skip_taskbar: skip_taskbar != JNI_FALSE,
+        transparent: transparent != JNI_FALSE,
+        undecorated_shadow: undecorated_shadow != JNI_FALSE,
+        force_x11: force_x11 != JNI_FALSE,
     });
 }
 
@@ -369,6 +375,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetAlwaysOnBottom(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    always_on_bottom: jboolean,
+) {
+    send_user_event(UserEvent::SetAlwaysOnBottom {
+        handle: handle as u64,
+        always_on_bottom: always_on_bottom != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetFocusable(
     _env: JNIEnv,
     _class: JClass,
@@ -382,6 +401,32 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetIgnoreCursorEvents(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    ignore: jboolean,
+) {
+    send_user_event(UserEvent::SetIgnoreCursorEvents {
+        handle: handle as u64,
+        ignore: ignore != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetVisibleOnAllWorkspaces(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    visible: jboolean,
+) {
+    send_user_event(UserEvent::SetVisibleOnAllWorkspaces {
+        handle: handle as u64,
+        visible: visible != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMinInnerSize(
     _env: JNIEnv,
     _class: JClass,
@@ -390,6 +435,21 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     height: jdouble,
 ) {
     send_user_event(UserEvent::SetMinInnerSize {
+        handle: handle as u64,
+        width,
+        height,
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMaxInnerSize(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    width: jdouble,
+    height: jdouble,
+) {
+    send_user_event(UserEvent::SetMaxInnerSize {
         handle: handle as u64,
         width,
         height,
@@ -448,6 +508,34 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
         handle: handle as u64,
         x,
         y,
+    });
+}
+
+/// Linux only: see `UserEvent::PopupAnchor`. Logical parent-window pixels.
+#[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeLinuxPopupAnchor(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    x: jint,
+    y: jint,
+    width: jint,
+    height: jint,
+    shadow_left: jint,
+    shadow_top: jint,
+    shadow_right: jint,
+    shadow_bottom: jint,
+) {
+    send_user_event(UserEvent::PopupAnchor {
+        handle: handle as u64,
+        x,
+        y,
+        width,
+        height,
+        shadow_left,
+        shadow_top,
+        shadow_right,
+        shadow_bottom,
     });
 }
 

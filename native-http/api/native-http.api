@@ -1,0 +1,6 @@
+public final class dev/nucleusframework/nativehttp/NativeHttpClient {
+	public static final field INSTANCE Ldev/nucleusframework/nativehttp/NativeHttpClient;
+	public final fun create ()Ljava/net/http/HttpClient;
+	public final fun withNativeSsl (Ljava/net/http/HttpClient$Builder;)Ljava/net/http/HttpClient$Builder;
+}
+

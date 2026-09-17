@@ -35,27 +35,57 @@ internal class TaoDragAndDropManager(
     @Suppress("unused") // wired in stage 2+ for inbound proxy through the manager
     private val getRootNode: () -> ComposeSceneDragAndDropNode,
     private val outboundLauncher: OutboundLauncher? = null,
+    /**
+     * Whether [outboundLauncher] can run a session whose only payload is a
+     * [TaoPrivateTransfer] token. Only the Linux host does: the cross-window
+     * gestures ride the DnD session there on native Wayland. Elsewhere such a
+     * request is refused like any other with nothing to export.
+     */
+    private val acceptsPrivateData: Boolean = false,
 ) : PlatformDragAndDropManager {
     /**
      * Per-platform implementation of the actual OS drag session. Receives the
      * extracted payload (already coerced from the user's [Transferable] into
-     * the cross-platform shape `files + text`) and returns the [DROPEFFECT]
-     * the destination accepted, or `null` if cancelled.
+     * the cross-platform shape `files + text`).
      *
-     * On Windows this maps to `DoDragDrop`. On macOS it will map to
-     * `[NSView beginDraggingSessionWithItems:event:source:]`. On Linux to
-     * `gtk_drag_begin_with_coordinates`.
+     * The contract is asynchronous because this is called from inside
+     * Compose's `sendPointerEvent` dispatch, and [startDragAndDropTransfer]
+     * must answer Compose before the OS session necessarily exists (#435):
+     * returns `true` if the session was — or will be — started, in which case
+     * [onCompleted] is invoked exactly once when the session ends, with the
+     * action the destination accepted or `null` if cancelled. Returns `false`
+     * without ever calling [onCompleted] when the session cannot start
+     * (native library missing, window gone).
+     *
+     * macOS (`beginDraggingSession`) and Linux (`gtk_drag_begin_with_coordinates`)
+     * run the session synchronously — their native calls cooperatively pump the
+     * platform run loop — and call [onCompleted] before returning. Windows
+     * defers `DoDragDrop` onto the main dispatcher so the modal session starts
+     * with no Compose dispatch below it, and calls [onCompleted] one event-loop
+     * iteration later, when `DoDragDrop` returns.
      */
     fun interface OutboundLauncher {
-        fun launch(request: OutboundRequest): DragAndDropTransferAction?
+        fun launch(
+            request: OutboundRequest,
+            onCompleted: (DragAndDropTransferAction?) -> Unit,
+        ): Boolean
     }
 
     class OutboundRequest internal constructor(
         val files: List<File>,
         val text: String?,
+        /** In-process token, see [TaoPrivateTransfer]; `null` for an ordinary data drag. */
+        val privateData: String?,
         val supportedActions: List<DragAndDropTransferAction>,
         val decorationSize: Size,
         val drawDragDecoration: DrawScope.() -> Unit,
+        /**
+         * Where the pointer sits inside the decoration, in the decoration's
+         * own pixels. Compose (and AWT's `DragSource.startDrag`) place the
+         * decoration's origin at the pointer *plus* the transfer's
+         * `dragDecorationOffset`, so the pointer is at minus that offset.
+         */
+        val decorationHotspot: Offset,
     )
 
     init {
@@ -75,7 +105,7 @@ internal class TaoDragAndDropManager(
         TaoDnDDiagnostics.requests.intValue++
         TaoDnDDiagnostics.log("requestDragAndDropTransfer offset=$offset")
 
-        var started = false
+        var inProgress = false
         val scope =
             object : PlatformDragAndDropSource.StartTransferScope {
                 override fun startDragAndDropTransfer(
@@ -97,7 +127,8 @@ internal class TaoDragAndDropManager(
                         }
                     val files = awt.extractFiles()
                     val text = awt.extractText()
-                    if (files.isEmpty() && text == null) {
+                    val privateData = TaoPrivateTransfer.tokenOf(awt)?.takeIf { acceptsPrivateData }
+                    if (files.isEmpty() && text == null && privateData == null) {
                         TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — no exportable data")
                         return false
                     }
@@ -106,19 +137,31 @@ internal class TaoDragAndDropManager(
                         OutboundRequest(
                             files = files,
                             text = text,
+                            privateData = privateData,
                             supportedActions = transferData.supportedActions.toList(),
                             decorationSize = decorationSize,
                             drawDragDecoration = drawDragDecoration,
+                            decorationHotspot = -transferData.dragDecorationOffset,
                         )
-                    TaoDnDDiagnostics.log("starting OS drag files=${files.size} text=${text != null}")
-                    val result = launcher.launch(request)
-                    TaoDnDDiagnostics.log("OS drag completed action=$result")
-                    transferData.onTransferCompleted?.invoke(result)
-                    started = result != null
+                    TaoDnDDiagnostics.log(
+                        "starting OS drag files=${files.size} text=${text != null} private=${privateData != null}",
+                    )
+                    inProgress = true
+                    val launched =
+                        launcher.launch(request) { result ->
+                            TaoDnDDiagnostics.log("OS drag completed action=$result")
+                            inProgress = false
+                            transferData.onTransferCompleted?.invoke(result)
+                        }
+                    if (!launched) {
+                        inProgress = false
+                        TaoDnDDiagnostics.log("startDragAndDropTransfer skipped — launcher refused")
+                        return false
+                    }
                     return true
                 }
             }
-        with(source) { scope.startDragAndDropTransfer(offset) { started } }
+        with(source) { scope.startDragAndDropTransfer(offset) { inProgress } }
     }
 
     /**

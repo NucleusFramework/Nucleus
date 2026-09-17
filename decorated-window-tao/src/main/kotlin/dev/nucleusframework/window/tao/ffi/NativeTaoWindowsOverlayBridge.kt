@@ -7,11 +7,10 @@ private const val LIBRARY_NAME = "nucleus_tao_windows_native_view"
 /**
  * JNI bridge for the Windows overlay HWND — a `WS_POPUP` owned window
  * with `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW | WS_EX_NOREDIRECTIONBITMAP`
- * that hosts a Compose scene rendered through the EGL/ANGLE +
- * DirectComposition bridge (nucleus_tao_windows_overlay_dcomp.cpp):
- * the host's EGLContext draws into a D3D11 texture bound as an EGL
- * pbuffer, presented on a composition swapchain with premultiplied
- * per-pixel alpha.
+ * that composites the host Compose scene over NativeView child HWNDs
+ * (Win32 children always paint above their parent) through the
+ * EGL/ANGLE + DirectComposition bridge
+ * (nucleus_tao_windows_overlay_dcomp.cpp).
  *
  * Threading: every entry point must run on the owner HWND's UI thread.
  */

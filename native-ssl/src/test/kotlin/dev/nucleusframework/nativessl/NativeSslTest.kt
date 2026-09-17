@@ -66,6 +66,31 @@ class NativeSslTest {
     }
 
     @Test
+    fun `ssl context and socket factory are usable`() {
+        val context = NativeTrustManager.sslContext
+        assertTrue("TLS context should be initialized", context.protocol.isNotBlank())
+        val factory = NativeTrustManager.sslSocketFactory
+        assertTrue("socket factory should be created", factory.defaultCipherSuites.isNotEmpty())
+        assertTrue(NativeTrustManager.trustManager.acceptedIssuers.isNotEmpty())
+    }
+
+    @Test
+    fun `LinuxCertificateProvider is safe off linux`() {
+        if (isLinux) return
+        val derCerts = LinuxCertificateProvider.getSystemCertificates()
+        for (der in derCerts) {
+            assertTrue(der.isNotEmpty())
+        }
+    }
+
+    @Test
+    fun `WindowsCertificateProvider falls back off windows`() {
+        if (isWindows) return
+        val derCerts = WindowsCertificateProvider.getSystemCertificates()
+        assertTrue("SunMSCAPI / Crypt32 should not yield certs off Windows", derCerts.isEmpty())
+    }
+
+    @Test
     fun `NativeTrustManager contains more certs than JVM defaults`() {
         assumeTrue("Test requires macOS", isMacOs)
 

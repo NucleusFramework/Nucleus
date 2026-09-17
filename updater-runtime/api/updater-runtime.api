@@ -1,0 +1,252 @@
+public final class dev/nucleusframework/updater/DownloadProgress {
+	public fun <init> (JJDLjava/io/File;Z)V
+	public synthetic fun <init> (JJDLjava/io/File;ZILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun component3 ()D
+	public final fun component4 ()Ljava/io/File;
+	public final fun component5 ()Z
+	public final fun copy (JJDLjava/io/File;Z)Ldev/nucleusframework/updater/DownloadProgress;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/DownloadProgress;JJDLjava/io/File;ZILjava/lang/Object;)Ldev/nucleusframework/updater/DownloadProgress;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBytesDownloaded ()J
+	public final fun getFile ()Ljava/io/File;
+	public final fun getPercent ()D
+	public final fun getTotalBytes ()J
+	public fun hashCode ()I
+	public final fun isDifferential ()Z
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/NucleusUpdater {
+	public static final field Companion Ldev/nucleusframework/updater/NucleusUpdater$Companion;
+	public fun <init> (Ldev/nucleusframework/updater/UpdaterConfig;)V
+	public final fun checkForUpdates (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public final fun consumeUpdateEvent ()Ldev/nucleusframework/updater/UpdateEvent;
+	public final fun downloadUpdate (Ldev/nucleusframework/updater/UpdateInfo;)Lkotlinx/coroutines/flow/Flow;
+	public final fun getCurrentVersion ()Ljava/lang/String;
+	public final fun installAndQuit (Ljava/io/File;)V
+	public final fun installAndRestart (Ljava/io/File;)V
+	public final fun isUpdateSupported ()Z
+	public final fun wasJustUpdated ()Z
+}
+
+public final class dev/nucleusframework/updater/NucleusUpdater$Companion {
+}
+
+public final class dev/nucleusframework/updater/UpdateEvent {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/updater/UpdateLevel;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ldev/nucleusframework/updater/UpdateLevel;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/updater/UpdateLevel;)Ldev/nucleusframework/updater/UpdateEvent;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/UpdateEvent;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/updater/UpdateLevel;ILjava/lang/Object;)Ldev/nucleusframework/updater/UpdateEvent;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getNewVersion ()Ljava/lang/String;
+	public final fun getPreviousVersion ()Ljava/lang/String;
+	public final fun getUpdateLevel ()Ldev/nucleusframework/updater/UpdateLevel;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateFile {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()J
+	public final fun component4 ()Ljava/lang/Long;
+	public final fun component5 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/lang/String;)Ldev/nucleusframework/updater/UpdateFile;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/UpdateFile;Ljava/lang/String;Ljava/lang/String;JLjava/lang/Long;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/updater/UpdateFile;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getBlockMapSize ()Ljava/lang/Long;
+	public final fun getFileName ()Ljava/lang/String;
+	public final fun getSha512 ()Ljava/lang/String;
+	public final fun getSize ()J
+	public final fun getUrl ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateInfo {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/updater/UpdateFile;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun component2 ()Ljava/lang/String;
+	public final fun component3 ()Ljava/util/List;
+	public final fun component4 ()Ldev/nucleusframework/updater/UpdateFile;
+	public final fun copy (Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/updater/UpdateFile;)Ldev/nucleusframework/updater/UpdateInfo;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/UpdateInfo;Ljava/lang/String;Ljava/lang/String;Ljava/util/List;Ldev/nucleusframework/updater/UpdateFile;ILjava/lang/Object;)Ldev/nucleusframework/updater/UpdateInfo;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getCurrentFile ()Ldev/nucleusframework/updater/UpdateFile;
+	public final fun getFiles ()Ljava/util/List;
+	public final fun getReleaseDate ()Ljava/lang/String;
+	public final fun getVersion ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateLevel : java/lang/Enum {
+	public static final field MAJOR Ldev/nucleusframework/updater/UpdateLevel;
+	public static final field MINOR Ldev/nucleusframework/updater/UpdateLevel;
+	public static final field PATCH Ldev/nucleusframework/updater/UpdateLevel;
+	public static final field PRE_RELEASE Ldev/nucleusframework/updater/UpdateLevel;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/updater/UpdateLevel;
+	public static fun values ()[Ldev/nucleusframework/updater/UpdateLevel;
+}
+
+public abstract class dev/nucleusframework/updater/UpdateResult {
+}
+
+public final class dev/nucleusframework/updater/UpdateResult$Available : dev/nucleusframework/updater/UpdateResult {
+	public fun <init> (Ldev/nucleusframework/updater/UpdateInfo;Ldev/nucleusframework/updater/UpdateLevel;)V
+	public final fun component1 ()Ldev/nucleusframework/updater/UpdateInfo;
+	public final fun component2 ()Ldev/nucleusframework/updater/UpdateLevel;
+	public final fun copy (Ldev/nucleusframework/updater/UpdateInfo;Ldev/nucleusframework/updater/UpdateLevel;)Ldev/nucleusframework/updater/UpdateResult$Available;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/UpdateResult$Available;Ldev/nucleusframework/updater/UpdateInfo;Ldev/nucleusframework/updater/UpdateLevel;ILjava/lang/Object;)Ldev/nucleusframework/updater/UpdateResult$Available;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getInfo ()Ldev/nucleusframework/updater/UpdateInfo;
+	public final fun getLevel ()Ldev/nucleusframework/updater/UpdateLevel;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateResult$Error : dev/nucleusframework/updater/UpdateResult {
+	public fun <init> (Ldev/nucleusframework/updater/exception/UpdateException;)V
+	public final fun component1 ()Ldev/nucleusframework/updater/exception/UpdateException;
+	public final fun copy (Ldev/nucleusframework/updater/exception/UpdateException;)Ldev/nucleusframework/updater/UpdateResult$Error;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/UpdateResult$Error;Ldev/nucleusframework/updater/exception/UpdateException;ILjava/lang/Object;)Ldev/nucleusframework/updater/UpdateResult$Error;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getException ()Ldev/nucleusframework/updater/exception/UpdateException;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdateResult$NotAvailable : dev/nucleusframework/updater/UpdateResult {
+	public static final field INSTANCE Ldev/nucleusframework/updater/UpdateResult$NotAvailable;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/UpdaterConfig {
+	public static final field Companion Ldev/nucleusframework/updater/UpdaterConfig$Companion;
+	public static final field DEV_VERSION Ljava/lang/String;
+	public field provider Ldev/nucleusframework/updater/provider/UpdateProvider;
+	public fun <init> ()V
+	public final fun getAllowDowngrade ()Z
+	public final fun getAllowPrerelease ()Z
+	public final fun getCacheDir ()Ljava/io/File;
+	public final fun getChannel ()Ljava/lang/String;
+	public final fun getCurrentVersion ()Ljava/lang/String;
+	public final fun getDifferentialDownload ()Z
+	public final fun getExecutableType ()Ljava/lang/String;
+	public final fun getHttpClient ()Ljava/net/http/HttpClient;
+	public final fun getProvider ()Ldev/nucleusframework/updater/provider/UpdateProvider;
+	public final fun setAllowDowngrade (Z)V
+	public final fun setAllowPrerelease (Z)V
+	public final fun setCacheDir (Ljava/io/File;)V
+	public final fun setChannel (Ljava/lang/String;)V
+	public final fun setCurrentVersion (Ljava/lang/String;)V
+	public final fun setDifferentialDownload (Z)V
+	public final fun setExecutableType (Ljava/lang/String;)V
+	public final fun setHttpClient (Ljava/net/http/HttpClient;)V
+	public final fun setProvider (Ldev/nucleusframework/updater/provider/UpdateProvider;)V
+}
+
+public final class dev/nucleusframework/updater/UpdaterConfig$Companion {
+}
+
+public final class dev/nucleusframework/updater/UpdaterConfigKt {
+	public static final fun NucleusUpdater (Lkotlin/jvm/functions/Function1;)Ldev/nucleusframework/updater/NucleusUpdater;
+}
+
+public final class dev/nucleusframework/updater/Version : java/lang/Comparable {
+	public static final field Companion Ldev/nucleusframework/updater/Version$Companion;
+	public fun <init> (IIILjava/lang/String;)V
+	public fun compareTo (Ldev/nucleusframework/updater/Version;)I
+	public synthetic fun compareTo (Ljava/lang/Object;)I
+	public final fun component1 ()I
+	public final fun component2 ()I
+	public final fun component3 ()I
+	public final fun component4 ()Ljava/lang/String;
+	public final fun copy (IIILjava/lang/String;)Ldev/nucleusframework/updater/Version;
+	public static synthetic fun copy$default (Ldev/nucleusframework/updater/Version;IIILjava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/updater/Version;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getMajor ()I
+	public final fun getMeta ()Ljava/lang/String;
+	public final fun getMinor ()I
+	public final fun getPatch ()I
+	public fun hashCode ()I
+	public final fun levelFrom (Ldev/nucleusframework/updater/Version;)Ldev/nucleusframework/updater/UpdateLevel;
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/Version$Companion {
+	public final fun fromString (Ljava/lang/String;)Ldev/nucleusframework/updater/Version;
+}
+
+public final class dev/nucleusframework/updater/exception/ChecksumException : dev/nucleusframework/updater/exception/UpdateException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/updater/exception/NetworkException : dev/nucleusframework/updater/exception/UpdateException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class dev/nucleusframework/updater/exception/NoMatchingFileException : dev/nucleusframework/updater/exception/UpdateException {
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+}
+
+public final class dev/nucleusframework/updater/exception/ParseException : dev/nucleusframework/updater/exception/UpdateException {
+	public fun <init> (Ljava/lang/String;)V
+}
+
+public class dev/nucleusframework/updater/exception/UpdateException : java/lang/Exception {
+	public fun <init> (Ljava/lang/String;Ljava/lang/Throwable;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/Throwable;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+}
+
+public final class dev/nucleusframework/updater/provider/GenericProvider : dev/nucleusframework/updater/provider/UpdateProvider {
+	public fun <init> (Ljava/lang/String;)V
+	public fun authHeaders ()Ljava/util/Map;
+	public final fun getBaseUrl ()Ljava/lang/String;
+	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/provider/GitHubProvider : dev/nucleusframework/updater/provider/UpdateProvider {
+	public static final field HTTP_FORBIDDEN I
+	public static final field HTTP_OK I
+	public static final field LATEST_CHANNEL Ljava/lang/String;
+	public static final field PER_PAGE I
+	public fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun authHeaders ()Ljava/util/Map;
+	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
+	public fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public final fun getOwner ()Ljava/lang/String;
+	public final fun getRepo ()Ljava/lang/String;
+	public final fun getToken ()Ljava/lang/String;
+	public fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/updater/provider/UpdateProvider {
+	public fun authHeaders ()Ljava/util/Map;
+	public fun getBlockMapUrl (Ljava/lang/String;)Ljava/lang/String;
+	public abstract fun getDownloadUrl (Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;
+	public abstract fun getUpdateMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;)Ljava/lang/String;
+	public fun resolveMetadataUrl (Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/updater/provider/UpdateProvider$DefaultImpls {
+	public static fun authHeaders (Ldev/nucleusframework/updater/provider/UpdateProvider;)Ljava/util/Map;
+	public static fun getBlockMapUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;)Ljava/lang/String;
+	public static fun resolveMetadataUrl (Ldev/nucleusframework/updater/provider/UpdateProvider;Ljava/lang/String;Ldev/nucleusframework/core/runtime/Platform;Ljava/net/http/HttpClient;)Ljava/lang/String;
+}
+

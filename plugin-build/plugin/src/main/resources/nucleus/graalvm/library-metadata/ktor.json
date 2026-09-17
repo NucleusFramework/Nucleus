@@ -1,6 +1,6 @@
 {
     "_meta": {
-        "description": "Ktor HTTP client and networking types",
+        "description": "Ktor HTTP client/server, plugins, websockets, and networking types",
         "matchPackages": [
             "io.ktor"
         ]
@@ -10,13 +10,64 @@
             "type": "io.ktor.client.HttpClient"
         },
         {
+            "type": "io.ktor.client.HttpClientConfig"
+        },
+        {
             "type": "io.ktor.client.call.HttpClientCall"
+        },
+        {
+            "type": "io.ktor.client.content.ProgressListener"
         },
         {
             "type": "io.ktor.client.engine.HttpClientEngineBase"
         },
         {
+            "type": "io.ktor.client.engine.HttpClientEngineCapability"
+        },
+        {
+            "type": "io.ktor.client.engine.HttpClientEngineConfig"
+        },
+        {
             "type": "io.ktor.client.engine.cio.Endpoint"
+        },
+        {
+            "type": "io.ktor.client.plugins.HttpRetryDelayContext"
+        },
+        {
+            "type": "io.ktor.client.plugins.HttpRetryModifyRequestContext"
+        },
+        {
+            "type": "io.ktor.client.plugins.HttpRetryShouldRetryContext"
+        },
+        {
+            "type": "io.ktor.client.plugins.HttpSend"
+        },
+        {
+            "type": "io.ktor.client.plugins.api.ClientPluginImpl"
+        },
+        {
+            "type": "io.ktor.client.plugins.api.ClientPluginInstance"
+        },
+        {
+            "type": "io.ktor.client.plugins.logging.HttpClientCallLogger"
+        },
+        {
+            "type": "io.ktor.client.request.HttpRequest"
+        },
+        {
+            "type": "io.ktor.client.request.HttpRequestBuilder"
+        },
+        {
+            "type": "io.ktor.client.request.ResponseAdapter"
+        },
+        {
+            "type": "io.ktor.client.statement.HttpResponse"
+        },
+        {
+            "type": "io.ktor.http.ContentType"
+        },
+        {
+            "type": "io.ktor.http.HttpStatusCode"
         },
         {
             "type": "io.ktor.network.selector.InterestSuspensionsMap",
@@ -41,7 +92,22 @@
             "type": "io.ktor.serialization.kotlinx.json.KotlinxSerializationJsonExtensionProvider"
         },
         {
+            "type": "io.ktor.server.engine.BaseApplicationResponse"
+        },
+        {
+            "type": "io.ktor.server.routing.RoutingCall"
+        },
+        {
+            "type": "io.ktor.server.routing.RoutingRoot"
+        },
+        {
+            "type": "io.ktor.server.websocket.WebSockets"
+        },
+        {
             "type": "io.ktor.util.collections.CopyOnWriteHashMap"
+        },
+        {
+            "type": "io.ktor.util.reflect.TypeInfo"
         },
         {
             "type": "io.ktor.utils.io.ByteChannel"
@@ -50,7 +116,7 @@
             "type": "io.ktor.utils.io.pool.DefaultPool"
         },
         {
-            "type": "io.ktor.client.plugins.logging.HttpClientCallLogger"
+            "type": "io.ktor.websocket.WebSocketExtension"
         }
     ]
 }

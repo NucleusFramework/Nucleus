@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.RestoreHover: ImageVector
+public val GnomeControlButtonsIcons.RestoreHover: ImageVector
     get() {
         if (_RestoreHover != null) {
             return _RestoreHover!!

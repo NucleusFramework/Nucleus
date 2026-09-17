@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.ClosePressedDark: ImageVector
+public val GnomeControlButtonsIcons.ClosePressedDark: ImageVector
     get() {
         if (_ClosePressedDark != null) {
             return _ClosePressedDark!!

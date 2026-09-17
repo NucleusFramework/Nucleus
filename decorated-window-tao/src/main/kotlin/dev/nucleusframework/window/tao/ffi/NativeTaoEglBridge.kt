@@ -106,6 +106,43 @@ internal object NativeTaoEglBridge {
         scale: Float,
     )
 
+    /**
+     * Positions the content subsurface at ([xLogical], [yLogical]) inside
+     * GTK's parent surface. (0,0) for plain undecorated toplevels; the GTK
+     * theme's shadow margins when the yaru-style hidden-titlebar CSD is
+     * active, so the EGL content fills exactly the visible window area and
+     * GTK's native drop shadow stays visible in the margin ring around it.
+     * Cheap no-op when unchanged; no-op on X11.
+     */
+    @JvmStatic
+    external fun nativeSetContentOffset(
+        handle: Long,
+        xLogical: Int,
+        yLogical: Int,
+    ): Boolean
+
+    /**
+     * Wayland only: declares which part of the content surface is fully opaque,
+     * in surface (logical) units, with the four [cornerRadius]-sized corners
+     * excluded (they are painted transparent so the drop shadow shows through).
+     *
+     * Without this the compositor must treat our full-window surface as
+     * translucent and cannot cull the drop-shadow subsurface or GTK's toplevel
+     * underneath it — it alpha-blends all three every frame, which shows up as
+     * slower frame callbacks and therefore a slower resize. See
+     * `docs/linux-wayland-resize-latency.md`.
+     *
+     * Pass `logicalW <= 0` when the window really is translucent, which clears
+     * the region. Queued state — it lands with the next buffer commit.
+     */
+    @JvmStatic
+    external fun nativeSetOpaqueRegion(
+        handle: Long,
+        logicalW: Int,
+        logicalH: Int,
+        cornerRadius: Int,
+    )
+
     /** Pumps the back-buffer to screen via `eglSwapBuffers`. */
     @JvmStatic
     external fun nativePresent(handle: Long)
@@ -160,40 +197,6 @@ internal object NativeTaoEglBridge {
     )
 
     /**
-     * Drop-shadow (approach B): uploads a canonical nine-slice shadow [pixels]
-     * tile (`tileW × tileH` premultiplied ARGB, centre slice `[sl,st,sr,sb]`)
-     * into a dedicated wl_shm subsurface placed *below* the content one, sized
-     * to the whole shadow-inclusive surface (`dwLogical × dhLogical` logical px,
-     * buffer = logical × [scale]), positioned at the *negative* offset
-     * ([shadowXLogical], [shadowYLogical]) = (−marginLeft, −marginTop) so it
-     * rings the content without the content subsurface moving from (0,0) — input
-     * and resize stay exactly as the flat window. Lazily creates the shadow
-     * subsurface + shm buffer. No-op unless the attachment is Wayland with a
-     * bound `wl_shm`. See `docs/linux-csd-shadow-subsurface.md`.
-     */
-    @JvmStatic
-    @Suppress("LongParameterList")
-    external fun nativeShadowCommit(
-        handle: Long,
-        pixels: IntArray,
-        tileW: Int,
-        tileH: Int,
-        sliceLeft: Int,
-        sliceTop: Int,
-        sliceRight: Int,
-        sliceBottom: Int,
-        dwLogical: Int,
-        dhLogical: Int,
-        scale: Int,
-        shadowXLogical: Int,
-        shadowYLogical: Int,
-    )
-
-    /** Hides the shadow subsurface (maximize/fullscreen/tile). */
-    @JvmStatic
-    external fun nativeShadowHide(handle: Long)
-
-    /**
      * Returns the address of a C function `void* fn(void* ctx, const char*
      * name)` matching Skia's `GrGLGetProc` signature. Pass to
      * [org.jetbrains.skia.GLAssembledInterface.createFromNativePointers] with
@@ -206,4 +209,16 @@ internal object NativeTaoEglBridge {
      */
     @JvmStatic
     external fun nativeGetProcAddrFunctionPointer(): Long
+
+    /**
+     * Wayland only: puts the content sub-surface in `set_sync` (buffers apply
+     * with GTK's toplevel commit, atomically with the positions of embedded
+     * native views) or back in `set_desync` (buffers apply on their own).
+     * No-op on X11.
+     */
+    @JvmStatic
+    external fun nativeSetSubsurfaceSync(
+        handle: Long,
+        sync: Boolean,
+    )
 }

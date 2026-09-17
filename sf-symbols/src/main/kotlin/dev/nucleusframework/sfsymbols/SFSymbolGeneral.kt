@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — General (1362 symbols). */
-enum class SFSymbolGeneral(
+public enum class SFSymbolGeneral(
     override val symbolName: String,
 ) : SFSymbol {
     ABS("abs"),

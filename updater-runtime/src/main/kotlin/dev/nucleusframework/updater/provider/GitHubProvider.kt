@@ -10,10 +10,10 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 
-class GitHubProvider(
-    val owner: String,
-    val repo: String,
-    val token: String? = null,
+public class GitHubProvider(
+    public val owner: String,
+    public val repo: String,
+    public val token: String? = null,
 ) : UpdateProvider {
     /**
      * Base URL for the GitHub REST API. Exposed as `internal` so tests in this module

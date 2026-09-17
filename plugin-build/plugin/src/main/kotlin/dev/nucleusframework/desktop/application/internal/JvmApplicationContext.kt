@@ -12,6 +12,7 @@ import dev.nucleusframework.internal.javaSourceSets
 import dev.nucleusframework.internal.mppExt
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.Target
+import dev.nucleusframework.internal.utils.currentArch
 import dev.nucleusframework.internal.utils.currentOS
 import dev.nucleusframework.internal.utils.jdkArch
 import dev.nucleusframework.internal.utils.joinDashLowercaseNonEmpty
@@ -50,8 +51,19 @@ internal data class JvmApplicationContext(
         runtimeFiles.configureUsageBy(this, fn)
     }
 
-    /** Architecture of the configured JDK (may differ from the Gradle daemon's arch when cross-building). */
-    val targetArch by lazy { jdkArch(java.io.File(app.javaHome)) }
+    /**
+     * Architecture of the configured JDK (may differ from the Gradle daemon's
+     * arch when cross-building). The auto-downloaded OpenJDK 27 matches the
+     * host, so we must not realize [JvmApplicationData.javaHomeOverride] here
+     * — that would download the JDK at configuration time.
+     */
+    val targetArch by lazy {
+        if (app.javaHomeOverride != null) {
+            currentArch
+        } else {
+            jdkArch(java.io.File(app.javaHome))
+        }
+    }
 
     /** Target combining the current OS with the configured JDK's architecture. */
     val targetTarget by lazy { Target(currentOS, targetArch) }
@@ -87,11 +99,13 @@ internal data class JvmApplicationContext(
      * - Linux: linux.packageName > root packageName > project.name
      * - Windows: windows.packageName > root packageName > project.name
      *
-     * This drives the native output/bundle directory name (e.g. the `.app` bundle
-     * on macOS). It lets the root [packageNameProvider] stay ASCII-safe for Debian/RPM
-     * package names while macOS uses a localized bundle name (e.g. a Hebrew display
-     * name), keeping the installed bundle name identical to the one shipped in the
-     * update archive so the auto-updater can relaunch it.
+     * This drives the native output directory name on Linux and Windows. It lets the root
+     * [packageNameProvider] stay ASCII-safe for Debian/RPM package names while a platform uses a
+     * localized name.
+     *
+     * On macOS it names the launcher and the `.icns` only — the `.app` bundle directory is named by
+     * [resolvedMacBundleNameProvider], which every macOS backend shares so the DMG and the ZIP ship
+     * the same bundle.
      */
     fun resolvedPackageNameProvider(): Provider<String> =
         project.provider {
@@ -101,6 +115,22 @@ internal data class JvmApplicationContext(
                 OS.Linux -> dist.linux.packageName ?: dist.packageName ?: project.name
                 OS.Windows -> dist.windows.packageName ?: dist.packageName ?: project.name
             }
+        }
+
+    /**
+     * Resolves the name of the macOS `.app` bundle directory, shared by every macOS packaging
+     * backend so that the DMG, the ZIP, the PKG, the raw app image and the GraalVM bundle all ship
+     * the app under the same name. See [resolveMacBundleName].
+     *
+     * Only meaningful on macOS; on other platforms it degrades to the resolved package name.
+     */
+    fun resolvedMacBundleNameProvider(): Provider<String> =
+        project.provider {
+            val dist = appInternal.nativeDistributions
+            if (currentOS != OS.MacOS) {
+                return@provider resolvedPackageNameProvider().get()
+            }
+            resolveMacBundleName(dist, dist.macOS, project.name)
         }
 
     inline fun <reified T : Any> provider(noinline fn: () -> T): Provider<T> = project.provider(fn)

@@ -4,7 +4,7 @@ import dev.nucleusframework.nativessl.NativeTrustManager
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.engine.HttpClientEngineConfig
 
-fun <T : HttpClientEngineConfig> HttpClientConfig<T>.installNativeSsl() {
+public fun <T : HttpClientEngineConfig> HttpClientConfig<T>.installNativeSsl() {
     engine {
         tryConfigureCio(this)
         tryConfigureJava(this)

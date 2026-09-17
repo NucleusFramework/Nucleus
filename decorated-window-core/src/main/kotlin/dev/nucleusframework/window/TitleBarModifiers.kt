@@ -20,7 +20,7 @@ import androidx.compose.ui.platform.debugInspectorInfo
  *
  * No-op on Linux and Windows.
  */
-fun Modifier.newFullscreenControls(newControls: Boolean = true): Modifier =
+public fun Modifier.newFullscreenControls(newControls: Boolean = true): Modifier =
     this then
         NewFullscreenControlsElement(
             newControls,
@@ -30,9 +30,9 @@ fun Modifier.newFullscreenControls(newControls: Boolean = true): Modifier =
             },
         )
 
-class NewFullscreenControlsElement(
-    val newControls: Boolean,
-    val inspectorInfo: InspectorInfo.() -> Unit,
+public class NewFullscreenControlsElement(
+    public val newControls: Boolean,
+    public val inspectorInfo: InspectorInfo.() -> Unit,
 ) : ModifierNodeElement<NewFullscreenControlsNode>() {
     override fun create(): NewFullscreenControlsNode = NewFullscreenControlsNode(newControls)
 
@@ -53,11 +53,11 @@ class NewFullscreenControlsElement(
     }
 }
 
-class NewFullscreenControlsNode(
-    var newControls: Boolean,
+public class NewFullscreenControlsNode(
+    public var newControls: Boolean,
 ) : Modifier.Node()
 
-fun Modifier.hasNewFullscreenControls(): Boolean =
+public fun Modifier.hasNewFullscreenControls(): Boolean =
     foldOut(false) { e, r ->
         if (e is NewFullscreenControlsElement) e.newControls else r
     }
@@ -75,7 +75,7 @@ fun Modifier.hasNewFullscreenControls(): Boolean =
  *
  * No-op on Linux and Windows, and on macOS pre-Sequoia.
  */
-fun Modifier.macOSLargeCornerRadius(enabled: Boolean = true): Modifier =
+public fun Modifier.macOSLargeCornerRadius(enabled: Boolean = true): Modifier =
     this then
         MacOSLargeCornerRadiusElement(
             enabled,
@@ -85,9 +85,9 @@ fun Modifier.macOSLargeCornerRadius(enabled: Boolean = true): Modifier =
             },
         )
 
-class MacOSLargeCornerRadiusElement(
-    val enabled: Boolean,
-    val inspectorInfo: InspectorInfo.() -> Unit,
+public class MacOSLargeCornerRadiusElement(
+    public val enabled: Boolean,
+    public val inspectorInfo: InspectorInfo.() -> Unit,
 ) : ModifierNodeElement<MacOSLargeCornerRadiusNode>() {
     override fun create(): MacOSLargeCornerRadiusNode = MacOSLargeCornerRadiusNode(enabled)
 
@@ -108,11 +108,11 @@ class MacOSLargeCornerRadiusElement(
     }
 }
 
-class MacOSLargeCornerRadiusNode(
-    var enabled: Boolean,
+public class MacOSLargeCornerRadiusNode(
+    public var enabled: Boolean,
 ) : Modifier.Node()
 
-fun Modifier.hasMacOSLargeCornerRadius(): Boolean =
+public fun Modifier.hasMacOSLargeCornerRadius(): Boolean =
     foldOut(false) { e, r ->
         if (e is MacOSLargeCornerRadiusElement) e.enabled else r
     }

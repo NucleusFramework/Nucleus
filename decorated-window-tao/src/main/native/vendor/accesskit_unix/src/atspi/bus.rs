@@ -4,31 +4,34 @@
 // the LICENSE-MIT file), at your option.
 
 use crate::{
-    atspi::{interfaces::*, ObjectId},
+    atspi::{ObjectId, cache_path, interfaces::*},
     context::get_or_init_app_context,
     executor::{Executor, Task},
 };
-use accesskit::NodeId;
 use accesskit_atspi_common::{
-    NodeIdOrRoot, ObjectEvent, PlatformNode, PlatformRoot, Property, WindowEvent,
+    NodeId, NodeIdOrRoot, ObjectEvent, PlatformNode, PlatformRoot, Property, WindowEvent,
 };
 use atspi::{
+    Interface, InterfaceSet, ObjectRefOwned,
     events::EventBodyBorrowed,
     proxy::{bus::BusProxy, socket::SocketProxy},
-    Interface, InterfaceSet,
 };
-use std::{env::var, io};
+use std::{
+    env::var,
+    sync::{Arc, OnceLock},
+};
 use zbus::{
+    Address, Connection, Result,
     connection::Builder,
     names::{BusName, InterfaceName, MemberName, OwnedUniqueName},
     zvariant::{Str, Value},
-    Address, Connection, Result,
 };
 
 pub(crate) struct Bus {
     conn: Connection,
     _task: Task<()>,
     socket_proxy: SocketProxy<'static>,
+    desktop: Arc<OnceLock<ObjectRefOwned>>,
 }
 
 impl Bus {
@@ -59,6 +62,7 @@ impl Bus {
             conn,
             _task,
             socket_proxy,
+            desktop: Arc::new(OnceLock::new()),
         };
         bus.register_root_node().await?;
         Ok(bus)
@@ -78,29 +82,36 @@ impl Bus {
             .at(path.clone(), ApplicationInterface(node.clone()))
             .await?
         {
-            self.socket_proxy
+            let desktop = self
+                .socket_proxy
                 .embed(&(self.unique_name().as_str(), ObjectId::Root.path().into()))
                 .await?;
+            let _ = self.desktop.set(desktop);
 
             self.conn
                 .object_server()
                 .at(
                     path,
-                    RootAccessibleInterface::new(self.unique_name().to_owned(), node),
+                    RootAccessibleInterface::new(
+                        self.unique_name().to_owned(),
+                        node.clone(),
+                        Arc::clone(&self.desktop),
+                    ),
+                )
+                .await?;
+
+            self.conn
+                .object_server()
+                .at(
+                    cache_path(),
+                    CacheInterface::new(
+                        self.unique_name().to_owned(),
+                        node,
+                        Arc::clone(&self.desktop),
+                    ),
                 )
                 .await?;
         }
-
-        // Vendored-fork addition: register an empty Cache stub at the
-        // standard `/org/a11y/atspi/cache` path so AT-SPI clients (Atspi,
-        // Orca, Accerciser) don't log `Unknown object '/org/a11y/atspi/cache'`
-        // for every introspection. Returns an empty item list — clients then
-        // walk the tree as a fallback (which is what we want anyway).
-        let _ = self
-            .conn
-            .object_server()
-            .at("/org/a11y/atspi/cache", CacheInterface)
-            .await;
 
         Ok(())
     }
@@ -130,6 +141,13 @@ impl Bus {
             )
             .await?;
         }
+        if new_interfaces.contains(Interface::Hyperlink) {
+            self.register_interface(
+                &path,
+                HyperlinkInterface::new(bus_name.clone(), node.clone()),
+            )
+            .await?;
+        }
         if new_interfaces.contains(Interface::Selection) {
             self.register_interface(
                 &path,
@@ -138,10 +156,11 @@ impl Bus {
             .await?;
         }
         if new_interfaces.contains(Interface::Text) {
-            // Text inputs without inline-text-box data (Compose's TextField via
-            // the Tao bridge) get the value-based SimpleTextInterface; the
-            // upstream TextInterface would return UnsupportedInterface for
-            // every call. See accesskit_atspi_common::PlatformNode::is_simple_text_input.
+            // Vendored-fork addition: text inputs without inline-text-box data
+            // (Compose's TextField via the Tao bridge) get the value-based
+            // SimpleTextInterface; the upstream TextInterface would return
+            // UnsupportedInterface for every call. See
+            // accesskit_atspi_common::PlatformNode::is_simple_text_input.
             if node.is_simple_text_input().unwrap_or(false) {
                 self.register_interface(&path, SimpleTextInterface::new(node.clone()))
                     .await?;
@@ -154,6 +173,7 @@ impl Bus {
             self.register_interface(&path, ValueInterface::new(node.clone()))
                 .await?;
         }
+        // Vendored-fork addition: EditableText for non-read-only text inputs.
         if new_interfaces.contains(Interface::EditableText) {
             self.register_interface(&path, EditableTextInterface::new(node.clone()))
                 .await?;
@@ -166,7 +186,7 @@ impl Bus {
     where
         T: zbus::object_server::Interface,
     {
-        map_or_ignoring_broken_pipe(
+        map_or_ignoring_recoverable_error(
             self.conn.object_server().at(path, interface).await,
             false,
             |result| result,
@@ -195,15 +215,20 @@ impl Bus {
             self.unregister_interface::<ComponentInterface>(&path)
                 .await?;
         }
+        if old_interfaces.contains(Interface::Hyperlink) {
+            self.unregister_interface::<HyperlinkInterface>(&path)
+                .await?;
+        }
         if old_interfaces.contains(Interface::Selection) {
             self.unregister_interface::<SelectionInterface>(&path)
                 .await?;
         }
         if old_interfaces.contains(Interface::Text) {
-            // We don't track which Text impl was registered, so try both.
-            // zbus returns `Err(InterfaceNotFound)` (NOT `Ok(false)`) for the
-            // type that wasn't registered — discard those errors so the loop
-            // doesn't crash the AT-SPI thread (which would tear down a11y).
+            // Vendored-fork fix: we don't track which Text impl was
+            // registered, so try both. zbus returns `Err(InterfaceNotFound)`
+            // (NOT `Ok(false)`) for the type that wasn't registered — discard
+            // those errors so the loop doesn't crash the AT-SPI thread (which
+            // would tear down a11y).
             let _ = self
                 .conn
                 .object_server()
@@ -230,7 +255,7 @@ impl Bus {
     where
         T: zbus::object_server::Interface,
     {
-        map_or_ignoring_broken_pipe(
+        map_or_ignoring_recoverable_error(
             self.conn.object_server().remove::<T, _>(path).await,
             false,
             |result| result,
@@ -400,6 +425,43 @@ impl Bus {
             .await
     }
 
+    pub(crate) async fn emit_cache_add(&self, node: PlatformNode) -> Result<()> {
+        let Ok(item) = cache_item_for_node(self.unique_name().inner(), &node) else {
+            return Ok(());
+        };
+        self.emit_cache_signal("AddAccessible", &item).await
+    }
+
+    pub(crate) async fn emit_cache_remove(&self, adapter_id: usize, node_id: NodeId) -> Result<()> {
+        let reference = object_ref(
+            self.unique_name().inner(),
+            ObjectId::Node {
+                adapter: adapter_id,
+                node: node_id,
+            },
+        );
+        self.emit_cache_signal("RemoveAccessible", &reference).await
+    }
+
+    async fn emit_cache_signal<B>(&self, signal_name: &str, body: &B) -> Result<()>
+    where
+        B: serde::Serialize + zbus::zvariant::DynamicType,
+    {
+        map_or_ignoring_recoverable_error(
+            self.conn
+                .emit_signal(
+                    Option::<BusName>::None,
+                    cache_path(),
+                    InterfaceName::from_str_unchecked("org.a11y.atspi.Cache"),
+                    MemberName::from_str_unchecked(signal_name),
+                    body,
+                )
+                .await,
+            (),
+            |_| (),
+        )
+    }
+
     async fn emit_event(
         &self,
         target: ObjectId,
@@ -407,7 +469,7 @@ impl Bus {
         signal_name: &str,
         body: EventBodyBorrowed<'_>,
     ) -> Result<()> {
-        map_or_ignoring_broken_pipe(
+        map_or_ignoring_recoverable_error(
             self.conn
                 .emit_signal(
                     Option::<BusName>::None,
@@ -423,7 +485,14 @@ impl Bus {
     }
 }
 
-pub(crate) fn map_or_ignoring_broken_pipe<T, U, F>(
+pub(crate) fn zbus_error_is_unrecoverable(error: &zbus::Error) -> bool {
+    matches!(
+        error,
+        zbus::Error::InterfaceExists(..) | zbus::Error::MissingParameter(..)
+    )
+}
+
+pub(crate) fn map_or_ignoring_recoverable_error<T, U, F>(
     result: zbus::Result<T>,
     default: U,
     f: F,
@@ -433,9 +502,7 @@ where
 {
     match result {
         Ok(result) => Ok(f(result)),
-        Err(zbus::Error::InputOutput(error)) if error.kind() == io::ErrorKind::BrokenPipe => {
-            Ok(default)
-        }
-        Err(error) => Err(error),
+        Err(error) if zbus_error_is_unrecoverable(&error) => Err(error),
+        Err(_) => Ok(default),
     }
 }

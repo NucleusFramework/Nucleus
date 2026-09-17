@@ -20,6 +20,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +48,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.rememberWindowState
+import androidx.compose.ui.window.WindowPlacement
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.sampleshared.A11yTab
 import dev.nucleusframework.sampleshared.ComplexTab
@@ -67,6 +67,9 @@ import dev.nucleusframework.window.macOSLargeCornerRadius
 import dev.nucleusframework.window.styling.TitleBarColors
 import dev.nucleusframework.window.styling.TitleBarMetrics
 import dev.nucleusframework.window.styling.TitleBarStyle
+import dev.nucleusframework.window.tao.v2.WindowBoundsProvider
+import dev.nucleusframework.window.tao.v2.WindowSizeProvider
+import dev.nucleusframework.window.tao.v2.rememberWindowState
 import java.awt.datatransfer.StringSelection
 
 fun main() {
@@ -91,7 +94,7 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
                 override fun onDrop(event: DragAndDropEvent): Boolean {
                     dropCount++
                     // Transparent AWT path — same code that works against
-                    // decorated-window-jni / standard Compose Desktop.
+                    // the legacy AWT backend / standard Compose Desktop.
                     lastDrop =
                         runCatching {
                             @Suppress("UNCHECKED_CAST")
@@ -233,9 +236,10 @@ private fun DnDStage0Banner(onLog: (String) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Suppress("CyclomaticComplexMethod")
 private fun runApp() =
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         val previewEvents = remember { mutableStateListOf<String>() }
         var childRequest by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }
 
@@ -251,13 +255,17 @@ private fun runApp() =
                 metrics = TitleBarMetrics(height = 36.dp),
             )
 
-        val mainState = rememberWindowState(size = DpSize(1024.dp, 720.dp))
+        val mainState =
+            rememberWindowState(
+                initialBoundsProvider =
+                    WindowBoundsProvider(WindowSizeProvider.Fixed(DpSize(1024.dp, 720.dp))),
+            )
         NucleusDecoratedWindowTheme(isDark = true, titleBarStyle = titleBarStyle) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,
                 state = mainState,
                 title = "Tao Backend Demo",
-                minimumSize = DpSize(640.dp, 480.dp),
+                minSize = DpSize(640.dp, 480.dp),
                 onPreviewKeyEvent = { event ->
                     // Demo: consume Cmd/Ctrl+K so it never reaches Compose. Other keys
                     // are still logged but pass through.
@@ -269,6 +277,7 @@ private fun runApp() =
                     }
                     false
                 },
+                nativeContextMenu = true,
             ) {
                 val taoWindow = nucleusWindow.unsafe.taoWindow!!
                 var clicks by remember { mutableStateOf(0) }
@@ -281,6 +290,22 @@ private fun runApp() =
                             it.name.equals(System.getenv("NUCLEUS_DEMO_TAB"), ignoreCase = true)
                         } ?: Tab.Demo,
                     )
+                }
+                // NUCLEUS_DEMO_AUTOSWITCH_MS=<delay> cycles through every tab
+                // (delay each) and lands on WebView — automation hook for the
+                // mid-session NativeView mount path (start on Demo, render a
+                // lot of text, then embed), which behaves differently from
+                // landing on WebView directly.
+                LaunchedEffect(Unit) {
+                    val autoSwitchMs = System.getenv("NUCLEUS_DEMO_AUTOSWITCH_MS")?.toLongOrNull()
+                    if (autoSwitchMs != null) {
+                        for (tab in Tab.entries.filter { it != Tab.WebView }) {
+                            kotlinx.coroutines.delay(autoSwitchMs)
+                            selectedTab = tab
+                        }
+                        kotlinx.coroutines.delay(autoSwitchMs)
+                        selectedTab = Tab.WebView
+                    }
                 }
                 val events = previewEvents
 
@@ -380,8 +405,13 @@ private fun runApp() =
                                 ActionsTab(
                                     modifier = Modifier.fillMaxSize(),
                                     window = taoWindow,
-                                    placement = mainState.placement,
-                                    onPlacementChange = { mainState.placement = it },
+                                    placement =
+                                        if (mainState.isInitialized) {
+                                            mainState.placement
+                                        } else {
+                                            WindowPlacement.Floating
+                                        },
+                                    onPlacementChange = { mainState.requestPlacement(it) },
                                     onLog = { logEvent(events, it) },
                                     onOpenChildWindow = { childEnabled, childFocusable ->
                                         childRequest = childEnabled to childFocusable
@@ -396,6 +426,8 @@ private fun runApp() =
                             Tab.Events -> EventsTab(modifier = Modifier.fillMaxSize(), events = events)
                             Tab.WebView -> WebViewTab(modifier = Modifier.fillMaxSize())
                             Tab.SwiftUI -> SwiftUITab(modifier = Modifier.fillMaxSize())
+                            Tab.Texture -> TextureTab(modifier = Modifier.fillMaxSize())
+                            Tab.Spellcheck -> SpellcheckTab(modifier = Modifier.fillMaxSize())
                         }
                     }
                 }
@@ -404,7 +436,11 @@ private fun runApp() =
             childRequest?.let { (childEnabled, childFocusable) ->
                 DecoratedWindow(
                     onCloseRequest = { childRequest = null },
-                    state = rememberWindowState(size = DpSize(480.dp, 240.dp)),
+                    state =
+                        rememberWindowState(
+                            initialBoundsProvider =
+                                WindowBoundsProvider(WindowSizeProvider.Fixed(DpSize(480.dp, 240.dp))),
+                        ),
                     title = "Child (enabled=$childEnabled, focusable=$childFocusable)",
                     enabled = childEnabled,
                     focusable = childFocusable,

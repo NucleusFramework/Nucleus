@@ -711,6 +711,101 @@ class FsWatcherRealFileSystemTest {
         }
 
     @Test
+    fun uncanonicalizedTempDirectoryRootDeliversRealFileEvents() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            // macOS temp directories live under the symlinked /var -> /private/var, so
+            // Files.createTempDirectory() on its own hands watch() a non-canonical root spelling.
+            val root = Files.createTempDirectory("fs-watcher-real-fs-uncanonical-root")
+            val target = root.resolve("alpha.txt")
+
+            try {
+                FsWatchers
+                    .create(
+                        FsWatcherConfig(deliveryMode = FsWatchDeliveryMode.Raw),
+                    ).use { watcher ->
+                        val registration = watcher.watch(root, recursive = true)
+
+                        val seen = java.util.Collections.synchronizedList(mutableListOf<FsWatchEvent>())
+                        val collector =
+                            launch(start = CoroutineStart.UNDISPATCHED) {
+                                watcher.events.collect { seen += it }
+                            }
+
+                        try {
+                            Files.writeString(target, "one")
+
+                            awaitEvents {
+                                seen.hasEventFromSource(target, registration.source)
+                            }
+
+                            assertTrue(seen.hasEventFromSource(target, registration.source))
+                        } finally {
+                            collector.cancelAndJoin()
+                        }
+                    }
+            } finally {
+                deleteRecursively(root)
+            }
+        }
+
+    @Test
+    fun rootReachedThroughSymlinkedParentDeliversEventsWithRegisteredPathForm() =
+        runBlocking {
+            if (!FsWatchers.isSupported()) return@runBlocking
+
+            val canonicalParent = createRealTempDirectory("fs-watcher-real-fs-symlinked-parent")
+            val symlinkedParent = canonicalParent.parent.resolve("${canonicalParent.fileName}-parent-link")
+
+            try {
+                try {
+                    Files.deleteIfExists(symlinkedParent)
+                    Files.createSymbolicLink(symlinkedParent, canonicalParent)
+                } catch (_: UnsupportedOperationException) {
+                    return@runBlocking
+                } catch (_: java.nio.file.FileSystemException) {
+                    return@runBlocking
+                }
+
+                val canonicalRoot = Files.createDirectory(canonicalParent.resolve("watched"))
+                val lexicalRoot = symlinkedParent.resolve("watched")
+                // Only the parent is a symlink: the watched root itself is a plain directory,
+                // so delivery must not depend on followSymlinks.
+                assertFalse(Files.isSymbolicLink(lexicalRoot))
+
+                val lexicalTarget = lexicalRoot.resolve("beta.txt")
+                FsWatchers
+                    .create(
+                        FsWatcherConfig(deliveryMode = FsWatchDeliveryMode.Raw),
+                    ).use { watcher ->
+                        val registration = watcher.watch(lexicalRoot, recursive = true)
+
+                        val seen = java.util.Collections.synchronizedList(mutableListOf<FsWatchEvent>())
+                        val collector =
+                            launch(start = CoroutineStart.UNDISPATCHED) {
+                                watcher.events.collect { seen += it }
+                            }
+
+                        try {
+                            Files.writeString(canonicalRoot.resolve("beta.txt"), "one")
+
+                            awaitEvents {
+                                seen.hasEventFromSource(lexicalTarget, registration.source)
+                            }
+
+                            assertTrue(seen.hasEventFromSource(lexicalTarget, registration.source))
+                        } finally {
+                            collector.cancelAndJoin()
+                        }
+                    }
+            } finally {
+                Files.deleteIfExists(symlinkedParent)
+                deleteRecursively(canonicalParent)
+            }
+        }
+
+    @Test
     fun canonicalAndSymlinkRegistrationsObserveSameRealChangeWithDistinctLexicalPaths() =
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
@@ -808,8 +903,9 @@ class FsWatcherRealFileSystemTest {
     fun symlinkRootResolvedFileEventsDoNotRemapWhenFollowSymlinksDisabled() =
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
-            // Linux reports this real-fs symlink case differently from the lexical-path behavior asserted here.
-            if (isLinuxHost()) return@runBlocking
+            // Linux and Windows report this real-fs symlink case differently
+            // from the lexical-path behavior asserted here.
+            if (isLinuxHost() || isWindowsHost()) return@runBlocking
 
             val canonicalRoot = createRealTempDirectory("fs-watcher-real-fs-no-follow-target")
             val symlinkRoot = canonicalRoot.parent.resolve("${canonicalRoot.fileName}-link")
@@ -1124,6 +1220,8 @@ private fun List<FsWatchEvent>.anyCoreEventFor(path: Path): Boolean =
 private fun createRealTempDirectory(prefix: String): Path = Files.createTempDirectory(prefix).toRealPath()
 
 private fun isLinuxHost(): Boolean = System.getProperty("os.name").startsWith("Linux")
+
+private fun isWindowsHost(): Boolean = System.getProperty("os.name").startsWith("Windows")
 
 private enum class RealFsEventKind {
     CREATED,

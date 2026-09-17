@@ -1,5 +1,6 @@
 package dev.nucleusframework.desktop.application.internal
 
+import dev.nucleusframework.desktop.application.dsl.GraalvmDistribution
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentArch
@@ -23,14 +24,32 @@ import java.security.MessageDigest
 import javax.inject.Inject
 
 /**
+ * Whether [javaHome] is an Oracle GraalVM build rather than a community one (GraalVM CE,
+ * Liberica NIK, Mandrel). Oracle GraalVM reports `IMPLEMENTOR="Oracle Corporation"` in the
+ * JDK `release` file, and is the only build shipping PGO, `-O3` and advanced obfuscation.
+ */
+internal fun isOracleGraalvmInstallation(javaHome: File): Boolean =
+    javaHome
+        .resolve("release")
+        .takeIf { it.isFile }
+        ?.readLines()
+        .orEmpty()
+        .any { line ->
+            (line.startsWith("IMPLEMENTOR=") || line.startsWith("VENDOR=")) &&
+                line.contains("Oracle", ignoreCase = true)
+        }
+
+/**
  * What GraalVM toolchain to provision for the current build machine.
  *
- * @param version Oracle GraalVM version: an innovation release (`"25i1"`), a feature
+ * @param distribution GraalVM Community Edition (the default) or Oracle GraalVM.
+ * @param version GraalVM version: an innovation release (`"25i3"`), a feature
  *   version tracking the latest CPU (`"25"`), or a pinned patch release (`"25.0.1"`).
- * @param macosIntelFallback use Liberica NIK on macOS x64, where Oracle GraalVM is no
- *   longer shipped (dropped after 25.0.1).
+ * @param macosIntelFallback use Liberica NIK on macOS x64, which neither distribution
+ *   ships any more (dropped after 25.0.1).
  */
 internal data class GraalvmToolchainRequest(
+    val distribution: GraalvmDistribution,
     val version: String,
     val os: OS,
     val arch: Arch,
@@ -48,6 +67,7 @@ internal data class GraalvmToolchainRequest(
 internal abstract class GraalvmToolchainValueSource :
     ValueSource<String, GraalvmToolchainValueSource.Params> {
     interface Params : ValueSourceParameters {
+        val distribution: Property<GraalvmDistribution>
         val version: Property<String>
         val macosIntelFallback: Property<Boolean>
         val installBaseDir: Property<String>
@@ -59,6 +79,7 @@ internal abstract class GraalvmToolchainValueSource :
     override fun obtain(): String {
         val request =
             GraalvmToolchainRequest(
+                distribution = parameters.distribution.get(),
                 version = parameters.version.get(),
                 os = currentOS,
                 arch = currentArch,
@@ -76,7 +97,11 @@ internal abstract class GraalvmToolchainValueSource :
  * installed GraalVM is required.
  *
  * Sources:
- * - Oracle GraalVM innovation releases (`25i1`) from
+ * - GraalVM Community Edition (the default) from the `graalvm/graalvm-ce-builds` GitHub
+ *   releases, resolved through the GitHub API since the innovation asset names embed a
+ *   base version that is not derivable from the requested version alone
+ *   (`graalvm-community-jdk-25i3-25.0.4.1_macos-aarch64_bin.tar.gz`).
+ * - Oracle GraalVM innovation releases (`25i3`) from
  *   `https://gds.oracle.com/download/graal/<v>/latest/graalvm-jdk-<v>-<base>_<os>-<arch>_bin.<ext>`
  * - Oracle GraalVM LTS/latest (`25`) and pinned (`25.0.1`) releases from
  *   `https://download.oracle.com/graalvm/<feature>/{latest,archive}/graalvm-jdk-<v>_<os>-<arch>_bin.<ext>`
@@ -89,6 +114,9 @@ internal abstract class GraalvmToolchainValueSource :
  * `GRAALVM_HOME` environment variable pointing at a valid installation bypasses the
  * download entirely.
  */
+// Three download sources (GraalVM CE, Oracle GraalVM, Liberica NIK) each need their own
+// resolution step on top of the shared download/verify/extract helpers.
+@Suppress("TooManyFunctions")
 internal object GraalvmToolchainProvisioner {
     private const val MARKER_FILE = ".nucleus-provisioned"
     private const val CONNECT_TIMEOUT_MS = 30_000
@@ -99,13 +127,18 @@ internal object GraalvmToolchainProvisioner {
     private const val HTTP_FIRST_ERROR = 400
     private const val BITNESS_64 = 64
     private const val BELLSOFT_NIK_API = "https://api.bell-sw.com/v1/nik/releases?os=macos&output=json"
+    private const val GRAALVM_CE_RELEASES_API =
+        "https://api.github.com/repos/graalvm/graalvm-ce-builds/releases?per_page=100"
+    private const val GRAALVM_CE_DOWNLOAD_BASE =
+        "https://github.com/graalvm/graalvm-ce-builds/releases/download"
+    private const val GRAALVM_CE_ASSET_PREFIX = "graalvm-community-jdk-"
 
     fun provision(
         request: GraalvmToolchainRequest,
         execOperations: ExecOperations,
         logger: Logger,
     ): File {
-        environmentOverride(logger)?.let { return it }
+        environmentOverride(request, logger)?.let { return it }
 
         val id = installationId(request)
         val installDir = File(request.installBaseDir, id)
@@ -121,27 +154,58 @@ internal object GraalvmToolchainProvisioner {
         }
     }
 
-    /** `GRAALVM_HOME` always wins — e.g. CI environments using `setup-graalvm`. */
-    private fun environmentOverride(logger: Logger): File? {
+    /**
+     * `GRAALVM_HOME` wins — e.g. CI environments using `setup-graalvm` — but only when it
+     * matches the requested [GraalvmDistribution]. A leftover Oracle GraalVM install (from
+     * before Community Edition became the default) must not be silently reused for a
+     * community build, otherwise the licensing choice made in the DSL is bypassed.
+     */
+    private fun environmentOverride(
+        request: GraalvmToolchainRequest,
+        logger: Logger,
+    ): File? {
         val env = System.getenv("GRAALVM_HOME")?.takeIf { it.isNotBlank() } ?: return null
         val root = File(env)
         val home = root.resolve("Contents/Home").takeIf { it.isDirectory } ?: root
-        return if (nativeImageExecutable(home) != null) {
-            logger.lifecycle("[graalvm] Using GRAALVM_HOME toolchain: $home")
-            home
-        } else {
+        if (nativeImageExecutable(home) == null) {
             logger.warn(
                 "[graalvm] GRAALVM_HOME is set to $env but contains no bin/native-image — ignoring it",
             )
-            null
+            return null
         }
+        // On Intel macs both distributions resolve to Liberica NIK, so a community build there
+        // is expected even when Oracle GraalVM was requested.
+        val expected =
+            if (request.usesLibericaFallback) GraalvmDistribution.COMMUNITY else request.distribution
+        val actual =
+            if (isOracleGraalvmInstallation(home)) {
+                GraalvmDistribution.ORACLE
+            } else {
+                GraalvmDistribution.COMMUNITY
+            }
+        if (actual != expected) {
+            logger.warn(
+                "[graalvm] GRAALVM_HOME ($home) is a ${actual.label} build, but " +
+                    "graalvm { toolchain { distribution } } requests ${expected.label} — ignoring " +
+                    "GRAALVM_HOME and provisioning ${expected.label}. Unset GRAALVM_HOME, or set " +
+                    "distribution = GraalvmDistribution.${actual.name} to use it.",
+            )
+            return null
+        }
+        logger.lifecycle("[graalvm] Using GRAALVM_HOME toolchain: $home (${actual.label})")
+        return home
     }
 
     private fun installationId(request: GraalvmToolchainRequest): String =
-        if (request.usesLibericaFallback) {
-            "liberica-nik-jdk${javaFeatureVersion(request.version)}-macos-x64"
-        } else {
-            "graalvm-jdk-${request.version}-${request.os.id}-${archToken(request.arch)}"
+        when {
+            request.usesLibericaFallback ->
+                "liberica-nik-jdk${javaFeatureVersion(request.version)}-macos-x64"
+            request.distribution.isOracle ->
+                "graalvm-jdk-${request.version}-${request.os.id}-${archToken(request.arch)}"
+            // Distinct directory per distribution, so flipping the DSL re-provisions
+            // instead of silently reusing the other build.
+            else ->
+                "graalvm-community-jdk-${request.version}-${request.os.id}-${archToken(request.arch)}"
         }
 
     private val GraalvmToolchainRequest.usesLibericaFallback: Boolean
@@ -162,12 +226,14 @@ internal object GraalvmToolchainProvisioner {
         logger: Logger,
     ): File {
         val source =
-            if (request.usesLibericaFallback) {
-                resolveLibericaDownload(javaFeatureVersion(request.version), logger)
-            } else {
-                resolveOracleDownload(request)
+            when {
+                request.usesLibericaFallback ->
+                    resolveLibericaDownload(javaFeatureVersion(request.version), logger)
+                request.distribution.isOracle -> resolveOracleDownload(request)
+                else -> resolveCommunityDownload(request)
             }
 
+        reportSupersededOracleToolchains(request, logger)
         logger.lifecycle("[graalvm] Downloading ${source.description} from ${source.url}")
         val archive = File(request.installBaseDir, "$id.download")
         val extractDir = File(request.installBaseDir, "$id.extract")
@@ -209,6 +275,138 @@ internal object GraalvmToolchainProvisioner {
         }
     }
 
+    /**
+     * Surfaces Oracle GraalVM toolchains left over from before Community Edition became the
+     * default. They are never reused — the install id embeds the distribution, so the community
+     * build is downloaded into its own directory — but each is several GB, so report them once,
+     * at the moment the replacement is fetched.
+     */
+    private fun reportSupersededOracleToolchains(
+        request: GraalvmToolchainRequest,
+        logger: Logger,
+    ) {
+        if (request.distribution.isOracle) return
+        val leftovers =
+            request.installBaseDir
+                .listFiles()
+                ?.filter { it.isDirectory && it.name.startsWith("graalvm-jdk-") }
+                .orEmpty()
+        if (leftovers.isEmpty()) return
+        logger.lifecycle(
+            "[graalvm] Ignoring the previously downloaded Oracle GraalVM toolchain — " +
+                "graalvm { toolchain { distribution } } is ${request.distribution.label}. " +
+                "Delete these directories under ${request.installBaseDir} to reclaim disk space: " +
+                leftovers.joinToString { it.name },
+        )
+    }
+
+    // ── GraalVM Community Edition ──
+
+    /**
+     * Resolves a CE asset from the `graalvm/graalvm-ce-builds` releases.
+     *
+     * A pinned patch release ("25.0.2") maps to a deterministic tag and asset name and is
+     * resolved offline. Floating versions need the API: for the LTS line ("25") the newest
+     * patch is unknown, and innovation assets embed a base version that is not derivable from
+     * the requested version (`graalvm-community-jdk-25i3-25.0.4.1_…` under tag `graal-25.3.4.1`).
+     */
+    private fun resolveCommunityDownload(request: GraalvmToolchainRequest): DownloadSource {
+        check(!(request.os == OS.Windows && request.arch == Arch.Arm64)) {
+            "GraalVM Community Edition is not available for windows-aarch64. Set GRAALVM_HOME to a " +
+                "manually installed toolchain, or disable graalvm { toolchain { autoDownload } } and " +
+                "use the Gradle toolchain resolver."
+        }
+        val version = request.version
+        val ext = if (request.os == OS.Windows) "zip" else "tar.gz"
+        val suffix = "_${request.os.id}-${archToken(request.arch)}_bin.$ext"
+        val target = "${request.os.id}-${archToken(request.arch)}"
+
+        // Pinned patch release: build the URL directly. This is the escape hatch when the
+        // GitHub API is rate-limited (60/hour unauthenticated, shared per IP on CI runners).
+        if (version.contains('.') && !version.contains('i')) {
+            val url = "$GRAALVM_CE_DOWNLOAD_BASE/jdk-$version/$GRAALVM_CE_ASSET_PREFIX$version$suffix"
+            return DownloadSource(
+                url = url,
+                description = "GraalVM Community Edition $version ($target)",
+                sha256Url = "$url.sha256",
+            )
+        }
+
+        val prefix =
+            if (version.contains('i')) {
+                // Innovation release ("25i3") — the asset appends the base version.
+                "$GRAALVM_CE_ASSET_PREFIX$version-"
+            } else {
+                // Feature version tracking the latest CPU ("25"); the trailing dot keeps
+                // "25" from also matching the "25i3" innovation assets.
+                "$GRAALVM_CE_ASSET_PREFIX$version."
+            }
+        val chosen =
+            communityAssets(request)
+                .filter { (name, _) -> name.startsWith(prefix) && name.endsWith(suffix) }
+                .maxWithOrNull(
+                    compareBy(versionOrder) { (name, _) ->
+                        versionKey(name.removePrefix(GRAALVM_CE_ASSET_PREFIX).removeSuffix(suffix))
+                    },
+                )
+                ?: error(
+                    "No GraalVM Community Edition build matching '$version' for $target was found " +
+                        "in the graalvm/graalvm-ce-builds releases. Pin a known version via " +
+                        "graalvm { toolchain { version = \"25.0.2\" } }, or set GRAALVM_HOME.",
+                )
+        val (name, url) = chosen
+        return DownloadSource(
+            url = url,
+            description = "GraalVM Community Edition " +
+                "${name.removePrefix(GRAALVM_CE_ASSET_PREFIX).removeSuffix(suffix)} ($target)",
+            // Every CE asset ships a sibling .sha256 in the same release.
+            sha256Url = "$url.sha256",
+        )
+    }
+
+    /** All downloadable assets of the published (non-prerelease) CE builds, as name → URL. */
+    @Suppress("UNCHECKED_CAST")
+    private fun communityAssets(request: GraalvmToolchainRequest): List<Pair<String, String>> {
+        val body =
+            runCatching { fetchText(GRAALVM_CE_RELEASES_API, githubApiHeaders()) }.getOrElse {
+                throw IOException(
+                    "Failed to list GraalVM Community Edition releases from $GRAALVM_CE_RELEASES_API: " +
+                        "${it.message}. Unauthenticated GitHub API calls are rate-limited to 60/hour — " +
+                        "set GITHUB_TOKEN to raise the limit, pin graalvm { toolchain { version } } and " +
+                        "reuse the cached toolchain, or set GRAALVM_HOME.",
+                    it,
+                )
+            }
+        val releases =
+            JsonSlurper().parseText(body) as? List<Map<String, Any?>>
+                ?: error("Unexpected response from the GraalVM CE releases API ($GRAALVM_CE_RELEASES_API)")
+        return releases
+            .filterNot { it["prerelease"] == true }
+            .flatMap { release ->
+                (release["assets"] as? List<Map<String, Any?>>).orEmpty().mapNotNull { asset ->
+                    val name = asset["name"] as? String ?: return@mapNotNull null
+                    val url = asset["browser_download_url"] as? String ?: return@mapNotNull null
+                    name to url
+                }
+            }.also {
+                check(it.isNotEmpty()) {
+                    "The GraalVM CE releases API ($GRAALVM_CE_RELEASES_API) returned no downloadable " +
+                        "assets for ${request.os.id}-${archToken(request.arch)}"
+                }
+            }
+    }
+
+    /** Authenticates GitHub API calls when a token is available, to escape the 60/hour anonymous limit. */
+    private fun githubApiHeaders(): Map<String, String> {
+        val token =
+            System.getenv("GITHUB_TOKEN")?.takeIf { it.isNotBlank() }
+                ?: System.getenv("GH_TOKEN")?.takeIf { it.isNotBlank() }
+        return buildMap {
+            put("Accept", "application/vnd.github+json")
+            token?.let { put("Authorization", "Bearer $it") }
+        }
+    }
+
     // ── Oracle GraalVM ──
 
     private fun resolveOracleDownload(request: GraalvmToolchainRequest): DownloadSource {
@@ -223,7 +421,7 @@ internal object GraalvmToolchainProvisioner {
         val ext = if (request.os == OS.Windows) "zip" else "tar.gz"
         val url =
             when {
-                // Innovation releases ("25i1") are distributed through GDS only.
+                // Innovation releases ("25i3") are distributed through GDS only.
                 version.contains('i') -> {
                     val base = version.substringBefore('i')
                     "https://gds.oracle.com/download/graal/$version/latest/" +
@@ -314,7 +512,7 @@ internal object GraalvmToolchainProvisioner {
     private fun javaFeatureVersion(version: String): Int =
         version.takeWhile(Char::isDigit).toIntOrNull()
             ?: error(
-                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i1\"",
+                "Invalid graalvm.toolchain.version '$version' — expected e.g. \"25\", \"25.0.1\" or \"25i3\"",
             )
 
     private fun archToken(arch: Arch): String =
@@ -391,16 +589,25 @@ internal object GraalvmToolchainProvisioner {
         }
     }
 
-    private fun fetchText(url: String): String = openConnection(url).inputStream.use { it.readBytes().decodeToString() }
+    private fun fetchText(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): String = openConnection(url, headers).inputStream.use { it.readBytes().decodeToString() }
 
     /** Opens a connection following redirects across hosts (HttpURLConnection won't by itself). */
-    private fun openConnection(url: String): HttpURLConnection {
+    // Redirect handling has three distinct failure modes worth reporting separately.
+    @Suppress("ThrowsCount")
+    private fun openConnection(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): HttpURLConnection {
         var current = url
         repeat(MAX_REDIRECTS) {
             val connection = URI(current).toURL().openConnection() as HttpURLConnection
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
             connection.instanceFollowRedirects = true
+            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             val code = connection.responseCode
             when {
                 code in HTTP_FIRST_REDIRECT until HTTP_FIRST_ERROR -> {

@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class OsInfo(
+public data class OsInfo(
     val name: String?,
     val kernelVersion: String?,
     val osVersion: String?,

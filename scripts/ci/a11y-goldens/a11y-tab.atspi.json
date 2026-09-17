@@ -1,0 +1,174 @@
+{
+  "_comment": "Golden AT-SPI projection of tao-demo's A11y tab (Linux / accesskit_unix). Verified by scripts/ci/verify-atspi-tree-golden.py --fixture a11y-tab. Volatile names (counters, timestamps, typed text) use prefix/contains matching.",
+  "appName": "Sample Tao",
+  "tab": "A11y",
+  "tabs": [
+    { "name": "Demo", "role": "page tab", "actionsAll": ["click"], "statesAll": ["enabled", "focusable", "sensitive"] },
+    { "name": "Scroll", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Zoom", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Window actions", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "A11y", "role": "page tab", "actionsAll": ["click"], "statesAll": ["selected", "selectable"] },
+    { "name": "Complex", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Events", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "WebView", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "SwiftUI", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Texture", "role": "page tab", "actionsAll": ["click"] },
+    { "name": "Spellcheck", "role": "page tab", "actionsAll": ["click"] }
+  ],
+  "nodes": [
+    {
+      "id": "tabbar",
+      "name": "Main navigation tabs",
+      "role": "panel",
+      "interfacesAll": ["Component"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "heading-surface",
+      "name": "Accessibility Test Surface",
+      "role": "heading",
+      "attributes": { "level": "2" },
+      "requireValidExtents": true
+    },
+    { "id": "heading-button", "name": "Button", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-checkbox", "name": "Checkbox", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-switch", "name": "Switch", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-radio", "name": "Radio buttons", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-slider", "name": "Slider", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-textfield", "name": "Text field", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-custom-actions", "name": "Custom actions", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-live", "name": "Live region (assertive)", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-bare", "name": "Toggleable (no role)", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-validation", "name": "Validation error", "role": "heading", "attributes": { "level": "2" } },
+    { "id": "heading-dialog", "name": "Modal dialog", "role": "heading", "attributes": { "level": "2" } },
+    {
+      "id": "increment",
+      "name": "Increment",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable", "showing", "visible"],
+      "interfacesAll": ["Action", "Component"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "click-counter",
+      "name": "click counter ",
+      "nameMatch": "prefix",
+      "role": "label",
+      "requireValidExtents": true
+    },
+    {
+      "id": "disabled-button",
+      "name": "Cannot press",
+      "role": "button",
+      "statesNone": ["enabled", "sensitive", "focusable"],
+      "actionsExact": [],
+      "requireValidExtents": true
+    },
+    {
+      "id": "tristate-checkbox",
+      "name": "Tri-state checkbox",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "switch",
+      "name": "Notifications switch",
+      "role": "toggle button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "radio-low",
+      "name": "Priority Low",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "radio-medium",
+      "name": "Priority Medium",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "radio-high",
+      "name": "Priority High",
+      "role": "radio button",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "slider-volume",
+      "name": "Volume",
+      "role": "slider",
+      "interfacesAll": ["Value", "Component"],
+      "valueMin": 0.0,
+      "valueMax": 1.0,
+      "requireValidExtents": true
+    },
+    {
+      "id": "textfield",
+      "name": "A11y text field",
+      "role": "entry",
+      "statesAll": ["editable", "enabled", "sensitive", "focusable", "selectable text", "single line"],
+      "interfacesAll": ["Action", "EditableText", "Text"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "textfield-status",
+      "name": "TextField status: text=",
+      "nameMatch": "prefix",
+      "role": "label"
+    },
+    {
+      "id": "custom-actions",
+      "name": "Notification (clicks:",
+      "nameMatch": "prefix",
+      "role": "button",
+      "interfacesAll": ["Action"],
+      "actionsExact": ["Mark as read", "Archive"],
+      "requireValidExtents": true
+    },
+    {
+      "id": "update-status",
+      "name": "Update status",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "live-region",
+      "name": "",
+      "nameMatch": "any",
+      "role": "label",
+      "attributes": { "container-live": "assertive" }
+    },
+    {
+      "id": "bare-toggleable",
+      "name": "Bare toggleable",
+      "role": "check box",
+      "statesAll": ["checkable", "enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    },
+    {
+      "id": "invalid-entry",
+      "name": "",
+      "nameMatch": "any",
+      "role": "entry",
+      "statesAll": ["invalid entry", "editable", "enabled", "sensitive"],
+      "interfacesAll": ["EditableText", "Text"]
+    },
+    {
+      "id": "open-dialog",
+      "name": "Open dialog",
+      "role": "button",
+      "statesAll": ["enabled", "sensitive", "focusable"],
+      "actionsAll": ["click"]
+    }
+  ]
+}

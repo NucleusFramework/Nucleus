@@ -7,7 +7,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.MaximizeInactiveDark: ImageVector
+public val WindowsControlButtonIcons.MaximizeInactiveDark: ImageVector
     get() {
         if (_MaximizeInactiveDark != null) {
             return _MaximizeInactiveDark!!

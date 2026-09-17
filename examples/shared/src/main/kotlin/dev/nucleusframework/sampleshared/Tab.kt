@@ -1,18 +1,24 @@
 package dev.nucleusframework.sampleshared
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -30,6 +36,8 @@ enum class Tab(
     Events("Events"),
     WebView("WebView"),
     SwiftUI("SwiftUI"),
+    Texture("Texture"),
+    Spellcheck("Spellcheck"),
 }
 
 @Composable
@@ -37,14 +45,35 @@ fun TabBar(
     selected: Tab,
     onSelect: (Tab) -> Unit,
 ) {
+    // selectableGroup + Tab role: screen readers see a proper tab list and
+    // UIA clients can navigate / select tabs (enterprise a11y baseline).
     Row(
-        modifier = Modifier.fillMaxWidth().height(40.dp).background(Color(0xFF15181D)),
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(40.dp)
+                .background(Color(0xFF15181D))
+                .selectableGroup()
+                .semantics {
+                    contentDescription = "Main navigation tabs"
+                },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Tab.entries.forEach { tab ->
             val isSelected = tab == selected
             Box(
-                modifier = Modifier.height(40.dp).clickable { onSelect(tab) }.padding(horizontal = 16.dp),
+                modifier =
+                    Modifier
+                        .height(40.dp)
+                        .selectable(
+                            selected = isSelected,
+                            onClick = { onSelect(tab) },
+                            role = Role.Tab,
+                        ).semantics(mergeDescendants = true) {
+                            role = Role.Tab
+                            this[SemanticsProperties.Selected] = isSelected
+                            contentDescription = tab.label
+                        }.padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center,
             ) {
                 BasicText(

@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.RestorePressed: ImageVector
+public val KdeControlButtonsIcons.RestorePressed: ImageVector
     get() {
         if (_RestorePressed != null) {
             return _RestorePressed!!

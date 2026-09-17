@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — TextFormatting (117 symbols). */
-enum class SFSymbolTextFormatting(
+public enum class SFSymbolTextFormatting(
     override val symbolName: String,
 ) : SFSymbol {
     BOLD("bold"),

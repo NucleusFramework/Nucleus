@@ -1,0 +1,17 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Action : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Animation : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Application : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Category : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Companion</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Device : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Emblem : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Emote : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$MimeType : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Place : FreedesktopIcon</ID>
+    <ID>UndocumentedPublicClass:FreedesktopIcon.kt:FreedesktopIcon$Status : FreedesktopIcon</ID>
+  </CurrentIssues>
+</SmellBaseline>

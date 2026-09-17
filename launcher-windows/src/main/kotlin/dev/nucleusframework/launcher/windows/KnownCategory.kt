@@ -8,8 +8,8 @@ package dev.nucleusframework.launcher.windows
  *
  * @property value The native `KNOWNDESTCATEGORY` constant.
  */
-enum class KnownCategory(
-    val value: Int,
+public enum class KnownCategory(
+    public val value: Int,
 ) {
     /** Frequently used destinations. */
     FREQUENT(1),

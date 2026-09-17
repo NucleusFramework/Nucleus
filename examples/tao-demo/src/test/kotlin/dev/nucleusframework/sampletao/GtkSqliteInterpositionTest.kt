@@ -8,8 +8,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * E2E regression test for issue #366 — the Tao Linux CSD shadow/widget
- * helpers must load GTK with RTLD_LOCAL. With RTLD_GLOBAL, any distro
+ * E2E regression test for issue #366 — the Tao Linux widget helper
+ * must load GTK with RTLD_LOCAL. With RTLD_GLOBAL, any distro
  * where GTK's dependency closure includes libsqlite3 (NixOS: gtk3 ->
  * tinysparql -> sqlite) gets the system sqlite interposed over the copy
  * bundled in androidx/Room's JNI library, and the first write bound after
@@ -63,10 +63,10 @@ class GtkSqliteInterpositionTest {
                 process.exitValue(),
             )
             // Guard against a vacuous pass: GTK (the patched copy) must have
-            // actually loaded and rendered the shadow theme in that process.
-            val stamp = output.lineSequence().firstOrNull { "shadow theme stamp = " in it }?.substringAfter("= ")
+            // actually been dlopen-ed and functional in that process.
+            val stamp = output.lineSequence().firstOrNull { "gtk probe version = " in it }?.substringAfter("= ")
             assertTrue(
-                "GTK shadow machinery not functional (stamp=$stamp)\n$output",
+                "GTK dlopen probe not functional (version=$stamp)\n$output",
                 !stamp.isNullOrEmpty() && stamp != "null" && !stamp.startsWith("error"),
             )
             assertTrue("write did not complete\n$output", output.contains("write OK"))

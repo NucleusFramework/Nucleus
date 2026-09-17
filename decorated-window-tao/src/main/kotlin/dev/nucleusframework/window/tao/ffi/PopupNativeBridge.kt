@@ -116,13 +116,24 @@ internal object PopupNativeBridge {
             modifiers: Int,
         )
 
-        /** AppKit `scrollingDelta*` units. */
-        @Suppress("FunctionParameterNaming")
+        /**
+         * Raw AppKit `scrollingDelta*` units. [precise] is
+         * `NSEvent.hasPreciseScrollingDeltas` (trackpad / Magic Mouse);
+         * [gesturePhase] is the [dev.nucleusframework.window.tao.TaoScrollGesturePhase]
+         * of a trackpad gesture step (`NONE` for a wheel notch), mapped in
+         * `popup_panel.m` exactly like the vendored tao does for the window.
+         * Callers must map through
+         * [dev.nucleusframework.window.tao.event.appKitWheelToAwtScrollEvent]
+         * then a `TaoSceneScrollRouter` before Compose.
+         */
+        @Suppress("FunctionParameterNaming", "LongParameterList")
         fun onScroll(
             x: Float,
             y: Float,
             dx: Float,
             dy: Float,
+            precise: Boolean,
+            gesturePhase: Int,
         )
 
         /** [type] = 1 down, 2 up. */

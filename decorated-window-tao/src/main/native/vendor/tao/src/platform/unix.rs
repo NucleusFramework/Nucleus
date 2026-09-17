@@ -22,6 +22,7 @@ pub use crate::platform_impl::x11;
 use crate::platform_impl::x11::xdisplay::XError;
 pub use crate::platform_impl::EventLoop as UnixEventLoop;
 use crate::{
+  dpi::{Position, Size},
   error::{ExternalError, OsError},
   event_loop::{EventLoopBuilder, EventLoopWindowTarget},
   monitor::MonitorHandle,
@@ -86,6 +87,22 @@ pub trait WindowExtUnix {
   fn set_skip_taskbar(&self, skip: bool) -> Result<(), ExternalError>;
 
   fn set_badge_count(&self, count: Option<i64>, desktop_filename: Option<String>);
+
+  /// Tells the input method the rectangle the text caret occupies, in window
+  /// coordinates, so it keeps its preedit and candidate windows clear of the
+  /// text being typed (nucleusframework#558).
+  ///
+  /// The cross-platform [`Window::set_ime_position`] carries only a point,
+  /// which is all IMM32 and AppKit need. GTK is area-based instead: the input
+  /// method is told the region the cursor covers and stays off it, so a bare
+  /// point leaves the candidate window free to sit on top of the composition.
+  /// Callers that know the caret's size should use this.
+  fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S);
+
+  /// Nucleus patch: anchor a popup overlay (`with_popup_transient_for`) at a
+  /// logical point of its parent so GDK maps it as a compositor-positioned
+  /// `xdg_popup`. See the platform `Window::popup_anchor`.
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32));
 }
 
 impl WindowExtUnix for Window {
@@ -111,6 +128,14 @@ impl WindowExtUnix for Window {
 
   fn set_badge_count(&self, count: Option<i64>, desktop_filename: Option<String>) {
     self.window.set_badge_count(count, desktop_filename);
+  }
+
+  fn set_ime_cursor_area<P: Into<Position>, S: Into<Size>>(&self, position: P, size: S) {
+    self.window.set_ime_cursor_area(position, size);
+  }
+
+  fn popup_anchor(&self, x: i32, y: i32, width: i32, height: i32, shadow: (i32, i32, i32, i32)) {
+    self.window.popup_anchor(x, y, width, height, shadow);
   }
 }
 
@@ -163,6 +188,11 @@ pub trait WindowBuilderExtUnix {
   /// Whether to create a vertical `gtk::Box` and add it as the sole child of this window.
   /// Created by default.
   fn with_default_vbox(self, add: bool) -> WindowBuilder;
+
+  /// Nucleus patch: yaru.dart-style hidden-titlebar client-side decorations
+  /// (native GTK drop shadow with no visible titlebar). Wayland only; ignored
+  /// on X11. See `PlatformSpecificWindowBuilderAttributes::csd_hidden_titlebar`.
+  fn with_csd_hidden_titlebar(self, csd: bool) -> WindowBuilder;
 }
 
 impl WindowBuilderExtUnix for WindowBuilder {
@@ -210,6 +240,11 @@ impl WindowBuilderExtUnix for WindowBuilder {
 
   fn with_default_vbox(mut self, add: bool) -> WindowBuilder {
     self.platform_specific.default_vbox = add;
+    self
+  }
+
+  fn with_csd_hidden_titlebar(mut self, csd: bool) -> WindowBuilder {
+    self.platform_specific.csd_hidden_titlebar = csd;
     self
   }
 }

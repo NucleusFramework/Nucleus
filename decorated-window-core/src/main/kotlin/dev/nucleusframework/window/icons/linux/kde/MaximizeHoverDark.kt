@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.MaximizeHoverDark: ImageVector
+public val KdeControlButtonsIcons.MaximizeHoverDark: ImageVector
     get() {
         if (_MaximizeHoverDark != null) {
             return _MaximizeHoverDark!!

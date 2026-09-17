@@ -1,0 +1,369 @@
+public final class dev/nucleusframework/application/AotTrainingKt {
+	public static final fun aotTraining-8Mi8wO0 (Ldev/nucleusframework/application/NucleusApplicationScope;JLkotlin/jvm/functions/Function1;)V
+	public static synthetic fun aotTraining-8Mi8wO0$default (Ldev/nucleusframework/application/NucleusApplicationScope;JLkotlin/jvm/functions/Function1;ILjava/lang/Object;)V
+}
+
+public final class dev/nucleusframework/application/ComposableSingletons$SatelliteKt {
+	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$SatelliteKt;
+	public fun <init> ()V
+	public final fun getLambda$-290429981$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$-939267807$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1449473754$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$624849194$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+}
+
+public final class dev/nucleusframework/application/ComposableSingletons$TabKt {
+	public static final field INSTANCE Ldev/nucleusframework/application/ComposableSingletons$TabKt;
+	public fun <init> ()V
+	public final fun getLambda$-1157930213$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$1616528785$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$1886912602$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$2066186131$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+	public final fun getLambda$283286354$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function3;
+	public final fun getLambda$773313628$Nucleus_nucleus_application ()Lkotlin/jvm/functions/Function4;
+}
+
+public final class dev/nucleusframework/application/DecoratedDialogKt {
+	public static final fun DecoratedDialog (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog-4gHVL9c (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun DecoratedDialog-cRDJ8gY (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/application/DecoratedWindowKt {
+	public static final fun DecoratedWindow-Ar7Y484 (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-OVDzFno (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-PI_BK1o (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+	public static final fun DecoratedWindow-oXav3jA (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZZZZZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;IIII)V
+}
+
+public final class dev/nucleusframework/application/DefaultNucleusDialogHost : dev/nucleusframework/application/NucleusDialogHost {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/DefaultNucleusDialogHost;
+	public fun Dialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public fun Dialog-uUwftkQ (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/DefaultNucleusWindowHost : dev/nucleusframework/application/NucleusWindowHost {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/DefaultNucleusWindowHost;
+	public fun Window-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public fun Window-ghhko4k (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/NucleusApplicationKt {
+	public static final fun nucleusApplication ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;)V
+	public static synthetic fun nucleusApplication$default ([Ljava/lang/String;ZLjava/util/Locale;ZLkotlin/jvm/functions/Function3;ILjava/lang/Object;)V
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusApplicationScope : androidx/compose/ui/window/ApplicationScope {
+	public abstract fun exitApplication ()V
+	public fun getAotMode ()Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public fun isAotRuntime ()Z
+	public fun isAotTraining ()Z
+	public abstract fun onDeepLink (Lkotlin/jvm/functions/Function1;)V
+}
+
+public final class dev/nucleusframework/application/NucleusApplicationScope$DefaultImpls {
+	public static fun getAotMode (Ldev/nucleusframework/application/NucleusApplicationScope;)Ldev/nucleusframework/aot/runtime/AotRuntimeMode;
+	public static fun isAotRuntime (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
+	public static fun isAotTraining (Ldev/nucleusframework/application/NucleusApplicationScope;)Z
+}
+
+public final class dev/nucleusframework/application/NucleusApplicationScopeKt {
+	public static final fun getLocalNucleusApplicationScope ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusDecoratedDialogScope : dev/nucleusframework/window/DecoratedDialogScope {
+	public abstract fun getNucleusWindow ()Ldev/nucleusframework/application/NucleusWindow;
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusDecoratedWindowScope : dev/nucleusframework/window/DecoratedWindowScope {
+	public abstract fun getNucleusWindow ()Ldev/nucleusframework/application/NucleusWindow;
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusDialogHost {
+	public abstract fun Dialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public fun Dialog-uUwftkQ (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/NucleusDialogHost$DefaultImpls {
+	public static fun Dialog-uUwftkQ (Ldev/nucleusframework/application/NucleusDialogHost;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusWindow {
+	public fun boundsOnScreen ()Ldev/nucleusframework/application/NucleusWindowBounds;
+	public abstract fun close ()V
+	public abstract fun getFocusFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getFullscreenFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getMaximizedFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getMinimizedFlow ()Lkotlinx/coroutines/flow/StateFlow;
+	public abstract fun getUnsafe ()Ldev/nucleusframework/application/NucleusWindowUnsafe;
+	public abstract fun hide ()V
+	public abstract fun isFocused ()Z
+	public abstract fun isFullscreen ()Z
+	public abstract fun isMaximized ()Z
+	public abstract fun isMinimized ()Z
+	public abstract fun requestFocus ()V
+	public abstract fun setAlwaysOnTop (Z)V
+	public abstract fun setFullscreen (Z)V
+	public abstract fun setIcon (Landroidx/compose/ui/graphics/painter/Painter;)V
+	public abstract fun setMaximized (Z)V
+	public abstract fun setMinimized (Z)V
+	public abstract fun setMinimumSize-06wGZ9Y (Landroidx/compose/ui/unit/DpSize;)V
+	public abstract fun show ()V
+	public abstract fun toFront ()V
+}
+
+public final class dev/nucleusframework/application/NucleusWindow$DefaultImpls {
+	public static fun boundsOnScreen (Ldev/nucleusframework/application/NucleusWindow;)Ldev/nucleusframework/application/NucleusWindowBounds;
+}
+
+public final class dev/nucleusframework/application/NucleusWindowBounds {
+	public static final field $stable I
+	public fun <init> (FFFF)V
+	public final fun component1 ()F
+	public final fun component2 ()F
+	public final fun component3 ()F
+	public final fun component4 ()F
+	public final fun copy (FFFF)Ldev/nucleusframework/application/NucleusWindowBounds;
+	public static synthetic fun copy$default (Ldev/nucleusframework/application/NucleusWindowBounds;FFFFILjava/lang/Object;)Ldev/nucleusframework/application/NucleusWindowBounds;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getHeight ()F
+	public final fun getWidth ()F
+	public final fun getX ()F
+	public final fun getY ()F
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusWindowHost {
+	public fun Window-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public abstract fun Window-ghhko4k (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/NucleusWindowHost$DefaultImpls {
+	public static fun Window-AnPh9MI (Ldev/nucleusframework/application/NucleusWindowHost;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/application/NucleusWindowHostKt {
+	public static final fun HostedDialog (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun HostedDialog-4gHVL9c (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/DialogState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun HostedWindow-AnPh9MI (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/window/tao/v2/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZJJLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun HostedWindow-rSwaGlE (Lkotlin/jvm/functions/Function0;Landroidx/compose/ui/window/WindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZZLdev/nucleusframework/application/NucleusWindow;ZZZLandroidx/compose/ui/unit/DpSize;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;ZLkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun getLocalNucleusDialogHost ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun getLocalNucleusWindowHost ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/application/NucleusWindowKt {
+	public static final fun getLocalNucleusWindow ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public abstract interface class dev/nucleusframework/application/NucleusWindowUnsafe {
+	public fun getTaoHandle ()Ljava/lang/Long;
+	public fun getTaoWindow ()Ldev/nucleusframework/window/tao/TaoWindow;
+}
+
+public final class dev/nucleusframework/application/NucleusWindowUnsafe$DefaultImpls {
+	public static fun getTaoHandle (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ljava/lang/Long;
+	public static fun getTaoWindow (Ldev/nucleusframework/application/NucleusWindowUnsafe;)Ldev/nucleusframework/window/tao/TaoWindow;
+}
+
+public final class dev/nucleusframework/application/SatelliteKt {
+	public static final fun Satellite (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun Satellite (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ljava/lang/String;Ljava/lang/String;Ldev/nucleusframework/window/tao/SatellitePlacement;ZLjava/util/Set;ZZZZZLkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun pinTo (Ldev/nucleusframework/window/tao/SatelliteWorkspace;Ldev/nucleusframework/application/NucleusWindow;)V
+}
+
+public final class dev/nucleusframework/application/SatelliteWindowKt {
+	public static final fun SatelliteWindow (Ldev/nucleusframework/application/NucleusApplicationScope;Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+	public static final fun SatelliteWindow (Lkotlin/jvm/functions/Function0;Ldev/nucleusframework/application/NucleusWindow;Ldev/nucleusframework/window/tao/SatelliteWindowState;ZLjava/lang/String;Landroidx/compose/ui/graphics/painter/Painter;ZZZZLkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;III)V
+}
+
+public final class dev/nucleusframework/application/SingleInstanceRestoreBusKt {
+	public static final fun SingleInstanceRestoreEffect (Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/application/TabKt {
+	public static final fun Tab (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun Tab (Ldev/nucleusframework/window/tao/TabWorkspace;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Lkotlin/jvm/functions/Function3;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabWindows (Ldev/nucleusframework/application/NucleusApplicationScope;Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+	public static final fun TabWindows (Ldev/nucleusframework/window/tao/TabWorkspace;Lkotlin/jvm/functions/Function3;ZLkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function4;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;II)V
+}
+
+public abstract class dev/nucleusframework/application/contextmenu/ContextMenuEntry {
+	public static final field $stable I
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuEntry$Item : dev/nucleusframework/application/contextmenu/ContextMenuEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;Ljava/lang/String;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Lkotlin/jvm/functions/Function0;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getEnabled ()Z
+	public final fun getIcon ()Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;
+	public final fun getLabel ()Ljava/lang/String;
+	public final fun getOnClick ()Lkotlin/jvm/functions/Function0;
+	public final fun getShortcut ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuEntry$Separator : dev/nucleusframework/application/contextmenu/ContextMenuEntry {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuEntry$Separator;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuEntry$Submenu : dev/nucleusframework/application/contextmenu/ContextMenuEntry {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Ljava/util/List;)V
+	public final fun getItems ()Ljava/util/List;
+	public final fun getLabel ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuEntryKt {
+	public static final fun getLocalContextMenuItemInterpreter ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public abstract class dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$Copy : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$Copy;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$Cut : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$Cut;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$Delete : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$Delete;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$Folder : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$Folder;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$Paste : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$Paste;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$SelectAll : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$SelectAll;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIcon$SfSymbol : dev/nucleusframework/application/contextmenu/ContextMenuIcon {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;)V
+	public final fun component1 ()Ljava/lang/String;
+	public final fun copy (Ljava/lang/String;)Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$SfSymbol;
+	public static synthetic fun copy$default (Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$SfSymbol;Ljava/lang/String;ILjava/lang/Object;)Ldev/nucleusframework/application/contextmenu/ContextMenuIcon$SfSymbol;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getName ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/ContextMenuIconKt {
+	public static final fun stockShortcut (Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;)Ljava/lang/String;
+}
+
+public abstract interface class dev/nucleusframework/application/contextmenu/ContextMenuItemInterpreter {
+	public abstract fun interpret (Landroidx/compose/foundation/ContextMenuItem;Landroidx/compose/foundation/ContextMenuItem;)Ldev/nucleusframework/application/contextmenu/ContextMenuEntry;
+}
+
+public final class dev/nucleusframework/application/contextmenu/DefaultContextMenuItemInterpreter : dev/nucleusframework/application/contextmenu/ContextMenuItemInterpreter {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/DefaultContextMenuItemInterpreter;
+	public fun interpret (Landroidx/compose/foundation/ContextMenuItem;Landroidx/compose/foundation/ContextMenuItem;)Ldev/nucleusframework/application/contextmenu/ContextMenuEntry;
+}
+
+public final class dev/nucleusframework/application/contextmenu/NativeContextMenuProviderKt {
+	public static final fun NativeContextMenuProvider (ZLkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun getLocalNativeContextMenu ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+	public static final fun isNativeContextMenuSupported ()Z
+}
+
+public final class dev/nucleusframework/application/contextmenu/NativeContextMenuRepresentation : androidx/compose/foundation/ContextMenuRepresentation {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/NativeContextMenuRepresentation;
+	public fun Representation (Landroidx/compose/foundation/ContextMenuState;Ljava/util/List;Landroidx/compose/runtime/Composer;I)V
+	public fun Representation (Landroidx/compose/foundation/ContextMenuState;Lkotlin/jvm/functions/Function0;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/application/contextmenu/NativeTextContextMenu : androidx/compose/foundation/text/TextContextMenu {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/NativeTextContextMenu;
+	public fun Area (Landroidx/compose/foundation/text/TextContextMenu$TextManager;Landroidx/compose/foundation/ContextMenuState;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;I)V
+}
+
+public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuDivider : androidx/compose/foundation/ContextMenuItem {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/contextmenu/NucleusContextMenuDivider;
+}
+
+public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuItem : androidx/compose/foundation/ContextMenuItem {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+	public synthetic fun <init> (Ljava/lang/String;ZLdev/nucleusframework/application/contextmenu/ContextMenuIcon;Ljava/lang/String;Lkotlin/jvm/functions/Function0;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun getIcon ()Ldev/nucleusframework/application/contextmenu/ContextMenuIcon;
+	public final fun getShortcut ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuItemKt {
+	public static final fun getLocalContextMenuDivider ()Landroidx/compose/runtime/ProvidableCompositionLocal;
+}
+
+public final class dev/nucleusframework/application/contextmenu/NucleusContextMenuSubmenu : androidx/compose/foundation/ContextMenuItem {
+	public static final field $stable I
+	public fun <init> (Ljava/lang/String;Lkotlin/jvm/functions/Function0;)V
+	public final fun getItems ()Lkotlin/jvm/functions/Function0;
+}
+
+public final class dev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller {
+	public static final field $stable I
+	public static final field INSTANCE Ldev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller;
+	public final fun menuItems (Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;)Ljava/util/List;
+	public static synthetic fun menuItems$default (Ldev/nucleusframework/application/spellcheck/NucleusSpellcheckInstaller;Ljava/lang/String;Ldev/nucleusframework/spellcheck/SpellcheckSession;Lkotlin/jvm/functions/Function1;Lkotlin/jvm/functions/Function0;Landroidx/compose/foundation/ContextMenuItem;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;ILjava/lang/Object;)Ljava/util/List;
+}
+
+public final class dev/nucleusframework/application/spellcheck/SpellcheckContextMenuKt {
+	public static final fun SpellcheckContextMenu (Landroidx/compose/foundation/text/input/TextFieldState;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ljava/util/Locale;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+	public static final fun SpellcheckContextMenu (Ljava/lang/String;Lkotlin/jvm/functions/Function1;Ldev/nucleusframework/spellcheck/SpellcheckSession;Ljava/util/Locale;Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;Lkotlin/jvm/functions/Function2;Landroidx/compose/runtime/Composer;II)V
+}
+
+public final class dev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement : java/lang/Enum {
+	public static final field Bottom Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static final field Top Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+	public static fun values ()[Ldev/nucleusframework/application/spellcheck/SpellcheckMenuPlacement;
+}
+
+public final class dev/nucleusframework/application/spellcheck/SpellcheckUnderlineKt {
+	public static final fun drawMisspellingSquiggles-g2O1Hgs (Landroidx/compose/ui/graphics/drawscope/DrawScope;Landroidx/compose/ui/text/TextLayoutResult;Ljava/util/List;J)V
+	public static synthetic fun drawMisspellingSquiggles-g2O1Hgs$default (Landroidx/compose/ui/graphics/drawscope/DrawScope;Landroidx/compose/ui/text/TextLayoutResult;Ljava/util/List;JILjava/lang/Object;)V
+}
+

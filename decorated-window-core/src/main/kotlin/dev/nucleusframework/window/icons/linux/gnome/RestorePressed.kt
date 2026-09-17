@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.gnome.GnomeControlButtonsIcons
 
-val GnomeControlButtonsIcons.RestorePressed: ImageVector
+public val GnomeControlButtonsIcons.RestorePressed: ImageVector
     get() {
         if (_RestorePressed != null) {
             return _RestorePressed!!

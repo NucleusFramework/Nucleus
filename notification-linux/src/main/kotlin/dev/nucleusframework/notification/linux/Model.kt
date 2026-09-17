@@ -16,7 +16,7 @@ import dev.nucleusframework.freedesktop.icons.FreedesktopIcon
  * @property channels Number of channels (3 for RGB, 4 for RGBA).
  * @property data     Raw pixel bytes in RGB(A) order.
  */
-data class ImageData(
+public data class ImageData(
     val width: Int,
     val height: Int,
     val rowstride: Int,
@@ -54,7 +54,7 @@ data class ImageData(
  *
  * Returned by [LinuxNotificationCenter.getServerInformation].
  */
-data class ServerInformation(
+public data class ServerInformation(
     val name: String,
     val vendor: String,
     val version: String,
@@ -67,13 +67,13 @@ data class ServerInformation(
  * @property key   Unique identifier for this action; use [DEFAULT_KEY] for the default click action.
  * @property label Human-readable label shown on the button.
  */
-data class NotificationAction(
+public data class NotificationAction(
     val key: String,
     val label: String,
 ) {
-    companion object {
+    public companion object {
         /** Special action key that maps to clicking the notification body itself. */
-        const val DEFAULT_KEY = "default"
+        public const val DEFAULT_KEY: String = "default"
     }
 }
 
@@ -97,7 +97,7 @@ data class NotificationAction(
  * @property x             X screen position hint (requires [y] to be set too).
  * @property y             Y screen position hint (requires [x] to be set too).
  */
-data class NotificationHints(
+public data class NotificationHints(
     val urgency: Urgency? = null,
     val category: String? = null,
     val desktopEntry: String? = null,
@@ -129,7 +129,7 @@ data class NotificationHints(
  * @property expireTimeout Timeout in milliseconds: `-1` = server default, `0` = never expires,
  *                         positive = auto-close after that many milliseconds.
  */
-data class Notification(
+public data class Notification(
     val appName: String = "",
     val replacesId: Int = 0,
     val appIcon: FreedesktopIcon? = null,

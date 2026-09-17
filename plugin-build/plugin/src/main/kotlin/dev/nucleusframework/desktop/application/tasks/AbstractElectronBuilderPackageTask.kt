@@ -25,6 +25,7 @@ import dev.nucleusframework.desktop.application.internal.electronbuilder.Electro
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderInvocation
 import dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderToolManager
 import dev.nucleusframework.desktop.application.internal.electronbuilder.NodeJsDetector
+import dev.nucleusframework.desktop.application.internal.electronbuilder.resolveCompressionLevel
 import dev.nucleusframework.desktop.application.internal.files.isDylibPath
 import dev.nucleusframework.desktop.application.internal.MACOS_DMG_TITLE_BAR_HEIGHT
 import dev.nucleusframework.desktop.application.internal.padDmgBackgroundForTitleBar
@@ -86,7 +87,9 @@ import kotlin.io.path.isRegularFile
  *   1. Resolve the platform-specific app directory from the jpackage app-image output.
  *   2. Update the executable type in the app image's .cfg launcher file.
  *   3. Generate an electron-builder YAML configuration from the DSL settings.
- *   4. Invoke electron-builder via npx with `--prepackaged`.
+ *   4. Provision the pinned electron-builder toolchain (`npm ci --ignore-scripts` against the lock
+ *      file embedded in this plugin) and invoke its CLI with `--prepackaged` — see
+ *      [dev.nucleusframework.desktop.application.internal.electronbuilder.ElectronBuilderToolManager].
  *   5. Output the final installer/package to [destinationDir].
  */
 @DisableCachingByDefault(because = "Depends on external electron-builder tool")
@@ -133,6 +136,19 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Input
         @get:Optional
         val executableName: Property<String> = objects.nullableProperty()
+
+        /**
+         * Name of the macOS `.app` bundle directory, without the `.app` extension.
+         *
+         * electron-builder's DMG target stages the bundle under `${productFilename}.app` while its
+         * ZIP target archives the prepackaged directory as-is, so the two formats only ship the same
+         * bundle name when the prepackaged directory is already named after `productFilename`. This
+         * task therefore renames its working copy to `<macBundleName>.app` and pins `productName` to
+         * the same value, making `basename(prepackaged) == productFilename` hold by construction.
+         */
+        @get:Input
+        @get:Optional
+        val macBundleName: Property<String> = objects.nullableProperty()
 
         @get:Input
         val targetArch: Property<String> =
@@ -245,21 +261,25 @@ abstract class AbstractElectronBuilderPackageTask
             val outputDir = destinationDir.ioFile.apply { mkdirs() }
 
             // Create a task-private copy of the app image so parallel tasks don't
-            // interfere when modifying .cfg files or signing the bundle.
-            val workingAppDir = copyAppImage(originalAppDir, outputDir, logger)
+            // interfere when modifying .cfg files or signing the bundle. On macOS the copy is
+            // renamed to the resolved bundle name so every format ships the same .app.
+            val workingAppDir = copyAppImage(originalAppDir, outputDir, resolveWorkingAppDirName(originalAppDir), logger)
 
             ensureResourcesDirForElectronBuilder(workingAppDir)
-            bundleUpdatePublicKey(workingAppDir, dist)
+            bundleSilentUpdateArtifacts(workingAppDir, dist)
             ensureLinuxExecutableAlias(workingAppDir)
             updateExecutableTypeInAppImage(workingAppDir, targetFormat, logger, packageVersion.orNull)
             ensureMacAdHocSigning(workingAppDir, targetFormat)
 
-            val npx = detectNpx()
-            validateNodeVersion()
+            val node = detectNode()
+            val npm = detectNpm()
+            validateNodeVersion(node)
 
             val linuxIconOverride = prepareLinuxIconSet(outputDir)
             val windowsIconOverride = resolveWindowsIcon()
-            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, isLinuxSilentUpdateEnabled(dist))
+            val silentUpdate = isLinuxSilentUpdateEnabled(dist)
+            val linuxAfterInstallTemplate = prepareLinuxAfterInstallTemplate(outputDir, silentUpdate)
+            val linuxAfterRemoveTemplate = prepareLinuxAfterRemoveTemplate(outputDir, silentUpdate)
             if (targetFormat == TargetFormat.AppX) {
                 val hasExplicitWindowsIcon =
                     dist.windows.iconFile.orNull
@@ -278,6 +298,7 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                 )
             ensureProjectPackageMetadata(outputDir, dist)
 
@@ -304,7 +325,9 @@ abstract class AbstractElectronBuilderPackageTask
                     outputDir = outputDir,
                     targets = buildElectronBuilderTargets(),
                     extraConfigArgs = extraConfigArgs,
-                    npx = npx,
+                    node = node,
+                    npm = npm,
+                    toolDir = File(outputDir, ELECTRON_BUILDER_TOOL_DIR_NAME),
                     environment = ebEnvironment,
                     publishFlag = resolvePublishFlag(),
                 ),
@@ -368,21 +391,26 @@ abstract class AbstractElectronBuilderPackageTask
             return flag
         }
 
-        private fun detectNpx(): File =
-            NodeJsDetector.detectNpx(
+        private fun detectNode(): File =
+            NodeJsDetector.detectNode(
                 customNodePath = customNodePath.orNull,
                 logger = logger,
             ) ?: throw GradleException(
-                "npx not found. Node.js 18+ is required for electron-builder packaging. " +
+                "node not found. Node.js 18+ is required for electron-builder packaging. " +
                     "Install Node.js or set the 'compose.electronBuilder.nodePath' Gradle property.",
             )
 
-        private fun validateNodeVersion() {
-            val node =
-                NodeJsDetector.detectNode(
-                    customNodePath = customNodePath.orNull,
-                    logger = logger,
-                ) ?: return
+        private fun detectNpm(): File =
+            NodeJsDetector.detectNpm(
+                customNodePath = customNodePath.orNull,
+                logger = logger,
+            ) ?: throw GradleException(
+                "npm not found. It provisions the pinned electron-builder toolchain from the " +
+                    "plugin's package-lock.json. Install Node.js 18+ (npm ships with it) or set " +
+                    "the 'compose.electronBuilder.nodePath' Gradle property.",
+            )
+
+        private fun validateNodeVersion(node: File) {
             val version = NodeJsDetector.getNodeVersion(node) ?: return
             if (!NodeJsDetector.isNodeVersionSupported(version)) {
                 throw GradleException(
@@ -399,6 +427,7 @@ abstract class AbstractElectronBuilderPackageTask
             linuxIconOverride: File?,
             windowsIconOverride: File?,
             linuxAfterInstallTemplate: File?,
+            linuxAfterRemoveTemplate: File?,
         ): File {
             val configGenerator = ElectronBuilderConfigGenerator()
             val resolvedArch = Arch.entries.first { it.id == targetArch.get() }
@@ -419,10 +448,15 @@ abstract class AbstractElectronBuilderPackageTask
             }
 
             // Both Maximum and Ultra map to electron-builder's "maximum"; warn for either.
-            if (targetFormat == TargetFormat.AppImage && distributions.compressionLevel?.id == "maximum") {
+            // Honor the AppImage-local override so Ultra globally + Normal on AppImage stays quiet.
+            val effectiveCompression =
+                resolveCompressionLevel(distributions, targetFormat)
+            if (targetFormat == TargetFormat.AppImage && effectiveCompression?.id == "maximum") {
                 logger.warn(
                     "AppImage with 'maximum' compression can cause extremely slow startup times (60s+) " +
-                        "due to squashfs/FUSE decompression overhead. Consider 'normal' or 'store' instead. " +
+                        "due to squashfs/FUSE decompression overhead. Prefer " +
+                        "linux { appImage { compressionLevel = CompressionLevel.Normal } } " +
+                        "(or Store), or lower the root compressionLevel. " +
                         "See https://github.com/electron-userland/electron-builder/issues/7483",
                 )
             }
@@ -439,10 +473,12 @@ abstract class AbstractElectronBuilderPackageTask
                     linuxIconOverride = linuxIconOverride,
                     windowsIconOverride = windowsIconOverride,
                     linuxAfterInstallTemplate = linuxAfterInstallTemplate,
+                    linuxAfterRemoveTemplate = linuxAfterRemoveTemplate,
                     executableName = resolveExecutableName(),
                     dmgBackgroundOverride = dmgBackgroundOverride,
                     dmgWindowOverride = dmgWindowOverride,
                     nsisProtocolInclude = nsisProtocolInclude,
+                    macBundleName = macBundleName.orNull,
                 )
             val configFile = File(outputDir, "electron-builder.yml")
             configFile.writeText(configContent)
@@ -606,8 +642,11 @@ abstract class AbstractElectronBuilderPackageTask
             val metadata =
                 buildString {
                     appendLine("{")
+                    // Mirrors the config generator: the bundle name wins so a DMG rebuilt from this
+                    // metadata on another machine stages the same .app the ZIP already ships.
                     val resolvedProductName =
-                        distributions.appName ?: distributions.packageName ?: executableName.orNull
+                        macBundleName.orNull?.takeIf { it.isNotBlank() }
+                            ?: distributions.appName ?: distributions.packageName ?: executableName.orNull
                     appendLine("  \"productName\": ${jsonStr(resolvedProductName)},")
                     appendLine("  \"appId\": ${jsonStr(appId)},")
                     appendLine("  \"copyright\": ${jsonStr(distributions.copyright)},")
@@ -1403,27 +1442,32 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Exports the signing public key into the app's `resources/` so the installed update helper
-         * can verify downloaded updates against it. Must run before electron-builder packages the app.
+         * Ships silent-update artifacts in the **package payload** (helper + public key).
+         * afterInstall only installs polkit — see [LinuxUpdateHelper.polkitAfterInstallFragment].
          */
-        private fun bundleUpdatePublicKey(
+        private fun bundleSilentUpdateArtifacts(
             workingAppDir: File,
             dist: JvmApplicationDistributions,
         ) {
             if (!isLinuxSilentUpdateEnabled(dist)) return
             val signing = dist.linux.signing
             val keyId = signing.keyId.orNull ?: return
-            val dest = workingAppDir.resolve("resources/nucleus-update.pub.asc")
-            dest.parentFile.mkdirs()
+
+            val keyDest = workingAppDir.resolve(LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH)
+            keyDest.parentFile.mkdirs()
             LinuxSigner(runExternalTool, logger).exportPublicKey(
                 keyId = keyId,
                 keyFile =
                     signing.keyFile.orNull
                         ?.asFile,
                 passphrase = signing.passphrase.orNull,
-                destination = dest,
+                destination = keyDest,
             )
-            logger.lifecycle("Bundled update public key into resources/nucleus-update.pub.asc")
+            LinuxUpdateHelper.writeHelper(workingAppDir)
+            logger.lifecycle(
+                "Bundled silent-update artifacts " +
+                    "(${LinuxUpdateHelper.HELPER_FILE_NAME}, ${LinuxUpdateHelper.PUBLIC_KEY_RELATIVE_PATH})",
+            )
         }
 
         private fun prepareLinuxIconSet(outputDir: File): File? {
@@ -1695,58 +1739,40 @@ abstract class AbstractElectronBuilderPackageTask
                 fi
                 """.trimIndent() + "\n"
 
-            val fullScript = if (silentUpdate) script + linuxSilentUpdateAfterInstallBlock() else script
+            val fullScript =
+                if (silentUpdate) {
+                    script + "\n" + LinuxUpdateHelper.polkitAfterInstallFragment()
+                } else {
+                    script
+                }
             templateFile.writeText(fullScript)
             logger.info("Generated Linux after-install template at: ${templateFile.absolutePath}")
             return templateFile
         }
 
         /**
-         * Root-run afterInstall fragment that installs the passwordless update helper plus a polkit
-         * policy scoped to it. The helper verifies a detached signature against the bundled public
-         * key and only upgrades the package that owns the helper, so `allow_active=yes` cannot be
-         * abused to install arbitrary packages. `${'$'}{executable}`/`${'$'}{sanitizedProductName}`
-         * are substituted by electron-builder at package time.
+         * afterRemove template: removes the polkit policy for silent update (and keeps the
+         * default electron-builder unlink behavior via an empty base script when silent is off).
+         * Only generated when silent update is enabled.
          */
-        private fun linuxSilentUpdateAfterInstallBlock(): String {
-            val header =
-                $$"""
-                # --- Nucleus passwordless self-update (signature-verified) ---
-                NUCLEUS_HELPER='/opt/${sanitizedProductName}/nucleus-update-helper'
-                NUCLEUS_POLKIT_ACTION='dev.nucleusframework.${executable}.update'
-
-                cat > "$NUCLEUS_HELPER" <<'NUCLEUS_HELPER_EOF'
-                """.trimIndent()
-            val footer =
-                $$"""
-                NUCLEUS_HELPER_EOF
-                chmod 0755 "$NUCLEUS_HELPER"
-                chown root:root "$NUCLEUS_HELPER" 2>/dev/null || true
-
-                # polkit policy: an ACTIVE local session may run ONLY this helper without a password.
-                POLKIT_DIR='/usr/share/polkit-1/actions'
-                if mkdir -p "$POLKIT_DIR" 2>/dev/null; then
-                cat > "$POLKIT_DIR/$NUCLEUS_POLKIT_ACTION.policy" <<NUCLEUS_POLKIT_EOF
-                <?xml version="1.0" encoding="UTF-8"?>
-                <!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
-                 "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
-                <policyconfig>
-                  <action id="$NUCLEUS_POLKIT_ACTION">
-                    <description>Install ${sanitizedProductName} updates</description>
-                    <message>Authentication is required to install ${sanitizedProductName} updates</message>
-                    <defaults>
-                      <allow_any>auth_admin</allow_any>
-                      <allow_inactive>auth_admin</allow_inactive>
-                      <allow_active>yes</allow_active>
-                    </defaults>
-                    <annotate key="org.freedesktop.policykit.exec.path">$NUCLEUS_HELPER</annotate>
-                    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
-                  </action>
-                </policyconfig>
-                NUCLEUS_POLKIT_EOF
-                fi
-                """.trimIndent()
-            return "\n" + header + "\n" + LinuxUpdateHelper.SCRIPT + "\n" + footer + "\n"
+        private fun prepareLinuxAfterRemoveTemplate(
+            outputDir: File,
+            silentUpdate: Boolean,
+        ): File? {
+            if (!silentUpdate) return null
+            if (currentOS != OS.Linux) return null
+            if (targetFormat != TargetFormat.Deb &&
+                targetFormat != TargetFormat.Rpm &&
+                targetFormat != TargetFormat.Pacman
+            ) {
+                return null
+            }
+            val templateFile = outputDir.resolve("after-remove-nucleus.tpl")
+            templateFile.writeText(
+                "#!/bin/bash\n" + LinuxUpdateHelper.polkitAfterRemoveFragment(),
+            )
+            logger.info("Generated Linux after-remove template at: ${templateFile.absolutePath}")
+            return templateFile
         }
 
         private fun resizeIcon(
@@ -1931,7 +1957,15 @@ abstract class AbstractElectronBuilderPackageTask
          * for parallel-safe builds. Called only after electron-builder finishes.
          */
         private fun cleanupBuildTemporaries(outputDir: File) {
-            for (dirName in listOf(".npm-cache", ".npm-prefix", ".electron-builder-cache", ".app-image")) {
+            for (dirName in
+                listOf(
+                    ".npm-cache",
+                    ".npm-prefix",
+                    ".electron-builder-cache",
+                    ELECTRON_BUILDER_TOOL_DIR_NAME,
+                    ".app-image",
+                )
+            ) {
                 val dir = File(outputDir, dirName)
                 if (dir.isDirectory) {
                     dir.deleteRecursively()
@@ -1945,7 +1979,7 @@ abstract class AbstractElectronBuilderPackageTask
          * Resolves the actual app directory inside the jpackage app-image output.
          *
          * jpackage produces: `<destinationDir>/<packageName>` on Linux/Windows
-         *                  or `<destinationDir>/<packageName>.app` on macOS.
+         *                  or `<destinationDir>/<macBundleName>.app` on macOS.
          */
         private fun resolveAppImageDir(): File {
             val root = appImageRoot.ioFile
@@ -1954,10 +1988,14 @@ abstract class AbstractElectronBuilderPackageTask
             }
 
             val name = packageName.get()
+            val bundleName = macBundleName.orNull?.takeIf { it.isNotBlank() }
 
-            // Try platform-specific name, then plain name, then single-child fallback
+            // Try the macOS bundle name, then the platform-specific name, then the plain name,
+            // then fall back to the single child directory.
             val resolved =
                 when {
+                    currentOS == OS.MacOS && bundleName != null && root.resolve("$bundleName.app").isDirectory ->
+                        root.resolve("$bundleName.app")
                     currentOS == OS.MacOS && root.resolve("$name.app").isDirectory ->
                         root.resolve("$name.app")
                     root.resolve(name).isDirectory -> root.resolve(name)
@@ -1966,8 +2004,21 @@ abstract class AbstractElectronBuilderPackageTask
 
             return resolved ?: throw GradleException(
                 "Unable to locate app image directory. " +
-                    "Expected '$name' or '$name.app' inside: ${root.absolutePath}",
+                    "Expected '$name' or '${bundleName ?: name}.app' inside: ${root.absolutePath}",
             )
+        }
+
+        /**
+         * Name the task-private copy of the app image must carry.
+         *
+         * On macOS this is `<macBundleName>.app`, which electron-builder's ZIP target archives
+         * verbatim and its DMG target reproduces via `productFilename`. Elsewhere the source name is
+         * kept as-is.
+         */
+        private fun resolveWorkingAppDirName(source: File): String {
+            if (currentOS != OS.MacOS) return source.name
+            val bundleName = macBundleName.orNull?.takeIf { it.isNotBlank() } ?: return source.name
+            return "$bundleName.app"
         }
 
         /**
@@ -2013,10 +2064,11 @@ internal fun resolveLinuxExecutableName(
 private fun copyAppImage(
     source: File,
     outputDir: File,
+    destinationName: String,
     logger: Logger,
 ): File {
     val workingRoot = File(outputDir, ".app-image")
-    val destination = File(workingRoot, source.name)
+    val destination = File(workingRoot, destinationName)
     if (destination.exists()) {
         deleteWithRetry(destination, logger)
     }
@@ -2062,11 +2114,17 @@ private fun copyAppImage(
 }
 
 /**
+ * Name of the build-local directory holding the provisioned electron-builder toolchain
+ * (`package.json`, `package-lock.json`, `node_modules`). Removed by `cleanupBuildTemporaries`.
+ */
+internal const val ELECTRON_BUILDER_TOOL_DIR_NAME = ".electron-builder-tool"
+
+/**
  * Returns an env map that isolates npm and electron-builder caches to subdirectories
  * of [outputDir]. This prevents EPERM/EBUSY errors on Windows when multiple
- * electron-builder tasks run in parallel and compete for shared caches (npx cache,
+ * electron-builder tasks run in parallel and compete for shared caches (npm cache,
  * NSIS downloads, etc.). The prefix is also isolated to avoid npm 11+ ECOMPROMISED
- * errors caused by concurrent npx invocations sharing the global prefix.
+ * errors caused by concurrent npm invocations sharing the global prefix.
  *
  * Additional npm config isolation (userconfig, globalconfig) prevents npm from
  * reading shared config files that could cause lock contention on Windows ARM64.

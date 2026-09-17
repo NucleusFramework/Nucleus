@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.CloseHover: ImageVector
+public val WindowsControlButtonIcons.CloseHover: ImageVector
     get() {
         if (_CloseHover != null) {
             return _CloseHover!!

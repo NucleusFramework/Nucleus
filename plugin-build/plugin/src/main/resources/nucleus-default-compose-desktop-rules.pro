@@ -147,134 +147,32 @@
 -dontwarn dev.nucleusframework.**
 -dontnote dev.nucleusframework.**
 
-# Nucleus decorated-window JNI
--keep class dev.nucleusframework.window.utils.macos.NativeMacBridge {
-    native <methods>;
-}
--keep class dev.nucleusframework.window.** { *; }
+# ── Nucleus JNI bridges ─────────────────────────────────────────────
+# Native entry points are resolved by symbol name (Java_<pkg>_<class>_<method>),
+# so renaming a class or a method that declares `native` breaks the lookup at the
+# first call — an UnsatisfiedLinkError deep inside composition at runtime, never a
+# build failure. The rules below are deliberately generic: enumerating bridges
+# module by module is what left autolaunch, launcher-linux, notification-linux,
+# notification-macos, service-management-macos, system-info, taskbar-progress and
+# graalvm-runtime's locale bridge unprotected, and every new native module would
+# have to remember to add itself here.
 
-# Nucleus darkmode-detector JNI (macOS)
-# NativeDarkModeBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.darkmodedetector.mac.NativeDarkModeBridge {
-    native <methods>;
-    static void onThemeChanged(boolean);
-}
-
-# Nucleus darkmode-detector JNI (Linux)
-# NativeLinuxBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.darkmodedetector.linux.NativeLinuxBridge {
-    native <methods>;
-    static void onThemeChanged(boolean);
-}
-
-# Nucleus darkmode-detector JNI (Windows)
--keep class dev.nucleusframework.darkmodedetector.windows.NativeWindowsBridge {
-    native <methods>;
-}
--keep class dev.nucleusframework.darkmodedetector.** { *; }
-
-# Nucleus fs-watcher JNI
-# NativeFsWatcherBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.fswatcher.NativeFsWatcherBridge {
-    native <methods>;
-    static void onNativeEvent(long, long, java.lang.Long, int, java.lang.String, java.lang.String, boolean, int);
-    static void onNativeError(long, long, java.lang.Long, java.lang.String, boolean, java.lang.String);
-}
-
-# Nucleus native-ssl JNI (macOS)
--keep class dev.nucleusframework.nativessl.mac.NativeSslBridge {
+# Any Nucleus class declaring native methods keeps its own name and the names of
+# those methods. Unused classes can still be shrunk away.
+-keepclasseswithmembernames,includedescriptorclasses class dev.nucleusframework.** {
     native <methods>;
 }
 
-# Nucleus native-ssl JNI (Windows)
--keep class dev.nucleusframework.nativessl.windows.WindowsSslBridge {
-    native <methods>;
-}
+# Bridge objects are additionally looked up from native code via FindClass +
+# GetStaticMethodID for callbacks (onThemeChanged, onHotKey, onToastActivated,
+# onMenuItemClicked, …). Those callbacks are ordinary JVM methods with no
+# reachable caller, so ProGuard cannot see them — bridges are kept whole. They
+# are thin JNI shims, so the size cost is negligible.
+-keep class dev.nucleusframework.**Bridge { *; }
+-keep class dev.nucleusframework.**Jni { *; }
 
-# Nucleus system-color JNI (macOS)
-# NativeMacSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.systemcolor.mac.NativeMacSystemColorBridge {
-    native <methods>;
-    static void onAccentColorChanged(float, float, float);
-    static void onAccentColorCleared();
-    static void onContrastChanged(boolean);
-}
-
-# Nucleus system-color JNI (Linux)
-# NativeLinuxSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.systemcolor.linux.NativeLinuxSystemColorBridge {
-    native <methods>;
-    static void onAccentColorChanged(float, float, float);
-    static void onHighContrastChanged(boolean);
-}
-
-# Nucleus system-color JNI (Windows)
-# NativeWindowsSystemColorBridge is looked up by name from native code (FindClass + GetStaticMethodID)
--keep class dev.nucleusframework.systemcolor.windows.NativeWindowsSystemColorBridge {
-    native <methods>;
-    static void onAccentColorChanged(int, int, int);
-    static void onHighContrastChanged(boolean);
-}
--keep class dev.nucleusframework.systemcolor.** { *; }
-
-# Nucleus energy-manager JNI (macOS)
--keep class dev.nucleusframework.energymanager.macos.NativeMacOsEnergyBridge {
-    native <methods>;
-}
-
-# Nucleus energy-manager JNI (Linux)
--keep class dev.nucleusframework.energymanager.linux.NativeLinuxEnergyBridge {
-    native <methods>;
-}
-
-# Nucleus energy-manager JNI (Windows)
--keep class dev.nucleusframework.energymanager.windows.NativeWindowsEnergyBridge {
-    native <methods>;
-}
--keep class dev.nucleusframework.energymanager.** { *; }
-
-# Nucleus linux-hidpi JNI
--keep class dev.nucleusframework.hidpi.HiDpiLinuxBridge {
-    native <methods>;
-}
-
-# Nucleus notification-windows JNI — static callbacks invoked from native via FindClass/GetStaticMethodID
--keep class dev.nucleusframework.notification.windows.NativeWindowsNotificationBridge {
-    native <methods>;
-    static void onToastActivated(java.lang.String, java.lang.String, java.lang.String, java.lang.String[], java.lang.String[]);
-    static void onToastDismissed(java.lang.String, java.lang.String, int);
-    static void onToastFailed(java.lang.String, java.lang.String, int);
-    static void onToastShown(long, java.lang.String);
-    static void onToastUpdated(long, java.lang.String);
-    static void onHistoryResult(long, java.lang.String[], java.lang.String[], java.lang.String);
-}
--keep class dev.nucleusframework.notification.windows.** { *; }
--keep class dev.nucleusframework.notification.common.** { *; }
-
-# Nucleus media-control JNI — native code uses FindClass(BRIDGE_CLASS) + static callbacks
--keep class dev.nucleusframework.media.control.** { *; }
-
-# Nucleus scheduler JNI
--keep class dev.nucleusframework.scheduler.** { *; }
-
-# Nucleus global-hotkey JNI — onHotKey is invoked from native code via JNI
--keep class dev.nucleusframework.globalhotkey.windows.NativeWindowsHotKeyBridge {
-    native <methods>;
-    static void onHotKey(long, int, int);
-}
--keep class dev.nucleusframework.globalhotkey.macos.NativeMacOsHotKeyBridge {
-    native <methods>;
-    static void onHotKey(long, int, int);
-}
--keep class dev.nucleusframework.globalhotkey.linux.NativeLinuxHotKeyBridge {
-    native <methods>;
-    static void onHotKey(long, int, int);
-}
-
-# Nucleus launcher-windows JNI — ThumbBarClickListener.onThumbButtonClick is invoked from native
--keep class dev.nucleusframework.launcher.windows.NativeWindowsBadgeBridge { native <methods>; }
--keep class dev.nucleusframework.launcher.windows.NativeWindowsJumpListBridge { native <methods>; }
--keep class dev.nucleusframework.launcher.windows.NativeWindowsTaskbarBridge { native <methods>; }
+# Callback interfaces implemented by application code: native code invokes the
+# interface method on instances whose construction ProGuard never observes.
 -keep interface dev.nucleusframework.launcher.windows.ThumbBarClickListener {
     void onThumbButtonClick(int);
 }
@@ -282,27 +180,15 @@
     void onThumbButtonClick(int);
 }
 
-# Nucleus menu-macos JNI — NativeNsMenuBridge is looked up by name from native
-# code (FindClass + GetStaticMethodID). The menu action/delegate callbacks fire
-# from AppKit into these @JvmStatic methods, so both the class name and the
-# method names must survive shrinking/obfuscation.
--keep class dev.nucleusframework.menu.macos.NativeNsMenuBridge {
-    native <methods>;
-    static void onMenuItemAction(long);
-    static void onMenuWillOpen(long);
-    static void onMenuDidClose(long);
-    static void onMenuNeedsUpdate(long);
-    static void onMenuWillHighlightItem(long, long);
-    static int onNumberOfItemsInMenu(long);
-}
-
-# Nucleus launcher-macos JNI — NativeMacOsDockMenuBridge is looked up by name
-# from native code (FindClass + GetStaticMethodID); onMenuItemClicked is the
-# dock-menu action callback invoked from AppKit.
--keep class dev.nucleusframework.launcher.macos.NativeMacOsDockMenuBridge {
-    native <methods>;
-    static void onMenuItemClicked(int);
-}
+# API surfaces whose types cross the JNI boundary or are resolved reflectively
+# beyond the bridge objects themselves.
+-keep class dev.nucleusframework.window.** { *; }
+-keep class dev.nucleusframework.darkmodedetector.** { *; }
+-keep class dev.nucleusframework.systemcolor.** { *; }
+-keep class dev.nucleusframework.energymanager.** { *; }
+-keep class dev.nucleusframework.notification.** { *; }
+-keep class dev.nucleusframework.media.control.** { *; }
+-keep class dev.nucleusframework.scheduler.** { *; }
 
 -dontwarn sun.misc.Unsafe
 -dontwarn sun.awt.**

@@ -39,7 +39,7 @@ internal object SingleInstanceRestoreBus {
  * is something else — typically a tray application re-opening its popup.
  */
 @Composable
-fun SingleInstanceRestoreEffect(onRestore: () -> Unit) {
+public fun SingleInstanceRestoreEffect(onRestore: () -> Unit) {
     val signal by SingleInstanceRestoreBus.signal.collectAsState()
     val currentOnRestore = rememberUpdatedState(onRestore)
     LaunchedEffect(signal) {

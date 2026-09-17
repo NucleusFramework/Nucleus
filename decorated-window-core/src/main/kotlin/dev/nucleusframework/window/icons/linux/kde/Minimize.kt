@@ -9,7 +9,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.linux.kde.KdeControlButtonsIcons
 
-val KdeControlButtonsIcons.Minimize: ImageVector
+public val KdeControlButtonsIcons.Minimize: ImageVector
     get() {
         if (_Minimize != null) {
             return _Minimize!!

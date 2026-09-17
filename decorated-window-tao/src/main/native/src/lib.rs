@@ -6,9 +6,10 @@
 //
 // Common responsibilities:
 //   - Owns the Tao event loop on the platform main thread.
-//   - Exposes the underlying native window handle (NSView on macOS, HWND on
-//     Windows, X11 / Wayland handles on Linux) so the JVM can attach a render
-//     surface and drive a Skiko/Compose render pipeline outside AWT.
+//   - Exposes the underlying native window handles (NSView + NSWindow on
+//     macOS, HWND on Windows, X11 / Wayland / xdg_foreign on Linux) so the JVM
+//     can attach a render surface, parent native dialogs, and drive a
+//     Skiko/Compose render pipeline outside AWT.
 //   - Dispatches pointer / mouse-button / keyboard events to Kotlin.
 //
 // Module layout (Rust idiomatic split):
@@ -18,13 +19,19 @@
 //   event_loop    — `run_event_loop_blocking()` (Tao loop body)
 //   window_jni    — cross-platform JNI exports for window lifecycle/state
 //   cursor        — cross-platform cursor JNI export
+//   dialog        — native fatal-error dialog JNI export (#622)
 //   keymap        — Tao physical key → AWT VK mapping
 //   platform::macos     — AppKit helpers (FFI, main-thread dance, IME,
 //                         text overlay, Apple events, VoiceOver bridge)
-//   platform::windows   — HWND handle + UIA bridge (loaded from sibling DLL)
+//   platform::windows   — HWND handle + AccessKit UIA bridge
 //   platform::linux     — X11/Wayland handle, AT-SPI bridge, GDK cursor
 
+// Shared AccessKit wire decoder + JVM action upcalls (Linux + Windows).
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+mod a11y;
+
 mod cursor;
+mod dialog;
 mod event_loop;
 mod events;
 mod keymap;

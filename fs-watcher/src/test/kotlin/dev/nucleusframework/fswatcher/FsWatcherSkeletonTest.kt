@@ -38,6 +38,32 @@ class FsWatcherSkeletonTest {
     }
 
     @Test
+    fun debouncedDeliveryRejectsNonPositiveWindow() {
+        assertFailsWith<IllegalArgumentException> {
+            FsWatchDeliveryMode.Debounced(window = Duration.ZERO)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            FsWatchDeliveryMode.Debounced(window = Duration.ofMillis(-1))
+        }
+    }
+
+    @Test
+    fun watchEventVariantsExposeSourceAndRescanFlags() {
+        val root = Files.createTempDirectory("fs-watcher-event")
+        val source = FsWatchSource(root, recursive = false, name = "tmp")
+        val created = FsWatchEvent.Created(root.resolve("a"), source, isDirectory = false)
+        val overflow = FsWatchEvent.Overflow(source)
+        val other = FsWatchEvent.Other(listOf(root), source)
+        assertEquals(source, created.source)
+        assertFalse(created.needsRescan)
+        assertTrue(overflow.needsRescan)
+        assertEquals(1, other.paths.size)
+        val error = FsWatchError("boom", source, recoverable = true)
+        assertTrue(error.recoverable)
+        assertEquals("boom", error.message)
+    }
+
+    @Test
     fun pollingStrategyHasReasonableDefaultInterval() {
         val strategy = FsWatchBackendStrategy.Polling()
 

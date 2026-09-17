@@ -1,5 +1,5 @@
 #!/bin/bash
-# Compiles four Linux shared libraries into per-architecture resource folders:
+# Compiles five Linux shared libraries into per-architecture resource folders:
 #   - libnucleus_tao.so              (Rust crate, Tao + JNI)
 #   - libnucleus_tao_egl.so          (C, EGL helper for Skia GL backend on
 #                                     X11 / Wayland)
@@ -7,6 +7,9 @@
 #                                     by the GtkWidget variant of NativeView)
 #   - libnucleus_tao_linux_popup.so  (C, standalone transparent popup panel —
 #                                     raw X11/XWayland window for TrayApp)
+#   - libnucleus_tao_linux_clipboard.so
+#                                    (C, GTK clipboard so paste follows the
+#                                     window's GDK backend instead of AWT/X11)
 #
 # Outputs are placed in src/main/resources/nucleus/native/{linux-x64,linux-aarch64}/.
 #
@@ -84,13 +87,19 @@ JNI_INCLUDE_LINUX="$JAVA_HOME/include/linux"
 CC="${CC:-cc}"
 
 # ── 3) EGL helper (libnucleus_tao_egl.so) ──────────────────────────────────
+# nucleus_tao_texture_linux.c (external GPU texture import for the TextureView
+# composable) is linked in here rather than into its own library: it needs the
+# EGL entry points and per-window attachment state nucleus_tao_egl.c owns, and
+# its JNI symbols resolve through the already-loaded nucleus_tao_egl — the same
+# arrangement as nucleus_tao_texture.c inside nucleus_tao_gl.dll on Windows.
 
 build_egl() {
     local OUT_DIR="$1"
     local OUT="$OUT_DIR/libnucleus_tao_egl.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_egl.c" -ldl -lm \
+        "$SCRIPT_DIR/nucleus_tao_egl.c" \
+        "$SCRIPT_DIR/nucleus_tao_texture_linux.c" -ldl -lm -lpthread \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }
@@ -107,8 +116,7 @@ build_widget() {
     local OUT="$OUT_DIR/libnucleus_tao_linux_widget.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_linux_widget.c" \
-        "$SCRIPT_DIR/nucleus_tao_linux_shadow.c" -ldl -lm \
+        "$SCRIPT_DIR/nucleus_tao_linux_widget.c" -ldl \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }
@@ -128,7 +136,8 @@ build_popup() {
     local OUT="$OUT_DIR/libnucleus_tao_linux_popup.so"
     "$CC" -shared -fPIC -O2 -fvisibility=hidden \
         -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
-        "$SCRIPT_DIR/nucleus_tao_linux_popup.c" -ldl -lpthread \
+        "$SCRIPT_DIR/nucleus_tao_linux_popup.c" \
+        "$SCRIPT_DIR/nucleus_tao_linux_popup_xdnd.c" -ldl -lpthread \
         -o "$OUT"
     strip --strip-unneeded "$OUT" || true
 }
@@ -138,7 +147,27 @@ case "$HOST_ARCH" in
     aarch64|arm64) build_popup "$OUT_DIR_ARM64" ;;
 esac
 
-# ── 6) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
+# ── 6) GTK clipboard helper (libnucleus_tao_linux_clipboard.so) ────────────
+# Its own library rather than a slot in nucleus_tao_linux_widget: the clipboard
+# is needed by every Tao window (Compose's LocalClipboard), the widget helper
+# only by apps embedding a foreign GtkWidget.
+
+build_clipboard() {
+    local OUT_DIR="$1"
+    local OUT="$OUT_DIR/libnucleus_tao_linux_clipboard.so"
+    "$CC" -shared -fPIC -O2 -fvisibility=hidden \
+        -I"$JNI_INCLUDE" -I"$JNI_INCLUDE_LINUX" \
+        "$SCRIPT_DIR/nucleus_tao_linux_clipboard.c" -ldl \
+        -o "$OUT"
+    strip --strip-unneeded "$OUT" || true
+}
+
+case "$HOST_ARCH" in
+    x86_64)        build_clipboard "$OUT_DIR_X64"   ;;
+    aarch64|arm64) build_clipboard "$OUT_DIR_ARM64" ;;
+esac
+
+# ── 7) Clear NativeLibraryLoader cache so fresh .so's are picked up ────────
 # Per the Linux module checklist in CLAUDE.md: skipping this serves the stale
 # cached copy out of ~/.cache/nucleus/native/<arch>/.
 
@@ -151,6 +180,6 @@ done
 
 echo "Built Linux native libraries:"
 case "$HOST_ARCH" in
-    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so,libnucleus_tao_linux_popup.so} ;;
-    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so,libnucleus_tao_linux_popup.so} ;;
+    x86_64) ls -lh "$OUT_DIR_X64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so,libnucleus_tao_linux_popup.so,libnucleus_tao_linux_clipboard.so} ;;
+    aarch64|arm64) ls -lh "$OUT_DIR_ARM64"/{libnucleus_tao.so,libnucleus_tao_egl.so,libnucleus_tao_linux_widget.so,libnucleus_tao_linux_popup.so,libnucleus_tao_linux_clipboard.so} ;;
 esac

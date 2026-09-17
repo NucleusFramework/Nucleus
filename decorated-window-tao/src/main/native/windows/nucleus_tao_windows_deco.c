@@ -73,6 +73,12 @@ typedef struct {
     WNDPROC originalWndProc;
     int     titleBarHeightPx;
     COLORREF bgColor;
+    /* Theme CSD contour (#526). When set, windowed chrome uses this as
+     * DWMWA_BORDER_COLOR so the 1px frame follows the rounded HWND —
+     * a Compose stroke on the client is either clipped at the corners
+     * or inset into a second contour. */
+    COLORREF borderColor;
+    BOOL    hasBorderColor;
     BOOL    startupBackgroundErase;
     BOOL    isFullscreen;
     LONG    savedStyle;
@@ -82,7 +88,412 @@ typedef struct {
      * (instead of Tao's consuming subclass) so the OS synthesises legacy mouse
      * messages for an OS-driven title-bar drag with Aero Snap. See decoWndProc. */
     BOOL    titleBarDragArmed;
+    /* Set while a DWM system backdrop (Mica / Acrylic / Mica Alt) is applied.
+     * The backdrop is only visible through an unpainted client area, so it
+     * suppresses both the WM_ERASEBKGND fill and the caption/border color
+     * overrides that would otherwise paint over it. */
+    BOOL    backdropActive;
+    /* Set while the frame is extended to the full sheet of glass
+     * ({-1,-1,-1,-1}) for a DWM backdrop tier. Remembered so the fullscreen
+     * toggle can re-derive the correct margins for the current mode — the
+     * accent (Windows 10 acrylic) tier is backdropActive without the sheet. */
+    BOOL    sheetOfGlass;
+    /* TRUE while a fullscreen toggle's geometry change is in flight. While
+     * set, the WM_WINDOWPOSCHANGED the change generates is forwarded
+     * SYNCHRONOUSLY to the JVM (NativeTaoWindowsDecoBridge.
+     * onFullscreenSizeChanged), which renders + presents the new-size frame
+     * on this stack, before the geometry call returns — the Windows analog
+     * of the macOS windowWillEnter/ExitFullScreen prepare (NucleusTaoMetal.m
+     * willEnterFS). Rendering after SetWindowPos returned was always ≥1
+     * composited frame too late (issue 413). NOTE: hooked at
+     * WM_WINDOWPOSCHANGED, not WM_SIZE — Tao's subclass handles
+     * WINDOWPOSCHANGED without DefWindowProc, so WM_SIZE never fires here. */
+    BOOL    fsTransitionActive;
+    /* Expected final client size of the in-flight toggle: only near-final
+     * sizes are forwarded (the geometry ops also deliver intermediate
+     * frame-recalc sizes, each worth a wasted relayout). Exit is an
+     * estimate, hence the tolerance at the forward site. */
+    int     fsExpectedW;
+    int     fsExpectedH;
+    /* Set when the active backdrop is the Windows 10 accent-policy acrylic
+     * rather than a DWM one. DWM tints its own materials from the OS theme,
+     * but the accent policy takes an explicit tint colour that has to be
+     * re-pushed whenever the window background changes — otherwise a light
+     * theme keeps the dark tint and the content becomes unreadable. */
+    BOOL    accentActive;
+    /* Explicit acrylic tint supplied by the app, as a premixed ABGR gradient
+     * colour. When absent the window background colour is used instead. */
+    BOOL    hasTint;
+    DWORD   tintGradient;
+    /* WS_SYSMENU is stripped while the sheet-of-glass frame is extended:
+     * with it present DWM paints its own caption buttons over the client
+     * area (offset from the app's) and steals their hover. Remembered here
+     * so deactivating the backdrop restores the style bit it removed. */
+    BOOL    strippedSysMenu;
+    /* The resolved immersive-dark flag last pushed by the Kotlin side, and
+     * whether one was pushed at all. Kept so WM_SETTINGCHANGE can restore it:
+     * Tao's own handler re-derives the flag from the SYSTEM theme on every
+     * settings change, silently overriding the app-resolved value — a light
+     * app on a system flipped to dark got a dark Mica under light content. */
+    BOOL    immersiveDark;
+    BOOL    hasImmersiveDark;
+    /* Client size at the last backdrop-mode WM_ERASEBKGND, so the erase can
+     * black-fill (= alpha 0 = show the material) only the newly exposed
+     * bands. Erasing the whole client each time made every interactive
+     * resize flicker between bare material and content; erasing nothing left
+     * half a screen of stale pixels on maximize. */
+    int     lastEraseClientW;
+    int     lastEraseClientH;
+    /* Client-space rects (physical px) of the Compose-drawn caption buttons,
+     * in the order minimize / maximize / close; all-zero = slot absent.
+     * Published from the Kotlin side after every layout so WM_NCHITTEST can
+     * answer HTMINBUTTON / HTMAXBUTTON / HTCLOSE over them — which is what
+     * makes Windows 11 show the Snap Layouts flyout on maximize hover. The
+     * buttons stay Compose-drawn and Compose-handled: the NC mouse messages
+     * for these hit codes are forwarded back as client messages. */
+    RECT    captionButtonRects[3];
+    /* Fully borderless chrome (DecoratedWindow(undecorated = true) overlays /
+     * ghosts). Suppresses DWM caption+border colours and the 1px bottom
+     * frame extension that keeps the drop shadow — otherwise a transparent
+     * window still shows a 1px system contour (themed border, often black
+     * when the clear colour is alpha-0). */
+    BOOL    borderlessChrome;
 } DecoState;
+
+/* Order inside DecoState.captionButtonRects. */
+#define CAPTION_BUTTON_MINIMIZE 0
+#define CAPTION_BUTTON_MAXIMIZE 1
+#define CAPTION_BUTTON_CLOSE    2
+
+/* The hit code each slot answers with. */
+static const LRESULT kCaptionButtonHitCodes[3] = { HTMINBUTTON, HTMAXBUTTON, HTCLOSE };
+
+static BOOL isCaptionButtonHit(WPARAM code) {
+    return code == HTMINBUTTON || code == HTMAXBUTTON || code == HTCLOSE;
+}
+
+/* DWM constants — declared manually because the /NODEFAULTLIB build can pull
+ * an SDK dwmapi.h predating Windows 11 22H2. */
+#ifndef DWMWA_SYSTEMBACKDROP_TYPE
+#define DWMWA_SYSTEMBACKDROP_TYPE 38
+#endif
+#ifndef DWMWA_COLOR_NONE
+/* "Draw no caption/border fill at all" — NOT DWMWA_COLOR_DEFAULT (0xFFFFFFFF),
+ * which restores the *opaque* system caption and hides the backdrop behind the
+ * title bar. Same value flutter_acrylic uses for its Mica path. */
+#define DWMWA_COLOR_NONE 0xFFFFFFFE
+#endif
+#ifndef DWMWA_COLOR_DEFAULT
+#define DWMWA_COLOR_DEFAULT 0xFFFFFFFF
+#endif
+#ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+#define DWMWA_WINDOW_CORNER_PREFERENCE 33
+#endif
+/* DWM_WINDOW_CORNER_PREFERENCE wire values (avoid depending on a 22H2 SDK). */
+#define NUCLEUS_DWMWCP_DEFAULT    0
+#define NUCLEUS_DWMWCP_DONOTROUND 1
+#define NUCLEUS_DWMWCP_ROUND      2
+#ifndef DWMWA_VISIBLE_FRAME_BORDER_THICKNESS
+/* Win11 22000+: thickness of the visible non-client border (logical px). */
+#define DWMWA_VISIBLE_FRAME_BORDER_THICKNESS 37
+#endif
+
+/* Backdrop styles below this are "no backdrop": DWMSBT_AUTO (0) leaves the
+ * choice to DWM, which means none for an ordinary window, and DWMSBT_NONE (1)
+ * says so outright. Both keep the window opaque. */
+#define BACKDROP_IS_ACTIVE(style) ((style) >= 2)
+
+/* DWMSBT_TRANSIENTWINDOW — the only style with a real pre-22H2 counterpart. */
+#define BACKDROP_STYLE_ACRYLIC 3
+
+/* Which implementation tier to use. TIER_AUTO picks the best one this OS
+ * supports; the others pin it so the fallbacks can be seen on a machine that
+ * does not need them. Wire values shared with WindowsBackdropTier. */
+#define TIER_AUTO         0
+#define TIER_MODERN       1
+#define TIER_LEGACY_MICA  2
+#define TIER_WIN10_ACRYLIC 3
+
+/* ================================================================== */
+/*  Legacy backdrop fallbacks (Windows 10, Windows 11 before 22H2)     */
+/*                                                                     */
+/*  Both APIs below are UNDOCUMENTED. They are used only when the      */
+/*  documented DWMWA_SYSTEMBACKDROP_TYPE is unavailable, and every     */
+/*  failure path leaves the window plainly opaque.                     */
+/* ================================================================== */
+
+/* Undocumented: enables Mica on Windows 11 builds before 22H2, where
+ * DWMWA_SYSTEMBACKDROP_TYPE does not exist yet. */
+#define DWMWA_MICA_EFFECT 1029
+
+/* First Windows 11 build (Mica exists from here on). */
+#define BUILD_WIN11 22000
+
+typedef enum {
+    ACCENT_DISABLED = 0,
+    ACCENT_ENABLE_BLURBEHIND = 3,
+    ACCENT_ENABLE_ACRYLICBLURBEHIND = 4
+} NUCLEUS_ACCENT_STATE;
+
+typedef struct {
+    NUCLEUS_ACCENT_STATE AccentState;
+    DWORD AccentFlags;
+    DWORD GradientColor; /* ABGR, alpha drives how much shows through */
+    DWORD AnimationId;
+} NUCLEUS_ACCENT_POLICY;
+
+typedef struct {
+    DWORD  Attrib; /* WCA_ACCENT_POLICY */
+    PVOID  pvData;
+    SIZE_T cbData;
+} NUCLEUS_WINDOWCOMPOSITIONATTRIBDATA;
+
+#define WCA_ACCENT_POLICY 19
+
+/* RTL_OSVERSIONINFOW, redeclared so we need no <winternl.h>. */
+typedef struct {
+    ULONG dwOSVersionInfoSize;
+    ULONG dwMajorVersion;
+    ULONG dwMinorVersion;
+    ULONG dwBuildNumber;
+    ULONG dwPlatformId;
+    WCHAR szCSDVersion[128];
+} NUCLEUS_OSVERSIONINFOW;
+
+typedef LONG (WINAPI *PFN_RtlGetVersion)(NUCLEUS_OSVERSIONINFOW *);
+typedef BOOL (WINAPI *PFN_SetWindowCompositionAttribute)(
+    HWND, NUCLEUS_WINDOWCOMPOSITIONATTRIBDATA *);
+
+static PFN_SetWindowCompositionAttribute pSetWindowCompositionAttribute = NULL;
+static DWORD sOsBuildNumber = 0;
+static volatile BOOL legacyApisResolved = FALSE;
+
+static void resolveLegacyBackdropApis(void) {
+    if (legacyApisResolved) return;
+    legacyApisResolved = TRUE;
+
+    HMODULE hUser32 = GetModuleHandleW(L"user32.dll");
+    if (hUser32) {
+        pSetWindowCompositionAttribute = (PFN_SetWindowCompositionAttribute)
+            GetProcAddress(hUser32, "SetWindowCompositionAttribute");
+    }
+    /* RtlGetVersion rather than GetVersionEx: the latter is shimmed and lies
+     * about the build number unless the app ships a compatibility manifest. */
+    HMODULE hNtdll = GetModuleHandleW(L"ntdll.dll");
+    if (hNtdll) {
+        PFN_RtlGetVersion pRtlGetVersion =
+            (PFN_RtlGetVersion)GetProcAddress(hNtdll, "RtlGetVersion");
+        if (pRtlGetVersion) {
+            NUCLEUS_OSVERSIONINFOW vi;
+            ZeroMemory(&vi, sizeof(vi));
+            vi.dwOSVersionInfoSize = sizeof(vi);
+            if (pRtlGetVersion(&vi) == 0) sOsBuildNumber = vi.dwBuildNumber;
+        }
+    }
+}
+
+/* Windows 11 pre-22H2 Mica. Needs the sheet-of-glass margins like the modern
+ * path. Returns TRUE when the attribute was accepted. */
+static BOOL applyLegacyMica(HWND hwnd, BOOL enable) {
+    if (sOsBuildNumber < BUILD_WIN11) return FALSE;
+    BOOL value = enable;
+    return SUCCEEDED(DwmSetWindowAttribute(hwnd, DWMWA_MICA_EFFECT,
+                                           &value, sizeof(value)));
+}
+
+/* Opacity of the acrylic tint. The blur behind is arbitrary content — a bright
+ * desktop under a dark theme, or the reverse — so the window's own background
+ * has to dominate it or the text on top stops being readable. Tuned for
+ * legibility first, effect second. */
+#define ACRYLIC_TINT_ALPHA 0xCC000000u
+
+/* Windows 10 acrylic. Unlike Mica this blurs what is actually behind the
+ * window, and it composites against the window's own transparent pixels — so
+ * it does NOT want the sheet-of-glass margins. [tint] is the window background
+ * colour; DWM never themes this one for us, so callers must re-apply it
+ * whenever that colour changes. */
+static BOOL applyAccentAcrylic(HWND hwnd, BOOL enable, DWORD gradientColor) {
+    if (!pSetWindowCompositionAttribute) return FALSE;
+
+    NUCLEUS_ACCENT_POLICY accent;
+    ZeroMemory(&accent, sizeof(accent));
+    if (enable) {
+        accent.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+        accent.AccentFlags = 2; /* draw all borders */
+        accent.GradientColor = gradientColor;
+    } else {
+        accent.AccentState = ACCENT_DISABLED;
+    }
+
+    NUCLEUS_WINDOWCOMPOSITIONATTRIBDATA data;
+    data.Attrib = WCA_ACCENT_POLICY;
+    data.pvData = &accent;
+    data.cbData = sizeof(accent);
+    return pSetWindowCompositionAttribute(hwnd, &data);
+}
+
+/* ACCENT_POLICY wants 0xAABBGGRR. A COLORREF is already 0x00BBGGRR, so it only
+ * needs the default alpha; an app-supplied ARGB is 0xAARRGGBB and needs R and
+ * B swapped, keeping the app's own alpha — that alpha is the whole point of
+ * letting the app pass a colour. */
+static DWORD gradientFromColorRef(COLORREF c) {
+    return (DWORD)(c & 0x00FFFFFF) | ACRYLIC_TINT_ALPHA;
+}
+
+static DWORD gradientFromArgb(DWORD argb) {
+    return (argb & 0xFF000000u)
+         | ((argb & 0x000000FFu) << 16)
+         |  (argb & 0x0000FF00u)
+         | ((argb & 0x00FF0000u) >> 16);
+}
+
+/* The tint currently in force: the app's if it gave one, else the window
+ * background. */
+static DWORD resolveTintGradient(DecoState *state) {
+    if (state && state->hasTint) return state->tintGradient;
+    return gradientFromColorRef(state ? state->bgColor : RGB(32, 32, 32));
+}
+
+static void applyCaptionColors(HWND hwnd, DecoState *state);
+static void applyFrameMargins(HWND hwnd, DecoState *state);
+
+/* Turns a backdrop window back into a plain opaque themed one, immediately —
+ * the last composited image before a close must be the theme colour, not
+ * semi-transparent tint over a material DWM is about to drop (which fades
+ * towards black). Shared by the WM_CLOSE handler and nativePrepareClose. */
+static void revertBackdropForClose(HWND hwnd, DecoState *state) {
+    if (!state || !state->backdropActive) return;
+    state->backdropActive = FALSE;
+    state->accentActive = FALSE;
+    state->sheetOfGlass = FALSE;
+    int none = 1; /* DWMSBT_NONE */
+    DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &none, sizeof(none));
+    resolveLegacyBackdropApis();
+    applyAccentAcrylic(hwnd, FALSE, 0);
+    applyLegacyMica(hwnd, FALSE);
+    applyFrameMargins(hwnd, state);
+    applyCaptionColors(hwnd, state);
+    HDC dc = GetDC(hwnd);
+    RECT rc;
+    if (dc && GetClientRect(hwnd, &rc)) {
+        HBRUSH brush = CreateSolidBrush(state->bgColor);
+        FillRect(dc, &rc, brush);
+        DeleteObject(brush);
+    }
+    if (dc) ReleaseDC(hwnd, dc);
+}
+
+/* Applies the caption/border color to a window. While a backdrop is active the
+ * caption fill is suppressed entirely (an opaque caption is what otherwise
+ * leaves the title bar as a flat band above a Mica client area), but the
+ * border keeps DWM's default: COLOR_NONE on the border renders the top edge
+ * as a bare black line instead of the subtle system frame.
+ *
+ * Windowed CSD (no backdrop) keeps the 1px visible-frame thickness
+ * (zeroing it drops Win11's 8px rounded clip) and, when the app has
+ * pushed a theme colour, paints that as DWMWA_BORDER_COLOR so the
+ * contour follows the rounded HWND (#526). Compose no longer strokes
+ * the client edge — that stroke was either clipped at the corners or
+ * inset into a second frame. The 1px bottom DwmExtendFrame margin is
+ * unchanged — it only keeps the drop shadow. */
+static void applyCaptionColors(HWND hwnd, DecoState *state) {
+    BOOL backdrop = state && state->backdropActive;
+    BOOL borderless = state && state->borderlessChrome;
+    BOOL fullscreen = state && state->isFullscreen;
+    COLORREF themed = state ? state->bgColor : RGB(255, 255, 255);
+    COLORREF caption = backdrop ? (COLORREF)DWMWA_COLOR_NONE : themed;
+    COLORREF border = backdrop ? (COLORREF)DWMWA_COLOR_DEFAULT : themed;
+    UINT thickness = 1;
+    int corner = NUCLEUS_DWMWCP_ROUND;
+    /* Fullscreen: the borderless window covers the monitor exactly, so any
+     * fill DWM still draws for these attributes shows as a 1px contour of
+     * the wrong colour around the content — the issue-413 white edge (worst
+     * with a backdrop, where the border is otherwise the light system
+     * default). Same for borderlessChrome overlays (no system frame at all).
+     * Regular CSD: hide the DWM colour fill only; keep thickness + rounding. */
+    if (fullscreen || borderless) {
+        caption = (COLORREF)DWMWA_COLOR_NONE;
+        border = (COLORREF)DWMWA_COLOR_NONE;
+        thickness = 0;
+        corner = NUCLEUS_DWMWCP_DONOTROUND;
+    } else if (!backdrop) {
+        border = (state && state->hasBorderColor)
+            ? state->borderColor
+            : (COLORREF)DWMWA_COLOR_NONE;
+    }
+    DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */, &caption, sizeof(caption));
+    DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+    DwmSetWindowAttribute(hwnd, DWMWA_VISIBLE_FRAME_BORDER_THICKNESS,
+                          &thickness, sizeof(thickness));
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+}
+
+/* The DwmExtendFrameIntoClientArea margins for the current mode. Windowed
+ * keeps the 1px bottom extension that preserves the DWM drop shadow (or the
+ * full sheet of glass while a DWM backdrop tier is live). Fullscreen drops
+ * the 1px band: with the window covering the monitor it composites as a
+ * light hairline along the bottom edge (issue 413).
+ *
+ * borderlessChrome uses ZERO margins on purpose. The classic {0,0,0,1}
+ * bottom extension exists *only* to keep the DWM drop shadow; sheet-of-glass
+ * {-1,-1,-1,-1} also keeps a soft system shadow around the window. Ghost
+ * overlays (`DecoratedWindow(undecorated = true)`) want neither — per-pixel
+ * transparency still works via tao's DwmEnableBlurBehindWindow empty region
+ * (`with_transparent`). */
+static void applyFrameMargins(HWND hwnd, DecoState *state) {
+    BOOL borderless = state && state->borderlessChrome;
+    BOOL sheet = state && state->sheetOfGlass && !borderless;
+    BOOL fs = state && state->isFullscreen;
+    MARGINS margins;
+    if (borderless) {
+        margins.cxLeftWidth = margins.cxRightWidth = 0;
+        margins.cyTopHeight = margins.cyBottomHeight = 0;
+    } else {
+        margins.cxLeftWidth    = sheet ? -1 : 0;
+        margins.cxRightWidth   = sheet ? -1 : 0;
+        margins.cyTopHeight    = sheet ? -1 : 0;
+        margins.cyBottomHeight = sheet ? -1 : (fs ? 0 : 1);
+    }
+    DwmExtendFrameIntoClientArea(hwnd, &margins);
+}
+
+/* Borderless fullscreen is deliberately NOT sized exactly to the monitor:
+ * when a window's client rect matches the screen, the graphics driver / DWM
+ * promote its swapchain to independent flip ("fullscreen optimization").
+ * The promotion and every later demotion (popup, alt-tab, toggle) briefly
+ * composites DWM's stale cached frame — the issue-413 dual ghost — and on
+ * some stacks leaves a light 1px contour. AMD drivers apply this heuristic
+ * on the client rectangle alone, ignoring window styles entirely (measured
+ * by the Godot team: godotengine/godot#63500), so the only reliable opt-out
+ * is to overhang the screen by a couple of pixels and clip them back off
+ * with a window region — the same mechanism Godot's multiwindow fullscreen
+ * uses (_get_screen_expand_offset + SetWindowRgn). */
+#define FS_EXPAND_PX 2
+
+/* Picks the edge the fullscreen overhang hangs off: the bottom, unless
+ * another monitor sits directly below (the overhang should stay off every
+ * screen), then the right. Both occupied: bottom — the window region keeps
+ * the overhang invisible there too. */
+static void getFullscreenExpandOffset(
+    HMONITOR hMon, const MONITORINFO *mi, int *dx, int *dy)
+{
+    POINT below;
+    below.x = (mi->rcMonitor.left + mi->rcMonitor.right) / 2;
+    below.y = mi->rcMonitor.bottom + 1;
+    POINT right;
+    right.x = mi->rcMonitor.right + 1;
+    right.y = (mi->rcMonitor.top + mi->rcMonitor.bottom) / 2;
+    HMONITOR mBelow = MonitorFromPoint(below, MONITOR_DEFAULTTONULL);
+    HMONITOR mRight = MonitorFromPoint(right, MONITOR_DEFAULTTONULL);
+    if (mBelow == NULL || mBelow == hMon) {
+        *dx = 0; *dy = FS_EXPAND_PX;
+    } else if (mRight == NULL || mRight == hMon) {
+        *dx = FS_EXPAND_PX; *dy = 0;
+    } else {
+        *dx = 0; *dy = FS_EXPAND_PX;
+    }
+}
 
 static DecoState *getState(HWND hwnd) {
     return (DecoState *)GetPropW(hwnd, PROP_NAME);
@@ -116,6 +527,52 @@ static BOOL isOwnedTaoPopup(HWND root, HWND owner) {
         currentOwner = GetWindow(currentOwner, GW_OWNER);
     }
     return FALSE;
+}
+
+/* ── JVM upcall for the fullscreen transition ─────────────────────────── */
+/* Cached in nativeInstallDecoration (the first JNI call with an env). Same
+ * pattern as NucleusTaoMetal.m's ensureMetalJVMCached. */
+static JavaVM   *sDecoJVM = NULL;
+static jclass    sDecoBridgeClass = NULL;   /* global ref */
+static jmethodID sDecoOnFullscreenSize = NULL;
+
+static void ensureDecoJVMCached(JNIEnv *env) {
+    if (sDecoJVM) return;
+    if ((*env)->GetJavaVM(env, &sDecoJVM) != JNI_OK) { sDecoJVM = NULL; return; }
+    jclass local = (*env)->FindClass(env,
+        "dev/nucleusframework/window/tao/ffi/NativeTaoWindowsDecoBridge");
+    if (local) {
+        sDecoBridgeClass = (jclass)(*env)->NewGlobalRef(env, local);
+        (*env)->DeleteLocalRef(env, local);
+        sDecoOnFullscreenSize = (*env)->GetStaticMethodID(
+            env, sDecoBridgeClass, "onFullscreenSizeChanged", "(JII)V");
+    }
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+}
+
+/* Calls NativeTaoWindowsDecoBridge.onFullscreenSizeChanged(hwnd, w, h) and
+ * BLOCKS until the JVM has rendered + presented at that size. Invoked from
+ * WM_WINDOWPOSCHANGED inside the fullscreen toggle's geometry change, on
+ * the Tao main thread — the JVM render runs re-entrantly on this stack, so
+ * the frame exists before the geometry change returns to the caller. */
+static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
+    if (!sDecoJVM || !sDecoBridgeClass || !sDecoOnFullscreenSize) return;
+    JNIEnv *env = NULL;
+    jint status = (*sDecoJVM)->GetEnv(sDecoJVM, (void **)&env, JNI_VERSION_1_8);
+    if (status == JNI_EDETACHED) {
+        if ((*sDecoJVM)->AttachCurrentThreadAsDaemon(sDecoJVM, (void **)&env, NULL) != JNI_OK) {
+            return;
+        }
+    } else if (status != JNI_OK) {
+        return;
+    }
+    if (!env) return;
+    (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnFullscreenSize,
+        (jlong)(uintptr_t)hwnd, (jint)w, (jint)h);
+    if ((*env)->ExceptionCheck(env)) {
+        (*env)->ExceptionDescribe(env);
+        (*env)->ExceptionClear(env);
+    }
 }
 
 /* WndProc subclass */
@@ -166,11 +623,57 @@ static LRESULT CALLBACK decoWndProc(
 
     switch (msg) {
 
+    /* While a backdrop is active, WS_SYSMENU must stay off no matter who
+     * writes the style: with the frame extended over the whole window, that
+     * bit makes DWM paint its own caption buttons over the app-drawn ones and
+     * steal their hover. A one-shot strip in nativeSetBackdropStyle is not
+     * enough — Tao reapplies its cached window flags on state transitions
+     * (maximize, restore, focus), which used to bring the buttons back on the
+     * first maximize. Enforcing the invariant here catches every writer. */
+    case WM_STYLECHANGING:
+        if (wParam == GWL_STYLE && state->backdropActive) {
+            STYLESTRUCT *ss = (STYLESTRUCT *)lParam;
+            ss->styleNew &= ~(DWORD)WS_SYSMENU;
+        }
+        break;
+
     /* During ShowWindow, DWM can request an erased client surface before GL
      * has presented into the now-visible redirection surface. Paint the themed
      * background only for that startup gap; after the first native redraw event
      * this is disabled to avoid solid-color flicker while resizing or dragging. */
     case WM_ERASEBKGND:
+        /* Borderless transparent overlays: claim the erase and paint nothing.
+         * A solid fill would reappear as a contour; the GL surface + tao
+         * DwmEnableBlurBehindWindow empty region already present the desktop. */
+        if (state->borderlessChrome) {
+            return 1;
+        }
+        /* With a backdrop, newly exposed areas must be erased to GDI black:
+         * GDI writes alpha 0 on the 32bpp redirection surface, which the
+         * sheet-of-glass frame composites as "show the backdrop" (the classic
+         * DWM custom-frame trick). Without it, a maximize left half a screen
+         * of stale opaque pixels until GL presented at the new size — a very
+         * visible pop. But ONLY the growth bands: blacking the whole client
+         * on every erase made interactive resizing strobe between bare
+         * material and content several times a second. */
+        if (state->backdropActive) {
+            HDC hdc = (HDC)wParam;
+            RECT rc;
+            if (hdc && GetClientRect(hwnd, &rc)) {
+                HBRUSH black = (HBRUSH)GetStockObject(BLACK_BRUSH);
+                if (rc.right > state->lastEraseClientW) {
+                    RECT band = { state->lastEraseClientW, 0, rc.right, rc.bottom };
+                    FillRect(hdc, &band, black);
+                }
+                if (rc.bottom > state->lastEraseClientH) {
+                    RECT band = { 0, state->lastEraseClientH, rc.right, rc.bottom };
+                    FillRect(hdc, &band, black);
+                }
+                state->lastEraseClientW = rc.right;
+                state->lastEraseClientH = rc.bottom;
+            }
+            return 1;
+        }
         if (state->startupBackgroundErase) {
             HDC hdc = (HDC)wParam;
             RECT rc;
@@ -182,6 +685,30 @@ static LRESULT CALLBACK decoWndProc(
         }
         return 1;
 
+
+    /* Fullscreen toggle: render + present the new-size frame synchronously,
+     * INSIDE the geometry change, before Tao's async RESIZED event would
+     * ever run. Tao's handler runs first so its cached size stays
+     * consistent. Only the (near-)final size is forwarded — intermediate
+     * frame-recalc geometries live for microseconds inside the win32 call. */
+    case WM_WINDOWPOSCHANGED: {
+        if (state->fsTransitionActive) {
+            LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+            RECT rc;
+            if (GetClientRect(hwnd, &rc) && rc.right > 0 && rc.bottom > 0) {
+                int dw = (int)rc.right - state->fsExpectedW;
+                if (dw < 0) dw = -dw;
+                int dh = (int)rc.bottom - state->fsExpectedH;
+                if (dh < 0) dh = -dh;
+                /* Tolerance: the exit target is an estimate. */
+                if (dw <= 64 && dh <= 64) {
+                    notifyFullscreenSizeChanged(hwnd, (int)rc.right, (int)rc.bottom);
+                }
+            }
+            return result;
+        }
+        break;
+    }
 
     case WM_NCCALCSIZE: {
         if (!wParam) break;
@@ -256,12 +783,27 @@ static LRESULT CALLBACK decoWndProc(
             if (pt.y >= windowRect.bottom - borderHeight) return HTBOTTOM;
         }
 
-        /* Title bar zone — always HTCLIENT.
-         * NEVER return HTMINBUTTON/HTMAXBUTTON/HTCLOSE: DWM would draw native
-         * buttons on top of our Compose UI. Compose handles the whole title
-         * bar, including its own min/max/close buttons; unconsumed clicks call
-         * window.dragWindow() which posts WM_NCLBUTTONDOWN HTCAPTION via Tao. */
-        if (pt.y < windowRect.top + state->titleBarHeightPx) {
+        /* Compose-drawn caption buttons answer with their real hit codes —
+         * the Snap Layouts protocol: HTMAXBUTTON is what makes Windows 11
+         * show the snap flyout on hover. DWM draws nothing for these codes
+         * on an opaque client (measured; the ghost-window buttons that once
+         * suggested otherwise were an unresponsive-probe artifact), and the
+         * NC mouse messages they generate are forwarded back to Compose
+         * below, so hover, press and click all stay Compose-handled. */
+        /* Measured in CLIENT space: when maximized, WM_NCCALCSIZE above
+         * shifts the client top down by the border width, so a window-rect
+         * comparison would truncate the bottom of the caption-button zone. */
+        POINT client = pt;
+        ScreenToClient(hwnd, &client);
+        if (client.y >= 0 && client.y < state->titleBarHeightPx) {
+            for (int i = 0; i < 3; ++i) {
+                const RECT *rc = &state->captionButtonRects[i];
+                if (rc->right > rc->left && rc->bottom > rc->top &&
+                    client.x >= rc->left && client.x < rc->right &&
+                    client.y >= rc->top && client.y < rc->bottom) {
+                    return kCaptionButtonHitCodes[i];
+                }
+            }
             return HTCLIENT;
         }
 
@@ -273,12 +815,45 @@ static LRESULT CALLBACK decoWndProc(
             ReleaseCapture();
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
+        /* Caption-button zones are non-client only for the Snap Layouts
+         * hit-test; the interaction itself belongs to the Compose buttons.
+         * Re-forward as a client press — same pattern as WM_NCMOUSEMOVE. */
+        if (isCaptionButtonHit(wParam)) {
+            POINT pt;
+            pt.x = (short)LOWORD(lParam);
+            pt.y = (short)HIWORD(lParam);
+            ScreenToClient(hwnd, &pt);
+            PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(pt.x, pt.y));
+            return 0;
+        }
+        break;
+    }
+
+    case WM_NCLBUTTONUP: {
+        if (isCaptionButtonHit(wParam)) {
+            POINT pt;
+            pt.x = (short)LOWORD(lParam);
+            pt.y = (short)HIWORD(lParam);
+            ScreenToClient(hwnd, &pt);
+            PostMessageW(hwnd, WM_LBUTTONUP, 0, MAKELPARAM(pt.x, pt.y));
+            return 0;
+        }
         break;
     }
 
     case WM_NCLBUTTONDBLCLK: {
         if (wParam == HTCAPTION) {
             return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+        /* A fast second click on a caption button arrives as a double-click;
+         * Compose sees it as an ordinary second press. */
+        if (isCaptionButtonHit(wParam)) {
+            POINT pt;
+            pt.x = (short)LOWORD(lParam);
+            pt.y = (short)HIWORD(lParam);
+            ScreenToClient(hwnd, &pt);
+            PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, MAKELPARAM(pt.x, pt.y));
+            return 0;
         }
         break;
     }
@@ -290,6 +865,28 @@ static LRESULT CALLBACK decoWndProc(
         ScreenToClient(hwnd, &pt);
         PostMessageW(hwnd, WM_MOUSEMOVE, 0, MAKELPARAM(pt.x, pt.y));
         break;
+    }
+
+    /* The caption buttons are non-client for the Snap Layouts hit-test, so a
+     * cursor leaving the window straight from one of them produces only a
+     * WM_NCMOUSELEAVE — without this forward, Compose never sees an Exit and
+     * the button's hover highlight sticks. */
+    case WM_NCMOUSELEAVE:
+        PostMessageW(hwnd, WM_MOUSELEAVE, 0, 0);
+        break;
+
+    /* Tao's WM_SETTINGCHANGE handler re-derives DWMWA_USE_IMMERSIVE_DARK_MODE
+     * from the SYSTEM theme, silently overriding the app-resolved flag — a
+     * light-forced app on a system flipped to dark got a dark Mica under
+     * light content. Let Tao run, then restore the resolved value on top. */
+    case WM_SETTINGCHANGE: {
+        LRESULT result = CallWindowProcW(state->originalWndProc, hwnd, msg, wParam, lParam);
+        if (state->hasImmersiveDark) {
+            BOOL dark = state->immersiveDark;
+            DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
+                                  &dark, sizeof(dark));
+        }
+        return result;
     }
 
     case WM_SYSCOMMAND: {
@@ -317,6 +914,15 @@ static LRESULT CALLBACK decoWndProc(
      * the (non-existent) menu silently. */
     case WM_MENUCHAR:
         return MAKELRESULT(0, MNC_CLOSE);
+
+    /* WM_CLOSE is cancelable: Tao turns it into CLOSE_REQUESTED and does not
+     * DestroyWindow until the app confirms via requestClose. Reverting the
+     * backdrop here permanently killed Mica on "Save before quit?" → Cancel
+     * while WindowsBackdrop was still composed. The opaque last frame is
+     * prepared on the confirmed destroy path only (nativePrepareClose from
+     * TaoWindow.requestClose / host.prepareClose). */
+    case WM_CLOSE:
+        break;
 
     case WM_NCDESTROY: {
         if (state->isFullscreen) {
@@ -353,9 +959,13 @@ JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstallDecoration(
     JNIEnv *env, jclass clazz, jlong hwndLong, jint titleBarHeightPx)
 {
-    (void)env; (void)clazz;
+    (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
     if (!hwnd || !IsWindow(hwnd)) return;
+
+    /* Prime the native → JVM upcall for the fullscreen-transition prepare:
+     * it fires from WM_WINDOWPOSCHANGED with no JNIEnv of its own. */
+    ensureDecoJVMCached(env);
 
     DecoState *existing = getState(hwnd);
     if (existing) {
@@ -382,6 +992,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeInstal
      * transparent pixels render as black (invisible on dark themes). */
     MARGINS margins = {0, 0, 0, 1};
     DwmExtendFrameIntoClientArea(hwnd, &margins);
+    applyCaptionColors(hwnd, state);
 
     SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
         SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
@@ -422,11 +1033,68 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetTit
     if (state) state->titleBarHeightPx = (int)heightPx;
 }
 
-/* Background color (ARGB) — synced to DWM caption/border color and dark-mode
- * flag so the "sheet of glass" composited during resize matches the theme. */
+/**
+ * Fully borderless chrome for overlay/ghost windows
+ * (`DecoratedWindow(undecorated = true)`).
+ *
+ * Kills every DWM source of contour / drop shadow we can:
+ *  - caption + border colours → COLOR_NONE
+ *  - frame margins → {0,0,0,0} (the 1px bottom band exists *only* for shadow)
+ *  - squared corners (no rounded AA outline)
+ *  - visible frame border thickness 0 (Win11)
+ *  - system backdrop none (no Mica/Acrylic halo)
+ *
+ * Per-pixel transparency still comes from tao's DwmEnableBlurBehindWindow
+ * empty region. Safe to call repeatedly (e.g. after show()).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBorderlessChrome(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean borderless)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+    DecoState *state = getState(hwnd);
+    if (!state) return;
+    BOOL wanted = borderless ? TRUE : FALSE;
+    state->borderlessChrome = wanted;
+    /* Backdrop sheet-of-glass would re-arm frame extension + shadow. */
+    if (wanted) {
+        state->sheetOfGlass = FALSE;
+        state->backdropActive = FALSE;
+    }
+    applyCaptionColors(hwnd, state);
+    applyFrameMargins(hwnd, state);
+
+    int corner = wanted ? NUCLEUS_DWMWCP_DONOTROUND : NUCLEUS_DWMWCP_DEFAULT;
+    DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+                          &corner, sizeof(corner));
+
+    if (wanted) {
+        /* DWMSBT_NONE — no system material halo around the HWND. */
+        int none = 1;
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+                              &none, sizeof(none));
+    }
+
+    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+        SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+/**
+ * Applies the whole window theme in one call — background brush, DWM
+ * caption/border colors, immersive-dark flag, and the Windows 10 acrylic tint
+ * when that fallback is live.
+ *
+ * [isDark] arrives resolved from the Kotlin side (window-background luminance
+ * unless `WindowAppearance` overrides it) rather than being re-derived here:
+ * a single resolution point is what makes it impossible for the DWM material
+ * and the Compose-drawn glyphs to disagree.
+ */
 JNIEXPORT void JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBackgroundColor(
-    JNIEnv *env, jclass clazz, jlong hwndLong, jint argb)
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint argb, jboolean isDark)
 {
     (void)env; (void)clazz;
     HWND hwnd = (HWND)(uintptr_t)hwndLong;
@@ -440,15 +1108,269 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBac
     DecoState *state = getState(hwnd);
     if (state) state->bgColor = color;
 
-    DwmSetWindowAttribute(hwnd, 35 /* DWMWA_CAPTION_COLOR */,
-                          &color, sizeof(color));
-    DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */,
-                          &color, sizeof(color));
+    /* No-op on the caption while a backdrop is active — it repaints it opaque.
+     * The color is still stored, so removing the backdrop restores it. */
+    applyCaptionColors(hwnd, state);
 
-    int luminance = (r * 299 + g * 587 + b * 114) / 1000;
-    BOOL isDark = (luminance < 128) ? TRUE : FALSE;
+    /* The Windows 10 acrylic tint is ours to maintain: DWM themes its own
+     * materials, but the accent policy holds whatever colour it was last
+     * given. Without this a light/dark switch keeps the old tint and the
+     * content stops being readable over the blur. */
+    if (state && state->accentActive) {
+        resolveLegacyBackdropApis();
+        applyAccentAcrylic(hwnd, TRUE, resolveTintGradient(state));
+    }
+
+    BOOL dark = isDark ? TRUE : FALSE;
+    if (state) {
+        state->immersiveDark = dark;
+        state->hasImmersiveDark = TRUE;
+    }
     DwmSetWindowAttribute(hwnd, 20 /* DWMWA_USE_IMMERSIVE_DARK_MODE */,
-                          &isDark, sizeof(isDark));
+                          &dark, sizeof(dark));
+}
+
+/**
+ * Theme colour for the DWM 1px frame (Win11 rounded clip). [visible] false
+ * hides it (maximized / fullscreen — same as skipping Compose insideBorder).
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBorderColor(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint argb, jboolean visible)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+
+    DecoState *state = getState(hwnd);
+    if (state) {
+        if (visible) {
+            int r = (argb >> 16) & 0xFF;
+            int g = (argb >>  8) & 0xFF;
+            int b =  argb        & 0xFF;
+            state->borderColor = RGB(r, g, b);
+            state->hasBorderColor = TRUE;
+        } else {
+            state->hasBorderColor = FALSE;
+        }
+    }
+    applyCaptionColors(hwnd, state);
+}
+
+/**
+ * Applies a system backdrop, degrading across three tiers:
+ *
+ *   1. Windows 11 22H2+  DWMWA_SYSTEMBACKDROP_TYPE  (documented)
+ *   2. Windows 11 <22H2  DWMWA_MICA_EFFECT          (undocumented)
+ *   3. Windows 10        SetWindowCompositionAttribute acrylic (undocumented)
+ *
+ * [style] is the DWM_SYSTEMBACKDROP_TYPE wire value: 0 auto, 1 none,
+ * 2 Mica, 3 Acrylic, 4 Mica Alt. Tier 2 has only one material, so Mica and
+ * Mica Alt both map to it and Acrylic falls through to tier 3. Tier 3 has no
+ * Mica at all — it blurs what is behind the window rather than tinting from
+ * the wallpaper — so every active style degrades to acrylic there. The app
+ * gets an effect, never the wrong-looking nothing.
+ *
+ * Tiers 1 and 2 need the client area turned into a "sheet of glass"
+ * ({-1,-1,-1,-1}) so whatever the renderer leaves at alpha 0 shows the
+ * material. Tier 3 composites against the window's own transparent pixels
+ * instead and must keep ordinary margins. Deactivating restores the 1px
+ * bottom extension the decoration installs for the DWM shadow — see
+ * nativeInstallDecoration for why the inactive case must NOT stay at -1 (DWM
+ * then renders transparent pixels as black).
+ *
+ * [tier] pins the implementation (TIER_* above) instead of letting the OS
+ * decide, so the fallbacks can be previewed on a machine that would otherwise
+ * always take tier 1.
+ *
+ * Returns the tier actually showing afterwards (TIER_MODERN /
+ * TIER_LEGACY_MICA / TIER_WIN10_ACRYLIC), or 0 when none is — including a
+ * style this OS cannot honour, which the caller treats as "stay opaque".
+ * The caller needs the tier, not just a boolean: the accent tier carries its
+ * own tint, so the Compose-side tint layer must not double it.
+ */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetBackdropStyle(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jint style, jint tintArgb, jboolean hasTint,
+    jint tier)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return 0;
+
+    resolveLegacyBackdropApis();
+    DecoState *state = getState(hwnd);
+    if (state) {
+        state->hasTint = hasTint ? TRUE : FALSE;
+        state->tintGradient = gradientFromArgb((DWORD)tintArgb);
+    }
+    BOOL wanted = BACKDROP_IS_ACTIVE(style);
+    BOOL active = FALSE;
+    BOOL sheetOfGlass = FALSE;
+    BOOL accent = FALSE;
+    int appliedTier = 0;
+
+    /* A pinned tier skips the ones above it. This has to happen before the
+     * tier-1 call, not after: on a real Windows 10 that call fails and has no
+     * effect, but on a modern one it would succeed and apply the backdrop
+     * anyway, masking the tier being previewed. */
+    BOOL allowModern = (tier == TIER_AUTO || tier == TIER_MODERN);
+    BOOL allowLegacyMica = (tier == TIER_AUTO || tier == TIER_LEGACY_MICA);
+    BOOL allowAccent = (tier == TIER_AUTO || tier == TIER_WIN10_ACRYLIC);
+
+    /* Tier 1. Also the way OFF is expressed on 22H2+, so it runs either way. */
+    int value = (int)style;
+    BOOL modern = allowModern && SUCCEEDED(DwmSetWindowAttribute(
+        hwnd, DWMWA_SYSTEMBACKDROP_TYPE, &value, sizeof(value)));
+
+    if (modern) {
+        active = wanted;
+        if (active) appliedTier = TIER_MODERN;
+        /* The sheet of glass is NOT optional, however much it looks like it:
+         * without it DWM treats the client area as opaque and composites the
+         * renderer's alpha-0 pixels as solid black rather than showing the
+         * backdrop (measured). It also makes DWM draw its own caption buttons
+         * over our custom title bar — countered by the WS_SYSMENU strip
+         * below. */
+        sheetOfGlass = wanted;
+        /* Leaving a lower tier: its mechanisms must be dismantled, not just
+         * outranked. A live ACCENT_POLICY under a modern backdrop renders the
+         * whole client area black (measured on the tier-3 → auto path), and a
+         * lingering legacy Mica attribute is the same hazard. */
+        if (state && state->accentActive) applyAccentAcrylic(hwnd, FALSE, 0);
+        applyLegacyMica(hwnd, FALSE);
+    } else {
+        /* Tier 2 — Mica / Mica Alt on Windows 11 before 22H2. */
+        if (allowLegacyMica && wanted && style != BACKDROP_STYLE_ACRYLIC &&
+            applyLegacyMica(hwnd, TRUE)) {
+            active = TRUE;
+            sheetOfGlass = TRUE;
+            appliedTier = TIER_LEGACY_MICA;
+            /* A tier-3 accent policy left running would fight this material
+             * the same way it fights the modern one. */
+            if (state && state->accentActive) applyAccentAcrylic(hwnd, FALSE, 0);
+        } else {
+            applyLegacyMica(hwnd, FALSE);
+            /* Tier 3 — Windows 10 acrylic. A pinned higher tier must NOT fall
+             * through to it: pinning a tier the OS lacks means "stay opaque",
+             * not "show a different material instead". */
+            DWORD gradient = resolveTintGradient(state);
+            active = allowAccent && wanted && applyAccentAcrylic(hwnd, TRUE, gradient);
+            if (!active) applyAccentAcrylic(hwnd, FALSE, gradient);
+            accent = active;
+            if (active) appliedTier = TIER_WIN10_ACRYLIC;
+        }
+    }
+
+    if (state) {
+        state->backdropActive = active;
+        state->accentActive = accent;
+        /* The delta-erase baseline starts at the current client size: the
+         * existing content is already rendered, nothing to black out yet. */
+        RECT rc;
+        if (GetClientRect(hwnd, &rc)) {
+            state->lastEraseClientW = rc.right;
+            state->lastEraseClientH = rc.bottom;
+        }
+    }
+
+    /* Measured on a probe reproducing this exact config (custom NCCALCSIZE +
+     * child render surface + sheet of glass): with WS_SYSMENU present DWM
+     * paints its own caption buttons over the top-right of the client area,
+     * offset from the app-drawn ones, and intercepts their hover; stripping
+     * the bit removes them while the backdrop keeps showing. Restored when
+     * the backdrop goes. Costs the system menu (Alt+Space) while active. */
+    if (state) {
+        LONG_PTR winStyle = GetWindowLongPtrW(hwnd, GWL_STYLE);
+        if (sheetOfGlass && (winStyle & WS_SYSMENU)) {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, winStyle & ~(LONG_PTR)WS_SYSMENU);
+            state->strippedSysMenu = TRUE;
+        } else if (!sheetOfGlass && state->strippedSysMenu) {
+            SetWindowLongPtrW(hwnd, GWL_STYLE, winStyle | WS_SYSMENU);
+            state->strippedSysMenu = FALSE;
+        }
+    }
+
+    if (state) {
+        state->sheetOfGlass = sheetOfGlass;
+        applyFrameMargins(hwnd, state);
+    } else {
+        MARGINS margins;
+        margins.cxLeftWidth    = sheetOfGlass ? -1 : 0;
+        margins.cxRightWidth   = sheetOfGlass ? -1 : 0;
+        margins.cyTopHeight    = sheetOfGlass ? -1 : 0;
+        margins.cyBottomHeight = sheetOfGlass ? -1 : 1;
+        DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
+
+    /* Re-resolve the caption: it is DWM's while a backdrop shows, and the
+     * themed color again once the backdrop is gone. */
+    applyCaptionColors(hwnd, state);
+
+    /* The WS_SYSMENU change above only takes effect after a frame change.
+     * Client geometry is unaffected (WM_NCCALCSIZE above yields the same
+     * client rect either way), so this does not disturb the renderer size. */
+    SetWindowPos(hwnd, NULL, 0, 0, 0, 0,
+        SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE |
+        SWP_NOZORDER | SWP_NOACTIVATE);
+    RedrawWindow(hwnd, NULL, NULL, RDW_INVALIDATE | RDW_FRAME);
+    return appliedTier;
+}
+
+/**
+ * Publishes the client-space rects (physical px) of the Compose-drawn caption
+ * buttons, as 12 ints: min(x,y,w,h), max(x,y,w,h), close(x,y,w,h). An
+ * all-zero quad clears that slot. See DecoState.captionButtonRects.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetCaptionButtonRects(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jintArray rectsArray)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd) return;
+    DecoState *state = getState(hwnd);
+    if (!state || !rectsArray) return;
+    if ((*env)->GetArrayLength(env, rectsArray) < 12) return;
+
+    jint v[12];
+    (*env)->GetIntArrayRegion(env, rectsArray, 0, 12, v);
+    for (int i = 0; i < 3; ++i) {
+        state->captionButtonRects[i].left   = v[i * 4];
+        state->captionButtonRects[i].top    = v[i * 4 + 1];
+        state->captionButtonRects[i].right  = v[i * 4] + v[i * 4 + 2];
+        state->captionButtonRects[i].bottom = v[i * 4 + 1] + v[i * 4 + 3];
+    }
+}
+
+/**
+ * Reverts an active backdrop to a plain opaque themed window, synchronously.
+ * Must be called on the confirmed destroy path (Kotlin requestClose) before
+ * DestroyWindow. Not from WM_CLOSE: that message is cancelable (Tao emits
+ * CLOSE_REQUESTED only), and a permanent revert there left Mica dead after
+ * "Cancel" while the Compose backdrop holder was still live.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativePrepareClose(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    revertBackdropForClose(hwnd, getState(hwnd));
+}
+
+/* Headful / e2e probe: is a DWM system backdrop currently armed on this HWND?
+ * Reads DecoState.backdropActive after nativeSetBackdropStyle / prepareClose. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsBackdropActive(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    DecoState *state = getState(hwnd);
+    return (state && state->backdropActive) ? JNI_TRUE : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
@@ -461,6 +1383,69 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetSta
 
     DecoState *state = getState(hwnd);
     if (state) state->startupBackgroundErase = enabled ? TRUE : FALSE;
+}
+
+/* Estimated client size after the fullscreen exit restore. Exact for the
+ * normal case (WM_NCCALCSIZE keeps the full top and the default side/bottom
+ * frame); the maximized case approximates with the work area. */
+static void estimateRestoredClientSize(HWND hwnd, DecoState *state, int *w, int *h) {
+    if (state->savedPlacement.showCmd == SW_SHOWMAXIMIZED) {
+        HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi;
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(hMon, &mi);
+        *w = mi.rcWork.right - mi.rcWork.left;
+        *h = mi.rcWork.bottom - mi.rcWork.top;
+    } else {
+        UINT dpi = getDpi(hwnd);
+        int fx = getSystemMetrics(SM_CXSIZEFRAME, dpi)
+               + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
+        int fy = getSystemMetrics(SM_CYSIZEFRAME, dpi)
+               + getSystemMetrics(SM_CXPADDEDBORDERWIDTH, dpi);
+        RECT nr = state->savedPlacement.rcNormalPosition;
+        *w = (nr.right - nr.left) - 2 * fx;
+        *h = (nr.bottom - nr.top) - fy;
+    }
+}
+
+/* Target client size of the NEXT fullscreen toggle as [width, height], so
+ * the caller can pre-layout (warm the Compose measure/layout at the final
+ * size without presenting) before nativeSetFullscreen. NULL on a would-be
+ * no-op. Enter is exact (monitor + overhang); exit is an estimate — the
+ * synchronous WM_WINDOWPOSCHANGED prepare renders at the REAL size. */
+JNIEXPORT jintArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetFullscreenTargetSize(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean fullscreen)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return NULL;
+    DecoState *state = getState(hwnd);
+    if (!state) return NULL;
+    if ((fullscreen && state->isFullscreen) || (!fullscreen && !state->isFullscreen)) return NULL;
+
+    jint targetSize[2] = { 0, 0 };
+    if (fullscreen) {
+        HMONITOR hMon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi;
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(hMon, &mi);
+        int expandX = 0, expandY = 0;
+        getFullscreenExpandOffset(hMon, &mi, &expandX, &expandY);
+        targetSize[0] = (mi.rcMonitor.right - mi.rcMonitor.left) + expandX;
+        targetSize[1] = (mi.rcMonitor.bottom - mi.rcMonitor.top) + expandY;
+    } else {
+        int w = 0, h = 0;
+        estimateRestoredClientSize(hwnd, state, &w, &h);
+        targetSize[0] = w;
+        targetSize[1] = h;
+    }
+
+    if (targetSize[0] <= 0 || targetSize[1] <= 0) return NULL;
+    jintArray arr = (*env)->NewIntArray(env, 2);
+    if (!arr) return NULL;
+    (*env)->SetIntArrayRegion(env, arr, 0, 2, targetSize);
+    return arr;
 }
 
 JNIEXPORT void JNICALL
@@ -502,14 +1487,31 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFul
 
         state->isFullscreen = TRUE;
 
-        LONG style = state->savedStyle
-            & ~(LONG)(WS_CAPTION | WS_THICKFRAME | WS_MAXIMIZE);
-        SetWindowLongW(hwnd, GWL_STYLE, style);
+        /* The window KEEPS its WS_CAPTION | WS_THICKFRAME styles — same as
+         * Windows Terminal's fullscreen. Stripping them detaches the DWM
+         * frame, and every re-attach on exit paints 1-3 compositions of the
+         * legacy GDI caption + basic frame regardless of call order
+         * (captured on this machine). The styles are invisible in
+         * fullscreen anyway: WM_NCCALCSIZE returns the full window as
+         * client, WM_NCHITTEST disables the resize borders, and
+         * WM_SYSCOMMAND blocks move/size. Only WS_MAXIMIZE is dropped, so
+         * the fullscreen geometry is not fighting a zoomed state. */
+        if (state->savedStyle & WS_MAXIMIZE) {
+            SetWindowLongW(hwnd, GWL_STYLE, state->savedStyle & ~(LONG)WS_MAXIMIZE);
+        }
 
-        LONG exStyle = state->savedExStyle
-            & ~(LONG)(WS_EX_DLGMODALFRAME | WS_EX_WINDOWEDGE
-                     | WS_EX_CLIENTEDGE | WS_EX_STATICEDGE);
-        SetWindowLongW(hwnd, GWL_EXSTYLE, exStyle);
+        /* Drop every DWM adornment BEFORE the geometry jump, so no
+         * intermediate composition still carries the windowed frame at the
+         * fullscreen size: the 1px bottom frame extension (a light hairline
+         * once the window covers the monitor), the caption/border fills
+         * (the white contour, COLOR_DEFAULT in backdrop mode), and the
+         * rounded-corner clip (anti-aliased light corners on a
+         * rectangular-content screen). */
+        applyFrameMargins(hwnd, state);
+        applyCaptionColors(hwnd, state);
+        int corner = NUCLEUS_DWMWCP_DONOTROUND;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner, sizeof(corner));
 
         /* Cover the monitor as a NON-topmost window (HWND_NOTOPMOST), exactly
          * matching SDL's borderless-fullscreen pattern. We deliberately do NOT
@@ -522,26 +1524,80 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetFul
          * above it and DWM composes normally. The taskbar still hides because
          * the shell auto-hides it for a foreground window that covers the whole
          * monitor — no topmost required (this is exactly what SDL relies on). */
+        /* Overhang the monitor by FS_EXPAND_PX on an edge with no adjacent
+         * monitor (the overhang lands off-screen, so it is invisible): a
+         * client rect that exactly matches the screen is what triggers the
+         * driver's exclusive / independent-flip promotion (see
+         * FS_EXPAND_PX). Deliberately NO SetWindowRgn clip: a region'd
+         * window loses its DWM frame and is rendered in BASIC mode — the
+         * exit transition then flashes the classic GDI caption and a black
+         * surface while DWM re-takes the window (captured on this machine).
+         * SWP_NOCOPYBITS keeps USER32 from bit-blitting the old windowed
+         * client into the new rect (the issue-413 dual ghost). */
+        int monW = mi.rcMonitor.right - mi.rcMonitor.left;
+        int monH = mi.rcMonitor.bottom - mi.rcMonitor.top;
+        int expandX = 0, expandY = 0;
+        getFullscreenExpandOffset(hMon, &mi, &expandX, &expandY);
+
+        /* The WM_WINDOWPOSCHANGED this generates re-enters the JVM
+         * synchronously (decoWndProc), rendering + presenting the
+         * fullscreen frame before SetWindowPos returns. */
+        state->fsTransitionActive = TRUE;
+        state->fsExpectedW = monW + expandX;
+        state->fsExpectedH = monH + expandY;
         SetWindowPos(hwnd, HWND_NOTOPMOST,
             mi.rcMonitor.left, mi.rcMonitor.top,
-            mi.rcMonitor.right - mi.rcMonitor.left,
-            mi.rcMonitor.bottom - mi.rcMonitor.top,
-            SWP_FRAMECHANGED);
+            monW + expandX, monH + expandY,
+            SWP_FRAMECHANGED | SWP_NOCOPYBITS);
+        state->fsTransitionActive = FALSE;
 
+        /* Wait for DWM to composite the new geometry before letting window
+         * transitions animate again: a re-enable racing the composition
+         * lets DWM animate the stale windowed frame into place. One flush
+         * is at most one composition pass — no cloak, no hide. */
+        DwmFlush();
         BOOL enableTransitions = FALSE;
         DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
             &enableTransitions, sizeof(enableTransitions));
     } else {
         if (!state->isFullscreen) return;
 
+        BOOL disableTransitions = TRUE;
+        DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+            &disableTransitions, sizeof(disableTransitions));
+
         state->isFullscreen = FALSE;
 
-        SetWindowLongW(hwnd, GWL_EXSTYLE, state->savedExStyle);
-        LONG restoreStyle = state->savedStyle & ~(LONG)WS_MAXIMIZE;
-        SetWindowLongW(hwnd, GWL_STYLE, restoreStyle);
+        /* Reassert the windowed DWM adornments the enter path dropped —
+         * before the geometry restore, so the very first windowed
+         * composition already has the themed border/caption back (a stale
+         * fullscreen COLOR_NONE otherwise left a bare or accent-coloured
+         * contour after exit). */
+        applyFrameMargins(hwnd, state);
+        applyCaptionColors(hwnd, state);
+        int corner = NUCLEUS_DWMWCP_DEFAULT;
+        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            &corner, sizeof(corner));
+
+        /* No styles to restore — they were never stripped (see the enter
+         * path): the DWM frame stays attached across the whole toggle, so
+         * the legacy-caption / basic-frame flash cannot happen. The
+         * placement restore alone re-applies the saved geometry (and
+         * SW_SHOWMAXIMIZED re-adds WS_MAXIMIZE itself). The synchronous
+         * prepare renders the windowed-size frame inside the restore, so
+         * DWM never composites the stale fullscreen frame cropped into the
+         * small window. */
+        state->fsTransitionActive = TRUE;
+        estimateRestoredClientSize(hwnd, state, &state->fsExpectedW, &state->fsExpectedH);
         SetWindowPlacement(hwnd, &state->savedPlacement);
         SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED);
+            SWP_NOMOVE | SWP_NOSIZE | SWP_FRAMECHANGED | SWP_NOCOPYBITS);
+        state->fsTransitionActive = FALSE;
+
+        DwmFlush();
+        BOOL enableTransitions = FALSE;
+        DwmSetWindowAttribute(hwnd, 3 /* DWMWA_TRANSITIONS_FORCEDISABLED */,
+            &enableTransitions, sizeof(enableTransitions));
     }
 }
 
@@ -576,6 +1632,15 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetOwn
 #else
     SetWindowLongW(child, GWLP_HWNDPARENT, (LONG)(LONG_PTR)owner);
 #endif
+    if (!owner) return;
+    /* Re-stack the child above its owner. Win32 only enforces "owned windows
+     * sit above their owner" when the owner gets *activated*; SW_MAXIMIZE /
+     * SW_RESTORE / a fullscreen SetWindowPos on an already-active owner puts
+     * it at HWND_TOP, above its own satellites. Re-setting the same
+     * GWLP_HWNDPARENT alone moves nothing. Async: this often runs from inside
+     * the owner's WM_SIZE, i.e. nested in its own SetWindowPos. */
+    SetWindowPos(child, HWND_TOP, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS);
 }
 
 /* Returns the primary monitor's scale factor as `(scale * 1000)`. Falls back
@@ -607,6 +1672,182 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPri
     return (jint)((dpi * 1000) / 96);
 }
 
+/* Returns [x, y, width, height] of the work area (screen minus taskbar) of the
+ * monitor hosting hwnd in physical pixels. If hwnd is NULL or invalid, falls
+ * back to the primary monitor work area. */
+JNIEXPORT jlongArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeOwnerMonitorWorkArea(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    MONITORINFO mi;
+    memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+
+    HMONITOR mon = NULL;
+    if (hwnd && IsWindow(hwnd)) {
+        mon = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    }
+    if (!mon) {
+        POINT ptZero = {0, 0};
+        mon = MonitorFromPoint(ptZero, MONITOR_DEFAULTTOPRIMARY);
+    }
+
+    if (mon && GetMonitorInfoW(mon, &mi)) {
+        jlongArray arr = (*env)->NewLongArray(env, 4);
+        if (!arr) return NULL;
+        jlong values[4];
+        values[0] = (jlong)mi.rcWork.left;
+        values[1] = (jlong)mi.rcWork.top;
+        values[2] = (jlong)(mi.rcWork.right - mi.rcWork.left);
+        values[3] = (jlong)(mi.rcWork.bottom - mi.rcWork.top);
+        (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+        return arr;
+    }
+
+    RECT r;
+    if (!SystemParametersInfoW(SPI_GETWORKAREA, 0, &r, 0)) return NULL;
+    jlongArray arr = (*env)->NewLongArray(env, 4);
+    if (!arr) return NULL;
+    jlong values[4];
+    values[0] = (jlong)r.left;
+    values[1] = (jlong)r.top;
+    values[2] = (jlong)(r.right - r.left);
+    values[3] = (jlong)(r.bottom - r.top);
+    (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
+    return arr;
+}
+
+/* ---------------- Multi-monitor enumeration ----------------
+ *
+ * One tab-separated descriptor per monitor:
+ *   id \t name \t x \t y \t w \t h \t workX \t workY \t workW \t workH
+ *      \t scaleMilli \t primary
+ * Geometry is physical pixels in virtual-screen space (the process is
+ * per-monitor-v2 DPI aware, so GetMonitorInfo already reports physical).
+ * `id` is the GDI device name (\\.\DISPLAY1) — stable across enumerations for
+ * as long as the monitor stays attached; `name` is the friendly device string.
+ *
+ * No CRT here (/NODEFAULTLIB), so formatting goes through user32's wsprintfW.
+ */
+
+#define NUCLEUS_MAX_MONITORS 32
+#define NUCLEUS_MONITOR_ROW_CHARS 512
+
+typedef struct {
+    WCHAR rows[NUCLEUS_MAX_MONITORS][NUCLEUS_MONITOR_ROW_CHARS];
+    int count;
+} MonitorRows;
+
+/* Replaces the row separators in-place so a display name can't corrupt the
+ * encoding. */
+static void sanitizeRowField(WCHAR *text) {
+    if (!text) return;
+    for (; *text; text++) {
+        if (*text == L'\t' || *text == L'\n' || *text == L'\r') *text = L' ';
+    }
+}
+
+static UINT getMonitorDpi(HMONITOR mon) {
+    typedef HRESULT (WINAPI *PFN_GetDpiForMonitor)(HMONITOR, int, UINT *, UINT *);
+    static PFN_GetDpiForMonitor pGetDpiForMonitor = NULL;
+    static BOOL resolved = FALSE;
+    if (!resolved) {
+        resolved = TRUE;
+        HMODULE shcore = LoadLibraryW(L"shcore.dll");
+        if (shcore) {
+            pGetDpiForMonitor =
+                (PFN_GetDpiForMonitor)GetProcAddress(shcore, "GetDpiForMonitor");
+        }
+    }
+    if (pGetDpiForMonitor && mon) {
+        UINT dpiX = 0, dpiY = 0;
+        /* MDT_EFFECTIVE_DPI */
+        if (pGetDpiForMonitor(mon, 0, &dpiX, &dpiY) == S_OK && dpiX > 0) return dpiX;
+    }
+    HDC hdc = GetDC(NULL);
+    UINT dpi = 96;
+    if (hdc) {
+        int caps = GetDeviceCaps(hdc, LOGPIXELSX);
+        if (caps > 0) dpi = (UINT)caps;
+        ReleaseDC(NULL, hdc);
+    }
+    return dpi;
+}
+
+static BOOL CALLBACK collectMonitorProc(HMONITOR mon, HDC hdc, LPRECT clip, LPARAM data) {
+    (void)hdc; (void)clip;
+    MonitorRows *out = (MonitorRows *)data;
+    if (!out || out->count >= NUCLEUS_MAX_MONITORS) return FALSE;
+
+    MONITORINFOEXW mi;
+    memset(&mi, 0, sizeof(mi));
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(mon, (LPMONITORINFO)&mi)) return TRUE;
+
+    DISPLAY_DEVICEW dd;
+    memset(&dd, 0, sizeof(dd));
+    dd.cb = sizeof(dd);
+    WCHAR name[128];
+    name[0] = L'\0';
+    if (EnumDisplayDevicesW(mi.szDevice, 0, &dd, 0)) {
+        lstrcpynW(name, dd.DeviceString, 128);
+    }
+    if (name[0] == L'\0') lstrcpynW(name, mi.szDevice, 128);
+    sanitizeRowField(name);
+    sanitizeRowField(mi.szDevice);
+
+    UINT dpi = getMonitorDpi(mon);
+    if (dpi == 0) dpi = 96;
+
+    wsprintfW(out->rows[out->count],
+        L"%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d",
+        mi.szDevice,
+        name,
+        (int)mi.rcMonitor.left,
+        (int)mi.rcMonitor.top,
+        (int)(mi.rcMonitor.right - mi.rcMonitor.left),
+        (int)(mi.rcMonitor.bottom - mi.rcMonitor.top),
+        (int)mi.rcWork.left,
+        (int)mi.rcWork.top,
+        (int)(mi.rcWork.right - mi.rcWork.left),
+        (int)(mi.rcWork.bottom - mi.rcWork.top),
+        (int)((dpi * 1000) / 96),
+        (mi.dwFlags & MONITORINFOF_PRIMARY) ? 1 : 0);
+    out->count++;
+    return TRUE;
+}
+
+/* Returns one descriptor String per attached monitor, or NULL when the
+ * enumeration fails. See the format comment above. */
+JNIEXPORT jobjectArray JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetMonitors(
+    JNIEnv *env, jclass clazz)
+{
+    (void)clazz;
+    /* Static, not stack: 32 KB of locals would need the CRT's __chkstk probe,
+     * which /NODEFAULTLIB doesn't link. Safe because every entry point of this
+     * bridge is called from the Tao event-loop thread. */
+    static MonitorRows rows;
+    rows.count = 0;
+    EnumDisplayMonitors(NULL, NULL, collectMonitorProc, (LPARAM)&rows);
+    if (rows.count <= 0) return NULL;
+
+    jclass stringClass = (*env)->FindClass(env, "java/lang/String");
+    if (!stringClass) return NULL;
+    jobjectArray arr = (*env)->NewObjectArray(env, rows.count, stringClass, NULL);
+    if (!arr) return NULL;
+    for (int i = 0; i < rows.count; i++) {
+        jstring row = (*env)->NewString(env,
+            (const jchar *)rows.rows[i], (jsize)lstrlenW(rows.rows[i]));
+        if (!row) return NULL;
+        (*env)->SetObjectArrayElement(env, arr, i, row);
+        (*env)->DeleteLocalRef(env, row);
+    }
+    return arr;
+}
+
 /* Returns [x, y, width, height] of the primary monitor's work area (full
  * screen minus the taskbar) in physical pixels. Used by DecoratedWindow to
  * resolve [WindowPosition.Aligned] for the initial outer position. */
@@ -627,6 +1868,8 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeGetPri
     (*env)->SetLongArrayRegion(env, arr, 0, 4, values);
     return arr;
 }
+
+
 
 /* Converts a window-client physical pixel position to screen physical
  * pixels. Returns [screenX, screenY] or NULL on failure. Used by the
@@ -831,5 +2074,80 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeSetWin
     if (!hwnd || !IsWindow(hwnd)) return;
     SetWindowPos(hwnd, NULL, (int)xPx, (int)yPx, 0, 0,
         SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+#ifndef SPI_GETFONTSMOOTHINGTYPE
+#define SPI_GETFONTSMOOTHINGTYPE 0x200A
+#endif
+#ifndef FE_FONTSMOOTHINGCLEARTYPE
+#define FE_FONTSMOOTHINGCLEARTYPE 0x0002
+#endif
+#ifndef SPI_GETFONTSMOOTHINGORIENTATION
+#define SPI_GETFONTSMOOTHINGORIENTATION 0x2012
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONBGR
+#define FE_FONTSMOOTHINGORIENTATIONBGR 0x0000
+#endif
+#ifndef FE_FONTSMOOTHINGORIENTATIONRGB
+#define FE_FONTSMOOTHINGORIENTATIONRGB 0x0001
+#endif
+
+/* 0 = grayscale / unknown, 1 = RGB_H, 2 = BGR_H. Used by Tao LCD text. */
+JNIEXPORT jint JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeFontSmoothingPixelGeometry(
+    JNIEnv *env, jclass clazz)
+{
+    (void)env; (void)clazz;
+    BOOL smoothing = FALSE;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &smoothing, 0) || !smoothing) {
+        return 0;
+    }
+    UINT type = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGTYPE, 0, &type, 0) ||
+        type != FE_FONTSMOOTHINGCLEARTYPE) {
+        return 0;
+    }
+    UINT orientation = 0;
+    if (!SystemParametersInfo(SPI_GETFONTSMOOTHINGORIENTATION, 0, &orientation, 0)) {
+        /* Unknown stripe order: degrade to grayscale, never assume RGB —
+         * a wrong guess on a BGR panel inverts every fringe. */
+        return 0;
+    }
+    if (orientation == FE_FONTSMOOTHINGORIENTATIONBGR) {
+        return 2;
+    }
+    return 1;
+}
+/* Issue #631: apply the requested topmost z-order directly and synchronously.
+ * tao caches its WindowFlags and only issues the z-order SetWindowPos when a
+ * flag *diff* appears (and then with SWP_ASYNCWINDOWPOS), so a WS_EX_TOPMOST
+ * band membership lost to an external rewrite — the fullscreen toggle's
+ * HWND_NOTOPMOST, a DWM backdrop switch, a size apply racing the async
+ * z-order change — is never repaired through that path: the cache still says
+ * ALWAYS_ON_TOP and the diff stays empty. This bypasses the cache entirely
+ * and is idempotent when the z-order already matches. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeApplyTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong, jboolean topmost)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return;
+    SetWindowPos(hwnd, topmost ? HWND_TOPMOST : HWND_NOTOPMOST,
+        0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+}
+
+/* E2E probe (issue #631 headful regression): whether the HWND is currently a
+ * member of the topmost band. Mirrors nativeIsBackdropActive's role — lets
+ * the headful suite assert the real z-order bit instead of Kotlin caches. */
+JNIEXPORT jboolean JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoWindowsDecoBridge_nativeIsTopmost(
+    JNIEnv *env, jclass clazz, jlong hwndLong)
+{
+    (void)env; (void)clazz;
+    HWND hwnd = (HWND)(uintptr_t)hwndLong;
+    if (!hwnd || !IsWindow(hwnd)) return JNI_FALSE;
+    LONG_PTR ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+    return (ex & WS_EX_TOPMOST) ? JNI_TRUE : JNI_FALSE;
 }
 

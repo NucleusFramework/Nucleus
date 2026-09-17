@@ -17,7 +17,7 @@ private fun isGnomeDesktop(): Boolean = LinuxDesktopEnvironment.Current == Linux
 /**
  * Represents a titlebar button type from the GNOME `button-layout` GSettings key.
  */
-enum class LinuxTitleBarButton {
+public enum class LinuxTitleBarButton {
     CLOSE,
     MINIMIZE,
     MAXIMIZE,
@@ -29,7 +29,7 @@ enum class LinuxTitleBarButton {
  * @property buttons Ordered list of buttons to display (edge-first: first element is closest to the window edge).
  * @property controlsOnRight `true` if buttons are placed on the right side of the titlebar.
  */
-data class LinuxButtonLayout(
+public data class LinuxButtonLayout(
     val buttons: List<LinuxTitleBarButton>,
     val controlsOnRight: Boolean,
 ) {
@@ -37,9 +37,9 @@ data class LinuxButtonLayout(
     val hasMinimize: Boolean get() = LinuxTitleBarButton.MINIMIZE in buttons
     val hasMaximize: Boolean get() = LinuxTitleBarButton.MAXIMIZE in buttons
 
-    companion object {
+    public companion object {
         /** Default layout: close on the right (GNOME default). */
-        val Default =
+        public val Default: LinuxButtonLayout =
             LinuxButtonLayout(
                 buttons =
                     listOf(
@@ -55,7 +55,7 @@ data class LinuxButtonLayout(
          * Falls back to [Default] if not on GNOME, GSettings is unavailable,
          * or returns no buttons.
          */
-        fun readSystem(): LinuxButtonLayout =
+        public fun readSystem(): LinuxButtonLayout =
             try {
                 if (!isGnomeDesktop()) {
                     return Default
@@ -147,7 +147,7 @@ internal object LinuxButtonLayoutObserver {
  * updating automatically when the user changes it in GNOME Tweaks.
  */
 @Composable
-fun rememberLinuxButtonLayout(): LinuxButtonLayout {
+public fun rememberLinuxButtonLayout(): LinuxButtonLayout {
     val layoutState = remember { mutableStateOf(LinuxButtonLayout.readSystem()) }
 
     DisposableEffect(Unit) {

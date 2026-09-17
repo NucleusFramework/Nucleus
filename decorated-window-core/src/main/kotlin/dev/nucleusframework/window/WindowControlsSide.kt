@@ -1,11 +1,13 @@
 package dev.nucleusframework.window
 
+import androidx.compose.runtime.ProvidableCompositionLocal
 import androidx.compose.runtime.staticCompositionLocalOf
 
-enum class WindowControlsSide {
+public enum class WindowControlsSide {
     Start,
     End,
     Unspecified,
 }
 
-val LocalWindowControlsSide = staticCompositionLocalOf { WindowControlsSide.Unspecified }
+public val LocalWindowControlsSide: ProvidableCompositionLocal<WindowControlsSide> =
+    staticCompositionLocalOf { WindowControlsSide.Unspecified }

@@ -28,7 +28,7 @@ import dev.nucleusframework.window.styling.TitleBarStyle
  */
 @Suppress("FunctionNaming", "LongParameterList")
 @Composable
-fun DecoratedWindowScope.MaterialTitleBar(
+public fun DecoratedWindowScope.MaterialTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,

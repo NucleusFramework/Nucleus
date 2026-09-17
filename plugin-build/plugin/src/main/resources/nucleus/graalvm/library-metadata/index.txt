@@ -1,4 +1,5 @@
 android-compat.json
+androidx-sqlite-bundled.json
 coil.json
 compose-mediaplayer.json
 compose-ui.json

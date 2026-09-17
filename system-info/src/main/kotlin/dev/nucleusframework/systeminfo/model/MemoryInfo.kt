@@ -1,6 +1,6 @@
 package dev.nucleusframework.systeminfo.model
 
-data class MemoryInfo(
+public data class MemoryInfo(
     val totalMemory: Long,
     val freeMemory: Long,
     val availableMemory: Long,

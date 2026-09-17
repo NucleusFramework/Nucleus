@@ -1,0 +1,380 @@
+public abstract interface class dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field Companion Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Companion;
+	public abstract fun getValue ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field ADDRESS_BOOK_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field APPLICATION_EXIT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field APPOINTMENT_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field CALL_START Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field CALL_STOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field CONTACT_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_OPEN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_OPEN_RECENT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_PAGE_SETUP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_PRINT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_PRINT_PREVIEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_PROPERTIES Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_REVERT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_SAVE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_SAVE_AS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field DOCUMENT_SEND Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_CLEAR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_COPY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_CUT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_DELETE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_FIND Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_FIND_REPLACE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_PASTE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_REDO Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_SELECT_ALL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field EDIT_UNDO Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FIND_LOCATION Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FOLDER_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_INDENT_LESS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_INDENT_MORE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_JUSTIFY_CENTER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_JUSTIFY_FILL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_JUSTIFY_LEFT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_JUSTIFY_RIGHT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_BOLD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_DIRECTION_LTR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_DIRECTION_RTL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_ITALIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_STRIKETHROUGH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field FORMAT_TEXT_UNDERLINE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_BOTTOM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_DOWN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_FIRST Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_HOME Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_JUMP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_LAST Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_NEXT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_PREVIOUS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_TOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field GO_UP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field HELP_ABOUT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field HELP_CONTENTS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field HELP_FAQ Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field INSERT_IMAGE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field INSERT_LINK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field INSERT_OBJECT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field INSERT_TEXT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field LIST_ADD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field LIST_REMOVE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_FORWARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MARK_IMPORTANT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MARK_JUNK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MARK_NOTJUNK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MARK_READ Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MARK_UNREAD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_MESSAGE_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_REPLY_ALL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_REPLY_SENDER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_SEND Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MAIL_SEND_RECEIVE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_EJECT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_PLAYBACK_PAUSE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_PLAYBACK_START Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_PLAYBACK_STOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_RECORD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_SEEK_BACKWARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_SEEK_FORWARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_SKIP_BACKWARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field MEDIA_SKIP_FORWARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field OBJECT_FLIP_HORIZONTAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field OBJECT_FLIP_VERTICAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field OBJECT_ROTATE_LEFT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field OBJECT_ROTATE_RIGHT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field PROCESS_STOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_LOCK_SCREEN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_LOG_OUT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_REBOOT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_RUN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_SEARCH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field SYSTEM_SHUTDOWN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field TOOLS_CHECK_SPELLING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field VIEW_FULLSCREEN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field VIEW_REFRESH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field VIEW_RESTORE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field VIEW_SORT_ASCENDING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field VIEW_SORT_DESCENDING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field WINDOW_CLOSE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field WINDOW_NEW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field ZOOM_FIT_BEST Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field ZOOM_IN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field ZOOM_ORIGINAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static final field ZOOM_OUT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Action;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Animation : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field PROCESS_WORKING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Animation;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Animation;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Animation;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field ACCESSORIES_CALCULATOR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field ACCESSORIES_CHARACTER_MAP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field ACCESSORIES_DICTIONARY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field ACCESSORIES_SCREENSHOT_TOOL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field ACCESSORIES_TEXT_EDITOR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field HELP_BROWSER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field MULTIMEDIA_VOLUME_CONTROL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_ACCESSIBILITY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_FONT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_KEYBOARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_LOCALE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_MULTIMEDIA Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_SCREENSAVER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_THEME Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field PREFERENCES_DESKTOP_WALLPAPER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field SYSTEM_FILE_MANAGER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field SYSTEM_SOFTWARE_INSTALL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field SYSTEM_SOFTWARE_UPDATE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field UTILITIES_SYSTEM_MONITOR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static final field UTILITIES_TERMINAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Application;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field APPLICATIONS_ACCESSORIES Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_DEVELOPMENT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_ENGINEERING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_GAMES Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_GRAPHICS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_INTERNET Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_MULTIMEDIA Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_OFFICE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_OTHER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_SCIENCE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_SYSTEM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field APPLICATIONS_UTILITIES Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_DESKTOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_DESKTOP_PERIPHERALS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_DESKTOP_PERSONAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_OTHER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_SYSTEM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field PREFERENCES_SYSTEM_NETWORK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static final field SYSTEM_HELP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Category;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Companion {
+	public final fun flag (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Custom : dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final synthetic fun box-impl (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Custom;
+	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
+	public fun equals (Ljava/lang/Object;)Z
+	public static fun equals-impl (Ljava/lang/String;Ljava/lang/Object;)Z
+	public static final fun equals-impl0 (Ljava/lang/String;Ljava/lang/String;)Z
+	public fun getValue ()Ljava/lang/String;
+	public fun hashCode ()I
+	public static fun hashCode-impl (Ljava/lang/String;)I
+	public fun toString ()Ljava/lang/String;
+	public static fun toString-impl (Ljava/lang/String;)Ljava/lang/String;
+	public final synthetic fun unbox-impl ()Ljava/lang/String;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field AUDIO_CARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field AUDIO_INPUT_MICROPHONE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field BATTERY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field CAMERA_PHOTO Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field CAMERA_VIDEO Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field CAMERA_WEB Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field COMPUTER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field DRIVE_HARDDISK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field DRIVE_OPTICAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field DRIVE_REMOVABLE_MEDIA Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field INPUT_GAMING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field INPUT_KEYBOARD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field INPUT_MOUSE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field INPUT_TABLET Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MEDIA_FLASH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MEDIA_FLOPPY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MEDIA_OPTICAL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MEDIA_TAPE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MODEM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field MULTIMEDIA_PLAYER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field NETWORK_WIRED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field NETWORK_WIRELESS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field PDA Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field PHONE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field PRINTER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field SCANNER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static final field VIDEO_DISPLAY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Device;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field DEFAULT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field DOCUMENTS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field DOWNLOADS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field FAVORITE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field IMPORTANT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field MAIL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field PHOTOS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field READONLY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field SHARED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field SYMBOLIC_LINK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field SYNCHRONIZED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field SYSTEM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static final field UNREADABLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emblem;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field FACE_ANGEL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_ANGRY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_COOL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_CRYING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_DEVILISH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_EMBARRASSED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_KISS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_LAUGH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_MONKEY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_PLAIN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_RASPBERRY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SAD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SICK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SMILE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SMILE_BIG Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SMIRK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_SURPRISE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_TIRED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_UNCERTAIN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_WINK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static final field FACE_WORRIED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Emote;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field APPLICATION_X_EXECUTABLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field AUDIO_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field FONT_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field IMAGE_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field PACKAGE_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field TEXT_HTML Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field TEXT_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field TEXT_X_GENERIC_TEMPLATE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field TEXT_X_SCRIPT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field VIDEO_X_GENERIC Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field X_OFFICE_ADDRESS_BOOK Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field X_OFFICE_CALENDAR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field X_OFFICE_DOCUMENT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field X_OFFICE_PRESENTATION Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static final field X_OFFICE_SPREADSHEET Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$MimeType;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field FOLDER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field FOLDER_REMOTE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field NETWORK_SERVER Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field NETWORK_WORKGROUP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field START_HERE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field USER_BOOKMARKS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field USER_DESKTOP Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field USER_HOME Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static final field USER_TRASH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Place;
+}
+
+public final class dev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status : java/lang/Enum, dev/nucleusframework/freedesktop/icons/FreedesktopIcon {
+	public static final field APPOINTMENT_MISSED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field APPOINTMENT_SOON Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field AUDIO_VOLUME_HIGH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field AUDIO_VOLUME_LOW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field AUDIO_VOLUME_MEDIUM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field AUDIO_VOLUME_MUTED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field BATTERY_CAUTION Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field BATTERY_LOW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field DIALOG_ERROR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field DIALOG_INFORMATION Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field DIALOG_PASSWORD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field DIALOG_QUESTION Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field DIALOG_WARNING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field FOLDER_DRAG_ACCEPT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field FOLDER_OPEN Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field FOLDER_VISITING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field IMAGE_LOADING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field IMAGE_MISSING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_ATTACHMENT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_READ Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_REPLIED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_SIGNED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_SIGNED_VERIFIED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MAIL_UNREAD Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MEDIA_PLAYLIST_REPEAT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field MEDIA_PLAYLIST_SHUFFLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_ERROR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_IDLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_OFFLINE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_RECEIVE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_TRANSMIT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field NETWORK_TRANSMIT_RECEIVE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field PRINTER_ERROR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field PRINTER_PRINTING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SECURITY_HIGH Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SECURITY_LOW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SECURITY_MEDIUM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SOFTWARE_UPDATE_AVAILABLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SOFTWARE_UPDATE_URGENT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SYNC_ERROR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field SYNC_SYNCHRONIZING Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field TASK_DUE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field TASK_PAST_DUE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field USER_AVAILABLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field USER_AWAY Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field USER_IDLE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field USER_OFFLINE Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field USER_TRASH_FULL Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_CLEAR Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_CLEAR_NIGHT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_FEW_CLOUDS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_FEW_CLOUDS_NIGHT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_FOG Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_OVERCAST Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_SEVERE_ALERT Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_SHOWERS Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_SHOWERS_SCATTERED Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_SNOW Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static final field WEATHER_STORM Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static fun getEntries ()Lkotlin/enums/EnumEntries;
+	public fun getValue ()Ljava/lang/String;
+	public static fun valueOf (Ljava/lang/String;)Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+	public static fun values ()[Ldev/nucleusframework/freedesktop/icons/FreedesktopIcon$Status;
+}
+

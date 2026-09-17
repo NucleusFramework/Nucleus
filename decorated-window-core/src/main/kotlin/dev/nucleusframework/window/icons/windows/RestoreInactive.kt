@@ -8,7 +8,7 @@ import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.dp
 import dev.nucleusframework.window.icons.windows.WindowsControlButtonIcons
 
-val WindowsControlButtonIcons.RestoreInactive: ImageVector
+public val WindowsControlButtonIcons.RestoreInactive: ImageVector
     get() {
         if (_RestoreInactive != null) {
             return _RestoreInactive!!

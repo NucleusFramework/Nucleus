@@ -1,8 +1,8 @@
 import com.github.benmanes.gradle.versions.updates.DependencyUpdatesTask
 import dev.detekt.gradle.Detekt
+import dev.nucleusframework.gradle.NativeTarget
 import org.apache.tools.ant.taskdefs.condition.Os
-import org.gradle.api.tasks.Exec
-import org.gradle.api.tasks.PathSensitivity
+import org.jetbrains.kotlin.gradle.dsl.KotlinProjectExtension
 
 plugins {
     alias(libs.plugins.kotlin) apply false
@@ -10,13 +10,66 @@ plugins {
     alias(libs.plugins.androidApplication) apply false
     alias(libs.plugins.vanniktechMavenPublish) apply false
     alias(libs.plugins.graalvmNative) apply false
+    // Freezes public ABI for every published library module: `apiCheck` fails on
+    // any change to public FQNs/signatures vs the checked-in `api/*.api` dumps
+    // (same harness as decorated-window-tao — see README project status).
+    alias(libs.plugins.binaryCompatibilityValidator)
     alias(libs.plugins.detekt)
     alias(libs.plugins.ktlint)
+    alias(libs.plugins.kover)
     alias(libs.plugins.versionCheck)
 }
 
-val nativeBuildTaskPrefix = "buildNative"
+apiValidation {
+    // Demo / sample apps are not published; skip ABI dumps for them.
+    // Names match the last segment of include(":examples:...") in settings.
+    ignoredProjects.addAll(
+        listOf(
+            "nucleus-demo",
+            "compose-demo",
+            "tao-demo",
+            "swing-tao-demo",
+            "zstd-demo",
+            "shared",
+            "jewel-demo",
+            "cmp-demo",
+            "scheduler-demo",
+            "service-management-demo",
+            "system-info-demo",
+            "fs-watcher-smoke",
+            "orphan-reflect-smoke",
+            "extra-launcher-demo",
+            "benchmark-demo",
+            "gstreamer-demo",
+            "mediafoundation-demo",
+            "avfoundation-demo",
+            "tao-native-test",
+            "window-scaffold-demo",
+            "satellite-demo",
+            "tabs-demo",
+            "jewel-tabs-demo",
+            "tab-satellites-demo",
+            "watermark-demo",
+            "rect-stress-demo",
+            "widget-demo",
+            // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
+            // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
+            "decorated-window-jewel",
+        ),
+    )
+    // TaoTransferableAccess lives in androidx.compose.ui.draganddrop purely to
+    // reach Compose's internal AwtDragAndDropTransferable (Java friend-package
+    // access). Implementation detail of decorated-window-tao, not public ABI.
+    ignoredPackages.add("androidx.compose.ui.draganddrop")
+    // ComposeWindowV2Access lives in androidx.compose.ui.window.v2 to reach
+    // Compose 1.12's internal WindowState/DialogState request channels. Nothing
+    // user-facing lives there — inspectableWindowBounds is in
+    // dev.nucleusframework.window.tao precisely so apiCheck still covers it.
+    ignoredPackages.add("androidx.compose.ui.window.v2")
+}
 
+// The per-module `buildNative*` tasks themselves are wired by the
+// `nucleus.native-module` convention plugin (see buildSrc).
 val buildNative by tasks.registering {
     group = "build"
     description = "Builds native libraries for the current host platform."
@@ -28,14 +81,6 @@ tasks.register("watchNative") {
     dependsOn(buildNative)
 }
 
-fun isCurrentHostNativeTask(taskName: String): Boolean =
-    when {
-        taskName.contains("Windows", ignoreCase = true) -> Os.isFamily(Os.FAMILY_WINDOWS)
-        taskName.contains("Mac", ignoreCase = true) -> Os.isFamily(Os.FAMILY_MAC)
-        taskName.contains("Linux", ignoreCase = true) -> Os.isFamily(Os.FAMILY_UNIX) && !Os.isFamily(Os.FAMILY_MAC)
-        else -> true
-    }
-
 subprojects {
     val isDemoProject = path.startsWith(":examples:")
     if (!isDemoProject) {
@@ -46,6 +91,19 @@ subprojects {
                     .pluginId,
             )
         }
+        // JetBrains convention: every public declaration must state its
+        // visibility (and return type) explicitly so the public surface can
+        // only change deliberately — enforced together with BCV apiCheck.
+        pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+            extensions.configure<KotlinProjectExtension>("kotlin") {
+                explicitApi()
+            }
+        }
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            extensions.configure<KotlinProjectExtension>("kotlin") {
+                explicitApi()
+            }
+        }
     }
     apply {
         plugin(
@@ -53,6 +111,41 @@ subprojects {
                 .get()
                 .pluginId,
         )
+    }
+
+    if (!isDemoProject) {
+        // Library modules only. Examples stay out of the aggregated report so
+        // demo UI does not dilute (or inflate) published-runtime coverage.
+        pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
+        pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
+            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            rootProject.dependencies.add("kover", project(path))
+        }
+    }
+
+    // Sources are UTF-8, but `javac` and `javadoc` default to the *platform*
+    // encoding, which is only UTF-8 where the JVM's default charset happens to
+    // be. On a Windows machine with a non-Western system locale it is a legacy
+    // code page (windows-31j on Japanese, GBK on Simplified Chinese, ...), and
+    // any non-ASCII character in a Java source file — the em dash in
+    // `TaoTransferableAccess`, for instance — becomes
+    // "unmappable character for encoding", which is a hard error in `javadoc`.
+    // That makes `publishToMavenLocal` fail for those developers even though CI
+    // (Linux/macOS, UTF-8 by default) is green. Stating the encoding explicitly
+    // makes the build reproducible regardless of the host locale.
+    tasks.withType<JavaCompile>().configureEach {
+        options.encoding = "UTF-8"
+    }
+
+    tasks.withType<Javadoc>().configureEach {
+        options.encoding = "UTF-8"
+        (options as StandardJavadocDocletOptions).apply {
+            docEncoding = "UTF-8"
+            charSet = "UTF-8"
+        }
     }
 
     ktlint {
@@ -80,45 +173,12 @@ subprojects {
 }
 
 gradle.projectsEvaluated {
-    allprojects {
-        tasks.withType<Exec>().configureEach {
-            val taskName = name
-            if (!taskName.startsWith(nativeBuildTaskPrefix)) return@configureEach
-            val isHostTask = isCurrentHostNativeTask(taskName)
-
-            val nativeSources =
-                fileTree("src/main/native") {
-                    include("Cargo.toml", "Cargo.lock", "build.rs", "src/**")
-                    when {
-                        taskName.contains("Windows", ignoreCase = true) -> include("windows/**")
-                        taskName.contains("Mac", ignoreCase = true) -> include("macos/**")
-                        taskName.contains("Linux", ignoreCase = true) -> include("linux/**")
-                    }
-                    exclude("target/**", "vendor/**")
-                }
-
-            if (System.getenv("CI") != "true") {
-                enabled = isHostTask
-                setOnlyIf("native build task matches the current host OS") {
-                    isHostTask
-                }
-            }
-            inputs
-                .files(nativeSources)
-                .withPropertyName("nativeSources")
-                .withPathSensitivity(PathSensitivity.RELATIVE)
-        }
-    }
-
     buildNative.configure {
         dependsOn(
-            allprojects.flatMap { project ->
-                project.tasks
-                    .matching { task ->
-                        task is Exec &&
-                            task.name.startsWith(nativeBuildTaskPrefix) &&
-                            isCurrentHostNativeTask(task.name)
-                    }.toList()
+            subprojects.flatMap { project ->
+                NativeTarget.entries
+                    .filter { it.isHost }
+                    .mapNotNull { project.tasks.findByName(it.taskName) }
             },
         )
     }
@@ -202,37 +262,84 @@ tasks.register<Exec>("publishDevToMavenLocal") {
 }
 
 tasks.register("preMerge") {
-    description = "Runs all the tests/verification tasks on both top level and included build."
+    description =
+        "Runs verification for every published library module plus the flagship demo " +
+        "and the included Gradle plugin. New library modules are picked up automatically."
 
-    dependsOn(":core-runtime:check")
-    dependsOn(":aot-runtime:check")
-    dependsOn(":updater-runtime:check")
-    dependsOn(":darkmode-detector:check")
-    dependsOn(":native-ssl:check")
-    dependsOn(":native-http:check")
-    dependsOn(":native-http-okhttp:check")
-    dependsOn(":native-http-ktor:check")
-    dependsOn(":decorated-window-core:check")
-    dependsOn(":decorated-window-tao:check")
-    dependsOn(":decorated-window-jbr:check")
-    dependsOn(":decorated-window-jni:check")
-    dependsOn(":decorated-window-jewel:check")
-    dependsOn(":decorated-window-material2:check")
-    dependsOn(":decorated-window-material3:check")
-    dependsOn(":graalvm-runtime:check")
-    dependsOn(":system-color:check")
-    dependsOn(":energy-manager:check")
-    dependsOn(":linux-hidpi:check")
-    dependsOn(":taskbar-progress:check")
-    dependsOn(":freedesktop-icons:check")
-    dependsOn(":notification-linux:check")
-    dependsOn(":notification-macos:check")
-    dependsOn(":launcher-linux:check")
-    dependsOn(":scheduler:check")
-    dependsOn(":fs-watcher:check")
+    // Every non-example subproject: compile + unit tests + detekt/ktlint + apiCheck
+    // (BCV wires apiCheck into each library module's `check`). Provider so the
+    // set of modules is resolved after projects are created and stays in sync
+    // with settings.gradle.kts (no hand-maintained allow-list).
+    dependsOn(
+        provider {
+            subprojects
+                // Skip the examples umbrella and every demo under it. The
+                // umbrella project has no `check` task; demos are opt-in
+                // (only nucleus-demo is wired below as a consumer smoke).
+                .filter { !it.path.startsWith(":examples") }
+                .filter { it.tasks.findByName("check") != null }
+                .map { it.tasks.named("check") }
+        },
+    )
+
+    // Flagship demo as a consumer smoke check (compile/test).
     dependsOn(":examples:nucleus-demo:check")
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:check"))
     dependsOn(gradle.includedBuild("plugin-build").task(":plugin:validatePlugins"))
+}
+
+// Aggregated coverage for every published runtime module. Local `check` /
+// `preMerge` do not run koverVerify — coverage is informational only
+// (`./gradlew koverHtmlReport` / `koverLog`). GraalVM @TargetClass
+// substitutions stay IN.
+kover {
+    reports {
+        filters {
+            excludes {
+                classes(
+                    "dev.nucleusframework.sfsymbols.*",
+                    "dev.nucleusframework.freedesktop.icons.*",
+                    "dev.nucleusframework.window.icons.*",
+                )
+            }
+        }
+        total {
+            verify {
+                onCheck = false
+            }
+            html {
+                title = "Nucleus published runtime"
+                htmlDir.set(layout.buildDirectory.dir("reports/kover/html"))
+            }
+            xml {
+                xmlFile.set(layout.buildDirectory.file("reports/kover/report.xml"))
+            }
+            log {
+                header = "Nucleus published runtime line coverage"
+                format = "<entity> line coverage: <value>%"
+            }
+            binary {
+                file.set(layout.buildDirectory.file("reports/kover/report.bin"))
+            }
+            // Merged when :decorated-window-tao:taoHeadfulTest has been run
+            // (Kover agent on the JavaExec). A missing/empty file is skipped
+            // so a clean checkout can still produce a unit-test-only report.
+            val headfulIc = file("decorated-window-tao/build/kover/bin-reports/taoHeadful.ic")
+            if (headfulIc.isFile && headfulIc.length() > 0L) {
+                additionalBinaryReports.add(headfulIc)
+            }
+            // Optional extra binary reports dropped into this directory
+            // (e.g. a local multi-OS merge). Configuration-time listing
+            // is enough: the files must exist before Gradle starts.
+            val crossOsDir = file("build/kover/cross-os")
+            if (crossOsDir.isDirectory) {
+                crossOsDir
+                    .walkTopDown()
+                    .filter { it.isFile && (it.extension == "ic" || it.extension == "bin") && it.length() > 0L }
+                    .forEach { additionalBinaryReports.add(it) }
+            }
+        }
+    }
 }
 
 tasks.wrapper {

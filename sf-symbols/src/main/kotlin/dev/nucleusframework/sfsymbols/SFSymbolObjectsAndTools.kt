@@ -1,7 +1,7 @@
 package dev.nucleusframework.sfsymbols
 
 /** SF Symbols — ObjectsAndTools (358 symbols). */
-enum class SFSymbolObjectsAndTools(
+public enum class SFSymbolObjectsAndTools(
     override val symbolName: String,
 ) : SFSymbol {
     BANDAGE("bandage"),

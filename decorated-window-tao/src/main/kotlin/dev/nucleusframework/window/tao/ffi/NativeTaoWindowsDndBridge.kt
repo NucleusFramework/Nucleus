@@ -68,16 +68,37 @@ internal object NativeTaoWindowsDndBridge {
     external fun nativeRevoke(hwnd: Long): Int
 
     /**
+     * Keeps the host alive while `DoDragDrop` owns the event-loop thread.
+     *
+     * [pump] is upcalled from `IDropSource::QueryContinueDrag`, i.e. on every
+     * mouse/keyboard state change for the duration of the drag, on the Tao
+     * event-loop thread. Implementations must drain the main dispatcher and
+     * paint one frame — and must not block, since the OS drag loop is waiting
+     * on the return.
+     *
+     * Must be a named class, not a lambda or anonymous object: GraalVM's
+     * `GetMethodID` does not pick up inherited interface methods on anonymous
+     * classes (same constraint as [Callback]).
+     */
+    interface DragPump {
+        fun pump()
+    }
+
+    /**
      * Starts an outbound OS drag session via Win32 `DoDragDrop`.
      *
      * Blocks the calling thread (Win32 pumps its own modal message loop) until
      * the user drops or cancels. Must run on the thread owning [hwnd]
-     * (= the Tao event-loop thread).
+     * (= the Tao event-loop thread) — `DoDragDrop` takes the mouse capture on
+     * the calling thread, so a thread that owns no window never sees the
+     * mouse-up and leaves the OS drag session wedged system-wide.
      *
      * Either [files] or [text] (or both) must be non-null/non-empty.
      *
      * @param allowedEffects bitmask of [DROP_EFFECT_COPY] / [DROP_EFFECT_MOVE] /
      *   [DROP_EFFECT_LINK]
+     * @param pump invoked repeatedly during the drag so the frozen event loop
+     *   can still drain and render; see [DragPump]. `null` disables it.
      * @return one of [DROP_EFFECT_*][DROP_EFFECT_NONE] — the action the
      *   destination accepted, or [DROP_EFFECT_NONE] if cancelled.
      */
@@ -87,6 +108,7 @@ internal object NativeTaoWindowsDndBridge {
         files: Array<String>?,
         text: String?,
         allowedEffects: Int,
+        pump: DragPump?,
     ): Int
 
     const val DROP_EFFECT_NONE: Int = 0

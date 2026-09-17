@@ -5,7 +5,7 @@ package dev.nucleusframework.notification.windows
  *
  * All callbacks are dispatched on the Swing EDT for thread safety.
  */
-interface ToastNotificationListener {
+public interface ToastNotificationListener {
     /**
      * Called when the user clicks the toast body or an action button.
      *
@@ -14,7 +14,7 @@ interface ToastNotificationListener {
      * @param arguments The launch arguments or button arguments.
      * @param userInputs Map of input ID to user-provided value (text boxes, selections).
      */
-    fun onActivated(
+    public fun onActivated(
         tag: String,
         group: String,
         arguments: String,
@@ -28,7 +28,7 @@ interface ToastNotificationListener {
      * @param group The notification group (if set).
      * @param reason Why the toast was dismissed.
      */
-    fun onDismissed(
+    public fun onDismissed(
         tag: String,
         group: String,
         reason: DismissalReason,
@@ -41,7 +41,7 @@ interface ToastNotificationListener {
      * @param group The notification group (if set).
      * @param errorCode The HRESULT error code.
      */
-    fun onFailed(
+    public fun onFailed(
         tag: String,
         group: String,
         errorCode: Int,

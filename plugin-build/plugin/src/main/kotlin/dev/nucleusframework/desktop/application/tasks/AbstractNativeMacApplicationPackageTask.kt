@@ -20,6 +20,15 @@ abstract class AbstractNativeMacApplicationPackageTask : AbstractNucleusTask() {
     @get:Input
     val packageName: Property<String> = objects.notNullProperty()
 
+    /**
+     * Name of the `.app` bundle directory, without the `.app` extension.
+     *
+     * Kept separate from [packageName], which still names the launcher inside `Contents/MacOS`.
+     * Defaults to [packageName] when unset.
+     */
+    @get:Input
+    val bundleName: Property<String> = objects.notNullProperty<String>().convention(packageName)
+
     @get:Input
     val packageVersion: Property<String> = objects.notNullProperty("1.0.0")
 

@@ -61,6 +61,12 @@ void *memset(void *dest, int c, size_t count) {
 /* ================================================================== */
 
 typedef void (APIENTRY *PFN_glViewport)(int, int, int, int);
+typedef void (APIENTRY *PFN_glClearColor)(float, float, float, float);
+typedef void (APIENTRY *PFN_glClear)(unsigned int);
+typedef void (APIENTRY *PFN_glDisable)(unsigned int);
+
+#define NUCLEUS_GL_COLOR_BUFFER_BIT 0x00004000u
+#define NUCLEUS_GL_SCISSOR_TEST     0x0C11u
 
 static HMODULE sLibEGL    = NULL;
 static HMODULE sLibGLESv2 = NULL;
@@ -81,6 +87,9 @@ static PFNEGLSWAPINTERVALPROC          pEglSwapInterval          = NULL;
 static PFNEGLDESTROYCONTEXTPROC        pEglDestroyContext        = NULL;
 static PFNEGLDESTROYSURFACEPROC        pEglDestroySurface        = NULL;
 static PFN_glViewport                  pglViewport               = NULL;
+static PFN_glClearColor                pglClearColor             = NULL;
+static PFN_glClear                     pglClear                  = NULL;
+static PFN_glDisable                   pglDisable                = NULL;
 
 static void loadEgl(void) {
     if (eglLoaded) return;
@@ -114,6 +123,16 @@ static void loadEgl(void) {
 
     if (sLibGLESv2) pglViewport = (PFN_glViewport) GetProcAddress(sLibGLESv2, "glViewport");
     if (!pglViewport && pEglGetProcAddress) pglViewport = (PFN_glViewport) pEglGetProcAddress("glViewport");
+    if (sLibGLESv2) {
+        pglClearColor = (PFN_glClearColor) GetProcAddress(sLibGLESv2, "glClearColor");
+        pglClear      = (PFN_glClear)      GetProcAddress(sLibGLESv2, "glClear");
+        pglDisable    = (PFN_glDisable)    GetProcAddress(sLibGLESv2, "glDisable");
+    }
+    if (pEglGetProcAddress) {
+        if (!pglClearColor) pglClearColor = (PFN_glClearColor) pEglGetProcAddress("glClearColor");
+        if (!pglClear)      pglClear      = (PFN_glClear)      pEglGetProcAddress("glClear");
+        if (!pglDisable)    pglDisable    = (PFN_glDisable)    pEglGetProcAddress("glDisable");
+    }
 
     eglAvailable = (pEglInitialize && pEglChooseConfig && pEglCreateContext &&
                     pEglCreateWindowSurface && pEglMakeCurrent && pEglSwapBuffers &&
@@ -575,6 +594,32 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeResize(
      * explicit viewport keeps Skia surface creation in step. */
     pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
     if (pglViewport) pglViewport(0, 0, att->widthPx, att->heightPx);
+}
+
+/* Presents one frame cleared to [argb]. Used by the fullscreen toggle right
+ * after the child render surface is resized: DWM registers the HWND resize
+ * immediately but the swapchain's first buffer at the new size only reaches
+ * it at the next present — a composition falling into that gap shows the
+ * uninitialized buffer (black). This sub-millisecond clear+present shrinks
+ * the gap to ~1ms and colours it with the themed background. The caller
+ * must resync Skia's GL state cache (resetGLAll) afterwards. */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoGlBridge_nativeClearPresent(
+    JNIEnv *env, jclass clazz, jlong handle, jint argb)
+{
+    (void)env; (void)clazz;
+    GlAttachment *att = (GlAttachment *)(uintptr_t)handle;
+    if (!att || !pglClearColor || !pglClear) return;
+    pEglMakeCurrent(att->eglDisplay, att->eglSurface, att->eglSurface, att->eglContext);
+    /* Skia can leave scissoring enabled; glClear honours it. */
+    if (pglDisable) pglDisable(NUCLEUS_GL_SCISSOR_TEST);
+    float a = (float)((argb >> 24) & 0xFF) / 255.0f;
+    float r = (float)((argb >> 16) & 0xFF) / 255.0f;
+    float g = (float)((argb >>  8) & 0xFF) / 255.0f;
+    float b = (float)( argb        & 0xFF) / 255.0f;
+    pglClearColor(r, g, b, a);
+    pglClear(NUCLEUS_GL_COLOR_BUFFER_BIT);
+    pEglSwapBuffers(att->eglDisplay, att->eglSurface);
 }
 
 JNIEXPORT void JNICALL

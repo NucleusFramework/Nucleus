@@ -15,7 +15,7 @@ import org.jetbrains.jewel.foundation.theme.LocalContentColor
 
 @Suppress("FunctionNaming")
 @Composable
-fun DecoratedWindowScope.JewelTitleBar(
+public fun DecoratedWindowScope.JewelTitleBar(
     modifier: Modifier = Modifier,
     gradientStartColor: Color = Color.Unspecified,
     style: TitleBarStyle = LocalTitleBarStyle.current,
