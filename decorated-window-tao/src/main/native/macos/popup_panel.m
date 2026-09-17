@@ -37,6 +37,7 @@
 #import <Cocoa/Cocoa.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <stdatomic.h>
 
 // ── JVM caching for the per-panel event callback ────────────────────────
@@ -249,7 +250,7 @@ static const char kCursorKey         = 6; // NSCursor — set via nativeSetPanel
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnPointerMethod, type, x, y, button, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* On mouseDown inside a focusable panel, escalate the panel to key
@@ -319,7 +320,7 @@ static jint scrollGesturePhase(NSEvent *event) {
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY,
         event.hasPreciseScrollingDeltas ? JNI_TRUE : JNI_FALSE,
         scrollGesturePhase(event));
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 - (void)dispatchKey:(NSEvent *)event type:(jint)type {
@@ -332,7 +333,7 @@ static jint scrollGesturePhase(NSEvent *event) {
     if (chars.length == 0) chars = event.charactersIgnoringModifiers;
     jint cp = (chars.length > 0) ? (jint)[chars characterAtIndex:0] : 0;
     (*env)->CallVoidMethod(env, cb, sOnKeyMethod, type, vk, cp, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 - (void)keyDown:(NSEvent *)event { [self dispatchKey:event type:EVT_KEY_DOWN]; }
@@ -856,7 +857,7 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
         if (e.type == NSEventTypeRightMouseDown) btn = 2;
         else if (e.type == NSEventTypeOtherMouseDown) btn = 3;
         (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
-        if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
+        nucleus_jni_clear_exception(jenv);
         return e;
     }];
 
@@ -882,7 +883,7 @@ Java_dev_nucleusframework_window_tao_ffi_PopupNativeBridge_nativeInstallOutsideC
             if (e.type == NSEventTypeRightMouseDown) btn = 2;
             else if (e.type == NSEventTypeOtherMouseDown) btn = 3;
             (*jenv)->CallVoidMethod(jenv, cb, sOutsideOnClickMethod, type, btn);
-            if ((*jenv)->ExceptionCheck(jenv)) (*jenv)->ExceptionClear(jenv);
+            nucleus_jni_clear_exception(jenv);
         }];
     }
 }

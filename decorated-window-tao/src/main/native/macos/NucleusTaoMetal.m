@@ -25,6 +25,7 @@
 #include <string.h>
 #include <math.h>
 #import <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
 // default (no-op) so production apps stay silent; opt in by launching with
@@ -213,9 +214,7 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOffsetChanged,
                                  nsViewPtr, (jfloat)offset);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 // Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
@@ -242,10 +241,7 @@ static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
                                  nsViewPtr, widthPx, heightPx);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 static void reinstallToolbarIfNeeded(NSWindow *window) {
@@ -2602,10 +2598,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
                 }
                 if (sRunMethod != NULL) {
                     (*menv)->CallVoidMethod(menv, interopGlobal, sRunMethod);
-                    if ((*menv)->ExceptionCheck(menv)) {
-                        (*menv)->ExceptionDescribe(menv);
-                        (*menv)->ExceptionClear(menv);
-                    }
+                    nucleus_jni_clear_exception(menv);
                 }
                 (*menv)->DeleteGlobalRef(menv, interopGlobal);
             }

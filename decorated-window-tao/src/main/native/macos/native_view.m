@@ -32,6 +32,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <objc/runtime.h>
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <math.h>
 #include <stdatomic.h>
 
@@ -167,7 +168,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     jfloat x, y;
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnPointerMethod, type, x, y, button, [self modifierMaskFor:event]);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* On click, become first responder of the host NSWindow so subsequent
@@ -190,7 +191,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
             JNIEnv *env = attachThread();
             if (env != NULL) {
                 (*env)->CallVoidMethod(env, cb, sOnResignMethod);
-                if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+                nucleus_jni_clear_exception(env);
             }
         }
     }
@@ -211,7 +212,7 @@ static const char kOverlayRegionCountKey    = 4; // NSNumber<int>
     [self pixelsForEvent:event outX:&x outY:&y];
     (*env)->CallVoidMethod(env, cb, sOnScrollMethod,
         x, y, (jfloat)event.scrollingDeltaX, (jfloat)event.scrollingDeltaY);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Deliberately NOT overriding `keyDown:` / `keyUp:`. AppKit's

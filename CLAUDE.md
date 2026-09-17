@@ -93,12 +93,12 @@ When creating a new module with platform-specific JNI libraries, all steps below
        windows("nucleus_feature")  // → nucleus_feature.dll
    }
    ```
-4. **Kotlin JNI bridge** — `internal object` using `NativeLibraryLoader.load()` with `@JvmStatic external` methods. Always provide a Kotlin fallback when native lib is unavailable.
+4. **Kotlin JNI bridge** — `internal object` using `NativeLibraryLoader.load()` with `@JvmStatic external` methods. Always provide a Kotlin fallback when native lib is unavailable. Native code that must drop a pending JNI exception (a Kotlin callback that threw) calls `nucleus_jni_clear_exception(env)` from `native-common/nucleus_jni.h` — never a bare `ExceptionClear`.
 5. **GraalVM reachability metadata** — create `<module>/src/main/resources/META-INF/native-image/dev.nucleusframework/nucleus.<module>/reachability-metadata.json` declaring all JNI-accessible classes/methods. Without this, native-image silently eliminates the bridge.
 6. **CI build** (`build-natives.yaml`) — add one build step per platform job, gated with `if: steps.natives-cache.outputs.cache-hit != 'true'`, plus the library entries in that platform's `Verify ... natives` FILES list. Native outputs are cached keyed on `hashFiles('**/src/main/native/**', ...)`, so the new sources invalidate the cache automatically. Each platform job publishes a single merged artifact (`natives-windows`, `natives-macos`, `natives-linux-{x64,aarch64}`); consumer workflows fetch them all with one `pattern: 'natives-*'` download step and need **no changes** for a new module.
 7. **CI verify lists** — add the 6 arch paths to the EXPECTED arrays of the "Verify all natives present" steps in `pre-merge.yaml` and `publish-maven.yaml`.
 
-Common pitfalls: forgetting Linux `.so` in verify lists, missing `reachability-metadata.json`, forgetting the `cache-hit` guard on new build steps in `build-natives.yaml`.
+Common pitfalls: forgetting Linux `.so` in verify lists, missing `reachability-metadata.json`, forgetting the `cache-hit` guard on new build steps in `build-natives.yaml`, swallowing JNI exceptions with a silent `ExceptionClear`.
 
 Existing `build.sh`/`build.bat` scripts also clear the `NativeLibraryLoader` cache themselves so a bare `./build.sh` (outside Gradle) is safe; new scripts don't have to, since `nucleus.native-module` does it after every run.
 

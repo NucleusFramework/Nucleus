@@ -16,6 +16,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <dwmapi.h>
 
@@ -547,7 +548,7 @@ static void ensureDecoJVMCached(JNIEnv *env) {
         sDecoOnFullscreenSize = (*env)->GetStaticMethodID(
             env, sDecoBridgeClass, "onFullscreenSizeChanged", "(JII)V");
     }
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 /* Calls NativeTaoWindowsDecoBridge.onFullscreenSizeChanged(hwnd, w, h) and
@@ -569,10 +570,7 @@ static void notifyFullscreenSizeChanged(HWND hwnd, int w, int h) {
     if (!env) return;
     (*env)->CallStaticVoidMethod(env, sDecoBridgeClass, sDecoOnFullscreenSize,
         (jlong)(uintptr_t)hwnd, (jint)w, (jint)h);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 /* WndProc subclass */
