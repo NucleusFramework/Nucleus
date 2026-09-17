@@ -232,6 +232,9 @@ public fun ApplicationScope.DecoratedWindow(
                 var isMinimized: Boolean? = null
                 var wrapSettled: Boolean = !wrapWidth && !wrapHeight
 
+                /** The `Aligned` request a wrap-content window resolves once its real size is known (#546). */
+                val initialAligned: WindowPosition.Aligned? = state.position as? WindowPosition.Aligned
+
                 /** Physical px of the last programmatic [TaoWindow.setInnerSize]; null = user/OS resize. */
                 var pendingProgrammaticPx: IntSize? = null
             }
@@ -435,6 +438,12 @@ public fun ApplicationScope.DecoratedWindow(
         applied.size = resolved
         latestState.size = resolved
         applied.wrapSettled = true
+        // #546: the position effect skipped `Aligned` while the size was the
+        // creation fallback; resolve it now. Let the resize land first — on
+        // macOS the centring reads the live NSWindow frame.
+        val aligned = applied.initialAligned ?: return@LaunchedEffect
+        repeat(ALIGNED_POSITION_RETRIES) { if (applied.pendingProgrammaticPx != null) delay(ALIGNED_POSITION_RETRY_MS) }
+        alignWithRetries(window, aligned, resolved)
     }
     LaunchedEffect(window, state.size, state.placement) {
         // Maximized / Fullscreen windows derive their size from the
@@ -496,6 +505,10 @@ public fun ApplicationScope.DecoratedWindow(
                 applied.position = pos
             }
             is WindowPosition.Aligned -> {
+                // Wrap-content (#546): the size is still the creation fallback;
+                // the wrap-content effect above resolves `initialAligned` once
+                // the real one is known.
+                if (!applied.wrapSettled) return@LaunchedEffect
                 // Use max(state.size, minimumSize) so the centring math matches
                 // the size the window will actually occupy on screen — Tao
                 // grows the window to honour `minimumSize` asynchronously, and
@@ -509,14 +522,7 @@ public fun ApplicationScope.DecoratedWindow(
                 // native-image start is not, and a single failed attempt left
                 // the window wherever the WM had centred it, for good, since
                 // this effect only re-runs when `state.position` changes.
-                var landed = applyAlignedPosition(window, pos, effectiveSize)
-                var attempt = 0
-                while (!landed && attempt < ALIGNED_POSITION_RETRIES) {
-                    delay(ALIGNED_POSITION_RETRY_MS)
-                    attempt++
-                    landed = applyAlignedPosition(window, pos, effectiveSize)
-                }
-                if (landed) {
+                if (alignWithRetries(window, pos, effectiveSize)) {
                     applied.position = pos
                 }
             }
@@ -643,6 +649,19 @@ private const val ALIGNED_POSITION_RETRY_MS = 16L
 
 /** Native px slop when matching a programmatic setInnerSize echo (#576). */
 private const val PROGRAMMATIC_SIZE_ECHO_PX = 1
+
+/** [applyAlignedPosition], retried while the native window is still being created (see [ALIGNED_POSITION_RETRIES]). */
+private suspend fun alignWithRetries(
+    window: TaoWindow,
+    position: WindowPosition.Aligned,
+    size: DpSize,
+): Boolean {
+    repeat(ALIGNED_POSITION_RETRIES) {
+        if (applyAlignedPosition(window, position, size)) return true
+        delay(ALIGNED_POSITION_RETRY_MS)
+    }
+    return applyAlignedPosition(window, position, size)
+}
 
 /**
  * Resolves a [WindowPosition.Aligned] against the primary monitor's work area
