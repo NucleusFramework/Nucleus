@@ -223,6 +223,26 @@ abstract class AbstractElectronBuilderPackageTask
 
         @get:InputFile
         @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxAfterInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxAfterRemove: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxBeforeInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val linuxBeforeRemove: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
         @get:PathSensitive(PathSensitivity.ABSOLUTE)
         val appxStoreLogo: RegularFileProperty = objects.fileProperty()
 
