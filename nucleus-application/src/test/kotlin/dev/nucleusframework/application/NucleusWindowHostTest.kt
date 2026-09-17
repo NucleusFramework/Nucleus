@@ -69,6 +69,7 @@ class NucleusWindowHostTest {
                         visible = false,
                         resizable = false,
                         minimizable = false,
+                        maximizable = false,
                         alwaysOnTop = true,
                         undecorated = true,
                         nativePopupLayers = true,
@@ -91,6 +92,7 @@ class NucleusWindowHostTest {
             assertFalse(windowHost.visible)
             assertFalse(windowHost.resizable)
             assertFalse(windowHost.minimizable)
+            assertFalse(windowHost.maximizable)
             assertTrue(windowHost.alwaysOnTop)
             assertTrue(windowHost.undecorated)
             assertTrue(windowHost.nativePopupLayers)
@@ -159,6 +161,7 @@ class NucleusWindowHostTest {
         var visible: Boolean = true
         var resizable: Boolean = true
         var minimizable: Boolean = true
+        var maximizable: Boolean = true
         var alwaysOnTop: Boolean = false
         var undecorated: Boolean = false
         var nativePopupLayers: Boolean = false
@@ -186,6 +189,7 @@ class NucleusWindowHostTest {
             icon: Painter?,
             resizable: Boolean,
             minimizable: Boolean,
+            maximizable: Boolean,
             enabled: Boolean,
             focusable: Boolean,
             alwaysOnTop: Boolean,
@@ -205,6 +209,7 @@ class NucleusWindowHostTest {
             this.visible = visible
             this.resizable = resizable
             this.minimizable = minimizable
+            this.maximizable = maximizable
             this.alwaysOnTop = alwaysOnTop
             this.undecorated = undecorated
             this.popupFor = popupFor
@@ -224,6 +229,7 @@ class NucleusWindowHostTest {
             icon: Painter?,
             resizable: Boolean,
             minimizable: Boolean,
+            maximizable: Boolean,
             enabled: Boolean,
             focusable: Boolean,
             alwaysOnTop: Boolean,
@@ -261,6 +267,7 @@ class NucleusWindowHostTest {
             icon: Painter?,
             resizable: Boolean,
             minimizable: Boolean,
+            maximizable: Boolean,
             enabled: Boolean,
             focusable: Boolean,
             alwaysOnTop: Boolean,
