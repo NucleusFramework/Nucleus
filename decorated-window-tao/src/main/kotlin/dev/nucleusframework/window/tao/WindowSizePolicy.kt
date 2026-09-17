@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.Dp
@@ -35,6 +37,12 @@ internal fun TaoWindow.resolvedSizePolicy(): WindowSizePolicy = sizePolicies[han
 /**
  * Wrap-content axes for a [DecoratedWindow] whose [androidx.compose.ui.window.WindowState.size]
  * has [Dp.Unspecified] on one or both dimensions (#532).
+ *
+ * [settled] flips once the measured size has been applied to the native
+ * window: the scene then fills it like any other window's. The wrap
+ * modifiers hand children an unbounded axis, under which `fillMaxWidth` /
+ * `fillMaxHeight` collapse to content — a `TitleBar` shrank to its buttons
+ * (#546).
  */
 internal class WindowSizePolicy(
     val wrapWidth: Boolean = false,
@@ -42,6 +50,7 @@ internal class WindowSizePolicy(
     val onContentMeasured: ((IntSize) -> Unit)? = null,
 ) {
     val wraps: Boolean get() = wrapWidth || wrapHeight
+    val settled: MutableState<Boolean> = mutableStateOf(false)
 }
 
 internal fun Dp.toWindowCreationDp(fallback: Double): Double =
@@ -58,7 +67,7 @@ internal fun Dp.toWindowCreationDp(fallback: Double): Double =
 internal fun WindowSceneColumn(content: @Composable ColumnScope.() -> Unit) {
     val policy = LocalTaoWindow.current?.resolvedSizePolicy() ?: WindowSizePolicy()
     val modifier =
-        if (!policy.wraps) {
+        if (!policy.wraps || policy.settled.value) {
             Modifier.fillMaxSize()
         } else {
             Modifier

@@ -7,14 +7,18 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.WindowState
 import dev.nucleusframework.window.DialogTitleBar
+import dev.nucleusframework.window.TitleBar
 import dev.nucleusframework.window.tao.TaoMonitors
 import dev.nucleusframework.window.tao.TaoWindow
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 
 /**
@@ -33,6 +37,7 @@ internal object UnspecifiedSizeHeadfulCases {
             windowWrapContentCentred(),
             dialogWrapContentCentredOnScreen(),
             dialogWrapContentCentredOnParent(),
+            windowWrapContentWidthTitleBarSpans(),
         )
 
     private fun windowWrapContentHeight(): TaoWindowTestCase =
@@ -138,6 +143,43 @@ internal object UnspecifiedSizeHeadfulCases {
             }
         }
 
+    /**
+     * #546 (follow-up): under an unspecified width the scene's wrap modifier
+     * left the TitleBar an unbounded max width, so its `fillMaxWidth` collapsed
+     * to the buttons. Once measured, the bar must span the window.
+     */
+    private fun windowWrapContentWidthTitleBarSpans(): TaoWindowTestCase {
+        val titleBarWidthPx = AtomicInteger(0)
+        val sceneWidthPx = AtomicInteger(0)
+        return TaoWindowTestCase(
+            name = "#546 wrap-content width: TitleBar spans the measured window",
+            paintDefaultBackground = false,
+            size = DpSize(Dp.Unspecified, WRAP_HEIGHT_DP.dp),
+            content = {
+                sceneWidthPx.set(LocalWindowInfo.current.containerSize.width)
+                TitleBar(Modifier.onSizeChanged { titleBarWidthPx.set(it.width) }) { }
+                RedBox()
+            },
+        ) {
+            awaitUntil(
+                "window mapped at its wrap-content width",
+                detail = { "bounds=${bounds()?.toList()}" },
+            ) {
+                val b = bounds() ?: return@awaitUntil false
+                val widthDp = b[2] / window.scaleFactor
+                widthDp in WRAP_WIDTH_DP..(WRAP_WIDTH_DP + MAX_CHROME_DP)
+            }
+            awaitUntil(
+                "TitleBar as wide as the scene",
+                detail = { "titleBar=${titleBarWidthPx.get()}px scene=${sceneWidthPx.get()}px" },
+            ) {
+                val scene = sceneWidthPx.get()
+                val settled = scene > 0 && scene <= (WRAP_WIDTH_DP + MAX_CHROME_DP) * window.scaleFactor
+                settled && titleBarWidthPx.get() == scene
+            }
+        }
+    }
+
     @Composable
     private fun RedBox() {
         Box(
@@ -179,6 +221,7 @@ internal object UnspecifiedSizeHeadfulCases {
         }
 
     private const val WRAP_WIDTH_DP = 300f
+    private const val WRAP_HEIGHT_DP = 300f
     private const val CONTENT_HEIGHT_DP = 137f
 
     // Title bar + Linux CSD shadow / macOS traffic-light chrome.
