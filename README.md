@@ -37,11 +37,23 @@ version 69. The Tao backend is the recommended one for new projects —
 
 ## Used by
 
+Apps take the packaging plugin, a single runtime module, or the full windowing stack:
+
 - [AB Download Manager](https://github.com/amir1376/ab-download-manager) — packaging plugin
+- [SimpMusic](https://github.com/maxrave-dev/SimpMusic) — notifications
+- [Tasks.org](https://github.com/tasks/tasks) — notifications
+- [CrossPaste](https://github.com/CrossPaste/crosspaste-desktop) — system tray
+- [Husi](https://github.com/xchacha20-poly1305/husi) — notifications, autolaunch, dark mode, tray
+- [Flare](https://github.com/DimensionDev/Flare)
+- [Rush](https://github.com/shub39/Rush)
 - [Hammer](https://github.com/Darkrock-Studios/hammer-editor)
 - [OtakuWorld](https://github.com/jakepurple13/OtakuWorld)
-- [Husi](https://github.com/xchacha20-poly1305/husi)
+- [WG Tunnel](https://github.com/wgtunnel/desktop)
 - [Zayit](https://github.com/kdroidFilter/Zayit)
+- [NOMM](https://github.com/Combat787/NOMM)
+- [FuoEvolve](https://github.com/feeluown/FuoEvolve)
+- [CozySpace](https://github.com/terrakok/CozySpace)
+- [Amethyst](https://github.com/anthonyhfm/Amethyst)
 - [GitVantage](https://github.com/rocketraman/gitvantage)
 
 ## Showcase
