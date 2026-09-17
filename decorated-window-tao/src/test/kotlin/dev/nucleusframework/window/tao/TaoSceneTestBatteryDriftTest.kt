@@ -151,6 +151,8 @@ class TaoSceneTestBatteryDriftTest {
                 "scrim bookkeeping + raster blend on a CPU bitmap (#569); no ComposeScene",
             LcdTextCaptureTest::class.java to
                 "writes an AWT comparison PNG; diagnostic, not a scene behaviour",
+            TaoApplicationExitTest::class.java to
+                "pure finishTaoApplication / exitProcessOnExit mapping (#667); no ComposeScene",
         )
 
     private fun testMethodNames(cls: Class<*>): List<String> =
