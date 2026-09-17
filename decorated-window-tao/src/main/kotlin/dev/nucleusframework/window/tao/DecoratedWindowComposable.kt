@@ -74,6 +74,7 @@ public fun ApplicationScope.DecoratedWindow(
     visible: Boolean = true,
     resizable: Boolean = true,
     minimizable: Boolean = true,
+    maximizable: Boolean = true,
     enabled: Boolean = true,
     focusable: Boolean = true,
     alwaysOnTop: Boolean = false,
@@ -419,6 +420,13 @@ public fun ApplicationScope.DecoratedWindow(
     LaunchedEffect(window, minimizable) {
         if (window.isMinimizable != minimizable) {
             window.setMinimizable(minimizable)
+        }
+    }
+    // `maximizable` likewise: the caption button / zoom button / Win+Up go
+    // with it on Windows and macOS, the Compose chrome everywhere.
+    LaunchedEffect(window, maximizable) {
+        if (window.isMaximizable != maximizable) {
+            window.setMaximizable(maximizable)
         }
     }
     LaunchedEffect(window, measuredContent.value) {

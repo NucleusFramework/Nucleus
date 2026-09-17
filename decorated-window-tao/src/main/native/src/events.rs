@@ -333,6 +333,10 @@ pub(crate) enum UserEvent {
         handle: u64,
         minimizable: bool,
     },
+    SetMaximizable {
+        handle: u64,
+        maximizable: bool,
+    },
     SetMinimized {
         handle: u64,
         minimized: bool,

@@ -151,6 +151,19 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeSetMaximizable(
+    _env: JNIEnv,
+    _class: JClass,
+    handle: jlong,
+    maximizable: jboolean,
+) {
+    send_user_event(UserEvent::SetMaximizable {
+        handle: handle as u64,
+        maximizable: maximizable != JNI_FALSE,
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_nativeRequestRedraw(
     _env: JNIEnv,
     _class: JClass,
