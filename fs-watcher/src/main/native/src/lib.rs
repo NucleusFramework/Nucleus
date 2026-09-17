@@ -38,8 +38,7 @@ static BRIDGE_CLASS: OnceCell<GlobalRef> = OnceCell::new();
 struct RegistrationState {
     original_root: PathBuf,
     resolved_root: PathBuf,
-    /// The spelling handed to the backend: the canonical one on macOS, where FSEvents reports
-    /// canonical paths and the debouncer's file-id cache is keyed by them.
+    /// The spelling handed to the backend; see [`watched_root_for`].
     watched_root: PathBuf,
     recursive: bool,
 }
@@ -820,14 +819,25 @@ fn release_native_watcher_if_unused(watcher_handle: i64) -> Option<Arc<NativeWat
     }
 }
 
+/// The spelling handed to the backend. One backend watch per *real* directory, so two
+/// registrations of the same directory under different spellings share it and the Kotlin side
+/// projects events back onto each registration's own root.
+///
+/// - macOS: FSEvents reports canonical paths anyway, and the debouncer keys its file-id cache by
+///   the root it was given — a `/var/...` root would never pair a rename reported under
+///   `/private/var`.
+/// - Linux: inotify identifies a directory by inode, so two spellings share one watch descriptor
+///   and notify keeps a single path per descriptor; watching the canonical spelling makes the
+///   reported paths the same for every alias instead of whichever alias registered last.
+/// - Windows: `canonicalize()` yields `\\?\` verbatim paths that Java's `toRealPath()` never
+///   produces, so the registered spelling is kept; `ReadDirectoryChangesW` opens one handle per
+///   watch anyway.
 fn watched_root_for(original_root: &Path, resolved_root: &Path) -> PathBuf {
-    if cfg!(target_os = "macos") {
-        // FSEvents reports canonical paths and the debouncer keys its file-id cache by the root
-        // it was given: a `/var/...` root would never pair a rename reported under `/private/var`.
-        resolved_root.to_path_buf()
-    } else {
+    if cfg!(target_os = "windows") {
         let _ = resolved_root;
         original_root.to_path_buf()
+    } else {
+        resolved_root.to_path_buf()
     }
 }
 

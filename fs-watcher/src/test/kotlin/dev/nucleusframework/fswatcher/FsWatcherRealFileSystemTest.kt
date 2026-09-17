@@ -1078,9 +1078,9 @@ class FsWatcherRealFileSystemTest {
     fun symlinkRootResolvedFileEventsDoNotRemapWhenFollowSymlinksDisabled() =
         runBlocking {
             if (!FsWatchers.isSupported()) return@runBlocking
-            // Linux and Windows report this real-fs symlink case differently
-            // from the lexical-path behavior asserted here.
-            if (isLinuxHost() || isWindowsHost()) return@runBlocking
+            // ReadDirectoryChangesW is handed the registered spelling, so Windows reports this
+            // real-fs symlink case under the lexical path regardless of followSymlinks.
+            if (isWindowsHost()) return@runBlocking
 
             val canonicalRoot = createRealTempDirectory("fs-watcher-real-fs-no-follow-target")
             val symlinkRoot = canonicalRoot.parent.resolve("${canonicalRoot.fileName}-link")
