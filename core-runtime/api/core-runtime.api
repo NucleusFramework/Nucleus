@@ -99,9 +99,12 @@ public final class dev/nucleusframework/core/runtime/LinuxUiToolkit$Companion {
 }
 
 public final class dev/nucleusframework/core/runtime/NativeLibraryLoader {
+	public static final field CACHE_DIR_PROPERTY Ljava/lang/String;
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NativeLibraryLoader;
+	public final fun getCacheDirectory ()Ljava/nio/file/Path;
 	public final fun load (Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;)Z
 	public static synthetic fun load$default (Ldev/nucleusframework/core/runtime/NativeLibraryLoader;Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Z
+	public final fun setCacheDirectory (Ljava/nio/file/Path;)V
 }
 
 public final class dev/nucleusframework/core/runtime/NucleusApp {
