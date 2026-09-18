@@ -139,6 +139,23 @@ internal object Issue444HeadfulCases {
                     "dw=${it.widthDelta} dh=${it.heightDelta}",
             )
         }
+        // #444 on non-Mesa drivers: the drawable can be reallocated *during* the
+        // frame, which makes the size queried up front a stale basis for the
+        // render target — the very premise the fix rests on. Dump those frames:
+        // if `queriedAfter` equals `requested`, the buffer reached the size we
+        // asked for mid-frame, and painting at the pre-frame size was wrong by
+        // exactly one step, in the opposite direction to the original defect.
+        val realloc = measurable.filter { it.reallocatedMidFrame }
+        if (realloc.isNotEmpty()) {
+            System.err.println("[#444] ${realloc.size} frames reallocated mid-frame:")
+            realloc.take(MIN_FRAMES).forEach {
+                System.err.println(
+                    "[#444]   REALLOC window=${it.windowPx} paint=${it.paintPx} " +
+                        "queried=${it.queriedPx}->${it.queriedAfterPx} " +
+                        "requested=${it.requestedPx} attached=${it.attachedPx}",
+                )
+            }
+        }
         check(measurable.size >= MIN_FRAMES) {
             "only ${measurable.size} frames with a known buffer size were recorded during the $gesture — " +
                 "nothing was measured (frames=${frames.size}, $skippedPasses passes skipped on a swap still " +
