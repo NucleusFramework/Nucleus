@@ -10,6 +10,7 @@ package dev.nucleusframework.desktop.application.internal
 import dev.nucleusframework.desktop.application.dsl.AotCacheCompatibility
 import dev.nucleusframework.desktop.application.dsl.AotCacheSettings
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
+import dev.nucleusframework.desktop.application.dsl.PkgSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.internal.transforms.configureLcdTextDefaultTransform
 import dev.nucleusframework.desktop.application.internal.validation.validateMacBundleName
@@ -333,8 +334,8 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
     val allEbFormats =
         app.nativeDistributions.targetFormats
             .filter { it.backend == PackagingBackend.ELECTRON_BUILDER }
-    val nonStoreFormats = allEbFormats.filter { !it.isStoreFormat }
-    val storeFormats = allEbFormats.filter { it.isStoreFormat }
+    val nonStoreFormats = allEbFormats.filter { !app.nativeDistributions.isSandboxed(it) }
+    val storeFormats = allEbFormats.filter { app.nativeDistributions.isSandboxed(it) }
 
     // Strip native libs from JARs for the sandboxed pipeline (store formats only).
     val stripNativeLibsFromJars =
@@ -470,7 +471,7 @@ private fun JvmApplicationContext.configurePackagingTasks(commonTasks: CommonJvm
             packageFormat
         }
 
-    // === Sandboxed pipeline (store formats: PKG, AppX, Flatpak) ===
+    // === Sandboxed pipeline (store formats: App Store PKG, AppX, Flatpak) ===
 
     val storeNotarizeTasks = mutableListOf<TaskProvider<AbstractNotarizationTask>>()
 
@@ -1003,9 +1004,16 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
         val mac = app.nativeDistributions.macOS
         packageTask.nonValidatedMacSigningSettings = mac.signing
         packageTask.nonValidatedMacBundleID.set(mac.bundleID)
-        // PKG is always treated as App Store — ignore the deprecated user setting for store formats.
-        packageTask.macAppStore.set(packageTask.targetFormat.isStoreFormat)
-        val sandboxed = packageTask.targetFormat.isStoreFormat
+        // A PKG is sandboxed (App Store) or not (Developer ID) by DSL choice; AppX/Flatpak always are.
+        val sandboxed = app.nativeDistributions.isSandboxed(packageTask.targetFormat)
+        packageTask.macAppStore.set(sandboxed)
+        // Only the PKG task reads the install scripts. Wiring them everywhere would make a typo in
+        // the path fail packageDmg / packageZip too, since Gradle checks every @InputFile exists.
+        if (packageTask.targetFormat == TargetFormat.Pkg) {
+            validatePkgScripts(mac.pkg)
+            packageTask.macPkgPreInstall.set(mac.pkg.preInstall)
+            packageTask.macPkgPostInstall.set(mac.pkg.postInstall)
+        }
         val defaultAppEntitlements =
             if (sandboxed) {
                 unpackDefaultResources.get { defaultSandboxEntitlements }
@@ -1058,6 +1066,20 @@ private fun <T : Any> TaskProvider<AbstractUnpackDefaultApplicationResourcesTask
     fn: AbstractUnpackDefaultApplicationResourcesTask.DefaultResourcesProvider.() -> Provider<T>,
 ) = flatMap { fn(it.resources) }
 
+/**
+ * Fails at configuration time on a PKG channel contradiction, rather than after minutes of
+ * packaging: the Mac App Store rejects installer packages carrying install scripts (error 90254).
+ * File-level checks (existence, shebang) stay in `MacPkgScripts` at execution time.
+ */
+internal fun validatePkgScripts(pkg: PkgSettings) {
+    if (pkg.appStore && pkg.hasScripts) {
+        error(
+            "macOS { pkg { preInstall / postInstall } } requires pkg { appStore = false }: " +
+                "the Mac App Store rejects installer packages that carry install scripts (error 90254).",
+        )
+    }
+}
+
 internal fun JvmApplicationContext.configurePlatformSettings(
     packageTask: AbstractJPackageTask,
     defaultResources: TaskProvider<AbstractUnpackDefaultApplicationResourcesTask>,
@@ -1095,10 +1117,10 @@ internal fun JvmApplicationContext.configurePlatformSettings(
                         }
                     },
                 )
-                // The jpackage task always builds a RawAppImage, so targetFormat.isStoreFormat
-                // is always false. Use the sandboxed flag instead: sandboxed distributable feeds
-                // store formats (PKG) and must pass --mac-app-store to jpackage so it searches
-                // for the correct certificate type ("3rd Party Mac Developer Application").
+                // The jpackage task always builds a RawAppImage, so the format says nothing about
+                // the channel. Use the sandboxed flag instead: the sandboxed distributable feeds
+                // the store formats (App Store PKG) and must pass --mac-app-store to jpackage so it
+                // searches for the correct certificate type ("3rd Party Mac Developer Application").
                 packageTask.macAppStore.set(sandboxed)
                 packageTask.macAppCategory.set(mac.appCategory)
                 packageTask.macMinimumSystemVersion.set(mac.minimumSystemVersion)

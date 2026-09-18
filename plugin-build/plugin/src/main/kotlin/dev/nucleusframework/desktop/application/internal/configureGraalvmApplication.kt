@@ -7,6 +7,7 @@ import dev.nucleusframework.desktop.application.dsl.GraalvmSettings
 import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.NativeImageMarch
 import dev.nucleusframework.desktop.application.dsl.PackagingBackend
+import dev.nucleusframework.desktop.application.dsl.TargetFormat
 import dev.nucleusframework.desktop.application.dsl.UrlProtocol
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistListValue
 import dev.nucleusframework.desktop.application.internal.InfoPlistBuilder.InfoPlistValue.InfoPlistMapValue
@@ -2310,7 +2311,22 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
 ) {
     val ebFormats =
         app.nativeDistributions.targetFormats
-            .filter { it.backend == PackagingBackend.ELECTRON_BUILDER && !it.isStoreFormat }
+            .filter { it.backend == PackagingBackend.ELECTRON_BUILDER && !app.nativeDistributions.isSandboxed(it) }
+
+    val droppedStoreFormats =
+        app.nativeDistributions.targetFormats
+            .filter { app.nativeDistributions.isSandboxed(it) && it.isCompatibleWithCurrentOS }
+    if (droppedStoreFormats.isNotEmpty()) {
+        // info, not warn: the configuration is legitimate and nothing is lost overall — the JVM
+        // packagePkg still builds the store package. Only the GraalVM-native variant is skipped,
+        // and warning on every configuration would fire on any project combining the two.
+        project.logger.info(
+            "GraalVM native image does not support the sandboxed (store) pipeline, so no " +
+                "packageGraalvm task is registered for ${droppedStoreFormats.joinToString { it.name }}; " +
+                "the JVM package task still builds it. For a native PKG use " +
+                "macOS { pkg { appStore = false } } (Developer ID).",
+        )
+    }
 
     for (targetFormat in ebFormats) {
         val packageFormat =
@@ -2361,8 +2377,13 @@ private fun JvmApplicationContext.configureGraalvmElectronBuilderPackaging(
                         val mac = app.nativeDistributions.macOS
                         nonValidatedMacSigningSettings = mac.signing
                         nonValidatedMacBundleID.set(mac.bundleID)
-                        // PKG is always treated as App Store — ignore the deprecated user setting.
-                        macAppStore.set(targetFormat.isStoreFormat)
+                        // Sandboxed formats are filtered out above, so a PKG reaching this point is
+                        // always Developer ID — the GraalVM pipeline does not build store packages.
+                        macAppStore.set(false)
+                        if (targetFormat == TargetFormat.Pkg) {
+                            macPkgPreInstall.set(mac.pkg.preInstall)
+                            macPkgPostInstall.set(mac.pkg.postInstall)
+                        }
                         macEntitlementsFile.set(
                             mac.entitlementsFile.orElse(
                                 unpackDefaultResources.flatMap { it.resources.defaultEntitlements },
