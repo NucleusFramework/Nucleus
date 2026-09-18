@@ -383,6 +383,7 @@ public object TaoHeadfulTestSuiteMain {
             DialogAppearanceHeadfulCases.all() +
             ClipboardHeadfulCases.all() +
             AnimatedWindowSizeHeadfulCases.all() +
+            Issue444HeadfulCases.all() +
             AlwaysOnTopHeadfulCases.all() +
             SatelliteWindowHeadfulCases.all() +
             SatelliteWorkspaceHeadfulCases.all() +
