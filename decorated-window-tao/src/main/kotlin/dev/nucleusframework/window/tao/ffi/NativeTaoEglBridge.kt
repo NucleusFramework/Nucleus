@@ -166,6 +166,17 @@ internal object NativeTaoEglBridge {
      * `eglQuerySurface` is unavailable. [nativeWidth] / [nativeHeight]
      * report the last *requested* size instead.
      */
+    /**
+     * Forces the driver to acquire — and, with a pending
+     * `wl_egl_window_resize`, reallocate — the buffer behind the default
+     * framebuffer, so [nativeQueryDrawableSize] describes the buffer this
+     * frame will actually land in rather than whatever the driver has not
+     * got round to yet. Touches the GL binding behind Skia's back: reset the
+     * cached state after calling it.
+     */
+    @JvmStatic
+    external fun nativeTouchDrawable(handle: Long)
+
     @JvmStatic
     external fun nativeQueryDrawableSize(handle: Long): Long
 

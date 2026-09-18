@@ -374,6 +374,13 @@ internal class TaoComposeSceneHostLinux(
     private var lastAppliedHeightPx: Int = -1
     private var lastAppliedScale: Float = Float.NaN
 
+    /**
+     * Whether this frame pushed a `wl_egl_window_resize` that the buffer has not
+     * caught up with yet — the only frames that need the drawable pinned before
+     * it is queried.
+     */
+    private var pushedNativeResize: Boolean = false
+
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -1612,6 +1619,7 @@ internal class TaoComposeSceneHostLinux(
             return
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
+        pushedNativeResize = true
         // The Skia surface is rebuilt from the *drawable's* size, which this
         // request does not change yet, so [ensurePaintSurface] decides when to
         // recreate it. A scale change does not resize the drawable at all, but
@@ -1793,6 +1801,16 @@ internal class TaoComposeSceneHostLinux(
         purgeResizeScratchIfDue(ctx)
         updateResizeBurstSwapInterval()
 
+        // Pin the moment the pending resize lands in the buffer, instead of
+        // predicting it per driver (see [resolvePaintSize]). Only on the frames
+        // that actually pushed a resize: it costs a Skia state reset.
+        if (pushedNativeResize) {
+            pushedNativeResize = false
+            if (isWayland) {
+                NativeTaoEglBridge.nativeTouchDrawable(attachmentHandle)
+                ctx.resetGLAll()
+            }
+        }
         val paintSize = resolvePaintSize()
         // Layout is the window's business; the render target is the buffer's.
         // Sizing the scene from the drawable instead is what made the content
