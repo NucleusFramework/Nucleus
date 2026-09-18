@@ -43,11 +43,14 @@ class CheckForUpdatesLogicTest {
     @Test
     fun `unsupported executable type short-circuits to not available`() {
         publish(version = "2.0.0", fileName = "App-2.0.0.zip")
+        // A store container cannot replace its own payload. Note that "pkg" is no longer such a
+        // case: a Developer ID PKG installs an ordinary .app and updates like a DMG, and only the
+        // sandboxed Mac App Store build stays excluded. See PkgUpdateSupportTest.
         val updater =
             NucleusUpdater {
                 currentVersion = "1.0.0"
                 provider = LoopbackProvider(server.baseUrl)
-                executableType = "pkg"
+                executableType = "appx"
             }
         assertFalse(updater.isUpdateSupported())
         assertEquals(UpdateResult.NotAvailable, runBlocking { updater.checkForUpdates() })

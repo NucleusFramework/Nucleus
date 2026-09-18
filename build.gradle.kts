@@ -21,37 +21,17 @@ plugins {
 }
 
 apiValidation {
-    // Demo / sample apps are not published; skip ABI dumps for them.
-    // Names match the last segment of include(":examples:...") in settings.
+    // Demo / sample apps are not published; skip ABI dumps for them. Derived from the project
+    // tree rather than hand-listed: a hand-maintained list silently goes stale every time a
+    // sample is added, and twice did (macos-appex-demo, reader-dock-demo failed apiCheck with
+    // "Expected file with API declarations ... does not exist").
+    ignoredProjects.addAll(
+        subprojects
+            .filter { it.path.startsWith(":examples:") }
+            .map { it.name },
+    )
     ignoredProjects.addAll(
         listOf(
-            "nucleus-demo",
-            "compose-demo",
-            "tao-demo",
-            "swing-tao-demo",
-            "zstd-demo",
-            "shared",
-            "jewel-demo",
-            "cmp-demo",
-            "scheduler-demo",
-            "service-management-demo",
-            "system-info-demo",
-            "fs-watcher-smoke",
-            "orphan-reflect-smoke",
-            "extra-launcher-demo",
-            "benchmark-demo",
-            "gstreamer-demo",
-            "mediafoundation-demo",
-            "avfoundation-demo",
-            "tao-native-test",
-            "window-scaffold-demo",
-            "satellite-demo",
-            "tabs-demo",
-            "jewel-tabs-demo",
-            "tab-satellites-demo",
-            "watermark-demo",
-            "rect-stress-demo",
-            "widget-demo",
             // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
             // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
             "decorated-window-jewel",

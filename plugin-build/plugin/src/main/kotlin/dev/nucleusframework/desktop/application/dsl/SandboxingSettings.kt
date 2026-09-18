@@ -8,9 +8,11 @@ package dev.nucleusframework.desktop.application.dsl
 /**
  * Sandboxed (store) distribution settings, scoped under `nativeDistributions { sandboxing { ... } }`.
  *
- * Active only when at least one store target format is configured
- * ([TargetFormat.Pkg], [TargetFormat.AppX], [TargetFormat.Flatpak]) and compatible with the
- * current OS — the same trigger as the rest of the sandboxed pipeline.
+ * Active only when at least one store target format is configured and compatible with the current
+ * OS — the same trigger as the rest of the sandboxed pipeline. Those are [TargetFormat.AppX],
+ * [TargetFormat.Flatpak], and [TargetFormat.Pkg] **only when it targets the Mac App Store**
+ * (`macOS { pkg { appStore = true } }`, the default). A Developer ID PKG is built like a DMG, so
+ * nothing here applies to it.
  *
  * The sandboxed pipeline replaces native libs inside dependency JARs with markers and rewrites
  * `System.load(String)` / `Runtime.load(String)` call sites to a runtime shim that loads the

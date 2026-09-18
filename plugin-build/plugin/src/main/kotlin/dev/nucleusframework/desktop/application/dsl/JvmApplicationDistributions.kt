@@ -58,11 +58,22 @@ abstract class JvmApplicationDistributions : AbstractDistributions() {
         }
 
     /**
-     * Whether any of the configured target formats require sandboxing
-     * (store formats like PKG, AppX, Flatpak) AND are compatible with the current OS.
+     * Whether [format] is built through the sandboxed (store) pipeline: AppX and Flatpak always
+     * are, PKG only when it targets the Mac App Store (`macOS { pkg { appStore } }`, the default).
+     * A Developer ID PKG shares the non-sandboxed pipeline with DMG.
+     */
+    internal fun isSandboxed(format: TargetFormat): Boolean =
+        when (format) {
+            TargetFormat.Pkg -> macOS.pkg.appStore
+            else -> format.isAlwaysSandboxed
+        }
+
+    /**
+     * Whether any of the configured target formats require sandboxing (see [isSandboxed])
+     * AND are compatible with the current OS.
      */
     internal val hasStoreFormats: Boolean
-        get() = targetFormats.any { it.isStoreFormat && it.isCompatibleWithCurrentOS }
+        get() = targetFormats.any { isSandboxed(it) && it.isCompatibleWithCurrentOS }
 
     val linux: LinuxPlatformSettings = objects.newInstance(LinuxPlatformSettings::class.java)
 
