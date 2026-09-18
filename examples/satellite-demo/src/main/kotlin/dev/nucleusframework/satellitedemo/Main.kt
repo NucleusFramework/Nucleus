@@ -21,7 +21,6 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
 import dev.nucleusframework.application.NucleusApplicationScope
-import dev.nucleusframework.application.NucleusDecoratedWindowScope
 import dev.nucleusframework.application.Satellite
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.darkmodedetector.isSystemInDarkMode

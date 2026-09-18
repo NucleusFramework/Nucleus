@@ -97,11 +97,21 @@ subprojects {
         // Library modules only. Examples stay out of the aggregated report so
         // demo UI does not dilute (or inflate) published-runtime coverage.
         pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
-            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            apply(
+                plugin =
+                    rootProject.libs.plugins.kover
+                        .get()
+                        .pluginId,
+            )
             rootProject.dependencies.add("kover", project(path))
         }
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
-            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            apply(
+                plugin =
+                    rootProject.libs.plugins.kover
+                        .get()
+                        .pluginId,
+            )
             rootProject.dependencies.add("kover", project(path))
         }
     }
