@@ -79,8 +79,18 @@ internal class ElectronBuilderConfigGenerator {
         // On macOS the product name must equal the prepackaged bundle's directory name: the DMG
         // target stages the app as `${productFilename}.app` while the ZIP target archives the
         // directory verbatim, so any mismatch ships two differently named bundles for one release.
+        //
+        // On Linux, fpm-based targets (deb/rpm/pacman) install the payload under
+        // `/opt/${sanitizedProductName}` and electron-builder's sanitizer only strips
+        // filesystem-invalid characters and does not remove spaces. So a display-style appName
+        // bakes spaces into the path, which then breaks every unquoted
+        // path/ExecStart substitution done by afterInstall scripts and systemd unit templates.
+        // `executableName` is already resolved from `linux.packageName ?: packageName`  and is
+        // the filesystem-safe name so it should be preferred it over appName on Linux so the install directory
+        // matched what scripts would expect.
         val resolvedProductName =
             macBundleName?.takeIf { currentOS == OS.MacOS && it.isNotBlank() }
+                ?: (if (currentOS == OS.Linux) executableName else null)
                 ?: distributions.appName ?: distributions.packageName ?: executableName
                 ?: error(
                     "No appName, packageName, or executableName available for electron-builder config",
@@ -614,6 +624,7 @@ internal class ElectronBuilderConfigGenerator {
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = false))
             }
             TargetFormat.Rpm -> {
                 yaml.appendLine("rpm:")
@@ -633,8 +644,7 @@ internal class ElectronBuilderConfigGenerator {
                 // --rpm-auto-add-directories makes fpm own every payload directory (while still
                 // excluding the standard filesystem-package dirs), mirroring what jpackage's own
                 // template.spec does via `comm -23` against the filesystem package. See issue #251.
-                yaml.appendLine("  fpm:")
-                yaml.appendLine("    - \"--rpm-auto-add-directories\"")
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = true))
             }
             TargetFormat.Pacman -> {
                 yaml.appendLine("pacman:")
@@ -646,6 +656,7 @@ internal class ElectronBuilderConfigGenerator {
                 }
                 appendIfNotNull(yaml, "  afterInstall", linuxAfterInstallTemplate?.absolutePath)
                 appendIfNotNull(yaml, "  afterRemove", linuxAfterRemoveTemplate?.absolutePath)
+                appendFpmArgs(yaml, fpmArgs(distributions, rpmAutoAddDirectories = false))
             }
             TargetFormat.Snap -> generateSnapConfig(yaml, distributions.linux.snap)
             TargetFormat.Flatpak -> generateFlatpakConfig(yaml, distributions.linux.flatpak)
@@ -799,6 +810,56 @@ internal class ElectronBuilderConfigGenerator {
      */
     @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
     private fun resolveInstallerIdentity(macOS: JvmMacOSPlatformSettings): String? = null
+
+    private fun fpmArgs(
+        distributions: JvmApplicationDistributions,
+        rpmAutoAddDirectories: Boolean,
+    ): List<String> {
+        val args = mutableListOf<String>()
+        if (rpmAutoAddDirectories) {
+            args += "--rpm-auto-add-directories"
+        }
+        distributions.linux.beforeInstall.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-install"
+                args += it.absolutePath
+            }
+        distributions.linux.beforeRemove.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-remove"
+                args += it.absolutePath
+            }
+        distributions.linux.afterUpgrade.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--after-upgrade"
+                args += it.absolutePath
+            }
+        distributions.linux.beforeUpgrade.orNull
+            ?.asFile
+            ?.takeIf { it.isFile }
+            ?.let {
+                args += "--before-upgrade"
+                args += it.absolutePath
+            }
+        return args
+    }
+
+    private fun appendFpmArgs(
+        yaml: StringBuilder,
+        args: List<String>,
+    ) {
+        if (args.isEmpty()) return
+        yaml.appendLine("  fpm:")
+        for (arg in args) {
+            yaml.appendLine("    - \"${arg.escapeForYamlDoubleQuotes()}\"")
+        }
+    }
 
     private fun appendIfNotNull(
         yaml: StringBuilder,

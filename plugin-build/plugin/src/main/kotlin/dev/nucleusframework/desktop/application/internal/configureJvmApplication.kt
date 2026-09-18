@@ -992,6 +992,10 @@ private fun JvmApplicationContext.configureElectronBuilderPackageTask(
     packageTask.appxSquare44x44Logo.set(app.nativeDistributions.windows.appx.square44x44Logo)
     packageTask.appxSquare150x150Logo.set(app.nativeDistributions.windows.appx.square150x150Logo)
     packageTask.appxWide310x150Logo.set(app.nativeDistributions.windows.appx.wide310x150Logo)
+    packageTask.linuxAfterInstall.set(app.nativeDistributions.linux.afterInstall)
+    packageTask.linuxAfterRemove.set(app.nativeDistributions.linux.afterRemove)
+    packageTask.linuxBeforeInstall.set(app.nativeDistributions.linux.beforeInstall)
+    packageTask.linuxBeforeRemove.set(app.nativeDistributions.linux.beforeRemove)
     packageTask.distributions = app.nativeDistributions
     packageTask.targetArch.set(app.javaHomeProvider.map { jdkArch(java.io.File(it)).id })
 

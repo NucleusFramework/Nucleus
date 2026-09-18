@@ -64,4 +64,37 @@ class ElectronBuilderRpmConfigTest {
         assertTrue(yaml, yaml.contains("deb:"))
         assertFalse(yaml, yaml.contains("--rpm-auto-add-directories"))
     }
+
+    @Test
+    fun `deb config passes before-install to fpm when configured`() {
+        val project = ProjectBuilder.builder().build()
+        val distributions = project.objects.newInstance(JvmApplicationDistributions::class.java)
+        val beforeInstall = project.layout.buildDirectory.file("before-install.sh").get().asFile
+        beforeInstall.parentFile.mkdirs()
+        beforeInstall.writeText("#!/bin/bash\nsystemctl stop wgtunnel-daemon.service || true\n")
+        distributions.linux.beforeInstall.set(beforeInstall)
+
+        val yaml = renderLinux(distributions, TargetFormat.Deb)
+
+        assertTrue(yaml, yaml.contains("fpm:"))
+        assertTrue(yaml, yaml.contains("--before-install"))
+        assertTrue(yaml, yaml.contains(beforeInstall.absolutePath))
+        assertFalse(yaml, yaml.contains("--rpm-auto-add-directories"))
+    }
+
+    @Test
+    fun `rpm config merges before-remove with auto-add-directories`() {
+        val project = ProjectBuilder.builder().build()
+        val distributions = project.objects.newInstance(JvmApplicationDistributions::class.java)
+        val beforeRemove = project.layout.buildDirectory.file("before-remove.sh").get().asFile
+        beforeRemove.parentFile.mkdirs()
+        beforeRemove.writeText("#!/bin/bash\n")
+        distributions.linux.beforeRemove.set(beforeRemove)
+
+        val yaml = renderLinux(distributions, TargetFormat.Rpm)
+
+        assertTrue(yaml, yaml.contains("--rpm-auto-add-directories"))
+        assertTrue(yaml, yaml.contains("--before-remove"))
+        assertTrue(yaml, yaml.contains(beforeRemove.absolutePath))
+    }
 }
