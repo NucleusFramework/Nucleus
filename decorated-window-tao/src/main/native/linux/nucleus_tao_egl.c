@@ -1774,6 +1774,51 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeQueryDrawableS
  * last requested through `wl_egl_window_resize`. Packed as
  * (width << 32) | height; 0 on X11 or when the symbol is unavailable.
  */
+/* GL entry points used by `nativeTouchDrawable`, resolved lazily through the
+ * same proc loader Skia is handed. Values from <GLES2/gl2.h>. */
+#define NUCLEUS_GL_FRAMEBUFFER      0x8D40
+#define NUCLEUS_GL_COLOR_BUFFER_BIT 0x00004000
+typedef void (*PFN_glBindFramebuffer)(unsigned int, unsigned int);
+typedef void (*PFN_glClear)(unsigned int);
+static PFN_glBindFramebuffer p_glBindFramebuffer = NULL;
+static PFN_glClear           p_glClear           = NULL;
+
+/**
+ * Forces the driver to acquire (and, if a `wl_egl_window_resize` is pending,
+ * reallocate) the buffer behind the default framebuffer, right now.
+ *
+ * The size of that buffer is what Skia's render target must agree with, and
+ * drivers disagree on *when* they act on a pending resize: Mesa defers it to
+ * `eglSwapBuffers`, the NVIDIA proprietary driver does it when the back buffer
+ * is first used for rendering — which, left to itself, is in the middle of our
+ * frame, after the render target was already built from a size that is by then
+ * stale. Rather than predict the driver, this pins the moment: issue the first
+ * use ourselves, before asking `eglQuerySurface`, so the answer describes the
+ * buffer the whole frame will land in on either driver.
+ *
+ * The clear is not wasted work — the frame clears the surface anyway. The
+ * caller must reset Skia's cached GL state afterwards, since this touches the
+ * binding behind its back.
+ */
+JNIEXPORT void JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeTouchDrawable(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att) return;
+    if (!p_glBindFramebuffer) {
+        p_glBindFramebuffer =
+            (PFN_glBindFramebuffer) nucleus_tao_egl_get_proc(NULL, "glBindFramebuffer");
+    }
+    if (!p_glClear) {
+        p_glClear = (PFN_glClear) nucleus_tao_egl_get_proc(NULL, "glClear");
+    }
+    if (!p_glBindFramebuffer || !p_glClear) return;
+    p_glBindFramebuffer(NUCLEUS_GL_FRAMEBUFFER, 0);
+    p_glClear(NUCLEUS_GL_COLOR_BUFFER_BIT);
+}
+
 JNIEXPORT jlong JNICALL
 Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachedSize(
     JNIEnv *env, jclass clazz, jlong handle)
