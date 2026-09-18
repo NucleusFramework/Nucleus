@@ -1801,16 +1801,7 @@ internal class TaoComposeSceneHostLinux(
         purgeResizeScratchIfDue(ctx)
         updateResizeBurstSwapInterval()
 
-        // Pin the moment the pending resize lands in the buffer, instead of
-        // predicting it per driver (see [resolvePaintSize]). Only on the frames
-        // that actually pushed a resize: it costs a Skia state reset.
-        if (pushedNativeResize) {
-            pushedNativeResize = false
-            if (isWayland) {
-                NativeTaoEglBridge.nativeTouchDrawable(attachmentHandle)
-                ctx.resetGLAll()
-            }
-        }
+        pinDrawableIfResized(ctx)
         val paintSize = resolvePaintSize()
         // Layout is the window's business; the render target is the buffer's.
         // Sizing the scene from the drawable instead is what made the content
@@ -1910,6 +1901,21 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
+     * Makes the pending `wl_egl_window_resize` land in the buffer now, so the
+     * query behind [resolvePaintSize] describes the buffer this frame will
+     * actually be drawn into rather than whatever the driver has not got round
+     * to yet. Only on the frames that pushed a resize: it costs a Skia GL state
+     * reset, because the touch changes the binding behind Skia's back.
+     */
+    private fun pinDrawableIfResized(ctx: DirectContext) {
+        if (!pushedNativeResize) return
+        pushedNativeResize = false
+        if (!isWayland) return
+        NativeTaoEglBridge.nativeTouchDrawable(attachmentHandle)
+        ctx.resetGLAll()
+    }
+
+    /**
      * The size the frame must be painted at: the size of the buffer it will
      * actually land in (#444).
      *
@@ -1926,9 +1932,15 @@ internal class TaoComposeSceneHostLinux(
      * one present behind" (KWin-only, because that guess was wrong elsewhere —
      * it fixed Fedora Mutter and regressed Ubuntu GNOME). `eglQuerySurface` is
      * neither guess but the answer, so there is no desktop environment in this
-     * decision any more. Measured on Mesa/Wayland: the value never changes
-     * between the start and the end of a render pass, so one query per frame
-     * describes the whole frame.
+     * decision any more.
+     *
+     * The answer is only authoritative if the driver cannot act on the pending
+     * resize *after* giving it. Mesa cannot — it defers the reallocation to
+     * `eglSwapBuffers` — but the NVIDIA proprietary driver reallocates when the
+     * back buffer is first used for rendering, which unaided is in the middle
+     * of the frame, after this render target was built. So the caller pins that
+     * moment first (`nativeTouchDrawable`) rather than relying on either
+     * driver's timing; see the call site in the render pass.
      *
      * The window's own size still drives *layout* — only the render target
      * follows the buffer. A frame painted while the buffer is a step behind is

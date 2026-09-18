@@ -72,12 +72,15 @@ internal object Issue444HeadfulCases {
             window.focus()
             settle()
 
-            // Compositor-driven size changes, not `setInnerSize`: a client
-            // resize request is advisory and a compositor may ignore it
-            // outright (this one does), which would leave the case measuring
-            // frames from a window that never changed size. A maximize is the
-            // compositor's own state change, so the configure always arrives —
-            // and a drag is compositor-driven too, so this is the closer shape.
+            // Compositor-driven size changes rather than `setInnerSize`. Not
+            // because a client resize never works — it does on Mutter 50.1,
+            // where #576 drives 40 distinct sizes through it — but because it
+            // is advisory: it is a request the compositor is free to drop, and
+            // a session that drops it would leave this case measuring frames
+            // from a window that never changed size. A maximize is the
+            // compositor's own state change, so the configure always follows,
+            // and a dragged edge is compositor-driven too, so this is also the
+            // closer shape to the gesture the issue is about.
             val sizesSeen = linkedSetOf<List<Long>>()
             window.onResized { w, h -> sizesSeen += listOf(w.toLong(), h.toLong()) }
 

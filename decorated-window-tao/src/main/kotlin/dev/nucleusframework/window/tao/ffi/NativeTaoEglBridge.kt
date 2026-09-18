@@ -161,12 +161,6 @@ internal object NativeTaoEglBridge {
     )
 
     /**
-     * Diagnostic probe (#444): the real size of the buffer behind the
-     * default framebuffer, packed as `(width shl 32) or height`, or 0 when
-     * `eglQuerySurface` is unavailable. [nativeWidth] / [nativeHeight]
-     * report the last *requested* size instead.
-     */
-    /**
      * Forces the driver to acquire — and, with a pending
      * `wl_egl_window_resize`, reallocate — the buffer behind the default
      * framebuffer, so [nativeQueryDrawableSize] describes the buffer this
@@ -177,6 +171,13 @@ internal object NativeTaoEglBridge {
     @JvmStatic
     external fun nativeTouchDrawable(handle: Long)
 
+    /**
+     * The real size of the buffer behind the default framebuffer, packed as
+     * `(width shl 32) or height`, or 0 when `eglQuerySurface` is unavailable.
+     * [nativeWidth] / [nativeHeight] report the last *requested* size instead,
+     * which on Wayland is not the same thing until the buffer catches up.
+     * Call [nativeTouchDrawable] first on a frame that pushed a resize.
+     */
     @JvmStatic
     external fun nativeQueryDrawableSize(handle: Long): Long
 
