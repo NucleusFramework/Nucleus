@@ -33,6 +33,7 @@ public class TaoWindow internal constructor(
     public val handle: Long,
     isResizable: Boolean = true,
     isMinimizable: Boolean = true,
+    isMaximizable: Boolean = true,
     /**
      * `true` when the window was created as a popup overlay of another window
      * (`openWindow(popupOf = …)` — GTK_WINDOW_POPUP, mapped as a `wl_subsurface`
@@ -104,6 +105,31 @@ public class TaoWindow internal constructor(
         if (minimizableState.value == minimizable) return
         minimizableState.value = minimizable
         NativeTaoBridge.nativeSetMinimizable(handle, minimizable)
+    }
+
+    private val maximizableState = mutableStateOf(isMaximizable)
+
+    /**
+     * `true` when the user can maximize the window. Initially the
+     * `maximizable` flag the window was created with; tracks runtime
+     * [setMaximizable] calls. The Compose chromes drop the maximize slot and
+     * the title-bar double-click when this is `false`. Orthogonal to
+     * [isResizable]: a palette stays resizable without ever filling the screen.
+     */
+    public val isMaximizable: Boolean
+        get() = maximizableState.value
+
+    /**
+     * Enables/disables user maximizing at runtime. macOS clears the zoom
+     * button (Window > Zoom follows); Windows drops `WS_MAXIMIZEBOX` (caption
+     * button, Win+Up, Aero Snap to the top edge). Linux has no client-side
+     * hint in tao, so only the title-bar button and double-click disappear —
+     * the window manager's own shortcuts can still maximize the window.
+     */
+    public fun setMaximizable(maximizable: Boolean) {
+        if (maximizableState.value == maximizable) return
+        maximizableState.value = maximizable
+        NativeTaoBridge.nativeSetMaximizable(handle, maximizable)
     }
 
     @Volatile

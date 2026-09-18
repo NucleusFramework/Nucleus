@@ -593,6 +593,16 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetMaximizable { handle, maximizable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            // tao: zoom button + Window > Zoom on macOS, WS_MAXIMIZEBOX
+                            // (caption button, Win+Up, Aero Snap) on Windows, no-op on Linux.
+                            w.set_maximizable(maximizable);
+                        }
+                    }
+                }
                 UserEvent::SetMinimized { handle, minimized } => {
                     {
                         let guard = WINDOWS.lock().unwrap();

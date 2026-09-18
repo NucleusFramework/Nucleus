@@ -57,6 +57,7 @@ internal fun TitleBarScope.WindowControlsLinux(
     state: DecoratedWindowState,
     isResizable: Boolean,
     isMinimizable: Boolean,
+    isMaximizable: Boolean,
     style: TitleBarStyle,
     layout: LinuxButtonLayout = rememberLinuxButtonLayout(),
     isFullscreen: Boolean = false,
@@ -99,8 +100,9 @@ internal fun TitleBarScope.WindowControlsLinux(
                     )
                     continue
                 }
-                if (!isResizable) continue
                 if (state.isMaximized) {
+                    // Restore is never gated: the WM can maximize a window tao
+                    // has no client-side maximizable hint for.
                     LinuxControlButton(
                         onClick = { win.setMaximized(false) },
                         icon = icons.restore,
@@ -110,7 +112,7 @@ internal fun TitleBarScope.WindowControlsLinux(
                         style = style,
                         modifier = Modifier.align(buttonAlignment),
                     )
-                } else {
+                } else if (isResizable && isMaximizable) {
                     LinuxControlButton(
                         onClick = { win.setMaximized(true) },
                         icon = icons.maximize,

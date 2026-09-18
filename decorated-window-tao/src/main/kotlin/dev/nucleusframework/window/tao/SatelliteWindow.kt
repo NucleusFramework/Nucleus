@@ -194,9 +194,14 @@ public fun ApplicationScope.SatelliteWindow(
             resizable = resizable,
             focusable = focusable,
             alwaysOnTop = false,
-            // Utility-window chrome: no maximize affordance, dialog-flavoured
-            // border. The owner relationship below is what keeps it off the
-            // taskbar and above its parent.
+            // A palette never fills the screen: it follows its parent at an
+            // offset ([SatelliteAnchoring]) and docks from its screen geometry,
+            // neither of which means anything for a maximized window. Drops the
+            // caption / zoom button, the title-bar double-click and Win+Up;
+            // `resizable` is untouched, a palette still resizes.
+            maximizable = false,
+            // Dialog-flavoured border; the owner relationship below is what
+            // keeps it off the taskbar and above its parent.
             isDialog = true,
             onPreviewKeyEvent = onPreviewKeyEvent,
             onKeyEvent = onKeyEvent,
@@ -272,6 +277,14 @@ public fun ApplicationScope.SatelliteWindow(
                         anchoring.detach()
                         state.reanchorRequest = null
                     }
+                }
+
+                // Linux has no client-side maximizable hint (tao's is a no-op), so
+                // a WM shortcut can still maximize the palette; undo it, the
+                // anchoring and the dock hit-test have no meaning at that size.
+                val maximized = this@DecoratedWindow.state.isMaximized
+                LaunchedEffect(satellite, maximized) {
+                    if (maximized) satellite.setMaximized(false)
                 }
 
                 // Re-synced on change so flipping the flag while the parent is
