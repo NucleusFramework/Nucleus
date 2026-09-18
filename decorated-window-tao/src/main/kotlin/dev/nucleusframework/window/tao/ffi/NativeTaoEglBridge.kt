@@ -160,6 +160,24 @@ internal object NativeTaoEglBridge {
         interval: Int,
     )
 
+    /**
+     * Diagnostic probe (#444): the real size of the buffer behind the
+     * default framebuffer, packed as `(width shl 32) or height`, or 0 when
+     * `eglQuerySurface` is unavailable. [nativeWidth] / [nativeHeight]
+     * report the last *requested* size instead.
+     */
+    @JvmStatic
+    external fun nativeQueryDrawableSize(handle: Long): Long
+
+    /**
+     * Size of the buffer currently attached to the content surface as
+     * libwayland-egl tracks it — what the compositor holds, as opposed to
+     * the size last requested through `wl_egl_window_resize`. Packed as
+     * `(width shl 32) or height`; 0 on X11 or when unavailable.
+     */
+    @JvmStatic
+    external fun nativeAttachedSize(handle: Long): Long
+
     @JvmStatic
     external fun nativeWidth(handle: Long): Int
 

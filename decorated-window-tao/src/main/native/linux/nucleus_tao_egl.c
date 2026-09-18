@@ -225,7 +225,10 @@ typedef void      *(*PFN_eglGetProcAddress)(const char *);
 typedef const char *(*PFN_eglQueryString)(EGLDisplay, EGLint);
 typedef EGLContext (*PFN_eglGetCurrentContext)(void);
 typedef EGLDisplay (*PFN_eglGetCurrentDisplay)(void);
+typedef EGLBoolean (*PFN_eglQuerySurface)(EGLDisplay, EGLSurface, EGLint, EGLint *);
 
+#define EGL_SURF_HEIGHT 0x3056
+#define EGL_SURF_WIDTH  0x3057
 #define EGL_VENDOR  0x3053
 #define EGL_VERSION 0x3054
 
@@ -241,6 +244,7 @@ typedef struct wl_event_queue_ wl_event_queue;
 typedef wl_egl_window *(*PFN_wl_egl_window_create)(wl_surface *, int, int);
 typedef void           (*PFN_wl_egl_window_destroy)(wl_egl_window *);
 typedef void           (*PFN_wl_egl_window_resize)(wl_egl_window *, int, int, int, int);
+typedef void           (*PFN_wl_egl_window_get_attached_size)(wl_egl_window *, int *, int *);
 
 /* `wl_message` and `wl_interface` are the static introspection tables for
  * each Wayland interface. We don't define our own — we read pointers via
@@ -346,6 +350,7 @@ static PFN_eglGetProcAddress     p_eglGetProcAddress     = NULL;
 static PFN_eglQueryString        p_eglQueryString        = NULL;
 static PFN_eglGetCurrentContext  p_eglGetCurrentContext  = NULL;
 static PFN_eglGetCurrentDisplay  p_eglGetCurrentDisplay  = NULL;
+static PFN_eglQuerySurface       p_eglQuerySurface       = NULL;
 
 static PFN_XGetWindowAttributes  p_XGetWindowAttributes  = NULL;
 static PFN_XVisualIDFromVisual   p_XVisualIDFromVisual   = NULL;
@@ -369,6 +374,7 @@ static int g_libs_loaded = 0;
 static PFN_wl_egl_window_create  p_wl_egl_window_create  = NULL;
 static PFN_wl_egl_window_destroy p_wl_egl_window_destroy = NULL;
 static PFN_wl_egl_window_resize  p_wl_egl_window_resize  = NULL;
+static PFN_wl_egl_window_get_attached_size p_wl_egl_window_get_attached_size = NULL;
 
 /* libwayland-client function pointers + interface globals (the latter
  * are exported `const struct wl_interface` symbols in the .so). */
@@ -454,6 +460,7 @@ static int load_libs(void) {
      * display/context the external-texture import must run on. */
     LOAD(g_libegl, eglGetCurrentContext);
     LOAD(g_libegl, eglGetCurrentDisplay);
+    LOAD(g_libegl, eglQuerySurface);
 
     LOAD(g_libx11, XGetWindowAttributes);
     LOAD(g_libx11, XVisualIDFromVisual);
@@ -478,6 +485,12 @@ static int load_libs(void) {
             (PFN_wl_egl_window_destroy) dlsym(g_libwlegl, "wl_egl_window_destroy");
         p_wl_egl_window_resize  =
             (PFN_wl_egl_window_resize)  dlsym(g_libwlegl, "wl_egl_window_resize");
+        /* The authoritative "what size is the buffer the compositor
+         * currently holds" — as opposed to the size we last asked for.
+         * Part of the stable libwayland-egl ABI since 1.0. */
+        p_wl_egl_window_get_attached_size =
+            (PFN_wl_egl_window_get_attached_size)
+                dlsym(g_libwlegl, "wl_egl_window_get_attached_size");
     }
     if (g_libwlclient) {
         p_wl_proxy_marshal_flags =
@@ -1733,6 +1746,45 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSwapInterva
      * always releases before signalling idle, so the caller must ensure it
      * holds the context (nativeMakeCurrent) before calling this. */
     p_eglSwapInterval(att->display, (EGLint) interval);
+}
+
+/**
+ * Diagnostic probe (#444): the size of the buffer actually behind the
+ * default framebuffer, as opposed to the size last *requested* through
+ * `wl_egl_window_resize` — which is what `nativeWidth`/`nativeHeight`
+ * report. On Wayland the two disagree until the next `eglSwapBuffers`
+ * reallocates. Packed as (width << 32) | height; 0 when unavailable.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeQueryDrawableSize(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !p_eglQuerySurface) return 0;
+    EGLint w = 0, h = 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_SURF_WIDTH, &w)) return 0;
+    if (!p_eglQuerySurface(att->display, att->surface, EGL_SURF_HEIGHT, &h)) return 0;
+    return ((jlong) (uint32_t) w << 32) | (jlong) (uint32_t) h;
+}
+
+/**
+ * Size of the buffer currently *attached* to the content surface, as
+ * libwayland-egl itself tracks it: what the compositor holds, not what we
+ * last requested through `wl_egl_window_resize`. Packed as
+ * (width << 32) | height; 0 on X11 or when the symbol is unavailable.
+ */
+JNIEXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeAttachedSize(
+    JNIEnv *env, jclass clazz, jlong handle)
+{
+    (void) env; (void) clazz;
+    EglAttachment *att = (EglAttachment *) (uintptr_t) handle;
+    if (!att || !att->wl_window || !p_wl_egl_window_get_attached_size) return 0;
+    int w = 0, h = 0;
+    p_wl_egl_window_get_attached_size(att->wl_window, &w, &h);
+    if (w <= 0 || h <= 0) return 0;
+    return ((jlong) (uint32_t) w << 32) | (jlong) (uint32_t) h;
 }
 
 JNIEXPORT jint JNICALL

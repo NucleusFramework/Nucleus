@@ -196,6 +196,15 @@ val taoHeadfulTest by tasks.registering(JavaExec::class) {
     providers.environmentVariable("NUCLEUS_TAO_LINUX_RENDERER").orNull?.let {
         environment("NUCLEUS_TAO_LINUX_RENDERER", it)
     }
+    // Lets the suite run against a nested compositor
+    // (`mutter --headless --virtual-monitor …`, `kwin_wayland`) instead of the
+    // session that happens to own the screen. A Wayland window the compositor
+    // considers occluded gets no frame callbacks, so its swap never completes
+    // and every render pass is skipped — cases then measure nothing while
+    // still looking like they ran.
+    providers.environmentVariable("WAYLAND_DISPLAY").orNull?.let {
+        environment("WAYLAND_DISPLAY", it)
+    }
     providers.environmentVariable("GDK_BACKEND").orNull?.let {
         environment("GDK_BACKEND", it)
     }

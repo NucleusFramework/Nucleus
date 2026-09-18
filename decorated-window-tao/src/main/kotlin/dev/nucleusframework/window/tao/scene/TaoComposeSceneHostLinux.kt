@@ -374,26 +374,6 @@ internal class TaoComposeSceneHostLinux(
     private var lastAppliedHeightPx: Int = -1
     private var lastAppliedScale: Float = Float.NaN
 
-    /**
-     * Wayland: size of the EGL buffer currently in use for painting.
-     * `wl_egl_window_resize` only takes effect on the next `eglSwapBuffers`.
-     * Used only when [useDrawableSizedPaint] is true (KWin): paint at this size
-     * and advance after present. Elsewhere (GNOME / main) paint at the window
-     * size so layout stays in sync with the configure.
-     */
-    private var drawableWidthPx: Int = 0
-    private var drawableHeightPx: Int = 0
-
-    /**
-     * KWin flashes if we paint at the window size into a still-old EGL FB
-     * (BOTTOM_LEFT). GNOME does not need that trade-off — keep master's
-     * window-sized paint there (and on every non-Plasma DE).
-     */
-    private val useDrawableSizedPaint: Boolean
-        get() =
-            attachedKind == 2 &&
-                LinuxDesktopEnvironment.Current == LinuxDesktopEnvironment.KDE
-
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -528,6 +508,9 @@ internal class TaoComposeSceneHostLinux(
 
     /** True once attached on the X11/XWayland backend (vs native Wayland). */
     val isX11: Boolean get() = attachedKind == 1
+
+    /** True once attached on the native Wayland backend. */
+    private val isWayland: Boolean get() = attachedKind == 2
 
     /**
      * True while a compositor-driven interactive resize/move drag is in
@@ -793,9 +776,6 @@ internal class TaoComposeSceneHostLinux(
         lastAppliedWidthPx = -1
         lastAppliedHeightPx = -1
         lastAppliedScale = Float.NaN
-        // Attach creates the wl_egl_window at the current physical size.
-        drawableWidthPx = widthPx.coerceAtLeast(0)
-        drawableHeightPx = heightPx.coerceAtLeast(0)
     }
 
     /**
@@ -822,8 +802,6 @@ internal class TaoComposeSceneHostLinux(
         cachedSurface = null
         cachedRt?.close()
         cachedRt = null
-        drawableWidthPx = 0
-        drawableHeightPx = 0
         // Drop TextureView imports made on this context while it is still
         // current and alive; the composition survives the hide, so its leases
         // would otherwise hold Skia images on a destroyed context.
@@ -1618,15 +1596,14 @@ internal class TaoComposeSceneHostLinux(
     private fun applyPendingNativeResize() {
         if (attachmentHandle == 0L) return
         if (widthPx <= 0 || heightPx <= 0) return
-        // GNOME / main: scene tracks the window. KWin drawable path sets scene
-        // size from the paint size below (may lag the window by one present).
-        if (!useDrawableSizedPaint) {
-            val currentSize = IntSize(widthPx, heightPx)
-            if (scene?.size != currentSize) {
-                scene?.size = currentSize
-                updateWindowInfoSize()
-                lastSceneSizeUpdateNs = System.nanoTime()
-            }
+        // Layout always tracks the window: Compose measures for the size the
+        // window *is*, never for the size its buffer happens to have caught up
+        // to. Only the render target follows the buffer (see [resolvePaintSize]).
+        val currentSize = IntSize(widthPx, heightPx)
+        if (scene?.size != currentSize) {
+            scene?.size = currentSize
+            updateWindowInfoSize()
+            lastSceneSizeUpdateNs = System.nanoTime()
         }
         if (widthPx == lastAppliedWidthPx &&
             heightPx == lastAppliedHeightPx &&
@@ -1635,27 +1612,15 @@ internal class TaoComposeSceneHostLinux(
             return
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
-        if (!useDrawableSizedPaint) {
-            // Master behaviour: paint size follows the window immediately.
-            if (widthPx != lastAppliedWidthPx ||
-                heightPx != lastAppliedHeightPx ||
-                scale != lastAppliedScale
-            ) {
-                cachedSurface?.close()
-                cachedSurface = null
-                cachedRt?.close()
-                cachedRt = null
-            }
-            drawableWidthPx = widthPx
-            drawableHeightPx = heightPx
-        } else if (scale != lastAppliedScale) {
-            // KWin: keep drawable lagging on size-only changes; rebuild on scale.
+        // The Skia surface is rebuilt from the *drawable's* size, which this
+        // request does not change yet, so [ensurePaintSurface] decides when to
+        // recreate it. A scale change does not resize the drawable at all, but
+        // it does change how the surface is built, so force it there.
+        if (scale != lastAppliedScale) {
             cachedSurface?.close()
             cachedSurface = null
             cachedRt?.close()
             cachedRt = null
-            drawableWidthPx = widthPx
-            drawableHeightPx = heightPx
         }
         lastAppliedWidthPx = widthPx
         lastAppliedHeightPx = heightPx
@@ -1699,25 +1664,6 @@ internal class TaoComposeSceneHostLinux(
         resizePurgeDue = false
         ctx.resourceCacheLimit = 0
         ctx.resourceCacheLimit = GPU_RESOURCE_CACHE_LIMIT_BYTES
-    }
-
-    /**
-     * KWin only: after a present, the pending `wl_egl_window_resize` is in
-     * effect — advance the paint size and re-arm a frame if still behind.
-     */
-    private fun onDrawablePresented() {
-        if (!useDrawableSizedPaint) return
-        if (lastAppliedWidthPx <= 0 || lastAppliedHeightPx <= 0) return
-        if (drawableWidthPx == lastAppliedWidthPx && drawableHeightPx == lastAppliedHeightPx) {
-            return
-        }
-        drawableWidthPx = lastAppliedWidthPx
-        drawableHeightPx = lastAppliedHeightPx
-        cachedSurface?.close()
-        cachedSurface = null
-        cachedRt?.close()
-        cachedRt = null
-        requestRedrawCoalesced()
     }
 
     fun onFocusChanged(focused: Boolean) {
@@ -1810,6 +1756,7 @@ internal class TaoComposeSceneHostLinux(
                 flushingDispatcher.drain()
             }
             skippedFrames++
+            TaoWaylandFrameDiagnostics.noteSkipped()
             if (skippedFrameStartNanos == 0L) skippedFrameStartNanos = System.nanoTime()
             return
         }
@@ -1847,12 +1794,20 @@ internal class TaoComposeSceneHostLinux(
         updateResizeBurstSwapInterval()
 
         val paintSize = resolvePaintSize()
-        if (bundle.scene.size != paintSize) {
-            bundle.scene.size = paintSize
+        // Layout is the window's business; the render target is the buffer's.
+        // Sizing the scene from the drawable instead is what made the content
+        // lag the window through a resize — the regression that sent the
+        // drawable-sized paint back behind a KDE-only check. Compose measures
+        // for the size the window *is*, and a frame whose buffer is a step
+        // behind simply leaves that step uncovered for one frame.
+        val sceneSize = IntSize(widthPx, heightPx)
+        if (bundle.scene.size != sceneSize) {
+            bundle.scene.size = sceneSize
             lastSceneSizeUpdateNs = now
         }
 
         val surface = ensurePaintSurface(ctx, paintSize.width, paintSize.height) ?: return
+        probeResizeFrame(paintSize)
 
         // Clear to the resolved title-bar background (pushed by `TitleBar` via
         // [LocalRequestedClearColor]) so any Compose region without an explicit
@@ -1877,6 +1832,7 @@ internal class TaoComposeSceneHostLinux(
         applyFrameDecoration(surface.canvas, paintSize.width, paintSize.height)
 
         surface.flushAndSubmit(syncCpu = false)
+        closeResizeProbeFrame()
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
         if (subsurfaceSynced) {
@@ -1899,15 +1855,77 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * KWin: paint at lagging drawable (avoids BOTTOM_LEFT flash).
-     * GNOME / others: paint at window size (master — no layout lag).
+     * Records this frame's paint size against the size of the buffer it will
+     * actually land in (#444). Inert unless a test armed
+     * [TaoWaylandFrameDiagnostics].
+     */
+    private fun probeResizeFrame(paintSize: IntSize) {
+        TaoWaylandFrameDiagnostics.record {
+            val queried = NativeTaoEglBridge.nativeQueryDrawableSize(attachmentHandle)
+            val attached = NativeTaoEglBridge.nativeAttachedSize(attachmentHandle)
+            TaoWaylandFrameDiagnostics.Frame(
+                nanos = System.nanoTime(),
+                windowPx = IntSize(widthPx, heightPx),
+                paintPx = paintSize,
+                attachedPx = IntSize((attached ushr 32).toInt(), (attached and 0xFFFFFFFFL).toInt()),
+                queriedPx = IntSize((queried ushr 32).toInt(), (queried and 0xFFFFFFFFL).toInt()),
+                queriedAfterPx = IntSize.Zero,
+                requestedPx =
+                    IntSize(
+                        NativeTaoEglBridge.nativeWidth(attachmentHandle),
+                        NativeTaoEglBridge.nativeHeight(attachmentHandle),
+                    ),
+            )
+        }
+    }
+
+    /**
+     * Second half of [probeResizeFrame]: samples the drawable again once the
+     * frame's GL work has been submitted, so a buffer reallocation that landed
+     * mid-frame is visible rather than inferred.
+     */
+    private fun closeResizeProbeFrame() {
+        if (!TaoWaylandFrameDiagnostics.isRecording) return
+        val queried = NativeTaoEglBridge.nativeQueryDrawableSize(attachmentHandle)
+        val after = IntSize((queried ushr 32).toInt(), (queried and 0xFFFFFFFFL).toInt())
+        TaoWaylandFrameDiagnostics.completeLast { it.copy(queriedAfterPx = after) }
+    }
+
+    /**
+     * The size the frame must be painted at: the size of the buffer it will
+     * actually land in (#444).
+     *
+     * On Wayland `wl_egl_window_resize` only records a *pending* size — the
+     * buffer behind the default framebuffer is reallocated inside the next
+     * `eglSwapBuffers`. Skia's render target wraps that framebuffer
+     * (`fbId = 0`), so building it from the size we just *requested* overstates
+     * it for one frame, and under [SurfaceOrigin.BOTTOM_LEFT] the whole frame
+     * lands that many rows off the top of the real drawable: a band of clear
+     * colour along the top edge, on roughly a third of the frames of a drag.
+     *
+     * So ask the driver instead of predicting it. Earlier attempts predicted:
+     * first "the buffer follows the request" (the flash), then "the buffer is
+     * one present behind" (KWin-only, because that guess was wrong elsewhere —
+     * it fixed Fedora Mutter and regressed Ubuntu GNOME). `eglQuerySurface` is
+     * neither guess but the answer, so there is no desktop environment in this
+     * decision any more. Measured on Mesa/Wayland: the value never changes
+     * between the start and the end of a render pass, so one query per frame
+     * describes the whole frame.
+     *
+     * The window's own size still drives *layout* — only the render target
+     * follows the buffer. A frame painted while the buffer is a step behind is
+     * therefore anchored correctly and merely leaves the last strip of a
+     * growing window uncovered until the catch-up frame, instead of displacing
+     * everything by the size of the step.
      */
     private fun resolvePaintSize(): IntSize {
-        val paintW =
-            if (useDrawableSizedPaint && drawableWidthPx > 0) drawableWidthPx else widthPx
-        val paintH =
-            if (useDrawableSizedPaint && drawableHeightPx > 0) drawableHeightPx else heightPx
-        return IntSize(paintW, paintH)
+        if (isWayland) {
+            val packed = NativeTaoEglBridge.nativeQueryDrawableSize(attachmentHandle)
+            val drawableW = (packed ushr 32).toInt()
+            val drawableH = (packed and 0xFFFFFFFFL).toInt()
+            if (drawableW > 0 && drawableH > 0) return IntSize(drawableW, drawableH)
+        }
+        return IntSize(widthPx, heightPx)
     }
 
     /**
@@ -3048,14 +3066,6 @@ internal class TaoComposeSceneHostLinux(
                                     renderOwed = false
                                     owed
                                 }
-                            // KWin: drawable advances only after this present.
-                            if (useDrawableSizedPaint) {
-                                dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
-                                    .dispatch(
-                                        EmptyCoroutineContext,
-                                        Runnable { onDrawablePresented() },
-                                    )
-                            }
                             // Catch-up after size change: the buffer matching the
                             // request only exists *after* this swap — paint it
                             // without waiting for more motion (all Wayland DEs).
