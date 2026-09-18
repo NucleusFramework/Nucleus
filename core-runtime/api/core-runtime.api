@@ -119,6 +119,13 @@ public final class dev/nucleusframework/core/runtime/NucleusApp {
 	public static final fun isConfigured ()Z
 }
 
+public final class dev/nucleusframework/core/runtime/NucleusUiThread {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NucleusUiThread;
+	public static final fun isRegistered ()Z
+	public static final fun post (Lkotlin/jvm/functions/Function0;)V
+	public static final fun setExecutor (Ljava/util/concurrent/Executor;)V
+}
+
 public final class dev/nucleusframework/core/runtime/Platform : java/lang/Enum {
 	public static final field Companion Ldev/nucleusframework/core/runtime/Platform$Companion;
 	public static final field Linux Ldev/nucleusframework/core/runtime/Platform;

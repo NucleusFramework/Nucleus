@@ -1,15 +1,19 @@
 package dev.nucleusframework.window.tao
 
+import dev.nucleusframework.core.runtime.NucleusUiThread
+import dev.nucleusframework.core.runtime.WindowBackend
 import dev.nucleusframework.window.tao.dispatch.LifecycleMainDispatcherPriming
 import dev.nucleusframework.window.tao.dispatch.TaoMainDispatcher
 import dev.nucleusframework.window.tao.ffi.NativeTaoBridge
 import kotlinx.coroutines.CoroutineExceptionHandler
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Level
 import java.util.logging.Logger
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * Phase 1 entry point for the Tao backend.
@@ -73,6 +77,19 @@ public object TaoApplication {
         // pump would race the very first `NavHost.setGraph` → `addObserver`
         // call on real apps.
         TaoMainDispatcher.taoMainThread = Thread.currentThread()
+        // Record the backend for libraries that branch on it without depending
+        // on Compose or Tao. `nucleusApplication` sets it earlier in its own
+        // bootstrap (before the loop exists); setting it again here is
+        // idempotent and covers a bare `TaoApplication.run` app, which would
+        // otherwise keep reporting the `Awt` fallback.
+        WindowBackend.setActive(WindowBackend.Tao)
+        // Route native integrations (notifications, launchers, media keys, …)
+        // to this thread instead of the AWT EDT, which is not Compose's UI
+        // thread under Tao (issue #310). Registered here rather than in
+        // `nucleusApplication` so a bare `TaoApplication.run` app gets it too.
+        NucleusUiThread.setExecutor(
+            Executor { runnable -> TaoMainDispatcher.dispatch(EmptyCoroutineContext, runnable) },
+        )
         // Hand queue draining over to the native loop: from here `dispatch`
         // wakes Tao and `pump()` drains `pending`, instead of the pre-loop
         // fallback thread (see TaoMainDispatcher, issue #337). Done *before*

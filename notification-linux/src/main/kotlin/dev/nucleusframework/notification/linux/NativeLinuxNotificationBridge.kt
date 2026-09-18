@@ -1,8 +1,8 @@
 package dev.nucleusframework.notification.linux
 
 import dev.nucleusframework.core.runtime.NativeLibraryLoader
+import dev.nucleusframework.core.runtime.NucleusUiThread
 import java.util.concurrent.ConcurrentHashMap
-import javax.swing.SwingUtilities
 
 private const val LIBRARY_NAME = "nucleus_notification_linux"
 
@@ -84,7 +84,7 @@ internal object NativeLinuxNotificationBridge {
         reason: Int,
     ) {
         val closeReason = CloseReason.fromValue(reason)
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             listeners.forEach { it.onClosed(id, closeReason) }
         }
     }
@@ -94,7 +94,7 @@ internal object NativeLinuxNotificationBridge {
         id: Int,
         actionKey: String,
     ) {
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             listeners.forEach { it.onActionInvoked(id, actionKey) }
         }
     }
@@ -104,7 +104,7 @@ internal object NativeLinuxNotificationBridge {
         id: Int,
         token: String,
     ) {
-        SwingUtilities.invokeLater {
+        NucleusUiThread.post {
             listeners.forEach { it.onActivationToken(id, token) }
         }
     }
