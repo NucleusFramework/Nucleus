@@ -204,11 +204,11 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * substitution rules as [afterInstall] apply: single-quoted `${executable}`
      * tokens are substituted, double-quoted ones are not.
      *
-     * On Pacman, `.INSTALL`'s `pre_remove` hook (which is where [beforeRemove] ends
-     * up) does not receive the deb-style `$1=upgrade` argument that would let a
-     * script distinguish an upgrade from a real removal. If your service needs to
-     * survive an upgrade, stop/disable it unconditionally here and re-enable it in
-     * [afterInstall] instead of trying to detect "is this an upgrade" in a remove hook.
+     * On Pacman, none of [afterInstall]/[afterRemove]/[beforeInstall]/[beforeRemove]
+     * run at all during an upgrade (pacman replacing an already-installed package with
+     * a newer version) — Pacman's `.INSTALL` only calls `pre_upgrade`/`post_upgrade`
+     * for that, and unlike Deb/RPM there is no fallback to the install/remove
+     * scriptlets when those are undefined. See [afterUpgrade]/[beforeUpgrade].
      */
     val afterRemove: RegularFileProperty = objects.fileProperty()
 
@@ -219,6 +219,8 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * Hardcode unit/path names instead of relying on those tokens. Runs as root
      * before the payload is unpacked — stop a packaged systemd service here so
      * binaries in `/opt` can be replaced.
+     *
+     * Not called on a Pacman upgrade — see [afterRemove] and [beforeUpgrade].
      */
     val beforeInstall: RegularFileProperty = objects.fileProperty()
 
@@ -227,10 +229,28 @@ abstract class LinuxPlatformSettings : AbstractPlatformSettings() {
      * [beforeInstall], this gets no electron-builder macro substitution; hardcode
      * unit/path names. Runs as root before the payload is deleted.
      *
-     * See [afterRemove] for the Pacman `pre_remove` upgrade-detection caveat, which
-     * applies here too.
+     * Not called on a Pacman upgrade — see [afterRemove] and [beforeUpgrade].
      */
     val beforeRemove: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User after-upgrade script passed raw to fpm (`--after-upgrade`), like
+     * [beforeInstall] this gets no electron-builder macro substitution. On Pacman,
+     * this is the *only* hook that runs when pacman replaces an already-installed
+     * package with a newer version — [afterInstall] is skipped entirely in that case.
+     * If a systemd service (or anything else set up in [afterInstall]) needs to keep
+     * working across upgrades, register/restart it here too, not just in
+     * [afterInstall]. Ignored for Deb/RPM, whose install scriptlets already fire on
+     * both fresh installs and upgrades.
+     */
+    val afterUpgrade: RegularFileProperty = objects.fileProperty()
+
+    /**
+     * User before-upgrade script passed raw to fpm (`--before-upgrade`). See
+     * [afterUpgrade] — on Pacman this is the only pre-payload-swap hook that runs
+     * during an upgrade; [beforeInstall] is skipped entirely in that case.
+     */
+    val beforeUpgrade: RegularFileProperty = objects.fileProperty()
 
     val snap: SnapSettings = objects.newInstance(SnapSettings::class.java)
 
