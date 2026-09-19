@@ -179,6 +179,14 @@ internal suspend fun robotPressAndDrag(
         fun x(p: Offset) = (p.x / scale).roundToInt()
 
         fun y(p: Offset) = (p.y / scale).roundToInt()
+        // Land on `from` in two hops. `Robot.mouseMove` warps the cursor on
+        // macOS, and the events that follow a warp carry the *pre-warp*
+        // location for a few hundred ms — a press sent inside that window is
+        // hit-tested where the pointer used to be. The second hop is a real
+        // move from the cursor's new home, which is what flushes the true
+        // location through.
+        robot.mouseMove(x(from) - ROBOT_NUDGE_PX, y(from) - ROBOT_NUDGE_PX)
+        Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
         robot.mouseMove(x(from), y(from))
         Thread.sleep(ROBOT_PRESS_SETTLE_MILLIS)
         HeadfulRobot.noteAim(x(from), y(from))
@@ -384,6 +392,9 @@ internal const val DROP_INSET_PX = 20f
 internal const val ROBOT_DRAG_STEPS = 12
 internal const val ROBOT_DRAG_STEP_MILLIS = 40L
 internal const val ROBOT_PRESS_SETTLE_MILLIS = 150L
+
+/** Offset of the first of [robotPressAndDrag]'s two hops onto its start point. */
+internal const val ROBOT_NUDGE_PX = 3
 internal const val SETTLE_AFTER_MAP_MILLIS = 400L
 
 /** Enough dock/undock rounds to expose a leak, few enough to stay quick. */
