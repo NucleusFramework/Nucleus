@@ -381,6 +381,9 @@ internal class TaoComposeSceneHostLinux(
      */
     private var pushedNativeResize: Boolean = false
 
+    /** A scale change asked for the Skia surface to be rebuilt once the context is current. */
+    private var surfaceRebuildDue: Boolean = false
+
     // Cache the Skia RT/Surface across frames — recreated only when the size
     // changes. Reallocating an FBO + GL surface every frame piles up driver
     // work that contributes to the resize-time GPU lockup.
@@ -423,7 +426,14 @@ internal class TaoComposeSceneHostLinux(
      */
     private var subsurfaceSynced: Boolean = false
     private var appliedSwapInterval: Int = 1
-    private var pendingSwapInterval: Int? = null
+
+    /**
+     * Whether the current resize burst renders from GTK's `draw` signal
+     * (#444) — set with the burst when the hook is in place, cleared with it.
+     * [subsurfaceSynced] follows one step later, armed from inside the first
+     * such draw so no in-flight swap is caught by `set_sync`.
+     */
+    private var inFrameBurst: Boolean = false
 
     /**
      * Extra redraws after a size change so the buffer allocated by the next
@@ -1438,11 +1448,25 @@ internal class TaoComposeSceneHostLinux(
                 } == true
             if (!resizeBurstActive && !framePacedContent) {
                 resizeBurstActive = true
-                pendingSwapInterval = 0
+                setSwapIntervalAsync(0)
             }
-            if (!subsurfaceSynced && attachedNativeViews.isNotEmpty() && attachmentHandle != 0L) {
-                subsurfaceSynced = true
-                NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, true)
+            // Sync mode for the whole burst (#444): the compositor then applies
+            // our buffer *with* GTK's toplevel commit — the one that carries the
+            // new geometry — instead of whenever it arrives. That is only
+            // atomic if the buffer is committed before GTK's, which is what
+            // rendering from the toplevel's `draw` signal guarantees (see
+            // [onToplevelDraw]); without that hook sync would just delay every
+            // frame by one GTK paint, so it is armed only once the hook is —
+            // and only with the interval-0 burst, since a swap that waited for
+            // a frame callback would wait for the GTK commit this very frame
+            // has yet to make.
+            if (!inFrameBurst && resizeBurstActive && attachmentHandle != 0L && ensureToplevelDrawHook()) {
+                inFrameBurst = true
+                // The interval-0 present must be in force before the first
+                // synced commit: a synced commit made with interval 1 registers
+                // a frame callback that only fires with GTK's commit, and the
+                // next swap would wait for it inside GTK's draw.
+                setSwapIntervalAsync(0)
             }
             // Two catch-up frames: (1) swap that allocates the new buffer,
             // (2) paint into it. Refreshed on every motion so a continuous
@@ -1477,7 +1501,7 @@ internal class TaoComposeSceneHostLinux(
     }
 
     /**
-     * Applies a pending [pendingSwapInterval] while the EGL context is current.
+     * Hands the swap thread the interval the burst state calls for.
      * Ends the resize burst once the window has been stable for
      * [RESIZE_BURST_HOLD_NS].
      */
@@ -1486,20 +1510,35 @@ internal class TaoComposeSceneHostLinux(
         val burstOver = lastResizeEventNs > 0L && System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
         if (resizeBurstActive && burstOver) {
             resizeBurstActive = false
-            pendingSwapInterval = 1
+            setSwapIntervalAsync(1)
         }
+        if (burstOver) inFrameBurst = false
         if (subsurfaceSynced && burstOver) {
             subsurfaceSynced = false
             // `set_desync` applies whatever the compositor still caches, so
             // the last frame of the burst is never stranded.
             NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, false)
         }
-        val want = pendingSwapInterval ?: return
-        pendingSwapInterval = null
-        if (want == appliedSwapInterval) return
-        NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, want)
-        appliedSwapInterval = want
+        if (swapThread == null) {
+            pendingSwapIntervalNoThread?.let { NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, it) }
+            pendingSwapIntervalNoThread = null
+        }
     }
+
+    /**
+     * Hands the swap thread the `eglSwapInterval` to apply before its next
+     * present — the thread that owns the context when it matters. Applied
+     * directly when there is no swap thread (X11 fallback paths).
+     */
+    private fun setSwapIntervalAsync(interval: Int) {
+        if (appliedSwapInterval == interval) return
+        appliedSwapInterval = interval
+        val st = swapThread
+        if (st != null) st.requestSwapInterval(interval) else pendingSwapIntervalNoThread = interval
+    }
+
+    /** Interval still to apply from the render pass when there is no swap thread to hand it to. */
+    private var pendingSwapIntervalNoThread: Int? = null
 
     /**
      * Keeps the content subsurface aligned with GTK's content area. With the
@@ -1620,16 +1659,11 @@ internal class TaoComposeSceneHostLinux(
         }
         NativeTaoEglBridge.nativeResize(attachmentHandle, widthPx, heightPx, scale)
         pushedNativeResize = true
-        // The Skia surface is rebuilt from the *drawable's* size, which this
-        // request does not change yet, so [ensurePaintSurface] decides when to
-        // recreate it. A scale change does not resize the drawable at all, but
-        // it does change how the surface is built, so force it there.
-        if (scale != lastAppliedScale) {
-            cachedSurface?.close()
-            cachedSurface = null
-            cachedRt?.close()
-            cachedRt = null
-        }
+        // The Skia surface is rebuilt from the *drawable's* size, so
+        // [ensurePaintSurface] decides when to recreate it. A scale change
+        // does not resize the drawable at all but changes how the surface is
+        // built; that rebuild needs the context, which is not current here.
+        if (scale != lastAppliedScale) surfaceRebuildDue = true
         lastAppliedWidthPx = widthPx
         lastAppliedHeightPx = heightPx
         lastAppliedScale = scale
@@ -1694,6 +1728,133 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onRedrawRequested() {
+        if (inFrameRenderActive()) {
+            // Tao delivers this from its event loop, *after* GTK's paint phase
+            // — GDK has already committed the toplevel. Rendering here would
+            // put the frame one GTK commit behind its geometry (#444). Ask GTK
+            // for a paint instead and render from its `draw` signal; only an
+            // invalidation we were asked for warrants one, or Tao's own draw
+            // handler (which also posts a redraw) would drive an endless
+            // repaint loop.
+            if (redrawPending.getAndSet(false)) queueToplevelDraw()
+            return
+        }
+        renderFrame(inFrame = false)
+    }
+
+    /**
+     * GTK's `draw` signal on the toplevel, before GDK commits it (#444). While
+     * the content sub-surface is synced this is the only place a frame is
+     * rendered: it waits for the previous swap, renders at the window's
+     * current size and waits for this frame's swap, so the buffer is cached
+     * compositor-side when GTK's commit — geometry included — applies it.
+     * Both waits are bounded; a late frame merely shows on the next commit.
+     */
+    fun onToplevelDraw() {
+        if (!isWayland || attachedKind == 0 || window.isPopup) return
+        // GTK is painting — and about to commit — a configure Tao has not told
+        // us about yet: its `configure-event` goes through the same event
+        // channel as its draw. Take the size from GTK itself so this very
+        // paint gets content of that size.
+        adoptGtkClientSize()
+        if (!inFrameRenderActive()) return
+        val st = swapThread
+        if (st != null && !st.awaitIdleOrMarkOwed(IN_FRAME_SWAP_WAIT_NS)) return
+        if (!subsurfaceSynced) {
+            // Armed only while no swap is in flight: a commit already on its
+            // way with a frame callback attached would otherwise be cached, and
+            // its callback — which the next swap waits for — would need the
+            // GTK commit this draw has yet to return to.
+            subsurfaceSynced = true
+            NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, true)
+        }
+        renderFrame(inFrame = true)
+        // While synced, frames show only with a GTK commit: keep GTK painting
+        // until the burst has ended (the render pass leaves sync mode once the
+        // window has been still for the hold), so the last frame is never
+        // stranded in the compositor's cache.
+        if (inFrameRenderActive()) queueToplevelDraw()
+    }
+
+    /** Whether frames are rendered from GTK's `draw` signal right now — see [onToplevelDraw]. */
+    private fun inFrameRenderActive(): Boolean =
+        (subsurfaceSynced || inFrameBurst) &&
+            isWayland &&
+            attachedKind == 2 &&
+            !window.isPopup &&
+            toplevelDrawHookId != 0L
+
+    /**
+     * Feeds GTK's current client size through [onResized] when it differs from
+     * ours — the configure GTK is laying out and painting right now (#444).
+     * Physical px, at GDK's integer surface scale like Tao's own report.
+     */
+    private fun adoptGtkClientSize() {
+        if (window.handle == 0L || !NativeTaoLinuxWidgetBridge.isLoaded) return
+        val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow == 0L) return
+        val packed = NativeTaoLinuxWidgetBridge.nativeToplevelClientSize(gtkWindow)
+        if (packed == 0L) return
+        val s = scale.roundToInt().coerceAtLeast(1)
+        val w = (packed ushr 32).toInt() * s
+        val h = (packed and 0xFFFFFFFFL).toInt() * s
+        if (w > 0 && h > 0 && (w != widthPx || h != heightPx)) onResized(w, h)
+    }
+
+    /** Handler id of the toplevel `draw` hook, 0 until connected — see [ensureToplevelDrawHook]. */
+    private var toplevelDrawHookId: Long = 0L
+    private var toplevelDrawHookWindow: Long = 0L
+
+    /** Connects [onToplevelDraw] to the toplevel once; `true` when the hook is in place. */
+    private fun ensureToplevelDrawHook(): Boolean {
+        if (!NativeTaoLinuxWidgetBridge.isLoaded || window.handle == 0L) return false
+        val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow == 0L) return false
+        if (toplevelDrawHookId != 0L && toplevelDrawHookWindow == gtkWindow) return true
+        toplevelDrawHookWindow = gtkWindow
+        toplevelDrawHookId =
+            NativeTaoLinuxWidgetBridge.nativeConnectToplevelDraw(
+                gtkWindow,
+                object : NativeTaoLinuxWidgetBridge.ToplevelDrawCallback {
+                    override fun onToplevelDraw() = this@TaoComposeSceneHostLinux.onToplevelDraw()
+                },
+            )
+        return toplevelDrawHookId != 0L
+    }
+
+    private fun queueToplevelDraw() {
+        if (window.handle == 0L || !NativeTaoLinuxWidgetBridge.isLoaded) return
+        val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
+        if (gtkWindow != 0L) NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
+    }
+
+    /**
+     * A scale change does not resize the drawable but changes how the Skia
+     * surface is built; drop the cached one once the context is current.
+     */
+    private fun rebuildSurfaceIfDue() {
+        if (!surfaceRebuildDue) return
+        surfaceRebuildDue = false
+        cachedSurface?.close()
+        cachedSurface = null
+        cachedRt?.close()
+        cachedRt = null
+    }
+
+    /**
+     * In-frame only (#444): the swap thread's `eglSwapBuffers` (interval 0 for
+     * the burst, so no frame-callback wait) attaches and commits the buffer;
+     * in sync mode the compositor caches it until the parent commits — which
+     * GDK does right after the draw handler returns. Waiting here is what puts
+     * geometry and content in that one commit.
+     */
+    private fun awaitInFrameSwap() {
+        if (swapThread?.awaitIdle(IN_FRAME_SWAP_WAIT_NS) == false) {
+            linuxHostLogger.fine("in-frame swap did not complete within the budget; frame lands late")
+        }
+    }
+
+    private fun renderFrame(inFrame: Boolean) {
         // Open the redraw gate first thing: any invalidation triggered while
         // we're in this method (state writes inside scene.render, animation
         // continuations resuming under sendFrame, observers firing during
@@ -1736,7 +1897,7 @@ internal class TaoComposeSceneHostLinux(
         // subsurface-backed dialog feel unresponsive while its parent kept
         // rendering — the parent's swap latency was paid on the input thread.)
         val st = swapThread
-        if (st != null && !st.tryBeginRenderOrMarkOwed()) {
+        if (st != null && !st.beginRenderOrMarkOwed(inFrame)) {
             // The GPU is busy presenting; the CPU is not. Drain the scene's
             // coroutine queue anyway — pure CPU work, with no GL context bound
             // (the same state as the drain in the render path below).
@@ -1781,6 +1942,7 @@ internal class TaoComposeSceneHostLinux(
         val ctx = directContext ?: return
         val bundle = sceneBundle ?: return
         if (widthPx <= 0 || heightPx <= 0) return
+        if (isWayland && attachedKind == 2 && !window.isPopup) ensureToplevelDrawHook()
 
         val now = System.nanoTime()
 
@@ -1791,13 +1953,20 @@ internal class TaoComposeSceneHostLinux(
         // the recompose → layout → draw the render call performs.
         flushingDispatcher.drain()
 
+        // Coalesced size change goes to the native window *before* the context
+        // is made current (#444). Mesa's `wl_egl_window` resize callback only
+        // adopts the new size while no back buffer is acquired — and
+        // `eglMakeCurrent` acquires one, at whatever size the window had. A
+        // resize pushed after it lands in the buffer of the *next* frame: this
+        // frame paints the previous size and, in a resize burst, the content
+        // trails the window by one configure on every commit. Pushed here,
+        // `eglMakeCurrent` acquires a buffer of the size this frame is for.
+        applyPendingNativeResize()
         NativeTaoEglBridge.nativeMakeCurrent(attachmentHandle)
         // An embedded NativeView's GPU compositor ran GL on this thread since
         // the last frame — drop Skia's cached GL state before any GPU work.
         if (foreignGlInterop) ctx.resetGLAll()
-        // Coalesced size/scale change is committed here, after the GL context
-        // is current — applyPendingNativeResize closes the stale Skia cache.
-        applyPendingNativeResize()
+        rebuildSurfaceIfDue()
         purgeResizeScratchIfDue(ctx)
         updateResizeBurstSwapInterval()
 
@@ -1844,14 +2013,7 @@ internal class TaoComposeSceneHostLinux(
         closeResizeProbeFrame()
         NativeTaoEglBridge.nativeReleaseCurrent(attachmentHandle)
         swapThread?.requestSwap()
-        if (subsurfaceSynced) {
-            // In sync mode this frame only shows with GTK's next commit; make
-            // sure there is one, also once the pointer has stopped moving.
-            val gtkWindow = NativeTaoBridge.nativeLinuxGtkWindow(window.handle)
-            if (gtkWindow != 0L && NativeTaoLinuxWidgetBridge.isLoaded) {
-                NativeTaoLinuxWidgetBridge.nativeQueueToplevelDraw(gtkWindow)
-            }
-        }
+        if (inFrame) awaitInFrameSwap()
 
         // Re-align the content subsurface with GTK's content area AFTER the
         // swap was requested, so the repositioning (which the native side
@@ -2954,6 +3116,13 @@ internal class TaoComposeSceneHostLinux(
         private const val RESIZE_BURST_HOLD_NS = 100_000_000L // 100 ms
 
         /**
+         * Longest an in-frame render waits on the swap thread, before and after
+         * its own swap (#444). Well past a swap with interval 0 (a few ms even
+         * on virgl); past it the frame simply lands one GTK commit late.
+         */
+        private const val IN_FRAME_SWAP_WAIT_NS = 50_000_000L // 50 ms
+
+        /**
          * How far outside the content (logical px) a pointer still counts as
          * the CSD shadow ring for resize hit-testing. Theme margins run
          * ~23-30px; anything farther is a stray coordinate from a drag grab.
@@ -3003,6 +3172,9 @@ internal class TaoComposeSceneHostLinux(
     ) : Thread("TaoSwapThread-${java.lang.Long.toHexString(handle)}") {
         private val lock = ReentrantLock()
         private val workCond = lock.newCondition()
+        private val idleCond = lock.newCondition()
+        private val requestedInterval = AtomicInteger(-1)
+        private var presentInterval = 1
         private var swapPending = false
         private var swapping = false
         private var shutdown = false
@@ -3016,6 +3188,11 @@ internal class TaoComposeSceneHostLinux(
 
         init {
             isDaemon = true
+        }
+
+        /** `eglSwapInterval` to apply, with the context current, before the next present. */
+        fun requestSwapInterval(interval: Int) {
+            requestedInterval.set(interval)
         }
 
         /** Called on the GTK main thread after `flushAndSubmit` + release. */
@@ -3037,6 +3214,40 @@ internal class TaoComposeSceneHostLinux(
          */
         fun tryBeginRenderOrMarkOwed(): Boolean =
             lock.withLock {
+                if (swapPending || swapping) {
+                    renderOwed = true
+                    false
+                } else {
+                    true
+                }
+            }
+
+        /**
+         * Blocks until no swap is pending or in flight, at most [timeoutNanos].
+         * Only for the in-frame path (#444), where the caller is inside GTK's
+         * `draw` and the swap runs with interval 0 — it never waits on a frame
+         * callback that this thread's return would have to produce.
+         */
+        fun awaitIdle(timeoutNanos: Long): Boolean =
+            lock.withLock {
+                var left = timeoutNanos
+                while ((swapPending || swapping) && left > 0L) left = idleCond.awaitNanos(left)
+                !(swapPending || swapping)
+            }
+
+        /**
+         * The render gate: [tryBeginRenderOrMarkOwed] for a frame from the
+         * event loop, a bounded wait for one rendered inside GTK's `draw`
+         * (#444) — marking a render owed either way when the swap is still busy.
+         */
+        fun beginRenderOrMarkOwed(inFrame: Boolean): Boolean =
+            if (inFrame) awaitIdleOrMarkOwed(IN_FRAME_SWAP_WAIT_NS) else tryBeginRenderOrMarkOwed()
+
+        /** [awaitIdle], marking a render owed when the wait runs out so the swap thread re-arms it. */
+        fun awaitIdleOrMarkOwed(timeoutNanos: Long): Boolean =
+            lock.withLock {
+                var left = timeoutNanos
+                while ((swapPending || swapping) && left > 0L) left = idleCond.awaitNanos(left)
                 if (swapPending || swapping) {
                     renderOwed = true
                     false
@@ -3074,6 +3285,11 @@ internal class TaoComposeSceneHostLinux(
                     if (doSwap) {
                         try {
                             NativeTaoEglBridge.nativeMakeCurrent(handle)
+                            val interval = requestedInterval.getAndSet(-1)
+                            if (interval >= 0 && interval != presentInterval) {
+                                NativeTaoEglBridge.nativeSetSwapInterval(handle, interval)
+                                presentInterval = interval
+                            }
                             NativeTaoEglBridge.nativePresent(handle)
                         } catch (t: Throwable) {
                             linuxHostLogger.log(java.util.logging.Level.WARNING, "EGL present failed", t)
@@ -3087,6 +3303,7 @@ internal class TaoComposeSceneHostLinux(
                             val rearm =
                                 lock.withLock {
                                     swapping = false
+                                    idleCond.signalAll()
                                     // Decoupled pacing: hand the owed frame back
                                     // to the render thread now that the context
                                     // is free. Checked + cleared under the same
