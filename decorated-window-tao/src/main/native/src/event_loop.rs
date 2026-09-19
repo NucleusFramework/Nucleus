@@ -406,6 +406,15 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     let window = builder.build(target);
                     if let Ok(window) = window {
+                        // TaoView exists from here on, so its NSTextInputClient
+                        // answers can be ours before any text field is focused.
+                        // Tao's own `firstRectForCharacterRange:` would
+                        // otherwise anchor the input-source indicator (the
+                        // Caps Lock layout badge) to the bottom-left corner.
+                        #[cfg(target_os = "macos")]
+                        unsafe {
+                            crate::platform::macos::ffi::nucleus_tao_install_ime_client_overrides();
+                        }
                         #[cfg(target_os = "linux")]
                         if force_x11 {
                             move_window_to_x11(&window);
