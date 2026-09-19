@@ -92,14 +92,28 @@ internal object DialogAppearanceHeadfulCases {
          * as a fraction of its resting height. `Dialog.skiko.kt` reports a
          * zero-size `boundsInWindow` during the fade-out; a native surface that
          * followed it shrank the dialog to a square of margin around a point.
+         *
+         * Read over *two consecutive frames*, not one. The collapse this guards
+         * against lasts the whole fade — it is where the surface now is — while
+         * a lone short frame is a drawable caught mid-present, which a separate
+         * OS surface can show and a scene drawing into the window canvas never
+         * can. Filming a fade-out on a real compositor turns up one such frame
+         * often enough (measured: heights of 1 px and of half the dialog, in
+         * runs whose neighbouring frames were both full height) that the strict
+         * minimum reports the compositor rather than the layer.
          */
         val hideMinHeightRatio: Float?
             get() {
                 val rest = visible.lastOrNull() ?: return null
                 val restHeight = (rest.dialogBottom!! - rest.dialogTop!!).coerceAtLeast(1)
-                val fading = hiding.filter { it.dialogTop != null && it.dialogBottom != null }
-                if (fading.isEmpty()) return null
-                return fading.minOf { it.dialogBottom!! - it.dialogTop!! }.toFloat() / restHeight
+                val heights =
+                    hiding
+                        .filter { it.dialogTop != null && it.dialogBottom != null }
+                        .map { it.dialogBottom!! - it.dialogTop!! }
+                if (heights.isEmpty()) return null
+                val sustained =
+                    if (heights.size == 1) heights.first() else heights.zipWithNext(::maxOf).min()
+                return sustained.toFloat() / restHeight
             }
 
         /** First moment after the hide request where the dialog was gone. */
@@ -133,15 +147,32 @@ internal object DialogAppearanceHeadfulCases {
                 val end = hideGoneMs ?: return 0
                 return stalls(hiding.filter { it.tMs - hideAtMs in start..end })
             }
-        val firstVisibleMs: Long? get() = visible.firstOrNull()?.tMs
+
+        /**
+         * Frames from half-way through the fade-in on, which is where the
+         * appearance can be compared between the two layers.
+         *
+         * [visible] begins at the knife-edge of the colour probe: the dialog
+         * fades in over the scrim, so its first frames are detected or not
+         * depending on where the sampling clock lands against
+         * [DIALOG_DETECT_THRESHOLD]. Measured on both layers, that first frame
+         * is bimodal — 0 ms on the runs that caught the faint start, ~60 ms on
+         * the runs that did not — and every metric anchored on it inherits the
+         * split, so the two films disagree whenever they land in different
+         * modes. Half the settled blueness is far from that edge and names the
+         * same moment of the same animation on either layer.
+         */
+        private val fadedIn: List<Sample> get() = visible.filter { it.blueness * 2 >= finalBlueness }
+
+        val firstVisibleMs: Long? get() = fadedIn.firstOrNull()?.tMs
         val finalTop: Int? get() = visible.lastOrNull()?.dialogTop
         val finalBlueness: Int get() = visible.lastOrNull()?.blueness ?: 0
         val finalScrimRed: Int get() = samples.lastOrNull()?.scrimRed ?: WHITE
 
-        /** How far below its resting place the dialog first appeared, in logical px. */
+        /** How far below its resting place the dialog was half-way in, in logical px. */
         val slideInPx: Int?
             get() {
-                val first = visible.firstOrNull()?.dialogTop ?: return null
+                val first = fadedIn.firstOrNull()?.dialogTop ?: return null
                 val last = finalTop ?: return null
                 return first - last
             }
