@@ -142,8 +142,17 @@ internal object NativePopupPlacementHeadfulCases {
     // ── 5-6. the window edge is not a screen edge ─────────────────────────
 
     private fun popupEscapesTheOwnerWindowWhenTheScreenHasRoom(): TaoWindowTestCase =
-        popupCase("#569 a popup outside the owner window is left alone while the screen has room") {
-            centerWindow()
+        // The case needs the popup to land *outside the window* and *inside the
+        // work area* at once, so the window has to leave room to its right for
+        // one. The default 800 dp window centred on a 1024 px display — the
+        // macOS CI runner — leaves 112 px, and the popup was clamped back in on
+        // a case whose whole point is that nothing clamps. A small window
+        // against the left edge has room on any display we run on.
+        popupCase(
+            "#569 a popup outside the owner window is left alone while the screen has room",
+            size = DpSize(ESCAPE_WINDOW_DP.dp, ESCAPE_WINDOW_DP.dp),
+        ) {
+            moveWindow(fromLeftPx = edgeMarginPx())
             val windowRight = windowRightPx()
             // Offset past the window's own right edge. The whole point of
             // native popup layers is that a popup may leave the window; a
@@ -162,7 +171,10 @@ internal object NativePopupPlacementHeadfulCases {
         }
 
     private fun popupAboveScreenTopIsClamped(): TaoWindowTestCase =
-        popupCase("#569 a popup above the top of the work area slides down") {
+        popupCase(
+            "#569 a popup above the top of the work area slides down",
+            skip = ::aboveWorkAreaSkipReason,
+        ) {
             // Compose clips popup positions at 0 in *window* coordinates, so a
             // popup can only end up above the work area when the window itself
             // does. Drag the window's top off the top of the screen — the
@@ -422,7 +434,7 @@ internal object NativePopupPlacementHeadfulCases {
     private fun dialogNearTheScreenEdgeIsStillClamped(): TaoWindowTestCase =
         TaoWindowTestCase(
             name = "#569 a Dialog whose window hangs off the display is clamped back on",
-            skip = ::skipReason,
+            skip = ::aboveWorkAreaSkipReason,
             nativePopupLayers = true,
             content = { DialogSlot() },
         ) {
@@ -522,12 +534,15 @@ internal object NativePopupPlacementHeadfulCases {
 
     private fun popupCase(
         name: String,
+        size: DpSize? = null,
+        skip: () -> String? = ::skipReason,
         driver: suspend TaoWindowTestScope.() -> Unit,
     ): TaoWindowTestCase =
         TaoWindowTestCase(
             name = name,
-            skip = ::skipReason,
+            skip = skip,
             nativePopupLayers = true,
+            size = size,
             content = { PopupSlot() },
             driver = {
                 awaitUntil("window mapped") { window.hasRealFramePx() }
@@ -649,6 +664,7 @@ internal object NativePopupPlacementHeadfulCases {
         fromBottomPx: Int? = null,
         fromTopPx: Int? = null,
         fromRightPx: Int? = null,
+        fromLeftPx: Int? = null,
         abovePx: Int? = null,
     ) {
         val work = workArea()
@@ -656,7 +672,11 @@ internal object NativePopupPlacementHeadfulCases {
         val w = rect[2].toInt()
         val h = rect[3].toInt()
         val x =
-            if (fromRightPx != null) work.right - w - fromRightPx else work.left + (work.width - w) / 2
+            when {
+                fromRightPx != null -> work.right - w - fromRightPx
+                fromLeftPx != null -> work.left + fromLeftPx
+                else -> work.left + (work.width - w) / 2
+            }
         val y =
             when {
                 fromBottomPx != null -> work.bottom - h - fromBottomPx
@@ -684,6 +704,24 @@ internal object NativePopupPlacementHeadfulCases {
         settle(SETTLE_MILLIS)
     }
 
+    /**
+     * The two cases that need a window *above* the work area to exist.
+     *
+     * macOS pulls every window back into it: measured on 26.5, both
+     * `setFrameOrigin:` and `setFrame:display:` clamp a frame whose top would
+     * go under the menu bar — titled and borderless alike — and only an
+     * override of `constrainFrameRect:toScreen:` escapes, which is not a trade
+     * Nucleus makes (AppKit runs that constraint on display changes too, and a
+     * window it no longer keeps on screen is a window the user cannot reach).
+     * A user cannot drag a window off the top of the screen there either, so
+     * the state under test is one the platform does not have. It stays covered
+     * on Windows and Linux, where that drag is an everyday gesture.
+     */
+    private fun aboveWorkAreaSkipReason(): String? =
+        skipReason()
+            ?: "macOS clamps every window into the work area — nothing can sit above it"
+                .takeIf { Platform.Current == Platform.MacOS }
+
     private fun skipReason(): String? =
         if (Platform.Current == Platform.Linux && isNativeWayland) {
             "Wayland popups are parent-relative subsurfaces — no global position to clamp"
@@ -706,6 +744,13 @@ internal object NativePopupPlacementHeadfulCases {
     private const val EDGE_MARGIN_DP = 40
     private const val OVERSIZE_SLACK_DP = 200
     private const val POPUP_ESCAPE_DP = 24
+
+    /**
+     * Owner window for the escape case: small enough that it, the escape
+     * offset and the popup all fit side by side on the narrowest display the
+     * suite runs on (1024 px on the macOS runner).
+     */
+    private const val ESCAPE_WINDOW_DP = 320
     private const val ABOVE_SCREEN_PX = 260
     private const val DIALOG_W_DP = 320
     private const val DIALOG_H_DP = 220
