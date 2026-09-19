@@ -2013,7 +2013,7 @@ private class TaoPlatformContext(
         // what lets AppKit's PressAndHold accent picker engage; a hidden
         // NSTextView overlay was tried and rejected because it forced an
         // I-beam cursor for the whole window.
-        NativeTaoBridge.nativeActivateInputContext(windowHandle)
+        val inputContextToken = NativeTaoBridge.nativeActivateInputContext(windowHandle)
         onInputSession(request)
         try {
             coroutineScope {
@@ -2052,6 +2052,10 @@ private class TaoPlatformContext(
             }
         } finally {
             NativeTaoBridge.nativeSetImeDocument(windowHandle, "", 0L, -1L, -1L)
+            // The field is gone: its insertion point must go with it, or
+            // AppKit keeps drawing the input-source indicator (Caps Lock
+            // layout switching) over the caret it last knew about.
+            NativeTaoBridge.nativeDeactivateInputContext(windowHandle, inputContextToken)
             onInputSession(null)
         }
     }

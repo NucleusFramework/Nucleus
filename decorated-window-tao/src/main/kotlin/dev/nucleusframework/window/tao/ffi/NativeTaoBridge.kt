@@ -405,6 +405,19 @@ internal object NativeTaoBridge {
     ): String
 
     /**
+     * macOS only, headful e2e: the rect TaoView answers
+     * `firstRectForCharacterRange:` with, filled into [rectOut] (length ≥ 4)
+     * as `[x, y, width, height]` in Cocoa screen coordinates. An all-zero rect
+     * is the client reporting no insertion point — what AppKit needs to hear
+     * once the focused field is gone.
+     */
+    @JvmStatic
+    external fun nativeMacOsQueryImeRect(
+        handle: Long,
+        rectOut: DoubleArray,
+    ): Boolean
+
+    /**
      * macOS only, headful e2e: invoke `setMarkedText:selectedRange:replacementRange:`
      * on TaoView (the same entry IMKit uses).
      */
@@ -831,9 +844,29 @@ internal object NativeTaoBridge {
         selectionEnd: Long,
     )
 
-    /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
+    /**
+     * Calls `[view.inputContext activate]` for TaoView's NSTextInputClient and
+     * returns the token identifying the text-input session it opens (0 when the
+     * window is gone). Hand it back to [nativeDeactivateInputContext].
+     */
     @JvmStatic
-    external fun nativeActivateInputContext(handle: Long)
+    external fun nativeActivateInputContext(handle: Long): Long
+
+    /**
+     * Ends the session [token] opened: `[view.inputContext deactivate]` plus
+     * the drop of the cached caret rect. Both matter — an input context left
+     * active over a caret rect that outlived its field keeps AppKit anchoring
+     * the input-source indicator (the badge Caps Lock raises when it is bound
+     * to keyboard-layout switching) to a field that no longer exists.
+     *
+     * A [token] the newest activation superseded is ignored, so the teardown of
+     * an outgoing session cannot undo the incoming one.
+     */
+    @JvmStatic
+    external fun nativeDeactivateInputContext(
+        handle: Long,
+        token: Long,
+    )
 
     // ── Accessibility (macOS) ──────────────────────────────────────────────
     //

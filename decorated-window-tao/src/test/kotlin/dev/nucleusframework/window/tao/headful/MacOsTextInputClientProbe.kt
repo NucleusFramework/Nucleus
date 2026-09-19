@@ -26,6 +26,19 @@ internal object MacOsTextInputClientProbe {
         )
     }
 
+    /**
+     * The caret rect TaoView publishes to AppKit, in Cocoa screen
+     * coordinates. `null` when the view has no insertion point — an all-zero
+     * rect, which is what keeps the input-source indicator off a field that
+     * no longer exists.
+     */
+    fun imeRect(handle: Long): ImeRect? {
+        val rect = DoubleArray(4)
+        if (!NativeTaoBridge.nativeMacOsQueryImeRect(handle, rect)) return null
+        if (rect.all { it == 0.0 }) return null
+        return ImeRect(rect[0], rect[1], rect[2], rect[3])
+    }
+
     fun setMarkedText(
         handle: Long,
         text: String,
@@ -56,6 +69,13 @@ internal object MacOsTextInputClientProbe {
             replacementLocation,
             replacementLength,
         )
+
+    data class ImeRect(
+        val x: Double,
+        val y: Double,
+        val width: Double,
+        val height: Double,
+    )
 
     data class Snapshot(
         val markedLocation: Long,
