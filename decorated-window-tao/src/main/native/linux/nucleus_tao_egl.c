@@ -1674,6 +1674,16 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetSubsurfaceS
  * `applyFrameDecoration` paints them transparent so the shadow shows through —
  * claiming them opaque would leave square corners with the shadow clipped away.
  *
+ * The bottom row is always left out. A toplevel covered edge to edge by an
+ * opaque subsurface — maximized, tiled or fullscreen, where GTK collapses the
+ * shadow margins — is culled by Mutter as obscured, and an obscured surface
+ * gets no frame callback. GDK's frame clock freezes on the callback of the
+ * last commit GTK made in that state (the one `applyContentOffset` asks for,
+ * to land the subsurface at (0, 0)), and with it the flush-events phase that
+ * delivers pointer motion: the app then renders at full rate but hover and
+ * drags only move when another event arrives. One row the compositor still
+ * has to blend keeps the toplevel painted and its callbacks flowing.
+ *
  * Pass `logicalW <= 0` to clear the region (window genuinely translucent).
  * Coordinates are surface-local (logical) units. Queued state: it lands with the
  * next `eglSwapBuffers` commit, so there is no extra commit and no race with the
@@ -1689,7 +1699,9 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetOpaqueRegio
     if (!att || !att->wl_child_surface || !p_wl_proxy_marshal_flags) return;
     if (!att->wl_compositor || !g_wl_region_interface) return;
 
-    if (logicalW <= 0 || logicalH <= 0) {
+    /* Bottom row excluded — see above. */
+    int opaqueH = logicalH - 1;
+    if (logicalW <= 0 || opaqueH <= 0) {
         p_wl_proxy_marshal_flags(
             att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,
             p_wl_proxy_get_version(att->wl_child_surface), 0, NULL);
@@ -1705,18 +1717,18 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoEglBridge_nativeSetOpaqueRegio
 
     int r = cornerRadius;
     if (r < 0) r = 0;
-    if (2 * r >= logicalW || 2 * r >= logicalH) r = 0;
+    if (2 * r >= logicalW || 2 * r >= opaqueH) r = 0;
     if (r == 0) {
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, 0, 0, logicalW, logicalH);
+            p_wl_proxy_get_version(region), 0, 0, 0, logicalW, opaqueH);
     } else {
-        /* Everything except the four r x r corner squares. */
+        /* Everything except the four r x r corner squares (and the bottom row). */
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, 0, r, logicalW, logicalH - 2 * r);
+            p_wl_proxy_get_version(region), 0, 0, r, logicalW, opaqueH - 2 * r);
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
             p_wl_proxy_get_version(region), 0, r, 0, logicalW - 2 * r, r);
         p_wl_proxy_marshal_flags(region, WL_REGION_ADD, NULL,
-            p_wl_proxy_get_version(region), 0, r, logicalH - r, logicalW - 2 * r, r);
+            p_wl_proxy_get_version(region), 0, r, opaqueH - r, logicalW - 2 * r, r);
     }
     p_wl_proxy_marshal_flags(
         att->wl_child_surface, WL_SURFACE_SET_OPAQUE_REGION, NULL,

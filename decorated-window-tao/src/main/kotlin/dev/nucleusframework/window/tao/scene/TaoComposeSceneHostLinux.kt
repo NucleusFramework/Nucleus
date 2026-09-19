@@ -45,6 +45,7 @@ import dev.nucleusframework.window.tao.clipboard.ProvideTaoClipboard
 import dev.nucleusframework.window.tao.deco.ResizeFrameDecoration
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayController
 import dev.nucleusframework.window.tao.deco.TaoLinuxOverlayControllerImpl
+import dev.nucleusframework.window.tao.dispatch.DelayScheduler
 import dev.nucleusframework.window.tao.event.TaoWheelPinchZoom
 import dev.nucleusframework.window.tao.event.dispatchAwtShapedScroll
 import dev.nucleusframework.window.tao.event.taoKeyEvent
@@ -84,6 +85,7 @@ import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
 import org.jetbrains.skia.makeGLWithInterface
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.locks.ReentrantLock
 import java.util.logging.Logger
@@ -434,6 +436,32 @@ internal class TaoComposeSceneHostLinux(
      * such draw so no in-flight swap is caught by `set_sync`.
      */
     private var inFrameBurst: Boolean = false
+
+    /**
+     * `System.nanoTime()` of the oldest `queue_draw` handed to GTK that
+     * [onToplevelDraw] has not answered yet; 0 while none is outstanding.
+     * GTK cannot paint while GDK's frame clock is frozen on a frame callback
+     * the compositor withholds — a maximized or tiled toplevel is covered
+     * edge to edge by its own opaque content sub-surface, which Mutter takes
+     * as obscured — and a burst that only rendered from GTK's draw would
+     * never render again. [onRedrawRequested] falls back to the event-loop
+     * path once an ask has gone unanswered for [IN_FRAME_DRAW_GRACE_NS].
+     */
+    private var toplevelDrawAskedNs: Long = 0L
+
+    /** GTK stopped answering `queue_draw` during this burst: stay off the in-frame path until it ends. */
+    private var inFrameStalled: Boolean = false
+
+    /**
+     * Whether the toplevel is covered edge to edge by our opaque content
+     * sub-surface: maximized, tiled and fullscreen windows have no CSD shadow
+     * ring. Mutter culls such a parent as obscured and sends it no frame
+     * callback, so a paint asked of GTK there would be the last one it ever
+     * makes — GDK's frame clock freezes on the unanswered callback, and with
+     * it the flush of pointer motion (GDK holds a lone motion event until
+     * the clock's flush-events phase). The in-frame path is not used there.
+     */
+    private fun parentObscured(): Boolean = window.isMaximized || window.isFullscreen || window.isTiled
 
     /**
      * Extra redraws after a size change so the buffer allocated by the next
@@ -1460,7 +1488,8 @@ internal class TaoComposeSceneHostLinux(
             // and only with the interval-0 burst, since a swap that waited for
             // a frame callback would wait for the GTK commit this very frame
             // has yet to make.
-            if (!inFrameBurst && resizeBurstActive && attachmentHandle != 0L && ensureToplevelDrawHook()) {
+            val inFrameWanted = resizeBurstActive && !inFrameBurst && !inFrameStalled && !parentObscured()
+            if (inFrameWanted && attachmentHandle != 0L && ensureToplevelDrawHook()) {
                 inFrameBurst = true
                 // The interval-0 present must be in force before the first
                 // synced commit: a synced commit made with interval 1 registers
@@ -1507,21 +1536,43 @@ internal class TaoComposeSceneHostLinux(
      */
     private fun updateResizeBurstSwapInterval() {
         if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
-        val burstOver = lastResizeEventNs > 0L && System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
-        if (resizeBurstActive && burstOver) {
-            resizeBurstActive = false
-            setSwapIntervalAsync(1)
-        }
-        if (burstOver) inFrameBurst = false
-        if (subsurfaceSynced && burstOver) {
-            subsurfaceSynced = false
-            // `set_desync` applies whatever the compositor still caches, so
-            // the last frame of the burst is never stranded.
-            NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, false)
-        }
+        endResizeBurstIfStale()
         if (swapThread == null) {
             pendingSwapIntervalNoThread?.let { NativeTaoEglBridge.nativeSetSwapInterval(attachmentHandle, it) }
             pendingSwapIntervalNoThread = null
+        }
+    }
+
+    /**
+     * Ends the resize burst — and with it in-frame rendering — once the
+     * window has been still for [RESIZE_BURST_HOLD_NS]. Needs no GL context,
+     * so it also runs from [onRedrawRequested]: while in-frame, the render
+     * pass only runs from GTK's draw, and the burst's end must not wait for
+     * a paint GTK may never make.
+     */
+    private fun endResizeBurstIfStale() {
+        if (attachmentHandle == 0L || attachedKind != 2 || window.isPopup) return
+        val burstOver = lastResizeEventNs > 0L && System.nanoTime() - lastResizeEventNs >= RESIZE_BURST_HOLD_NS
+        if (!burstOver) return
+        if (resizeBurstActive) {
+            resizeBurstActive = false
+            setSwapIntervalAsync(1)
+        }
+        inFrameStalled = false
+        leaveInFrameRendering()
+    }
+
+    /**
+     * Back to rendering from the event loop: `set_desync` applies whatever
+     * the compositor still caches, so the last in-frame frame is never
+     * stranded.
+     */
+    private fun leaveInFrameRendering() {
+        toplevelDrawAskedNs = 0L
+        inFrameBurst = false
+        if (subsurfaceSynced) {
+            subsurfaceSynced = false
+            NativeTaoEglBridge.nativeSetSubsurfaceSync(attachmentHandle, false)
         }
     }
 
@@ -1728,18 +1779,49 @@ internal class TaoComposeSceneHostLinux(
     }
 
     fun onRedrawRequested() {
+        endResizeBurstIfStale()
         if (inFrameRenderActive()) {
-            // Tao delivers this from its event loop, *after* GTK's paint phase
-            // — GDK has already committed the toplevel. Rendering here would
-            // put the frame one GTK commit behind its geometry (#444). Ask GTK
-            // for a paint instead and render from its `draw` signal; only an
-            // invalidation we were asked for warrants one, or Tao's own draw
-            // handler (which also posts a redraw) would drive an endless
-            // repaint loop.
-            if (redrawPending.getAndSet(false)) queueToplevelDraw()
-            return
+            val now = System.nanoTime()
+            if (toplevelDrawAskedNs != 0L && now - toplevelDrawAskedNs >= IN_FRAME_DRAW_GRACE_NS) {
+                // GTK has not painted since we asked: its frame clock is
+                // frozen on a frame callback the compositor is withholding
+                // (the parent of a maximized or tiled window is fully covered
+                // by our opaque content, and Mutter sends none to an obscured
+                // surface). Waiting on it would be waiting forever — render
+                // from here for the rest of the burst, as before #444.
+                linuxHostLogger.fine("GTK did not answer queue_draw within the grace; leaving in-frame rendering")
+                inFrameStalled = true
+                leaveInFrameRendering()
+            } else {
+                // Tao delivers this from its event loop, *after* GTK's paint
+                // phase — GDK has already committed the toplevel. Rendering
+                // here would put the frame one GTK commit behind its geometry
+                // (#444). Ask GTK for a paint instead and render from its
+                // `draw` signal; only an invalidation we were asked for
+                // warrants one, or Tao's own draw handler (which also posts a
+                // redraw) would drive an endless repaint loop.
+                if (redrawPending.getAndSet(false)) askToplevelDraw(now)
+                return
+            }
         }
         renderFrame(inFrame = false)
+    }
+
+    /**
+     * `queue_draw` on the toplevel, remembering the first unanswered ask and
+     * arming a redraw past [IN_FRAME_DRAW_GRACE_NS] so an unanswered one is
+     * noticed even when nothing else invalidates — a static UI after a
+     * maximize would otherwise sit frozen until its next invalidation.
+     */
+    private fun askToplevelDraw(now: Long) {
+        queueToplevelDraw()
+        if (toplevelDrawAskedNs != 0L) return
+        toplevelDrawAskedNs = now
+        DelayScheduler.schedule(
+            { requestRedrawCoalesced() },
+            IN_FRAME_DRAW_GRACE_NS / 1_000_000L + IN_FRAME_DRAW_WATCHDOG_SLACK_MS,
+            TimeUnit.MILLISECONDS,
+        )
     }
 
     /**
@@ -1752,12 +1834,23 @@ internal class TaoComposeSceneHostLinux(
      */
     fun onToplevelDraw() {
         if (!isWayland || attachedKind == 0 || window.isPopup) return
+        // GTK answered; whether this draw renders is a separate matter.
+        toplevelDrawAskedNs = 0L
         // GTK is painting — and about to commit — a configure Tao has not told
         // us about yet: its `configure-event` goes through the same event
         // channel as its draw. Take the size from GTK itself so this very
         // paint gets content of that size.
         adoptGtkClientSize()
         if (!inFrameRenderActive()) return
+        if (parentObscured()) {
+            // The state flag can land after the Resized that armed the burst;
+            // this paint must then be GTK's last, and the invalidation it was
+            // asked for goes back to the event loop.
+            inFrameStalled = true
+            leaveInFrameRendering()
+            requestRedrawCoalesced()
+            return
+        }
         val st = swapThread
         if (st != null && !st.awaitIdleOrMarkOwed(IN_FRAME_SWAP_WAIT_NS)) return
         if (!subsurfaceSynced) {
@@ -1772,8 +1865,9 @@ internal class TaoComposeSceneHostLinux(
         // While synced, frames show only with a GTK commit: keep GTK painting
         // until the burst has ended (the render pass leaves sync mode once the
         // window has been still for the hold), so the last frame is never
-        // stranded in the compositor's cache.
-        if (inFrameRenderActive()) queueToplevelDraw()
+        // stranded in the compositor's cache. Watched like any other ask:
+        // this paint's commit may be the one the compositor stops answering.
+        if (inFrameRenderActive()) askToplevelDraw(System.nanoTime())
     }
 
     /** Whether frames are rendered from GTK's `draw` signal right now — see [onToplevelDraw]. */
@@ -3121,6 +3215,16 @@ internal class TaoComposeSceneHostLinux(
          * on virgl); past it the frame simply lands one GTK commit late.
          */
         private const val IN_FRAME_SWAP_WAIT_NS = 50_000_000L // 50 ms
+
+        /**
+         * Longest a `queue_draw` may go unanswered before in-frame rendering
+         * is abandoned for the burst — three 60 Hz frames, past the two GDK's
+         * frame clock takes when a frame callback is already in flight.
+         */
+        private const val IN_FRAME_DRAW_GRACE_NS = 50_000_000L // 50 ms
+
+        /** How long after the grace the watchdog redraw lands. */
+        private const val IN_FRAME_DRAW_WATCHDOG_SLACK_MS = 10L
 
         /**
          * How far outside the content (logical px) a pointer still counts as
