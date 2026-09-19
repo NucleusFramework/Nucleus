@@ -1218,7 +1218,7 @@ extern "C" fn other_mouse_dragged(this: &NSView, _sel: Sel, event: &NSEvent) {
   mouse_motion(this, event);
 }
 
-extern "C" fn mouse_entered(this: &Object, _sel: Sel, _event: id) {
+extern "C" fn mouse_entered(this: &NSView, _sel: Sel, event: &NSEvent) {
   trace!("Triggered `mouseEntered`");
   unsafe {
     let state_ptr: *mut c_void = *this.get_ivar("taoState");
@@ -1233,12 +1233,79 @@ extern "C" fn mouse_entered(this: &Object, _sel: Sel, _event: id) {
 
     AppState::queue_event(EventWrapper::StaticEvent(enter_event));
   }
+  // PATCH(nucleus): publish *where* the cursor entered, which AppKit hands us
+  // in the event and tao drops. `CursorEntered` carries no position, so a
+  // consumer that tracks the pointer (Compose's hover) only learns it on the
+  // next `mouseMoved:` — and a pointer that *rests* after entering sends none.
+  mouse_motion(this, event);
   trace!("Completed `mouseEntered`");
 }
 
-extern "C" fn mouse_exited(this: &Object, _sel: Sel, _event: id) {
+/// Is the cursor still over this view, whatever AppKit just claimed?
+///
+/// Inside the view's own bounds, and the window on top at that screen point is
+/// this one — or one of its **child** windows, which is how Nucleus hosts a
+/// native popup layer. A popup that opens over the pointer must not take the
+/// owner's hover with it: the two are one scene to the app, and the owner
+/// answers for the pointer everywhere the popup's content does not.
+unsafe fn cursor_is_still_inside(this: &NSView, event: &NSEvent) -> bool {
+  let view_point = this.convertPoint_fromView(event.locationInWindow(), None);
+  let bounds = NSView::bounds(this);
+  let inside = view_point.x >= 0.0
+    && view_point.y >= 0.0
+    && view_point.x <= bounds.size.width
+    && view_point.y <= bounds.size.height;
+  if !inside {
+    return false;
+  }
+  let window: id = msg_send![this, window];
+  if window.is_null() {
+    return false;
+  }
+  let screen_point: NSPoint = msg_send![class!(NSEvent), mouseLocation];
+  let top: NSInteger = msg_send![
+      class!(NSWindow),
+      windowNumberAtPoint: screen_point
+      belowWindowWithWindowNumber: 0 as NSInteger
+  ];
+  let mine: NSInteger = msg_send![window, windowNumber];
+  if top == mine {
+    return true;
+  }
+  let children: id = msg_send![window, childWindows];
+  if children.is_null() {
+    return false;
+  }
+  let count: NSUInteger = msg_send![children, count];
+  for index in 0..count {
+    let child: id = msg_send![children, objectAtIndex: index];
+    let child_number: NSInteger = msg_send![child, windowNumber];
+    if child_number == top {
+      return true;
+    }
+  }
+  false
+}
+
+extern "C" fn mouse_exited(this: &NSView, _sel: Sel, event: &NSEvent) {
   trace!("Triggered `mouseExited`");
   unsafe {
+    // PATCH(nucleus): AppKit fires `mouseExited:` for a cursor that never left
+    // — measured on macOS 26 with the pointer parked over a tab strip: enter →
+    // exit → enter → exit at one screen point, the exits raised by a hover
+    // card's own popup panel rising over the pointer (a child window of ours)
+    // and by tracking-rect rebuilds. Compose takes the exit at face value and
+    // drops its hover state, and a *resting* pointer sends nothing afterwards
+    // to correct it: hover effects and hover cards stay dead until the user
+    // moves the mouse. Worse, a card that dies on its own exit reopens and
+    // exits again, which is a loop no pointer can break. Trust the geometry
+    // over the event: re-publish the position instead, and keep `CursorLeft`
+    // for a cursor that really is somewhere else.
+    if cursor_is_still_inside(this, event) {
+      trace!("Ignored a `mouseExited` with the cursor still inside");
+      mouse_motion(this, event);
+      return;
+    }
     let state_ptr: *mut c_void = *this.get_ivar("taoState");
     let state = &mut *(state_ptr as *mut ViewState);
 
