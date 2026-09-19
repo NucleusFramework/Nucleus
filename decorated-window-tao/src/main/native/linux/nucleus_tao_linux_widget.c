@@ -127,6 +127,7 @@ typedef void       (*PFN_g_list_free)(GList *list);
 typedef GtkWidget *(*PFN_gtk_window_get_focus)(GtkWindow *window);
 typedef void       (*PFN_gtk_container_check_resize)(GtkContainer *container);
 typedef void       (*PFN_gtk_widget_queue_draw)(GtkWidget *widget);
+typedef void       (*PFN_gtk_window_get_size)(GtkWindow *window, int *width, int *height);
 typedef void      *(*PFN_gdk_window_get_display)(void *window);
 typedef void      *(*PFN_gdk_display_get_default_seat)(void *display);
 typedef void      *(*PFN_gdk_seat_get_pointer)(void *seat);
@@ -181,6 +182,7 @@ static struct {
     PFN_gtk_window_get_focus      gtk_window_get_focus;
     PFN_gtk_container_check_resize gtk_container_check_resize;
     PFN_gtk_widget_queue_draw     gtk_widget_queue_draw;
+    PFN_gtk_window_get_size       gtk_window_get_size;
     PFN_gdk_window_get_display    gdk_window_get_display;
     PFN_gdk_display_get_default_seat gdk_display_get_default_seat;
     PFN_gdk_seat_get_pointer      gdk_seat_get_pointer;
@@ -261,6 +263,7 @@ static int ensure_gtk_loaded(void) {
     g.gtk_window_get_focus        = (PFN_gtk_window_get_focus)        dlsym(libgtk, "gtk_window_get_focus");
     g.gtk_container_check_resize  = (PFN_gtk_container_check_resize)  dlsym(libgtk, "gtk_container_check_resize");
     g.gtk_widget_queue_draw       = (PFN_gtk_widget_queue_draw)       dlsym(libgtk, "gtk_widget_queue_draw");
+    g.gtk_window_get_size         = (PFN_gtk_window_get_size)         dlsym(libgtk, "gtk_window_get_size");
     g.g_object_ref                = (PFN_g_object_ref)                dlsym(libgobj, "g_object_ref");
     g.g_object_unref              = (PFN_g_object_unref)              dlsym(libgobj, "g_object_unref");
     if (libglib != NULL) {
@@ -821,6 +824,89 @@ Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeQueueT
     (void) env; (void) clazz;
     if (!ensure_gtk_loaded() || g.gtk_widget_queue_draw == NULL || gtk_window_ptr == 0) return;
     g.gtk_widget_queue_draw((GtkWidget *) (uintptr_t) gtk_window_ptr);
+}
+
+/**
+ * The toplevel's client size in logical units (`gtk_window_get_size`, CSD
+ * shadows excluded), packed `(width << 32) | height`; 0 when unavailable.
+ * Read from the `draw` hook: during a resize GTK lays out and paints a
+ * configure before Tao's `configure-event` has been delivered to the host, so
+ * this is the size the paint being committed is for (#444).
+ */
+EXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeToplevelClientSize(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr)
+{
+    (void) env; (void) clazz;
+    if (!ensure_gtk_loaded() || g.gtk_window_get_size == NULL || gtk_window_ptr == 0) return 0;
+    int w = 0, h = 0;
+    g.gtk_window_get_size((GtkWindow *) (uintptr_t) gtk_window_ptr, &w, &h);
+    if (w <= 0 || h <= 0) return 0;
+    return ((jlong) (uint32_t) w << 32) | (jlong) (uint32_t) h;
+}
+
+/* ── toplevel draw hook (#444) ─────────────────────────────────────────
+ *
+ * Tao's own `draw` handler only posts the window id to its event channel; the
+ * `RedrawRequested` the host renders on is delivered by the event loop *after*
+ * GTK's paint phase — and after GDK's after-paint has already committed the
+ * toplevel, on Wayland with the geometry of the configure just acked. Content
+ * rendered from there always lands one toplevel commit late, which on a
+ * left/top-edge resize is the window origin moving one step ahead of the
+ * content. This hook hands the host the `draw` signal itself (connected after
+ * GTK's class handler, still inside the paint phase): a frame rendered and
+ * committed from here rides GTK's commit of the same frame, atomically with
+ * the geometry, once the content sub-surface is in sync mode. */
+static jmethodID sOnToplevelDrawMethod = NULL; /* ()V */
+
+static gboolean on_toplevel_draw(GtkWidget *widget, void *cr, void *data) {
+    (void) widget; (void) cr;
+    jobject cb = (jobject) data;
+    if (cb == NULL || sOnToplevelDrawMethod == NULL) return 0;
+    JNIEnv *env = attach_jvm_thread();
+    if (env == NULL) return 0;
+    (*env)->CallVoidMethod(env, cb, sOnToplevelDrawMethod);
+    nucleus_jni_clear_exception(env);
+    return 0; /* FALSE: never swallow GTK's own drawing */
+}
+
+static void toplevel_draw_cb_destroy_notify(void *data, void *closure) {
+    (void) closure;
+    jobject ref = (jobject) data;
+    if (ref == NULL) return;
+    JNIEnv *env = attach_jvm_thread();
+    if (env != NULL) (*env)->DeleteGlobalRef(env, ref);
+}
+
+/**
+ * Connects [callback]'s `onToplevelDraw()` to the GtkWindow's `draw` signal
+ * (`G_CONNECT_AFTER`). Returns the handler id, 0 when unavailable. The
+ * handler lives as long as the GtkWindow: GObject drops it — and the global
+ * ref through the destroy notify — when the window is finalized.
+ */
+EXPORT jlong JNICALL
+Java_dev_nucleusframework_window_tao_ffi_NativeTaoLinuxWidgetBridge_nativeConnectToplevelDraw(
+    JNIEnv *env, jclass clazz, jlong gtk_window_ptr, jobject callback)
+{
+    (void) clazz;
+    if (!ensure_gtk_loaded() || gtk_window_ptr == 0 || callback == NULL) return 0;
+    if (g.g_signal_connect_data == NULL) return 0;
+    if (sJVM == NULL) (*env)->GetJavaVM(env, &sJVM);
+    if (sOnToplevelDrawMethod == NULL) {
+        jclass local = (*env)->GetObjectClass(env, callback);
+        if (local != NULL) {
+            sOnToplevelDrawMethod = (*env)->GetMethodID(env, local, "onToplevelDraw", "()V");
+            (*env)->DeleteLocalRef(env, local);
+        }
+        nucleus_jni_clear_exception(env);
+        if (sOnToplevelDrawMethod == NULL) return 0;
+    }
+    jobject ref = (*env)->NewGlobalRef(env, callback);
+    /* G_CONNECT_AFTER = 1 << 0 */
+    gulong id = g.g_signal_connect_data((void *) (uintptr_t) gtk_window_ptr, "draw",
+        (void (*)(void)) on_toplevel_draw, ref,
+        (void (*)(void *, void *)) toplevel_draw_cb_destroy_notify, 1);
+    return (jlong) id;
 }
 
 /* ── Input-box overlay: hit capture for NativeView blending ──

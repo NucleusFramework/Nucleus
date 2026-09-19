@@ -111,6 +111,35 @@ internal object NativeTaoLinuxWidgetBridge {
     @JvmStatic
     external fun nativeRemoveInputBox(boxPtr: Long)
 
+    /** Receives the toplevel GtkWindow's `draw` signal — see [nativeConnectToplevelDraw]. */
+    interface ToplevelDrawCallback {
+        fun onToplevelDraw()
+    }
+
+    /**
+     * Connects [callback] to the toplevel's `draw` signal, after GTK's own
+     * handler and still inside the frame clock's paint phase — i.e. *before*
+     * GDK's after-paint commits the toplevel surface (#444). A frame rendered
+     * and swapped from that callback, with the content sub-surface in sync
+     * mode, is applied by the compositor together with the geometry that
+     * commit carries. Returns the handler id, 0 if unavailable; the handler
+     * is owned by the GtkWindow and goes with it.
+     */
+    @JvmStatic
+    external fun nativeConnectToplevelDraw(
+        gtkWindowPtr: Long,
+        callback: ToplevelDrawCallback,
+    ): Long
+
+    /**
+     * The toplevel's client size in logical units (`gtk_window_get_size`),
+     * packed `(width shl 32) or height`, 0 when unavailable. Inside the `draw`
+     * signal this is the size of the configure GTK is painting — which Tao's
+     * `configure-event` only reports once that paint has been committed (#444).
+     */
+    @JvmStatic
+    external fun nativeToplevelClientSize(gtkWindowPtr: Long): Long
+
     /**
      * Receives motion / press / release events forwarded from the
      * native EventBox handlers. Coords are **logical pixels** in the
