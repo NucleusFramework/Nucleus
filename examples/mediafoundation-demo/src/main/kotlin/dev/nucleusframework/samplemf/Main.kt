@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.rememberWindowState
 import dev.nucleusframework.application.DecoratedWindow
-import dev.nucleusframework.application.NucleusBackend
 import dev.nucleusframework.application.nucleusApplication
 import dev.nucleusframework.window.NucleusDecoratedWindowTheme
 import dev.nucleusframework.window.TitleBar
@@ -72,7 +71,7 @@ import java.util.concurrent.atomic.AtomicInteger
 fun main(args: Array<String>) {
     // No GraalVmInitializer call: nucleusApplication runs it first thing.
     val url = resolveUrl(args.firstOrNull() ?: System.getenv("NUCLEUS_MF_URL"))
-    nucleusApplication(backend = NucleusBackend.Tao) {
+    nucleusApplication {
         NucleusDecoratedWindowTheme(isDark = true) {
             DecoratedWindow(
                 onCloseRequest = ::exitApplication,

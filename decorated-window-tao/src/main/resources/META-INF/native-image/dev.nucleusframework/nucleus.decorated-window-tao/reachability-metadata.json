@@ -262,6 +262,10 @@
                         "int",
                         "int"
                     ]
+                },
+                {
+                    "name": "nativeFontSmoothingPixelGeometry",
+                    "parameterTypes": []
                 }
             ]
         },

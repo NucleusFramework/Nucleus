@@ -189,4 +189,61 @@ internal object NativeTaoLinuxWidgetBridge {
         dx: Float,
         dy: Float,
     )
+
+    /**
+     * Gives the keyboard back to Compose after a press Compose kept: clears
+     * the GTK focus widget when it is an embed (not one of the suite's own
+     * input boxes), so keys route to Tao's toplevel handler again. `true`
+     * when it did.
+     */
+    @JvmStatic
+    external fun nativeClaimKeyboardForCompose(gtkWindowPtr: Long): Boolean
+
+    /**
+     * GDK's live pointer button mask (`GDK_BUTTON1_MASK = 1 shl 8`,
+     * `GDK_BUTTON3_MASK = 1 shl 10`, …), or -1 when unavailable.
+     */
+    @JvmStatic
+    external fun nativeQueryPointerButtons(gtkWindowPtr: Long): Int
+
+    /** `gtk_widget_queue_draw` on the toplevel: GTK paints and commits it on its next frame. */
+    @JvmStatic
+    external fun nativeQueueToplevelDraw(gtkWindowPtr: Long)
+
+    // ── Diagnostics for the headful suite ─────────────────────────────
+
+    /**
+     * A fresh, unparented `GtkEntry` for a headful case to embed through
+     * `NativeView` — the test module cannot fabricate a `GtkWidget*` on
+     * its own. 0 when GTK is unavailable. Destroy with
+     * [nativeDiagDestroyWidget].
+     */
+    @JvmStatic
+    external fun nativeDiagCreateEntry(): Long
+
+    /** Detaches and destroys a widget from [nativeDiagCreateEntry]. */
+    @JvmStatic
+    external fun nativeDiagDestroyWidget(widgetPtr: Long)
+
+    /** The widget [gtkWindowPtr] routes keys to (`gtk_window_get_focus`), or 0. */
+    @JvmStatic
+    external fun nativeDiagFocusWidget(gtkWindowPtr: Long): Long
+
+    /** Whether [widgetPtr] itself holds GTK focus. */
+    @JvmStatic
+    external fun nativeDiagWidgetHasFocus(widgetPtr: Long): Boolean
+
+    /** The text of an entry from [nativeDiagCreateEntry], or null. */
+    @JvmStatic
+    external fun nativeDiagEntryText(widgetPtr: Long): String?
+
+    /**
+     * Where a widget sits, in Tao's content-box coordinates and logical px,
+     * as `[x, y, w, h]` — null while it is not mapped.
+     */
+    @JvmStatic
+    external fun nativeDiagWidgetFrame(
+        gtkWindowPtr: Long,
+        widgetPtr: Long,
+    ): IntArray?
 }

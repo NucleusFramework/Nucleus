@@ -25,6 +25,7 @@
 #include <string.h>
 #include <math.h>
 #import <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 // Diagnostic logging for the title-bar / fullscreen / menu-bar paths. Off by
 // default (no-op) so production apps stay silent; opt in by launching with
@@ -213,9 +214,7 @@ static void notifyMenuBarOffsetChanged(jlong nsViewPtr, float offset) {
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnOffsetChanged,
                                  nsViewPtr, (jfloat)offset);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 // Calls NativeMetalBridge.onFullscreenPrepare(nsViewPtr, widthPx, heightPx)
@@ -242,10 +241,7 @@ static void notifyFullscreenPrepare(jlong nsViewPtr, jint widthPx, jint heightPx
 
     (*env)->CallStaticVoidMethod(env, sMetalBridgeClass, sMetalOnFullscreenPrepare,
                                  nsViewPtr, widthPx, heightPx);
-    if ((*env)->ExceptionCheck(env)) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
-    }
+    nucleus_jni_clear_exception(env);
 }
 
 static void reinstallToolbarIfNeeded(NSWindow *window) {
@@ -2280,29 +2276,37 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
         att->layer.contentsScale = scale;
         att->layer.drawableSize  = CGSizeMake(widthPx, heightPx);
         att->layer.frame         = att->view.bounds;
-        // During an interactive live-resize the present always lags the
-        // bounds by one frame (the Resized event is queued and processed on
-        // a later runloop turn than the AppKit layout commit). With the
-        // default `kCAGravityResize`, Core Animation stretches the stale
-        // last drawable to the new — oscillating — bounds, which reads as
-        // the whole window trembling when the pointer circles a corner.
-        // Instead anchor the stale drawable to the window's *fixed* corner
-        // for the duration of the drag so it stops rubber-banding around
-        // the layer centre; the render thread still presents crisp frames
-        // at the new size, and `kCAGravityResize` is restored on drag end.
-        // The fixed corner is inferred from the NSWindow frame origin delta
-        // (macOS reports the origin at the bottom-left corner):
-        //   origin.x unchanged -> left edge fixed   (else right edge fixed)
-        //   origin.y unchanged -> bottom edge fixed (else top edge fixed)
-        NSString *gravity = kCAGravityResize;
+        // Outside a programmatic resize (presented in the same turn by the
+        // scene host, #576) the present lags the bounds by one frame: the
+        // Resized event is processed on a later runloop turn than the
+        // AppKit layout commit. With the default `kCAGravityResize`, Core
+        // Animation stretches the stale last drawable to the new bounds —
+        // oscillating under a pointer circling a corner, growing step by
+        // step under the zoom animation a title-bar double-click starts —
+        // which reads as the whole content trembling. So never stretch:
+        // anchor the stale drawable to a corner and let the crisp frame at
+        // the new size land a frame later, the exposed band showing the
+        // window's own background colour meanwhile.
+        //   - interactive live-resize: the window's *fixed* corner, so the
+        //     content holds still on screen instead of rubber-banding
+        //     around the layer centre. Inferred from the NSWindow frame
+        //     origin delta (macOS reports the origin at the bottom-left):
+        //       origin.x unchanged -> left edge fixed   (else right edge)
+        //       origin.y unchanged -> bottom edge fixed (else top edge)
+        //   - anything else (zoom / animator frame changes, #576): the
+        //     top-left, where the next frame lays its content out anyway.
+        // At rest contents and bounds agree, so the anchor is invisible.
+        NSString *gravity = kCAGravityTopLeft;
         NSWindow *win = att->view.window;
         // Never anchor during an AppKit fullscreen transition: the #327
         // snapshot ramp depends on Resize gravity for the whole animation,
         // and AppKit may report inLiveResize while it animates the frame.
-        BOOL liveResize = att->view.inLiveResize &&
-                          atomic_load(&att->in_transition) == 0;
-        if (liveResize && win != nil &&
-            !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
+        BOOL inTransition = atomic_load(&att->in_transition) != 0;
+        BOOL liveResize = att->view.inLiveResize && !inTransition;
+        if (inTransition) {
+            gravity = kCAGravityResize;
+        } else if (liveResize && win != nil &&
+                   !isnan(att->prev_origin_x) && !isnan(att->prev_origin_y)) {
             NSRect fr = win.frame;
             BOOL leftFixed   = fabs(fr.origin.x - att->prev_origin_x) < 0.5;
             BOOL bottomFixed = fabs(fr.origin.y - att->prev_origin_y) < 0.5;
@@ -2311,11 +2315,6 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativeResize(
             } else {
                 gravity = bottomFixed ? kCAGravityBottomRight : kCAGravityTopRight;
             }
-        } else if (liveResize) {
-            // First tick of the drag: no prior origin to diff against. Pin
-            // top-left — the common bottom/right case — and let the next
-            // tick self-correct to the proper fixed corner.
-            gravity = kCAGravityTopLeft;
         }
         att->layer.contentsGravity = gravity;
         if (win != nil) {
@@ -2602,10 +2601,7 @@ Java_dev_nucleusframework_window_tao_ffi_NativeMetalBridge_nativePresentWithInte
                 }
                 if (sRunMethod != NULL) {
                     (*menv)->CallVoidMethod(menv, interopGlobal, sRunMethod);
-                    if ((*menv)->ExceptionCheck(menv)) {
-                        (*menv)->ExceptionDescribe(menv);
-                        (*menv)->ExceptionClear(menv);
-                    }
+                    nucleus_jni_clear_exception(menv);
                 }
                 (*menv)->DeleteGlobalRef(menv, interopGlobal);
             }

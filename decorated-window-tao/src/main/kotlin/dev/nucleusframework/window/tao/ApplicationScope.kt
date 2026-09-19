@@ -7,7 +7,7 @@ import androidx.compose.runtime.setValue
 /**
  * Scope exposed by [taoApplication]. Mirrors `androidx.compose.ui.window.ApplicationScope`
  * so call sites can stay nearly identical between the AWT-based backends
- * (`decorated-window-jni`, `decorated-window-jbr`) and the Tao backend.
+ * (removed in 2.6) and the Tao backend.
  */
 public interface ApplicationScope {
     /** Posts an exit request to the Tao event loop, unblocking [taoApplication]. */

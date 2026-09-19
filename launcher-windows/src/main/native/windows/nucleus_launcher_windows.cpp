@@ -36,6 +36,7 @@
 #include <windows.data.xml.dom.h>
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 
 #include <string>
 #include <vector>
@@ -652,33 +653,33 @@ static HWND GetHwndFromAwtWindow(JNIEnv *env, jobject awtWindow) {
     if (!awtWindow) return nullptr;
 
     jclass awtAccessorClass = env->FindClass("sun/awt/AWTAccessor");
-    if (!awtAccessorClass || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!awtAccessorClass || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jmethodID getCompAccessor = env->GetStaticMethodID(awtAccessorClass,
         "getComponentAccessor", "()Lsun/awt/AWTAccessor$ComponentAccessor;");
-    if (!getCompAccessor || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!getCompAccessor || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jobject compAccessor = env->CallStaticObjectMethod(awtAccessorClass, getCompAccessor);
-    if (!compAccessor || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!compAccessor || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jclass compAccessorClass = env->FindClass("sun/awt/AWTAccessor$ComponentAccessor");
-    if (!compAccessorClass || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!compAccessorClass || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jmethodID getPeer = env->GetMethodID(compAccessorClass,
         "getPeer", "(Ljava/awt/Component;)Ljava/awt/peer/ComponentPeer;");
-    if (!getPeer || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!getPeer || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jobject peer = env->CallObjectMethod(compAccessor, getPeer, awtWindow);
-    if (!peer || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!peer || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jclass wCompPeerClass = env->FindClass("sun/awt/windows/WComponentPeer");
-    if (!wCompPeerClass || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!wCompPeerClass || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jmethodID getHWnd = env->GetMethodID(wCompPeerClass, "getHWnd", "()J");
-    if (!getHWnd || env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (!getHWnd || env->ExceptionCheck()) { nucleus_jni_clear_exception(env); return nullptr; }
 
     jlong hwnd = env->CallLongMethod(peer, getHWnd);
-    if (env->ExceptionCheck()) { env->ExceptionClear(); return nullptr; }
+    if (nucleus_jni_clear_exception(env)) { return nullptr; }
     return (HWND)(intptr_t)hwnd;
 }
 
@@ -729,7 +730,7 @@ static LRESULT CALLBACK ThumbBarWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPA
             JNIEnv *env = nullptr;
             if (g_jvm->GetEnv((void **)&env, JNI_VERSION_1_8) == JNI_OK && env) {
                 env->CallVoidMethod(state->callbackRef, state->onClickMethod, (jint)buttonId);
-                if (env->ExceptionCheck()) env->ExceptionClear();
+                nucleus_jni_clear_exception(env);
             }
         }
     }

@@ -405,6 +405,19 @@ internal object NativeTaoBridge {
     ): String
 
     /**
+     * macOS only, headful e2e: the rect TaoView answers
+     * `firstRectForCharacterRange:` with, filled into [rectOut] (length ≥ 4)
+     * as `[x, y, width, height]` in Cocoa screen coordinates. An all-zero rect
+     * is the client reporting no insertion point — what AppKit needs to hear
+     * once the focused field is gone.
+     */
+    @JvmStatic
+    external fun nativeMacOsQueryImeRect(
+        handle: Long,
+        rectOut: DoubleArray,
+    ): Boolean
+
+    /**
      * macOS only, headful e2e: invoke `setMarkedText:selectedRange:replacementRange:`
      * on TaoView (the same entry IMKit uses).
      */
@@ -558,16 +571,34 @@ internal object NativeTaoBridge {
     external fun nativeLinuxPrimaryMonitorScaleMilli(handle: Long): Int
 
     /**
+     * Linux only: returns one descriptor per GDK monitor, encoded as documented
+     * in [dev.nucleusframework.window.tao.TaoMonitor].
+     *
+     * [handle] may be `0` — monitors are a display-wide property, so the
+     * default GDK display is used when no window is available. `null` when GDK
+     * has no display.
+     */
+    @JvmStatic
+    external fun nativeLinuxMonitors(handle: Long): Array<String>?
+
+    /**
      * Linux only: wires [childHandle] as a GTK transient of [ownerHandle] via
-     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint` and
-     * `destroy_with_parent`). Mirrors the Win32 `GWLP_HWNDPARENT` and AppKit
-     * `addChildWindow:` paths used by `DecoratedDialog`. Pass `0` for
-     * [ownerHandle] to clear the relationship.
+     * `gtk_window_set_transient_for` (+ `skip_taskbar_hint`). Mirrors the Win32
+     * `GWLP_HWNDPARENT` and AppKit `addChildWindow:` paths used by
+     * `DecoratedDialog`. Pass `0` for [ownerHandle] to clear the relationship.
+     *
+     * [destroyWithOwner] adds `gtk_window_set_destroy_with_parent`, which is
+     * the JDialog behaviour a dialog wants and the opposite of what a
+     * satellite wants: a satellite outlives the window it is anchored to (the
+     * workspace hands it to another one). GTK destroying it behind tao's back
+     * leaves a live `TaoWindow` whose toplevel is gone — a window that reports
+     * no geometry and can never be shown again.
      */
     @JvmStatic
     external fun nativeLinuxSetDialogOwner(
         childHandle: Long,
         ownerHandle: Long,
+        destroyWithOwner: Boolean,
     )
 
     /**
@@ -618,6 +649,18 @@ internal object NativeTaoBridge {
     external fun nativeSetResizable(
         handle: Long,
         resizable: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetMinimizable(
+        handle: Long,
+        minimizable: Boolean,
+    )
+
+    @JvmStatic
+    external fun nativeSetMaximizable(
+        handle: Long,
+        maximizable: Boolean,
     )
 
     @JvmStatic
@@ -673,6 +716,14 @@ internal object NativeTaoBridge {
         height: Double,
     )
 
+    /** [width]/[height] in logical pixels; pass negative values to clear. */
+    @JvmStatic
+    external fun nativeSetMaxInnerSize(
+        handle: Long,
+        width: Double,
+        height: Double,
+    )
+
     /** [pixels] is row-major premultiplied RGBA. Empty array clears the icon. */
     @JvmStatic
     external fun nativeSetWindowIcon(
@@ -698,6 +749,24 @@ internal object NativeTaoBridge {
         y: Double,
     )
 
+    /**
+     * Linux only: anchors a popup overlay (`popupOf`) at a logical point of
+     * its parent window through GDK's `move_to_rect`, so GDK maps it as a
+     * compositor-positioned `xdg_popup` — see [TaoWindow.anchorPopupInParent].
+     */
+    @JvmStatic
+    external fun nativeLinuxPopupAnchor(
+        handle: Long,
+        x: Int,
+        y: Int,
+        width: Int,
+        height: Int,
+        shadowLeft: Int,
+        shadowTop: Int,
+        shadowRight: Int,
+        shadowBottom: Int,
+    )
+
     @JvmStatic
     external fun nativeIsFullscreen(handle: Long): Boolean
 
@@ -707,12 +776,34 @@ internal object NativeTaoBridge {
         fullscreen: Boolean,
     )
 
-    /** Sets the OS cursor for the window. [code] follows [TaoCursorIcon]. */
+    /**
+     * Sets the OS cursor for the window. [code] follows [TaoCursorIcon].
+     * Callers go through [setCursorIcon], which records the request first.
+     */
     @JvmStatic
     external fun nativeSetCursorIcon(
         handle: Long,
         code: Int,
     )
+
+    /**
+     * The last cursor code requested per window handle, exactly as it was
+     * handed to [nativeSetCursorIcon]. The platform cursor itself cannot be
+     * read back portably (and never under Xvfb), so this is what the headful
+     * suite asserts against: a `BasicTextField` under a still pointer must
+     * have left a `TEXT` here, and a native view under it must not have
+     * flipped it back.
+     */
+    val lastCursorIcon: java.util.concurrent.ConcurrentHashMap<Long, Int> = java.util.concurrent.ConcurrentHashMap()
+
+    /** Records the request in [lastCursorIcon] and applies it. */
+    fun setCursorIcon(
+        handle: Long,
+        code: Int,
+    ) {
+        lastCursorIcon[handle] = code
+        nativeSetCursorIcon(handle, code)
+    }
 
     /**
      * Anchors the platform IME UI at the given window-local rect in *physical
@@ -753,9 +844,29 @@ internal object NativeTaoBridge {
         selectionEnd: Long,
     )
 
-    /** Calls `[view.inputContext activate]` for TaoView's NSTextInputClient. */
+    /**
+     * Calls `[view.inputContext activate]` for TaoView's NSTextInputClient and
+     * returns the token identifying the text-input session it opens (0 when the
+     * window is gone). Hand it back to [nativeDeactivateInputContext].
+     */
     @JvmStatic
-    external fun nativeActivateInputContext(handle: Long)
+    external fun nativeActivateInputContext(handle: Long): Long
+
+    /**
+     * Ends the session [token] opened: `[view.inputContext deactivate]` plus
+     * the drop of the cached caret rect. Both matter — an input context left
+     * active over a caret rect that outlived its field keeps AppKit anchoring
+     * the input-source indicator (the badge Caps Lock raises when it is bound
+     * to keyboard-layout switching) to a field that no longer exists.
+     *
+     * A [token] the newest activation superseded is ignored, so the teardown of
+     * an outgoing session cannot undo the incoming one.
+     */
+    @JvmStatic
+    external fun nativeDeactivateInputContext(
+        handle: Long,
+        token: Long,
+    )
 
     // ── Accessibility (macOS) ──────────────────────────────────────────────
     //

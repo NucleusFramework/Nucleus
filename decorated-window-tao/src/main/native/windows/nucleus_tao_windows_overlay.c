@@ -21,6 +21,7 @@
  */
 
 #include <jni.h>
+#include "../../../../../native-common/nucleus_jni.h"
 #include <windows.h>
 #include <dwmapi.h>
 #include "nucleus_tao_windows_overlay_internal.h"
@@ -194,7 +195,7 @@ static void dispatchPointer(OverlayState *s, int type, int button, LPARAM lParam
     int y = (short)HIWORD(lParam);
     (*env)->CallVoidMethod(env, s->pointerCb, sOnPointerMethod,
         (jint)type, (jfloat)x, (jfloat)y, (jint)button, (jint)modifierMask());
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static UINT gLastInputMsg;
@@ -211,8 +212,13 @@ void nucleus_tao_remember_native_input(HWND hwnd, UINT msg, WPARAM w, LPARAM l) 
     gHasLastInput = TRUE;
 }
 
-BOOL nucleus_tao_replay_last_native_input(HWND target) {
+BOOL nucleus_tao_replay_last_native_input(HWND target, UINT expectedMsg, BOOL post) {
     if (!gHasLastInput || !IsWindow(target)) return FALSE;
+    /* Only the event being forwarded is worth replaying verbatim. A press
+     * dispatched in-process (no overlay message behind it) or a move that
+     * reached the scene through the owner HWND's capture would otherwise
+     * replay whatever the overlay saw last — a stale press, say. */
+    if (gLastInputMsg != expectedMsg) return FALSE;
     LPARAM lp = gLastInputL;
     if (gLastInputMsg != WM_MOUSEWHEEL && gLastInputMsg != WM_MOUSEHWHEEL &&
         target != gLastInputHwnd && IsWindow(gLastInputHwnd)) {
@@ -220,7 +226,11 @@ BOOL nucleus_tao_replay_last_native_input(HWND target) {
         MapWindowPoints(gLastInputHwnd, target, &pt, 1);
         lp = MAKELPARAM((short)pt.x, (short)pt.y);
     }
-    SendMessageW(target, gLastInputMsg, gLastInputW, lp);
+    if (post) {
+        PostMessageW(target, gLastInputMsg, gLastInputW, lp);
+    } else {
+        SendMessageW(target, gLastInputMsg, gLastInputW, lp);
+    }
     return TRUE;
 }
 
@@ -231,7 +241,7 @@ static void dispatchScroll(OverlayState *s, int xLocal, int yLocal,
     if (!env || !sOnScrollMethod) return;
     (*env)->CallVoidMethod(env, s->pointerCb, sOnScrollMethod,
         (jfloat)xLocal, (jfloat)yLocal, (jfloat)dx, (jfloat)dy);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionClear(env);
+    nucleus_jni_clear_exception(env);
 }
 
 static LRESULT CALLBACK overlayWndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {

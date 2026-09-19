@@ -12,7 +12,18 @@ extern "C" {
     );
     pub(crate) fn nucleus_tao_is_main_thread() -> i32;
     pub(crate) fn nucleus_tao_install_cmd_q_handler();
-    pub(crate) fn nucleus_tao_activate_input_context(ns_view_handle: i64);
+    /// Installs the `NSTextInputClient` overrides on TaoView (idempotent).
+    /// Called per window creation so the caret-rect answer is ours from the
+    /// first frame, not only once a text field has been focused.
+    pub(crate) fn nucleus_tao_install_ime_client_overrides();
+    /// Activates TaoView's `NSTextInputContext` and returns the token that
+    /// identifies the text-input session it opens.
+    pub(crate) fn nucleus_tao_activate_input_context(ns_view_handle: i64) -> i64;
+    /// Ends the session `token` identifies (deactivates the input context,
+    /// drops the cached caret rect). A stale token is ignored; a 0
+    /// `ns_view_handle` means the window is gone and only the cached state is
+    /// dropped.
+    pub(crate) fn nucleus_tao_deactivate_input_context(ns_view_handle: i64, token: i64);
     /// Pushes the focused field's committed text (a bounded UTF-16 window),
     /// selection and composition so the swizzled `NSTextInputClient` getters
     /// can answer AppKit like a document-backed client (Chromium's
@@ -84,6 +95,9 @@ extern "C" {
         substring_buf: *mut std::os::raw::c_char,
         substring_buf_len: i32,
     ) -> i32;
+    /// Headful e2e: the rect `firstRectForCharacterRange:` publishes, as
+    /// 4×f64 (x, y, w, h) in Cocoa screen coordinates.
+    pub(crate) fn nucleus_tao_query_ime_rect(ns_view_ptr: i64, out_rect: *mut f64) -> i32;
     /// Headful e2e: `[view setMarkedText:selectedRange:replacementRange:]`.
     pub(crate) fn nucleus_tao_inject_marked_text(
         ns_view_ptr: i64,

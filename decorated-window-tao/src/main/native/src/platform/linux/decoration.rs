@@ -45,6 +45,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     _class: JClass,
     child_handle: jlong,
     owner_handle: jlong,
+    destroy_with_owner: jni::sys::jboolean,
 ) {
     use gtk::prelude::GtkWindowExt;
 
@@ -55,6 +56,7 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
 
     if owner_handle == 0 {
         GtkWindowExt::set_transient_for(child_gtk, None::<&gtk::Window>);
+        GtkWindowExt::set_destroy_with_parent(child_gtk, false);
         return;
     }
 
@@ -66,9 +68,12 @@ pub extern "system" fn Java_dev_nucleusframework_window_tao_ffi_NativeTaoBridge_
     // dialog: keep the dialog out of the taskbar — the owner already
     // represents the app there.
     GtkWindowExt::set_skip_taskbar_hint(child_gtk, true);
-    // If the owner closes (or is destroyed), bring the dialog down with it
-    // so the user can never end up with an orphan transient.
-    GtkWindowExt::set_destroy_with_parent(child_gtk, true);
+    // A dialog comes down with its owner so the user is never left with an
+    // orphan transient. A satellite must NOT: it outlives the window it is
+    // anchored to, and GTK destroying its toplevel behind tao's back leaves a
+    // live `TaoWindow` with no GtkWindow — no geometry, and re-realized on the
+    // next show, which faults inside `gtk_application_window_real_realize`.
+    GtkWindowExt::set_destroy_with_parent(child_gtk, destroy_with_owner != 0);
 }
 
 /// Returns `[x, y, width, height]` of the window's outer (decoration-inclusive)

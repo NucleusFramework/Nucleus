@@ -34,6 +34,7 @@ public final class dev/nucleusframework/core/runtime/ExecutableRuntime {
 	public static final fun isPkg ()Z
 	public static final fun isPortable ()Z
 	public static final fun isRpm ()Z
+	public static final fun isSandboxed ()Z
 	public static final fun isSevenZ ()Z
 	public static final fun isSnap ()Z
 	public static final fun isTar ()Z
@@ -99,9 +100,12 @@ public final class dev/nucleusframework/core/runtime/LinuxUiToolkit$Companion {
 }
 
 public final class dev/nucleusframework/core/runtime/NativeLibraryLoader {
+	public static final field CACHE_DIR_PROPERTY Ljava/lang/String;
 	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NativeLibraryLoader;
+	public final fun getCacheDirectory ()Ljava/nio/file/Path;
 	public final fun load (Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;)Z
 	public static synthetic fun load$default (Ldev/nucleusframework/core/runtime/NativeLibraryLoader;Ljava/lang/String;Ljava/lang/Class;Ljava/lang/String;Ljava/util/List;ILjava/lang/Object;)Z
+	public final fun setCacheDirectory (Ljava/nio/file/Path;)V
 }
 
 public final class dev/nucleusframework/core/runtime/NucleusApp {
@@ -114,6 +118,13 @@ public final class dev/nucleusframework/core/runtime/NucleusApp {
 	public static final fun getVendor ()Ljava/lang/String;
 	public static final fun getVersion ()Ljava/lang/String;
 	public static final fun isConfigured ()Z
+}
+
+public final class dev/nucleusframework/core/runtime/NucleusUiThread {
+	public static final field INSTANCE Ldev/nucleusframework/core/runtime/NucleusUiThread;
+	public static final fun isRegistered ()Z
+	public static final fun post (Lkotlin/jvm/functions/Function0;)V
+	public static final fun setExecutor (Ljava/util/concurrent/Executor;)V
 }
 
 public final class dev/nucleusframework/core/runtime/Platform : java/lang/Enum {

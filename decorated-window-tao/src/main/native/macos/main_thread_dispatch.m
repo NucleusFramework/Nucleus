@@ -77,8 +77,14 @@ void nucleus_tao_install_cmd_q_handler(void) {
 // ── IME caret rect plumbing (used by `firstRectForCharacterRange:` swizzle) ──
 //
 // Stored in screen coords (Cocoa bottom-up Y) so the swizzled getter can hand
-// it back unchanged. Updated from the JVM side via `nativeSetImeRect`.
+// it back unchanged. Updated from the JVM side via `nativeSetImeRect`, and
+// scoped to the view that pushed it: the rect is an *insertion point*, so it
+// only exists while that view hosts a live text-input session. A rect kept
+// past the session anchors AppKit's input-source indicator — the badge a
+// Caps Lock bound to "switch input source" raises — over the caret of a field
+// that no longer exists. With no rect, AppKit leaves the badge off.
 
+static _Atomic int64_t g_ime_rect_view = 0;
 static _Atomic CGFloat g_ime_screen_x = 0;
 static _Atomic CGFloat g_ime_screen_y = 0;
 static _Atomic CGFloat g_ime_w = 1;
@@ -87,9 +93,12 @@ static _Atomic CGFloat g_ime_h = 18;
 static NSRect tao_view_first_rect_for_character_range(
     id self, SEL _cmd, NSRange range, NSRangePointer actual_range
 ) {
-    (void)self; (void)_cmd; (void)range;
+    (void)_cmd; (void)range;
     if (actual_range) {
         *actual_range = range;
+    }
+    if (atomic_load(&g_ime_rect_view) != (int64_t)(intptr_t)(__bridge void *)self) {
+        return NSZeroRect;
     }
     return NSMakeRect(g_ime_screen_x, g_ime_screen_y, g_ime_w, g_ime_h);
 }
@@ -355,12 +364,59 @@ static void nucleus_tao_swizzle_view_methods_once(void) {
     });
 }
 
-void nucleus_tao_activate_input_context(long ns_view_handle) {
+/// Installs the `NSTextInputClient` overrides on TaoView. Called once per
+/// window creation (the class only exists once a window has been built), not
+/// only when a text-input session starts: tao's own
+/// `firstRectForCharacterRange:` answers the window corner with a *top-down*
+/// y read back as a Cocoa coordinate, which parks the input-source indicator
+/// in the bottom-left corner of an app that has never shown a text field.
+/// Ours answers `NSZeroRect` until a session publishes a caret, and that is
+/// the one shape AppKit reads as "no insertion point".
+void nucleus_tao_install_ime_client_overrides(void) {
+    nucleus_tao_swizzle_view_methods_once();
+}
+
+// Session tokens for the input-context activation. `g_ime_token_seq` never
+// repeats a value, so a token identifies one text-input session for the whole
+// process lifetime; `g_ime_active_token` is the live one (0 = none).
+static _Atomic int64_t g_ime_token_seq = 0;
+static _Atomic int64_t g_ime_active_token = 0;
+
+int64_t nucleus_tao_activate_input_context(long ns_view_handle) {
     nucleus_tao_swizzle_view_methods_once();
     NSView *view = (__bridge NSView *)(void *)ns_view_handle;
     NSTextInputContext *ctx = view.inputContext;
     if (ctx) {
         [ctx activate];
+    }
+    int64_t token = atomic_fetch_add(&g_ime_token_seq, 1) + 1;
+    atomic_store(&g_ime_active_token, token);
+    return token;
+}
+
+/// Ends the session [token] identifies: deactivates TaoView's input context
+/// and drops the cached caret rect. Deactivating is what takes the focused
+/// field's insertion point off AppKit's books — a still-active context keeps
+/// the input-source indicator (Caps Lock layout switching) anchored to it.
+///
+/// [ns_view_handle] is 0 when the window is already gone; the cached state is
+/// still dropped, only the AppKit call is skipped.
+void nucleus_tao_deactivate_input_context(long ns_view_handle, int64_t token) {
+    // Focus moving between fields (or windows) starts the incoming session
+    // *before* the outgoing one is torn down, so only the newest activation
+    // may be undone — same ordering trap as the document cache above.
+    if (token == 0 || token != atomic_load(&g_ime_active_token)) {
+        return;
+    }
+    atomic_store(&g_ime_active_token, 0);
+    atomic_store(&g_ime_rect_view, 0);
+    if (ns_view_handle == 0) {
+        return;
+    }
+    NSView *view = (__bridge NSView *)(void *)ns_view_handle;
+    NSTextInputContext *ctx = view.inputContext;
+    if (ctx) {
+        [ctx deactivate];
     }
 }
 
@@ -394,6 +450,8 @@ static NSCursor *nucleus_tao_cursor_for_code(int code) {
             return cursor ?: [NSCursor arrowCursor];
         }
         case 9:  return [NSCursor resizeLeftRightCursor];
+        case 13: return [NSCursor openHandCursor];
+        case 14: return [NSCursor closedHandCursor];
         case 10: return [NSCursor resizeUpDownCursor];
         case 11: {
             NSCursor *cursor = nucleus_tao_cursor_from_selector(
@@ -440,4 +498,5 @@ void nucleus_tao_set_ime_local_rect(long ns_view_handle,
     atomic_store(&g_ime_screen_y, rectOnScreen.origin.y);
     atomic_store(&g_ime_w, rectOnScreen.size.width > 0 ? rectOnScreen.size.width : 1);
     atomic_store(&g_ime_h, rectOnScreen.size.height > 0 ? rectOnScreen.size.height : 18);
+    atomic_store(&g_ime_rect_view, (int64_t)ns_view_handle);
 }

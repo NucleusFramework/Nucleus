@@ -7,6 +7,7 @@ package dev.nucleusframework.desktop.application.tasks
 
 import dev.nucleusframework.desktop.application.dsl.CompressionLevel
 import dev.nucleusframework.desktop.application.dsl.JvmApplicationDistributions
+import dev.nucleusframework.desktop.application.dsl.MacAppExtension
 import dev.nucleusframework.desktop.application.dsl.MacOSSigningSettings
 import dev.nucleusframework.desktop.application.dsl.ReleaseChannel
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
@@ -15,6 +16,7 @@ import dev.nucleusframework.desktop.application.internal.UpdateYmlPublish
 import dev.nucleusframework.desktop.application.internal.UpdateYmlGenerator
 import dev.nucleusframework.desktop.application.internal.LinuxSigner
 import dev.nucleusframework.desktop.application.internal.LinuxUpdateHelper
+import dev.nucleusframework.desktop.application.internal.MacPkgScripts
 import dev.nucleusframework.desktop.application.internal.MacDmgLzma
 import dev.nucleusframework.desktop.application.internal.MacSigner
 import dev.nucleusframework.desktop.application.internal.MacSignerImpl
@@ -44,13 +46,16 @@ import net.coobird.thumbnailator.Thumbnails
 import net.coobird.thumbnailator.filters.Canvas
 import net.coobird.thumbnailator.geometry.Positions
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.DirectoryProperty
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.logging.Logger
+import org.gradle.api.provider.ListProperty
 import org.gradle.api.provider.Property
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.InputDirectory
 import org.gradle.api.tasks.InputFile
+import org.gradle.api.tasks.InputFiles
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Nested
 import org.gradle.api.tasks.Optional
@@ -224,9 +229,29 @@ abstract class AbstractElectronBuilderPackageTask
         @get:Optional
         internal val nonValidatedMacBundleID: Property<String> = objects.nullableProperty()
 
+        @get:Internal
+        internal val macAppExtensions: ListProperty<MacAppExtension> =
+            objects.listProperty(MacAppExtension::class.java).convention(emptyList())
+
+        // Tracks the .appex payload + per-extension entitlements/profiles for up-to-date checks.
+        @get:InputFiles
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        internal val macAppExtensionFiles: ConfigurableFileCollection = objects.fileCollection()
+
         @get:Input
         @get:Optional
         val macAppStore: Property<Boolean> = objects.nullableProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val macPkgPreInstall: RegularFileProperty = objects.fileProperty()
+
+        @get:InputFile
+        @get:Optional
+        @get:PathSensitive(PathSensitivity.RELATIVE)
+        val macPkgPostInstall: RegularFileProperty = objects.fileProperty()
 
         @get:Optional
         @get:Nested
@@ -296,6 +321,9 @@ abstract class AbstractElectronBuilderPackageTask
                     hasExplicitWindowsIcon = hasExplicitWindowsIcon,
                 )
             }
+            if (targetFormat == TargetFormat.Pkg) {
+                stagePkgScripts(outputDir)
+            }
             val configFile =
                 generateConfig(
                     distributions = dist,
@@ -323,7 +351,7 @@ abstract class AbstractElectronBuilderPackageTask
                     currentOs = currentOS,
                     currentArchitecture = currentArch,
                     logger = logger,
-                ) + isolatedCacheEnv(outputDir)
+                ) + isolatedCacheEnv(outputDir) + pkgInstallerSigningEnv()
             toolManager.invoke(
                 ElectronBuilderInvocation(
                     configFile = configFile,
@@ -341,6 +369,7 @@ abstract class AbstractElectronBuilderPackageTask
 
             if (targetFormat == TargetFormat.Pkg) {
                 signPkgInstaller(outputDir)
+                verifyDeveloperIdPkgSignature(outputDir)
             }
 
             // Must run before signLinuxPackage(): rebuilding the .deb archive to recompress its
@@ -737,12 +766,12 @@ abstract class AbstractElectronBuilderPackageTask
             if (currentOS != OS.MacOS) return
             if (!appDir.isDirectory) return
 
-            // For PKG (App Store), re-sign the .app with proper entitlements after .cfg modification.
-            // The jpackage task signed the app, but updateExecutableTypeInAppImage() modified .cfg
-            // files which invalidated the code signature. We must re-sign before electron-builder
-            // packages it into the PKG.
-            if (targetFormat == TargetFormat.Pkg) {
-                resignAppForPkg(appDir)
+            // For an App Store PKG, re-sign the .app with the store entitlements after .cfg
+            // modification. The jpackage task signed the app, but updateExecutableTypeInAppImage()
+            // modified .cfg files which invalidated the code signature. We must re-sign before
+            // electron-builder packages it into the PKG. A Developer ID PKG takes the DMG path below.
+            if (targetFormat == TargetFormat.Pkg && macAppStore.orNull == true) {
+                resignAppForAppStorePkg(appDir)
                 return
             }
 
@@ -769,6 +798,15 @@ abstract class AbstractElectronBuilderPackageTask
                         appDir.absolutePath,
                     )
                 spec.isIgnoreExitValue = false
+            }
+
+            // The blanket `--deep` above re-signs embedded extensions ad-hoc, dropping their
+            // own entitlements. When extensions are configured, re-sign them with their
+            // entitlements and re-seal the outer bundle (without --deep) to preserve them.
+            // NoCertificateSigner only signs on Apple Silicon; on Intel the --deep result stands.
+            if (signer != null && currentArch == Arch.Arm64 && macAppExtensions.get().isNotEmpty()) {
+                signAppExtensions(appDir, signer)
+                signer.sign(appDir, macEntitlementsFile.orNull?.asFile, forceEntitlements = true)
             }
 
             logger.info("Ad-hoc signature applied successfully")
@@ -818,29 +856,74 @@ abstract class AbstractElectronBuilderPackageTask
                 }
             }
 
+            // Re-sign embedded app extensions (Contents/PlugIns) with their own entitlements
+            // before sealing the outer bundle. The jpackage task embedded them; the copy that
+            // electron-builder packages must carry a valid nested signature.
+            signAppExtensions(appDir, signer)
+
             // Re-sign the entire app bundle
             signer.sign(appDir, appEntitlements, forceEntitlements = true)
         }
 
         /**
-         * Re-signs the .app bundle for PKG builds (always App Store).
-         * Delegates to [resignApp] for the core signing, then augments entitlements
-         * with application-identifier and team-identifier for App Store submissions.
+         * Re-signs each configured app extension found under `Contents/PlugIns/` with its own
+         * entitlements, inside-out. Mirrors the embedding done by the jpackage task; here the
+         * `.appex` already exists in the bundle copy and only needs a fresh signature.
          */
-        private fun resignAppForPkg(appDir: File) {
-            resignApp(appDir, "PKG format")
+        private fun signAppExtensions(
+            appDir: File,
+            signer: MacSigner,
+        ) {
+            val extensions = macAppExtensions.get()
+            if (extensions.isEmpty()) return
 
-            // For App Store builds, re-sign the bundle with augmented entitlements
-            // (application-identifier + team-identifier required by TestFlight / Transporter, error 90886).
-            if (macAppStore.orNull == true) {
-                val signer = macSigner ?: return
-                val appEntitlements = macEntitlementsFile.orNull?.asFile
-                // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
-                // unsigned builds). Fall back to the original entitlements so the app is never re-signed
-                // without them — which would silently strip sandbox entitlements from the bundle.
-                val bundleEntitlements = augmentEntitlementsForAppStore(appEntitlements, signer.settings)
-                signer.sign(appDir, bundleEntitlements ?: appEntitlements, forceEntitlements = true)
+            val plugInsDir = appDir.resolve("Contents/PlugIns")
+            for (extension in extensions) {
+                val appexName = extension.appex?.name ?: continue
+                val appex = plugInsDir.resolve(appexName)
+                if (!appex.exists()) continue
+                signBundleInsideOut(appex, extension.entitlements, signer)
             }
+        }
+
+        /**
+         * Signs a nested bundle (e.g. an `.appex`) inside-out: nested executables/dylibs in its
+         * `Contents/Frameworks` first, then the bundle itself with its [entitlements].
+         */
+        private fun signBundleInsideOut(
+            bundle: File,
+            entitlements: File?,
+            signer: MacSigner,
+        ) {
+            val frameworks = bundle.resolve("Contents/Frameworks")
+            if (frameworks.exists()) {
+                frameworks.walk().forEach { file ->
+                    val path = file.toPath()
+                    if (path.isRegularFile(LinkOption.NOFOLLOW_LINKS) &&
+                        (path.isExecutable() || file.name.isDylibPath)
+                    ) {
+                        signer.sign(file, entitlements)
+                    }
+                }
+            }
+            signer.sign(bundle, entitlements, forceEntitlements = true)
+        }
+
+        /**
+         * Re-signs the .app bundle for an App Store PKG. Delegates to [resignApp] for the core
+         * signing, then re-signs the bundle with entitlements augmented with application-identifier
+         * and team-identifier (required by TestFlight / Transporter, error 90886).
+         */
+        private fun resignAppForAppStorePkg(appDir: File) {
+            resignApp(appDir, "App Store PKG format")
+
+            val signer = macSigner ?: return
+            val appEntitlements = macEntitlementsFile.orNull?.asFile
+            // augmentEntitlementsForAppStore returns null when settings is null (NoCertificateSigner /
+            // unsigned builds). Fall back to the original entitlements so the app is never re-signed
+            // without them — which would silently strip sandbox entitlements from the bundle.
+            val bundleEntitlements = augmentEntitlementsForAppStore(appEntitlements, signer.settings)
+            signer.sign(appDir, bundleEntitlements ?: appEntitlements, forceEntitlements = true)
         }
 
         /**
@@ -886,11 +969,12 @@ abstract class AbstractElectronBuilderPackageTask
         }
 
         /**
-         * Signs the PKG installer for App Store distribution using `productsign`.
+         * Signs an App Store PKG installer with `productsign`.
          *
-         * PKG is always treated as an App Store format. electron-builder creates an
-         * unsigned PKG (installer identity is always null), and this method re-signs
-         * it with the correct "3rd Party Mac Developer Installer" certificate.
+         * electron-builder's PKG target only knows the "Developer ID Installer" certificate type, so
+         * for the store channel the config hands it no identity, it produces an unsigned PKG, and
+         * this method re-signs it with the "3rd Party Mac Developer Installer" certificate. A
+         * Developer ID PKG is signed by electron-builder itself and skips this step.
          */
         private fun signPkgInstaller(outputDir: File) {
             if (currentOS != OS.MacOS) return
@@ -937,6 +1021,81 @@ abstract class AbstractElectronBuilderPackageTask
             pkgFile.delete()
             signedPkg.renameTo(pkgFile)
             logger.lifecycle("Signed PKG installer: ${pkgFile.name}")
+        }
+
+        /**
+         * Stages `macOS { pkg { preInstall / postInstall } }` under electron-builder's build
+         * resources directory (`<outputDir>/build`, the same root as the AppX assets), see
+         * [MacPkgScripts].
+         */
+        private fun stagePkgScripts(outputDir: File) {
+            val staged =
+                MacPkgScripts.stage(
+                    buildResourcesDir = outputDir.resolve("build"),
+                    preInstall = macPkgPreInstall.orNull?.asFile,
+                    postInstall = macPkgPostInstall.orNull?.asFile,
+                    appStore = macAppStore.orNull == true,
+                )
+            if (staged != null) {
+                logger.info("Staged PKG install scripts: ${staged.listFiles()?.map { it.name }}")
+            }
+        }
+
+        /**
+         * electron-builder signs a Developer ID PKG itself (`productbuild --sign`) and looks the
+         * "Developer ID Installer" certificate up in the keychain named by `CSC_KEYCHAIN`, so a
+         * keychain configured in the signing DSL must be handed over; without it only the default
+         * keychain search list is consulted.
+         */
+        private fun pkgInstallerSigningEnv(): Map<String, String> {
+            if (currentOS != OS.MacOS || targetFormat != TargetFormat.Pkg || macAppStore.orNull == true) {
+                return emptyMap()
+            }
+            val keychain = macSigner?.settings?.keychain ?: return emptyMap()
+            return mapOf("CSC_KEYCHAIN" to keychain.absolutePath)
+        }
+
+        /**
+         * electron-builder silently emits an unsigned PKG when it finds no "Developer ID Installer"
+         * certificate matching the configured identity. When signing is configured for a Developer
+         * ID PKG, fail loudly instead of shipping an installer Gatekeeper will refuse.
+         */
+        private fun verifyDeveloperIdPkgSignature(outputDir: File) {
+            if (currentOS != OS.MacOS || macAppStore.orNull == true) return
+            val settings = macSigner?.settings ?: return
+            val pkgFile =
+                outputDir
+                    .listFiles()
+                    ?.firstOrNull { it.isFile && it.extension == "pkg" }
+                    ?: return
+
+            var output = ""
+            val result =
+                runExternalTool(
+                    tool = File("/usr/sbin/pkgutil"),
+                    args = listOf("--check-signature", pkgFile.absolutePath),
+                    checkExitCodeIsNormal = false,
+                    processStdout = { output = it },
+                )
+            if (output.contains("no signature")) {
+                val keychainHint = settings.keychain?.let { " in keychain ${it.absolutePath}" } ?: ""
+                throw GradleException(
+                    "${pkgFile.name} is not signed: electron-builder found no \"Developer ID Installer\" " +
+                        "certificate matching '${settings.bareIdentityName}'$keychainHint. Import the " +
+                        "Developer ID Installer certificate of the same team, or set " +
+                        "macOS { pkg { appStore = true } } for the Mac App Store channel.\n$output",
+                )
+            }
+            if (result.exitValue != 0) {
+                // Signed, but the chain did not validate — an expired certificate or a keychain
+                // missing the Apple intermediate. Report it as such instead of "no certificate".
+                logger.warn(
+                    "${pkgFile.name} carries a signature that pkgutil could not validate. " +
+                        "Check the certificate chain (expiry, Apple WWDR intermediate).\n$output",
+                )
+                return
+            }
+            logger.lifecycle("Verified Developer ID signature of ${pkgFile.name}")
         }
 
         /**
@@ -1916,6 +2075,9 @@ abstract class AbstractElectronBuilderPackageTask
                     ".electron-builder-cache",
                     ELECTRON_BUILDER_TOOL_DIR_NAME,
                     ".app-image",
+                    // electron-builder's build-resources dir: staged AppX assets and PKG install
+                    // scripts. Leaving it behind would publish a root-run script next to the .pkg.
+                    "build",
                 )
             ) {
                 val dir = File(outputDir, dirName)

@@ -77,6 +77,24 @@ internal class TaoLinuxOverlayControllerImpl(
     /** key → GtkEventBox pointer (0 if creation failed). */
     private val boxes: MutableMap<Any, Long> = LinkedHashMap()
 
+    private val focusSinkKey: Any = object {}
+
+    /**
+     * Puts an invisible, focusable EventBox first in the overlay's focus
+     * chain, before any embed is added. GTK hands a newly focused window
+     * with no focus widget to its *first* focusable child — which used to be
+     * the embed, so a `WebKitWebView` or a `GtkEntry` held GTK focus (and a
+     * caret) from the moment the window mapped, next to Compose's own. The
+     * sink takes that default focus instead; being one of our boxes, keys
+     * then route to Tao's toplevel handler and on to Compose. Parked at
+     * (-1, -1) 1×1, it never catches a click. Idempotent; call before the
+     * first attach.
+     */
+    fun ensureFocusSink() {
+        if (focusSinkKey in boxes) return
+        registerRegion(focusSinkKey, -1, -1, 1, 1)
+    }
+
     /**
      * Translates the EventBox's logical pixel reports back into
      * Compose's physical pixel space (matching what Tao's

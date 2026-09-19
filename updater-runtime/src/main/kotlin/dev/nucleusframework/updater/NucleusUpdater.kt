@@ -60,7 +60,11 @@ public class NucleusUpdater(
 
     public fun isUpdateSupported(): Boolean {
         val type = resolveExecutableType()
-        return type in SELF_UPDATABLE_TYPES
+        if (type in SELF_UPDATABLE_TYPES) return true
+        // A PKG installs an ordinary .app in /Applications, exactly like a DMG, so a Developer ID
+        // PKG can update itself from the ZIP/DMG artifacts of the same release. Only the Mac App
+        // Store build cannot — and that one is sandboxed, which is what distinguishes the two.
+        return type == ExecutableType.PKG && !ExecutableRuntime.isSandboxed()
     }
 
     public suspend fun checkForUpdates(): UpdateResult {

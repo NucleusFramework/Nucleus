@@ -21,32 +21,17 @@ plugins {
 }
 
 apiValidation {
-    // Demo / sample apps are not published; skip ABI dumps for them.
-    // Names match the last segment of include(":examples:...") in settings.
+    // Demo / sample apps are not published; skip ABI dumps for them. Derived from the project
+    // tree rather than hand-listed: a hand-maintained list silently goes stale every time a
+    // sample is added, and twice did (macos-appex-demo, reader-dock-demo failed apiCheck with
+    // "Expected file with API declarations ... does not exist").
+    ignoredProjects.addAll(
+        subprojects
+            .filter { it.path.startsWith(":examples:") }
+            .map { it.name },
+    )
     ignoredProjects.addAll(
         listOf(
-            "nucleus-demo",
-            "compose-demo",
-            "tao-demo",
-            "swing-tao-demo",
-            "zstd-demo",
-            "jni-demo",
-            "shared",
-            "jewel-demo",
-            "cmp-demo",
-            "scheduler-demo",
-            "service-management-demo",
-            "system-info-demo",
-            "fs-watcher-smoke",
-            "orphan-reflect-smoke",
-            "extra-launcher-demo",
-            "benchmark-demo",
-            "gstreamer-demo",
-            "mediafoundation-demo",
-            "avfoundation-demo",
-            "tao-native-test",
-            "window-scaffold-demo",
-            "watermark-demo",
             // BCV 0.18.1's bundled ASM cannot read JVM 25 class files (major 69).
             // Module still uses explicitApi(); re-enable once BCV/KGP ABI supports it.
             "decorated-window-jewel",
@@ -56,6 +41,11 @@ apiValidation {
     // reach Compose's internal AwtDragAndDropTransferable (Java friend-package
     // access). Implementation detail of decorated-window-tao, not public ABI.
     ignoredPackages.add("androidx.compose.ui.draganddrop")
+    // ComposeWindowV2Access lives in androidx.compose.ui.window.v2 to reach
+    // Compose 1.12's internal WindowState/DialogState request channels. Nothing
+    // user-facing lives there — inspectableWindowBounds is in
+    // dev.nucleusframework.window.tao precisely so apiCheck still covers it.
+    ignoredPackages.add("androidx.compose.ui.window.v2")
 }
 
 // The per-module `buildNative*` tasks themselves are wired by the
@@ -107,11 +97,21 @@ subprojects {
         // Library modules only. Examples stay out of the aggregated report so
         // demo UI does not dilute (or inflate) published-runtime coverage.
         pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
-            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            apply(
+                plugin =
+                    rootProject.libs.plugins.kover
+                        .get()
+                        .pluginId,
+            )
             rootProject.dependencies.add("kover", project(path))
         }
         pluginManager.withPlugin("org.jetbrains.kotlin.multiplatform") {
-            apply(plugin = rootProject.libs.plugins.kover.get().pluginId)
+            apply(
+                plugin =
+                    rootProject.libs.plugins.kover
+                        .get()
+                        .pluginId,
+            )
             rootProject.dependencies.add("kover", project(path))
         }
     }

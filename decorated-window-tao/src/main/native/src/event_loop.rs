@@ -148,6 +148,39 @@ fn x11_display() -> Option<gtk::gdk::Display> {
     })
 }
 
+/// Serves the redraws asked for during this batch (Windows only — see
+/// `UserEvent::RequestRedraw`), after the dispatcher drain that precedes every
+/// call site so a frame sees the work that produced it. A window destroyed
+/// meanwhile is skipped; one that asks again while being painted lands in the
+/// next batch, which the request itself wakes the loop for.
+/// Whether the thread's message queue currently holds mouse, keyboard or
+/// other hardware input — the high word of `GetQueueStatus` reports the
+/// kinds of messages present. See `UserEvent::Wake`.
+#[cfg(target_os = "windows")]
+fn input_pending() -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{GetQueueStatus, QS_INPUT};
+    // SAFETY: plain query of the calling thread's queue, no pointers.
+    let status = unsafe { GetQueueStatus(QS_INPUT) };
+    (status >> 16) & QS_INPUT.0 != 0
+}
+
+#[cfg(target_os = "windows")]
+fn serve_pending_redraws(pending: &mut Vec<u64>) {
+    if pending.is_empty() {
+        return;
+    }
+    let serving: Vec<u64> = pending.drain(..).collect();
+    for handle in serving {
+        let alive = {
+            let guard = WINDOWS.lock().unwrap();
+            guard.as_ref().is_some_and(|map| map.contains_key(&handle))
+        };
+        if alive {
+            dispatch(handle, EVENT_REDRAW_REQUESTED, 0, 0);
+        }
+    }
+}
+
 pub(crate) fn run_event_loop_blocking() {
     // GTK backend selection. Default: let GDK auto-pick (= native Wayland on
     // a Wayland session, X11 elsewhere). The Wayland-native path goes through
@@ -230,6 +263,10 @@ pub(crate) fn run_event_loop_blocking() {
     // guards against duplicate callbacks.
     #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
     let mut last_minimized: HashMap<u64, bool> = HashMap::new();
+    // Windows: handles that asked for a redraw during the batch being
+    // processed, served at `MainEventsCleared`. See UserEvent::RequestRedraw.
+    #[cfg(target_os = "windows")]
+    let mut pending_redraws: Vec<u64> = Vec::new();
     event_loop.run_return(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -239,10 +276,41 @@ pub(crate) fn run_event_loop_blocking() {
             }
             Event::UserEvent(user) => match user {
                 UserEvent::Wake => {
-                    // No-op: the side-effect we want is the loop returning from
-                    // its `Wait` to dispatch this event, which guarantees a
-                    // following `MainEventsCleared` tick that drains
+                    // The side-effect we want is the loop returning from its
+                    // `Wait` to dispatch this event, which normally guarantees
+                    // a following `MainEventsCleared` tick that drains
                     // `TaoMainDispatcher`.
+                    //
+                    // Windows: not inside a nested modal message loop. Tao
+                    // derives `MainEventsCleared` from an internal WM_PAINT on
+                    // its thread-message window, and a modal loop running on
+                    // this thread — an embedded EDIT's context menu, a
+                    // `DoDragDrop` — never generates it, while it does deliver
+                    // the posted wake. Drain the dispatcher here, and serve the
+                    // frames that work asks for, so the app keeps running *and*
+                    // painting for as long as the menu is up. Outside a modal
+                    // loop the tick that follows finds both queues empty.
+                    //
+                    // But never over pending input. A wake is a *posted*
+                    // message, and Win32 hands posted messages out before
+                    // hardware input; a frame served here resumes the
+                    // continuations that post the next wake, so a window that
+                    // animates (a `withFrameNanos` producer, an infinite
+                    // transition) keeps the posted queue non-empty and every
+                    // WM_MOUSEMOVE / WM_LBUTTONDOWN starves behind it — the
+                    // window paints at full rate and takes no clicks. The
+                    // WM_PAINT-derived `MainEventsCleared` never had that
+                    // problem: paint ranks below input. So a wake only serves
+                    // frames when the queue holds no input; otherwise the
+                    // requests stay pending and the tick that follows the
+                    // input serves them, exactly as before.
+                    #[cfg(target_os = "windows")]
+                    {
+                        dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
+                        if !input_pending() {
+                            serve_pending_redraws(&mut pending_redraws);
+                        }
+                    }
                 }
                 UserEvent::CreateWindow {
                     handle,
@@ -338,6 +406,15 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                     let window = builder.build(target);
                     if let Ok(window) = window {
+                        // TaoView exists from here on, so its NSTextInputClient
+                        // answers can be ours before any text field is focused.
+                        // Tao's own `firstRectForCharacterRange:` would
+                        // otherwise anchor the input-source indicator (the
+                        // Caps Lock layout badge) to the bottom-left corner.
+                        #[cfg(target_os = "macos")]
+                        unsafe {
+                            crate::platform::macos::ffi::nucleus_tao_install_ime_client_overrides();
+                        }
                         #[cfg(target_os = "linux")]
                         if force_x11 {
                             move_window_to_x11(&window);
@@ -346,6 +423,19 @@ pub(crate) fn run_event_loop_blocking() {
                         let _ = force_x11;
                         let logical_w = width as jint;
                         let logical_h = height as jint;
+
+                        // GTK takes a transient window down with its owner
+                        // (`gtk_window_set_destroy_with_parent`), behind tao's
+                        // back: nothing else records that the toplevel is gone.
+                        // See `state::GTK_DESTROYED`.
+                        #[cfg(target_os = "linux")]
+                        {
+                            use gtk::prelude::WidgetExt;
+                            use tao::platform::unix::WindowExtUnix;
+                            window.gtk_window().connect_destroy(move |_| {
+                                crate::state::mark_gtk_destroyed(handle);
+                            });
+                        }
 
                         {
                             let mut guard = WINDOWS.lock().unwrap();
@@ -383,7 +473,14 @@ pub(crate) fn run_event_loop_blocking() {
                                     {
                                         use gtk::prelude::WidgetExt;
                                         use tao::platform::unix::WindowExtUnix;
-                                        w.gtk_window().show_all();
+                                        // Never on a toplevel GTK already
+                                        // destroyed with its owner: showing it
+                                        // re-realizes a disposed
+                                        // GtkApplicationWindow and crashes
+                                        // inside GTK. See `state::GTK_DESTROYED`.
+                                        if !crate::state::is_gtk_destroyed(handle) {
+                                            w.gtk_window().show_all();
+                                        }
                                     }
                                     // Force a fresh frame into the now-composited surface.
                                     // The first frame is rendered (SwapBuffers) while the
@@ -412,10 +509,35 @@ pub(crate) fn run_event_loop_blocking() {
                     }
                 }
                 UserEvent::RequestRedraw { handle } => {
-                    let guard = WINDOWS.lock().unwrap();
-                    if let Some(map) = guard.as_ref() {
-                        if let Some(w) = map.get(&handle) {
-                            w.request_redraw();
+                    // Windows: queue the request for the end of this batch
+                    // instead of asking the OS for a paint. `request_redraw` is
+                    // `RedrawWindow(RDW_INTERNALPAINT)`, and Win32 only
+                    // synthesises WM_PAINT once the thread's message queue is
+                    // otherwise empty — so a window animating flat out (each
+                    // frame posting the next request as a queued user event)
+                    // starves the paints of every *other* window in the app.
+                    // They stop being scheduled for good: their next frame
+                    // waits on a WM_PAINT that only arrives when the animation
+                    // stops. Answering it here, on the other hand, re-enters
+                    // rendering from inside the event batch and `MainEventsCleared`
+                    // — the tick that drains `TaoMainDispatcher` — is never
+                    // reached at all. So the requests are collected and served
+                    // below, once per batch, after that drain: every window is
+                    // painted at the same priority, in request order.
+                    // OS-driven repaints still arrive as Event::RedrawRequested.
+                    #[cfg(target_os = "windows")]
+                    {
+                        if !pending_redraws.contains(&handle) {
+                            pending_redraws.push(handle);
+                        }
+                    }
+                    #[cfg(not(target_os = "windows"))]
+                    {
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(map) = guard.as_ref() {
+                            if let Some(w) = map.get(&handle) {
+                                w.request_redraw();
+                            }
                         }
                     }
                 }
@@ -451,6 +573,8 @@ pub(crate) fn run_event_loop_blocking() {
                         if let Some(map) = guard.as_mut() {
                             map.remove(&handle);
                         }
+                        #[cfg(target_os = "linux")]
+                        crate::state::forget_gtk_destroyed(handle);
                     }
                 }
                 UserEvent::SetMaximized { handle, maximized } => {
@@ -466,6 +590,25 @@ pub(crate) fn run_event_loop_blocking() {
                     if let Some(map) = guard.as_ref() {
                         if let Some(w) = map.get(&handle) {
                             w.set_resizable(resizable);
+                        }
+                    }
+                }
+                UserEvent::SetMinimizable { handle, minimizable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            // tao: styleMask on macOS, WS_MINIMIZEBOX on Windows, no-op on Linux.
+                            w.set_minimizable(minimizable);
+                        }
+                    }
+                }
+                UserEvent::SetMaximizable { handle, maximizable } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            // tao: zoom button + Window > Zoom on macOS, WS_MAXIMIZEBOX
+                            // (caption button, Win+Up, Aero Snap) on Windows, no-op on Linux.
+                            w.set_maximizable(maximizable);
                         }
                     }
                 }
@@ -636,6 +779,29 @@ pub(crate) fn run_event_loop_blocking() {
                         }
                     }
                 }
+                UserEvent::SetMaxInnerSize {
+                    handle,
+                    width,
+                    height,
+                } => {
+                    let guard = WINDOWS.lock().unwrap();
+                    if let Some(map) = guard.as_ref() {
+                        if let Some(w) = map.get(&handle) {
+                            if width < 0.0 || height < 0.0 {
+                                w.set_max_inner_size::<LogicalSize<f64>>(None);
+                            } else {
+                                w.set_max_inner_size(Some(LogicalSize::new(width, height)));
+                                let scale = w.scale_factor();
+                                let current = w.inner_size().to_logical::<f64>(scale);
+                                let new_w = current.width.min(width);
+                                let new_h = current.height.min(height);
+                                if new_w < current.width || new_h < current.height {
+                                    w.set_inner_size(LogicalSize::new(new_w, new_h));
+                                }
+                            }
+                        }
+                    }
+                }
                 UserEvent::SetWindowIcon {
                     handle,
                     width,
@@ -696,6 +862,44 @@ pub(crate) fn run_event_loop_blocking() {
                             w.set_outer_position(tao::dpi::LogicalPosition::new(x, y));
                         }
                     }
+                }
+                UserEvent::PopupAnchor {
+                    handle,
+                    x,
+                    y,
+                    width,
+                    height,
+                    shadow_left,
+                    shadow_top,
+                    shadow_right,
+                    shadow_bottom,
+                } => {
+                    #[cfg(target_os = "linux")]
+                    {
+                        use tao::platform::unix::WindowExtUnix;
+                        let guard = WINDOWS.lock().unwrap();
+                        if let Some(w) = guard.as_ref().and_then(|map| map.get(&handle)) {
+                            w.popup_anchor(
+                                x,
+                                y,
+                                width,
+                                height,
+                                (shadow_left, shadow_right, shadow_top, shadow_bottom),
+                            );
+                        }
+                    }
+                    #[cfg(not(target_os = "linux"))]
+                    let _ = (
+                        handle,
+                        x,
+                        y,
+                        width,
+                        height,
+                        shadow_left,
+                        shadow_top,
+                        shadow_right,
+                        shadow_bottom,
+                    );
                 }
                 UserEvent::SetFullscreen { handle, fullscreen } => {
                     let guard = WINDOWS.lock().unwrap();
@@ -1011,6 +1215,14 @@ pub(crate) fn run_event_loop_blocking() {
             }
             Event::MainEventsCleared => {
                 dispatch(0, EVENT_MAIN_EVENTS_CLEARED, 0, 0);
+                // The redraws asked for during this batch (Windows only — see
+                // UserEvent::RequestRedraw), served after the dispatcher drain
+                // above so a frame sees the work that produced it. A window
+                // destroyed meanwhile is skipped; one that asks again while
+                // being painted lands in the next batch, which the request
+                // itself wakes the loop for.
+                #[cfg(target_os = "windows")]
+                serve_pending_redraws(&mut pending_redraws);
             }
             // macOS deep links: AppKit installs its own `kAEGetURL` handler
             // during `finishLaunching` (routing to `application:openURLs:`).

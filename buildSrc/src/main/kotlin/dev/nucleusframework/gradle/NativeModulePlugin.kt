@@ -116,6 +116,10 @@ open class NativeModuleExtension(
                     .files(nativeSources)
                     .withPropertyName("nativeSources")
                     .withPathSensitivity(PathSensitivity.RELATIVE)
+                inputs
+                    .file(project.rootProject.layout.projectDirectory.file("native-common/nucleus_jni.h"))
+                    .withPropertyName("nucleusJniHeader")
+                    .optional()
                 outputs.dir(resourceDir).withPropertyName("nativeLibraries")
                 onlyIf("native build task matches the current host OS") { target.isHost }
                 if (skipWhenPrebuilt) {
@@ -138,25 +142,34 @@ open class NativeModuleExtension(
         return task
     }
 
-    /** Mirrors `NativeLibraryLoader.resolveCacheDir()` in `core-runtime`. */
+    /**
+     * Mirrors `NativeLibraryLoader.defaultCacheDir()` in `core-runtime`.
+     *
+     * Deliberately only the platform default: an application that relocates its
+     * cache (`NativeLibraryLoader.CACHE_DIR_PROPERTY` / `cacheDirectory`) does so
+     * in its own JVM, which this build never sees, so guessing an override here
+     * would evict a directory nothing reads and leave the real one untouched.
+     * Developers running with a relocated cache clear it themselves.
+     */
     private fun loaderCacheDir(): File {
         val os = System.getProperty("os.name", "").lowercase()
         val userHome = System.getProperty("user.home")
+
+        // Blank or relative values are ignored, exactly as the loader does:
+        // evicting a relative directory would miss the cache actually in use.
+        fun envDir(name: String): File? =
+            project.providers
+                .environmentVariable(name)
+                .orNull
+                ?.takeIf { it.isNotBlank() }
+                ?.let(::File)
+                ?.takeIf { it.isAbsolute }
+
         val base =
             when {
-                os.contains("win") ->
-                    project.providers
-                        .environmentVariable("LOCALAPPDATA")
-                        .orNull
-                        ?.let(::File)
-                        ?: File(userHome, "AppData/Local")
+                os.contains("win") -> envDir("LOCALAPPDATA") ?: File(userHome, "AppData/Local")
                 os.contains("mac") -> File(userHome, "Library/Caches")
-                else ->
-                    project.providers
-                        .environmentVariable("XDG_CACHE_HOME")
-                        .orNull
-                        ?.let(::File)
-                        ?: File(userHome, ".cache")
+                else -> envDir("XDG_CACHE_HOME") ?: File(userHome, ".cache")
             }
         return File(base, "nucleus/native")
     }

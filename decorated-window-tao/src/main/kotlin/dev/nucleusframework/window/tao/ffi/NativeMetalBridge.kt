@@ -36,7 +36,7 @@ internal object NativeMetalBridge {
 
     // ── Menu bar offset (event-driven via native NSEvent monitor) ──
     //
-    // Mirrors `decorated-window-jni`'s JniMacTitleBarBridge. Keyed by NSView
+    // Mirrors the legacy AWT backend's mac title-bar bridge. Keyed by NSView
     // pointer for consistency with the rest of this bridge (the JNI sibling
     // keys by NSWindow pointer because it owns AWT windows directly).
 
@@ -393,7 +393,7 @@ internal object NativeMetalBridge {
      * be called after [nativeApplyButtonLayout] has stashed the title-bar
      * height (otherwise this is a no-op until the height is published).
      *
-     * Mirrors `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetRTL`.
+     * Mirrors the legacy AWT backend's `nativeSetRTL`.
      */
     @JvmStatic
     external fun nativeSetButtonLayoutRtl(
@@ -409,7 +409,7 @@ internal object NativeMetalBridge {
      *
      * If the window is already in fullscreen, the menu bar event monitor is
      * installed/removed to match the new flag. Mirrors
-     * `decorated-window-jni`'s `JniMacTitleBarBridge.nativeSetNewFullscreenControls`.
+     * the legacy AWT backend's `nativeSetNewFullscreenControls`.
      */
     @JvmStatic
     external fun nativeSetNewFullscreenControls(
@@ -423,7 +423,7 @@ internal object NativeMetalBridge {
      * changes, the native side calls [onMenuBarOffsetChanged] via JNI so the
      * Compose layer can animate the title-bar offset.
      *
-     * Mirrors `decorated-window-jni`'s `nativeInstallMenuBarMonitor`.
+     * Mirrors the legacy AWT backend's `nativeInstallMenuBarMonitor`.
      */
     @JvmStatic
     external fun nativeInstallMenuBarMonitor(nsViewPtr: Long)
@@ -438,7 +438,7 @@ internal object NativeMetalBridge {
      * Compose animates the offset. Triggers an immediate
      * `updateFullScreenButtonsPosition` on the macOS main thread.
      *
-     * Mirrors `decorated-window-jni`'s `nativeSetMenuBarOffset`.
+     * Mirrors the legacy AWT backend's `nativeSetMenuBarOffset`.
      */
     @JvmStatic
     external fun nativeSetMenuBarOffset(
@@ -451,7 +451,7 @@ internal object NativeMetalBridge {
      * frame from the stored title-bar height + menu-bar offset. Useful after
      * a layout pass that may have moved the contentView.
      *
-     * Mirrors `decorated-window-jni`'s `nativeUpdateFullScreenButtons`.
+     * Mirrors the legacy AWT backend's `nativeUpdateFullScreenButtons`.
      */
     @JvmStatic
     external fun nativeUpdateFullScreenButtons(nsViewPtr: Long)

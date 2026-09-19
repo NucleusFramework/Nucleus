@@ -33,19 +33,7 @@ internal data class ValidatedMacOSSigningSettings(
 
     /** Identity with all known certificate-type prefixes stripped. */
     val bareIdentityName: String
-        get() {
-            val knownPrefixes =
-                listOf(
-                    "Developer ID Application: ",
-                    "3rd Party Mac Developer Application: ",
-                    "Developer ID Installer: ",
-                    "3rd Party Mac Developer Installer: ",
-                )
-            return knownPrefixes
-                .firstOrNull { identity.startsWith(it) }
-                ?.let { identity.removePrefix(it) }
-                ?: identity
-        }
+        get() = identity.stripAppleCertificatePrefix()
 
     /** Team ID extracted from the identity string, e.g. "NAME (XXXXXXX)" → "XXXXXXX". */
     val teamID: String?
@@ -107,3 +95,18 @@ private val ERR_UNKNOWN_SIGN_ID =
     """.trimMargin()
 
 private val TEAM_ID_REGEX = Regex("\\(([A-Z0-9]+)\\)\\s*$")
+
+private val APPLE_CERTIFICATE_PREFIXES =
+    listOf(
+        "Developer ID Application: ",
+        "3rd Party Mac Developer Application: ",
+        "Developer ID Installer: ",
+        "3rd Party Mac Developer Installer: ",
+    )
+
+/**
+ * Strips a known certificate-type prefix ("Developer ID Application: ", "3rd Party Mac Developer
+ * Installer: ", …) from a signing identity, leaving the bare "NAME (TEAMID)" qualifier.
+ */
+internal fun String.stripAppleCertificatePrefix(): String =
+    APPLE_CERTIFICATE_PREFIXES.firstOrNull { startsWith(it) }?.let { removePrefix(it) } ?: this

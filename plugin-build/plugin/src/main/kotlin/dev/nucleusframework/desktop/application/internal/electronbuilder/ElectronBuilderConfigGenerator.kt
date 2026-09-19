@@ -16,6 +16,8 @@ import dev.nucleusframework.desktop.application.dsl.NsisSettings
 import dev.nucleusframework.desktop.application.dsl.PublishSettings
 import dev.nucleusframework.desktop.application.dsl.SnapSettings
 import dev.nucleusframework.desktop.application.dsl.TargetFormat
+import dev.nucleusframework.desktop.application.internal.MacPkgScripts
+import dev.nucleusframework.desktop.application.internal.validation.stripAppleCertificatePrefix
 import dev.nucleusframework.internal.utils.Arch
 import dev.nucleusframework.internal.utils.OS
 import dev.nucleusframework.internal.utils.currentOS
@@ -174,7 +176,7 @@ internal class ElectronBuilderConfigGenerator {
         return yaml.toString()
     }
 
-    private fun generateMacConfig(
+    internal fun generateMacConfig(
         yaml: StringBuilder,
         distributions: JvmApplicationDistributions,
         targetFormat: TargetFormat,
@@ -196,6 +198,15 @@ internal class ElectronBuilderConfigGenerator {
         )
         appendIfNotNull(yaml, "  minimumSystemVersion", distributions.macOS.minimumSystemVersion)
 
+        // electron-builder never notarizes the PKG. App Store binaries are not Developer ID, so
+        // notarytool would return "Invalid" — and without this it submits the .app anyway whenever
+        // APPLE_ID / APPLE_API_KEY / APPLE_KEYCHAIN_PROFILE are in the environment (#650). A
+        // Developer ID PKG is notarized and stapled as a whole by the notarizePkg task, which
+        // covers the embedded .app.
+        if (targetFormat == TargetFormat.Pkg) {
+            yaml.appendLine("  notarize: false")
+        }
+
         // When not signing, disable signature-related features
         if (distributions.macOS.signing.sign.orNull != true) {
             yaml.appendLine("  identity: null")
@@ -212,10 +223,10 @@ internal class ElectronBuilderConfigGenerator {
                 if (distributions.macOS.signing.sign.orNull != true) {
                     yaml.appendLine("  identity: null")
                 } else {
-                    val installerIdentity = resolveInstallerIdentity(distributions.macOS)
-                    if (installerIdentity != null) {
-                        yaml.appendLine("  identity: \"$installerIdentity\"")
-                    }
+                    appendIfNotNull(yaml, "  identity", resolveInstallerIdentity(distributions.macOS))
+                }
+                if (distributions.macOS.pkg.hasScripts) {
+                    yaml.appendLine("  scripts: \"${MacPkgScripts.SCRIPTS_DIR}\"")
                 }
             }
             else -> {}
@@ -793,16 +804,21 @@ internal class ElectronBuilderConfigGenerator {
     }
 
     /**
-     * Resolves the PKG installer signing identity.
+     * Resolves the identity electron-builder hands to `productbuild --sign` for the PKG installer.
      *
-     * PKG is always treated as an App Store format, so signing is handled post-build
-     * via `productsign` with the "3rd Party Mac Developer Installer" certificate.
-     * This always returns `null` because electron-builder's `pkg.ts` hardcodes
-     * `certType = "Developer ID Installer"`, making it impossible to match a
-     * "3rd Party Mac Developer Installer" certificate at build time.
+     * - App Store PKG: `null`. electron-builder's `pkg.ts` hardcodes `certType = "Developer ID
+     *   Installer"`, so it can never match a "3rd Party Mac Developer Installer" certificate; the
+     *   package task re-signs the installer with `productsign` after the build instead.
+     * - Developer ID PKG: the configured signing identity with any certificate-type prefix stripped.
+     *   electron-builder prepends the type itself when it looks the certificate up, and rejects a
+     *   qualifier that already carries one.
      */
-    @Suppress("UnusedParameter", "FunctionOnlyReturningConstant")
-    private fun resolveInstallerIdentity(macOS: JvmMacOSPlatformSettings): String? = null
+    private fun resolveInstallerIdentity(macOS: JvmMacOSPlatformSettings): String? {
+        if (macOS.pkg.appStore) return null
+        return macOS.signing.identity.orNull
+            ?.takeIf { it.isNotBlank() }
+            ?.stripAppleCertificatePrefix()
+    }
 
     private fun fpmArgs(
         distributions: JvmApplicationDistributions,
