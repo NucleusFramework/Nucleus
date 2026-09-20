@@ -3,13 +3,19 @@ description: Validate release tags that must be cut from a specific branch
 
 inputs:
   prerelease-branch:
-    description: Branch that owns 2.x prerelease tags
+    description: >
+      Branch that owns the prerelease tags. Empty (the default) derives it from the tag itself,
+      so the check follows the release line instead of going stale every cycle.
     required: false
-    default: nucleus-2.0
+    default: ''
+  prerelease-branch-prefix:
+    description: Prefix of the derived prerelease branch name (`<prefix><major>.<minor>`)
+    required: false
+    default: nucleus-
   prerelease-tag-regex:
-    description: Bash regex for prerelease tags that must be on prerelease-branch
+    description: Bash regex for prerelease tags that must be on the prerelease branch
     required: false
-    default: '^v2\.[0-9]+\.[0-9]+-(alpha|beta|rc)([.-][0-9A-Za-z]+)*$'
+    default: '^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta|rc)([.-][0-9A-Za-z]+)*$'
 
 runs:
   using: composite
@@ -33,8 +39,23 @@ runs:
           exit 0
         fi
 
+        # The branch that owns a prerelease tag is the one named after its release line:
+        # `v2.6.0-rc.1` belongs on `nucleus-2.6`. Derived rather than hard-coded, because a
+        # pinned branch name silently protects the *previous* line once the work moves on
+        # (the default was still `nucleus-2.0` while 2.6 was in development, and that branch
+        # no longer exists on origin — every rc would have failed to fetch).
+        if [[ -z "$prerelease_branch" ]]; then
+          line="${tag#v}"
+          line="${line%%-*}"
+          prerelease_branch="${{ inputs.prerelease-branch-prefix }}${line%.*}"
+          echo "Derived prerelease branch '$prerelease_branch' from tag '$tag'."
+        fi
+
         echo "Validating prerelease tag '$tag' against origin/$prerelease_branch..."
-        git fetch --no-tags origin "+refs/heads/$prerelease_branch:refs/remotes/origin/$prerelease_branch"
+        if ! git fetch --no-tags origin "+refs/heads/$prerelease_branch:refs/remotes/origin/$prerelease_branch"; then
+          echo "::error::Prerelease branch '$prerelease_branch' does not exist on origin (derived from tag '$tag')."
+          exit 1
+        fi
 
         if git merge-base --is-ancestor "$GITHUB_SHA" "refs/remotes/origin/$prerelease_branch"; then
           echo "Tag '$tag' points to a commit contained in origin/$prerelease_branch."

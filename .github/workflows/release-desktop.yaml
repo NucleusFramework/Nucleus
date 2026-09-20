@@ -3,7 +3,10 @@ name: Release Desktop App (All Platforms)
 on:
   push:
     tags:
+      # Dev builds (`v2.6.0-dev-<timestamp>`) only publish libraries to Maven —
+      # they must not cut a GitHub release or burn the per-OS packaging matrix.
       - "v*"
+      - "!v*-dev*"
   workflow_dispatch:
 
 permissions:

@@ -8,11 +8,19 @@ on:
 jobs:
   validate-release-ref:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
+      channel: ${{ steps.tag.outputs.channel }}
+      is-dev: ${{ steps.tag.outputs.is-dev }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Classify release tag
+        id: tag
+        uses: ./.github/actions/release-tag-info
 
       - name: Validate release ref
         uses: ./.github/actions/validate-release-ref
@@ -23,7 +31,7 @@ jobs:
     uses: ./.github/workflows/build-natives.yaml
 
   publish:
-    needs: build-natives
+    needs: [validate-release-ref, build-natives]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repo
@@ -193,7 +201,11 @@ jobs:
           curl -s https://api.ipify.org; echo
           curl -s https://api64.ipify.org; echo
 
+      # Dev builds (`v2.6.0-dev-<timestamp>`) publish straight from the tag: the whole
+      # point is a throwaway version a downstream app can consume today. Every other tag
+      # is a real release and still has to pass preMerge.
       - name: Run pre-merge checks
+        if: needs.validate-release-ref.outputs.is-dev != 'true'
         run: ./gradlew preMerge --continue
 
       - name: Publish to Maven Central

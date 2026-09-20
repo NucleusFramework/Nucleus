@@ -127,6 +127,26 @@ GITHUB_REF=refs/tags/v2.4.4 JAVA_HOME=/usr/lib/jvm/java-1.21.0-openjdk-amd64 \
 
 Published tags are `v2.4.x`. The `v` prefix is stripped for the Maven version.
 
+## Dev releases (unverified)
+
+A tag `v<major>.<minor>.<patch>-dev-<id>` (convention: `v2.6.0-dev-YYYYMMDDHHMM`, UTC, the
+`tag-dev` skill cuts it) publishes the runtime modules to Maven Central and the plugin to the
+Gradle Plugin Portal **without running `preMerge`** — no tests, no `apiCheck`, no detekt; only
+the compile/javadoc/sign graph the publish tasks themselves pull in. Natives are still built and
+verified, since the JARs would be unusable otherwise. Dev tags are also excluded from
+`release-desktop` / `release-graalvm`, so they cut no GitHub release and burn no packaging matrix.
+
+`.github/actions/release-tag-info` is the single place that classifies a tag: it rejects anything
+that is not `v<semver>` (every publish task derives its version with
+`GITHUB_REF.removePrefix("refs/tags/v")`, so a `dev-2026…` tag would have published a version
+literally named `refs/tags/dev-2026…`) and exposes `is-dev`, which gates the `preMerge` step in
+both publish workflows. Dev tags can be cut from any branch — `validate-release-ref` only
+constrains `alpha`/`beta`/`rc`, and it derives the branch they must live on from the tag itself
+(`v2.6.0-rc.1` → `nucleus-2.6`) rather than pinning one that goes stale each release line.
+
+`2.6.0-dev-<ts>` orders below `2.6.0` for Gradle and Maven, so a dev build never shadows the real
+release. The versions are immutable on Central: never retag, bump the timestamp.
+
 ## GraalVM Native Image
 
 - Reflection metadata is centralized in 3 levels — users no longer copy hundreds of entries:
