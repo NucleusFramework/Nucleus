@@ -156,8 +156,8 @@ public object ExecutableRuntime {
                     .info()
                     .command()
                     .orElse(null) ?: return null
-            val marker = File(execPath).parentFile?.resolve(TYPE_MARKER_FILE) ?: return null
-            if (!marker.isFile) return null
+            val executableDir = File(execPath).parentFile ?: return null
+            val marker = locateMarkerFile(executableDir) ?: return null
             val lines = marker.readLines()
             MarkerData(
                 type = lines.getOrNull(0)?.trim() ?: return null,
@@ -166,4 +166,25 @@ public object ExecutableRuntime {
         } catch (_: Exception) {
             null
         }
+
+    /**
+     * Locates the executable type marker file for an executable living in [executableDir].
+     *
+     * Candidates, in order:
+     * 1. `[executableDir]/.nucleus-executable-type` — Linux/Windows, and macOS bundles built by
+     *    older plugin versions that wrote the marker into `Contents/MacOS/`.
+     * 2. `[executableDir]/../Resources/.nucleus-executable-type` — the current macOS layout, where
+     *    [executableDir] is `Contents/MacOS` and the marker is kept out of `Contents/MacOS/` so
+     *    codesign does not reject it as an unsigned nested code object.
+     *
+     * Returns `null` when no candidate exists.
+     */
+    internal fun locateMarkerFile(executableDir: File): File? {
+        val candidates =
+            listOfNotNull(
+                executableDir.resolve(TYPE_MARKER_FILE),
+                executableDir.parentFile?.resolve("Resources")?.resolve(TYPE_MARKER_FILE),
+            )
+        return candidates.firstOrNull { it.isFile }
+    }
 }
