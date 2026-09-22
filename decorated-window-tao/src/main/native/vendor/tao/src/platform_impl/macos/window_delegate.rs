@@ -6,7 +6,7 @@ use std::{
   f64,
   ffi::CStr,
   os::raw::c_void,
-  sync::{Arc, Weak},
+  sync::{Arc, Mutex, Weak},
 };
 
 use objc2::{
@@ -30,7 +30,7 @@ use crate::{
     ffi::{id, nil, BOOL, NO, YES},
     util::{self, IdRef},
     view::ViewState,
-    window::{get_ns_theme, get_window_id, UnownedWindow},
+    window::{get_ns_theme, get_window_id, SharedState, UnownedWindow},
   },
   window::{Fullscreen, WindowId},
 };
@@ -276,6 +276,24 @@ static WINDOW_DELEGATE_CLASS: Lazy<WindowDelegateClass> = Lazy::new(|| unsafe {
   decl.add_ivar::<*mut c_void>(CStr::from_bytes_with_nul(b"taoState\0").unwrap());
   WindowDelegateClass(decl.register())
 });
+
+// PATCH(nucleus): the shared state behind a `TaoWindow`, read through its
+// delegate — for the window class's own overrides (`setFrame:display:animate:`
+// in window.rs). `None` when the delegate is not ours.
+pub fn shared_state_of(ns_window: &NSWindow) -> Option<Arc<Mutex<SharedState>>> {
+  #[allow(deprecated)] // TODO: Use define_class!
+  unsafe {
+    let delegate: id = msg_send![ns_window, delegate];
+    if delegate.is_null() || !std::ptr::eq((*delegate).class() as *const Class, WINDOW_DELEGATE_CLASS.0) {
+      return None;
+    }
+    let state_ptr: *mut c_void = *(*delegate).get_ivar("taoState");
+    (*(state_ptr as *mut WindowDelegateState))
+      .window
+      .upgrade()
+      .map(|window| window.shared_state.clone())
+  }
+}
 
 // This function is definitely unsafe, but labeling that would increase
 // boilerplate and wouldn't really clarify anything...

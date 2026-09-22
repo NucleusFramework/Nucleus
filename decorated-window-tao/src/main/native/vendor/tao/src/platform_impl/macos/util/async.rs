@@ -18,7 +18,7 @@ use objc2_foundation::{MainThreadMarker, NSPoint, NSRect, NSSize, NSString};
 use crate::{
   dpi::LogicalSize,
   platform_impl::platform::{
-    ffi::{self, id, NO, YES},
+    ffi::{self, id, YES},
     window::SharedState,
   },
 };
@@ -191,71 +191,29 @@ pub unsafe fn set_maximized_async(
 
       shared_state_lock.maximized = maximized;
 
-      let curr_mask = ns_window.styleMask();
       if shared_state_lock.fullscreen.is_some() {
         // Handle it in window_did_exit_fullscreen
         return;
-      } else if curr_mask.contains(NSWindowStyleMask::Resizable)
-        && curr_mask.contains(NSWindowStyleMask::Titled)
-      {
-        // PATCH(nucleus): upstream calls `ns_window.zoom(None)` here. AppKit's
-        // `zoom:` runs its resize animation SYNCHRONOUSLY on the main thread
-        // (~350 ms) in a private run-loop mode that services neither the main
-        // dispatch queue nor observers registered on `kCFRunLoopCommonModes`,
-        // so the embedder saw a single Resized at the end and the content
-        // snapped into place. Animating through the NSWindow animator proxy
-        // instead delivered a Resized per step, but the steps are Core
-        // Animation's: overlapping requests run overlapping animations whose
-        // final frame is whichever finishes last, and presenting the content
-        // synchronously on each step (Nucleus #576) left them stopping
-        // mid-flight.
-        //
-        // So step the frame ourselves, on the main queue, 60 times a second,
-        // easing between the current frame and the zoom target (the same
-        // frames `zoom:` uses: screen visibleFrame ⇄ saved standard frame)
-        // over `animationResizeTime:`. Every step is a plain `setFrame:`, so
-        // the embedder gets one Resized per step and can present the content
-        // for it in the same turn; a new request bumps `zoom_generation`,
-        // which stops the chain in flight and starts over from the frame it
-        // had reached. `is_zoomed()` is frame-based (see window.rs) so
-        // bypassing `zoom:` keeps the maximized-state tracking consistent.
-        let mtm = MainThreadMarker::new_unchecked();
-        let screen = ns_window.screen().or_else(|| NSScreen::mainScreen(mtm));
-        let target = if maximized {
-          match screen {
-            Some(screen) => NSScreen::visibleFrame(&screen),
-            None => return,
-          }
-        } else {
-          shared_state_lock.saved_standard_frame()
-        };
-        let duration: f64 = msg_send![&*ns_window, animationResizeTime: target];
-        shared_state_lock.zoom_generation += 1;
-        shared_state_lock.zoom_animating = true;
-        let generation = shared_state_lock.zoom_generation;
-        let from = NSWindow::frame(&ns_window);
-        drop(shared_state_lock);
-        zoom_step(
-          MainThreadSafe((*ns_window).retain()),
-          MainThreadSafe(Arc::downgrade(&shared_state)),
-          generation,
-          from,
-          target,
-          Instant::now(),
-          duration.max(ZOOM_MIN_DURATION_SECS),
-        );
-        return;
-      } else {
-        // if it's not resizable, we set the frame directly
-        let new_rect = if maximized {
-          let mtm = MainThreadMarker::new_unchecked();
-          let screen = NSScreen::mainScreen(mtm).unwrap();
-          NSScreen::visibleFrame(&screen)
-        } else {
-          shared_state_lock.saved_standard_frame()
-        };
-        let _: () = msg_send![&*ns_window, setFrame:new_rect, display:NO, animate: YES];
       }
+      // PATCH(nucleus): upstream calls `ns_window.zoom(None)` on a resizable
+      // titled window and `setFrame:display:NO animate:YES` otherwise — both
+      // AppKit's blocking animator, which `TaoWindow` reroutes to
+      // `animate_frame` below (`set_frame_display_animate`, window.rs). Zoom
+      // between the frames `zoom:` uses: screen visibleFrame ⇄ saved standard
+      // frame. `is_zoomed()` is frame-based (see window.rs) so bypassing
+      // `zoom:` keeps the maximized-state tracking consistent.
+      let target = if maximized {
+        let mtm = MainThreadMarker::new_unchecked();
+        match ns_window.screen().or_else(|| NSScreen::mainScreen(mtm)) {
+          Some(screen) => NSScreen::visibleFrame(&screen),
+          None => return,
+        }
+      } else {
+        shared_state_lock.saved_standard_frame()
+      };
+      // `animate_frame` takes the lock itself.
+      drop(shared_state_lock);
+      let _: () = msg_send![&*ns_window, setFrame: target, display: YES, animate: YES];
 
       trace!("Unlocked shared state in `set_maximized`");
     }
@@ -320,9 +278,52 @@ pub unsafe fn set_ignore_mouse_events(ns_window: &NSWindow, ignore: bool) {
   });
 }
 
-// PATCH(nucleus): one step of the zoom animation started by
-// `set_maximized_async`; re-schedules itself until the target is reached or
-// a newer request has bumped `zoom_generation`.
+// PATCH(nucleus): tao's frame animation — what `setFrame:display:animate:YES`
+// resolves to on a `TaoWindow` (window.rs): `set_maximized_async` above, and
+// the zooms AppKit starts on its own — a double-click on a resize edge
+// (`_zoomToScreenEdge:`), the Window-menu tiling (`_zoomLeft:` and friends),
+// `zoom:`. AppKit's own animator runs SYNCHRONOUSLY on the main thread
+// (~250 ms) in a private run-loop mode that services neither the main
+// dispatch queue nor observers registered on `kCFRunLoopCommonModes`, so every
+// step's `windowDidResize:` only queued a `Resized` and the embedder got the
+// whole run once the window already sat at the target: the content snapped
+// into place (Nucleus #576). Animating through the NSWindow animator proxy
+// instead delivered a Resized per step, but the steps are Core Animation's:
+// overlapping requests run overlapping animations whose final frame is
+// whichever finishes last, and presenting the content synchronously on each
+// step left them stopping mid-flight.
+//
+// So step the frame ourselves, on the main queue, 60 times a second, easing
+// between the current frame and the target over `animationResizeTime:`. Every
+// step is a plain `setFrame:display:`, so the embedder gets one Resized per
+// step and can present the content for it in the same turn; a new request
+// bumps `zoom_generation`, which stops the chain in flight and starts over
+// from the frame it had reached.
+pub(crate) unsafe fn animate_frame(
+  ns_window: &NSWindow,
+  shared_state: &Arc<Mutex<SharedState>>,
+  target: NSRect,
+) {
+  let duration: f64 = msg_send![ns_window, animationResizeTime: target];
+  let (generation, from) = {
+    let mut state = shared_state.lock().unwrap();
+    state.zoom_generation += 1;
+    state.zoom_animating = true;
+    (state.zoom_generation, NSWindow::frame(ns_window))
+  };
+  zoom_step(
+    MainThreadSafe(ns_window.retain()),
+    MainThreadSafe(Arc::downgrade(shared_state)),
+    generation,
+    from,
+    target,
+    Instant::now(),
+    duration.max(ZOOM_MIN_DURATION_SECS),
+  );
+}
+
+// One step of `animate_frame`; re-schedules itself until the target is
+// reached or a newer request has bumped `zoom_generation`.
 const ZOOM_STEP_MS: u64 = 16;
 const ZOOM_MIN_DURATION_SECS: f64 = 0.05;
 
