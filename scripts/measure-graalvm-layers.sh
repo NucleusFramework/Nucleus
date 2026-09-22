@@ -10,18 +10,11 @@
 # This script builds both shapes of the same app, one source line apart, and reports how many bytes
 # an update transfers in each case. It is a measurement harness, not part of the build.
 #
-# STATUS: the layered path does not currently produce a working Compose application. The application
-# layer fails to compile with a permanent Graal bailout on `androidx.compose.runtime.snapshots
-# .SnapshotKt.sync` — Kotlin's `synchronized` intrinsic wrapping an inlined lambda:
-#
-#     PermanentBailoutException: Unstructured locking: too few monitorexits exiting frame
-#         at BytecodeParser.handleUnstructuredLockingForUnwindTarget
-#
-# A monolithic build compiles the same method without complaint. Reproduced on GraalVM CE 25.1.3 and
-# 25.2.4, with the layer option verification on and off, with the package assigned to either layer,
-# and with -H:-UseSharedLayerGraphs. Nothing works around it: the bailout is permanent, and
-# SnapshotKt.sync is reachable from any Compose application. The delta figures below were therefore
-# measured on a JDK-only base layer, whose application layer does build.
+# STATUS: a JDK-only base layer works on GraalVM CE 25.3.4.1. `nucleus-demo` compiles and starts.
+# The same build fails on CE 25.2.4: AtomicFieldUpdaterAccessCheck was not seen by the initial layer.
+# Putting framework packages in the base layer was not retested on 25.3. On 25.1.3 and 25.2.4 that
+# split failed to compile with a permanent bailout on SnapshotKt.sync (Kotlin's synchronized
+# intrinsic). The delta figures below were measured on the JDK-only split.
 #
 # Usage: scripts/measure-graalvm-layers.sh [output-dir]
 #

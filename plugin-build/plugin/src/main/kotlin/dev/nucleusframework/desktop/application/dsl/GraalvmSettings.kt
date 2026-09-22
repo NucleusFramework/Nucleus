@@ -165,6 +165,7 @@ abstract class GraalvmSettings
             fn.execute(toolchain)
         }
 
+        /** Configures the optional base layer plus application layer split. */
         fun layers(fn: Action<GraalvmLayerSettings>) {
             fn.execute(layers)
         }
@@ -376,80 +377,24 @@ abstract class MetadataRepositorySettings
  * The trade is disk for traffic: the base layer is not pruned against what the application actually
  * uses, so the first download grows while every later one shrinks.
  *
- * **Not usable for a shipping application as of GraalVM 25.2.** Kept behind this flag because the
- * scaffolding is correct and the payoff is measured (2.3x less traffic per update, break-even after
- * ~1.2 updates on a macOS ZIP of `nucleus-demo`), but three things stand in the way:
+ * **Requires GraalVM 25.3, and stays off by default.** On CE 25.2.4 the application layer fails
+ * because `AtomicFieldUpdaterAccessCheck` was not seen by the initial layer. On CE 25.3.4.1 the same
+ * `nucleus-demo` build compiles and the application starts. macOS only: on the other platforms the
+ * flag is ignored and the image stays monolithic. The measured payoff of the split, from before this
+ * fix, was 2.3x less traffic per update, breaking even after about 1.2 updates on a macOS ZIP of
+ * `nucleus-demo`.
  *
- *  - **Reflection metadata versus base-layer types.** The application layer fails with "This type is
- *    incomplete and should not be used", thrown from `BaseLayerType.getStaticFields` under
- *    `ReflectionDataBuilder.checkHidingFields`: registering a type for reflection makes the builder
- *    walk its subtypes and read their static fields, and a subtype that lives in the base layer is
- *    only a stub in the application layer. There is no option that disables that walk, and the
- *    metadata that triggers it is the metadata every real application needs. The number of errors
- *    reported scales with `-H:NumberOfThreads` (the walk runs on a parallel executor), which makes it
- *    look intermittent; the failure itself is not.
- *  - **Text fields need an AWT resource bundle.** Constructing a `java.awt.Cursor` — what
- *    `PointerIcon` does for any text field — reads `sun.awt.resources.awtosx`. A base-layer build
- *    reaches no AWT code on its own, so native-image never registers those bundles the way it does
- *    for a monolithic image; [resourceBundles] registers them explicitly, in the layer that owns
- *    `java.desktop`. That is the only place it works — registering them from the application layer
- *    leaves the runtime lookup failing — but it is also what makes the reflection defect above fire,
- *    so the two cannot currently be satisfied at once.
+ * Only the JDK goes into the base layer. Putting the application's classes there as well makes
+ * the application layer bail out on Kotlin's `synchronized` intrinsic. `java.desktop` has to stay
+ * in the base layer: omitting it fails with "Newly seen boot package java.awt.datatransfer".
  *
- * Past that, the application layer stops on a second wall: "The core type
- * `com.oracle.svm.core.jdk.AtomicFieldUpdaterAccessCheck` was not seen as reachable the initial layer.
- * It is illegal for core types to become reachable in subsequent layers." A base layer holding only
- * JDK modules analyses no application code, so it never sees the SVM internals the application will
- * reach. Putting the application's classes on the base layer's class path does make it see them — and
- * collapses the split: the base layer then analyses 28,400 types and 173,197 methods while the
- * application layer is left with 158 types. GraalVM's prescribed escape is to pin those types via
- * `LayeredCompilationBehavior` / `InitialLayerFeature`, which needs the set of SVM internals a given
- * application reaches to be known up front — the opposite of working for any application.
+ * A text field looks up `sun.awt.resources.awtosx` when it builds a cursor, and a base-layer build
+ * never reaches that code on its own. [resourceBundles] registers the AWT bundles in the layer that
+ * owns `java.desktop`. Registering them from the application layer leaves the lookup failing at
+ * runtime.
  *
- * There is one configuration that gets past both compile walls: a base layer that analyses Kotlin,
- * the coroutines runtime and the framework's own modules — enough for the SVM core types to be seen —
- * while Compose stays in the application layer, so nothing re-parses `SnapshotKt.sync`. It compiles:
- * 28,045 types in the base layer, 10,478 types and a 42.8 MB executable in the application layer.
- *
- * And the result does not run. The two layers disagree on virtual dispatch tables, so the binary dies
- * at startup with "Fatal error: Virtual method call used an illegal vtable entry that was seen as
- * unused by the static analysis". `-H:+AbortOnLayeredDispatchTableDiscrepancies` turns that into a
- * build failure ("Issue while comparing dispatch table info"), which is the safer behaviour — by
- * default native-image emits the broken binary without a word. That alone is reason enough for this
- * flag to stay off.
- *
- * An open type world is not the missing piece: the discrepancy is identical with the defaults, with
- * `-H:-ClosedTypeWorld`, and with `-H:-ClosedTypeWorld -H:-ClosedTypeWorldHubLayout` on both layers —
- * the coherent combination, since the hub layout defaults to enabled and is documented as valid only
- * under a closed world. The layer type counts do not move either, which suggests the layered dispatch
- * tables do not key on the type-world mode at all.
- *
- * The other two failures are the same coin. A base layer that *analyses* framework code — whether the
- * framework is selected with `package=` or simply put on the base layer's class path — makes the
- * application layer bail out on Kotlin's `synchronized` intrinsic. A base layer that analyses nothing
- * leaves the SVM core types unseen. There is no setting in between: the configuration space was walked
- * (base with and without a class path, framework selected by package and by class path, layer option
- * verification on and off, `-H:NumberOfThreads=1`, `-H:-UseSharedLayerGraphs`,
- * `-H:InlineBeforeAnalysisAllowedDepth=0`, GraalVM 25.1 and 25.2)
- * and every combination lands on one wall or the other.
- *
- * Two further routes were tried and are dead ends worth not repeating. Substituting
- * `Toolkit.getProperty` to return its default (the JDK already does that for a missing bundle) has to
- * be applied in the layer that compiles `java.awt.Toolkit`, and a base layer only sees substitutions
- * if it is given a class path — at which point it absorbs the whole application and the application
- * layer has nothing left to compile ("0 types, 0 fields, and 2 methods found reachable"). Moving
- * `java.desktop` out of the base layer is not possible either: a base layer without it fails with
- * "Newly seen boot package java.awt.datatransfer".
- *  - **Requires GraalVM 25.2 or newer.** On 25.1 an application layer's JNI registrations are
- *    invisible to `FindClass`, so every native bridge breaks: the window opens and never renders.
- *
- * When the build does succeed the application runs, Compose renders and the native macOS menu bar
- * works, so only the two items above separate this from being usable.
- *
- * Only the JDK goes into the base layer. Putting classpath packages there as well would shrink the
- * application layer further, but as of GraalVM 25.2 it makes the application layer fail to compile
- * with a permanent Graal bailout ("Unstructured locking: too few monitorexits exiting frame") on
- * Kotlin's `synchronized` intrinsic — which any Compose application reaches.
+ * On GraalVM 25.1 an application layer's JNI registrations are invisible to `FindClass`, so the
+ * window opens and never renders.
  */
 abstract class GraalvmLayerSettings
     @Inject
